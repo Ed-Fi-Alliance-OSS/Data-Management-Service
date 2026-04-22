@@ -2834,27 +2834,29 @@ public class Given_Default_Relational_Write_Executor
 
         public RelationalWriteMergeResult? ResultToReturn { get; set; }
 
-        public RelationalWriteMergeResult Synthesize(RelationalWriteProfileMergeRequest request)
+        public ProfileMergeOutcome Synthesize(RelationalWriteProfileMergeRequest request)
         {
             SynthesizeCallCount++;
             CapturedRequest = request;
 
-            return ResultToReturn
-                ?? new RelationalWriteMergeResult(
-                    [
-                        new RelationalWriteMergedTableState(
-                            request.WritePlan.TablePlansInDependencyOrder[0],
-                            [],
-                            [
-                                new RelationalWriteMergedTableRow(
-                                    request.FlattenedWriteSet.RootRow.Values,
-                                    request.FlattenedWriteSet.RootRow.Values
-                                ),
-                            ]
-                        ),
-                    ],
-                    supportsGuardedNoOp: false
-                );
+            return ProfileMergeOutcome.Success(
+                ResultToReturn
+                    ?? new RelationalWriteMergeResult(
+                        [
+                            new RelationalWriteMergedTableState(
+                                request.WritePlan.TablePlansInDependencyOrder[0],
+                                [],
+                                [
+                                    new RelationalWriteMergedTableRow(
+                                        request.FlattenedWriteSet.RootRow.Values,
+                                        request.FlattenedWriteSet.RootRow.Values
+                                    ),
+                                ]
+                            ),
+                        ],
+                        supportsGuardedNoOp: false
+                    )
+            );
         }
     }
 

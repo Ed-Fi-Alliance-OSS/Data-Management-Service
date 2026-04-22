@@ -85,6 +85,21 @@ public static class ReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<
+                IProfileSeparateTableBindingClassifier,
+                ProfileSeparateTableBindingClassifier
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IProfileSeparateTableKeyUnificationResolver,
+                ProfileSeparateTableKeyUnificationResolver
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IProfileSeparateTableMergeDecider, ProfileSeparateTableMergeDecider>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
                 IRelationalWriteProfileMergeSynthesizer,
                 RelationalWriteProfileMergeSynthesizer
             >()

@@ -275,7 +275,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     )
                 );
 
-                mergeResult = _profileMergeSynthesizer.Synthesize(
+                var profileMergeOutcome = _profileMergeSynthesizer.Synthesize(
                     new RelationalWriteProfileMergeRequest(
                         executionRequest.WritePlan,
                         profileFlattenedWriteSet,
@@ -286,6 +286,17 @@ internal sealed class DefaultRelationalWriteExecutor(
                         resolvedReferences
                     )
                 );
+
+                if (profileMergeOutcome.IsRejection)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildProfileCreatabilityRejectionResult(
+                        request.OperationKind,
+                        profileWriteContext.ProfileName
+                    );
+                }
+
+                mergeResult = profileMergeOutcome.MergeResult!;
             }
             else
             {

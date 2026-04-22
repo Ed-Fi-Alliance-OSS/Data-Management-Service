@@ -584,6 +584,89 @@ internal static class ProfileTestDoubles
     }
 
     /// <summary>
+    /// Build a three-table plan: [0] = root ($), [1] = RootExtension child table,
+    /// [2] = an additional separate table (default:
+    /// <see cref="DbTableKind.CollectionExtensionScope"/>) that the slice-3 synthesizer
+    /// must silently skip. Used to exercise the synthesizer's "carry unused tables
+    /// through" behavior when the write plan contains non-root-extension scopes the
+    /// current request never touches (the executor's slice-fence ensures the request
+    /// itself avoids those scopes).
+    /// </summary>
+    internal static ResourceWritePlan BuildRootPlusRootExtensionPlusUnusedTablePlan(
+        RootExtensionBindingSpec extensionBinding,
+        string unusedTableJsonScope = "$._ext.sample.addresses[*]",
+        string unusedTableSchema = "sample",
+        DbTableKind unusedTableKind = DbTableKind.CollectionExtensionScope
+    )
+    {
+        // Start from the two-table plan so the root + RootExtension shape stays identical
+        // to every other slice-3 fixture.
+        var twoTablePlan = BuildRootPlusRootExtensionPlan(extensionBindings: extensionBinding);
+        var rootModel = twoTablePlan.TablePlansInDependencyOrder[0].TableModel;
+        var rootPlan = twoTablePlan.TablePlansInDependencyOrder[0];
+        var extensionPlan = twoTablePlan.TablePlansInDependencyOrder[1];
+
+        // Third table: a minimal unused separate table tagged with the non-RootExtension
+        // kind. The synthesizer must not process it in slice 3.
+        var unusedSchemaName = new DbSchemaName(unusedTableSchema);
+        var unusedParentKeyColumn = Column("DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false);
+        var unusedScalarColumn = Column("Street", ColumnKind.Scalar, StringType());
+        var unusedTableModel = new DbTableModel(
+            Table: new DbTableName(unusedSchemaName, "HostExtensionAddress"),
+            JsonScope: Path(unusedTableJsonScope),
+            Key: new TableKey(
+                "PK_HostExtensionAddress",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [unusedParentKeyColumn, unusedScalarColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: unusedTableKind,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+        var unusedTablePlan = new TableWritePlan(
+            TableModel: unusedTableModel,
+            InsertSql: $"INSERT INTO {unusedTableSchema}.\"HostExtensionAddress\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 2, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    unusedParentKeyColumn,
+                    new WriteValueSource.ParentKeyPart(0),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    unusedScalarColumn,
+                    new WriteValueSource.Scalar(Path($"{unusedTableJsonScope}.street"), StringType()),
+                    "Street"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: _defaultResource,
+                PhysicalSchema: _defaultSchema,
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootModel,
+                TablesInDependencyOrder: [rootModel, extensionPlan.TableModel, unusedTableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, extensionPlan, unusedTablePlan]
+        );
+    }
+
+    /// <summary>
     /// Build a two-table plan: [0] = root ($), [1] = RootExtension child table at
     /// <paramref name="extensionJsonScope"/> with a key-unification plan whose members
     /// live under the extension scope. Mirrors
@@ -1127,7 +1210,24 @@ internal static class ProfileTestDoubles
     /// that verify the synthesizer's composition behavior.
     /// </summary>
     internal static RelationalWriteProfileMergeSynthesizer BuildProfileSynthesizer() =>
-        new(new ProfileRootTableBindingClassifier(), new ProfileRootKeyUnificationResolver());
+        new(
+            new ProfileRootTableBindingClassifier(),
+            new ProfileRootKeyUnificationResolver(),
+            new ProfileSeparateTableBindingClassifier(),
+            new ProfileSeparateTableKeyUnificationResolver(),
+            new ProfileSeparateTableMergeDecider()
+        );
+
+    /// <summary>
+    /// Unwrap a synthesis outcome to its underlying <see cref="RelationalWriteMergeResult"/>,
+    /// failing the test if the outcome was a rejection.
+    /// </summary>
+    internal static RelationalWriteMergeResult UnwrapMergeResult(ProfileMergeOutcome outcome) =>
+        outcome.MergeResult
+        ?? throw new InvalidOperationException(
+            "Expected success outcome from profile merge synthesizer, got rejection: "
+                + (outcome.CreatabilityRejection?.Message ?? "<unknown>")
+        );
 
     /// <summary>
     /// Build a minimal <see cref="FlattenedWriteSet"/> whose root row has literal values
@@ -1172,6 +1272,76 @@ internal static class ProfileTestDoubles
             [new HydratedTableRows(writePlan.TablePlansInDependencyOrder[0].TableModel, [columnValues])],
             []
         );
+
+    /// <summary>
+    /// Build a <see cref="RelationalWriteCurrentState"/> for a two-table plan: one row on
+    /// the root table and optionally one row on the root-extension table. Pass
+    /// <paramref name="extensionRowValues"/> = <c>null</c> for the "no stored extension row"
+    /// case (the extension table appears in <c>TableRowsInDependencyOrder</c> with an empty
+    /// rows list so the synthesizer's lookup correctly reports "no stored row").
+    /// </summary>
+    internal static RelationalWriteCurrentState BuildCurrentStateWithRootAndExtensionRow(
+        ResourceWritePlan writePlan,
+        object?[] rootRowValues,
+        object?[]? extensionRowValues
+    )
+    {
+        var rootTableModel = writePlan.TablePlansInDependencyOrder[0].TableModel;
+        var extensionTableModel = writePlan.TablePlansInDependencyOrder[1].TableModel;
+        var extensionRows = extensionRowValues is null ? (IReadOnlyList<object?[]>)[] : [extensionRowValues];
+        return new(
+            new DocumentMetadataRow(
+                DocumentId: 345L,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(rootTableModel, [rootRowValues]),
+                new HydratedTableRows(extensionTableModel, extensionRows),
+            ],
+            []
+        );
+    }
+
+    /// <summary>
+    /// Build a <see cref="FlattenedWriteSet"/> whose root row has literal values in
+    /// binding-index order and carries a single <see cref="RootExtensionWriteRowBuffer"/>
+    /// for the supplied <paramref name="extensionTablePlan"/> with its own literal values.
+    /// </summary>
+    internal static FlattenedWriteSet BuildFlattenedWriteSetWithExtensionRow(
+        ResourceWritePlan writePlan,
+        TableWritePlan extensionTablePlan,
+        object?[] rootLiteralsByBindingIndex,
+        object?[] extensionLiteralsByBindingIndex
+    )
+    {
+        var rootPlan = writePlan.TablePlansInDependencyOrder[0];
+        var rootBindings = rootPlan.ColumnBindings;
+        var rootValues = new FlattenedWriteValue[rootBindings.Length];
+        for (var i = 0; i < rootBindings.Length; i++)
+        {
+            rootValues[i] = new FlattenedWriteValue.Literal(
+                i < rootLiteralsByBindingIndex.Length ? rootLiteralsByBindingIndex[i] : null
+            );
+        }
+
+        var extensionBindings = extensionTablePlan.ColumnBindings;
+        var extensionValues = new FlattenedWriteValue[extensionBindings.Length];
+        for (var i = 0; i < extensionBindings.Length; i++)
+        {
+            extensionValues[i] = new FlattenedWriteValue.Literal(
+                i < extensionLiteralsByBindingIndex.Length ? extensionLiteralsByBindingIndex[i] : null
+            );
+        }
+
+        var extensionRow = new RootExtensionWriteRowBuffer(extensionTablePlan, extensionValues);
+        return new FlattenedWriteSet(
+            new RootWriteRowBuffer(rootPlan, rootValues, rootExtensionRows: [extensionRow])
+        );
+    }
 
     /// <summary>
     /// Pre-canned classifier used by invariant tests that need to force a specific
