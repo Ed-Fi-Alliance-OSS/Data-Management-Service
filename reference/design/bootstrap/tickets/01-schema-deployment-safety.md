@@ -7,29 +7,32 @@ design: DMS-916
 ## Description
 
 Implement the authoritative pre-start schema provisioning and validation step used by developer bootstrap.
-This slice separates schema provisioning from seed loading and makes step 8 a required invocation of the
+This slice separates schema provisioning from seed loading and assigns those responsibilities to
+`provision-dms-schema.ps1` — the phase command defined in `command-boundaries.md` §3.5 that invokes the
 shared SchemaTools/runtime-owned path over the staged schema workspace that Story 00 has already resolved
-for the run. Story 01 consumes that staged schema context and expected `EffectiveSchemaHash` as inputs to
-the authoritative path, but it does not publish a second schema-readiness decision table of its own.
+for the run. `provision-dms-schema.ps1` consumes that staged schema context and expected
+`EffectiveSchemaHash` as inputs to the authoritative path, but it does not publish a second
+schema-readiness decision table of its own.
 Under the strong DMS-916 reading, the staged schema workspace also defines the exact physical schema
 footprint expected for the run, so changing the selected extension set changes the target schema that must
 be provisioned or validated.
 
 ## Acceptance Criteria
 
-- Before any DMS host starts, step 8 consumes the selected `ApiSchema*.json` files and expected
-  `EffectiveSchemaHash` already produced by the schema-selection slice for the run.
+- Before any DMS host starts, `provision-dms-schema.ps1` consumes the selected `ApiSchema*.json` files
+  and expected `EffectiveSchemaHash` already produced by the schema-selection slice for the run.
 - Same-checkout reruns reuse the existing staged schema workspace only when the intended staged schema set is
   identical. If it differs, bootstrap fails fast with teardown guidance rather than mutating files that a
   running DMS host or already-provisioned database may still depend on.
 - The schema files hashed in bootstrap are the same files later read by Docker-hosted DMS and by
   IDE-hosted DMS.
 - Bootstrap derives the target databases from the DMS instances selected or created for the run.
-- After target selection, step 8 always invokes the authoritative SchemaTools/runtime-owned provisioning and
-  validation path against those targets before any DMS process is expected to serve requests.
-- Bootstrap passes the staged schema paths, target connection details, and expected `EffectiveSchemaHash`
-  into that shared path. `EffectiveSchemaHash` is a shared input, not bootstrap's final serviceability
-  decision.
+- After target selection, `provision-dms-schema.ps1` always invokes the authoritative
+  SchemaTools/runtime-owned provisioning and validation path against those targets before any DMS process
+  is expected to serve requests.
+- `provision-dms-schema.ps1` passes the staged schema paths, target connection details, and expected
+  `EffectiveSchemaHash` into that shared path. `EffectiveSchemaHash` is a shared input, not bootstrap's
+  final serviceability decision.
 - Story 01 depends on SchemaTools through a narrow public integration contract only:
   - documented command shape or equivalent helper inputs,
   - exit code `0` for success and non-zero for failure,
@@ -51,13 +54,14 @@ be provisioned or validated.
 
 ## Tasks
 
-1. Implement the step-7-to-step-8 handoff that resolves the target connection details from the DMS
-   instances selected or created for the run and supplies the staged schema context to the provisioning
-   helper.
-2. Consume the staged schema paths and expected `EffectiveSchemaHash` produced by Story 00 and pass them
-   unchanged into the authoritative provisioning helper.
-3. Implement step 8 as an unconditional invocation of the authoritative SchemaTools/runtime-owned
-   provisioning and validation path over the staged schema set before DMS starts.
+1. Implement the `configure-local-dms-instance.ps1`-to-`provision-dms-schema.ps1` handoff: resolve the
+   target connection details from the DMS instances selected or created for the run and supply the staged
+   schema context produced by Story 00 to `provision-dms-schema.ps1`.
+2. Inside `provision-dms-schema.ps1`, consume the staged schema paths and expected `EffectiveSchemaHash`
+   produced by Story 00 and pass them unchanged into the authoritative provisioning helper.
+3. Implement `provision-dms-schema.ps1` as an unconditional invocation of the authoritative
+   SchemaTools/runtime-owned provisioning and validation path over the staged schema set before DMS starts,
+   per `command-boundaries.md` §3.5.
 4. Keep the committed default `AppSettings__DeployDatabaseOnStartup=false` in place and surface
    authoritative provisioning diagnostics directly rather than routing schema work through DMS startup side
    effects or inventing bootstrap-owned readiness rules. Treat SchemaTools as a black-box authority for
@@ -80,3 +84,4 @@ be provisioned or validated.
 ## Design References
 
 - [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3.2, 5, 11.3, 11.5, and 14.3
+- [`../command-boundaries.md`](../command-boundaries.md), §3.5 (`provision-dms-schema.ps1` — normative ownership contract)

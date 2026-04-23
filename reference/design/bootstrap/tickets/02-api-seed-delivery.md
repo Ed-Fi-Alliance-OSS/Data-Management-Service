@@ -8,9 +8,9 @@ design: DMS-916
 
 Implement the story-aligned API-based seed path for developer bootstrap. This slice replaces the current
 direct-SQL bootstrap intent with JSONL-based API loading through the repo-pinned BulkLoadClient resolution
-path. The target state for DMS-916 is replacement, not supplementation. Operational delivery remains blocked
-until the external JSONL dependency lands; that blocker does not create a second normative seed mode in this
-design.
+path. The target state for DMS-916 is replacement, not supplementation. Operational delivery is blocked on
+two named external dependencies — **ODS-6738** (BulkLoadClient JSONL support) and **DMS-1119** (published
+seed artifact packages) — and their landing does not create a second normative seed mode in this design.
 
 The slice includes seed-source selection, the dedicated DMS-dependent `SeedLoader` credential flow for the
 `-LoadSeedData` continuation, per-year loading for the existing `-SchoolYearRange` workflow, and the
@@ -28,6 +28,21 @@ seed support, because the top-level embedded `SeedLoader` claim set is delivered
 This story defines only the DMS bootstrap consumer boundary for BulkLoadClient: the pinned-resolution path,
 the invocation shape DMS depends on, and the pass-through result handling. It does not broaden DMS-916 into
 owning BulkLoadClient product design, packaging, or non-bootstrap runtime behavior.
+
+## External Blockers
+
+This story is design-complete for DMS-916 but is **not implementation-ready end to end**. Two external
+dependencies must land before operational delivery is possible:
+
+- **ODS-6738** — BulkLoadClient JSONL support: the `--input-format jsonl` and `--data <directory>` flags
+  required by the DMS bootstrap consumption contract do not yet exist in BulkLoadClient. The bootstrap
+  design is defined and ready; delivery waits on the ODS team.
+- **DMS-1119** — Published seed artifact packages: JSONL seed artifact packages for the built-in
+  `Minimal` and `Populated` templates are not yet available with stable, bootstrap-resolvable coordinates.
+
+Neither blocker introduces a second normative seed mode. The direct-SQL path is **not** the design target
+state; it is the current gap this story closes once the external dependencies land. No DMS-916 artifact
+normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
 
 ## Acceptance Criteria
 
@@ -132,6 +147,7 @@ owning BulkLoadClient product design, packaging, or non-bootstrap runtime behavi
 - DMS-owned redesign of BulkLoadClient beyond the documented bootstrap consumer boundary.
 - Enhancing or extending the legacy direct-SQL path.
 - Folding smoke, E2E, or integration test execution into the seed-delivery flow.
+- Benchmark thresholds or performance sign-off gates for this story.
 - Dynamic claim-set synthesis from arbitrary `-SeedDataPath` JSONL files.
 
 ## Design References

@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [1. Introduction](#1-introduction)
+  - [1.1 Bootstrap Contract Change (DMS-916 Review Delta)](#11-bootstrap-contract-change-dms-916-review-delta)
 - [2. ODS InitDev Audit (Informational Reference)](#2-ods-initdev-audit-informational-reference)
 - [3. ApiSchema.json Selection](#3-apischemajson-selection)
   - [3.5 Compatibility Validation](#35-compatibility-validation)
@@ -11,7 +12,8 @@
 - [6. API-Based Seed Data Loading](#6-api-based-seed-data-loading)
 - [7. Credential Bootstrapping](#7-credential-bootstrapping)
 - [8. Extension Selection and Loading](#8-extension-selection-and-loading)
-- [9. Single Entry Point and Skip/Resume Flags](#9-single-entry-point-and-skipresume-flags)
+- [9. Bootstrap Commands and Parameters](#9-bootstrap-commands-and-parameters)
+  - [9.4.3 Thin Wrapper Contract](#943-thin-wrapper-contract)
   - [9.5 Bootstrap Working Directory](#95-bootstrap-working-directory)
 - [10. School-Year Range Handling](#10-school-year-range-handling)
 - [11. Backend Redesign Impact and DDL Provisioning](#11-backend-redesign-impact-and-ddl-provisioning)
@@ -21,13 +23,15 @@
   - [14.1 Design-Complete Criteria](#141-design-complete-criteria)
   - [14.2 Operationally Blocked Criteria](#142-operationally-blocked-criteria)
   - [14.3 Blocking Cross-Team Dependencies](#143-blocking-cross-team-dependencies)
+  - [14.4 Close-Out Status](#144-close-out-status)
+- [15. Breaking Changes and Migration Notes](#15-breaking-changes-and-migration-notes)
 
 ## 1. Introduction
 
-This document is the primary design artifact for DMS-916. It designs a single-command developer bootstrap
-experience for the Ed-Fi Data Management Service, centered on the existing
-`eng/docker-compose/start-local-dms.ps1` Docker-first workflow. The intended audience is the DMS platform
-team - specifically developers bootstrapping a local environment for active development and testing.
+This document is the primary design artifact for DMS-916. It designs a composable, phase-oriented developer
+bootstrap experience for the Ed-Fi Data Management Service, grounded in the existing Docker-first workflow
+in `eng/docker-compose/`. The intended audience is the DMS platform team - specifically developers
+bootstrapping a local environment for active development and testing.
 
 **Scope**: This document covers the **developer bootstrap workflow only**. Sysadmin and agency deployment
 concerns — including versioned seed data distribution and production provisioning — are out of scope.
@@ -43,14 +47,15 @@ Docker-first with no codegen step, no dacpac-based database deployment, and no N
 generated artifacts. The ODS audit in Section 2 is included as informational context only — it is not
 a gap-fill checklist. The DMS bootstrap design stands on its own.
 
-**Bootstrap contract**: The canonical developer-facing single-command surface described by this design is
-`pwsh eng/docker-compose/start-local-dms.ps1`. New parameters, examples, and acceptance criteria are defined
-once against that script-owned local-developer workflow. No repo-root wrapper, shell bootstrap step, or
-secondary alias is part of the normative design. The canonical bootstrap always includes the Config Service
-because instance discovery, claimset seeding, and credential bootstrap depend on it. The legacy
-`-EnableConfig` switch remains on `start-local-dms.ps1` for backward compatibility, but it is not a
-normative opt-out on the script-owned bootstrap contract. Subsequent sections address each design concern in
-turn.
+**Bootstrap contract**: The normative developer bootstrap contract is the composable set of phase-oriented
+commands documented in `reference/design/bootstrap/command-boundaries.md`. Each phase command owns exactly
+one primary concern; no single script is the source of all lifecycle semantics. Any thin wrapper over those
+commands is a convenience entry point for the happy path only and is not the source of lifecycle semantics,
+schema policy, claims logic, provisioning behavior, or any other phase-specific concern. The canonical
+bootstrap always includes the Config Service because instance discovery, claimset seeding, and credential
+bootstrap depend on it. The legacy `-EnableConfig` switch remains on the infrastructure-startup phase for
+backward compatibility but is not a normative opt-out on the phase-oriented contract. Subsequent sections
+address each design concern in turn.
 
 **Scope guardrail**: DMS-916 is a developer-bootstrap design spike, not a general orchestration platform.
 Bootstrap-integrated SDK generation, smoke-test runners, broader post-bootstrap automation, and published
@@ -71,6 +76,84 @@ accept native host paths for the platform running `pwsh` (for example, `C:\dev\s
 `/Users/alex/schema`, or `/home/alex/schema`). The repo-local staging directory
 `eng/docker-compose/.bootstrap/` is relative to the repository root and is therefore platform-neutral.
 
+**Normative rules summary**: The rest of this document expands these rules; this list is the quickest way
+to verify the design without re-reading every section.
+
+1. The normative bootstrap contract is the composable set of phase commands in
+   `command-boundaries.md`, not a monolithic control plane.
+2. The wrapper, if implemented, is sequencing convenience only. It forwards `-ConfigFile` unchanged and
+   must not own schema, claims, provisioning, credential, retry, or continuation policy.
+3. `ApiSchema.json` selection is the source of truth for API surface, security pairing in standard mode,
+   and the exact DDL target for the run.
+4. Standard mode means `-Extensions`, including the omitted-`-Extensions` core-only case. Expert mode
+   means `-ApiSchemaPath`; expert mode requires explicit `-ClaimsDirectoryPath` when non-core schemas are
+   staged.
+5. DDL provisioning and seed loading are separate phases. DMS startup is never the authoritative schema
+   deployment path.
+6. Omitting `-Extensions` means core only. DMS-916 does not preserve the legacy TPDM-included default.
+7. "Skip/resume" in this story means safe per-phase invocation plus optional same-invocation continuation
+   through `-InfraOnly -DmsBaseUrl`; it does not mean a persisted cross-invocation resume model.
+8. This is a developer-bootstrap design spike. Production provisioning, versioned seed distribution, and
+   broader orchestration concerns remain out of scope.
+
+**Terminology**:
+
+- **Standard mode**: schema selection through `-Extensions`, including the omitted-`-Extensions`
+  core-only case.
+- **Expert mode**: schema selection through `-ApiSchemaPath`.
+- **Thin wrapper**: `bootstrap-local-dms.ps1` as optional sequencing convenience only.
+- **Same-invocation continuation**: `-InfraOnly -DmsBaseUrl` continuing the current run against an
+  IDE-hosted DMS process.
+- **Exact physical schema**: the concrete relational footprint implied by the selected staged schema set;
+  this is the DDL target for the run.
+
+**Recommended developer paths**:
+
+- **Core only**: omit `-Extensions`; stage only the core schema, embedded claims, and core seed sources.
+- **Core plus supported extension**: use `-Extensions <name>`; bootstrap stages the mapped schema and
+  claims automatically and loads built-in seed data only when that mapping row defines it.
+- **Custom schema**: use `-ApiSchemaPath`; pair it with `-ClaimsDirectoryPath` for non-core resources and
+  `-SeedDataPath` when loading data.
+- **IDE workflow**: use `-InfraOnly` for pre-DMS preparation, or `-InfraOnly -DmsBaseUrl` for
+  same-invocation continuation once the IDE-hosted DMS process is healthy.
+
+### 1.1 Bootstrap Contract Change (DMS-916 Review Delta)
+
+The DMS-916 story originally called for a single normative entry point as the bootstrap control plane:
+
+> **Replaced contract:** `eng/docker-compose/start-local-dms.ps1` is the single normative bootstrap
+> control plane and single source of lifecycle semantics. All bootstrap phases — infrastructure startup,
+> schema selection, security configuration, schema provisioning, instance creation, credential
+> bootstrapping, and seed data loading — are owned by or orchestrated directly by this script.
+
+Design review determined that combining all phases behind one monolithic command surface creates an
+untestable, hard-to-maintain `initdev` clone. The complete review reasoning is in
+[`.review/feedback_PR.md`](../../../../.review/feedback_PR.md).
+
+The DMS-916 design adopts the following replacement instead:
+
+> **New normative contract:** Bootstrap is a composable set of phase-oriented commands, each owning
+> exactly one primary concern. No single script is the source of all lifecycle semantics. Any thin
+> wrapper over those commands is a convenience entry point for the happy path only — not the source of
+> schema policy, claims logic, provisioning behavior, or any other phase-specific concern.
+
+The six phase commands are:
+
+| Command | Primary concern |
+|---|---|
+| `start-local-dms.ps1` | Docker stack management and service health waiting |
+| `prepare-dms-schema.ps1` | Schema resolution and staging |
+| `prepare-dms-claims.ps1` | Security (claims) staging |
+| `configure-local-dms-instance.ps1` | DMS instance and CMS client setup |
+| `provision-dms-schema.ps1` | Authoritative schema provisioning and hash validation |
+| `load-dms-seed-data.ps1` | API-based seed data delivery |
+
+The optional `bootstrap-local-dms.ps1` thin wrapper sequences those commands for the common developer
+path. It introduces no additional policy. Per-phase ownership and boundary rules are in
+[`command-boundaries.md`](command-boundaries.md).
+
+---
+
 ## 2. ODS InitDev Audit (Informational Reference)
 
 > **Scope note:** DMS is Docker-first with no code generation step. This audit is informational context for understanding ODS heritage, **not a gap-fill checklist**. The DMS bootstrap design stands on its own.
@@ -84,12 +167,12 @@ The ODS initdev is organized into eight abstract phases. The table below maps ea
 | ODS Phase | ODS Concern | DMS Equivalent |
 |-----------|-------------|----------------|
 | Phase 1: Environment Setup | Load modules, resolve cross-repo paths, detect platform | `Import-Module` calls at top of `start-local-dms.ps1`; `env-utility.psm1` reads `.env` file |
-| Phase 2: Configuration | Assemble settings from parameters, config files, defaults; generate `appsettings.Development.json`; generate secrets | Parameters on `start-local-dms.ps1`; `.env` / `.env.example` consumed via `env-utility.psm1`; `setup-openiddict.ps1` generates OpenIddict public/private keys |
+| Phase 2: Configuration | Assemble settings from parameters, config files, defaults; generate `appsettings.Development.json`; generate secrets | Phase-owned parameters across the composable bootstrap commands; `.env` / `.env.example` consumed via `env-utility.psm1`; `setup-openiddict.ps1` generates OpenIddict public/private keys |
 | Phase 3: Code Generation | Generate NHibernate mappings and API metadata from data model | **Obsolete** — DMS derives API shape from the ApiSchema at runtime; no compile-time code generation |
 | Phase 4: Build | Compile the .NET solution | **Obsolete for Docker path** — Docker images are built from `Dockerfile`s via `docker compose build`; local `dotnet build` is used only for IDE/unit-test workflows |
 | Phase 5: Tool Installation | Install `EdFi.Db.Deploy`, `EdFi.BulkLoadClient` as .NET global tools | Partially covered - no explicit tool-install step; tools are baked into Docker images. DMS should reuse the existing repo-pinned NuGet resolution path for BulkLoadClient rather than introducing a new global-tool requirement |
 | Phase 6: Database Provisioning | Drop/create/migrate Admin, Security, ODS databases per engine and install type | Covered by the DMS-916 design for Docker-managed PostgreSQL: `postgresql.yml` starts the engine, `Add-DmsInstance` / `Add-DmsSchoolYearInstances` in `Dms-Management.psm1` identify the target instances, and the explicit step-8 SchemaTools/runtime-owned provisioning and validation path performs the authoritative pre-start schema work for those targets. See [Backend Redesign Impact and DDL Provisioning](#11-backend-redesign-impact-and-ddl-provisioning). |
-| Phase 7: Data Seeding | Load bootstrap/sample data through an API host | Partially covered — `-LoadSeedData` flag calls `setup-database-template.psm1` which executes SQL directly. Gap: needs replacement with an API-based JSONL path |
+| Phase 7: Data Seeding | Load bootstrap/sample data through an API host | Partially covered - the legacy `-LoadSeedData` path currently lives on `start-local-dms.ps1` and calls `setup-database-template.psm1`, which executes SQL directly. DMS-916 replaces that with the phase-owned `load-dms-seed-data.ps1` API-based JSONL path |
 | Phase 8: Verification | Run unit, integration, smoke tests | Partially covered — `Invoke-NonDestructiveApiTests.ps1` exists as a separate smoke test script; no integrated `-RunSmokeTest` flag on `start-local-dms.ps1` |
 
 ---
@@ -107,7 +190,7 @@ The ODS initdev pipeline (`Initialize-DevelopmentEnvironment`) defines 17 steps,
 | 5 | Install plugins | `Install-Plugins` | `-UsePlugins` | **Gap** | No plugin/extension install step. Volume mounts in Docker Compose currently load extension ApiSchema files. Parameterized selection design is in [Extension Selection and Loading](#8-extension-selection-and-loading) |
 | 6 | Code generation | `Invoke-CodeGen` | `!ExcludeCodeGen` | **Obsolete** | DMS has no code generation step. The ApiSchema JSON drives the runtime API surface without NHibernate mapping generation or similar compile-time artifacts |
 | 7 | Build solution | `Invoke-RebuildSolution` | `!NoRebuild` | **Covered (Docker path)** | `docker compose build --no-cache` via `-r` flag rebuilds Docker images. For IDE workflow, `dotnet build` is run manually |
-| 8 | Install DbDeploy tool | `Install-DbDeploy` | always | **Covered (implicitly)** | Database migration tooling is embedded in the DMS backend and invoked when the DMS container starts or when the Config Service provisions an instance. No host-side tool install step needed for the Docker path |
+| 8 | Install DbDeploy tool | `Install-DbDeploy` | always | **Covered (implicitly)** | DMS-916 does not introduce a host-side database deployment tool install step. The authoritative provisioning path is the explicit step-8 SchemaTools/runtime-owned provisioning and validation phase that runs before DMS serves requests; it is not owned by DMS startup. |
 | 9 | Reset test Admin database | `Reset-TestAdminDatabase` | always | **Obsolete (as standalone step)** | DMS has no separate Admin database. The Config Service database (`edfi_config`) is created and migrated automatically when the `local-config.yml` container starts |
 | 10 | Reset test Security database | `Reset-TestSecurityDatabase` | always | **Obsolete (as standalone step)** | DMS has no separate Security database. Authorization metadata (claimsets) is seeded into the Config Service database via `AddExtensionSecurityMetadata` environment-variable path |
 | 11 | Reset populated template database | `Reset-TestPopulatedTemplateDatabase` | `!NoDeploy` | **Gap** | DMS has no populated template database concept. Seed data loading replaces this. The `-LoadSeedData` flag currently runs `setup-database-template.psm1` (direct SQL). See [API-Based Seed Data Loading](#6-api-based-seed-data-loading) for proposed API-based replacement |
@@ -145,6 +228,10 @@ variables named `USE_API_SCHEMA_PATH` and `API_SCHEMA_PATH`.
 Today `run.sh` also contains a container-only convenience path: when `SCHEMA_PACKAGES` is populated, the
 container downloads schema packages with `EdFi.DataManagementService.ApiSchemaDownloader` before launching
 DMS. That explains the current `.env.example` pattern, for example:
+
+> **Non-normative example** — the JSON block below illustrates the `SCHEMA_PACKAGES` format currently in
+> `.env.example`; the exact package names and versions shown here are current-state illustration only and
+> are not part of the DMS-916 contract.
 
 ```json
 [
@@ -206,9 +293,10 @@ database's stored `EffectiveSchemaHash` (see
 
 ### 3.3 Proposed Selection Mechanism
 
-Add an `-Extensions` parameter to `start-local-dms.ps1` as the primary schema-selection input. The
-parameter is typed as `String[]` and accepts one or more extension names using normal PowerShell array
-binding. The script does not rely on comma-splitting a single string; multi-extension examples therefore use
+`-Extensions` is the primary schema-selection input, owned by `prepare-dms-schema.ps1` (see
+[`command-boundaries.md` Section 3.1](command-boundaries.md#31-prepare-dms-schemaps1--schema-selection-and-staging)).
+It is typed as `String[]` and accepts one or more extension names using normal PowerShell array binding.
+The phase command does not rely on comma-splitting a single string; multi-extension examples therefore use
 PowerShell array syntax such as `-Extensions "sample","homograph"`.
 
 Bootstrap owns schema materialization. Before any DMS host starts, it stages the selected schema files into
@@ -250,8 +338,14 @@ through a deliberately narrow black-box contract:
 The public invocation surface is documented in
 `src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md`; the bootstrap design reuses that public
 surface rather than defining a bootstrap-specific alternate CLI. It does not assume the README is the sole
-normative source for every internal provisioning safety rule implemented behind that CLI. Three usage modes
-are supported:
+normative source for every internal provisioning safety rule implemented behind that CLI.
+
+> **Implementation note:** The assumed command names (`dms-schema hash`, `dms-schema ddl provision`) and
+> their argument shapes reflect the SchemaTools CLI as documented at design time. These must be verified
+> against the actual SchemaTools README before Story 01 implementation begins; any discrepancy takes
+> precedence over this design document.
+
+Three usage modes are supported:
 
 #### Standard Development Flows
 
@@ -259,7 +353,8 @@ Modes 1 and 2 cover the vast majority of development workflows. Use these for da
 
 **Mode 1 - Default (core Ed-Fi only)**
 
-Omit `-Extensions` entirely. Bootstrap resolves only `EdFi.DataStandard52.ApiSchema` host-side with
+Omit `-Extensions` entirely. Bootstrap resolves only the standard core Data Standard schema package
+(e.g. `EdFi.DataStandard52.ApiSchema`; exact package name to be confirmed before Story 01) host-side with
 `EdFi.DataManagementService.ApiSchemaDownloader`, stages the extracted `ApiSchema.json` into
 `eng/docker-compose/.bootstrap/ApiSchema/`, and computes the expected `EffectiveSchemaHash` from that
 staged file. Until a dedicated downloader README exists, the authoritative downloader CLI contract for this
@@ -274,7 +369,7 @@ developer bootstrap profile to core only when `-Extensions` is omitted. TPDM is 
 `-Extensions` support surface for this ticket rather than an implied default that bootstrap must preserve.
 
 ```powershell
-pwsh eng/docker-compose/start-local-dms.ps1
+pwsh eng/docker-compose/prepare-dms-schema.ps1
 ```
 
 **Mode 2 - Core + named extensions**
@@ -285,18 +380,22 @@ stages the resulting `ApiSchema.json` files into the same workspace before compu
 `EffectiveSchemaHash`.
 
 ```powershell
-pwsh eng/docker-compose/start-local-dms.ps1 -Extensions "sample"
-pwsh eng/docker-compose/start-local-dms.ps1 -Extensions "sample","homograph"
+pwsh eng/docker-compose/prepare-dms-schema.ps1 -Extensions "sample"
+pwsh eng/docker-compose/prepare-dms-schema.ps1 -Extensions "sample","homograph"
 ```
 
-Supported extension names (initial set; extensible):
+Supported extension names for v1 (closed set; future additions require an explicit mapping change
+in a follow-on ticket):
 
 | Name | NuGet Package |
 |------|--------------|
 | `sample` | `EdFi.Sample.ApiSchema` |
 | `homograph` | `EdFi.Homograph.ApiSchema` |
 
-An unrecognized extension name causes an immediate error with a clear message listing valid names. This validation runs before any Docker operations start.
+An unrecognized extension name causes an immediate error with a clear message listing valid names. This
+validation runs before any Docker operations start. TPDM and any other extension not present in this table
+are intentionally outside the v1 `-Extensions` surface and are not silently substituted by `sample`,
+`homograph`, or any default.
 
 #### Advanced / Expert Usage - Custom Local Schema Path
 
@@ -317,7 +416,7 @@ expected `EffectiveSchemaHash` from the staged copies. Automatic extension-deriv
 selection are still disabled in this mode.
 
 ```powershell
-pwsh eng/docker-compose/start-local-dms.ps1 -ApiSchemaPath "C:\dev\my-custom-schema"
+pwsh eng/docker-compose/prepare-dms-schema.ps1 -ApiSchemaPath "C:\dev\my-custom-schema"
 ```
 
 `-Extensions` and `-ApiSchemaPath` are mutually exclusive. If both are specified, the bootstrap script exits
@@ -337,13 +436,10 @@ defaults.
   supplied, passing `-SeedTemplate` is an error because expert mode disables bootstrap-managed seed-source
   selection.
 
-**Bootstrap-time warning:** When `-ApiSchemaPath` is used, the bootstrap script emits the following warning
-before proceeding:
-
-```
-WARNING: -ApiSchemaPath disables automatic extension-derived claimset and seed data selection.
-Provide -ClaimsDirectoryPath and, if loading data, -SeedDataPath explicitly.
-```
+**Bootstrap-time warning:** When `-ApiSchemaPath` is used, the bootstrap script emits a warning before
+proceeding. The warning communicates that automatic extension-derived claimset and seed data selection are
+disabled and that the caller must provide `-ClaimsDirectoryPath` and, if loading data, `-SeedDataPath`
+explicitly. The exact warning text is an implementation detail and is not prescribed here.
 
 **Expert companion parameters for a complete custom bootstrap:** To avoid editing environment variables or
 Docker mounts by hand, Mode 3 introduces two expert-only companion parameters alongside `-ApiSchemaPath`:
@@ -359,7 +455,7 @@ Docker mounts by hand, Mode 3 introduces two expert-only companion parameters al
 The following sequence describes the canonical schema flow for all bootstrap modes:
 
 ```text
-start-local-dms.ps1
+prepare-dms-schema.ps1
   -> Resolve schema inputs from -Extensions or -ApiSchemaPath
      -> Mode 1/2: download package-backed ApiSchema.json files on the host into
         eng/docker-compose/.bootstrap/ApiSchema/
@@ -422,8 +518,8 @@ packages.
   governed by the seed-specific rule below.
 - When `-ApiSchemaPath` is used (Mode 3): Schema hashing and DDL validation still work because bootstrap
   stages and hashes the exact files. What is disabled is automatic security-fragment and seed-package
-  selection. Bootstrap emits a warning: "Custom schema path in use - compatibility with claimsets and seed
-  data is only validated against the explicit companion inputs for this run."
+  selection. Bootstrap emits a warning indicating that compatibility with claimsets and seed data is only
+  validated against the explicit companion inputs for this run. The exact warning text is an implementation detail.
 - When `-ApiSchemaPath` is used (Mode 3): The staged directory must normalize to exactly one
   `projectSchema.isExtensionProject=false` file and zero or more `true` files. Any other shape is a
   bootstrap-time error.
@@ -432,8 +528,9 @@ packages.
   - If the extension has a mapping entry and its NuGet seed package fails to resolve (network/feed
     error): error before starting containers.
   - If the extension has no seed package entry in the mapping: informational warning only —
-    `Warning: Extension '<name>' has no built-in seed package. Schema and security configuration
-    still apply. Provide custom seed data via -SeedDataPath if needed.`
+    Bootstrap emits an informational warning indicating no built-in seed package is available for
+    that extension; schema and security configuration from the extension still apply and the
+    developer may provide custom seed data via `-SeedDataPath`.
 
 **Ownership**: The bootstrap script owns pre-flight validation. DMS runtime does not validate artifact
 compatibility - it loads whatever staged schema files it receives. This makes pre-flight checks the only
@@ -513,13 +610,25 @@ configuration must be consistent with those resources:
 
 ### 4.3 Proposed Automatic Security Configuration
 
-When the `-Extensions` parameter (Section 3.3) drives schema selection, the bootstrap script derives the
-corresponding security configuration automatically. For expert mode, the design also provides an explicit
-`-ClaimsDirectoryPath` parameter so custom schema bootstraps can supply security fragments without editing
-environment variables or Docker mounts manually. The bootstrap script maintains one extension mapping that
-carries schema, security, namespace, and built-in seed support together:
+> **Scope of automatic derivation (precise).** "Automatic" here means standard `-Extensions` mode only,
+> including the omitted-`-Extensions` core-only case. In that mode the bootstrap script pairs the
+> selected schema set with its matching security fragments from the v1 extension mapping below. Expert
+> `-ApiSchemaPath` mode does **not** derive security automatically: when the staged schema set includes
+> non-core schemas the caller must supply explicit `-ClaimsDirectoryPath` input, and `prepare-dms-claims.ps1`
+> fails fast if it is missing (see [`command-boundaries.md` Section 3.2](command-boundaries.md#32-prepare-dms-claimsps1--claims-and-security-staging)). This section
+> describes the standard-mode pairing; nothing in it promises universal claimset loading from schema alone
+> across every supported mode.
 
-| Extension name | ApiSchema NuGet package | Security fragment file(s) | Built-in seed package (when supported) | Namespace prefix |
+When the `-Extensions` parameter (Section 3.3) drives schema selection, the bootstrap script derives the
+corresponding security configuration automatically in standard mode only. For expert mode, the design also
+provides an explicit `-ClaimsDirectoryPath` parameter so custom schema bootstraps can supply security
+fragments without editing environment variables or Docker mounts manually. The bootstrap script maintains
+one extension mapping that carries schema, security, namespace, and built-in seed support together. In
+DMS-916 v1, a row advertises built-in seed support only when it names a concrete built-in seed package.
+Rows that say "Not defined in DMS-916 v1" do not participate in automatic built-in seed loading and must
+use custom `-SeedDataPath` payloads instead:
+
+| Extension name | ApiSchema NuGet package | Security fragment file(s) | Built-in seed package (only when explicitly defined) | Namespace prefix |
 |----------------|------------------------|---------------------------|----------------------------------------|------------------|
 | `sample` | `EdFi.Sample.ApiSchema` | `004-sample-extension-claimset.json` | Not defined in DMS-916 v1 | `uri://sample.ed-fi.org` |
 | `homograph` | `EdFi.Homograph.ApiSchema` | `005-homograph-extension-claimset.json` | Not defined in DMS-916 v1 | `uri://homograph.ed-fi.org` |
@@ -575,22 +684,18 @@ The bootstrap logic is:
     incomplete, the resulting authorization failures remain DMS or BulkLoadClient runtime errors rather than
     a bootstrap-owned certification gap.
 
-4. **Bootstrap performs bounded claims-workspace validation before container startup.** The bootstrap
+4. **Bootstrap performs structural claims-workspace validation before container startup.** The bootstrap
    surface validates only the staged conditions it directly owns:
    - duplicate filenames remain fail-fast because the staged workspace must contain one deterministic file
      per path;
    - every staged fragment must be parseable JSON and follow the `*-claimset.json` file contract used by CMS;
    - any claim set name referenced by a staged fragment must already exist in the embedded base
-     `Claims.json`;
-   - no two staged fragments may attach the same effective claim set name to the same normalized resource
-     claim.
+     `Claims.json`.
 
-   This last overlap check is intentional and narrow: bootstrap catches the one additive-fragment hazard that
-   is already implicit in current CMS composition behavior, where later overlapping attachments do not create
-   a merged union of permissions. Bootstrap still does not attempt to predict the full composed authorization
-   graph or define a second semantic claims authority. CMS startup remains the authoritative composition gate,
-   and any semantic composition issue beyond this bounded preflight is surfaced as a CMS startup/runtime
-   error rather than a bootstrap-side certification rule.
+   Bootstrap validation is structural only. Bootstrap does not inspect attachment overlap, predict the
+   fully composed authorization graph, or define a second semantic claims authority. CMS startup is the
+   authoritative composition gate: any semantic composition issue — including overlapping claim
+   attachments — is surfaced as a CMS startup or runtime error rather than a bootstrap-side rule.
 
 5. **`-AddExtensionSecurityMetadata` becomes redundant when `-Extensions` or `-ClaimsDirectoryPath` is
    used.** As noted in Section 8, the existing flag is retained for backward compatibility but no longer
@@ -615,10 +720,9 @@ workspace. The bootstrap sequence therefore places security configuration as fol
       (Hybrid if yes, Embedded otherwise)
     - Build the intended staged claims set from extension-specific and/or
       developer-supplied fragment files
-    - Validate staged fragments before CMS startup:
+    - Validate staged fragments before CMS startup (structural checks only):
       - every referenced claim set name already exists in embedded Claims.json
       - no duplicate filenames exist in the staged workspace
-      - no duplicate effective `(normalized resource claim, effective claim set name)` attachments exist
     - Compare the intended staged claims set to any existing
       eng/docker-compose/.bootstrap/claims workspace
     - If no workspace exists yet: materialize the staged claims workspace for the run
@@ -697,27 +801,48 @@ proposed `-Extensions` bootstrap flow and the expert `-ClaimsDirectoryPath` flow
 
 **`DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING`** is a separate, legacy flag used for dynamic management endpoints (where the Config Service API is called post-boot to push arbitrary claimset data) and for legacy dev-only workflows. It is **not** required by the proposed `-Extensions` bootstrap path and is **not** part of the standard bootstrap flow described in this design.
 
-The proposed `-Extensions` path is explicitly designed to operate without this flag:
+All three schema-selection modes are explicitly designed to operate without this flag:
 
 - **Mode 1 (core only)**: `DMS_CONFIG_CLAIMS_SOURCE=Embedded` — no extra flag needed.
 - **Mode 2 (named extensions)**: `DMS_CONFIG_CLAIMS_SOURCE=Hybrid` with
   `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims` and
   `DMS_CONFIG_CLAIMS_HOST_DIRECTORY` pointing at the staged claims workspace containing only the selected
   claimset files - no extra flag needed.
-- `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` is **not set** in either standard bootstrap path.
+- **Mode 3 (expert `-ApiSchemaPath`)**: claims loading is **not** automatic. When the staged schema set
+  contains any non-core schema, the caller must supply `-ClaimsDirectoryPath`; `prepare-dms-claims.ps1`
+  fails fast otherwise (see [`command-boundaries.md` Section 3.2](command-boundaries.md#32-prepare-dms-claimsps1--claims-and-security-staging)). When fragments are
+  supplied, the same `Hybrid` + `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims` +
+  `DMS_CONFIG_CLAIMS_HOST_DIRECTORY` mechanism is used; core-only `-ApiSchemaPath` runs may stay on
+  `Embedded`. The dangerously-enable flag is **not** required in expert mode either.
+- `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` is **not set** in any of the three modes above.
 
 The deprecation path for `-AddExtensionSecurityMetadata` explicitly includes removal of `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` from standard bootstrap usage as the `-Extensions` mechanism supersedes it. That cleanup belongs to the schema-and-security-selection slice rather than a separate bootstrap story.
 
 ## 5. Proposed Bootstrap Sequence
 
-The consolidated bootstrap sequence below is derived from
+The bootstrap sequence is organized around the composable phase commands defined in
+[`command-boundaries.md`](command-boundaries.md). Each phase owns exactly one primary concern;
+no single script is the source of all lifecycle semantics. The consolidated flow below is derived from
 [ApiSchema.json Selection](#3-apischemajson-selection),
 [Security Database Configuration from ApiSchema.json](#4-security-database-configuration-from-apischemajson),
 [API-Based Seed Data Loading](#6-api-based-seed-data-loading), and
-[IDE Debugging Workflow](#12-ide-debugging-workflow). It is intentionally limited to the DMS-916 story
-goals. Optional SDK generation and post-bootstrap test orchestration remain outside this story and are not
-part of the normative bootstrap flow. The canonical single-command surface is
-`pwsh eng/docker-compose/start-local-dms.ps1 ...`.
+[IDE Debugging Workflow](#12-ide-debugging-workflow). Optional SDK generation and post-bootstrap test
+orchestration remain outside this story and are not part of the normative bootstrap flow.
+
+**Phase dependency chain:**
+
+```text
+prepare-dms-schema.ps1
+  └─▶ prepare-dms-claims.ps1
+        └─▶ start-local-dms.ps1 -InfraOnly  (PostgreSQL, identity provider, Config Service)
+              └─▶ configure-local-dms-instance.ps1  (instance and client setup)
+                    └─▶ provision-dms-schema.ps1  (authoritative schema provisioning)
+                          └─▶ start-local-dms.ps1  (DMS container, or IDE-hosted DMS starts here)
+                                └─▶ load-dms-seed-data.ps1  (live DMS + SeedLoader credentials)
+```
+
+The detailed step sequence below maps to those phases and preserves the behavioral invariants required
+by implementers.
 
 ```text
 1.  Validate parameters and read environment file        [Existing]
@@ -757,10 +882,9 @@ part of the normative bootstrap flow. The canonical single-command surface is
 5.  Prepare security environment for CMS startup         [Proposed] - Section 4
     - Stage extension-derived and user-supplied *-claimset.json fragments into one workspace directory
     - Derive DMS_CONFIG_CLAIMS_SOURCE from whether any staged fragments exist
-    - Validate staged fragments before CMS startup:
+    - Validate staged fragments before CMS startup (structural checks only):
       - every referenced claim set name already exists in embedded Claims.json
       - no duplicate filenames exist in the staged workspace
-      - no duplicate effective `(normalized resource claim, effective claim set name)` attachments exist
     - Keep `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims`
     - When staged fragments exist, set `DMS_CONFIG_CLAIMS_HOST_DIRECTORY` to the staged workspace directory
     - This is env-var preparation for the CMS container, not direct DB mutation
@@ -834,10 +958,10 @@ part of the normative bootstrap flow. The canonical single-command surface is
       eng/docker-compose/.bootstrap/ApiSchema/
     - -InfraOnly without -DmsBaseUrl: stop here and print next-step guidance for the IDE-hosted
       DMS launch; no DMS health wait, SeedLoader credential bootstrap, or seed loading occurs in this variant
-    - Docker flow: poll the containerized DMS health endpoint every 3 seconds for up to 5 minutes
-      and fail fast on timeout or non-success health status before any DMS-dependent continuation work begins
-    - -InfraOnly + -DmsBaseUrl flow: poll `$DmsBaseUrl/health` every 3 seconds for up to 5 minutes
-      and fail fast on timeout or non-success health status before SeedLoader credential bootstrap or seed loading
+    - Docker flow: poll the containerized DMS health endpoint (configurable interval and maximum
+      timeout) and fail fast on timeout or non-success health status before any DMS-dependent continuation work begins
+    - -InfraOnly + -DmsBaseUrl flow: poll `$DmsBaseUrl/health` (configurable interval and maximum
+      timeout) and fail fast on timeout or non-success health status before SeedLoader credential bootstrap or seed loading
     - Step 8 has already completed any required schema provisioning before DMS health checks begin
 
 10. Seed-loader credential bootstrap                     [Existing + Proposed] - Section 7
@@ -860,13 +984,11 @@ part of the normative bootstrap flow. The canonical single-command surface is
     - Resolve seed package list: built-in core manifest + extension packages from -Extensions,
       unless -SeedDataPath supplies the data directory explicitly
     - Download and extract JSONL files into a repo-local seed workspace; abort on filename collisions
-    - Per -SchoolYearRange: loop over each year, invoking the pinned BulkLoadClient once per year
-      with --year $year; derive `$tokenUrl` per iteration for the self-contained identity path at
-      `http://localhost:8081/connect/token/$year`; Keycloak keeps its provider-native static token URL;
-      single invocation when no range
-    - dotnet $bulkLoadClientDll --input-format jsonl --data $seedWorkDir
-      --base-url $dmsBaseUrl --token-url $tokenUrl
-      --key $seedKey --secret $seedSecret --continue-on-error [--year $year]
+    - Per -SchoolYearRange: loop over each year, invoking the pinned BulkLoadClient once per year;
+      derive `$tokenUrl` per iteration for the self-contained identity path; Keycloak keeps its
+      provider-native static token URL; single invocation when no range
+    - Invoke BulkLoadClient against the prepared seed workspace using the contracted surface defined
+      in [Section 6.1](#61-bulkloadclient-bootstrap-consumption-contract)
     - Check exit code; throw and halt on non-zero
     - Clean up the seed workspace on success; leave it in place on failure for debugging
 ```
@@ -1013,9 +1135,9 @@ files is intentionally not part of this design.
 | `Minimal` | All core descriptor resources plus `schoolYearTypes` | CI, automated tests, minimal developer environments |
 | `Populated` | `Minimal` plus `localEducationAgencies`, `schools`, `courses`, `students`, and `studentSchoolAssociations` | Full developer environments, manual smoke testing |
 
-The `-SeedTemplate` parameter on `start-local-dms.ps1` controls which core seed source is used. The default
-is `Minimal` to keep bootstrap fast and lightweight. Use `-SeedTemplate Populated` when you need realistic
-sample data for manual testing or demos.
+The `-SeedTemplate` parameter on `load-dms-seed-data.ps1` controls which core seed source is used. The
+default is `Minimal` to keep bootstrap fast and lightweight. Use `-SeedTemplate Populated` when you need
+realistic sample data for manual testing or demos.
 
 These built-in manifests are the authoritative DMS-916 seed-source contract. If a future seed package adds
 or removes built-in resources, the manifest table above, the core `SeedLoader` permissions in
@@ -1024,7 +1146,8 @@ or removes built-in resources, the manifest table above, the core `SeedLoader` p
 #### 6.2.3 Developer Sample Data Selection
 
 Developers may use Ed-Fi provided seed sources or supply their own JSONL files. The `-SeedTemplate` and
-`-SeedDataPath` parameters on `start-local-dms.ps1` control this selection.
+`-SeedDataPath` parameters on `load-dms-seed-data.ps1` control this selection. The full seed-parameter
+contract is defined normatively in [`command-boundaries.md`](command-boundaries.md).
 
 **Three modes:**
 
@@ -1057,16 +1180,16 @@ Developers may use Ed-Fi provided seed sources or supply their own JSONL files. 
 
 ```powershell
 # Default: Ed-Fi Minimal seed data (descriptors only)
-pwsh eng/docker-compose/start-local-dms.ps1 -LoadSeedData
+pwsh eng/docker-compose/load-dms-seed-data.ps1 -LoadSeedData
 
-# Ed-Fi Populated template with sample extension schema/security enabled
-pwsh eng/docker-compose/start-local-dms.ps1 -LoadSeedData -SeedTemplate Populated -Extensions "sample"
+# Ed-Fi Populated template
+pwsh eng/docker-compose/load-dms-seed-data.ps1 -LoadSeedData -SeedTemplate Populated
 
 # Custom seed data directory (bypasses NuGet download)
-pwsh eng/docker-compose/start-local-dms.ps1 -LoadSeedData -SeedDataPath "./my-seeds/"
+pwsh eng/docker-compose/load-dms-seed-data.ps1 -LoadSeedData -SeedDataPath "./my-seeds/"
 
-# Custom seed data with extension schema/security still staged from the run inputs
-pwsh eng/docker-compose/start-local-dms.ps1 -LoadSeedData -Extensions "sample" -SeedDataPath "./sample-seeds/"
+# Custom seed data after the run's schema/security inputs have already been staged
+pwsh eng/docker-compose/load-dms-seed-data.ps1 -LoadSeedData -SeedDataPath "./sample-seeds/"
 ```
 
 In DMS-916 v1, the supported `sample` and `homograph` extensions do not define built-in seed packages. When
@@ -1098,7 +1221,9 @@ or reinterpret that ordering contract.
 
 #### 6.3.1 Updated `-LoadSeedData` Behavior
 
-The existing `-LoadSeedData` switch on `start-local-dms.ps1` is reused with new behavior. When set, the bootstrap script performs the following steps after the pre-DMS phase has completed and the selected DMS endpoint is healthy:
+The `-LoadSeedData` switch is owned by `load-dms-seed-data.ps1`, which runs after the pre-DMS phases have
+completed and the selected DMS endpoint is healthy. When set, that phase command performs the following
+steps:
 
 **Step 1. Resolve seed sources.** Build the set of developer seed sources to materialize for the run: always
 include the core seed source selected by `-SeedTemplate` (`Minimal` by default, or `Populated` when
@@ -1117,9 +1242,15 @@ DMS-1119 or the external BulkLoadClient JSONL contract.
 
 **Step 3. Invoke BulkLoadClient.** Call the pinned BulkLoadClient DLL with the merged seed workspace, DMS
 base URL, the OAuth token URL resolved from `-IdentityProvider` for the current iteration, and the
-bootstrap credentials. In the existing `-SchoolYearRange` workflow, `--year` maps to a route-qualified
-DMS path where the school-year segment appears before `/data`; when self-contained CMS identity is
-selected, `--token-url` carries the same context path after `/connect/token/{schoolYear}`:
+bootstrap credentials using the contracted surface defined in
+[Section 6.1](#61-bulkloadclient-bootstrap-consumption-contract). In the existing `-SchoolYearRange`
+workflow, `--year` maps to a route-qualified DMS path where the school-year segment appears before `/data`;
+when self-contained CMS identity is selected, `--token-url` carries the same context path after
+`/connect/token/{schoolYear}`:
+
+> **Non-normative illustration:** The code block below shows the expected invocation shape derived from the
+> Section 6.1 consumption contract. Exact flag names are subject to BulkLoadClient implementation
+> verification before Story 02.
 
 ```powershell
 dotnet $bulkLoadClientDll `
@@ -1201,6 +1332,10 @@ The tradeoff is intentional. The API-based path exercises full DMS validation an
 preventing the discriminator corruption and referential integrity violations documented in Section 6.4.
 For a developer bootstrap workflow, data integrity and early detection of schema regressions outweigh
 raw loading speed.
+
+The API-based path may be materially slower than the direct-SQL path because it exercises full HTTP request
+handling and validation. Any performance follow-up should be treated as a separate optimization concern, not
+as part of the required Story 02 functionality.
 
 Future optimization options — including parallel per-year loading, BulkLoadClient request batching,
 and pre-validated seed data caching — are out of scope for the initial implementation and deferred to
@@ -1295,7 +1430,12 @@ missing grants from arbitrary JSONL content.
 
 **Credential Handoff to BulkLoadClient**
 
-`Key` and `Secret` returned by `Add-Application` are stored in PowerShell variables and passed as CLI arguments when invoking BulkLoadClient:
+`Key` and `Secret` returned by `Add-Application` are stored in PowerShell variables and passed as CLI
+arguments when invoking BulkLoadClient using the contracted surface in
+[Section 6.1](#61-bulkloadclient-bootstrap-consumption-contract):
+
+> **Non-normative illustration:** The code block below shows the expected credential-handoff invocation shape.
+> Exact flag names are subject to BulkLoadClient implementation verification before Story 02.
 
 ```powershell
 $seedCreds  = Add-Application -ApplicationName "Seed Loader" -ClaimSetName "SeedLoader" ...
@@ -1445,13 +1585,54 @@ Key characteristics of the current model:
 
 ### 8.2 Proposed `-Extensions` Parameter
 
-Add an `-Extensions` parameter to `start-local-dms.ps1` typed as `String[]`, accepting one or more extension identifiers (lowercase short names) through normal PowerShell array binding:
+> **v1 scope guardrail (precise).** This section describes the v1 `-Extensions` surface as a deliberately
+> narrow scope, not a generalized extension framework. Three constraints apply together and are normative
+> for DMS-916:
+>
+> 1. **Closed v1 set.** `-Extensions` accepts only names present in the well-known v1 mapping (currently
+>    `sample` and `homograph`; see Section 3.3, Mode 2 table). Any other name is a fail-fast error before container
+>    startup. Adding a new built-in extension is an explicit follow-on ticket that updates the mapping.
+> 2. **Omitting `-Extensions` means core only.** The default profile is the standard core Data Standard
+>    schema with no extension schemas, no extension claimsets, and no extension seed packages. It does not
+>    fall back to the legacy `eng/docker-compose` `SCHEMA_PACKAGES` baseline that includes TPDM. TPDM is not
+>    part of the v1 `-Extensions` surface and is not part of the default profile.
+> 3. **Built-in support is per-mapping-row, not per-extension-name.** A name in the v1 set automatically
+>    receives only the artifact slots its mapping row defines (schema package and security fragments are
+>    required; built-in seed package is optional). For v1, neither `sample` nor `homograph` defines a
+>    built-in seed package; bootstrap therefore does not advertise built-in seed support for them. Custom
+>    seed payloads still flow through `-SeedDataPath` (Mode 3 / additive).
+>
+> This is a scope guardrail. It does not introduce new mapping fields, fallback rules, or runtime
+> mechanisms beyond what is already defined in Sections 3.3, 8.3, and 8.4.
+
+**V1 support matrix**:
+
+| Extension name | Schema support | Security support | Built-in seed support | DMS-916 v1 status |
+|---|---|---|---|---|
+| Core only (omit `-Extensions`) | Yes | Yes, embedded claims | Yes, core-managed seed sources | Supported default |
+| `sample` | Yes | Yes | No built-in extension seed package | Supported |
+| `homograph` | Yes | Yes | No built-in extension seed package | Supported |
+| `tpdm` | No | No | No | Intentionally unsupported in v1 |
+| Any other extension name | No | No | No | Fail-fast unsupported |
+
+This table is the explicit v1 support contract. It separates "supported now" from "possible later"
+without widening scope:
+
+- `sample` and `homograph` are supported for schema and security selection today.
+- Built-in extension seed support is a per-mapping capability, not an automatic property of every
+  supported extension.
+- Unsupported names stay outside the v1 surface until their schema and security artifacts are
+  intentionally added to the mapping.
+
+`-Extensions` belongs to `prepare-dms-schema.ps1` (see `command-boundaries.md` §3.1). It accepts one or
+more extension identifiers (lowercase short names) typed as `String[]` through normal PowerShell array
+binding. The phase command runs before any Docker services start:
 
 ```powershell
 # Examples
-pwsh eng/docker-compose/start-local-dms.ps1 -Extensions "sample"
-pwsh eng/docker-compose/start-local-dms.ps1 -Extensions "sample","homograph"
-pwsh eng/docker-compose/start-local-dms.ps1   # no -Extensions: core only
+pwsh eng/docker-compose/prepare-dms-schema.ps1 -Extensions "sample"
+pwsh eng/docker-compose/prepare-dms-schema.ps1 -Extensions "sample","homograph"
+pwsh eng/docker-compose/prepare-dms-schema.ps1   # no -Extensions: core only
 ```
 
 **Default behavior**: omitting `-Extensions` loads core Ed-Fi resources only - no staged extension security
@@ -1462,12 +1643,13 @@ minimal and fast to start.
 
 **How it works at runtime:**
 
-1. The script maintains a well-known mapping of extension short names to the bootstrap artifacts they own:
-   schema package, staged security fragment path, extension seed package (when built-in seed support
-   exists), and namespace prefix. Initially this mapping lives as a hashtable in `start-local-dms.ps1`; it
-   can be moved to a lookup file as the extension catalog grows. Each entry uses the same field set:
-   `ApiSchemaPackage`, `SecurityFragments`, `BuiltInSeedPackage`, and `NamespacePrefix`.
-2. For each name in `-Extensions`, the script stages the corresponding security fragment JSON file(s) into
+1. `prepare-dms-schema.ps1` maintains a well-known mapping of extension short names to the bootstrap
+   artifacts they own: schema package, staged security fragment path, extension seed package (when built-in
+   seed support exists), and namespace prefix. Initially this mapping lives as a hashtable in
+   `prepare-dms-schema.ps1`; it can be moved to a lookup file as the extension catalog grows. Each entry
+   uses the same field set: `ApiSchemaPackage`, `SecurityFragments`, `BuiltInSeedPackage`, and
+   `NamespacePrefix`.
+2. For each name in `-Extensions`, bootstrap stages the corresponding security fragment JSON file(s) into
    the repo-local bootstrap workspace. That staged directory is bind-mounted to `/app/additional-claims`
    instead of the static `AdditionalClaimsets` source path. When `-LoadSeedData` is also set, the same
    mapping resolves the extension seed package list for the seed-workspace step. The compose files expose
@@ -1481,7 +1663,7 @@ minimal and fast to start.
    `DMS_CONFIG_CLAIMS_DIRECTORY` remains `/app/additional-claims`, and the developer does not need to pass
    `-AddExtensionSecurityMetadata` separately. The existing flag remains for backward compatibility but is
    otherwise redundant when `-Extensions` is used.
-4. If any specified extension name is not in the mapping, the script exits with a clear error before starting any containers.
+4. If any specified extension name is not in the mapping, the phase command exits with a clear error before starting any containers.
 
 The staged claims directory must remain in place while Docker containers are running because it is
 bind-mounted into the container at `/app/additional-claims`. For v1, bootstrap uses a stable repo-local
@@ -1558,10 +1740,13 @@ The `-Extensions` parameter is the single developer-facing control for enabling 
    into the same bootstrap workspace only when that package participates in the same external JSONL contract
    used for core artifacts.
 
-**Example - sample enabled:**
+**Example - sample-enabled bootstrap run:**
+
+After schema and claims preparation have already selected the sample extension for the run, the seed-delivery
+phase behaves as follows:
 
 ```powershell
-pwsh eng/docker-compose/start-local-dms.ps1 -LoadSeedData -Extensions "sample"
+pwsh eng/docker-compose/load-dms-seed-data.ps1 -LoadSeedData
 # Result:
 #   eng/docker-compose/.bootstrap/ApiSchema/ includes the staged Sample ApiSchema.json  (Section 3)
 #   /app/additional-claims contains the sample security fragment with EdFiSandbox coverage  (Section 4)
@@ -1576,29 +1761,46 @@ above while still giving expert users a fully supported custom-schema workflow.
 
 ---
 
-## 9. Single Entry Point and Skip/Resume Flags
+## 9. Bootstrap Commands and Parameters
 
 In DMS-916, the story's "skip/resume" wording is interpreted narrowly and intentionally: the design defines
-safe skip behavior on the single `start-local-dms.ps1` surface plus optional same-invocation continuation
-through `-InfraOnly -DmsBaseUrl`. It does **not** define a persisted cross-invocation resume mechanism,
-checkpoint file, or second control plane.
+safe skip behavior through the phase-oriented commands plus optional same-invocation continuation through
+`-InfraOnly -DmsBaseUrl`. It does **not** define a persisted cross-invocation resume mechanism,
+checkpoint file, or second control plane. Phase commands are the normative contract;
+`bootstrap-local-dms.ps1` is a thin convenience entry point for the common developer path when
+implemented — it is optional convenience packaging only and is not a mandatory design deliverable.
 
-### 9.1 Current Bootstrap Implementation Surface
+> **Wrapper simplicity rule (precise, read with [`command-boundaries.md` Section 3.7](command-boundaries.md#37-bootstrap-local-dmsps1--thin-convenience-wrapper-optional)).**
+> The wrapper sequences phase commands and forwards `-ConfigFile` unchanged. Accepting `-ConfigFile` does
+> not make the wrapper a policy owner: each phase reads its own keys from that file (see
+> [Section 9.4.2](#942-wrapper-defaults-configuration-file)), and the wrapper never parses, translates,
+> or re-routes individual parameter values. Adding, renaming, or removing any phase parameter — CLI flag
+> or config file key — is a change to the owning phase command alone and never requires wrapper-specific
+> logic.
 
-`eng/docker-compose/start-local-dms.ps1` is the current orchestration script, and it remains the single
-developer-facing and automation bootstrap surface for the local workflow in this design:
+### 9.1 Infrastructure Phase Command
+
+`eng/docker-compose/start-local-dms.ps1` is the infrastructure-phase command. Its primary concern is
+Docker stack management and service health waiting. The infrastructure lifecycle parameters are shown
+below; parameters owned by other phase commands are documented under their owning commands and listed in
+[`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner). The
+`-InfraOnly` and `-DmsBaseUrl` parameters proposed by DMS-916 appear in Section 9.3.2.
 
 ```powershell
-pwsh eng/docker-compose/start-local-dms.ps1 -LoadSeedData
-pwsh eng/docker-compose/start-local-dms.ps1 -EnableSwaggerUI -LoadSeedData -AddSmokeTestCredentials -IdentityProvider self-contained
+# Default core-only stack
+pwsh eng/docker-compose/start-local-dms.ps1
+
+# Keycloak identity provider with Swagger UI
+pwsh eng/docker-compose/start-local-dms.ps1 -EnableSwaggerUI -IdentityProvider keycloak
+
+# Infrastructure only — stop before DMS starts (IDE workflow)
+pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
+
+# Teardown stack and volumes
+pwsh eng/docker-compose/start-local-dms.ps1 -d -v
 ```
 
-The script orchestrates the full sequence: reading `.env`, configuring the identity provider, building
-Docker images (optional), starting containers, provisioning DMS instances, loading seed data, and
-bootstrapping credentials. The design does not introduce any additional wrapper or alias around this
-script-owned lifecycle.
-
-Current parameters:
+Infrastructure lifecycle parameters on `start-local-dms.ps1`:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -1609,12 +1811,9 @@ Current parameters:
 | `-EnableKafkaUI` | Switch | Include Kafka UI container in the stack |
 | `-EnableConfig` | Switch | Include the DMS Configuration Service container |
 | `-EnableSwaggerUI` | Switch | Include Swagger UI container for the DMS API |
-| `-LoadSeedData` | Switch | Load standard seed data after services are up (opt-in) |
-| `-AddExtensionSecurityMetadata` | Switch | Enable file-based extension claimset loading (hybrid mode) |
-| `-AddSmokeTestCredentials` | Switch | Bootstrap a vendor/application/key-secret pair for smoke tests |
 | `-IdentityProvider` | String | Identity provider selection: `keycloak` or `self-contained` (default) |
-| `-NoDmsInstance` | Switch | Skip creating the initial DMS instance in Config Service |
-| `-SchoolYearRange` | String | Multi-instance setup by school year range, e.g. `"2022-2026"` |
+
+Parameters owned by other phase commands (`-LoadSeedData`, `-AddExtensionSecurityMetadata`, `-AddSmokeTestCredentials`, `-NoDmsInstance`, `-SchoolYearRange`) are documented under their owning commands; see [`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner) for the per-phase distribution.
 
 ---
 
@@ -1655,17 +1854,26 @@ was considered during the ODS audit, but it is intentionally out of scope for DM
 
 ---
 
-### 9.3 Proposed Full Parameter List
+### 9.3 Parameter Surface
 
-The table below shows the story-aligned parameter list owned by `start-local-dms.ps1` after the additions
-proposed in Sections 9.1-9.3. Existing parameters are unchanged; new parameters are marked.
+#### 9.3.1 V1 Top-Level Surface
 
-The Config Service is treated as mandatory for the script-owned bootstrap contract. Every non-teardown
-DMS-916 bootstrap invocation of `start-local-dms.ps1` starts the Config Service unconditionally, including
+For the common developer path, the thin convenience wrapper exposes exactly one parameter:
+
+| Command | Parameter | Required | Purpose |
+|---------|-----------|----------|---------|
+| `bootstrap-local-dms.ps1` | `-ConfigFile <path>` | No | Path to `bootstrap-local-dms.config.json`; each phase reads its own keys before CLI overrides apply. |
+
+All behavioral flags — schema selection, claims configuration, instance management, seed loading — belong to the phase command that owns each concern. Adding a new parameter to any phase command never requires a wrapper change. See [Section 9.4.2](#942-wrapper-defaults-configuration-file) for the config file key reference and [`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner) for the complete per-phase distribution.
+
+#### 9.3.2 Infrastructure Phase Parameters (`start-local-dms.ps1`)
+
+`start-local-dms.ps1` owns the Docker infrastructure lifecycle: stack management, service health waiting, and backward-compatible continuation flags. This section covers only the parameters owned by this command. For the complete per-phase parameter distribution — including schema selection, claims, instance configuration, and seed loading — see [`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner).
+
+The Config Service is mandatory for the normative bootstrap contract. Every non-teardown
+DMS-916 bootstrap invocation starts the Config Service unconditionally, including
 the default no-argument core-only Mode 1 flow and keycloak-backed runs. `-EnableConfig` therefore remains
-only as an implementation/backward-compatibility switch on `start-local-dms.ps1`, not as a meaningful
-opt-out on the story-aligned bootstrap flow or as a selector for whether CMS participates in the canonical
-bootstrap sequence.
+only as a backward-compatibility switch, not as a meaningful opt-out on the canonical bootstrap contract.
 
 | Parameter | Type | Default | Status | Description |
 |-----------|------|---------|--------|-------------|
@@ -1676,40 +1884,36 @@ bootstrap sequence.
 | `-EnableKafkaUI` | Switch | — | Existing | Include Kafka UI container |
 | `-EnableConfig` | Switch | - | Existing (script compatibility) | Retained on `start-local-dms.ps1` for compatibility. The story-aligned bootstrap flow always includes the Config Service, so this is not treated as a meaningful opt-out on the canonical bootstrap contract. |
 | `-EnableSwaggerUI` | Switch | — | Existing | Include Swagger UI container |
-| `-LoadSeedData` | Switch | — | Existing | Load standard seed data (opt-in) |
-| `-AddExtensionSecurityMetadata` | Switch | — | Existing | Enable extension claimset loading. Superseded by `-Extensions`; retained for backward compatibility. |
-| `-AddSmokeTestCredentials` | Switch | — | Existing | Bootstrap smoke test credentials through CMS after step-7 target selection (opt-in) |
 | `-IdentityProvider` | String | `self-contained` | Existing | Identity provider: `keycloak` or `self-contained` |
-| `-NoDmsInstance` | Switch | - | Existing | Skip DMS instance creation in Config Service only for narrow reruns against an already prepared environment. Valid only when exactly one existing instance is present in the current tenant scope and `-SchoolYearRange` is not set. Bootstrap reuses that single instance as the step-7-selected target for all later phases. |
-| `-SchoolYearRange` | String | `""` | Existing | Multi-instance school year range, e.g. `"2022-2026"` |
-| `-Extensions` | String[] | `@()` | **Proposed** | Extension packages to load. Multiple values use PowerShell array syntax, for example `-Extensions "sample","homograph"` ([Extension Selection and Loading](#8-extension-selection-and-loading)) |
-| `-ClaimsDirectoryPath` | String | - | **Proposed** | Path to a local directory containing one or more `*-claimset.json` files. Staged additively with any `-Extensions` fragments. Fragments may attach permissions only to claim set names already declared in the embedded `Claims.json`; bootstrap fails if a fragment references an unknown claim set. In expert `-ApiSchemaPath` mode, this parameter is mandatory whenever the staged schema set includes one or more extension schemas, because automatic non-core claimset selection is disabled. |
-| `-SeedTemplate` | String | `Minimal` | **Proposed** | Seed data template: `Minimal` (descriptors only) or `Populated` (sample data). Mutually exclusive with `-SeedDataPath`. |
 | `-InfraOnly` | Switch | - | **Proposed** | Exclude the DMS container from Docker startup. Bootstrap still performs the pre-DMS steps through instance creation and schema provisioning/validation. With `-DmsBaseUrl`, the same invocation then continues against an external DMS endpoint; without it, the run stops after reporting IDE next steps. This pre-DMS-only shape is terminal for that invocation: DMS-916 does not define a later bootstrap "resume" that picks up unfinished post-start work from the stopped run. ([IDE Debugging Workflow](#12-ide-debugging-workflow)) |
 | `-DmsBaseUrl` | String | - | **Proposed** | External IDE-hosted DMS endpoint used only with `-InfraOnly`. When omitted, `-InfraOnly` stops after the pre-DMS phase; when set, bootstrap automatically waits for that external DMS process to become healthy, then continues against it. Any run that intends DMS-dependent continuation work such as seed loading must provide `-DmsBaseUrl` on that same invocation. |
-| `-ApiSchemaPath` | String | - | **Proposed** | **(Expert mode)** Path to a local directory containing pre-built `ApiSchema*.json` files. Bootstrap normalizes those files into `eng/docker-compose/.bootstrap/ApiSchema/`, requires the staged result to be exactly one core schema plus zero or more extensions, hashes that staged set with `dms-schema hash`, and points Docker-hosted or IDE-hosted DMS at the same staged directory. This mode bypasses NuGet schema download and disables automatic claimset and seed data selection. If the staged schema set includes non-core resources, `-ClaimsDirectoryPath` is required. If `-LoadSeedData` is used, `-SeedDataPath` is required and `-SeedTemplate` is invalid. Emits a bootstrap-time warning when used. Mutually exclusive with `-Extensions` - if both are specified, the script exits with an error. ([ApiSchema.json Selection](#3-apischemajson-selection), Mode 3 - Expert / Manual) |
-| `-SeedDataPath` | String | - | **Proposed** | Path to local directory containing JSONL seed files. Mutually exclusive with `-SeedTemplate`. Bypasses NuGet seed package download, but compatibility still comes from the run's staged schema/security inputs rather than JSONL inspection. ([Developer Sample Data Selection](#623-developer-sample-data-selection)) |
 
-**Breaking-change note for an existing flag:** The DMS-916 definition of `-NoDmsInstance` deliberately
-narrows the current behavior. Existing scripts that used it on a fresh stack as a generic "skip creation"
-switch must now either drop the flag or pre-create exactly one intended target instance before rerunning.
+**Breaking-change note:** The DMS-916 definition of `-NoDmsInstance` (owned by `configure-local-dms-instance.ps1`) deliberately narrows the current behavior. Existing scripts that used it on a fresh stack as a generic "skip creation" switch must now either drop the flag or pre-create exactly one intended target instance before rerunning. See also [Section 15](#15-breaking-changes-and-migration-notes) for the consolidated migration reference.
+
+**Phase parameter ownership cross-reference:** All bootstrap parameters not in the table above belong to the phase command listed here. See [`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner) for authoritative per-phase ownership.
+
+| Parameter | Owned by |
+|-----------|----------|
+| `-Extensions`, `-ApiSchemaPath` | `prepare-dms-schema.ps1` |
+| `-ClaimsDirectoryPath`, `-AddExtensionSecurityMetadata` | `prepare-dms-claims.ps1` |
+| `-NoDmsInstance`, `-SchoolYearRange`, `-AddSmokeTestCredentials` | `configure-local-dms-instance.ps1` |
+| `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath` | `load-dms-seed-data.ps1` |
+| `-InfraOnly`, `-DmsBaseUrl`, teardown flags, identity flags | `start-local-dms.ps1` |
 
 #### Parameter Validation Rules
 
-The following parameter combinations are validated or normalized before any bootstrap work begins. Invalid
-combinations exit immediately with a clear error message. Supported combinations that require non-fatal
-warnings continue with documented behavior.
+Each validation rule below is owned by the phase command responsible for the affected parameters; cross-phase mutual-exclusion rules are enforced at the earliest gate phase. Phase commands exit immediately on invalid combinations; supported combinations requiring non-fatal warnings continue with documented behavior.
 
-| Rule | Error message |
-|------|--------------|
+| Rule | Outcome |
+|------|---------|
 | `-Extensions` and `-ApiSchemaPath` both specified | "Error: -Extensions and -ApiSchemaPath are mutually exclusive. Use -Extensions for well-known extensions or -ApiSchemaPath for a custom schema directory." |
 | `-ApiSchemaPath` staging does not normalize to exactly one core `ApiSchema*.json` file plus zero or more extension files | "Error: -ApiSchemaPath must resolve to exactly one core ApiSchema.json and zero or more extension ApiSchema.json files after staging." |
 | `-SeedTemplate` and `-SeedDataPath` both specified | "Error: -SeedTemplate and -SeedDataPath are mutually exclusive. Use -SeedTemplate for Ed-Fi packages or -SeedDataPath for a custom seed directory." |
 | `-ApiSchemaPath` with `-SeedTemplate` | "Error: -SeedTemplate is not valid with -ApiSchemaPath. Expert custom-schema mode disables bootstrap-managed seed selection; use -SeedDataPath when -LoadSeedData is required." |
 | `-ApiSchemaPath` with staged extension schemas but without `-ClaimsDirectoryPath` | "Error: -ApiSchemaPath staged one or more extension schemas, but no -ClaimsDirectoryPath was provided. Expert custom-schema mode requires explicit non-core security metadata for staged extension resources." |
 | `-ApiSchemaPath` with `-LoadSeedData` but without `-SeedDataPath` | "Error: -LoadSeedData with -ApiSchemaPath requires -SeedDataPath. Expert custom-schema mode does not fall back to built-in Minimal or Populated seed templates." |
-| `-AddExtensionSecurityMetadata` with `-Extensions` or `-ClaimsDirectoryPath` | Permitted with warning. The script ignores `-AddExtensionSecurityMetadata` and emits: "Warning: -AddExtensionSecurityMetadata is legacy-only when -Extensions or -ClaimsDirectoryPath is supplied. Bootstrap uses the staged claims workspace for the selected inputs instead." |
-| `-LoadSeedData` with `-SeedDataPath` and `-Extensions` | `-Extensions` seed package resolution is skipped. Schema packages and staged security configuration from `-Extensions` still apply. The script emits: "Warning: -Extensions seed package lookup is skipped when -SeedDataPath is provided. Schema and security configuration from -Extensions still apply." |
+| `-AddExtensionSecurityMetadata` with `-Extensions` or `-ClaimsDirectoryPath` | Permitted with warning. The script ignores `-AddExtensionSecurityMetadata` and emits a warning indicating it is a legacy-only flag when `-Extensions` or `-ClaimsDirectoryPath` is supplied and that bootstrap will use the staged claims workspace instead. |
+| `-LoadSeedData` with `-SeedDataPath` and `-Extensions` | `-Extensions` seed package resolution is skipped. Schema packages and staged security configuration from `-Extensions` still apply. The script emits a warning indicating that extension seed package lookup is skipped when `-SeedDataPath` is provided. |
 | `-InfraOnly` without `-DmsBaseUrl` | Permitted. Bootstrap performs infrastructure startup, instance creation, and schema provisioning/validation, then stops with next-step guidance for the IDE-hosted DMS launch. This is a terminal pre-DMS-only invocation, not a checkpoint for a later bootstrap resume. |
 | `-LoadSeedData` with `-InfraOnly` but without `-DmsBaseUrl` | "Error: -LoadSeedData requires an active DMS endpoint. Supply -DmsBaseUrl to continue bootstrap against an IDE-hosted DMS, or remove -LoadSeedData for infra-only preparation. The pre-DMS-only -InfraOnly flow never defers seed loading to a later implicit continuation." |
 | `-InfraOnly` without `-DmsBaseUrl`, with smoke-credential opt-in | Permitted. Bootstrap creates smoke-test credentials after step 7 using the selected target instance IDs, then stops after step 8 with IDE next-step guidance. |
@@ -1722,43 +1926,81 @@ warnings continue with documented behavior.
 | `-ClaimsDirectoryPath` path does not exist or contains no `*-claimset.json` files | "Error: -ClaimsDirectoryPath must point to a directory containing one or more *-claimset.json files." |
 | `-ClaimsDirectoryPath` fragments collide with staged extension fragments by filename | "Error: Claimset fragment filename collision detected for '<file>'. Each staged *-claimset.json filename must be unique before bootstrapping." |
 | `-ClaimsDirectoryPath` fragment references a claim set name that does not exist in the embedded `Claims.json` | "Error: Claimset fragment '<file>' references unknown claim set '<name>'. DMS-916 additive fragments may only attach to claim sets declared in the embedded Claims.json." |
-| Multiple staged fragments resolve to the same effective claim set name but attach to different normalized resources | Permitted. Bootstrap retains them and validates only duplicate effective `(normalized resource claim, effective claim set name)` attachments under current CMS composition semantics. |
-| Two staged fragments attach the same effective claim set name to the same normalized resource claim | "Error: Claimset fragment overlap detected for normalized resource '<resource>' and effective claim set '<name>'. Consolidate the permissions because current CMS composition keeps one attachment for a given resource and claim set rather than merging overlapping entries." |
 | `-LoadSeedData` set but the pinned BulkLoadClient package cannot be resolved or does not expose the required JSONL interface | "Error: BulkLoadClient package resolution failed or the required JSONL interface is unavailable." |
 | `-LoadSeedData` is set but the embedded claims metadata does not define the top-level `SeedLoader` claim set | "Error: -LoadSeedData requires the embedded CMS claims metadata to define the top-level SeedLoader claim set. Bootstrap cannot continue to BulkLoadClient until that claim set exists." |
 | Unrecognized name in `-Extensions` | "Error: Unrecognized extension '<name>'. Valid extensions: sample, homograph" |
 | `-LoadSeedData` with `-Extensions` where an extension is in the mapping but its NuGet seed package fails to resolve | "Error: Seed package for extension '<name>' could not be resolved. Check network/feed access or supply the package manually." |
-| `-LoadSeedData` with `-Extensions` where an extension has no seed package entry in the mapping | "Warning: Extension '<name>' has no built-in seed package. Schema and security configuration still apply. Provide custom seed data via -SeedDataPath if needed." |
+| `-LoadSeedData` with `-Extensions` where an extension has no seed package entry in the mapping | Permitted with warning. Bootstrap emits an informational warning indicating no built-in seed package is available; schema and security configuration from the extension still apply. |
 | `-LoadSeedData` with a built-in extension seed source whose staged security fragments do not attach required `SeedLoader` permissions for that extension's seed resources | "Error: Extension '<name>' seed support is incomplete. The staged security fragments do not provide the required SeedLoader permissions for the extension seed resources." |
 
 ---
 
-### 9.4 Entry Point Strategy: Single Script Surface
+### 9.4 Developer Invocation Examples
 
-The canonical single-command surface is `pwsh eng/docker-compose/start-local-dms.ps1`.
-
-Developer workflow:
+Phase commands may be called individually for targeted re-runs, or sequenced through the thin convenience
+wrapper (`bootstrap-local-dms.ps1`) for the happy path. Common invocations:
 
 ```powershell
-# Full bootstrap
-pwsh eng/docker-compose/start-local-dms.ps1 -LoadSeedData
+# Full bootstrap via thin wrapper (the wrapper contributes only -ConfigFile;
+# each phase reads its own defaults from that file)
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -ConfigFile eng/docker-compose/bootstrap-local-dms.config.json
 
-# Prepare infrastructure and staged schema for an IDE-hosted DMS run
+# Infrastructure phase only (no DMS container; prints IDE next-step guidance)
 pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
+
+# Infrastructure phase with same-invocation IDE continuation (waits for DMS to report healthy)
+pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198"
+
+# Teardown stack and volumes
+pwsh eng/docker-compose/start-local-dms.ps1 -d -v
 ```
 
-Key properties of this approach:
+No shell/session preparation is required before invoking any phase command. The story-aligned behaviors
+documented elsewhere — `-Extensions`, authoritative step-8 schema-provisioning, `-InfraOnly`,
+`-DmsBaseUrl` — apply regardless of whether phase commands are called individually or through the wrapper.
 
-- **One public surface** - developers, CI, and automation use the same script.
-- **No shell/session prep** - developers do not have to dot-source a setup file before the command exists.
-- **Single source of lifecycle semantics** - the script owns the parameter behavior and ordering rules.
-- **No second control plane** - the design does not introduce a wrapper, alias, or alternate bootstrap API that must stay in sync.
-- **Incremental adoption** - story-aligned capabilities such as extension selection, API-based seeding, authoritative schema provisioning, and IDE workflow support are added directly to `start-local-dms.ps1`.
+#### 9.4.2 Wrapper Defaults Configuration File
 
-For DMS-916, expanding `start-local-dms.ps1` directly is sufficient as long as it exposes the story-aligned
-parameter surface. The behaviors designed elsewhere in this document (for example `-Extensions`,
-the authoritative step-8 schema-provisioning path, and `-InfraOnly`) remain required; richer timing wrappers or CI-specific log
-grouping are optional implementation details rather than separate story requirements.
+Developers who often use the same phase defaults can place an optional JSON defaults file alongside the
+wrapper instead of repeating those values on every invocation. The wrapper passes `-ConfigFile <path>` to
+each phase command; each phase reads its own relevant keys from that file before applying CLI overrides.
+This file is a convenience defaults mechanism only. It is not a second orchestration surface, and it does
+not let the wrapper own cross-phase policy or behavioral decisions.
+
+**Why phases read their own keys directly (black-box boundary):**
+If the wrapper extracted individual values and forwarded them by name, it would need to know
+every phase command's parameter surface. Any new phase parameter would require a wrapper
+change too — exactly the coupling the phase-oriented design exists to prevent. With
+phase-reads-own-config, the wrapper is reduced to one concern: pass the config file path
+through. Adding or renaming a parameter in any phase command is that phase's change alone.
+
+**Precedence:** explicit CLI flag to the phase > config file value > built-in default.
+
+**File location:** `eng/docker-compose/bootstrap-local-dms.config.json` (git-ignored).
+Committed example: `eng/docker-compose/bootstrap-local-dms.config.json.example`.
+
+**Key reference** (each phase reads only its own keys; unknown keys are ignored):
+
+| Key | Type | Read by |
+|---|---|---|
+| `Extensions` | `string[]` | `prepare-dms-schema.ps1`, `prepare-dms-claims.ps1` |
+| `IdentityProvider` | `string` | `start-local-dms.ps1` |
+| `AddSmokeTestCredentials` | `bool` | `configure-local-dms-instance.ps1` |
+| `SchoolYearRange` | `string` | `configure-local-dms-instance.ps1`, `load-dms-seed-data.ps1` |
+| `LoadSeedData` | `bool` | `load-dms-seed-data.ps1` |
+| `SeedTemplate` | `string` | `load-dms-seed-data.ps1` |
+| `SeedDataPath` | `string` | `load-dms-seed-data.ps1` |
+
+**Guard rails:**
+
+- Each phase fails fast if the file exists but is not valid JSON.
+- Unknown keys are silently ignored by each phase (forward-compatibility).
+- The config file does not make the wrapper normative for any phase's behavior;
+  phase commands remain the authoritative source of every lifecycle and domain rule.
+- Parameters that are mode-changing, destructive, or expert-only (`-InfraOnly`,
+  `-DmsBaseUrl`, `-d`, `-v`, `-ApiSchemaPath`, `-ClaimsDirectoryPath`, `-NoDmsInstance`)
+  are intentionally absent from the key reference. They must be supplied directly on the
+  owning phase command.
 
 #### 9.4.1 Recommended Bootstrap Output
 
@@ -1814,6 +2056,26 @@ Summary
 ```
 
 CI environments may suppress color output. The summary table is always emitted on both success and failure; on failure the failing step name and error are printed before the summary.
+
+#### 9.4.3 Thin Wrapper Contract
+
+The complete normative wrapper contract — including the full prohibition list — is
+[`command-boundaries.md` Section 3.7](command-boundaries.md#37-bootstrap-local-dmsps1--thin-convenience-wrapper-optional).
+Read in conjunction with the wrapper simplicity rule in [Section 9](#9-bootstrap-commands-and-parameters)
+and the single-parameter surface in [Section 9.3.1](#931-v1-top-level-surface), §3.7 is the authoritative
+statement of what the wrapper does and does not do.
+
+For convenience, the wrapper's permitted actions in this design narrative are:
+
+- Call phase commands in the documented dependency order
+  (`prepare-dms-schema.ps1` → `prepare-dms-claims.ps1` → `start-local-dms.ps1` →
+  `configure-local-dms-instance.ps1` → `provision-dms-schema.ps1` → DMS startup → `load-dms-seed-data.ps1`).
+- Pass `-ConfigFile <path>` to each phase command when the caller supplies it.
+- Print next-step guidance after an intentionally omitted phase.
+- Propagate the non-zero exit code immediately when any phase command fails.
+
+Everything else — schema/claims/credential/state/continuation/policy ownership — is prohibited by §3.7
+and is not restated here.
 
 ### 9.5 Bootstrap Working Directory
 
@@ -1883,6 +2145,10 @@ The single-segment `/{schoolYear}/data/...` examples in this section intentional
 DMS-916 bootstrap route profile where route qualifiers are configured as `schoolYear` only. Broader repo
 profiles such as `/{districtId}/{schoolYear}/data/...` remain valid DMS behavior outside this narrowed
 local bootstrap workflow and are not redefined here.
+
+> **Non-normative illustration:** The code block below shows the expected per-year invocation loop shape
+> derived from the Section 6.1 consumption contract. Exact flag names are subject to BulkLoadClient
+> implementation verification before Story 02.
 
 ```powershell
 $startYear, $endYear = $SchoolYearRange -split '-'
@@ -2136,6 +2402,14 @@ surface at step 8 rather than inventing a bootstrap-owned schema-readiness model
 
 This section documents how developers run or debug DMS locally in an IDE (Visual Studio, Rider) while Docker manages the supporting infrastructure. It covers the architecture, the mechanism for starting infrastructure without DMS, the environment variables required for the local process, and how bootstrap interacts with a locally running DMS instance.
 
+> **Status (read with Section 14.1).** The IDE workflow described here is the accepted DMS-916 design,
+> not a feature that is already wired into `start-local-dms.ps1`. The `-InfraOnly` switch and the
+> `-DmsBaseUrl` continuation behavior are still labeled "Proposed" in this section because their
+> implementation is owned by [`tickets/03-entry-point-and-ide-workflow.md`](tickets/03-entry-point-and-ide-workflow.md)
+> and is tracked as "Designed, implementation pending" in Section 14.1 and as an operationally
+> blocked item in Section 14.2. Read the architecture and parameter narrative below as the design
+> contract those tickets must implement, not as a description of behavior available today.
+
 ### 12.1 Architecture
 
 The IDE debugging pattern follows the standard "Docker for infrastructure, local process for the application under development" model:
@@ -2224,19 +2498,18 @@ Docker-managed infrastructure after bootstrap has already completed schema provi
 
 The values below assume the default port mapping from `.env.example`.
 
-Story 03 owns establishing the fixed dev-only `CMSReadOnlyAccess` local contract used by IDE-hosted DMS to
-query the Config Service. That work happens in the post-CMS-health, pre-DMS phase of the canonical bootstrap
-so the IDE workflow does not depend on pre-existing local seed state. The documented secret
-`ValidClientSecret1234567890!Abcd` is the bootstrap-managed localhost default, not a generated per-run
-secret. The example file and IDE guidance in this section must stay aligned with that local contract unless
-the bootstrap scripts are intentionally changed in the future.
+Story 03 owns establishing the dev-only `CMSReadOnlyAccess` local contract used by IDE-hosted DMS to query
+the Config Service. That work happens in the post-CMS-health, pre-DMS phase of the canonical bootstrap so
+the IDE workflow does not depend on pre-existing local seed state. The IDE guidance and example file should
+stay aligned with the bootstrap-managed local-development credential contract for that client, but the exact
+secret value is an implementation detail rather than a story-level invariant.
 
 | Variable (appsettings key) | Local value | Description |
 |---|---|---|
 | `ConnectionStrings__DatabaseConnection` | `host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;` | PostgreSQL connection. Uses `localhost:5435` (Docker-exposed port) instead of Docker-internal `dms-postgresql:5432`. |
 | `ConfigurationServiceSettings__BaseUrl` | `http://localhost:8081` | Config Service URL. Uses `localhost:8081` instead of Docker-internal `http://dms-config-service:8081`. |
 | `ConfigurationServiceSettings__ClientId` | `CMSReadOnlyAccess` | Bootstrap-provisioned read-only OAuth client ID that DMS uses to authenticate against the Config Service during local development. |
-| `ConfigurationServiceSettings__ClientSecret` | `ValidClientSecret1234567890!Abcd` | Fixed dev-only secret seeded by the bootstrap scripts for `CMSReadOnlyAccess`. Keep the example file aligned with this value unless the bootstrap provisioning scripts are intentionally updated. **DEV-ONLY**: This localhost secret must not be reused in shared, remote, or production environments. |
+| `ConfigurationServiceSettings__ClientSecret` | `<bootstrap-provisioned-local-secret>` | Local-development secret for `CMSReadOnlyAccess`, taken from the bootstrap-managed IDE guidance or local provisioning output. **DEV-ONLY**: This localhost credential must not be reused in shared, remote, or production environments. |
 | `ConfigurationServiceSettings__Scope` | `edfi_admin_api/readonly_access` | OAuth scope for Config Service read access. |
 | `AppSettings__AuthenticationService` | `http://localhost:8081/connect/token` (self-contained) or `http://localhost:8045/realms/edfi/protocol/openid-connect/token` (Keycloak) | Token endpoint must match the selected `-IdentityProvider`, using host-reachable URLs rather than Docker-internal addresses. |
 | `JwtAuthentication__Authority` | `http://localhost:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | JWT authority for token validation, translated to host-local endpoints for IDE debugging. |
@@ -2263,7 +2536,7 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
   "ConfigurationServiceSettings": {
     "BaseUrl": "http://localhost:8081",
     "ClientId": "CMSReadOnlyAccess",
-    "ClientSecret": "ValidClientSecret1234567890!Abcd",
+    "ClientSecret": "<bootstrap-provisioned-local-secret>",
     "Scope": "edfi_admin_api/readonly_access"
   },
   "AppSettings": {
@@ -2312,9 +2585,11 @@ The authority and metadata-address values remain host-root URLs in this design:
 
 ### 12.4 Bootstrap with Local DMS
 
-Bootstrap is still performed by `start-local-dms.ps1`. In the normal Docker workflow, the script targets the
-containerized DMS at `http://localhost:8080`. When DMS runs in an IDE, the script can either stop after the
+In the normal Docker workflow, the infrastructure-lifecycle phase command `start-local-dms.ps1` targets the
+containerized DMS at `http://localhost:8080`. When DMS runs in an IDE, that phase can either stop after the
 pre-DMS phase (`-InfraOnly`) or continue bootstrap against the IDE process (`-InfraOnly -DmsBaseUrl ...`).
+The broader bootstrap contract remains the composable phase sequence defined in
+[`command-boundaries.md`](command-boundaries.md); `start-local-dms.ps1` owns infrastructure lifecycle only.
 
 **Continuation rule**: Instance creation and schema provisioning are Config Service / database concerns and
 do not require DMS to be running. When a run chooses `-DmsBaseUrl`, `start-local-dms.ps1` automatically
@@ -2332,8 +2607,9 @@ IDE-hosted DMS endpoint used during the `-InfraOnly` continuation flow:
 
 ```powershell
 # Developer runs bootstrap against an IDE-hosted DMS endpoint.
-pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -LoadSeedData -AddSmokeTestCredentials `
+pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -AddSmokeTestCredentials `
     -DmsBaseUrl "http://localhost:5198"
+pwsh eng/docker-compose/load-dms-seed-data.ps1 -LoadSeedData
 ```
 
 When `-InfraOnly` is used **without** `-DmsBaseUrl`, the script:
@@ -2373,7 +2649,7 @@ into the external-endpoint phase:
 5. Provisions or validates the target databases directly through SchemaTools.
 6. Provisions or validates the fixed dev-only `CMSReadOnlyAccess` client used by IDE-hosted DMS.
 7. Automatically waits for the developer-started DMS process to become healthy at `$DmsBaseUrl` by polling
-   the health endpoint every 3 seconds with a maximum timeout of 5 minutes. Success is defined as an HTTP
+   the health endpoint at a configurable interval with a maximum timeout. Success is defined as an HTTP
    200 response from the health endpoint; timeout or persistent non-success is fatal for the run.
 8. When `-LoadSeedData` is set, provisions SeedLoader credentials and runs seed data loading targeting
    `$DmsBaseUrl` and the same target instance set selected earlier in the run; the continuation path does
@@ -2406,7 +2682,7 @@ Companion implementation-ready story definitions for these four slices live in
 | Schema and security selection | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md) | `-Extensions`, `-ApiSchemaPath`, and `-ClaimsDirectoryPath` resolve one schema/security story, with v1 support limited to extensions backed by the current schema and security artifacts. |
 | Schema deployment safety | [`tickets/01-schema-deployment-safety.md`](tickets/01-schema-deployment-safety.md) | Bootstrap invokes the authoritative SchemaTools/runtime-owned provisioning and validation path over the staged schema set before DMS starts. `EffectiveSchemaHash` remains a shared input to that path, and different extension selections remain different physical-schema targets. |
 | API-based seed delivery | [`tickets/02-api-seed-delivery.md`](tickets/02-api-seed-delivery.md) | Built-in seed packages remain deterministic, and custom directories load through the repo-pinned BulkLoadClient path using the run's staged schema/security inputs, dedicated `SeedLoader` credentials, and the existing `-SchoolYearRange` developer workflow when present. |
-| Entry point and IDE workflow | [`tickets/03-entry-point-and-ide-workflow.md`](tickets/03-entry-point-and-ide-workflow.md) | `start-local-dms.ps1` is the single bootstrap surface, and `-InfraOnly` / `-DmsBaseUrl` define the two IDE-hosted workflow shapes: stop after the pre-DMS phase, or automatically health-wait and continue against the external endpoint. |
+| Entry point and IDE workflow | [`tickets/03-entry-point-and-ide-workflow.md`](tickets/03-entry-point-and-ide-workflow.md) | `start-local-dms.ps1` is the infrastructure-lifecycle phase command, while the normative bootstrap contract remains the composable phase-command set. `-InfraOnly` / `-DmsBaseUrl` define the two IDE-hosted infrastructure workflow shapes: stop after the pre-DMS phase, or automatically health-wait and continue against the external endpoint. |
 
 **Cross-story dependency notes**
 
@@ -2440,18 +2716,25 @@ these rows, it is outside the intended scope of this design spike.
 > drives the DDL target/version/hash validation path and the exact physical table set for the run.
 > Per-selection physical schema shaping is in scope for this design.
 
-| Ticket acceptance criterion | Evidence in this document | Design status |
-|-----------------------------|---------------------------|---------------|
-| ApiSchema.json selection - how developers choose core, extensions, or custom path | Sections 3.3, 8.2, 8.4, 9.3 | Designed |
-| Security database configuration from ApiSchema.json | Sections 4.3-4.5, 9.3 (`-ClaimsDirectoryPath`) | Designed |
-| Database schema provisioning - DDL hook separated from seed data loading, driven by selected ApiSchema.json | Sections 3.2, 5 step 8, 11.3-11.5 | Designed under the strong interpretation above. Selected schema drives the DDL target/version/`EffectiveSchemaHash` validation path and the exact physical schema provisioned for that run. |
-| Sample data loading - API-based JSON/JSONL loading replacing direct SQL, with Ed-Fi packages or developer-supplied JSONL directories paired with compatible schema/security inputs | Section 6 | Designed |
-| Extension selection - parameterized `-Extensions` flag driving schema and security automatically, and driving built-in seed data automatically only where the extension mapping defines built-in seed support | Sections 3.3, 8.2-8.4 | Designed |
-| Credential bootstrapping - enhancements for seed data loading support | Section 7 | Designed |
-| Single entry point - `start-local-dms.ps1` with story-aligned safe skip behavior and same-invocation continuation only | Sections 1, 9.2-9.5 | Designed. `start-local-dms.ps1` is the single developer-facing and automation bootstrap surface for the local story-aligned flow. The accepted DMS-916 reading of "skip/resume" is safe skip behavior plus optional same-invocation continuation via `-InfraOnly -DmsBaseUrl`, not a persisted resume model. Step 8 always uses the authoritative schema-provisioning path rather than a bootstrap-owned alternate schema branch. |
-| IDE debugging workflow - running DMS in IDE against Docker infrastructure | Section 12 | Designed |
-| Backend redesign awareness - forward-compatible with relational tables replacing JSONB | Section 11 | Designed |
-| ODS initdev audit - informational reference only, not a gap-fill checklist | Sections 1-2 and `reference-initdev-workflow.md` | Designed |
+> **How to read the status columns.** "Design completeness" reports whether the normative design is in
+> place in this artifact set. "Delivery readiness" reports whether the implementation work needed to put
+> that design in front of a developer is in place today; rows still waiting on Story 00–03 implementation
+> work read as "Designed, implementation pending" rather than as fully achieved. "Blocking dependency /
+> gap" names the specific pending item (story, ticket, or cross-team dependency) so a stakeholder can
+> trace each non-ready row to its owner without re-reading Sections 14.2 and 14.3.
+
+| Ticket acceptance criterion | Evidence in this document | Design completeness | Delivery readiness | Blocking dependency / gap |
+|-----------------------------|---------------------------|---------------------|--------------------|---------------------------|
+| ApiSchema.json selection - how developers choose core, extensions, or custom path | Sections 3.3, 8.2, 8.4, 9.3 | Designed | Designed, implementation pending | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md) |
+| Security database configuration from ApiSchema.json | Sections 4.3-4.5, 9.3 (`-ClaimsDirectoryPath`) | Designed | Designed, implementation pending. Standard `-Extensions` mode covers automatic schema-and-security selection; expert `-ApiSchemaPath` mode requires explicit `-ClaimsDirectoryPath` companion input when non-core schemas are present. | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md) |
+| Database schema provisioning - DDL hook separated from seed data loading, driven by selected ApiSchema.json | Sections 3.2, 5 step 8, 11.3-11.5 | Designed under the strong interpretation above. Selected schema drives the DDL target/version/`EffectiveSchemaHash` validation path and the exact physical schema provisioned for that run. | Designed, implementation pending. Bootstrap delegates to the SchemaTools / runtime-owned provisioning path; readiness is gated on that surface remaining stable. | [`tickets/01-schema-deployment-safety.md`](tickets/01-schema-deployment-safety.md); SchemaTools dependency in Section 14.3 |
+| Sample data loading - API-based JSON/JSONL loading replacing direct SQL, with Ed-Fi packages or developer-supplied JSONL directories paired with compatible schema/security inputs | Section 6 | Designed | Not deliverable end to end today | ODS-6738 (BulkLoadClient JSONL) and DMS-1119 (seed artifact packages); see Sections 14.2 and 14.3 |
+| Extension selection - parameterized `-Extensions` flag driving schema and security automatically, and driving built-in seed data automatically only where the extension mapping defines built-in seed support | Sections 3.3, 8.2-8.4 | Designed | Designed, implementation pending. The combined `-Extensions` plus `-ClaimsDirectoryPath` additive-claims staging path is not yet implemented. | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md); see Section 14.2 |
+| Credential bootstrapping - enhancements for seed data loading support | Section 7 | Designed | Designed, implementation pending. The `SeedLoader` claim set is not yet defined in the embedded CMS claims resource. | [`tickets/02-api-seed-delivery.md`](tickets/02-api-seed-delivery.md); see Section 14.2 |
+| Bootstrap entry point and safe skip behavior — composable phase commands with optional same-invocation continuation | Sections 1, 9, 9.2–9.5 | Designed. The normative contract is the composable phase commands in `command-boundaries.md`; any thin wrapper is convenience only. "Skip/resume" means safe skip behavior across phase commands plus optional same-invocation continuation via `-InfraOnly -DmsBaseUrl`, not a persisted resume model. | Designed, implementation pending across the phase commands and the optional thin wrapper. | [`tickets/03-entry-point-and-ide-workflow.md`](tickets/03-entry-point-and-ide-workflow.md) and the phase-command implementation tickets |
+| IDE debugging workflow - running DMS in IDE against Docker infrastructure | Section 12 | Designed | Designed, implementation pending. `-InfraOnly` and the `-DmsBaseUrl` continuation behavior are not yet implemented in `start-local-dms.ps1`. | [`tickets/03-entry-point-and-ide-workflow.md`](tickets/03-entry-point-and-ide-workflow.md); see Section 14.2 |
+| Backend redesign awareness - forward-compatible with relational tables replacing JSONB | Section 11 | Designed | Achieved as a forward-compatibility property of this design; no separate implementation deliverable is required beyond honoring the SchemaTools provisioning boundary. | None within this story; tracked as the SchemaTools cross-team dependency in Section 14.3. |
+| ODS initdev audit - informational reference only, not a gap-fill checklist | Sections 1-2 and `reference-initdev-workflow.md` | Designed | Achieved as informational reference; no implementation deliverable. | None |
 
 ### 14.2 Operationally Blocked Criteria
 
@@ -2473,3 +2756,32 @@ these rows, it is outside the intended scope of this design spike.
 Until these blockers are resolved, the intended API-based replacement path cannot be delivered end to end.
 The design target remains replacement of the deprecated direct-SQL path (`setup-database-template.psm1`);
 the blocker does not change that scope contract.
+
+### 14.4 Close-Out Status
+
+The bootstrap architecture documented here — composable phase commands, expert-mode security boundary,
+schema-driven DDL provisioning, and the optional thin convenience wrapper — is **accepted as the normative
+DMS-916 design**. Stakeholders may treat it as the contract that Stories 00–03 implement against.
+
+**Design acceptance is not feature completion.** The non-seed items marked "Designed, implementation pending"
+in Section 14.1 — additive extension plus explicit-claims staging, the `-InfraOnly` / `-DmsBaseUrl` IDE
+workflow, the `SeedLoader` claim set, and the phase-command surface itself — are **not delivered today**
+and are not counted as complete by virtue of this document being merged. Each remains owned by its Story
+00–03 ticket. Seed-delivery readiness is a separate concern, tracked under the cross-team blockers in
+Section 14.3, and is not what this close-out is asserting.
+
+A stakeholder reading only this section should leave with one takeaway: the design is settled and
+approved; the implementation work it describes is tracked in the linked tickets and is not yet done.
+
+## 15. Breaking Changes and Migration Notes
+
+This section collects every deliberate behavior change introduced by DMS-916 in one place. Each entry names
+the old behavior, the new DMS-916 behavior, and the one-line migration action required of existing scripts
+or contributors.
+
+| # | Area | Old behavior | New DMS-916 behavior | Migration action |
+|---|------|--------------|----------------------|------------------|
+| 1 | Default schema profile when `-Extensions` is omitted | `SCHEMA_PACKAGES` staged Data Standard 5.2 **plus TPDM** by default in the existing `eng/docker-compose` flow | Bootstrap resolves and stages **core only** (`EdFi.DataStandard52.ApiSchema`) when `-Extensions` is omitted | Remove any assumption that TPDM artifacts are present by default; omit `-Extensions` for core-only runs |
+| 2 | TPDM in the v1 `-Extensions` surface | TPDM was implied as a bundled default via the `SCHEMA_PACKAGES` environment variable | TPDM is **not a supported value** for `-Extensions` in the DMS-916 v1 surface; specifying it produces a fast-fail with a clear error message | Remove `-Extensions TPDM` from any scripts; do not assume TPDM support is available in the DMS-916 bootstrap path |
+| 3 | `-NoDmsInstance` semantics | Generic "skip instance creation" switch used on fresh stacks as a convenient no-op | **Narrow rerun escape hatch only:** valid only when exactly one existing instance is present in the current tenant scope, and invalid with `-SchoolYearRange`; zero or multiple instances fail fast requiring teardown or manual preparation | Drop the flag on fresh-stack runs, or pre-create exactly one target instance before rerunning with `-NoDmsInstance` |
+| 4 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | These parameters are **owned by `load-dms-seed-data.ps1`**; `start-local-dms.ps1` no longer accepts them | Call `load-dms-seed-data.ps1` directly for seed loading, or use `bootstrap-local-dms.ps1 -ConfigFile` which orchestrates the phase commands including seed loading |

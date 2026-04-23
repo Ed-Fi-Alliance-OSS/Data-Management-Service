@@ -6,11 +6,12 @@ design: DMS-916
 
 ## Description
 
-Implement the primary bootstrap surface and the IDE-hosted DMS workflow without creating a second bootstrap
-architecture. This slice keeps `start-local-dms.ps1` as the single developer-facing and automation surface
-for the local workflow, and supports the Docker-for-infrastructure plus IDE-for-DMS workflow described in the
-main design. The IDE path must reuse the same staged schema workspace and bootstrap ordering as the
-canonical Docker path; it is not a parallel schema-resolution or auth-initialization design. Step 7 remains
+Implement the infrastructure-lifecycle phase command (`start-local-dms.ps1`) and document the IDE
+debugging workflow consistent with the phase-oriented bootstrap contract. `start-local-dms.ps1` owns Docker
+stack management and service health waiting; schema preparation, claims staging, instance configuration,
+and seed delivery belong to their respective phase commands as specified in `command-boundaries.md`. The IDE
+path reuses the same staged schema workspace and bootstrap ordering as the Docker-hosted path; it is not a
+parallel schema-resolution or auth-initialization design. Step 7 remains
 the only phase that resolves target DMS instance IDs for the run. Optional smoke-test credentials are
 CMS-only pre-DMS work anchored to that selected target set, while the DMS-dependent continuation covers only
 automatic health wait plus the `SeedLoader`/seed-delivery path when `-LoadSeedData` is requested.
@@ -20,23 +21,31 @@ across separate invocations.
 
 ## Acceptance Criteria
 
-- `start-local-dms.ps1` is the primary automation surface for the local developer bootstrap workflow.
-- `start-local-dms.ps1` is also the canonical developer-facing single-command entry point for the bootstrap
-  workflow; no wrapper script or alias is required.
+- `start-local-dms.ps1` is the infrastructure-lifecycle phase command: it owns Docker stack management,
+  service health waiting, and the `-InfraOnly`/`-DmsBaseUrl` behaviors documented in this story. It does
+  not own schema preparation, claims staging, instance configuration, or seed delivery.
+- The optional thin wrapper (`bootstrap-local-dms.ps1`) sequences the phase commands for the common
+  happy-path developer workflow. It is convenience packaging only — not the normative bootstrap contract
+  and not required; developers may invoke the phase commands directly.
 - The story-aligned bootstrap flow stays consistent:
   - Config Service remains part of the canonical flow,
   - `-EnableConfig` is not treated as a meaningful developer-facing opt-out,
   - every non-teardown bootstrap run starts Config Service, including the default no-argument flow and
     keycloak-backed runs.
 - `-InfraOnly` excludes the DMS container from Docker startup and, together with the optional
-  `-DmsBaseUrl`, defines the two explicit workflow shapes in this story's public contract.
-- Story 03 documents only two workflow shapes:
-  - `-InfraOnly` without `-DmsBaseUrl` completes the pre-DMS phase only: infrastructure startup, instance
-    creation or narrow existing-instance reuse, optional CMS-only smoke-test credentials, schema
-    provisioning or validation, and next-step guidance for the IDE-hosted DMS launch.
-  - `-InfraOnly` with `-DmsBaseUrl` set continues from that same pre-DMS phase by automatically waiting for
-    the IDE-hosted DMS process to become healthy, then running DMS-dependent continuation work such as the
-    dedicated `SeedLoader` credential flow and seed loading when requested.
+  `-DmsBaseUrl`, defines the two workflow shapes supported by the infrastructure-lifecycle phase command.
+- Story 03 documents two workflow shapes, with the pre-DMS-stop path as the primary recommended IDE
+  workflow:
+  - **Primary**: `-InfraOnly` without `-DmsBaseUrl` completes the pre-DMS phase only — infrastructure
+    startup, instance creation or narrow existing-instance reuse, optional CMS-only smoke-test credentials,
+    schema provisioning or validation, and next-step guidance for the IDE-hosted DMS launch. Developers
+    manually start DMS in their IDE after this invocation completes.
+  - **Optional convenience**: `-InfraOnly` with `-DmsBaseUrl` set continues from that same pre-DMS phase
+    by automatically waiting for the IDE-hosted DMS process to become healthy, then running DMS-dependent
+    continuation work such as the dedicated `SeedLoader` credential flow and seed loading when requested.
+    This shape is retained because removing it would require a separate bootstrap re-invocation after IDE
+    launch to perform seed loading, forcing redundant re-execution of prior phase outputs (instance IDs,
+    schema hash, credentials); it is documented as a convenience option rather than a required path.
 - `-InfraOnly` without `-DmsBaseUrl` is terminal for that invocation. It is not a checkpoint or later
   bootstrap-resume mechanism for unfinished post-start work.
 - Story 03's accepted reading of "resume" is only the same-invocation continuation selected up front with
@@ -62,16 +71,18 @@ across separate invocations.
     target-selection subsystem.
 - The narrowed DMS-916 definition of `-NoDmsInstance` is documented as a deliberate breaking change for
   existing fresh-stack scripts; migration guidance tells users to rerun without the flag or pre-create the
-  intended single target instance.
+  intended single target instance. See [`bootstrap-design.md` Section 15](../bootstrap-design.md#15-breaking-changes-and-migration-notes)
+  for the consolidated migration reference.
 - Story 03 keeps CMS-only smoke credentials separate from DMS-dependent `SeedLoader` credentials and seed
   loading; no acceptance criterion describes one blended post-start credential-bootstrap phase.
 - Developer-facing IDE guidance exists for the localhost configuration values required to run DMS against the
   Docker-managed infrastructure.
-- Story 03 owns the bootstrap-time provisioning or validation of the fixed dev-only `CMSReadOnlyAccess`
-  client and documented secret used by IDE-hosted DMS to query CMS; the IDE workflow must not rely on
-  pre-existing local seed state for that client to exist.
-- The design documents one fixed localhost contract for that dev-only `CMSReadOnlyAccess` client so the IDE
-  workflow is deterministic; broader CMS client lifecycle behavior remains outside this story.
+- Story 03 owns the bootstrap-time provisioning or validation of the dev-only `CMSReadOnlyAccess`
+  client and its local-development credential used by IDE-hosted DMS to query CMS; the IDE workflow must
+  not rely on pre-existing local seed state for that client to exist.
+- The design documents one localhost contract for that dev-only `CMSReadOnlyAccess` client so the IDE
+  workflow is deterministic, while leaving the exact local secret value as bootstrap-managed guidance rather
+  than a story-level invariant. Broader CMS client lifecycle behavior remains outside this story.
 - That IDE guidance scopes the starter `appsettings.Development.json.example` to the common single-instance
   flow and documents the self-contained `-SchoolYearRange` variant's
   `/connect/token/{schoolYear}` behavior separately.
@@ -87,18 +98,21 @@ across separate invocations.
     DMS-916 readiness gate,
   - Keycloak identity does not run `setup-openiddict.ps1 -InsertData`.
 - Story 03 treats Config Service readiness as a claims-ready gate for the selected staged inputs. Step 7 and
-  all later phases begin only after CMS startup claim loading has completed; if CMS health can become green
-  before claims loading finishes, bootstrap must add an explicit claims-ready verification step.
+  all later phases begin only after CMS startup claim loading has completed; if service health alone is not
+  sufficient to guarantee that, the implementation must ensure readiness is checked before continuing.
 - The IDE workflow remains Docker-first and does not introduce a second non-Docker bootstrap path.
 - `eng/docker-compose/.bootstrap/` is treated as scratch bootstrap state and is excluded from source
   control.
 
 ## Tasks
 
-1. Keep `start-local-dms.ps1` as the single developer-facing and automation bootstrap surface for the local
-   workflow.
-2. Put the story-aligned parameter surface directly on `start-local-dms.ps1` without creating a second
-   lifecycle contract.
+1. Implement the story-aligned behaviors on `start-local-dms.ps1` as the infrastructure-lifecycle phase
+   command: Docker stack management, service health waiting, idempotent `-InfraOnly` and `-DmsBaseUrl`
+   workflow shapes, and the fail-fast parameter validation rules described in the Acceptance Criteria. Do
+   not add parameters owned by schema preparation, claims staging, instance configuration, or seed delivery
+   to this command.
+2. Put the story-aligned infrastructure-phase parameters on `start-local-dms.ps1` as specified in
+   `command-boundaries.md` §3.3; parameters owned by other phase commands stay with those commands.
 3. Implement the `-InfraOnly` and `-DmsBaseUrl` behaviors on the script-owned bootstrap surface so only two
    workflow shapes remain: pre-DMS stop, or automatic-health-wait continuation against the external DMS
    endpoint. Keep optional smoke-test credentials in the CMS-only pre-DMS phase, reserve the DMS-dependent
@@ -106,24 +120,25 @@ across separate invocations.
    pre-DMS-only `-InfraOnly` shape without `-DmsBaseUrl`, and document that the stopped pre-DMS shape is a
    terminal invocation rather than a later resume checkpoint. The only "resume" interpretation accepted by
    this story is continuation declared up front on that same invocation via `-DmsBaseUrl`. The next-step
-   guidance printed at the
-   pre-DMS termination point must include the exact IDE-hosted DMS configuration values needed to start the
-   application against the prepared environment, and it must not present a second bootstrap invocation as a
-   resume mechanism for skipped `SeedLoader` or seed-loading work.
+   guidance printed at the pre-DMS termination point must give the developer the required IDE-hosted DMS
+   configuration needed to start against the prepared environment, and it must not present a second
+   bootstrap invocation as a resume mechanism for skipped `SeedLoader` or seed-loading work.
 4. Keep the documented identity-provider ordering aligned with the real dependency chain for both Keycloak
    and self-contained auth, including the explicit rule that self-contained identity runs
    `setup-openiddict.ps1 -InsertData` after Config Service readiness while Keycloak skips that step, and keep
    the step-6 readiness contract aligned with claims loading: bootstrap does not proceed to step 7 until CMS
    startup claim loading is complete for the selected staged inputs.
-5. Implement bootstrap-time provisioning or validation of the fixed dev-only `CMSReadOnlyAccess` client so
-   the IDE-hosted DMS flow has a deterministic local CMS credential contract aligned to the documented
+5. Implement bootstrap-time provisioning or validation of the dev-only `CMSReadOnlyAccess` client so
+   the IDE-hosted DMS flow has a stable local CMS credential contract aligned to the documented
    localhost values, without expanding this story into broader CMS client lifecycle design.
 6. Add or update the developer-facing IDE guidance, including the localhost configuration values and staged
    schema-path settings described in the main bootstrap design, including the bootstrap-provisioned
-   `CMSReadOnlyAccess` read-only OAuth client details and the fixed, documented dev-only secret value used locally.
+   `CMSReadOnlyAccess` read-only OAuth client details and the bootstrap-managed local-development credential
+   value used by that flow.
 7. Provide the starter configuration artifact for IDE use (`appsettings.Development.json.example`) so the
-   documented workflow is directly actionable and remains aligned with the bootstrap-seeded
-   `CMSReadOnlyAccess` credentials unless the provisioning scripts are intentionally changed.
+   documented workflow is actionable once the bootstrap-managed local-development credential is inserted from
+   printed guidance or provisioning output, and remains aligned with the bootstrap-seeded
+   `CMSReadOnlyAccess` client contract unless the provisioning scripts are intentionally changed.
 8. Update the `-NoDmsInstance` rerun behavior to the narrowed DMS-916 escape hatch: valid only when exactly
    one existing instance is present in the current tenant scope and `-SchoolYearRange` is not set. Ambiguity
    or zero matches fail fast with teardown or manual-environment-preparation guidance, and all later phases
@@ -144,3 +159,4 @@ across separate invocations.
 ## Design References
 
 - [`../bootstrap-design.md`](../bootstrap-design.md), Sections 1, 5, 7, 9, 12, 13, and 14.1
+- [`../command-boundaries.md`](../command-boundaries.md), §3.3 (infrastructure-lifecycle phase contract)
