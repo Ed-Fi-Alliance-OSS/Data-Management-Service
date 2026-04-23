@@ -140,8 +140,12 @@ Soft dependency:
   auxiliary-lookup miss (no link); abstract reference with fully-defined FK (concrete `rel` and
   `href` via `ResourceKeyId`, no discriminator parsing); abstract reference with auxiliary-lookup
   miss (no link); GUID formatting (`D`-format, 36 characters, lowercase hex with hyphens); page
-  with multiple
-  references to the same target document (single auxiliary-map entry, both references resolve).
+  with multiple references to the same target document (single auxiliary-map entry, both
+  references resolve); child-table-hosted binding (source table is a collection or
+  nested-collection table keyed by `CollectionItemId` with `<Root>_DocumentId` as the root
+  locator) — asserts the auxiliary SQL joins through the binding table's root-document locator
+  column rather than assuming `DocumentId`, and that `link` is emitted on references inside
+  collection/nested-collection elements.
 - Feature-flag tests cover: flag on with fully-defined references (body carries `link`); flag off
   (body has no `link` on any reference and `_etag` reflects the link-free form); flag flip across
   a process restart (existing cached rows remain valid for freshness-check purposes, and `_etag`

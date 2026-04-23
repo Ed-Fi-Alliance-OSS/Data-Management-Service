@@ -168,13 +168,24 @@ SELECT d.DocumentId, d.DocumentUuid, d.ResourceKeyId
 FROM (
   SELECT t1.<FkColumn_1> AS DocumentId
   FROM <source_table_1> t1
-  INNER JOIN <keyset> ks ON t1.DocumentId = ks.DocumentId
+  INNER JOIN <keyset> ks ON t1.<RootDocumentIdColumn_1> = ks.DocumentId
   WHERE t1.<FkColumn_1> IS NOT NULL
   UNION
-  -- one branch per DocumentReferenceBinding FK column
+  -- one branch per DocumentReferenceBinding FK column; each branch joins its
+  -- source table to the page keyset via that table's RootDocumentIdColumn
 ) p
 INNER JOIN dms.Document d ON d.DocumentId = p.DocumentId;
 ```
+
+**Join column per branch.** Each UNION branch joins its source table back to the page keyset
+through that table's root-document locator column (`RootDocumentIdColumn` in the compiled
+read-plan table model — the same concept used by collection hydration at
+[flattening-reconstitution.md](flattening-reconstitution.md) §8). For root tables and
+root-scope extension tables this column is `DocumentId`; for core collection tables, nested
+collection tables, and extension child collection tables it is `<Root>_DocumentId` (e.g.,
+`School_DocumentId`). Link injection reads the join column directly off the binding's `Table`
+in the read model; it does not re-infer it from naming at query-build time, and there is no
+special-casing by table kind.
 
 This mirrors the descriptor URI projection pattern
 ([compiled-mapping-set.md](compiled-mapping-set.md) §4.3 step 6;
@@ -183,8 +194,10 @@ join — not a parameterized IN-list of FK values — so the auxiliary runs unde
 command and ambient transaction as the main hydration with no client-side FK collection, no
 second round-trip, and no parameter-cap sub-batching.
 
-**Boundary condition.** If every `..._DocumentId` FK on every page row is null, the inner UNION
-returns zero rows, the outer join returns zero rows, and the
+**Boundary condition.** If every `..._DocumentId` FK on every row joined back to any page
+document — across the root table, root-scope extension tables, and any collection, nested
+collection, or extension child collection attached to a page document — is null, the inner
+UNION returns zero rows, the outer join returns zero rows, and the
 `DocumentId → (DocumentUuid, ResourceKeyId)` map is empty. Every reference-writer lookup misses
 and `link` is suppressed via the gate in [Link Shape](#link-shape).
 
@@ -393,6 +406,11 @@ the `DocumentUuid`-stamping decision in particular has been made.
   matching the DMS `Location` header rendering.
 - Page with multiple references to the same target document → single auxiliary-map entry, both
   references resolve.
+- Child-table-hosted binding → binding `Table` is a collection or nested-collection table keyed
+  by `CollectionItemId` with `<Root>_DocumentId` as the root locator; the auxiliary SQL joins
+  through that `<Root>_DocumentId` column (not `DocumentId`), the UNION branch returns the
+  expected FK values, and `link` is emitted on references inside collection/nested-collection
+  elements.
 
 **Feature-flag tests:**
 
