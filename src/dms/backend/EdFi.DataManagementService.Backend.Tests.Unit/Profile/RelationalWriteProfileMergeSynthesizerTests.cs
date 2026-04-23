@@ -275,63 +275,6 @@ public class Given_ProfileSynthesizer_request_with_inconsistent_current_state_an
 }
 
 [TestFixture]
-public class Given_Synthesizer_SeparateTable_Contract_Rejects_CollectionCandidates_On_RootRow
-{
-    private Action _act = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var plan = BuildSingleScalarBindingRootPlan();
-        var body = new JsonObject();
-        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
-
-        var rootPlan = plan.TablePlansInDependencyOrder[0];
-        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
-        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
-        var collectionCandidate = new CollectionWriteCandidate(
-            tableWritePlan: collectionPlan,
-            ordinalPath: [0],
-            requestOrder: 0,
-            values:
-            [
-                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
-                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Physical"),
-            ],
-            semanticIdentityValues: ["Physical"]
-        );
-        var flattenedWriteSet = new FlattenedWriteSet(
-            new RootWriteRowBuffer(
-                rootPlan,
-                [new FlattenedWriteValue.Literal("Ada")],
-                collectionCandidates: [collectionCandidate]
-            )
-        );
-
-        _act = () =>
-            new RelationalWriteProfileMergeRequest(
-                writePlan: plan,
-                flattenedWriteSet: flattenedWriteSet,
-                writableRequestBody: body,
-                currentState: null,
-                profileRequest: request,
-                profileAppliedContext: null,
-                resolvedReferences: EmptyResolvedReferenceSet()
-            );
-    }
-
-    [Test]
-    public void It_throws_ArgumentException_about_root_level_collection_fence()
-    {
-        _act.Should()
-            .Throw<ArgumentException>()
-            .WithMessage("*root-level collection candidates*later slice*");
-    }
-}
-
-[TestFixture]
 public class Given_Synthesizer_SeparateTable_Contract_Rejects_CollectionCandidates_Under_RootExtensionRow
 {
     private Action _act = null!;
@@ -1790,4 +1733,1140 @@ public class Given_Synthesizer_SeparateTable_Update_With_ScopeRelative_KeyUnific
             .Value.Should()
             .Be(42);
     }
+}
+
+[TestFixture]
+public class Given_ProfileMergeRequest_with_nested_collection_candidates_under_top_level
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan();
+        var body = new JsonObject();
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
+        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
+
+        // A nested collection candidate hung under the top-level candidate.
+        var nestedCandidate = new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0, 0],
+            requestOrder: 0,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Physical"),
+            ],
+            semanticIdentityValues: ["Physical"]
+        );
+
+        var topLevelCandidate = new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Mailing"),
+            ],
+            semanticIdentityValues: ["Mailing"],
+            collectionCandidates: [nestedCandidate]
+        );
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal("Ada")],
+                collectionCandidates: [topLevelCandidate]
+            )
+        );
+
+        _act = () =>
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: flattenedWriteSet,
+                writableRequestBody: body,
+                currentState: null,
+                profileRequest: request,
+                profileAppliedContext: null,
+                resolvedReferences: EmptyResolvedReferenceSet()
+            );
+    }
+
+    [Test]
+    public void It_throws_ArgumentException_about_nested_collection_candidates()
+    {
+        _act.Should().Throw<ArgumentException>().WithMessage("*nested CollectionCandidates*Slice 5*");
+    }
+}
+
+[TestFixture]
+public class Given_ProfileMergeRequest_with_attached_aligned_scope_data_on_top_level_candidate
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan();
+        var body = new JsonObject();
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
+        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
+
+        // Build a CollectionExtensionScope plan via the shared fixture helper.
+        var alignedTableModel = AdapterFactoryTestFixtures.BuildCollectionExtensionScopeTableModel();
+        var alignedPlan = AdapterFactoryTestFixtures.BuildCollectionExtensionScopeTableWritePlan(
+            alignedTableModel
+        );
+
+        var attachedAlignedScope = new CandidateAttachedAlignedScopeData(
+            tableWritePlan: alignedPlan,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(null),
+            ]
+        );
+
+        var topLevelCandidate = new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Physical"),
+            ],
+            semanticIdentityValues: ["Physical"],
+            attachedAlignedScopeData: [attachedAlignedScope]
+        );
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal("Ada")],
+                collectionCandidates: [topLevelCandidate]
+            )
+        );
+
+        _act = () =>
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: flattenedWriteSet,
+                writableRequestBody: body,
+                currentState: null,
+                profileRequest: request,
+                profileAppliedContext: null,
+                resolvedReferences: EmptyResolvedReferenceSet()
+            );
+    }
+
+    [Test]
+    public void It_throws_ArgumentException_about_attached_aligned_scope_data()
+    {
+        _act.Should().Throw<ArgumentException>().WithMessage("*AttachedAlignedScopeData*Slice 5*");
+    }
+}
+
+[TestFixture]
+public class Given_ProfileMergeRequest_still_rejects_collection_candidate_under_root_extension_row
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan();
+        var body = new JsonObject();
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
+        var extensionPlan = AdapterFactoryTestFixtures.BuildRootExtensionTableWritePlan(extensionTableModel);
+
+        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
+        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
+        var nestedCollectionCandidate = new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Physical"),
+            ],
+            semanticIdentityValues: ["Physical"]
+        );
+
+        var extensionRow = new RootExtensionWriteRowBuffer(
+            extensionPlan,
+            [new FlattenedWriteValue.Literal(null), new FlattenedWriteValue.Literal("Blue")],
+            collectionCandidates: [nestedCollectionCandidate]
+        );
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal("Ada")],
+                rootExtensionRows: [extensionRow]
+            )
+        );
+
+        _act = () =>
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: flattenedWriteSet,
+                writableRequestBody: body,
+                currentState: null,
+                profileRequest: request,
+                profileAppliedContext: null,
+                resolvedReferences: EmptyResolvedReferenceSet()
+            );
+    }
+
+    [Test]
+    public void It_throws_ArgumentException_about_nested_collection_fence_under_root_extension_row()
+    {
+        _act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*collection candidates nested under root-extension*later slice*");
+    }
+}
+
+[TestFixture]
+public class Given_ProfileMergeRequest_with_non_collection_root_candidate_still_rejects
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan();
+        var body = new JsonObject();
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        // ExtensionCollection is the non-base-Collection kind that CollectionWriteCandidate
+        // still accepts but the Slice 4 profile merge gate must fence.
+        var extCollectionTableModel = AdapterFactoryTestFixtures.BuildExtensionCollectionTableModel();
+        var extCollectionPlan = AdapterFactoryTestFixtures.BuildExtensionCollectionCandidateTableWritePlan(
+            extCollectionTableModel
+        );
+        var candidate = new CollectionWriteCandidate(
+            tableWritePlan: extCollectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Code1"),
+            ],
+            semanticIdentityValues: ["Code1"]
+        );
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal("Ada")],
+                collectionCandidates: [candidate]
+            )
+        );
+
+        _act = () =>
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: flattenedWriteSet,
+                writableRequestBody: body,
+                currentState: null,
+                profileRequest: request,
+                profileAppliedContext: null,
+                resolvedReferences: EmptyResolvedReferenceSet()
+            );
+    }
+
+    [Test]
+    public void It_throws_ArgumentException_about_non_collection_table_kind()
+    {
+        _act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*DbTableKind.Collection*root-attached base collection*");
+    }
+}
+
+[TestFixture]
+public class Given_ProfileMergeRequest_with_top_level_base_collection_candidate
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan();
+        var body = new JsonObject();
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
+        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
+        var collectionCandidate = new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Physical"),
+            ],
+            semanticIdentityValues: ["Physical"]
+        );
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal("Ada")],
+                collectionCandidates: [collectionCandidate]
+            )
+        );
+
+        _act = () =>
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: flattenedWriteSet,
+                writableRequestBody: body,
+                currentState: null,
+                profileRequest: request,
+                profileAppliedContext: null,
+                resolvedReferences: EmptyResolvedReferenceSet()
+            );
+    }
+
+    [Test]
+    public void It_does_not_throw()
+    {
+        // Root-attached base Collection candidate with no nesting or attached-aligned scope passes the Slice 4 gate.
+        _act.Should().NotThrow();
+    }
+}
+
+// ── Slice 4 top-level collection synthesizer fixtures ──────────────────────────
+//
+// These fixtures exercise the full synthesizer path for top-level collection candidates
+// on the root row.  The collection table layout produced by
+// Slice4Builders.MinimalCollectionTableWritePlan is:
+//   [0] CollectionItemId  (Precomputed)  — StableRowIdentityBindingIndex = 0
+//   [1] ParentDocumentId  (DocumentId)   — parent key (not ParentKeyPart, so no rewrite)
+//   [2] Ordinal           (Ordinal)      — OrdinalBindingIndex = 2
+//   [3] IdentityField0    (Scalar)       — SemanticIdentityBinding 0, binding index 3
+
+/// <summary>
+/// Local helpers for Slice-4 synthesizer fixtures. Shared between fixtures in this file.
+/// Candidates, stored rows, and request items use the "$.addresses[*]" scope with a single
+/// identity field "$.identityField0".
+/// </summary>
+internal static class CollectionSynthesizerBuilders
+{
+    public const string CollectionScope = "$.addresses[*]";
+    public const string IdentityPath = "$.identityField0";
+
+    // ── Canonical identity builders ────────────────────────────────────────
+
+    public static ImmutableArray<SemanticIdentityPart> Identity(string value) =>
+        [new SemanticIdentityPart(IdentityPath, JsonValue.Create(value), IsPresent: true)];
+
+    // ── Write-plan / flattened-write-set builders ──────────────────────────
+
+    /// <summary>
+    /// Builds a two-table ResourceWritePlan: [0] root, [1] collection table at
+    /// <see cref="CollectionScope"/> with a single identity column.
+    /// </summary>
+    public static (ResourceWritePlan Plan, TableWritePlan CollectionPlan) BuildRootAndCollectionPlan()
+    {
+        var collectionPlan = Slice4Builders.MinimalCollectionTableWritePlan(CollectionScope, 1);
+        var rootPlan = BuildMinimalRootPlan();
+
+        var resourceWritePlan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "Address"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder: [rootPlan.TableModel, collectionPlan.TableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, collectionPlan]
+        );
+        return (resourceWritePlan, collectionPlan);
+    }
+
+    /// <summary>
+    /// Builds a minimal root table plan: [0] DocumentId (DocumentId).
+    /// </summary>
+    private static TableWritePlan BuildMinimalRootPlan()
+    {
+        var docIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var rootTableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "Address"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                "PK_Address",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [docIdColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+        return new TableWritePlan(
+            TableModel: rootTableModel,
+            InsertSql: "INSERT INTO edfi.\"Address\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 1, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(docIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    /// <summary>
+    /// Builds a CollectionWriteCandidate at the given array position with the given identity value.
+    /// All values default to Literal(null) except index 3 (the identity field).
+    /// </summary>
+    public static CollectionWriteCandidate BuildCandidate(
+        TableWritePlan collectionPlan,
+        string identityValue,
+        int requestOrder
+    )
+    {
+        var values = new FlattenedWriteValue[collectionPlan.ColumnBindings.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = new FlattenedWriteValue.Literal(null);
+        }
+        // Stamp the identity field value at index 3
+        values[3] = new FlattenedWriteValue.Literal(identityValue);
+
+        return new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [requestOrder],
+            requestOrder: requestOrder,
+            values: values,
+            semanticIdentityValues: [identityValue]
+        );
+    }
+
+    /// <summary>
+    /// Builds the FlattenedWriteSet with a root row (single DocumentId literal) and the
+    /// supplied collection candidates.
+    /// </summary>
+    public static FlattenedWriteSet BuildFlattenedWriteSet(
+        TableWritePlan rootPlan,
+        ImmutableArray<CollectionWriteCandidate> candidates,
+        long documentId = 345L
+    )
+    {
+        var rootValues = new FlattenedWriteValue[] { new FlattenedWriteValue.Literal(documentId) };
+        return new FlattenedWriteSet(
+            new RootWriteRowBuffer(rootPlan, rootValues, collectionCandidates: candidates)
+        );
+    }
+
+    /// <summary>
+    /// Builds a VisibleRequestCollectionItem for a given identity value at the given array position.
+    /// </summary>
+    public static VisibleRequestCollectionItem BuildRequestItem(
+        string identityValue,
+        bool creatable,
+        int arrayIndex
+    ) =>
+        new(
+            new CollectionRowAddress(
+                CollectionScope,
+                new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
+                Identity(identityValue)
+            ),
+            creatable,
+            $"$.addresses[{arrayIndex}]"
+        );
+
+    /// <summary>
+    /// Builds a VisibleStoredCollectionRow for a given identity value.
+    /// </summary>
+    public static VisibleStoredCollectionRow BuildStoredRow(
+        string identityValue,
+        ImmutableArray<string>? hiddenMemberPaths = null
+    ) =>
+        new(
+            new CollectionRowAddress(
+                CollectionScope,
+                new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
+                Identity(identityValue)
+            ),
+            hiddenMemberPaths ?? ImmutableArray<string>.Empty
+        );
+
+    /// <summary>
+    /// Builds a ProfileAppliedWriteRequest with request-scope states and the supplied
+    /// collection items.
+    /// </summary>
+    public static ProfileAppliedWriteRequest BuildRequest(
+        JsonNode writableBody,
+        ImmutableArray<VisibleRequestCollectionItem> collectionItems,
+        bool rootResourceCreatable = true
+    ) =>
+        new(
+            writableBody,
+            rootResourceCreatable,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    rootResourceCreatable
+                ),
+            ],
+            collectionItems
+        );
+
+    /// <summary>
+    /// Builds a ProfileAppliedWriteContext with the supplied visible stored collection rows.
+    /// No StoredScopeStates are included for root-scope — the minimal root table used in
+    /// these fixtures has only a DocumentId binding (StorageManaged), which would fail the
+    /// classifier's stored-scope drift check if a root stored scope state were present.
+    /// The synthesizer's root-table classification only validates stored scopes that have
+    /// ordinary (non-StorageManaged) bindings, so omitting the root stored scope is safe for
+    /// these collection-only fixtures.
+    /// </summary>
+    public static ProfileAppliedWriteContext BuildContext(
+        ProfileAppliedWriteRequest request,
+        ImmutableArray<VisibleStoredCollectionRow> storedRows
+    ) => new(request, new JsonObject(), ImmutableArray<StoredScopeState>.Empty, storedRows);
+
+    /// <summary>
+    /// Builds a RelationalWriteCurrentState with a root row and optional collection rows.
+    /// Collection rows are: [0]=CollectionItemId, [1]=ParentDocumentId, [2]=Ordinal, [3]=IdentityField0.
+    /// </summary>
+    public static RelationalWriteCurrentState BuildCurrentState(
+        TableWritePlan rootPlan,
+        TableWritePlan collectionPlan,
+        long documentId,
+        IReadOnlyList<object?[]>? collectionRows = null
+    ) =>
+        new(
+            new DocumentMetadataRow(
+                DocumentId: documentId,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [documentId],
+                    ]
+                ),
+                new HydratedTableRows(collectionPlan.TableModel, collectionRows ?? []),
+            ],
+            []
+        );
+}
+
+// ------------------------------------------------------------------------
+// Slice 4 top-level collection synthesizer fixtures (DMS-1124 Task 2.7).
+//
+// Two fixtures from the spec are intentionally deferred:
+//
+// 1. KU-in-collection disagreement propagates as RelationalWriteRequestValidationException.
+//    The current test harness has no helper for a key-unification-enabled collection
+//    write plan. This fixture is deferred until the overlay tests or the Checkpoint 3
+//    integration tests land that capability. The underlying key-unification path is
+//    exercised by ProfileKeyUnificationCoreTests + ProfileTopLevelCollectionMatchedRowOverlayTests.
+//
+// 2. Emission-layer defense-in-depth shape fence (nested candidates / attached-aligned /
+//    root-extension-buffer). The constructor gate on RelationalWriteProfileMergeRequest
+//    already rejects these shapes — reaching the emission-layer throws requires bypassing
+//    the constructor. Coverage of the constructor gate is in:
+//      - Given_ProfileMergeRequest_with_nested_collection_candidates_under_top_level
+//      - Given_ProfileMergeRequest_with_attached_aligned_scope_data_on_top_level_candidate
+//      - Given_ProfileMergeRequest_still_rejects_collection_candidate_under_root_extension_row
+//    The emission-layer fence is kept as defense-in-depth per spec Section 4.3.
+// ------------------------------------------------------------------------
+
+/// <summary>
+/// Fixture 5: create-new path (null context + currentState), all-insert scenario.
+/// Two visible request items, both Creatable=true. Expects two merged rows with ordinals 1, 2.
+/// </summary>
+[TestFixture]
+public class Given_Synthesize_top_level_collection_create_new_with_all_inserts
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["identityField0"] = "V1" },
+                new JsonObject { ["identityField0"] = "V2" }
+            ),
+        };
+
+        var candidate0 = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V1", 0);
+        var candidate1 = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V2", 1);
+
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("V1", creatable: true, arrayIndex: 0),
+            CollectionSynthesizerBuilders.BuildRequestItem("V2", creatable: true, arrayIndex: 1)
+        );
+
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(
+            rootPlan,
+            [candidate0, candidate1]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: null,
+                    profileRequest: request,
+                    profileAppliedContext: null,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_has_two_table_states() =>
+        _outcome.MergeResult!.TablesInDependencyOrder.Length.Should().Be(2);
+
+    [Test]
+    public void It_emits_two_merged_collection_rows() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(2);
+
+    [Test]
+    public void It_stamps_ordinal_1_on_first_row()
+    {
+        var ordinal = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[2];
+        ordinal.Value.Should().Be(1);
+    }
+
+    [Test]
+    public void It_stamps_ordinal_2_on_second_row()
+    {
+        var ordinal = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[1].Values[2];
+        ordinal.Value.Should().Be(2);
+    }
+
+    [Test]
+    public void It_carries_identity_value_on_first_row()
+    {
+        var identity = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[3];
+        identity.Value.Should().Be("V1");
+    }
+
+    [Test]
+    public void It_carries_identity_value_on_second_row()
+    {
+        var identity = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[1].Values[3];
+        identity.Value.Should().Be("V2");
+    }
+
+    [Test]
+    public void It_has_no_current_collection_rows() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Should().BeEmpty();
+}
+
+/// <summary>
+/// Fixture 2: creatability rejection propagates. One unmatched non-creatable insert.
+/// Expects ProfileMergeOutcome.Reject with ProfileCreatabilityRejection naming the collection scope.
+/// </summary>
+[TestFixture]
+public class Given_Synthesize_top_level_collection_CreatabilityRejection_propagates
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(new JsonObject { ["identityField0"] = "NEW1" }),
+        };
+
+        // One new candidate; not creatable → planner must reject.
+        var candidate = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "NEW1", 0);
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("NEW1", creatable: false, arrayIndex: 0)
+        );
+
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(rootPlan, [candidate]);
+
+        // Existing document: stored rows empty for the collection (no match found → insert → rejected).
+        var context = CollectionSynthesizerBuilders.BuildContext(
+            request,
+            ImmutableArray<VisibleStoredCollectionRow>.Empty
+        );
+        var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId: 345L,
+            collectionRows: []
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_a_rejection() => _outcome.IsRejection.Should().BeTrue();
+
+    [Test]
+    public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
+
+    [Test]
+    public void It_identifies_the_collection_scope()
+    {
+        _outcome
+            .CreatabilityRejection!.ScopeJsonScope.Should()
+            .Be(CollectionSynthesizerBuilders.CollectionScope);
+    }
+}
+
+/// <summary>
+/// Fixture 1: existing document happy path with matched + hidden + insert rows.
+/// Stored state: [V1, H, V2]. Request: [V1', V2', NEW1] all creatable.
+/// Expects Success with merged rows in Section-D order [V1_upd, H, V2_upd, NEW1], ordinals 1..4.
+/// </summary>
+[TestFixture]
+public class Given_Synthesize_top_level_collection_with_matched_and_hidden_and_insert
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        const long documentId = 345L;
+
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["identityField0"] = "V1" },
+                new JsonObject { ["identityField0"] = "V2" },
+                new JsonObject { ["identityField0"] = "NEW1" }
+            ),
+        };
+
+        // Candidates: V1 at [0], V2 at [1], NEW1 at [2].
+        var candidateV1 = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V1", 0);
+        var candidateV2 = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V2", 1);
+        var candidateNew1 = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "NEW1", 2);
+
+        // Request items: V1, V2, NEW1 all creatable.
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("V1", creatable: true, arrayIndex: 0),
+            CollectionSynthesizerBuilders.BuildRequestItem("V2", creatable: true, arrayIndex: 1),
+            CollectionSynthesizerBuilders.BuildRequestItem("NEW1", creatable: true, arrayIndex: 2)
+        );
+
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+
+        // Stored rows: V1 at ordinal 1 (visible), H at ordinal 2 (hidden), V2 at ordinal 3 (visible).
+        // Visible stored rows: V1 and V2 (H is not in VisibleStoredCollectionRows).
+        var storedRowV1 = CollectionSynthesizerBuilders.BuildStoredRow("V1");
+        var storedRowV2 = CollectionSynthesizerBuilders.BuildStoredRow("V2");
+        var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1, storedRowV2]);
+
+        // Current DB rows: CollectionItemId, ParentDocumentId, Ordinal, IdentityField0.
+        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
+        object?[] dbRowH = [20L, documentId, 2, "H"];
+        object?[] dbRowV2 = [30L, documentId, 3, "V2"];
+
+        var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId,
+            [dbRowV1, dbRowH, dbRowV2]
+        );
+
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(
+            rootPlan,
+            [candidateV1, candidateV2, candidateNew1],
+            documentId
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_emits_four_merged_collection_rows() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(4);
+
+    [Test]
+    public void It_stamps_ordinals_1_through_4()
+    {
+        var mergedRows = _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows;
+        for (var i = 0; i < 4; i++)
+        {
+            var ordinal = (FlattenedWriteValue.Literal)mergedRows[i].Values[2];
+            ordinal.Value.Should().Be(i + 1, $"row {i} should have ordinal {i + 1}");
+        }
+    }
+
+    [Test]
+    public void It_preserves_hidden_row_identity_field()
+    {
+        // The hidden row H is at position 2 (ordinal 2, 0-based index 1 in the sequence).
+        // Planner Section-D interleaves hidden rows in their original ordinal position.
+        var mergedRows = _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows;
+        // Find the row with identity "H"
+        var hiddenRow = mergedRows.FirstOrDefault(r =>
+            r.Values[3] is FlattenedWriteValue.Literal lit && lit.Value?.Equals("H") == true
+        );
+        hiddenRow.Should().NotBeNull("the hidden row H must be preserved");
+    }
+
+    [Test]
+    public void It_has_three_current_collection_rows() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(3);
+}
+
+/// <summary>
+/// Fixture 6: multi-scope short-circuit — two top-level scopes where the first scope's
+/// non-creatable unmatched insert causes rejection; the second scope is never synthesized.
+/// Since the synthesizer groups by scope (each scope iterates a single table), we simulate
+/// by having one collection scope with a non-creatable insert.  The rejection short-circuits
+/// the synthesizer before it emits any table state.
+/// </summary>
+[TestFixture]
+public class Given_Synthesize_top_level_collection_multi_scope_first_rejection_short_circuits_rest
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(new JsonObject { ["identityField0"] = "NEWBAD" }),
+        };
+
+        // One candidate, not creatable → planner rejects.
+        var candidate = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "NEWBAD", 0);
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("NEWBAD", creatable: false, arrayIndex: 0)
+        );
+
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(rootPlan, [candidate]);
+        var context = CollectionSynthesizerBuilders.BuildContext(
+            request,
+            ImmutableArray<VisibleStoredCollectionRow>.Empty
+        );
+        var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId: 345L,
+            collectionRows: []
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_a_rejection() => _outcome.IsRejection.Should().BeTrue();
+
+    [Test]
+    public void It_names_the_collection_scope_in_the_rejection()
+    {
+        _outcome
+            .CreatabilityRejection!.ScopeJsonScope.Should()
+            .Be(CollectionSynthesizerBuilders.CollectionScope);
+    }
+
+    [Test]
+    public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
+}
+
+/// <summary>
+/// Blocker #1 regression pin: omitted-visible rows must appear in CurrentRows.
+/// Stored state: [V1, V2] both visible. Request provides only V1 (V2 is omitted).
+/// Planner: V1 → MatchedUpdate (in Sequence), V2 → omitted (not in Sequence).
+/// Fix: CurrentRows must contain both V1 and V2 so the persister can delete V2
+/// by absence (V2 in CurrentRows, not in MergedRows → delete).
+/// </summary>
+[TestFixture]
+public class Given_Synthesize_top_level_collection_omitted_visible_row_appears_in_CurrentRows
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        const long documentId = 345L;
+
+        // Request body has only V1 (V2 is omitted — not sent by the caller).
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(new JsonObject { ["identityField0"] = "V1" }),
+        };
+
+        // One candidate: V1 at request order 0.
+        var candidateV1 = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V1", 0);
+
+        // One visible request item: V1 (creatable so no rejection).
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("V1", creatable: true, arrayIndex: 0)
+        );
+
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+
+        // Stored visible rows: V1 and V2 (both visible in the stored profile context).
+        var storedRowV1 = CollectionSynthesizerBuilders.BuildStoredRow("V1");
+        var storedRowV2 = CollectionSynthesizerBuilders.BuildStoredRow("V2");
+        var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1, storedRowV2]);
+
+        // Current DB rows: V1 at ordinal 1, V2 at ordinal 2.
+        // [0]=CollectionItemId, [1]=ParentDocumentId, [2]=Ordinal, [3]=IdentityField0
+        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
+        object?[] dbRowV2 = [20L, documentId, 2, "V2"];
+
+        var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId,
+            [dbRowV1, dbRowV2]
+        );
+
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(
+            rootPlan,
+            [candidateV1],
+            documentId
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_emits_one_merged_collection_row_V1_only() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    [Test]
+    public void It_carries_V1_identity_in_merged_row()
+    {
+        var identity = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[3];
+        identity.Value.Should().Be("V1");
+    }
+
+    [Test]
+    public void It_has_two_current_rows_so_persister_can_delete_V2_by_absence() =>
+        // BLOCKER #1 KEY ASSERTION: both V1 and V2 must be in CurrentRows even though
+        // V2 is absent from MergedRows. The persister detects V2's delete by set-difference.
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(2);
+}
+
+/// <summary>
+/// Blocker #2 regression pin: stored-only delete-all-visible scope must be driven even
+/// when the request-side has NO collection candidates for this scope.
+/// Stored state: [V1, H, V2] where V1/V2 are visible and H is hidden. Request has NO
+/// collection candidates for this scope (CollectionCandidates is empty). The synthesizer
+/// must still enter the scope because stored/current rows exist, preserve H, and surface
+/// all three DB rows in CurrentRows so the persister can delete V1 and V2.
+/// </summary>
+[TestFixture]
+public class Given_Synthesize_top_level_collection_delete_all_visible_while_hidden_remains
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        const long documentId = 345L;
+
+        // Request body has the collection array absent / empty (no visible items submitted).
+        var body = new JsonObject { ["addresses"] = new JsonArray() };
+
+        // NO collection candidates in the flattened write set — the request is empty for
+        // this scope (triggering the Blocker #2 scenario).
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(
+            rootPlan,
+            ImmutableArray<CollectionWriteCandidate>.Empty,
+            documentId
+        );
+
+        // No visible request items for this scope.
+        var request = CollectionSynthesizerBuilders.BuildRequest(
+            body,
+            ImmutableArray<VisibleRequestCollectionItem>.Empty
+        );
+
+        // Stored visible rows: V1 and V2 (H is hidden — not in VisibleStoredCollectionRows).
+        var storedRowV1 = CollectionSynthesizerBuilders.BuildStoredRow("V1");
+        var storedRowV2 = CollectionSynthesizerBuilders.BuildStoredRow("V2");
+        var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1, storedRowV2]);
+
+        // Current DB rows: V1 at ordinal 1, H at ordinal 2 (hidden), V2 at ordinal 3.
+        // [0]=CollectionItemId, [1]=ParentDocumentId, [2]=Ordinal, [3]=IdentityField0
+        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
+        object?[] dbRowH = [20L, documentId, 2, "H"];
+        object?[] dbRowV2 = [30L, documentId, 3, "V2"];
+
+        var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId,
+            [dbRowV1, dbRowH, dbRowV2]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_emits_only_the_hidden_H_row_in_merged_rows() =>
+        // BLOCKER #2 KEY ASSERTION: only H (the hidden row) must appear in MergedRows.
+        // V1 and V2 are absent (deleted by absence), even though the request had no
+        // collection candidates at all for this scope.
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    [Test]
+    public void It_carries_H_identity_in_the_single_merged_row()
+    {
+        var identity = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[3];
+        identity.Value.Should().Be("H");
+    }
+
+    [Test]
+    public void It_has_three_current_rows_so_persister_can_delete_V1_and_V2_by_absence() =>
+        // All three DB rows (V1, H, V2) must appear in CurrentRows so the persister can
+        // compute the set-difference: CurrentRows − MergedRows = {V1, V2} → delete both.
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(3);
 }

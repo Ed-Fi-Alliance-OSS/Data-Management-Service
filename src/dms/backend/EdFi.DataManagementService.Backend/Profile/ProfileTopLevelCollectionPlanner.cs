@@ -22,9 +22,128 @@ internal static class ProfileTopLevelCollectionPlanner
     public static ProfileTopLevelCollectionPlanResult Plan(ProfileTopLevelCollectionScopeInput input)
     {
         ValidateInvariants(input);
-        // Task 1.2 stub: return empty success until matching/sequencing land in Task 2.2 / Task 2.3.
+        return BuildMergedVisibleSequence(input);
+    }
+
+    /// <summary>
+    /// Builds the final sequenced plan via two logical phases described in spec Section 5.2.
+    ///
+    /// <para><b>Phase 1 — Build <c>mergedVisibleSequence</c> in request order.</b>
+    /// Walks <see cref="ProfileTopLevelCollectionScopeInput.VisibleRequestItems"/> in request array order.
+    /// For each item:
+    /// <list type="bullet">
+    ///   <item>Emits a <see cref="ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry"/> when the item's
+    ///   semantic identity matches a <see cref="CurrentCollectionRowSnapshot"/> (via the visible-stored index).</item>
+    ///   <item>Emits a <see cref="ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry"/> when unmatched and
+    ///   <see cref="VisibleRequestCollectionItem.Creatable"/> is <c>true</c>.</item>
+    ///   <item>Short-circuits with <see cref="ProfileTopLevelCollectionPlanResult.CreatabilityRejection"/> when
+    ///   unmatched and <see cref="VisibleRequestCollectionItem.Creatable"/> is <c>false</c>.</item>
+    /// </list></para>
+    ///
+    /// <para><b>Phase 2 — Walk <see cref="ProfileTopLevelCollectionScopeInput.CurrentRows"/> in stored-ordinal
+    /// order, interleaving hidden-preserves and consuming <c>mergedVisibleSequence</c> at visible slots.</b>
+    /// Hidden rows (not in the visible-stored index) are emitted as
+    /// <see cref="ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry"/>; visible slots consume the next
+    /// entry from <c>mergedVisibleSequence</c> in first-come-first-served order (matching the request's
+    /// reordering of visibles). Visible slots reached after the merged cursor is exhausted are omitted;
+    /// the persister's delete-by-absence mechanism handles their removal. Leftover merged entries
+    /// (new inserts beyond the previous visible count) are appended at the end after all current rows.</para>
+    /// </summary>
+    private static ProfileTopLevelCollectionPlanResult BuildMergedVisibleSequence(
+        ProfileTopLevelCollectionScopeInput input
+    )
+    {
+        // Build a lookup from semantic identity key → CurrentCollectionRowSnapshot, restricted to
+        // those rows that also appear in VisibleStoredRows. This is the "matched" set for this scope.
+        var visibleStoredKeys = input
+            .VisibleStoredRows.Select(r => BuildSemanticIdentityKey(r.Address.SemanticIdentityInOrder))
+            .ToHashSet();
+
+        // currentByIdentity was already validated in invariants; rebuild cheaply for the matching pass.
+        var matchedCurrentByIdentity = input
+            .CurrentRows.Where(r =>
+                visibleStoredKeys.Contains(BuildSemanticIdentityKey(r.SemanticIdentityInOrder))
+            )
+            .ToDictionary(r => BuildSemanticIdentityKey(r.SemanticIdentityInOrder));
+
+        // Build candidate lookup for retrieving the CollectionWriteCandidate per request item.
+        var candidateByIdentityKey = input.RequestCandidates.ToDictionary(BuildCandidateIdentityKey);
+
+        // Also build visible-stored lookup to retrieve HiddenMemberPaths per matched row.
+        var visibleStoredByIdentity = input.VisibleStoredRows.ToDictionary(r =>
+            BuildSemanticIdentityKey(r.Address.SemanticIdentityInOrder)
+        );
+
+        // Phase 1: build mergedVisibleSequence in request order.
+        var mergedVisibleSequence = new List<ProfileTopLevelCollectionPlanEntry>();
+
+        foreach (var visibleRequestItem in input.VisibleRequestItems)
+        {
+            var key = BuildSemanticIdentityKey(visibleRequestItem.Address.SemanticIdentityInOrder);
+
+            if (matchedCurrentByIdentity.TryGetValue(key, out var currentRow))
+            {
+                // Matched: visible request item maps to a visible stored row with a current snapshot.
+                var hiddenPaths = visibleStoredByIdentity[key].HiddenMemberPaths;
+                var candidate = candidateByIdentityKey[key];
+                mergedVisibleSequence.Add(
+                    new ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry(
+                        currentRow,
+                        candidate,
+                        hiddenPaths
+                    )
+                );
+            }
+            else if (visibleRequestItem.Creatable)
+            {
+                // Unmatched but creatable: new row to insert.
+                var candidate = candidateByIdentityKey[key];
+                mergedVisibleSequence.Add(
+                    new ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry(candidate)
+                );
+            }
+            else
+            {
+                // Unmatched and not creatable: reject immediately before Phase 2.
+                return new ProfileTopLevelCollectionPlanResult.CreatabilityRejection(
+                    visibleRequestItem.Address,
+                    $"Profile does not allow creating new collection items in scope '{input.JsonScope}'."
+                );
+            }
+        }
+
+        // Phase 2: walk current rows in stored-ordinal order, interleaving hidden-preserves
+        // and consuming mergedVisibleSequence at visible slots. See spec Section 5.2.
+        var output = new List<ProfileTopLevelCollectionPlanEntry>(
+            capacity: input.CurrentRows.Length + mergedVisibleSequence.Count
+        );
+        var mergedCursor = 0;
+        foreach (var currentRow in input.CurrentRows)
+        {
+            var currentKey = BuildSemanticIdentityKey(currentRow.SemanticIdentityInOrder);
+            if (!visibleStoredByIdentity.ContainsKey(currentKey))
+            {
+                // Hidden slot: preserve verbatim.
+                output.Add(new ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry(currentRow));
+            }
+            else if (mergedCursor < mergedVisibleSequence.Count)
+            {
+                // Visible slot: consume next merged-visible entry in request order.
+                output.Add(mergedVisibleSequence[mergedCursor]);
+                mergedCursor++;
+            }
+            // else: visible slot with no merged entry to consume → omitted, persister deletes by absence.
+        }
+
+        // Append any leftover merged entries (new inserts beyond previous visible count).
+        while (mergedCursor < mergedVisibleSequence.Count)
+        {
+            output.Add(mergedVisibleSequence[mergedCursor]);
+            mergedCursor++;
+        }
+
         return new ProfileTopLevelCollectionPlanResult.Success(
-            new ProfileTopLevelCollectionPlan(ImmutableArray<ProfileTopLevelCollectionPlanEntry>.Empty)
+            new ProfileTopLevelCollectionPlan(output.ToImmutableArray())
         );
     }
 
@@ -296,7 +415,7 @@ internal static class ProfileTopLevelCollectionPlanner
     {
         foreach (var identity in input.VisibleRequestItems.Select(i => i.Address.SemanticIdentityInOrder))
         {
-            var candidateKey = BuildAddressAsCandidateKey(identity);
+            var candidateKey = BuildSemanticIdentityKey(identity);
             if (!candidatesByIdentityKey.ContainsKey(candidateKey))
             {
                 throw new InvalidOperationException(
@@ -313,7 +432,7 @@ internal static class ProfileTopLevelCollectionPlanner
     {
         // Build a set of address-side keys from VisibleRequestItems for O(1) lookup.
         var visibleRequestKeys = input
-            .VisibleRequestItems.Select(i => BuildAddressAsCandidateKey(i.Address.SemanticIdentityInOrder))
+            .VisibleRequestItems.Select(i => BuildSemanticIdentityKey(i.Address.SemanticIdentityInOrder))
             .ToHashSet();
 
         foreach (var candidate in input.RequestCandidates)
@@ -341,7 +460,7 @@ internal static class ProfileTopLevelCollectionPlanner
         var lastRequestOrder = int.MinValue;
         foreach (var address in input.VisibleRequestItems.Select(i => i.Address))
         {
-            var candidateKey = BuildAddressAsCandidateKey(address.SemanticIdentityInOrder);
+            var candidateKey = BuildSemanticIdentityKey(address.SemanticIdentityInOrder);
             var candidate = candidatesByIdentityKey[candidateKey];
             if (candidate.RequestOrder <= lastRequestOrder)
             {
@@ -386,14 +505,6 @@ internal static class ProfileTopLevelCollectionPlanner
     /// </summary>
     private static string FormatCandidateIdentity(CollectionWriteCandidate candidate) =>
         BuildCandidateIdentityKey(candidate);
-
-    /// <summary>
-    /// Builds a candidate-compatible key from a visible-request-item's
-    /// <see cref="SemanticIdentityPart"/> array by serializing each part's value the same way
-    /// <see cref="BuildCandidateIdentityKey"/> serializes candidate values.
-    /// </summary>
-    private static string BuildAddressAsCandidateKey(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join("|", identity.Select(p => p.Value?.ToJsonString() ?? "null"));
 
     /// <summary>
     /// Formats a semantic identity into a human-readable diagnostics string
