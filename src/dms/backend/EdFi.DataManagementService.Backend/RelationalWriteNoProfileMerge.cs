@@ -229,54 +229,32 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         IReadOnlyList<FlattenedWriteValue> values
     )
     {
-        var comparableValues = RelationalWriteMergeSupport.ProjectComparableValues(tableWritePlan, values);
+        var row = RelationalWriteRowHelpers.CreateMergedTableRow(tableWritePlan, values);
 
-        return new MergedRow(tableWritePlan, new RelationalWriteMergedTableRow(values, comparableValues));
+        return new MergedRow(tableWritePlan, row);
     }
 
     private static ImmutableArray<FlattenedWriteValue> RewriteParentKeyPartValues(
         TableWritePlan tableWritePlan,
         IReadOnlyList<FlattenedWriteValue> values,
         IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues
-    )
-    {
-        FlattenedWriteValue[] rewrittenValues = [.. values];
-
-        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
-        {
-            if (
-                tableWritePlan.ColumnBindings[bindingIndex].Source
-                is not WriteValueSource.ParentKeyPart parentKeyPart
-            )
-            {
-                continue;
-            }
-
-            rewrittenValues[bindingIndex] = parentPhysicalRowIdentityValues[parentKeyPart.Index];
-        }
-
-        return rewrittenValues.ToImmutableArray();
-    }
+    ) =>
+        RelationalWriteRowHelpers.RewriteParentKeyPartValues(
+            tableWritePlan,
+            values,
+            parentPhysicalRowIdentityValues
+        );
 
     private static ImmutableArray<FlattenedWriteValue> RewriteCollectionStableRowIdentity(
         TableWritePlan tableWritePlan,
         IReadOnlyList<FlattenedWriteValue> values,
-        IReadOnlyList<FlattenedWriteValue> currentValues
-    )
-    {
-        var mergePlan =
-            tableWritePlan.CollectionMergePlan
-            ?? throw new InvalidOperationException(
-                $"Collection table '{FormatTable(tableWritePlan)}' does not have a compiled collection merge plan."
-            );
-
-        FlattenedWriteValue[] rewrittenValues = [.. values];
-        rewrittenValues[mergePlan.StableRowIdentityBindingIndex] = currentValues[
-            mergePlan.StableRowIdentityBindingIndex
-        ];
-
-        return rewrittenValues.ToImmutableArray();
-    }
+        IReadOnlyList<FlattenedWriteValue> matchedCurrentRowValues
+    ) =>
+        RelationalWriteRowHelpers.RewriteCollectionStableRowIdentity(
+            tableWritePlan,
+            values,
+            matchedCurrentRowValues
+        );
 
     private static ImmutableArray<FlattenedWriteValue> ExtractPhysicalRowIdentityValues(
         TableWritePlan tableWritePlan,
