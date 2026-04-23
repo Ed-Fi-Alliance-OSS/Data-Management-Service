@@ -27,34 +27,34 @@ or deliberately ignore them; this section is reference material, not a required 
 
 ```
 Phase 1: ENVIRONMENT SETUP
-  └─ Load modules/scripts, resolve paths across repos, detect platform
+  -> Load modules/scripts, resolve paths across repos, detect platform
 
 Phase 2: CONFIGURATION
-  └─ Assemble settings from: parameters → config files → defaults → plugins
-  └─ Generate environment-specific config files (e.g., appsettings.Development.json)
-  └─ Generate secrets (API keys, encryption keys, signing keys)
+  -> Assemble settings from: parameters -> config files -> defaults -> plugins
+  -> Generate environment-specific config files (e.g., appsettings.Development.json)
+  -> Generate secrets (API keys, encryption keys, signing keys)
 
 Phase 3: CODE GENERATION (if applicable)
-  └─ Run any code generators that produce source from data models/schemas
+  -> Run any code generators that produce source from data models/schemas
 
 Phase 4: BUILD
-  └─ Compile the solution / build artifacts
+  -> Compile the solution / build artifacts
 
 Phase 5: TOOL INSTALLATION
-  └─ Install CLI tools needed for database migrations, bulk loading, etc.
+  -> Install CLI tools needed for database migrations, bulk loading, etc.
 
 Phase 6: DATABASE PROVISIONING
-  └─ For each database type (Admin, Security, ODS, etc.):
-       Backup (if exists + pending changes) → Drop → Create → Migrate
-  └─ Varies by install type (single DB vs per-tenant vs per-token)
-  └─ Varies by engine (SQL Server vs PostgreSQL vs other)
+  -> For each database type (Admin, Security, ODS, etc.):
+       Backup (if exists + pending changes) -> Drop -> Create -> Migrate
+  -> Varies by install type (single DB vs per-tenant vs per-token)
+  -> Varies by engine (SQL Server vs PostgreSQL vs other)
 
 Phase 7: DATA SEEDING (if applicable)
-  └─ Load bootstrap/sample data into template databases
-  └─ May require starting an API host to load data through the API
+  -> Load bootstrap/sample data into template databases
+  -> May require starting an API host to load data through the API
 
 Phase 8: VERIFICATION (optional)
-  └─ Run unit tests, integration tests, smoke tests, SDK generation
+  -> Run unit tests, integration tests, smoke tests, SDK generation
 ```
 
 ### Design Principles Embedded in ODS InitDev
@@ -65,7 +65,7 @@ Phase 8: VERIFICATION (optional)
 | **Idempotent by default** | Drop-and-recreate databases, overwrite config files | Running twice produces the same result |
 | **Opt-in complexity** | Tests, plugins, multi-tenancy are all off by default | Fast inner loop for most developers |
 | **Engine abstraction** | Strategy pattern for SQL Server vs PostgreSQL | Same command works regardless of backend |
-| **Settings cascade** | Parameters → config files → defaults, deep-merged | Override anything without editing files |
+| **Settings cascade** | Parameters -> config files -> defaults, deep-merged | Override anything without editing files |
 | **Task wrapper** | Every step wrapped in `Invoke-Task` with timing/errors | Consistent logging, easy to find failures |
 | **Skip flags** | `-NoRebuild`, `-NoDeploy`, `-ExcludeCodeGen` | Re-run partial pipeline after a failure |
 | **Extensibility via plugins** | Plugin scripts return package metadata, auto-discovered | Third parties extend without forking |
@@ -107,6 +107,7 @@ initdev                                        # runs the pipeline
 **File:** `Initialize-PowershellForDevelopment.ps1` (repo root)
 
 This script:
+
 1. Imports `logistics/scripts/modules/load-path-resolver.ps1` (cross-repo path resolution)
 2. Imports `logistics/scripts/modules/utility/cross-platform.psm1`
 3. On Windows: scans for Zone.Identifier-blocked files (`Find-BlockedFiles`)
@@ -150,23 +151,23 @@ Every step is wrapped in `Invoke-Task` (from `logistics/scripts/modules/tasks/Ta
 
 ```
 Step  Function                              Condition           Module Source
-────  ────────────────────────────────────  ──────────────────  ─────────────────────────
+----  ------------------------------------  ------------------  -------------------------
  1    Clear-Error                           always              TaskHelper.psm1
  2    Set-DeploymentSettings                always              Deployment.psm1
  3    Merge plugin settings                 UsePlugins flag     settings-management.psm1
- 4    Invoke-NewDevelopmentAppSettings       always              local (→ settings-management)
+ 4    Invoke-NewDevelopmentAppSettings       always              local (-> settings-management)
  5    Install-Plugins                       UsePlugins flag     plugin-source.psm1
- 6    Invoke-CodeGen                        !ExcludeCodeGen     local (→ ToolsHelper)
- 7    Invoke-RebuildSolution                !NoRebuild          local (→ dotnet build)
- 8    Install-DbDeploy                      always              local (→ ToolsHelper)
- 9    Reset-TestAdminDatabase               always              local (→ database-lifecycle)
-10    Reset-TestSecurityDatabase            always              local (→ database-lifecycle)
-11    Reset-TestPopulatedTemplateDatabase   !NoDeploy           local (→ database-lifecycle)
+ 6    Invoke-CodeGen                        !ExcludeCodeGen     local (-> ToolsHelper)
+ 7    Invoke-RebuildSolution                !NoRebuild          local (-> dotnet build)
+ 8    Install-DbDeploy                      always              local (-> ToolsHelper)
+ 9    Reset-TestAdminDatabase               always              local (-> database-lifecycle)
+10    Reset-TestSecurityDatabase            always              local (-> database-lifecycle)
+11    Reset-TestPopulatedTemplateDatabase   !NoDeploy           local (-> database-lifecycle)
 12    Initialize-DeploymentEnvironment      !NoDeploy           Deployment.psm1
-13    Invoke-PesterTests                    RunPester           local (→ Pester)
-14    Invoke-DotnetTest                     RunDotnetTest       local (→ run-tests.ps1)
+13    Invoke-PesterTests                    RunPester           local (-> Pester)
+14    Invoke-DotnetTest                     RunDotnetTest       local (-> run-tests.ps1)
 15    Invoke-PostmanIntegrationTests        RunPostman          Invoke-PostmanIntegrationTests.ps1
-16    Invoke-SmokeTests                     RunSmokeTest        local (→ run-smoke-tests.ps1)
+16    Invoke-SmokeTests                     RunSmokeTest        local (-> run-smoke-tests.ps1)
 17    Invoke-SdkGen                         RunSdkGen           Invoke-SdkGen.ps1
 ```
 
@@ -181,6 +182,7 @@ Output: a `Format-Table` of task names and durations.
 **File:** `InstallerPackages/EdFi.RestApi.Databases/Deployment.psm1`
 
 Merges parameters into a settings hashtable through multiple layers:
+
 1. Caller parameters (InstallType, Engine, tokens, etc.)
 2. `configuration.packages.json` (NuGet package versions)
 3. Default connection strings per engine
@@ -191,9 +193,10 @@ The result is a single `$Settings` hashtable that flows through every subsequent
 
 ### Step 4: App Settings Generation (`Invoke-NewDevelopmentAppSettings`)
 
-**File:** `logistics/scripts/modules/settings/settings-management.psm1` → `New-DevelopmentAppSettings`
+**File:** `logistics/scripts/modules/settings/settings-management.psm1` -> `New-DevelopmentAppSettings`
 
 Generates `appsettings.Development.json` for each project:
+
 - `Application/EdFi.Ods.WebApi`
 - `Application/EdFi.Ods.SandboxAdmin`
 - `Application/EdFi.Ods.SwaggerUI`
@@ -227,29 +230,32 @@ Each creates a test-specific database (`Admin_Test`, `Security_Test`, `Populated
 This is the core database provisioning step. Behavior varies by install type:
 
 #### Sandbox Mode (default)
+
 ```
 1. Install-Plugins              (if configured)
-2. Reset-AdminDatabase          → EdFi_Admin
-3. Reset-SecurityDatabase       → EdFi_Security
-4. Remove-SandboxDatabases      → drop all Ods_Sandbox_*
-5. Reset-MinimalTemplateDatabase → EdFiMinimalTemplate
-6. Reset-PopulatedTemplateDatabase → EdFi_Ods (populated with sample data)
+2. Reset-AdminDatabase          -> EdFi_Admin
+3. Reset-SecurityDatabase       -> EdFi_Security
+4. Remove-SandboxDatabases      -> drop all Ods_Sandbox_*
+5. Reset-MinimalTemplateDatabase -> EdFiMinimalTemplate
+6. Reset-PopulatedTemplateDatabase -> EdFi_Ods (populated with sample data)
 ```
 
 #### SingleTenant Mode
+
 ```
 1. Install-Plugins
-2. Reset-AdminDatabase          → EdFi_Admin
-3. Reset-SecurityDatabase       → EdFi_Security
-4. Reset-OdsDatabase            → EdFi_Ods_{token} (per OdsToken)
+2. Reset-AdminDatabase          -> EdFi_Admin
+3. Reset-SecurityDatabase       -> EdFi_Security
+4. Reset-OdsDatabase            -> EdFi_Ods_{token} (per OdsToken)
 ```
 
 #### MultiTenant Mode
+
 ```
 For each tenant:
-  1. Reset-AdminDatabase        → EdFi_Admin_{tenant}
-  2. Reset-SecurityDatabase     → EdFi_Security_{tenant}
-  3. Reset-OdsDatabase          → EdFi_Ods_{tenant}_{token} (per token)
+  1. Reset-AdminDatabase        -> EdFi_Admin_{tenant}
+  2. Reset-SecurityDatabase     -> EdFi_Security_{tenant}
+  3. Reset-OdsDatabase          -> EdFi_Ods_{tenant}_{token} (per token)
 ```
 
 Each `Reset-*Database` call goes through the database lifecycle:
@@ -258,13 +264,14 @@ Each `Reset-*Database` call goes through the database lifecycle:
 
 ```
 Initialize-EdFiDatabase:
-  1. Backup   → (SQL Server only, if persistent + pending scripts)
-  2. Remove   → (if DropDatabases = true)
-  3. Create   → (restore from backup OR create new)
-  4. Script   → (run migrations via EdFi.Db.Deploy)
+  1. Backup   -> (SQL Server only, if persistent + pending scripts)
+  2. Remove   -> (if DropDatabases = true)
+  3. Create   -> (restore from backup OR create new)
+  4. Script   -> (run migrations via EdFi.Db.Deploy)
 ```
 
 Strategy selection is engine-specific:
+
 - **SQL Server:** Full backup/remove/create/script chain
 - **PostgreSQL:** No-op backup, custom remove/create, psql-based script
 - **Azure SQL:** Special create strategy, no backup
@@ -272,11 +279,12 @@ Strategy selection is engine-specific:
 ### Steps 13-17: Test Runners (All Optional)
 
 Each test step starts/stops infrastructure as needed:
+
 - **Pester:** Runs PowerShell unit tests
 - **DotnetTest:** Runs .NET integration tests via `logistics/scripts/run-tests.ps1`
-- **Postman:** Starts test harness → runs Newman → stops harness
-- **SmokeTest:** Starts test harness → runs smoke test client → stops harness
-- **SdkGen:** Starts test harness → generates SDK from metadata → stops harness
+- **Postman:** Starts test harness -> runs Newman -> stops harness
+- **SmokeTest:** Starts test harness -> runs smoke test client -> stops harness
+- **SdkGen:** Starts test harness -> generates SDK from metadata -> stops harness
 
 The test harness (`logistics/scripts/modules/TestHarness.psm1`) is an in-memory API host. It starts the `EdFi.Ods.Api.IntegrationTestHarness` project and polls until ready.
 
@@ -286,33 +294,33 @@ The test harness (`logistics/scripts/modules/TestHarness.psm1`) is an in-memory 
 
 ```
 InitializeDevelopmentEnvironment.psm1
- │
- ├── settings-management.psm1          — settings cascade, defaults, feature flags
- │    ├── key-management.psm1          — AES key generation
- │    └── public-private-key-pair.psm1 — RSA key pairs for JWT
- │
- ├── Deployment.psm1                   — deployment orchestration
- │    ├── database-lifecycle.psm1      — backup/remove/create/script strategies
- │    │    ├── database-management.psm1     — SQL Server operations (SMO)
- │    │    ├── postgres-database-management.psm1 — PostgreSQL operations (psql/pg_dump)
- │    │    └── ToolsHelper.psm1        — .NET tool management, Invoke-DbDeploy
- │    ├── plugin-source.psm1           — plugin discovery and installation
- │    └── config-management.psm1       — database IDs, features, connection strings
- │
- ├── TaskHelper.psm1                   — task timing, error handling, TeamCity integration
- ├── hashtable.psm1                    — deep merge, flatten, clone utilities
- ├── path-resolver.psm1               — cross-repo path resolution
- │
- ├── create-minimal-template.psm1      — minimal template creation
- ├── create-populated-template.psm1    — populated template creation
- │    └── create-database-template.psm1 — shared template infrastructure
- │         ├── TestHarness.psm1        — test harness lifecycle
- │         └── LoadTools.psm1          — bulk load client, smoke tests
- │
- └── database-template-source.psm1     — template source resolution
-      ├── get-populated-from-nuget.ps1 — download template from NuGet
-      ├── get-populated-from-web.ps1   — download template from web
-      └── get-template-from-web.ps1    — generic template downloader
+ |
+ +-- settings-management.psm1          -- settings cascade, defaults, feature flags
+ |    +-- key-management.psm1          -- AES key generation
+ |    +-- public-private-key-pair.psm1 -- RSA key pairs for JWT
+ |
+ +-- Deployment.psm1                   -- deployment orchestration
+ |    +-- database-lifecycle.psm1      -- backup/remove/create/script strategies
+ |    |    +-- database-management.psm1     -- SQL Server operations (SMO)
+ |    |    +-- postgres-database-management.psm1 -- PostgreSQL operations (psql/pg_dump)
+ |    |    +-- ToolsHelper.psm1        -- .NET tool management, Invoke-DbDeploy
+ |    +-- plugin-source.psm1           -- plugin discovery and installation
+ |    +-- config-management.psm1       -- database IDs, features, connection strings
+ |
+ +-- TaskHelper.psm1                   -- task timing, error handling, TeamCity integration
+ +-- hashtable.psm1                    -- deep merge, flatten, clone utilities
+ +-- path-resolver.psm1               -- cross-repo path resolution
+ |
+ +-- create-minimal-template.psm1      -- minimal template creation
+ +-- create-populated-template.psm1    -- populated template creation
+ |    +-- create-database-template.psm1 -- shared template infrastructure
+ |         +-- TestHarness.psm1        -- test harness lifecycle
+ |         +-- LoadTools.psm1          -- bulk load client, smoke tests
+ |
+ +-- database-template-source.psm1     -- template source resolution
+      +-- get-populated-from-nuget.ps1 -- download template from NuGet
+      +-- get-populated-from-web.ps1   -- download template from web
+      +-- get-template-from-web.ps1    -- generic template downloader
 ```
 
 ---
@@ -328,6 +336,7 @@ InitializeDevelopmentEnvironment.psm1
 ### `configuration.packages.json` Structure
 
 Contains version pins for:
+
 - `EdFi.Suite3.Db.Deploy` (database migration tool)
 - `EdFi.Suite3.Ods.CodeGen` (code generator)
 - Database packages per engine and standard version (Admin, Security, ODS templates)
@@ -353,19 +362,22 @@ The entire pipeline abstracts over two engines. The `-Engine` parameter propagat
 ## Install Types Deep Dive
 
 ### Sandbox (Default)
+
 - Creates template databases that the SandboxAdmin app clones on-demand
-- `EdFiMinimalTemplate` → empty ODS schema
-- `EdFi_Ods` (populated) → sample data from GrandBend dataset
+- `EdFiMinimalTemplate` -> empty ODS schema
+- `EdFi_Ods` (populated) -> sample data from GrandBend dataset
 - Sandbox instances are named `Ods_Sandbox_{key}`
 
 ### SingleTenant
+
 - One Admin + Security database
 - N ODS databases, one per token (e.g., `EdFi_Ods_2024`, `EdFi_Ods_2025`)
 - No sandbox cloning
 
 ### MultiTenant
+
 - Per-tenant Admin + Security databases (`EdFi_Admin_{tenant}`, `EdFi_Security_{tenant}`)
-- Per-tenant × per-token ODS databases (`EdFi_Ods_{tenant}_{token}`)
+- Per-tenant x per-token ODS databases (`EdFi_Ods_{tenant}_{token}`)
 - Tenant configuration in `appsettings.Development.json` includes per-tenant connection strings
 
 ---
@@ -379,6 +391,7 @@ bootstrap support surface.
 **File:** `logistics/scripts/modules/plugin/plugin-source.psm1`
 
 Flow:
+
 1. Plugin scripts live in `Plugin/` directory (for example, the historical ODS plugin script
    `Plugin/tpdm.ps1`)
 2. Each script returns a hashtable with NuGet package names and versions
@@ -414,40 +427,40 @@ Features with database subtypes cause additional migration script folders to be 
 
 ```
 Ed-Fi-ODS-Implementation/
-├── Initialize-PowershellForDevelopment.ps1    ← developer entry point
-├── configuration.packages.json                ← NuGet version pins
-├── Application/
-│   ├── Ed-Fi-Ods.sln                         ← .NET solution
-│   ├── SolutionScripts/
-│   │   └── InitializeDevelopmentEnvironment.psm1  ← main orchestrator
-│   ├── EdFi.Ods.WebApi/                      ← Web API project
-│   ├── EdFi.Ods.SandboxAdmin/               ← Sandbox Admin project
-│   ├── EdFi.Ods.SwaggerUI/                  ← Swagger UI project
-│   └── EdFi.Ods.Api.IntegrationTestHarness/ ← test harness project
-├── InstallerPackages/
-│   └── EdFi.RestApi.Databases/
-│       └── Deployment.psm1                   ← deployment orchestrator
-├── DatabaseTemplate/
-│   ├── Modules/                              ← template creation modules
-│   └── Scripts/                              ← template scripts (GrandBend, EdFiMinimalTemplate, etc.)
-├── Plugin/                                   ← plugin scripts and downloaded packages
-├── logistics/scripts/modules/
-│   ├── tasks/TaskHelper.psm1                 ← task execution framework
-│   ├── settings/settings-management.psm1     ← settings cascade
-│   ├── database/
-│   │   ├── database-lifecycle.psm1           ← strategy-based DB lifecycle
-│   │   ├── database-management.psm1          ← SQL Server operations
-│   │   └── postgres-database-management.psm1 ← PostgreSQL operations
-│   ├── config/config-management.psm1         ← DB IDs, features, paths
-│   ├── plugin/plugin-source.psm1             ← plugin management
-│   ├── tools/ToolsHelper.psm1               ← .NET tool management
-│   ├── packaging/                            ← NuGet packaging
-│   ├── utility/                              ← hashtable, cross-platform, keys
-│   ├── TestHarness.psm1                      ← test harness lifecycle
-│   └── LoadTools.psm1                        ← bulk load, smoke tests
-├── Docker/                                   ← Docker images and compose files
-├── SecurityMetadata/                         ← auth metadata XML→SQL pipeline
-└── tests/                                    ← .NET integration test projects
++-- Initialize-PowershellForDevelopment.ps1    (developer entry point)
++-- configuration.packages.json                (NuGet version pins)
++-- Application/
+|   +-- Ed-Fi-Ods.sln                         (.NET solution)
+|   +-- SolutionScripts/
+|   |   +-- InitializeDevelopmentEnvironment.psm1  (main orchestrator)
+|   +-- EdFi.Ods.WebApi/                      (Web API project)
+|   +-- EdFi.Ods.SandboxAdmin/               (Sandbox Admin project)
+|   +-- EdFi.Ods.SwaggerUI/                  (Swagger UI project)
+|   +-- EdFi.Ods.Api.IntegrationTestHarness/ (test harness project)
++-- InstallerPackages/
+|   +-- EdFi.RestApi.Databases/
+|       +-- Deployment.psm1                   (deployment orchestrator)
++-- DatabaseTemplate/
+|   +-- Modules/                              (template creation modules)
+|   +-- Scripts/                              (template scripts: GrandBend, EdFiMinimalTemplate, etc.)
++-- Plugin/                                   (plugin scripts and downloaded packages)
++-- logistics/scripts/modules/
+|   +-- tasks/TaskHelper.psm1                 (task execution framework)
+|   +-- settings/settings-management.psm1     (settings cascade)
+|   +-- database/
+|   |   +-- database-lifecycle.psm1           (strategy-based DB lifecycle)
+|   |   +-- database-management.psm1          (SQL Server operations)
+|   |   +-- postgres-database-management.psm1 (PostgreSQL operations)
+|   +-- config/config-management.psm1         (DB IDs, features, paths)
+|   +-- plugin/plugin-source.psm1             (plugin management)
+|   +-- tools/ToolsHelper.psm1               (.NET tool management)
+|   +-- packaging/                            (NuGet packaging)
+|   +-- utility/                              (hashtable, cross-platform, keys)
+|   +-- TestHarness.psm1                      (test harness lifecycle)
+|   +-- LoadTools.psm1                        (bulk load, smoke tests)
++-- Docker/                                   (Docker images and compose files)
++-- SecurityMetadata/                         (auth metadata XML->SQL pipeline)
++-- tests/                                    (.NET integration test projects)
 ```
 
 ---
@@ -455,25 +468,30 @@ Ed-Fi-ODS-Implementation/
 ## Common Modification Scenarios
 
 ### Adding a new feature flag
+
 1. Add to `Get-DefaultFeatures` in `settings-management.psm1`
 2. If it has a database subtype, add to `Get-SubtypesByFeature`
 3. The flag will automatically propagate to `appsettings.Development.json` and database script folder selection
 
 ### Adding a new database type
+
 1. Add to `Get-DatabaseTypes` in `settings-management.psm1`
 2. Add connection string key mapping in `Get-ConnectionStringKeyByDatabaseTypes`
 3. Add lifecycle handling in `Deployment.psm1`
 
 ### Adding a new plugin
+
 1. Create `Plugin/{name}.ps1` returning a hashtable with package info
 2. Add the name to `Get-EdFiDeveloperPluginSettings` in `settings-management.psm1`
 
 ### Changing database migration behavior
+
 1. Strategy functions in `database-lifecycle.psm1` control backup/remove/create/script
 2. `Initialize-EdFiDatabase` calls strategies in order
-3. `ToolsHelper.psm1` → `Invoke-DbDeploy` runs the actual migration tool
+3. `ToolsHelper.psm1` -> `Invoke-DbDeploy` runs the actual migration tool
 
 ### Adding a new test runner
+
 1. Add a `-Run*` switch to `Initialize-DevelopmentEnvironment`
 2. Create an `Invoke-*` function wrapping the test execution
 3. Add an `Invoke-Task` call in the pipeline section of `Initialize-DevelopmentEnvironment`
@@ -489,21 +507,23 @@ Ed-Fi-ODS-Implementation/
 
 ---
 
-## Lessons Learned — What to Preserve or Improve
+## Observations on the ODS InitDev Design
 
-These observations are relevant when designing a new initdev inspired by this one:
+These notes describe patterns and trade-offs observed in the ODS pipeline. They are historical context for understanding what DMS-916 chose to adopt, adapt, or omit — not DMS requirements or forward-looking recommendations.
 
-### What works well (keep)
-- **Single `$Settings` hashtable** flowing through all steps — simple, debuggable, easy to override
-- **Strategy pattern for database lifecycle** — cleanly separates engine-specific logic
-- **`Invoke-Task` wrapper** — uniform timing and error reporting across all steps
-- **Skip flags** (`-NoRebuild`, `-NoDeploy`) — essential for fast iteration after partial failures
-- **`configuration.packages.json`** as a single source of truth for tool/package versions
+### Patterns that worked well in ODS
 
-### What could be improved (consider for new system)
-- **Implicit scope dependencies** — some modules reference `$Settings` from parent scope instead of receiving it as a parameter; prefer explicit parameter passing
-- **No resume/checkpoint** — if step 12 fails, you re-run from step 1; consider persisting pipeline state so steps can be skipped automatically on re-run
-- **Deep module nesting** — 18 imported modules with cross-dependencies make it hard to test or run modules in isolation; consider a flatter structure with explicit dependency injection
-- **Settings merge complexity** — the multi-layer deep merge (parameters → config → defaults → plugins → overrides) is powerful but hard to debug when a value comes from the wrong layer; consider logging which layer each setting came from
-- **No dry-run mode** — there's no way to preview what initdev *would* do without actually doing it; a `--dry-run` or `--plan` flag would help users understand the impact before committing
-- **Tight coupling to NuGet** — tool installation, plugin resolution, and template downloads all go through NuGet; if your new system uses a different package manager, this concern needs to be re-abstracted
+- **Single `$Settings` hashtable** flows through all steps — simple, debuggable, easy to override per layer
+- **Strategy pattern for database lifecycle** — ODS cleanly separates engine-specific logic (SQL Server vs PostgreSQL) at the lifecycle layer
+- **`Invoke-Task` wrapper** — provides uniform timing and error reporting across all 17 steps
+- **Skip flags** (`-NoRebuild`, `-NoDeploy`) — reduce re-run cost after partial failures without restructuring the pipeline
+- **`configuration.packages.json`** — single source of truth for tool and package version pins
+
+### Trade-offs and constraints in the ODS design
+
+- **Implicit scope dependencies** — several modules reference `$Settings` from parent scope rather than receiving it as a parameter; creates implicit coupling that complicates isolated testing
+- **No resume or checkpoint** — a failure at step 12 requires re-running from step 1
+- **Deep module nesting** — 18 imported modules with cross-dependencies make individual modules hard to exercise in isolation
+- **Settings merge complexity** — the multi-layer deep merge (parameters -> config -> defaults -> plugins -> overrides) is powerful but makes it hard to trace which layer supplied a given value
+- **No dry-run mode** — ODS provides no mechanism to preview what the pipeline would do without executing it
+- **NuGet coupling** — tool installation, plugin resolution, and template downloads all go through NuGet; alternative package registries require re-abstraction at each of these points

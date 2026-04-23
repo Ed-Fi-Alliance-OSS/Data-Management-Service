@@ -23,8 +23,8 @@ story's dependency chain and its credentials are never reused for seed delivery.
 directories remain supported as compatible payload sources when the run's staged schema/security inputs are
 intended to cover them, but bootstrap does not preflight-certify arbitrary JSONL content.
 
-This slice is also the prerequisite that unlocks any Story 00 extension mapping entry advertising built-in
-seed support, because the top-level embedded `SeedLoader` claim set is delivered here.
+This slice is the single owner of built-in seed-support advertisement. An extension may advertise built-in
+seed support only when this story's `SeedLoader` contract is delivered end to end.
 This story defines only the DMS bootstrap consumer boundary for BulkLoadClient: the pinned-resolution path,
 the invocation shape DMS depends on, and the pass-through result handling. It does not broaden DMS-916 into
 owning BulkLoadClient product design, packaging, or non-bootstrap runtime behavior.
@@ -125,7 +125,7 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
    extension security fragments for built-in extension seed sources, the bootstrap-side preflight failure
    when the embedded claims metadata is missing the top-level `SeedLoader` claim set, and the staged-input
    compatibility boundary for custom `-SeedDataPath` directories.
-   This task is what unblocks Story 00 from advertising any built-in extension seed-support mapping entry.
+   This task is what allows built-in extension seed support to be advertised at all.
 4. Implement seed-workspace creation, JSONL extraction/copying for both built-in artifacts and
    `-SeedDataPath`, collision detection, and deterministic cleanup behavior. Ordering of directory
    consumption, if required, remains part of the external BulkLoadClient JSONL contract rather than a
