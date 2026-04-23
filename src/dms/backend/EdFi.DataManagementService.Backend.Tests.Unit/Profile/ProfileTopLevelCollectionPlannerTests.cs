@@ -1,0 +1,843 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Immutable;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.Profile;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Tests.Unit.Profile;
+
+/// <summary>
+/// Local test-double factories for Slice-4 planner tests.
+/// Task 3.2 will promote these to ProfileTestDoubles.cs.
+/// </summary>
+internal static class Slice4Builders
+{
+    private static readonly DbSchemaName _schema = new("edfi");
+
+    public static ImmutableArray<SemanticIdentityPart> BuildSemanticIdentity(
+        string relativePath,
+        string value
+    ) => [new SemanticIdentityPart(relativePath, JsonValue.Create(value), IsPresent: true)];
+
+    public static ScopeInstanceAddress RootScopeAddress() =>
+        new("$", ImmutableArray<AncestorCollectionInstance>.Empty);
+
+    public static VisibleStoredCollectionRow BuildVisibleStoredCollectionRow(
+        string jsonScope,
+        ImmutableArray<SemanticIdentityPart> identity,
+        ImmutableArray<string>? hiddenMemberPaths = null
+    ) =>
+        new(
+            new CollectionRowAddress(jsonScope, RootScopeAddress(), identity),
+            hiddenMemberPaths ?? ImmutableArray<string>.Empty
+        );
+
+    public static VisibleRequestCollectionItem BuildVisibleRequestCollectionItem(
+        string jsonScope,
+        ImmutableArray<SemanticIdentityPart> identity,
+        bool creatable,
+        string requestJsonPath
+    ) => new(new CollectionRowAddress(jsonScope, RootScopeAddress(), identity), creatable, requestJsonPath);
+
+    public static CurrentCollectionRowSnapshot BuildCurrentCollectionRowSnapshot(
+        ImmutableArray<SemanticIdentityPart> identity,
+        int storedOrdinal,
+        long stableRowIdentity = 1L
+    ) =>
+        new(
+            stableRowIdentity,
+            identity,
+            storedOrdinal,
+            new RelationalWriteMergedTableRow(
+                ImmutableArray<FlattenedWriteValue>.Empty,
+                ImmutableArray<FlattenedWriteValue>.Empty
+            )
+        );
+
+    /// <summary>
+    /// Builds a minimal <see cref="CollectionWriteCandidate"/> whose semantic identity is
+    /// derived from the supplied <see cref="SemanticIdentityPart"/> array. The candidate's
+    /// <see cref="CollectionWriteCandidate.SemanticIdentityValues"/> stores each part's
+    /// underlying CLR value directly (e.g. the raw <c>string</c> from
+    /// <c>JsonValue.GetValue&lt;string&gt;()</c>), matching the real flattener output from
+    /// <c>RelationalWriteFlattener</c>. The planner's <c>BuildCandidateIdentityKey</c> wraps
+    /// these via <c>JsonValue.Create</c> to normalize them before key comparison.
+    /// </summary>
+    public static CollectionWriteCandidate BuildCollectionWriteCandidate(
+        string jsonScope,
+        ImmutableArray<SemanticIdentityPart> identity,
+        int requestOrder = 0
+    )
+    {
+        var identityCount = identity.Length;
+        var tableWritePlan = MinimalCollectionTableWritePlan(jsonScope, identityCount);
+
+        // Pass raw CLR values as the flattener does: GetValue<T>() extracts the underlying
+        // CLR object from each JsonValue without re-serializing to JSON text.
+        var semanticIdentityValues = identity
+            .Select(p => p.Value is JsonValue jv ? (object?)jv.GetValue<object>() : null)
+            .ToArray();
+
+        return new CollectionWriteCandidate(
+            tableWritePlan: tableWritePlan,
+            ordinalPath: [requestOrder],
+            requestOrder: requestOrder,
+            values: Enumerable.Repeat<FlattenedWriteValue>(
+                new FlattenedWriteValue.Literal(null),
+                tableWritePlan.ColumnBindings.Length
+            ),
+            semanticIdentityValues: semanticIdentityValues
+        );
+    }
+
+    /// <summary>
+    /// Builds a minimal <see cref="TableWritePlan"/> for a collection table with
+    /// <paramref name="semanticIdentityCount"/> identity columns. Layout:
+    /// [0] CollectionItemId (Precomputed), [1] ParentDocumentId (DocumentId),
+    /// [2] Ordinal (Ordinal), [3..] identity Scalar columns.
+    /// </summary>
+    public static TableWritePlan MinimalCollectionTableWritePlan(string jsonScope, int semanticIdentityCount)
+    {
+        // Fixed columns: CollectionItemId, ParentDocumentId, Ordinal
+        var collectionKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("CollectionItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var parentKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ParentDocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+
+        // Identity columns: one Scalar per identity member
+        var identityColumns = Enumerable
+            .Range(0, semanticIdentityCount)
+            .Select(i => new DbColumnModel(
+                ColumnName: new DbColumnName($"IdentityField{i}"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                IsNullable: false,
+                SourceJsonPath: new JsonPathExpression(
+                    $"$.identityField{i}",
+                    [new JsonPathSegment.Property($"identityField{i}")]
+                ),
+                TargetResource: null
+            ))
+            .ToArray();
+
+        var allColumns = new DbColumnModel[] { collectionKeyColumn, parentKeyColumn, ordinalColumn }
+            .Concat(identityColumns)
+            .ToArray();
+
+        // Identity metadata: one SemanticIdentityBinding per identity column
+        var semanticIdentityBindings = identityColumns
+            .Select(
+                (col, i) => new CollectionSemanticIdentityBinding(col.SourceJsonPath!.Value, col.ColumnName)
+            )
+            .ToArray();
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(_schema, "CollectionTable"),
+            JsonScope: new JsonPathExpression(jsonScope, []),
+            Key: new TableKey(
+                "PK_CollectionTable",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: allColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                SemanticIdentityBindings: semanticIdentityBindings
+            ),
+        };
+
+        // SemanticIdentityBindings in CollectionMergePlan reference binding indexes 3..N+2
+        var mergeSemanticIdentityBindings = Enumerable
+            .Range(0, semanticIdentityCount)
+            .Select(i => new CollectionMergeSemanticIdentityBinding(
+                identityColumns[i].SourceJsonPath!.Value,
+                3 + i
+            ))
+            .ToArray();
+
+        var columnBindings = new List<WriteColumnBinding>
+        {
+            new(collectionKeyColumn, new WriteValueSource.Precomputed(), "CollectionItemId"),
+            new(parentKeyColumn, new WriteValueSource.DocumentId(), "ParentDocumentId"),
+            new(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+        };
+        columnBindings.AddRange(
+            identityColumns.Select(col => new WriteColumnBinding(
+                col,
+                new WriteValueSource.Scalar(
+                    col.SourceJsonPath!.Value,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                ),
+                col.ColumnName.Value
+            ))
+        );
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: $"INSERT INTO edfi.\"CollectionTable\" VALUES (@CollectionItemId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, allColumns.Length, 65535),
+            ColumnBindings: columnBindings,
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings: mergeSemanticIdentityBindings,
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.\"CollectionTable\" SET X = @X WHERE \"CollectionItemId\" = @CollectionItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.\"CollectionTable\" WHERE \"CollectionItemId\" = @CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [.. Enumerable.Range(3, semanticIdentityCount), 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Invariant 1 — Reverse stored coverage
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_visible_stored_row_lacking_current_row_counterpart
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
+            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
+            VisibleStoredRows: [Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", identity)],
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException() =>
+        _thrown.Should().BeOfType<InvalidOperationException>();
+
+    [Test]
+    public void It_names_the_json_scope_in_the_message() =>
+        _thrown!.Message.Should().Contain("$.addresses[*]");
+
+    [Test]
+    public void It_names_the_invariant_category() =>
+        _thrown!.Message.Should().Contain("reverse stored coverage");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Invariant 2 — Request-side coverage
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_visible_request_item_lacking_request_candidate_counterpart
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
+            VisibleRequestItems:
+            [
+                Slice4Builders.BuildVisibleRequestCollectionItem(
+                    "$.addresses[*]",
+                    identity,
+                    creatable: true,
+                    requestJsonPath: "$.addresses[0]"
+                ),
+            ],
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException() =>
+        _thrown.Should().BeOfType<InvalidOperationException>();
+
+    [Test]
+    public void It_names_request_coverage_violation() =>
+        _thrown!.Message.Should().Contain("request-side coverage");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Invariant 3 — Duplicate VisibleRequestCollectionItem
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_duplicate_visible_request_items
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+        var candidate = Slice4Builders.BuildCollectionWriteCandidate(
+            "$.addresses[*]",
+            identity,
+            requestOrder: 0
+        );
+        var visible1 = Slice4Builders.BuildVisibleRequestCollectionItem(
+            "$.addresses[*]",
+            identity,
+            creatable: true,
+            requestJsonPath: "$.addresses[0]"
+        );
+        var visible2 = Slice4Builders.BuildVisibleRequestCollectionItem(
+            "$.addresses[*]",
+            identity,
+            creatable: true,
+            requestJsonPath: "$.addresses[1]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate],
+            VisibleRequestItems: [visible1, visible2],
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_for_duplicate_visible_request_items() =>
+        _thrown
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("duplicate visible request item");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Invariant 4 — Duplicate VisibleStoredCollectionRow
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_duplicate_visible_stored_rows
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+        var stored1 = Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", identity);
+        var stored2 = Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", identity);
+        var current = Slice4Builders.BuildCurrentCollectionRowSnapshot(identity, storedOrdinal: 1);
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
+            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
+            VisibleStoredRows: [stored1, stored2],
+            CurrentRows: [current]
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_for_duplicate_visible_stored_rows() =>
+        _thrown
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("duplicate visible stored row");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Invariant 5 — Duplicate CurrentCollectionRowSnapshot semantic identity
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_duplicate_current_row_identities
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+        var current1 = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            identity,
+            storedOrdinal: 1,
+            stableRowIdentity: 1L
+        );
+        var current2 = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            identity,
+            storedOrdinal: 2,
+            stableRowIdentity: 2L
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
+            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: [current1, current2]
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_for_duplicate_current_row_identities() =>
+        _thrown
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("current row identity uniqueness");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Invariant 6 — Pre-scoped input: JsonScope mismatch on a candidate
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_candidate_in_wrong_jsonscope
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = Slice4Builders.BuildSemanticIdentity("phoneId", "P1");
+        // Candidate's TableWritePlan uses "$.phones[*]" scope — different from input's JsonScope.
+        var wrongScopeCandidate = Slice4Builders.BuildCollectionWriteCandidate(
+            "$.phones[*]",
+            identity,
+            requestOrder: 0
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [wrongScopeCandidate],
+            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_for_jsonscope_mismatch() =>
+        _thrown
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("pre-scoped input: JsonScope mismatch");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Invariant 6 — Pre-scoped input: parent scope mismatch on a visible request item
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_address_under_wrong_parent_scope
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+        // Item uses a non-root parent scope address — different from input's ParentScopeAddress.
+        var wrongParent = new ScopeInstanceAddress(
+            "$.nested",
+            ImmutableArray<AncestorCollectionInstance>.Empty
+        );
+        var wrongParentItem = new VisibleRequestCollectionItem(
+            new CollectionRowAddress("$.addresses[*]", wrongParent, identity),
+            Creatable: true,
+            RequestJsonPath: "$.addresses[0]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
+            VisibleRequestItems: [wrongParentItem],
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_for_parent_scope_mismatch() =>
+        _thrown
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("pre-scoped input: parent scope mismatch");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Invariant 7 — Order consistency: stored
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_stored_rows_out_of_ordinal_order
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var id1 = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+        var id2 = Slice4Builders.BuildSemanticIdentity("addressId", "A2");
+
+        // Current rows have ordinals 1 and 2, but VisibleStoredRows presents them in
+        // reverse order (A2 at ordinal 2 before A1 at ordinal 1) — decreasing ordinals.
+        var current1 = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            id1,
+            storedOrdinal: 1,
+            stableRowIdentity: 1L
+        );
+        var current2 = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            id2,
+            storedOrdinal: 2,
+            stableRowIdentity: 2L
+        );
+
+        var stored1 = Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", id2); // ordinal 2
+        var stored2 = Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", id1); // ordinal 1
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
+            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
+            VisibleStoredRows: [stored1, stored2],
+            CurrentRows: [current1, current2]
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_for_stored_ordinal_order_violation() =>
+        _thrown
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("order consistency: stored");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Invariant 8 — Order consistency: request
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_matched_candidates_out_of_request_order
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var id1 = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+        var id2 = Slice4Builders.BuildSemanticIdentity("addressId", "A2");
+
+        // Candidates: A1 has requestOrder=1, A2 has requestOrder=0.
+        // VisibleRequestItems in array order: A1 first then A2 — maps to requestOrders [1, 0],
+        // which is decreasing (invariant violated).
+        var candidate1 = Slice4Builders.BuildCollectionWriteCandidate("$.addresses[*]", id1, requestOrder: 1);
+        var candidate2 = Slice4Builders.BuildCollectionWriteCandidate("$.addresses[*]", id2, requestOrder: 0);
+
+        var item1 = Slice4Builders.BuildVisibleRequestCollectionItem(
+            "$.addresses[*]",
+            id1,
+            creatable: true,
+            requestJsonPath: "$.addresses[0]"
+        );
+        var item2 = Slice4Builders.BuildVisibleRequestCollectionItem(
+            "$.addresses[*]",
+            id2,
+            creatable: true,
+            requestJsonPath: "$.addresses[1]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate1, candidate2],
+            VisibleRequestItems: [item1, item2],
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_for_request_order_violation() =>
+        _thrown
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("order consistency: request");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// New invariant — Duplicate visible request candidate
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_duplicate_request_candidates
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+
+        // Two candidates with the same semantic identity — requestOrder differs to prevent
+        // other invariants from firing first.
+        var candidate1 = Slice4Builders.BuildCollectionWriteCandidate(
+            "$.addresses[*]",
+            identity,
+            requestOrder: 0
+        );
+        var candidate2 = Slice4Builders.BuildCollectionWriteCandidate(
+            "$.addresses[*]",
+            identity,
+            requestOrder: 1
+        );
+
+        // VisibleRequestItems and CurrentRows/VisibleStoredRows are empty so only the
+        // duplicate-candidate invariant fires.
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate1, candidate2],
+            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException() =>
+        _thrown.Should().BeOfType<InvalidOperationException>();
+
+    [Test]
+    public void It_names_the_invariant_category() =>
+        _thrown!.Message.Should().Contain("duplicate visible request candidate");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// New invariant — Orphan candidate (reverse request-side coverage)
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_candidate_lacking_matching_visible_request_item
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+
+        // One candidate but no corresponding VisibleRequestCollectionItem.
+        // VisibleStoredRows and CurrentRows are empty to avoid other invariants.
+        var candidate = Slice4Builders.BuildCollectionWriteCandidate(
+            "$.addresses[*]",
+            identity,
+            requestOrder: 0
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate],
+            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException() =>
+        _thrown.Should().BeOfType<InvalidOperationException>();
+
+    [Test]
+    public void It_names_the_invariant_category() => _thrown!.Message.Should().Contain("orphan candidate");
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Happy path — valid empty input returns stub Success
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Planner_with_valid_empty_input
+{
+    private ProfileTopLevelCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
+            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_returns_Success() =>
+        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+
+    [Test]
+    public void It_returns_an_empty_sequence_as_stub()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence.Should().BeEmpty();
+    }
+}
