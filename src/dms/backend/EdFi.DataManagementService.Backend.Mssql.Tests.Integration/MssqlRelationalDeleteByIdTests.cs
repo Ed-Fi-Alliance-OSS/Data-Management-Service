@@ -435,14 +435,16 @@ public class Given_A_Mssql_Relational_Delete_By_Id
     {
         var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
 
-        // dms.Document has an enabled trigger; SQL Server disallows OUTPUT without INTO on
-        // triggered tables (error 334). Use SCOPE_IDENTITY() instead, matching the descriptor
-        // INSERT in DescriptorWriteHandler.BuildMssqlInsertCommand.
+        // Use OUTPUT INTO (rather than bare OUTPUT or SCOPE_IDENTITY()) so this works against
+        // dms.Document even though the table has an enabled trigger (SQL Server error 334
+        // forbids bare OUTPUT on triggered tables). OUTPUT ... INTO @tmp is allowed.
         return await _database.ExecuteScalarAsync<long>(
             """
+            DECLARE @ids TABLE ([DocumentId] bigint);
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+            OUTPUT INSERTED.[DocumentId] INTO @ids
             VALUES (@documentUuid, @resourceKeyId);
-            SELECT CAST(SCOPE_IDENTITY() AS bigint);
+            SELECT [DocumentId] FROM @ids;
             """,
             new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@resourceKeyId", resourceKeyId)
@@ -480,13 +482,17 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         );
 
     private Task<long> InsertSchoolAddressAsync(long schoolDocumentId, int ordinal, string city) =>
-        // Use SCOPE_IDENTITY() rather than OUTPUT to stay safe against any enabled triggers
-        // on the target table (SQL Server error 334 forbids OUTPUT-without-INTO on triggered tables).
+        // edfi.SchoolAddress.CollectionItemId is NOT an IDENTITY column — it defaults from
+        // dms.CollectionItemIdSequence. So SCOPE_IDENTITY() returns NULL after this INSERT.
+        // OUTPUT ... INTO @tmp captures the sequence-assigned value directly and is also
+        // trigger-safe (unlike bare OUTPUT, which SQL Server 334 rejects on triggered tables).
         _database.ExecuteScalarAsync<long>(
             """
+            DECLARE @ids TABLE ([CollectionItemId] bigint);
             INSERT INTO [edfi].[SchoolAddress] ([Ordinal], [School_DocumentId], [City])
+            OUTPUT INSERTED.[CollectionItemId] INTO @ids
             VALUES (@ordinal, @schoolDocumentId, @city);
-            SELECT CAST(SCOPE_IDENTITY() AS bigint);
+            SELECT [CollectionItemId] FROM @ids;
             """,
             new SqlParameter("@ordinal", ordinal),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
