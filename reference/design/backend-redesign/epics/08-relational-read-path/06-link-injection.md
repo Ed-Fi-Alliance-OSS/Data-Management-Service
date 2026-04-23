@@ -41,6 +41,11 @@ Builds on:
   binding columns; this story extends that same per-reference binding-column approach to also emit
   `link: { rel, href }`, adding one per-page logical auxiliary `dms.Document` lookup returning
   `(DocumentId, DocumentUuid, ResourceKeyId)`.
+- `../07-relational-write-path/01d-profile-namespace-and-server-generated-fields.md` (Jira TBD) —
+  establishes the Core profile namespace rule that keeps `link` outside profile addressability,
+  so readable-profile projection preserves `link` by construction. Without this story, the
+  projector would treat `link` as an ordinary member and strip it under `MemberSelection.IncludeOnly`
+  profiles that do not list it.
 
 Soft dependency:
 
@@ -62,10 +67,14 @@ Soft dependency:
   subclass through the same `ResourceKeyId` path; no discriminator parsing, no discriminator
   binding, no per-reference-kind variant.
 - `href` is prefix-free and has the form
-  `/{projectEndpointName}/{endpointName}/{documentUuid:N}` (e.g.,
-  `/ed-fi/schools/550e8400e29b41d4a716446655440000`). DMS does not prepend `PathBase`, tenant,
-  qualifier, or `/data` segments to `link.href`; hrefs match ODS's emitted path-tail form.
-- GUID formatting is `"N"` — 32 lowercase hex characters, no hyphens.
+  `/{projectEndpointName}/{endpointName}/{documentUuid}` (e.g.,
+  `/ed-fi/schools/550e8400-e29b-41d4-a716-446655440000`). DMS does not prepend `PathBase`, tenant,
+  qualifier, or `/data` segments to `link.href`; the path structure mirrors ODS's emitted
+  path-tail form.
+- GUID formatting is `"D"` — 36 characters, lowercase hex with hyphens — matching the current DMS
+  `Location` header. This intentionally differs from ODS's `"N"` rendering; DMS does not support
+  cross-platform `id` interchange, so keeping `link.href` aligned with DMS's existing `Location`
+  output is preferred.
 - `projectEndpointName` and `endpointName` are derived at reference-write time from
   `ApiSchema.json` using `projectSchema.projectEndpointName` and
   `ProjectSchema.GetEndpointNameFromResourceName(...)` keyed by the `QualifiedResourceName`
@@ -118,10 +127,6 @@ Soft dependency:
 - The cache remains caller-agnostic: callers who can both read the same source document share the
   same cached intermediate JSON even if one caller would fail a direct GET against the target
   resource, because target-side authorization is not consulted for link emission.
-- Readable-profile projection MUST preserve `link` subtrees on reference objects as
-  server-generated fields. This story treats `link` preservation as a feature-local rule
-  parallel to `_etag` and `_lastModifiedDate` preservation. Profiles cannot suppress `link` via
-  `MemberSelection.IncludeOnly`.
 - Link emission is gated only on source-resource readability: fully-defined references to targets
   whose resource type is hidden by the caller's readable profile still emit `rel` and `href`,
   matching the accepted disclosure envelope in `design-docs/link-injection.md` §Authorization. For
@@ -134,7 +139,8 @@ Soft dependency:
   emitted); concrete reference with null FK (no link); concrete reference with non-null FK but
   auxiliary-lookup miss (no link); abstract reference with fully-defined FK (concrete `rel` and
   `href` via `ResourceKeyId`, no discriminator parsing); abstract reference with auxiliary-lookup
-  miss (no link); GUID formatting (`N`-format, 32 lowercase hex, no hyphens); page with multiple
+  miss (no link); GUID formatting (`D`-format, 36 characters, lowercase hex with hyphens); page
+  with multiple
   references to the same target document (single auxiliary-map entry, both references resolve).
 - Feature-flag tests cover: flag on with fully-defined references (body carries `link`); flag off
   (body has no `link` on any reference and `_etag` reflects the link-free form); flag flip across
@@ -144,11 +150,9 @@ Soft dependency:
   reference (any `educationOrganizationReference` site); a nested-collection reference (link
   appears inside collection elements).
 - Contract/parity tests against an ODS baseline fixture on the same semantic input, scoped to
-  document references only, assert byte-for-byte `link.rel` and `link.href` parity at the
-  path-tail level.
-- Profile-preservation test: a readable profile whose `MemberSelection.IncludeOnly` does not list
-  `link` is applied to a GET with fully-defined references; `link` is still present on every
-  surviving reference.
+  document references only, assert byte-for-byte `link.rel` parity and `link.href` path-structure
+  parity (projectEndpointName, endpointName, GUID identity) at the path-tail level; the GUID
+  rendering is normalized before comparison because DMS emits `"D"` format and ODS emits `"N"`.
 - Source-readable / target-denied test: caller can read the source resource but fails a direct GET
   against the target under the active authorization strategy; fully-defined references still emit
   `link`.
@@ -199,11 +203,7 @@ Soft dependency:
    `_lastModifiedDate`) are untouched. Use the cached materialized `_etag` when the served body
    equals the cached intermediate (flag on, no readable profile reshaping); otherwise recompute
    `_etag` from the served body per `design-docs/update-tracking.md` §Serving API metadata.
-7. Readable-profile projector: preserve `link` subtrees on reference objects as server-generated
-  fields. This story treats `link` preservation as a feature-local rule parallel to `_etag` and
-  `_lastModifiedDate` preservation. Profiles must not be able to suppress `link` via
-  `MemberSelection.IncludeOnly`.
-8. When `dms.DocumentCache` is provisioned: extend it to store cached `ContentVersion` alongside
+7. When `dms.DocumentCache` is provisioned: extend it to store cached `ContentVersion` alongside
    the materialized `_etag/_lastModifiedDate` so the two-input freshness check
    (`cached ContentVersion == dms.Document.ContentVersion AND cached LastModifiedAt ==
    dms.Document.ContentLastModifiedAt`) is representable in the schema. Cache entries store the
@@ -211,7 +211,7 @@ Soft dependency:
    fingerprint, no advisory lock, no `dms.DocumentCachePlanFingerprint` table, no cache truncate,
    and no `ResourceLinksFlag` column are introduced. Flag flips are handled implicitly through
    `_etag` derivation from the served body.
-9. Tests: add unit, fixture, integration, and contract tests per the acceptance criteria. Include
+8. Tests: add unit, fixture, integration, and contract tests per the acceptance criteria. Include
    feature-flag-on and flag-off coverage; a flag-flip-across-restart regression; source-readable
    / target-denied authorization coverage; the caller-agnostic cache test; and an ODS baseline
    parity check scoped to document references.
@@ -226,5 +226,4 @@ design is approved.
 | Deferred item | Why deferred from DMS-622 | Follow-on ticket seed |
 |---------------|---------------------------|-----------------------|
 | OpenAPI / Discovery updates | V1 link injection ships runtime behavior only; schema and documentation surfaces are a separate effort. Clients MUST treat `link` as additive. | Update OpenAPI and Discovery surfaces to advertise reference `link` behavior accurately. |
-| `Location` header GUID `D` → `N` alignment | Link hrefs ship with `Guid.ToString("N")`, but `Location` continues to use the current `"D"` formatting to limit the initial blast radius. | Align frontend `Location` header generation with link href GUID formatting, assess POST/PUT client impact, and update contract tests that assert `Location` values. |
 | Resource-scoped write-time `DocumentUuid` stamping optimization | V1 uses the per-page auxiliary `dms.Document` lookup and intentionally avoids new per-reference `..._DocumentUuid` columns, write-path stamping, and backfill work. | For profiled hot resources, add optional `{ReferenceBaseName}_DocumentUuid` storage, extend write-time referential resolution to stamp `DocumentUuid`, and provide backfill/runbook guidance. **Opt-in MUST be resource-scoped — never global, never per-request** — expressed either as an `ApiSchema.json` field on the resource schema or as an operator configuration list keyed by `QualifiedResourceName`. |

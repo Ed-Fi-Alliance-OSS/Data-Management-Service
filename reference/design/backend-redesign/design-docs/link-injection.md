@@ -69,9 +69,9 @@ Descriptor references remain on their existing canonical-URI string surface.
 
 - Document-store backend support — relational backend only.
 - OpenAPI / Discovery updates (see [Out of Scope](#out-of-scope)).
-- `Location` header GUID format (tracked separately).
 - Byte-for-byte reproduction of ODS codegen internals. Parity is defined at the response shape and
-  path-tail level and verified by contract tests.
+  path-tail level and verified by contract tests. GUID rendering intentionally diverges from ODS
+  (see `href` format below).
 
 ---
 
@@ -139,9 +139,11 @@ already holds:
 No new startup dictionary, no new fields on `ResourceKeyEntry`, no link-injection-owned cache.
 
 - **`rel`**: the concrete `ResourceName` (e.g., `"School"`). Case-preserving, matches the schema.
-- **`href`**: prefix-free, `/{projectEndpointName}/{endpointName}/{documentUuid:N}`
-  (e.g., `/ed-fi/schools/550e8400e29b41d4a716446655440000`). GUID formatting is `"N"` — 32
-  lowercase hex characters, no hyphens — matching ODS.
+- **`href`**: prefix-free, `/{projectEndpointName}/{endpointName}/{documentUuid}`
+  (e.g., `/ed-fi/schools/550e8400-e29b-41d4-a716-446655440000`). GUID formatting is `"D"` — 36
+  characters, lowercase hex with hyphens — matching the current DMS `Location` header. This
+  intentionally differs from ODS's `"N"` rendering; DMS does not support cross-platform `id`
+  interchange, so aligning with DMS's existing output keeps `link.href` and `Location` consistent.
 
 Abstract references (e.g., `educationOrganizationReference`) resolve to the concrete subclass
 uniformly: the reference FK points at the concrete document's `dms.Document.DocumentId`
@@ -149,10 +151,10 @@ uniformly: the reference FK points at the concrete document's `dms.Document.Docu
 [data-model.md](data-model.md) §"Abstract identity tables for polymorphic references"), so the
 auxiliary lookup returns the concrete `ResourceKeyId` with no discriminator join required.
 
-Href format matches ODS's generated pattern
-(`/{schemaUriSegment}/{pluralCamelEndpointName}/{ResourceId:N}`) at the path-tail level. DMS does
-not prepend `PathBase`, tenant, or `/data` segments to `link.href`; hrefs remain relative and
-prefix-free, consistent with ODS's emitted form.
+Href path structure mirrors ODS's generated pattern
+(`/{schemaUriSegment}/{pluralCamelEndpointName}/{ResourceId}`) at the path-tail level, except the
+GUID is rendered in `"D"` format (with hyphens) rather than ODS's `"N"`. DMS does not prepend
+`PathBase`, tenant, or `/data` segments to `link.href`; hrefs remain relative and prefix-free.
 
 ### Auxiliary Lookup
 
@@ -342,10 +344,10 @@ Consequences:
 Per-reference target-resource authorization at link-emission time is deliberately not performed:
 it would multiply auth cost per response by reference sites × page size.
 
-**Profile interaction.** Readable-profile projection MUST preserve `link` subtrees on reference
-objects as server-generated fields. This story treats `link` preservation as a feature-local rule
-parallel to `_etag` and `_lastModifiedDate` preservation; profiles cannot suppress `link` via
-`MemberSelection.IncludeOnly`.
+**Profile interaction.** `link` is a server-generated field and lies outside the profile
+namespace defined in [profiles.md §Profile Namespace](profiles.md#profile-namespace). Readable-profile
+projection preserves `link` by construction whenever the enclosing reference survives projection; no
+feature-local preservation rule is required here.
 
 ---
 
@@ -362,7 +364,6 @@ single result set — not per reference or per item.
 
 - Document-store backend link injection.
 - Absolute-URL emission.
-- `Location`-header GUID format migration (`D` → `N`).
 - Discovery-API `link` elements on the API root document.
 
 ### Deferred Follow-On Work
@@ -373,7 +374,6 @@ the `DocumentUuid`-stamping decision in particular has been made.
 | Deferred item | Reason |
 |---------------|--------|
 | OpenAPI / Discovery updates | Separate schema and documentation effort; V1 link injection ships runtime behavior only. Clients MUST treat `link` as additive. |
-| `Location` header GUID `D` → `N` alignment | API-visible identifier-format change kept out of this rollout to limit blast radius. |
 | Resource-scoped write-time `DocumentUuid` stamping | If auxiliary-lookup cost becomes a bottleneck, stamping `{ReferenceBaseName}_DocumentUuid` on referencing rows eliminates the lookup. Opt-in must be resource-scoped — never global, never per-request — via `ApiSchema.json` or operator configuration keyed by `QualifiedResourceName`. |
 
 ---
@@ -389,7 +389,8 @@ the `DocumentUuid`-stamping decision in particular has been made.
 - Abstract reference with a fully-defined FK → emits concrete `rel` and `href` derived from the
   target's `ResourceKeyId`. Covers polymorphic resolution without discriminator parsing.
 - Abstract reference with an auxiliary-lookup miss → no `link`.
-- GUID formatting → `href` contains 32 lowercase hex characters, no hyphens.
+- GUID formatting → `href` contains a 36-character `"D"`-format GUID (lowercase hex with hyphens),
+  matching the DMS `Location` header rendering.
 - Page with multiple references to the same target document → single auxiliary-map entry, both
   references resolve.
 
