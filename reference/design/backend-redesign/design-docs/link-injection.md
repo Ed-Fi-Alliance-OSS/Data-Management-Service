@@ -178,14 +178,38 @@ INNER JOIN dms.Document d ON d.DocumentId = p.DocumentId;
 ```
 
 **Join column per branch.** Each UNION branch joins its source table back to the page keyset
-through that table's root-document locator column (`RootDocumentIdColumn` in the compiled
-read-plan table model — the same concept used by collection hydration at
-[flattening-reconstitution.md](flattening-reconstitution.md) §8). For root tables and
-root-scope extension tables this column is `DocumentId`; for core collection tables, nested
-collection tables, and extension child collection tables it is `<Root>_DocumentId` (e.g.,
-`School_DocumentId`). Link injection reads the join column directly off the binding's `Table`
-in the read model; it does not re-infer it from naming at query-build time, and there is no
-special-casing by table kind.
+through the resource's root-document locator column. The read-path compiler resolves this
+column at plan-compile time using only metadata already present in the compiled
+`RelationalResourceModel` ([flattening-reconstitution.md](flattening-reconstitution.md) §7.3),
+with no column-name pattern inference:
+
+1. Resolve `DocumentReferenceBinding.Table` (a `DbTableName`) against
+   `RelationalResourceModel.TablesInDependencyOrder` to obtain the corresponding
+   `DbTableModel`.
+2. If the binding's table is the resource's root table or a root-scope extension table
+   (`DbTableModel.JsonScope == "$"`), the join column is the single `ColumnKind.ParentKeyPart`
+   column declared in `DbTableModel.Key` — `DocumentId` by shape invariant.
+3. Otherwise (core collection, nested collection, collection-aligned extension scope table,
+   or extension child collection table — i.e., any table whose `IdentityMetadata.TableKind`
+   is `Collection`, `CollectionExtensionScope`, or `ExtensionCollection`), the join column
+   is the `DbColumnModel` of `Kind == ColumnKind.ParentKeyPart` whose `DbColumnName` matches
+   the resource's shared root-locator name. That name is established once per resource by
+   inspecting any top-level collection of the resource: it is the `DbColumnName` of the
+   `ParentKeyPart` column appearing in a single-column `TableConstraint.ForeignKey` whose
+   `TargetTable` is `RelationalResourceModel.Root.Table` and whose `TargetColumns` is
+   `[DocumentId]`. By shape invariant, every core child, nested, collection-aligned
+   extension scope, and extension child table of the resource exposes a `ParentKeyPart`
+   column with this same `DbColumnName` (e.g., `School_DocumentId` for a resource rooted at
+   `School`). Nested tables and collection-aligned extension scope tables inherit the
+   locator through their immediate-parent FK chain —
+   `(ParentCollectionItemId, <locator>)` for nested collections, `BaseCollectionItemId` for
+   collection-aligned extension scope rows — rather than through a separate direct FK to
+   the root.
+
+This derivation is the same rule that sources the `<RootDocumentIdColumn>` placeholder used
+by the existing collection-hydration SQL at
+[flattening-reconstitution.md](flattening-reconstitution.md) §8, so link injection and
+collection hydration consume one shared contract and neither special-cases by table kind.
 
 This mirrors the descriptor URI projection pattern
 ([compiled-mapping-set.md](compiled-mapping-set.md) §4.3 step 6;
@@ -196,7 +220,8 @@ second round-trip, and no parameter-cap sub-batching.
 
 **Boundary condition.** If every `..._DocumentId` FK on every row joined back to any page
 document — across the root table, root-scope extension tables, and any collection, nested
-collection, or extension child collection attached to a page document — is null, the inner
+collection, collection-aligned extension scope, or extension child collection attached to
+a page document — is null, the inner
 UNION returns zero rows, the outer join returns zero rows, and the
 `DocumentId → (DocumentUuid, ResourceKeyId)` map is empty. Every reference-writer lookup misses
 and `link` is suppressed via the gate in [Link Shape](#link-shape).
@@ -205,6 +230,15 @@ and `link` is suppressed via the gate in [Link Shape](#link-shape).
 deleted between main hydration and the auxiliary lookup within the same command produces a lookup
 miss, which suppresses the link. This is strictly safer than emitting an href to a deleted
 document.
+
+**Zero-bindings case.** If a resource has zero `DocumentReferenceBinding`s, the auxiliary
+phase is not emitted — no UNION, no SELECT, no result set. A UNION with zero branches is not a
+valid query, and emission is therefore conditioned at plan-compile time on the resource having
+at least one binding. This is orthogonal to the feature flag: a zero-binding resource has no
+auxiliary phase regardless of flag state, and a resource with `≥1` binding always emits the
+phase regardless of flag state (see [Feature Flag](#feature-flag)). The reconstitution
+reference-writer has nothing to look up on zero-binding resources, so the reader contract
+matches the command shape without a special empty-shape branch.
 
 ### Compiled Read-Plan Extensions
 
@@ -216,9 +250,11 @@ story. Instead, the read-path compiler / hydration-command builder appends a fea
 `dms.Document` lookup phase to the same multi-result hydration command already used for descriptor
 URI projection. The lookup is keyed on the union of `..._DocumentId` FK columns from the
 resource's `DocumentReferenceBinding`s and returns `(DocumentId, DocumentUuid, ResourceKeyId)`.
-This remains a fixed-shape feature-local lookup rather than a new shared plan primitive. When the
-feature flag is off at deployment, the lookup phase is still emitted — see
-[Feature Flag](#feature-flag).
+This remains a fixed-shape feature-local lookup rather than a new shared plan primitive.
+Emission is conditioned on the resource having at least one `DocumentReferenceBinding`: the
+lookup phase is emitted for every such resource regardless of the feature flag's state
+(see [Feature Flag](#feature-flag)), and is omitted entirely for resources with zero bindings
+(see the **Zero-bindings case** above).
 
 Within the composed multi-result command, the lookup follows the existing descriptor-URI lookup
 pattern: main hydration result sets first, then any descriptor URI lookup already emitted for the
@@ -249,7 +285,7 @@ Link emission happens inline in the reconstituter's reference-writing loop
    post-startup seed-row addition is a deployment invariant violation, not a runtime data
    condition, so reconstitution does not spec a recovery path for a `ResourceKeyById` miss — a
    miss throws and the request fails.
-5. Write a `"link": { "rel": <resourceName>, "href": "/<projectEndpointName>/<endpointName>/<documentUuid:N>" }`
+5. Write a `"link": { "rel": <resourceName>, "href": "/<projectEndpointName>/<endpointName>/<documentUuid:D>" }`
    object after the reference's identity fields.
 
 The href is written in final form during reconstitution — no post-processing or prefix-assembly
@@ -406,11 +442,23 @@ the `DocumentUuid`-stamping decision in particular has been made.
   matching the DMS `Location` header rendering.
 - Page with multiple references to the same target document → single auxiliary-map entry, both
   references resolve.
-- Child-table-hosted binding → binding `Table` is a collection or nested-collection table keyed
-  by `CollectionItemId` with `<Root>_DocumentId` as the root locator; the auxiliary SQL joins
-  through that `<Root>_DocumentId` column (not `DocumentId`), the UNION branch returns the
-  expected FK values, and `link` is emitted on references inside collection/nested-collection
-  elements.
+- Child-table-hosted binding (core) → binding `Table` is a collection or nested-collection
+  table (`DbTableKind.Collection`) keyed by `CollectionItemId` with `<Root>_DocumentId` as
+  the root locator; the auxiliary SQL joins through that `<Root>_DocumentId` column (not
+  `DocumentId`), the UNION branch returns the expected FK values, and `link` is emitted on
+  references inside collection/nested-collection elements.
+- Extension-scope-hosted binding → binding `Table` is a collection-aligned extension scope
+  table (`DbTableKind.CollectionExtensionScope`, e.g., `sample.ContactExtensionAddress`)
+  keyed by `BaseCollectionItemId` with `<Root>_DocumentId` as the root locator; the
+  auxiliary SQL joins through `<Root>_DocumentId` (not `BaseCollectionItemId` and not
+  `DocumentId`), the UNION branch returns the expected FK values for a reference declared
+  directly under `$.{baseCollection}[*]._ext.{p}`, and `link` is emitted on that reference
+  inside the `_ext` subtree of a base collection element.
+- Extension-child-hosted binding → binding `Table` is an extension child-collection table
+  (`DbTableKind.ExtensionCollection`) keyed by `CollectionItemId` with `<Root>_DocumentId`
+  as the root locator; the auxiliary SQL joins through that `<Root>_DocumentId` column, the
+  UNION branch returns the expected FK values for a reference declared inside an `_ext`
+  array, and `link` is emitted on that reference inside the `_ext` array element.
 
 **Feature-flag tests:**
 
@@ -424,6 +472,12 @@ the `DocumentUuid`-stamping decision in particular has been made.
 - Resource with a concrete reference (e.g., `AcademicWeek` → `School`).
 - Resource with an abstract reference (any `educationOrganizationReference` site).
 - Resource with a nested-collection reference (link appears inside collection elements).
+- Resource with a reference declared directly on a collection-aligned extension scope
+  (a `..._DocumentId` column at `$.{baseCollection}[*]._ext.{p}`; link appears inside the
+  `_ext` subtree of a base collection element).
+- Resource with a reference inside an extension child-collection (a `..._DocumentId` column
+  declared in an `_ext` array at either root or collection scope; link appears on the
+  reference inside the `_ext` array element).
 
 **Contract / parity tests** against an ODS baseline fixture on the same semantic input, scoped to
 document references only. Goal: byte-for-byte `link.rel` and `link.href` parity at the path-tail

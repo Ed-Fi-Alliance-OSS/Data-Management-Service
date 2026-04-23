@@ -141,18 +141,24 @@ Soft dependency:
   `href` via `ResourceKeyId`, no discriminator parsing); abstract reference with auxiliary-lookup
   miss (no link); GUID formatting (`D`-format, 36 characters, lowercase hex with hyphens); page
   with multiple references to the same target document (single auxiliary-map entry, both
-  references resolve); child-table-hosted binding (source table is a collection or
-  nested-collection table keyed by `CollectionItemId` with `<Root>_DocumentId` as the root
-  locator) — asserts the auxiliary SQL joins through the binding table's root-document locator
-  column rather than assuming `DocumentId`, and that `link` is emitted on references inside
-  collection/nested-collection elements.
+  references resolve); child-table-hosted binding (source table is a collection, nested-
+  collection, collection-aligned extension scope (`DbTableKind.CollectionExtensionScope`),
+  or extension child-collection table (`DbTableKind.ExtensionCollection`) — keyed by
+  `CollectionItemId` or `BaseCollectionItemId` with `<Root>_DocumentId` as the root
+  locator) — asserts the auxiliary SQL joins through the binding table's root-document
+  locator column rather than assuming `DocumentId` or the table's physical PK, and that
+  `link` is emitted on references inside collection, nested-collection, and `_ext` (scope
+  and child) elements.
 - Feature-flag tests cover: flag on with fully-defined references (body carries `link`); flag off
   (body has no `link` on any reference and `_etag` reflects the link-free form); flag flip across
   a process restart (existing cached rows remain valid for freshness-check purposes, and `_etag`
   values computed pre-flip do not match post-flip responses — expected).
 - Fixture tests cover: a concrete reference (e.g., `AcademicWeek` → `School`); an abstract
   reference (any `educationOrganizationReference` site); a nested-collection reference (link
-  appears inside collection elements).
+  appears inside collection elements); a reference declared directly on a collection-aligned
+  extension scope (a `..._DocumentId` column at `$.{baseCollection}[*]._ext.{p}`); and a
+  reference inside an extension child-collection (a `..._DocumentId` column in an `_ext`
+  array at either root or collection scope).
 - Contract/parity tests against an ODS baseline fixture on the same semantic input, scoped to
   document references only, assert byte-for-byte `link.rel` parity and `link.href` path-structure
   parity (projectEndpointName, endpointName, GUID identity) at the path-tail level; the GUID
@@ -169,9 +175,16 @@ Soft dependency:
 1. Read-path compiler / hydration command builder: append a feature-local `dms.Document` lookup
   phase to the existing multi-result hydration command, keyed on the union of
   `..._DocumentId` FK columns from the resource's `DocumentReferenceBinding`s and returning
-  `(DocumentId, DocumentUuid, ResourceKeyId)`. Reuse the existing descriptor-URI multi-result
-  pattern rather than introducing a new shared `ResourceReadPlan` or mapping-pack shape. The
-  lookup phase is always emitted regardless of the feature flag's value.
+  `(DocumentId, DocumentUuid, ResourceKeyId)`. Each UNION branch joins its source table to the
+  page keyset through the resource's root-document locator column derived from
+  `DbTableModel.JsonScope`, `ColumnKind.ParentKeyPart`, and `TableConstraint.ForeignKey` per the
+  **Join column per branch** rule in `design-docs/link-injection.md` §Auxiliary Lookup — no
+  column-name inference at query-build time and no new fields on `DbTableModel`. Reuse the
+  existing descriptor-URI multi-result pattern rather than introducing a new shared
+  `ResourceReadPlan` or mapping-pack shape. Emission is conditioned on the resource having ≥1
+  `DocumentReferenceBinding`: the phase is always emitted for such resources regardless of the
+  feature flag's value, and is omitted entirely (no UNION, no result set) for resources with
+  zero bindings.
 2. Endpoint slug resolution: at reference-write time, derive
    `(projectEndpointName, endpointName, resourceName)` from `ResourceKeyId` by reading
    `MappingSet.ResourceKeyById[resourceKeyId].Resource` and calling
@@ -192,7 +205,7 @@ Soft dependency:
    the `..._DocumentId` FK value; if null, skip link. Otherwise look up the FK in the page-level
    `DocumentId → (DocumentUuid, ResourceKeyId)` map; on miss, skip link. On hit, resolve the
    endpoint-slug triple per task 2 and write a final-form
-   `"link": { "rel": <resourceName>, "href": "/<projectEndpointName>/<endpointName>/<documentUuid:N>" }`
+   `"link": { "rel": <resourceName>, "href": "/<projectEndpointName>/<endpointName>/<documentUuid:D>" }`
    object after the reference's identity fields. `dms.ResourceKey` is immutable seed data, so a
    `ResourceKeyById` map miss is a deployment invariant violation and is not handled as a
    runtime suppression path.
