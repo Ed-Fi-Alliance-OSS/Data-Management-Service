@@ -263,149 +263,177 @@ public sealed class RelationalDocumentStoreRepository(
     )
     {
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
+        var documentUuid = relationalDeleteRequest.DocumentUuid;
+        var traceId = relationalDeleteRequest.TraceId;
 
-        await using var writeSession = await _writeSessionFactory.CreateAsync().ConfigureAwait(false);
-        var sessionCommandExecutor = writeSession.CreateCommandExecutor();
-
-        DeleteResult outcome;
-
+        IRelationalWriteSession writeSession;
         try
         {
-            var resolved = await RelationalDocumentUuidLookupSupport
-                .TryResolveByDocumentUuidAndResourceAsync(
-                    sessionCommandExecutor,
-                    mappingSet,
-                    resource,
-                    relationalDeleteRequest.DocumentUuid
-                )
-                .ConfigureAwait(false);
-
-            if (resolved is null)
-            {
-                outcome = new DeleteResult.DeleteFailureNotExists();
-            }
-            else
-            {
-                // Authorization-check statements will be prepended to this command in a future story
-                // (DMS-1009). If-Match/ETag validation against resolved.ContentVersion is likewise deferred.
-                // This path is gated behind AppSettings.UseRelationalBackend (default false); production
-                // DELETE traffic continues through Old.Postgresql.DeleteDocumentById, which enforces both
-                // checks. See reference/design/backend-redesign/design-docs/auth.md.
-                var deleteCommand = mappingSet.Key.Dialect switch
-                {
-                    SqlDialect.Pgsql => new RelationalCommand(
-                        """
-                        DELETE FROM dms."Document"
-                        WHERE "DocumentId" = @documentId
-                        RETURNING "DocumentId";
-                        """,
-                        [new RelationalParameter("@documentId", resolved.DocumentId)]
-                    ),
-                    SqlDialect.Mssql => new RelationalCommand(
-                        """
-                        DELETE FROM [dms].[Document]
-                        OUTPUT DELETED.[DocumentId]
-                        WHERE [DocumentId] = @documentId;
-                        """,
-                        [new RelationalParameter("@documentId", resolved.DocumentId)]
-                    ),
-                    _ => throw new NotSupportedException(
-                        $"Relational delete does not support SQL dialect '{mappingSet.Key.Dialect}'."
-                    ),
-                };
-
-                var deleted = await sessionCommandExecutor
-                    .ExecuteReaderAsync(
-                        deleteCommand,
-                        static async (reader, ct) => await reader.ReadAsync(ct).ConfigureAwait(false)
-                    )
-                    .ConfigureAwait(false);
-
-                outcome = deleted
-                    ? new DeleteResult.DeleteSuccess()
-                    : new DeleteResult.DeleteFailureNotExists();
-            }
-        }
-        catch (DbException ex) when (_writeExceptionClassifier.IsForeignKeyViolation(ex))
-        {
-            _logger.LogDebug(
-                ex,
-                "FK constraint violation on relational DELETE for {DocumentUuid} - {TraceId}",
-                relationalDeleteRequest.DocumentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
-            );
-
-            await writeSession.RollbackAsync().ConfigureAwait(false);
-            return new DeleteResult.DeleteFailureReference(["(referenced document)"]);
+            writeSession = await _writeSessionFactory.CreateAsync().ConfigureAwait(false);
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
         {
             _logger.LogDebug(
                 ex,
-                "Transient conflict on relational DELETE for {DocumentUuid} - {TraceId}",
-                relationalDeleteRequest.DocumentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
+                "Transient conflict creating write session for relational DELETE on {DocumentUuid} - {TraceId}",
+                documentUuid.Value,
+                LoggingSanitizer.SanitizeForLogging(traceId.Value)
             );
-
-            await writeSession.RollbackAsync().ConfigureAwait(false);
             return new DeleteResult.DeleteFailureWriteConflict();
         }
         catch (DbException ex)
         {
             _logger.LogError(
                 ex,
-                "Database error on relational DELETE for {DocumentUuid} - {TraceId}",
-                relationalDeleteRequest.DocumentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
+                "Database error creating write session for relational DELETE on {DocumentUuid} - {TraceId}",
+                documentUuid.Value,
+                LoggingSanitizer.SanitizeForLogging(traceId.Value)
             );
-
-            await writeSession.RollbackAsync().ConfigureAwait(false);
             return new DeleteResult.UnknownFailure(
                 "An unexpected error occurred while processing the delete request."
             );
         }
 
-        if (outcome is DeleteResult.DeleteSuccess)
+        await using (writeSession)
         {
+            var sessionCommandExecutor = writeSession.CreateCommandExecutor();
+
+            DeleteResult outcome;
+
             try
             {
-                await writeSession.CommitAsync().ConfigureAwait(false);
+                var resolved = await RelationalDocumentUuidLookupSupport
+                    .TryResolveDeleteTargetAsync(sessionCommandExecutor, mappingSet, resource, documentUuid)
+                    .ConfigureAwait(false);
+
+                if (resolved is null)
+                {
+                    outcome = new DeleteResult.DeleteFailureNotExists();
+                }
+                else
+                {
+                    // Authorization-check statements will join this DELETE in a future DMS-1009 child
+                    // ticket; If-Match/ETag validation against the resolved ContentVersion is likewise
+                    // deferred. Until then, this path stays gated behind the UseRelationalBackend
+                    // setting, while production DELETE traffic continues to flow through the Old
+                    // Postgresql DeleteDocumentById handler which already enforces both.
+                    // See reference/design/backend-redesign/design-docs/auth.md for the target shape.
+                    var deleteCommand = BuildDocumentDeleteByDocumentIdCommand(
+                        mappingSet.Key.Dialect,
+                        resolved.DocumentId
+                    );
+
+                    outcome = await RelationalDeleteExecution
+                        .TryExecuteAsync(
+                            sessionCommandExecutor,
+                            deleteCommand,
+                            _writeExceptionClassifier,
+                            _logger,
+                            documentUuid,
+                            traceId,
+                            DeleteTargetKind.Document
+                        )
+                        .ConfigureAwait(false);
+                }
             }
             catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
             {
                 _logger.LogDebug(
                     ex,
-                    "Transient conflict committing relational DELETE for {DocumentUuid} - {TraceId}",
-                    relationalDeleteRequest.DocumentUuid.Value,
-                    LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
+                    "Transient conflict resolving delete target for {DocumentUuid} - {TraceId}",
+                    documentUuid.Value,
+                    LoggingSanitizer.SanitizeForLogging(traceId.Value)
                 );
 
-                // Commit-phase failures leave the transaction in an ambiguous state: do not call
-                // RollbackAsync (the session would throw InvalidOperationException if the commit
-                // already began). The `await using writeSession` disposes the DbTransaction, which
-                // rolls back any still-pending state.
+                await writeSession.RollbackAsync().ConfigureAwait(false);
                 return new DeleteResult.DeleteFailureWriteConflict();
             }
             catch (DbException ex)
             {
                 _logger.LogError(
                     ex,
-                    "Database error committing relational DELETE for {DocumentUuid} - {TraceId}",
-                    relationalDeleteRequest.DocumentUuid.Value,
-                    LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
+                    "Database error resolving delete target for {DocumentUuid} - {TraceId}",
+                    documentUuid.Value,
+                    LoggingSanitizer.SanitizeForLogging(traceId.Value)
                 );
 
+                await writeSession.RollbackAsync().ConfigureAwait(false);
                 return new DeleteResult.UnknownFailure(
                     "An unexpected error occurred while processing the delete request."
                 );
             }
-        }
-        else
-        {
-            await writeSession.RollbackAsync().ConfigureAwait(false);
-        }
 
-        return outcome;
+            if (outcome is DeleteResult.DeleteSuccess)
+            {
+                try
+                {
+                    await writeSession.CommitAsync().ConfigureAwait(false);
+                }
+                catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+                {
+                    _logger.LogDebug(
+                        ex,
+                        "Transient conflict committing relational DELETE for {DocumentUuid} - {TraceId}",
+                        documentUuid.Value,
+                        LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                    );
+
+                    // Commit-phase failures leave the transaction in an ambiguous state: do not call
+                    // RollbackAsync (the session would throw InvalidOperationException if the commit
+                    // already began). The `await using writeSession` disposes the DbTransaction, which
+                    // rolls back any still-pending state.
+                    return new DeleteResult.DeleteFailureWriteConflict();
+                }
+                catch (DbException ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Database error committing relational DELETE for {DocumentUuid} - {TraceId}",
+                        documentUuid.Value,
+                        LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                    );
+
+                    return new DeleteResult.UnknownFailure(
+                        "An unexpected error occurred while processing the delete request."
+                    );
+                }
+            }
+            else
+            {
+                await writeSession.RollbackAsync().ConfigureAwait(false);
+            }
+
+            return outcome;
+        }
+    }
+
+    private static RelationalCommand BuildDocumentDeleteByDocumentIdCommand(
+        SqlDialect dialect,
+        long documentId
+    )
+    {
+        return dialect switch
+        {
+            SqlDialect.Pgsql => new RelationalCommand(
+                """
+                DELETE FROM dms."Document"
+                WHERE "DocumentId" = @documentId
+                RETURNING "DocumentId";
+                """,
+                [new RelationalParameter("@documentId", documentId)]
+            ),
+            SqlDialect.Mssql => new RelationalCommand(
+                """
+                DELETE FROM [dms].[Document]
+                OUTPUT DELETED.[DocumentId]
+                WHERE [DocumentId] = @documentId;
+                """,
+                [new RelationalParameter("@documentId", documentId)]
+            ),
+            _ => throw new NotSupportedException(
+                $"Relational delete does not support SQL dialect '{dialect}'."
+            ),
+        };
     }
 
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)

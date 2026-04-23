@@ -294,9 +294,29 @@ internal sealed class DescriptorWriteHandler(
         // (or a non-descriptor document) cannot be deleted through this resource endpoint.
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
 
-        var dialect = _commandExecutor.Dialect;
+        var command = BuildDescriptorDeleteCommand(_commandExecutor.Dialect, documentUuid, resourceKeyId);
 
-        var command = dialect switch
+        return await RelationalDeleteExecution
+            .TryExecuteAsync(
+                _commandExecutor,
+                command,
+                _writeExceptionClassifier,
+                _logger,
+                documentUuid,
+                traceId,
+                DeleteTargetKind.Descriptor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static RelationalCommand BuildDescriptorDeleteCommand(
+        SqlDialect dialect,
+        DocumentUuid documentUuid,
+        short resourceKeyId
+    )
+    {
+        return dialect switch
         {
             SqlDialect.Pgsql => new RelationalCommand(
                 """
@@ -326,54 +346,6 @@ internal sealed class DescriptorWriteHandler(
                 $"Descriptor delete does not support SQL dialect '{dialect}'."
             ),
         };
-
-        try
-        {
-            var deleted = await _commandExecutor
-                .ExecuteReaderAsync(
-                    command,
-                    static async (reader, ct) => await reader.ReadAsync(ct).ConfigureAwait(false),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
-        }
-        catch (DbException ex) when (_writeExceptionClassifier.IsForeignKeyViolation(ex))
-        {
-            _logger.LogDebug(
-                ex,
-                "FK constraint violation on descriptor DELETE for {DocumentUuid} - {TraceId}",
-                documentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(traceId.Value)
-            );
-
-            return new DeleteResult.DeleteFailureReference(["(referenced descriptor)"]);
-        }
-        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
-        {
-            _logger.LogDebug(
-                ex,
-                "Transient conflict on descriptor DELETE for {DocumentUuid} - {TraceId}",
-                documentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(traceId.Value)
-            );
-
-            return new DeleteResult.DeleteFailureWriteConflict();
-        }
-        catch (DbException ex)
-        {
-            _logger.LogError(
-                ex,
-                "Database error on descriptor DELETE for {DocumentUuid} - {TraceId}",
-                documentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(traceId.Value)
-            );
-
-            return new DeleteResult.UnknownFailure(
-                "An unexpected error occurred while processing the descriptor request."
-            );
-        }
     }
 
     private async Task<UpsertResult> InsertDescriptorAsync(

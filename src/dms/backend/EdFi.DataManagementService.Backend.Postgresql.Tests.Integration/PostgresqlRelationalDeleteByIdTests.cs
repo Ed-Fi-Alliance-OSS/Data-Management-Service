@@ -208,6 +208,45 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
     }
 
     [Test]
+    public async Task It_returns_delete_failure_reference_when_the_document_is_referenced_by_another_document()
+    {
+        // Seed a Program document, then stitch a School document with a
+        // SchoolExtensionAddressSponsorReference row that FK-references the Program via
+        // FK_SchoolExtensionAddressSponsorReference_Program_RefKey (ON DELETE NO ACTION).
+        // Deleting the Program must be refused by the database and surface as
+        // DeleteResult.DeleteFailureReference through the classifier chain.
+        var programDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-0000-0000-0000-000000000100"));
+        var programDocumentId = await InsertDocumentAsync(programDocumentUuid.Value, "Ed-Fi", "Program");
+        await InsertProgramAsync(programDocumentId, "Robotics");
+
+        var schoolDocumentUuid = Guid.Parse("dddddddd-0000-0000-0000-000000000101");
+        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, "Ed-Fi", "School");
+        await InsertSchoolAsync(schoolDocumentId, schoolId: 900001);
+        await InsertSchoolExtensionAsync(schoolDocumentId, "North");
+        var addressCollectionItemId = await InsertSchoolAddressAsync(schoolDocumentId, 1, "Austin");
+        await InsertSchoolExtensionAddressAsync(addressCollectionItemId, schoolDocumentId, "Zone-1");
+        await InsertSchoolExtensionAddressSponsorReferenceAsync(
+            addressCollectionItemId,
+            schoolDocumentId,
+            1,
+            programDocumentId,
+            "Robotics"
+        );
+
+        var delete = await InvokeAsync(repository =>
+            repository.DeleteDocumentById(CreateDeleteRequest(_unrelatedResourceInfo, programDocumentUuid))
+        );
+
+        delete.Should().BeOfType<DeleteResult.DeleteFailureReference>();
+        (await CountDocumentsAsync(programDocumentUuid))
+            .Should()
+            .Be(
+                1,
+                "the Program row must still be present when the database refuses the DELETE due to an active reference"
+            );
+    }
+
+    [Test]
     public async Task It_returns_not_exists_when_the_uuid_belongs_to_a_different_resource()
     {
         // Insert under the School resource, then attempt to delete it via an unrelated
@@ -374,6 +413,130 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         var rows = await _database.QueryRowsAsync(sql, new NpgsqlParameter("documentId", documentId));
 
         return Convert.ToInt64(rows[0]["Count"]);
+    }
+
+    private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ResourceKeyId"
+            FROM "dms"."ResourceKey"
+            WHERE "ProjectName" = @projectName
+              AND "ResourceName" = @resourceName;
+            """,
+            new NpgsqlParameter("projectName", projectName),
+            new NpgsqlParameter("resourceName", resourceName)
+        );
+
+        return Convert.ToInt16(rows[0]["ResourceKeyId"]);
+    }
+
+    private async Task<long> InsertDocumentAsync(Guid documentUuid, string projectName, string resourceName)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
+
+        var rows = await _database.QueryRowsAsync(
+            """
+            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
+            VALUES (@documentUuid, @resourceKeyId)
+            RETURNING "DocumentId";
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        return Convert.ToInt64(rows[0]["DocumentId"]);
+    }
+
+    private async Task InsertProgramAsync(long documentId, string programName)
+    {
+        await _database.QueryRowsAsync(
+            """
+            INSERT INTO "edfi"."Program" ("DocumentId", "ProgramName")
+            VALUES (@documentId, @programName);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("programName", programName)
+        );
+    }
+
+    private async Task InsertSchoolAsync(long documentId, int schoolId)
+    {
+        await _database.QueryRowsAsync(
+            """
+            INSERT INTO "edfi"."School" ("DocumentId", "SchoolId")
+            VALUES (@documentId, @schoolId);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("schoolId", schoolId)
+        );
+    }
+
+    private async Task InsertSchoolExtensionAsync(long documentId, string campusCode)
+    {
+        await _database.QueryRowsAsync(
+            """
+            INSERT INTO "sample"."SchoolExtension" ("DocumentId", "CampusCode")
+            VALUES (@documentId, @campusCode);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("campusCode", campusCode)
+        );
+    }
+
+    private async Task<long> InsertSchoolAddressAsync(long schoolDocumentId, int ordinal, string city)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            INSERT INTO "edfi"."SchoolAddress" ("Ordinal", "School_DocumentId", "City")
+            VALUES (@ordinal, @schoolDocumentId, @city)
+            RETURNING "CollectionItemId";
+            """,
+            new NpgsqlParameter("ordinal", ordinal),
+            new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
+            new NpgsqlParameter("city", city)
+        );
+
+        return Convert.ToInt64(rows[0]["CollectionItemId"]);
+    }
+
+    private async Task InsertSchoolExtensionAddressAsync(
+        long baseCollectionItemId,
+        long schoolDocumentId,
+        string zone
+    )
+    {
+        await _database.QueryRowsAsync(
+            """
+            INSERT INTO "sample"."SchoolExtensionAddress" ("BaseCollectionItemId", "School_DocumentId", "Zone")
+            VALUES (@baseCollectionItemId, @schoolDocumentId, @zone);
+            """,
+            new NpgsqlParameter("baseCollectionItemId", baseCollectionItemId),
+            new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
+            new NpgsqlParameter("zone", zone)
+        );
+    }
+
+    private async Task InsertSchoolExtensionAddressSponsorReferenceAsync(
+        long baseCollectionItemId,
+        long schoolDocumentId,
+        int ordinal,
+        long programDocumentId,
+        string programName
+    )
+    {
+        await _database.QueryRowsAsync(
+            """
+            INSERT INTO "sample"."SchoolExtensionAddressSponsorReference"
+                ("BaseCollectionItemId", "Ordinal", "School_DocumentId", "Program_DocumentId", "Program_ProgramName")
+            VALUES (@baseCollectionItemId, @ordinal, @schoolDocumentId, @programDocumentId, @programName);
+            """,
+            new NpgsqlParameter("baseCollectionItemId", baseCollectionItemId),
+            new NpgsqlParameter("ordinal", ordinal),
+            new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
+            new NpgsqlParameter("programDocumentId", programDocumentId),
+            new NpgsqlParameter("programName", programName)
+        );
     }
 
     private static ServiceProvider CreateServiceProvider()

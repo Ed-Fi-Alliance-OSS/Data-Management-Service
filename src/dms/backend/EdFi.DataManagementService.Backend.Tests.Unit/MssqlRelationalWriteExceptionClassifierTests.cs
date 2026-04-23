@@ -217,10 +217,21 @@ public class Given_MssqlRelationalWriteExceptionClassifier
     {
         var exception = CreateSqlException(
             547,
-            "Localized or reworded server message without a quoted constraint name."
+            "The DELETE statement conflicted with the REFERENCE constraint."
         );
 
         _sut.IsForeignKeyViolation(exception).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_does_not_report_foreign_key_violation_for_error_547_with_check_constraint_message()
+    {
+        var exception = CreateSqlException(
+            547,
+            "The UPDATE statement conflicted with the CHECK constraint \"CK_Student_SchoolId\"."
+        );
+
+        _sut.IsForeignKeyViolation(exception).Should().BeFalse();
     }
 
     [TestCase(2627)]

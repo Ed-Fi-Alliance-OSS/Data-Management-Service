@@ -2273,6 +2273,46 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_delete_failure_write_conflict_when_session_creation_reports_a_transient_failure()
+    {
+        _writeSessionFactory.CreateAsyncExceptionToThrow = new StubDbException("deadlock at session create");
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
+        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_unknown_failure_when_session_creation_throws_a_generic_database_exception()
+    {
+        _writeSessionFactory.CreateAsyncExceptionToThrow = new StubDbException("session create boom");
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new DeleteResult.UnknownFailure(
+                    "An unexpected error occurred while processing the delete request."
+                )
+            );
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_the_missing_write_plan_guard_rail_for_non_descriptor_post_requests()
     {
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -2540,9 +2580,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         public int CreateAsyncCallCount { get; private set; }
 
+        public Exception? CreateAsyncExceptionToThrow { get; set; }
+
         public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
         {
             CreateAsyncCallCount++;
+            if (CreateAsyncExceptionToThrow is not null)
+            {
+                throw CreateAsyncExceptionToThrow;
+            }
             return Task.FromResult<IRelationalWriteSession>(Session);
         }
     }
