@@ -8,7 +8,7 @@ design: DMS-916
 
 Implement the authoritative pre-start schema provisioning and validation step used by developer bootstrap.
 This slice separates schema provisioning from seed loading and assigns those responsibilities to
-`provision-dms-schema.ps1` — the phase command defined in `command-boundaries.md` §3.5 that invokes the
+`provision-dms-schema.ps1` - the phase command defined in `command-boundaries.md` Section 3.5 that invokes the
 shared SchemaTools/runtime-owned path over the staged schema workspace that Story 00 has already resolved
 for the run. `provision-dms-schema.ps1` consumes that staged schema context and expected
 `EffectiveSchemaHash` as inputs to the authoritative path, but it does not publish a second
@@ -61,7 +61,7 @@ be provisioned or validated.
    produced by Story 00 and pass them unchanged into the authoritative provisioning helper.
 3. Implement `provision-dms-schema.ps1` as an unconditional invocation of the authoritative
    SchemaTools/runtime-owned provisioning and validation path over the staged schema set before DMS starts,
-   per `command-boundaries.md` §3.5.
+   per `command-boundaries.md` Section 3.5.
 4. Keep the committed default `AppSettings__DeployDatabaseOnStartup=false` in place and surface
    authoritative provisioning diagnostics directly rather than routing schema work through DMS startup side
    effects or inventing bootstrap-owned readiness rules. Treat SchemaTools as a black-box authority for
@@ -84,4 +84,5 @@ be provisioned or validated.
 ## Design References
 
 - [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3.2, 5, 11.3, 11.5, and 14.3
-- [`../command-boundaries.md`](../command-boundaries.md), §3.5 (`provision-dms-schema.ps1` — normative ownership contract)
+- [`../command-boundaries.md`](../command-boundaries.md), Section 3.5 (`provision-dms-schema.ps1` - normative ownership contract)
+

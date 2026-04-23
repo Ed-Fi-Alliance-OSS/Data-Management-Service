@@ -33,8 +33,8 @@ this story's supported extension surface. Specifying `TPDM` via `-Extensions` pr
 clear unsupported-extension message.
 
 Within the composable bootstrap design, schema selection and staging are owned exclusively by the
-`prepare-dms-schema.ps1` phase command (see `command-boundaries.md` §3.1). Claims and security staging are
-owned exclusively by `prepare-dms-claims.ps1` (see `command-boundaries.md` §3.2). Both commands run without
+`prepare-dms-schema.ps1` phase command (see `command-boundaries.md` Section 3.1). Claims and security staging are
+owned exclusively by `prepare-dms-claims.ps1` (see `command-boundaries.md` Section 3.2). Both commands run without
 Docker services and hand their staged outputs — the staged schema workspace and the staged claims workspace
 — to the downstream infrastructure and provisioning phases.
 
@@ -101,12 +101,8 @@ security defaults.
 - CMS consumes that staged workspace through the standard `/app/additional-claims` mount, with the compose
   source path redirected from the static repo folder to `eng/docker-compose/.bootstrap/claims` by the
   `DMS_CONFIG_CLAIMS_HOST_DIRECTORY` bind-mount variable in `local-config.yml`.
-- Until Story 02 adds the top-level `SeedLoader` claim set to the embedded `Claims.json`, no extension
-  mapping entry may advertise built-in seed support or rely on `SeedLoader`-bearing extension fragments as
-  part of the standard bootstrap surface.
-- Bootstrap also fails fast when a built-in extension seed source is selected but the staged extension
-  security fragments do not attach the required `SeedLoader` permissions for that extension's seed
-  resources.
+- Story 00 does not own built-in seed-support advertisement. It stages and validates claims inputs; Story 02
+  decides when built-in seed support is available and enforces the `SeedLoader` requirements for that path.
 - When `-AddExtensionSecurityMetadata` is used without `-Extensions` or `-ClaimsDirectoryPath`, bootstrap
   preserves the legacy behavior of loading the static repo-bundled additional claimset set. The narrowed
   DMS-916 cleanup removes standard-bootstrap dependence on
@@ -135,7 +131,7 @@ security defaults.
    Story 03 delivery is not concurrent, this story must carry that one-line `.gitignore` entry itself.
 1. Add or refine the schema/security parameter surface for `-Extensions`, `-ApiSchemaPath`, and
    `-ClaimsDirectoryPath` across `prepare-dms-schema.ps1` (schema inputs) and `prepare-dms-claims.ps1`
-   (security inputs) per the command boundary contracts in `command-boundaries.md` §3.1–§3.2.
+   (security inputs) per the command boundary contracts in `command-boundaries.md` Section 3.1-3.2.
 2. Implement one extension artifact mapping (shared by both phase commands) that drives schema-package
    resolution, security-fragment resolution, and extension seed-package resolution from the same selected
    extension set, with `EdFiSandbox` coverage required for every supported extension and `SeedLoader`
@@ -163,8 +159,8 @@ security defaults.
 7. Treat changed claims inputs in an existing staged workspace as incompatible rerun state; reuse identical
    staged content as-is, but fail fast with teardown guidance instead of rewriting bind-mounted claims files
    or attempting in-place CMS claims replacement.
-8. Keep any built-in extension seed-support advertisement gated on Story 02's addition of the top-level
-   `SeedLoader` claim set to the embedded claims metadata.
+8. Keep Story 00 limited to schema and claims staging. Built-in seed-support advertisement and `SeedLoader`
+   enforcement stay in Story 02.
 9. Document the expert-mode boundary explicitly: `-ApiSchemaPath` plus `-ClaimsDirectoryPath` validates
    staged fragment presence and structure, but bootstrap does not certify complete authorization coverage for
    arbitrary custom non-core resources ahead of runtime.
@@ -180,4 +176,5 @@ security defaults.
 ## Design References
 
 - [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3, 4, 8, 9.3, and 11
-- [`../command-boundaries.md`](../command-boundaries.md), §3.1 (`prepare-dms-schema.ps1`) and §3.2 (`prepare-dms-claims.ps1`)
+- [`../command-boundaries.md`](../command-boundaries.md), Section 3.1 (`prepare-dms-schema.ps1`) and Section 3.2 (`prepare-dms-claims.ps1`)
+

@@ -1,6 +1,6 @@
 # DMS-916 Bootstrap - Responsibility Inventory
 
-**Basis:** `bootstrap-design.md` Sections 1-14 and companion Stories 00-03.
+**Basis:** `bootstrap-design.md` and companion Stories 00-03.
 
 ---
 
@@ -57,8 +57,8 @@ every downstream phase depends on. Runs before any Docker service starts.
 | Compute expected `EffectiveSchemaHash` via `dms-schema hash` over staged files | Section 3.3, Story 00 |
 | Surface `dms-schema hash` diagnostics unchanged on non-zero exit | Section 3.3 |
 | Fail fast with clear error when NuGet feed is unreachable; no partial downloads | Section 3.4 |
-| Emit expert-mode warning and require explicit claims input when non-core schemas are present | Section 3.3, Story 00 |
-| Produce the staged-schema manifest (core path + extension paths) for downstream consumers | Section 3.3 |
+| Record that the run is in expert mode; may emit a warning when non-core schemas are staged | Section 3.3, Story 00 |
+| Produce the staged schema workspace used directly by downstream consumers | Section 3.3 |
 
 The staged workspace `eng/docker-compose/.bootstrap/ApiSchema/` is the sole schema source for
 `dms-schema hash`, Docker-hosted DMS, and IDE-hosted DMS. No downstream phase re-resolves packages.
@@ -68,7 +68,7 @@ The staged workspace `eng/docker-compose/.bootstrap/ApiSchema/` is the sole sche
 ### 2.3 Claims and Security Staging - `prepare-dms-claims.ps1`
 
 Stages `*-claimset.json` fragments into a workspace directory that the Config Service reads on startup.
-Depends on the staged-schema manifest from `prepare-dms-schema.ps1`; runs before the Config Service starts.
+Depends on the staged schema workspace from `prepare-dms-schema.ps1`; runs before the Config Service starts.
 Standard-vs-expert mode behavior is defined normatively in
 [`command-boundaries.md` Section 3.2](command-boundaries.md#32-prepare-dms-claimsps1). This file only
 records ownership and dependencies.
@@ -83,11 +83,12 @@ records ownership and dependencies.
 | Validate: no unknown claim set names (must exist in embedded `Claims.json`) | Section 4, Story 00 |
 | Derive `DMS_CONFIG_CLAIMS_SOURCE` (Embedded or Hybrid) from staged results | Section 4, Story 00 |
 | Set `DMS_CONFIG_CLAIMS_HOST_DIRECTORY` bind-mount variable for CMS | Section 4, Story 00 |
-| Gate built-in extension seed-support advertisement on `SeedLoader` claim set presence | Section 4, Story 00, Story 02 |
+| Stage and validate the claims inputs that later built-in seed delivery depends on | Section 4, Story 00 |
 | Treat legacy `-AddExtensionSecurityMetadata` as redundant when `-Extensions` or `-ClaimsDirectoryPath` is set; emit warning | Section 4, Story 00 |
+| Enforce `-ClaimsDirectoryPath` requirement when expert mode (`-ApiSchemaPath`) is in use with non-core schemas; fail fast if missing | Section 4, [`command-boundaries.md` Section 3.2](command-boundaries.md#32-prepare-dms-claimsps1--claims-and-security-staging), Story 00 |
 
-This phase has no dependency on Docker state at execution time. Its only input is the staged-schema
-manifest produced by `prepare-dms-schema.ps1`.
+This phase has no dependency on Docker state at execution time. Its only schema input is the staged
+workspace produced by `prepare-dms-schema.ps1`.
 
 ---
 
@@ -121,12 +122,12 @@ Runs after the Config Service is ready.
 | Create DMS instance via `Add-DmsInstance` (default path) | Section 5, Story 03 |
 | Create school-year DMS instances via `Add-DmsSchoolYearInstances` (school-year path) | Section 10, Story 03 |
 | Implement narrow `-NoDmsInstance` reuse: proceed only when exactly one existing instance is present; fail on 0 or >1 | Section 9, Story 03 |
-| Resolve target instance IDs once; pass them to downstream phases; never re-query CMS in later steps | Section 5, Story 03 |
+| Resolve target instance IDs once; write them to the repo-local run-context file for downstream phases; never re-query CMS in later steps | Section 5, Story 03 |
 | Provision or validate the bootstrap-time fixed `CMSReadOnlyAccess` client for IDE-hosted DMS | Section 12, Story 03 |
 | Create smoke-test application via `Add-CmsClient` / `Add-Application` (`EdFiSandbox`) when `-AddSmokeTestCredentials` is set | Section 7, Story 03 |
 
 Instance ID resolution is the only target-resolution phase for the run. All later phases consume the
-selected set without performing a second CMS discovery pass.
+selected set from the repo-local run-context file without performing a second CMS discovery pass.
 
 ---
 
@@ -159,8 +160,8 @@ created immediately before BulkLoadClient invocation and are never reused for sm
 ### 2.7 IDE Workflow - composition of existing phase commands plus `appsettings.Development.json.example` and printed guidance
 
 Developer experience of running DMS in an IDE against Docker-managed infrastructure. The workflow is
-not owned by a separate script; it is the composition of `start-local-dms.ps1 -InfraOnly`,
-`prepare-dms-schema.ps1`, `prepare-dms-claims.ps1`, `configure-local-dms-instance.ps1`, and
+not owned by a separate script; it is the composition of `prepare-dms-schema.ps1`,
+`prepare-dms-claims.ps1`, `start-local-dms.ps1 -InfraOnly`, `configure-local-dms-instance.ps1`, and
 `provision-dms-schema.ps1`, together with the `appsettings.Development.json.example` documentation
 artifact and the next-step guidance printed by the provisioning phase. No phase command in this
 list exists solely for the IDE flow; each is the same phase command used in the Docker-hosted
@@ -169,13 +170,13 @@ IDE.
 
 | Responsibility | Design reference |
 |---|---|
-| `appsettings.Development.json.example` with `AppSettings__UseApiSchemaPath=true` and `AppSettings__ApiSchemaPath` pointing at the staged workspace | Section 12, Story 03 |
+| `appsettings.Development.json.example` — illustrative guidance only; bootstrap does not generate or read it; the developer copies it to `appsettings.Development.json` and sets the staged schema path and secrets from printed provisioning output | Section 12, Story 03 |
 | Printed next-step guidance from `provision-dms-schema.ps1` after infra-only completion, including localhost `CMSReadOnlyAccess` credentials and staged schema path | Section 12, Story 03 |
 | `.gitignore` entry excluding `eng/docker-compose/.bootstrap/` from source control | Story 03 |
 
-The developer starts infrastructure with `start-local-dms.ps1 -InfraOnly`, runs the phase commands
-to stage schema and provision the database, then launches DMS in the IDE pointing at the staged schema
-workspace and the Docker-managed PostgreSQL and Config Service.
+The developer stages schema (`prepare-dms-schema.ps1`), stages claims (`prepare-dms-claims.ps1`),
+starts infrastructure (`start-local-dms.ps1 -InfraOnly`), provisions the database, then launches DMS
+in the IDE pointing at the staged schema workspace and the Docker-managed PostgreSQL and Config Service.
 
 ---
 
@@ -201,15 +202,7 @@ without the full stack being live.
 
 ## 4. Phase Command to Parameter Mapping
 
-The authoritative per-phase parameter surface is in
-[`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner).
-That section is the single normative reference for which flags each phase command owns;
-update it directly when parameters change rather than maintaining a parallel table here.
-
-Maintaining a separate parameter table in this document creates drift risk without adding
-unique information beyond what Section 6 already states. The phase ownership narrative in
-Section 2 above and the phase dependency rules in Section 3 are the unique content of this
-document; parameter surface details are not.
+See [`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner) for the authoritative per-phase parameter surface.
 
 ---
 
@@ -231,3 +224,4 @@ this table as a design-ownership map, not as a delivery-status report; delivery 
 | IDE debugging workflow | Composition of `start-local-dms.ps1 -InfraOnly` (infra-only shape), `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1` (staged workspaces the IDE process reads), `configure-local-dms-instance.ps1` (instance plus `CMSReadOnlyAccess` for the IDE process), `provision-dms-schema.ps1` (databases plus printed next-step guidance), and `appsettings.Development.json.example` (Section 2.7). No additional script or control plane is introduced. |
 | Backend redesign awareness | `provision-dms-schema.ps1` via SchemaTools plus `EffectiveSchemaHash` |
 | ODS initdev audit | Informational reference only; no phase required |
+

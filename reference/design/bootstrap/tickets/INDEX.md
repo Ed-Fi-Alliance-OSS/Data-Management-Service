@@ -24,7 +24,7 @@ backend-redesign story docs.
 - Story 01 depends on Story 00's staged schema workspace and expected hash because schema provisioning and
   validation run over that already-selected staged file set.
 - Story 02 depends on Story 00's staged schema and security inputs, and it is the gate for advertising any
-  built-in extension seed support because it delivers the top-level `SeedLoader` contract.
+  built-in extension seed support because it owns the `SeedLoader` contract for that path.
   **Story 02 is externally blocked** by ODS-6738 (BulkLoadClient JSONL support) and DMS-1119 (published
   seed artifact packages); it is design-complete but not implementation-ready end to end.
 - Story 03 reuses the parameter surfaces and mechanisms delivered by the other slices where applicable, but
@@ -49,8 +49,8 @@ backend-redesign story docs.
   schema-provisioning targets, not silently reusable supersets of one another.
 - Only extensions backed by current schema and security artifacts belong in the DMS-916 v1
   `-Extensions` surface; deferred extensions stay out of operator-facing validation and examples.
-- Story 00 may not advertise built-in extension seed support until Story 02 adds the top-level `SeedLoader`
-  claim set to the embedded claims metadata.
+- Story 00 stages schema and claims inputs only. Story 02 owns when built-in extension seed support may be
+  advertised.
 - Story 03 owns the repo-local `.bootstrap/` workspace hygiene and the user-facing migration note for the
   narrowed `-NoDmsInstance` contract. **Note:** The `.gitignore` update for `.bootstrap/` must be delivered
   first or concurrently with Story 00 to prevent accidental commits of staged artifacts. The consolidated

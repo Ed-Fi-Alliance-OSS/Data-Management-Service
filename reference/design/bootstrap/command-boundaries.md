@@ -34,7 +34,7 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 |---|---|
 | **Preconditions** | NuGet feed reachable (Mode 1/2) or local path supplied (Mode 3). No Docker services required. |
 | **Inputs** | `-Extensions <name>` (0..N, standard names only); `-ApiSchemaPath <path>` (Mode 3 expert path, mutually exclusive with `-Extensions`) |
-| **Outputs** | Staged workspace `eng/docker-compose/.bootstrap/ApiSchema/` containing resolved schema files; staged-schema manifest (core path + extension paths) consumed by all downstream phases |
+| **Outputs** | Staged workspace `eng/docker-compose/.bootstrap/ApiSchema/` containing resolved schema files; the staged workspace itself is the downstream schema contract consumed by all later phases |
 | **Side effects** | Writes staged workspace; computes and records expected `EffectiveSchemaHash` via `dms-schema hash` |
 | **Failure conditions** | Unrecognized extension name; `-Extensions` and `-ApiSchemaPath` both supplied; NuGet feed unreachable; staged workspace exists with different content; `dms-schema hash` exits non-zero; fewer or more than 1 core schema present after staging |
 | **Must NOT do** | Start or depend on Docker services; modify `.env` or Docker Compose variables; perform DDL work; contact the Config Service; accept claims-related parameters |
@@ -60,7 +60,7 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 
 **Mode-to-security contract (precise):** Standard `-Extensions` mode (including the omitted-`-Extensions` core-only case) is the only mode in which this command derives the staged claims set automatically from the schema selection recorded by `prepare-dms-schema.ps1`. Expert `-ApiSchemaPath` mode is not auto-derived: when the staged schema set includes any non-core schema, this command requires explicit `-ClaimsDirectoryPath` input and fails fast if it is missing. Core-only `-ApiSchemaPath` runs may rely on embedded claims only. This is the single point of truth for "automatic vs explicit" in claims staging; nothing later in the pipeline retro-fits expert-mode security defaults.
 
-**Boundary note:** Claim-fragment validation here is structural only: JSON shape, duplicate filenames, and claim-set-name references. This phase does not inspect attachment overlap, reject duplicate `(resource claim, claim set name)` pairs, or perform semantic composition reasoning; CMS startup remains the authoritative composition gate. This phase also gates built-in extension seed-support advertisement on the presence of the `SeedLoader` claim set in the staged results. That gate is this command's concern, not the seed-delivery command's.
+**Boundary note:** Claim-fragment validation here is structural only: JSON shape, duplicate filenames, and claim-set-name references. This phase does not inspect attachment overlap, reject duplicate `(resource claim, claim set name)` pairs, or perform semantic composition reasoning; CMS startup remains the authoritative composition gate. Built-in seed-support advertisement is owned by Story 02 / `load-dms-seed-data.ps1`; this phase only stages and validates the claims inputs that later seed delivery depends on.
 
 ---
 
@@ -89,12 +89,12 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 |---|---|
 | **Preconditions** | Config Service healthy and claims-loaded (Docker service ready). |
 | **Inputs** | `-NoDmsInstance` (narrow reuse escape hatch: valid only when exactly one existing instance is present); `-SchoolYearRange <range>` (school-year path); `-AddSmokeTestCredentials` (creates CMS-only test application) |
-| **Outputs** | One or more DMS instance records in CMS; `CMSReadOnlyAccess` client record for IDE-hosted DMS; `EdFiSandbox` application when `-AddSmokeTestCredentials` is set; resolved instance ID set passed to downstream phases |
-| **Side effects** | CMS API calls to `Add-DmsInstance` / `Add-DmsSchoolYearInstances`; writes `CMSReadOnlyAccess` client credentials to printed output and/or `appsettings.Development.json` guidance |
+| **Outputs** | One or more DMS instance records in CMS; `CMSReadOnlyAccess` client record for IDE-hosted DMS; `EdFiSandbox` application when `-AddSmokeTestCredentials` is set; repo-local run-context file `eng/docker-compose/.bootstrap/run-context.json` containing the resolved instance ID set and downstream connection metadata for the current run |
+| **Side effects** | CMS API calls to `Add-DmsInstance` / `Add-DmsSchoolYearInstances`; writes `eng/docker-compose/.bootstrap/run-context.json` for later phases; writes `CMSReadOnlyAccess` client credentials to printed output and/or `appsettings.Development.json` guidance |
 | **Failure conditions** | Config Service unreachable; `-NoDmsInstance` with 0 or >1 existing instances; `-NoDmsInstance` with `-SchoolYearRange` (invalid combination) |
 | **Must NOT do** | Create `SeedLoader` credentials (those belong to `load-dms-seed-data.ps1`); perform DDL work; re-query CMS for instance IDs in later phases (this is the one and only resolution phase for the run); accept schema or claims parameters |
 
-**Boundary note:** This is the only phase permitted to resolve target DMS instance IDs. All later phases consume the selected instance set. No subsequent phase may perform a second CMS discovery pass.
+**Boundary note:** This is the only phase permitted to resolve target DMS instance IDs. All later phases consume the selected instance set from `eng/docker-compose/.bootstrap/run-context.json` for the current run. At minimum, that JSON handoff records the selected instance IDs, the connection details later phases require, and whether the run is single-instance or school-year-qualified. No subsequent phase may perform a second CMS discovery pass.
 
 ---
 
@@ -104,8 +104,8 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 
 | Item | Detail |
 |---|---|
-| **Preconditions** | Instance IDs and connection strings from `configure-local-dms-instance.ps1`; staged-schema manifest and expected `EffectiveSchemaHash` from `prepare-dms-schema.ps1`; Config Service and PostgreSQL reachable. |
-| **Inputs** | Instance connection strings (derived from instance list, not user-supplied directly); staged schema paths (from staged-schema manifest) |
+| **Preconditions** | Instance IDs and connection strings from `eng/docker-compose/.bootstrap/run-context.json` written by `configure-local-dms-instance.ps1`; staged schema workspace and expected `EffectiveSchemaHash` from `prepare-dms-schema.ps1`; Config Service and PostgreSQL reachable. |
+| **Inputs** | Instance connection strings (derived from `eng/docker-compose/.bootstrap/run-context.json`, not user-supplied directly); staged schema paths (read from `eng/docker-compose/.bootstrap/ApiSchema/`) |
 | **Outputs** | Provisioned or validated databases for each target instance; printed IDE next-step guidance (staged schema path, `appsettings` values, `CMSReadOnlyAccess` credentials) after infra-only shape completes |
 | **Side effects** | Invokes authoritative SchemaTools/runtime provisioning path; exits non-zero if provisioning or validation fails |
 | **Failure conditions** | SchemaTools/runtime provisioning exits non-zero; stored `EffectiveSchemaHash` mismatches expected hash for a target instance; connection to target database fails |
@@ -134,24 +134,20 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 
 ### 3.7 `bootstrap-local-dms.ps1` — Thin Convenience Wrapper (Optional)
 
-**Delivery status:** Convenience packaging only. When implemented, this script may serve as the common developer-path entry point by sequencing phase commands in dependency order. The composable phase commands are the authoritative bootstrap contract for DMS-916; this wrapper is thin sequencing convenience over them, not a mandatory design deliverable.
+**Delivery status:** Convenience packaging only. The wrapper is optional, may forward `-ConfigFile`, and owns no policy. The composable phase commands remain the authoritative bootstrap contract for DMS-916.
 
 **Primary concern:** Sequence the above phase commands in the correct order for the common happy path.
 
 | Item | Detail |
 |---|---|
 | **Preconditions** | None additional beyond what phase commands require. |
-| **Inputs** | `-ConfigFile <path>` (optional; path to `bootstrap-local-dms.config.json`; defaults to `eng/docker-compose/bootstrap-local-dms.config.json` when present). Each phase command reads its own relevant keys from that file directly. The wrapper does not extract or re-route individual parameter values. |
+| **Inputs** | `-ConfigFile <path>` (optional; path to a JSON defaults file). Each phase command reads its own relevant keys from that file directly. The wrapper does not extract or re-route individual parameter values. |
 | **Outputs** | Delegated entirely to the phase commands it calls |
 | **Side effects** | Delegates to phase commands; prints next-step guidance when a phase is intentionally omitted |
 | **Failure conditions** | Propagates non-zero exit from any called phase command; fails fast if `-ConfigFile` is supplied but the file is not valid JSON |
 | **Must NOT do** | Extract individual parameter values from the config file and forward them by name to phase commands; own schema logic; perform claims parsing; inspect database state; synthesize credentials; implement retry or continuation policy; absorb any concern owned by a phase command |
 
-**Boundary note (single rule, three corollaries):** The wrapper sequences phase commands in happy-path order, forwards the `-ConfigFile` path unchanged, and prints next-step guidance. From that single rule:
-
-- *Sequencing only.* The wrapper never owns policy, domain logic, schema/claims/credential/continuation behavior, or specialized parameter handling. Any decision that requires those concerns belongs in the owning phase command.
-- *`-ConfigFile` is not policy ownership.* The wrapper passes the path through; each phase reads its own keys from that file. The wrapper does not parse, enumerate, translate, or re-route individual parameter values, and accepting `-ConfigFile` does not make the wrapper an interpreter of phase configuration.
-- *Per-phase parameters never require wrapper changes.* Each phase's parameter surface is that phase's own concern. Adding, renaming, or removing a phase parameter — by CLI flag or by config file key — is a change to that phase command alone, never a wrapper change.
+**Boundary note:** The wrapper sequences phase commands, may forward `-ConfigFile` unchanged, and may print next-step guidance. It never owns policy, schema or claims logic, credential behavior, or per-phase parameter handling. Validation ownership is precise: the wrapper may validate only that the file is well-formed JSON. Each phase consumes only the keys it owns, and a phase command invoked directly with `-ConfigFile` must not reject keys owned by other phases. A lightweight example key list may be documented as a reader aid, but it is illustrative rather than a second config-schema contract.
 
 ---
 
@@ -159,12 +155,12 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 
 ```
 prepare-dms-schema.ps1
-  └─▶ prepare-dms-claims.ps1
-        └─▶ start-local-dms.ps1 -InfraOnly  (starts PostgreSQL, Keycloak/OpenIddict, Config Service)
-              └─▶ configure-local-dms-instance.ps1  (CMS HTTP API ready)
-                    └─▶ provision-dms-schema.ps1  (instance IDs + staged schema)
-                          └─▶ start-local-dms.ps1  (starts DMS container; or IDE-hosted DMS starts here)
-                                └─▶ load-dms-seed-data.ps1  (live DMS + SeedLoader credentials)
+  -> prepare-dms-claims.ps1
+       -> start-local-dms.ps1 -InfraOnly  (starts PostgreSQL, Keycloak/OpenIddict, Config Service)
+            -> configure-local-dms-instance.ps1  (CMS HTTP API ready)
+                 -> provision-dms-schema.ps1  (instance IDs + staged schema)
+                      -> start-local-dms.ps1  (starts DMS container; or IDE-hosted DMS starts here)
+                           -> load-dms-seed-data.ps1  (live DMS + SeedLoader credentials)
 ```
 
 Each phase begins only when all of its required inputs are ready. No phase polls for or waits on
@@ -195,10 +191,16 @@ The following concerns are each owned by exactly one phase:
 
 ## 6. Parameter Surface by Owner
 
-Each phase accepts only the parameters relevant to its concern. Every phase command also accepts
+Each phase accepts only the parameters relevant to its concern. Every phase command may also accept
 an optional `-ConfigFile <path>` parameter; when present, the phase reads its own relevant keys
 from that file before applying CLI flags. CLI flags always take precedence over config file values.
-The wrapper passes `-ConfigFile` (when provided) to all phase commands and does nothing else with it.
+The wrapper may pass `-ConfigFile` through unchanged and does nothing else with it.
+
+Ownership rule for validation:
+
+- The wrapper may validate that the shared defaults file is well-formed JSON.
+- A phase command validates only the keys it owns and must tolerate keys owned by other phases in the same file.
+- A phase command invoked directly with `-ConfigFile` must fail on malformed JSON or invalid values for its owned keys, but not on the mere presence of keys outside its ownership.
 
 | Phase command | Owned parameters |
 |---|---|
@@ -210,8 +212,8 @@ The wrapper passes `-ConfigFile` (when provided) to all phase commands and does 
 | `load-dms-seed-data.ps1` | `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath`, `-SchoolYearRange`, `-ConfigFile` |
 | `bootstrap-local-dms.ps1` | `-ConfigFile` *(only; all per-phase defaults come from the config file, not from wrapper params)* |
 
-The wrapper has no parameter surface beyond `-ConfigFile`. Adding a new parameter to any phase
-command requires no wrapper change — the phase reads its new key from the config file directly.
+The wrapper has no parameter surface beyond `-ConfigFile`. Adding a new parameter to a phase command does
+not require a wrapper change.
 
 ---
 
@@ -235,4 +237,4 @@ this design exists to remove.
 
 **Allowed extension:** The wrapper may forward a single `-ConfigFile <path>` argument unchanged to each
 phase command. Each phase reads its own keys; the wrapper does not extract, route, rename, or interpret
-individual values. See `bootstrap-design.md` Section 9.4.2 for the file layout and key reference.
+individual values. See `bootstrap-design.md` Section 9.4.2.

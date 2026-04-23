@@ -13,8 +13,9 @@ and seed delivery belong to their respective phase commands as specified in `com
 path reuses the same staged schema workspace and bootstrap ordering as the Docker-hosted path; it is not a
 parallel schema-resolution or auth-initialization design. Step 7 remains
 the only phase that resolves target DMS instance IDs for the run. Optional smoke-test credentials are
-CMS-only pre-DMS work anchored to that selected target set, while the DMS-dependent continuation covers only
-automatic health wait plus the `SeedLoader`/seed-delivery path when `-LoadSeedData` is requested.
+CMS-only pre-DMS work anchored to that selected target set, while the DMS-dependent continuation on
+`start-local-dms.ps1` covers automatic health wait only; when seed loading is requested, `load-dms-seed-data.ps1`
+is the next phase to invoke, consuming the healthy endpoint and the instance set already selected.
 Within this story, the source story wording about "skip/resume" is satisfied by safe skip behavior and
 optional same-invocation continuation only. It does not introduce a stopped-then-resume bootstrap contract
 across separate invocations.
@@ -41,29 +42,28 @@ across separate invocations.
     schema provisioning or validation, and next-step guidance for the IDE-hosted DMS launch. Developers
     manually start DMS in their IDE after this invocation completes.
   - **Optional convenience**: `-InfraOnly` with `-DmsBaseUrl` set continues from that same pre-DMS phase
-    by automatically waiting for the IDE-hosted DMS process to become healthy, then running DMS-dependent
-    continuation work such as the dedicated `SeedLoader` credential flow and seed loading when requested.
-    This shape is retained because removing it would require a separate bootstrap re-invocation after IDE
-    launch to perform seed loading, forcing redundant re-execution of prior phase outputs (instance IDs,
-    schema hash, credentials); it is documented as a convenience option rather than a required path.
-- `-InfraOnly` without `-DmsBaseUrl` is terminal for that invocation. It is not a checkpoint or later
-  bootstrap-resume mechanism for unfinished post-start work.
-- Story 03's accepted reading of "resume" is only the same-invocation continuation selected up front with
-  `-InfraOnly -DmsBaseUrl`; it does not define a persisted resume mechanism for a later bootstrap run.
-- `-LoadSeedData` with `-InfraOnly` but without `-DmsBaseUrl` is invalid and fails fast during parameter
-  validation; the pre-DMS-only workflow never silently defers seed loading to an implicit later
-  continuation.
+    by automatically waiting for the IDE-hosted DMS process to become healthy; `start-local-dms.ps1` stops
+    after confirming DMS health. If seed loading is requested, `load-dms-seed-data.ps1` is the next phase
+    to invoke, consuming the healthy endpoint and the instance set already selected in step 7. This keeps
+    `start-local-dms.ps1` limited to infrastructure lifecycle and health waiting while preserving a practical
+    convenience handoff for developers who want to seed through an IDE-hosted DMS process.
+- `-InfraOnly` without `-DmsBaseUrl` is terminal for that `start-local-dms.ps1` invocation. It is not a
+  checkpoint or later resume mechanism for that command's unfinished work.
+- Story 03's accepted reading of "resume" applies only to `start-local-dms.ps1`: same-invocation
+  continuation selected up front with `-InfraOnly -DmsBaseUrl`. It does not define a persisted resume
+  mechanism for a later `start-local-dms.ps1` run.
 - `-DmsBaseUrl` selects the external IDE-hosted DMS endpoint used in that continuation flow and is valid
   only with `-InfraOnly`.
 - `-DmsBaseUrl` implies automatic health wait with a clear timeout failure if the IDE-hosted process never
   becomes healthy; there is no separate health-wait flag in the public contract.
-- If the school-year workflow needs DMS-dependent continuation work such as seed loading under the IDE-hosted
-  process, `-DmsBaseUrl` must be present on that original `-InfraOnly` invocation. Story 03 does not define
-  a later multi-year resume from the stopped pre-DMS shape.
+- If the school-year workflow needs DMS-dependent work such as seed loading under the IDE-hosted process,
+  that work still belongs to `load-dms-seed-data.ps1` and requires a healthy DMS endpoint. Story 03 does
+  not define a later multi-year bootstrap-resume mechanism from the stopped pre-DMS shape.
 - `-AddSmokeTestCredentials` is a CMS-only operation that runs after CMS readiness and step-7 instance
   selection. It is valid with `-InfraOnly` even when `-DmsBaseUrl` is not set.
 - Step 7 is the only phase allowed to resolve target DMS instance IDs for the run. All later phases consume
-  that selected target set and never rediscover instances through CMS.
+  that selected target set from the repo-local bootstrap run-context file and never rediscover instances
+  through CMS.
 - `-NoDmsInstance` is only a narrow manual reuse escape hatch:
   - valid only when exactly one existing instance is present in the current tenant scope,
   - invalid with `-SchoolYearRange`,
@@ -98,8 +98,10 @@ across separate invocations.
     DMS-916 readiness gate,
   - Keycloak identity does not run `setup-openiddict.ps1 -InsertData`.
 - Story 03 treats Config Service readiness as a claims-ready gate for the selected staged inputs. Step 7 and
-  all later phases begin only after CMS startup claim loading has completed; if service health alone is not
-  sufficient to guarantee that, the implementation must ensure readiness is checked before continuing.
+  all later phases begin only after CMS startup claim loading has completed.
+- The readiness check is explicit: after `/health` is green, bootstrap calls
+  `/authorizationMetadata?claimSetName=<name>` and requires HTTP 200 for `EdFiSandbox`, and for each staged
+  additional claim set name when hybrid claims are staged. Proceed only when those probes succeed.
 - The IDE workflow remains Docker-first and does not introduce a second non-Docker bootstrap path.
 - `eng/docker-compose/.bootstrap/` is treated as scratch bootstrap state and is excluded from source
   control.
@@ -112,40 +114,45 @@ across separate invocations.
    not add parameters owned by schema preparation, claims staging, instance configuration, or seed delivery
    to this command.
 2. Put the story-aligned infrastructure-phase parameters on `start-local-dms.ps1` as specified in
-   `command-boundaries.md` §3.3; parameters owned by other phase commands stay with those commands.
+   `command-boundaries.md` Section 3.3; parameters owned by other phase commands stay with those commands.
 3. Implement the `-InfraOnly` and `-DmsBaseUrl` behaviors on the script-owned bootstrap surface so only two
    workflow shapes remain: pre-DMS stop, or automatic-health-wait continuation against the external DMS
-   endpoint. Keep optional smoke-test credentials in the CMS-only pre-DMS phase, reserve the DMS-dependent
-   continuation for `SeedLoader`/seed-loading work, fail fast when `-LoadSeedData` is requested in the
-   pre-DMS-only `-InfraOnly` shape without `-DmsBaseUrl`, and document that the stopped pre-DMS shape is a
-   terminal invocation rather than a later resume checkpoint. The only "resume" interpretation accepted by
-   this story is continuation declared up front on that same invocation via `-DmsBaseUrl`. The next-step
-   guidance printed at the pre-DMS termination point must give the developer the required IDE-hosted DMS
+   endpoint. Keep optional smoke-test credentials in the CMS-only pre-DMS phase; the health-wait
+   continuation on `start-local-dms.ps1` ends when DMS health is confirmed - `load-dms-seed-data.ps1`
+   is the next phase when seed loading is requested. Document that the stopped pre-DMS shape is a terminal
+   invocation rather than a later resume checkpoint for `start-local-dms.ps1`. The next-step guidance
+   printed at the pre-DMS termination point must give the developer the required IDE-hosted DMS
    configuration needed to start against the prepared environment, and it must not present a second
-   bootstrap invocation as a resume mechanism for skipped `SeedLoader` or seed-loading work.
+   `start-local-dms.ps1` invocation as a resume mechanism for skipped post-start work.
 4. Keep the documented identity-provider ordering aligned with the real dependency chain for both Keycloak
    and self-contained auth, including the explicit rule that self-contained identity runs
    `setup-openiddict.ps1 -InsertData` after Config Service readiness while Keycloak skips that step, and keep
    the step-6 readiness contract aligned with claims loading: bootstrap does not proceed to step 7 until CMS
-   startup claim loading is complete for the selected staged inputs.
+   startup claim loading is complete for the selected staged inputs, verified by `/health` plus successful
+   `/authorizationMetadata?claimSetName=<name>` probes for `EdFiSandbox` and each staged additional claim
+   set name when hybrid claims are in use.
 5. Implement bootstrap-time provisioning or validation of the dev-only `CMSReadOnlyAccess` client so
    the IDE-hosted DMS flow has a stable local CMS credential contract aligned to the documented
    localhost values, without expanding this story into broader CMS client lifecycle design.
-6. Add or update the developer-facing IDE guidance, including the localhost configuration values and staged
+6. Persist the step-7-selected target set to one small repo-local run-context file under
+   `eng/docker-compose/.bootstrap/` so later phases can consume the intended instances without a second CMS
+   discovery pass. Keep this handoff narrow; it is a per-run bootstrap artifact, not a broader persisted
+   control plane.
+7. Add or update the developer-facing IDE guidance, including the localhost configuration values and staged
    schema-path settings described in the main bootstrap design, including the bootstrap-provisioned
    `CMSReadOnlyAccess` read-only OAuth client details and the bootstrap-managed local-development credential
    value used by that flow.
-7. Provide the starter configuration artifact for IDE use (`appsettings.Development.json.example`) so the
+8. Provide the starter configuration artifact for IDE use (`appsettings.Development.json.example`) so the
    documented workflow is actionable once the bootstrap-managed local-development credential is inserted from
    printed guidance or provisioning output, and remains aligned with the bootstrap-seeded
    `CMSReadOnlyAccess` client contract unless the provisioning scripts are intentionally changed.
-8. Update the `-NoDmsInstance` rerun behavior to the narrowed DMS-916 escape hatch: valid only when exactly
+9. Update the `-NoDmsInstance` rerun behavior to the narrowed DMS-916 escape hatch: valid only when exactly
    one existing instance is present in the current tenant scope and `-SchoolYearRange` is not set. Ambiguity
    or zero matches fail fast with teardown or manual-environment-preparation guidance, and all later phases
    consume the step-7-selected target set without performing a second CMS discovery pass.
-9. Carry the repo-local bootstrap-workspace hygiene through this slice by keeping
+10. Carry the repo-local bootstrap-workspace hygiene through this slice by keeping
    `eng/docker-compose/.bootstrap/` git-ignored and documented as scratch-only state.
-10. Document the narrowed `-NoDmsInstance` semantics as a deliberate breaking change for existing fresh-stack
+11. Document the narrowed `-NoDmsInstance` semantics as a deliberate breaking change for existing fresh-stack
    scripts and provide the migration guidance on the local bootstrap surface.
 
 ## Out of Scope
@@ -159,4 +166,4 @@ across separate invocations.
 ## Design References
 
 - [`../bootstrap-design.md`](../bootstrap-design.md), Sections 1, 5, 7, 9, 12, 13, and 14.1
-- [`../command-boundaries.md`](../command-boundaries.md), §3.3 (infrastructure-lifecycle phase contract)
+- [`../command-boundaries.md`](../command-boundaries.md), Section 3.3 (infrastructure-lifecycle phase contract)
