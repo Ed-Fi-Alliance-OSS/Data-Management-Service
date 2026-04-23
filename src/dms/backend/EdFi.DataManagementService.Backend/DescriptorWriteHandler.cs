@@ -7,6 +7,7 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -18,6 +19,7 @@ namespace EdFi.DataManagementService.Backend;
 internal sealed class DescriptorWriteHandler(
     IRelationalWriteTargetLookupService targetLookupService,
     IRelationalCommandExecutor commandExecutor,
+    IRelationalWriteExceptionClassifier writeExceptionClassifier,
     ILogger<DescriptorWriteHandler> logger
 ) : IDescriptorWriteHandler
 {
@@ -25,6 +27,8 @@ internal sealed class DescriptorWriteHandler(
         targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
+    private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
+        writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
     private readonly ILogger<DescriptorWriteHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -100,13 +104,24 @@ internal sealed class DescriptorWriteHandler(
                 ),
             };
         }
-        catch (DbException ex) when (IsUniqueConstraintViolation(ex))
+        catch (DbException ex) when (_writeExceptionClassifier.IsUniqueConstraintViolation(ex))
         {
             _logger.LogDebug(
                 ex,
                 "Unique constraint violation on descriptor POST for {Resource} - {TraceId}",
                 RelationalWriteSupport.FormatResource(request.Resource),
                 request.TraceId.Value
+            );
+
+            return new UpsertResult.UpsertFailureWriteConflict();
+        }
+        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+        {
+            _logger.LogDebug(
+                ex,
+                "Transient conflict on descriptor POST for {Resource} - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
             );
 
             return new UpsertResult.UpsertFailureWriteConflict();
@@ -231,6 +246,17 @@ internal sealed class DescriptorWriteHandler(
                 RelationalApiMetadataFormatter.FormatEtag(body)
             );
         }
+        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+        {
+            _logger.LogDebug(
+                ex,
+                "Transient conflict on descriptor PUT for {Resource} - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+            );
+
+            return new UpdateResult.UpdateFailureWriteConflict();
+        }
         catch (DbException ex)
         {
             _logger.LogError(
@@ -247,80 +273,79 @@ internal sealed class DescriptorWriteHandler(
     }
 
     public async Task<DeleteResult> HandleDeleteAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
         DocumentUuid documentUuid,
         TraceId traceId,
         CancellationToken cancellationToken = default
     )
     {
+        ArgumentNullException.ThrowIfNull(mappingSet);
         cancellationToken.ThrowIfCancellationRequested();
 
         _logger.LogDebug(
-            "Deleting descriptor document {DocumentUuid} - {TraceId}",
+            "Deleting descriptor document {DocumentUuid} for {Resource} - {TraceId}",
             documentUuid.Value,
-            traceId.Value
+            RelationalWriteSupport.FormatResource(resource),
+            LoggingSanitizer.SanitizeForLogging(traceId.Value)
         );
 
-        var dialect = _commandExecutor.Dialect;
+        // Scope the DELETE by ResourceKeyId so a UUID belonging to a different descriptor
+        // (or a non-descriptor document) cannot be deleted through this resource endpoint.
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
 
-        var command = dialect switch
+        var command = BuildDescriptorDeleteCommand(_commandExecutor.Dialect, documentUuid, resourceKeyId);
+
+        return await RelationalDeleteExecution
+            .TryExecuteAsync(
+                _commandExecutor,
+                command,
+                _writeExceptionClassifier,
+                _logger,
+                documentUuid,
+                traceId,
+                DeleteTargetKind.Descriptor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static RelationalCommand BuildDescriptorDeleteCommand(
+        SqlDialect dialect,
+        DocumentUuid documentUuid,
+        short resourceKeyId
+    )
+    {
+        return dialect switch
         {
             SqlDialect.Pgsql => new RelationalCommand(
                 """
                 DELETE FROM dms."Document"
                 WHERE "DocumentUuid" = @documentUuid
+                  AND "ResourceKeyId" = @resourceKeyId
                 RETURNING "DocumentId";
                 """,
-                [new RelationalParameter("@documentUuid", documentUuid.Value)]
+                [
+                    new RelationalParameter("@documentUuid", documentUuid.Value),
+                    new RelationalParameter("@resourceKeyId", resourceKeyId),
+                ]
             ),
             SqlDialect.Mssql => new RelationalCommand(
                 """
                 DELETE FROM [dms].[Document]
                 OUTPUT DELETED.[DocumentId]
-                WHERE [DocumentUuid] = @documentUuid;
+                WHERE [DocumentUuid] = @documentUuid
+                  AND [ResourceKeyId] = @resourceKeyId;
                 """,
-                [new RelationalParameter("@documentUuid", documentUuid.Value)]
+                [
+                    new RelationalParameter("@documentUuid", documentUuid.Value),
+                    new RelationalParameter("@resourceKeyId", resourceKeyId),
+                ]
             ),
             _ => throw new NotSupportedException(
                 $"Descriptor delete does not support SQL dialect '{dialect}'."
             ),
         };
-
-        try
-        {
-            var deleted = await _commandExecutor
-                .ExecuteReaderAsync(
-                    command,
-                    static async (reader, ct) => await reader.ReadAsync(ct).ConfigureAwait(false),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
-        }
-        catch (DbException ex) when (IsForeignKeyViolation(ex))
-        {
-            _logger.LogDebug(
-                ex,
-                "FK constraint violation on descriptor DELETE for {DocumentUuid} - {TraceId}",
-                documentUuid.Value,
-                traceId.Value
-            );
-
-            return new DeleteResult.DeleteFailureReference(["(referenced descriptor)"]);
-        }
-        catch (DbException ex)
-        {
-            _logger.LogError(
-                ex,
-                "Database error on descriptor DELETE for {DocumentUuid} - {TraceId}",
-                documentUuid.Value,
-                traceId.Value
-            );
-
-            return new DeleteResult.UnknownFailure(
-                "An unexpected error occurred while processing the descriptor request."
-            );
-        }
     }
 
     private async Task<UpsertResult> InsertDescriptorAsync(
@@ -778,40 +803,5 @@ internal sealed class DescriptorWriteHandler(
         var parameters = BuildCommonFieldParameters(body);
         parameters.Add(new RelationalParameter("@discriminator", body.Discriminator));
         return parameters;
-    }
-
-    // ── SQL error classification ────────────────────────────────────────
-
-    /// <summary>
-    /// Detects unique constraint violations across Postgres (23505) and SQL Server (2627/2601).
-    /// </summary>
-    private static bool IsUniqueConstraintViolation(DbException ex)
-    {
-        // Postgres: SqlState "23505" (unique_violation)
-        // SQL Server: Number 2627 (unique key) or 2601 (unique index)
-        return ex.SqlState == "23505"
-            || (
-                ex is { HResult: var hr }
-                && hr is unchecked((int)0x80131904)
-                && (
-                    ex.Message.Contains("2627", StringComparison.Ordinal)
-                    || ex.Message.Contains("2601", StringComparison.Ordinal)
-                )
-            );
-    }
-
-    /// <summary>
-    /// Detects foreign key constraint violations across Postgres (23503) and SQL Server (547).
-    /// </summary>
-    private static bool IsForeignKeyViolation(DbException ex)
-    {
-        // Postgres: SqlState "23503" (foreign_key_violation)
-        // SQL Server: Number 547 (FK constraint)
-        return ex.SqlState == "23503"
-            || (
-                ex is { HResult: var hr }
-                && hr is unchecked((int)0x80131904)
-                && ex.Message.Contains("547", StringComparison.Ordinal)
-            );
     }
 }

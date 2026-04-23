@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -41,11 +42,16 @@ internal sealed class DefaultDescriptorWriteHandler : IDescriptorWriteHandler
     }
 
     public Task<DeleteResult> HandleDeleteAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
         DocumentUuid documentUuid,
         TraceId traceId,
         CancellationToken cancellationToken = default
     )
     {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        cancellationToken.ThrowIfCancellationRequested();
+
         return Task.FromResult<DeleteResult>(
             new DeleteResult.UnknownFailure("Descriptor DELETE write is not implemented.")
         );

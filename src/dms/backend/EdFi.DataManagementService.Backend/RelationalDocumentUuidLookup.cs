@@ -38,6 +38,35 @@ internal static class RelationalDocumentUuidLookupSupport
         );
     }
 
+    /// <summary>
+    /// Delete-path entry point for resolving a document by (resource, DocumentUuid). The regular
+    /// non-descriptor DELETE needs only the internal <c>DocumentId</c> to scope the actual DELETE
+    /// statement, so this helper narrows the shared UUID lookup result to a
+    /// <see cref="ResolvedDeleteTarget"/> (DocumentId only) and keeps "resolve delete target" as
+    /// an explicit concept separate from the PUT-oriented
+    /// <see cref="RelationalWriteTargetLookupService.ResolveForPutAsync"/> (which additionally
+    /// requires a non-null <c>ContentVersion</c>).
+    /// </summary>
+    public static async Task<ResolvedDeleteTarget?> TryResolveDeleteTargetAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var resolved = await TryResolveByDocumentUuidAndResourceAsync(
+                commandExecutor,
+                mappingSet,
+                resource,
+                documentUuid,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return resolved is null ? null : new ResolvedDeleteTarget(resolved.DocumentId);
+    }
+
     public static Task<ResolvedDocumentByUuid?> TryResolveByDocumentUuidAndResourceAsync(
         IRelationalCommandExecutor commandExecutor,
         MappingSet mappingSet,
@@ -168,4 +197,6 @@ internal static class RelationalDocumentUuidLookupSupport
         short ResourceKeyId,
         long? ContentVersion
     );
+
+    internal sealed record ResolvedDeleteTarget(long DocumentId);
 }

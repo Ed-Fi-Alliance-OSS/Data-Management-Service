@@ -8,16 +8,46 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal sealed class SessionRelationalCommandExecutor(DbConnection connection, DbTransaction transaction)
-    : IRelationalCommandExecutor
+internal sealed class SessionRelationalCommandExecutor : IRelationalCommandExecutor
 {
-    private readonly DbConnection _connection =
-        connection ?? throw new ArgumentNullException(nameof(connection));
+    private readonly Func<RelationalCommand, DbCommand> _createCommand;
 
-    private readonly DbTransaction _transaction =
-        transaction ?? throw new ArgumentNullException(nameof(transaction));
+    public SessionRelationalCommandExecutor(DbConnection connection, DbTransaction transaction)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
 
-    public SqlDialect Dialect { get; } = DetermineDialect(connection);
+        Dialect = DetermineDialect(connection);
+        _createCommand = command =>
+            SessionRelationalCommandFactory.CreateCommand(connection, transaction, command);
+    }
+
+    private SessionRelationalCommandExecutor(
+        Func<RelationalCommand, DbCommand> createCommand,
+        SqlDialect dialect
+    )
+    {
+        _createCommand = createCommand ?? throw new ArgumentNullException(nameof(createCommand));
+        Dialect = dialect;
+    }
+
+    /// <summary>
+    /// Builds an executor that routes every command through
+    /// <see cref="IRelationalWriteSession.CreateCommand(RelationalCommand)"/>, so a session
+    /// decorator that overrides <c>CreateCommand</c> observes every write issued inside the
+    /// session (including reads such as UUID/resource lookups).
+    /// </summary>
+    public static IRelationalCommandExecutor ForSession(IRelationalWriteSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        return new SessionRelationalCommandExecutor(
+            session.CreateCommand,
+            DetermineDialect(session.Connection)
+        );
+    }
+
+    public SqlDialect Dialect { get; }
 
     public async Task<TResult> ExecuteReaderAsync<TResult>(
         RelationalCommand command,
@@ -28,11 +58,7 @@ internal sealed class SessionRelationalCommandExecutor(DbConnection connection, 
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(readAsync);
 
-        await using var dbCommand = SessionRelationalCommandFactory.CreateCommand(
-            _connection,
-            _transaction,
-            command
-        );
+        await using var dbCommand = _createCommand(command);
 
         await using var reader = new DbRelationalCommandReader(
             await dbCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false)

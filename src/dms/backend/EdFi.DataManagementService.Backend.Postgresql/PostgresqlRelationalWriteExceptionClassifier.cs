@@ -46,6 +46,32 @@ internal sealed class PostgresqlRelationalWriteExceptionClassifier : IRelational
         return classification is not null;
     }
 
+    public bool IsForeignKeyViolation(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        // Rely on SqlState 23503 directly so FK violations still map to a 409
+        // DeleteFailureReference even if the constraint name is absent.
+        return exception is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation };
+    }
+
+    public bool IsUniqueConstraintViolation(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        // Rely on SqlState 23505 directly so unique-violation failures still map to a 409
+        // write-conflict even if the constraint name is absent.
+        return exception is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+    }
+
+    public bool IsTransientFailure(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return exception is PostgresException { SqlState: var sqlState }
+            && sqlState is PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure;
+    }
+
     private static RelationalWriteExceptionClassification BuildConstraintClassification(
         string? constraintName,
         Func<string, RelationalWriteExceptionClassification.ConstraintViolation> createClassification

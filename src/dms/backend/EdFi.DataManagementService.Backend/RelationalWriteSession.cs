@@ -7,18 +7,34 @@ using System.Data.Common;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal interface IRelationalWriteSessionFactory
+public interface IRelationalWriteSessionFactory
 {
     Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default);
 }
 
-internal interface IRelationalWriteSession : IAsyncDisposable
+public interface IRelationalWriteSession : IAsyncDisposable
 {
     DbConnection Connection { get; }
 
     DbTransaction Transaction { get; }
 
+    /// <summary>
+    /// Creates a provider-specific <see cref="DbCommand"/> bound to this session's connection
+    /// and transaction. This is the single command-creation hook for the session; decorators
+    /// that record or fail writes intercept here. Command executors produced by
+    /// <see cref="CreateCommandExecutor"/> route through this method so a decorator observes
+    /// every read and write issued in-session.
+    /// </summary>
     DbCommand CreateCommand(RelationalCommand command);
+
+    /// <summary>
+    /// Returns an <see cref="IRelationalCommandExecutor"/> scoped to this session. The default
+    /// implementation builds an executor that delegates command creation back to
+    /// <see cref="CreateCommand(RelationalCommand)"/>, so decorators only need to override
+    /// <c>CreateCommand</c> to intercept every in-session command (reads and writes).
+    /// Test stubs may override this to inject a fake executor directly.
+    /// </summary>
+    IRelationalCommandExecutor CreateCommandExecutor() => SessionRelationalCommandExecutor.ForSession(this);
 
     Task CommitAsync(CancellationToken cancellationToken = default);
 

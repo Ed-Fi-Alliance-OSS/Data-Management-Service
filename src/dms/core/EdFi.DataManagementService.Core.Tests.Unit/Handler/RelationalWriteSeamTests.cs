@@ -725,7 +725,9 @@ actual: {requestInfo.FrontendResponse.Body}
                 A.Fake<IDocumentHydrator>(),
                 A.Fake<IRelationalReadTargetLookupService>(),
                 A.Fake<IRelationalReadMaterializer>(),
-                A.Fake<IReadableProfileProjector>()
+                A.Fake<IReadableProfileProjector>(),
+                new NoOpRelationalWriteExceptionClassifier(),
+                A.Fake<IRelationalWriteSessionFactory>()
             );
 
             return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor);

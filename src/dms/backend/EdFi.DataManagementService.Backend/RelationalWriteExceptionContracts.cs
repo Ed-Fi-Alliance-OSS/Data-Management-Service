@@ -10,15 +10,40 @@ using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal interface IRelationalWriteExceptionClassifier
+public interface IRelationalWriteExceptionClassifier
 {
     bool TryClassify(
         DbException exception,
         [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
     );
+
+    /// <summary>
+    /// Reports whether the exception represents a foreign-key violation, independent of whether
+    /// the constraint name can be extracted. Callers that need a 409 response for FK conflicts
+    /// should prefer this over <see cref="TryClassify"/>, which returns
+    /// <see cref="RelationalWriteExceptionClassification.UnrecognizedWriteFailure"/> when the
+    /// constraint name is missing (e.g., localized SQL Server error messages).
+    /// </summary>
+    bool IsForeignKeyViolation(DbException exception);
+
+    /// <summary>
+    /// Reports whether the exception represents a unique-constraint violation, independent of
+    /// whether the constraint name can be extracted. Callers that need a 409 write-conflict
+    /// response for duplicates (e.g., descriptor POST) should prefer this over
+    /// <see cref="TryClassify"/>, which returns
+    /// <see cref="RelationalWriteExceptionClassification.UnrecognizedWriteFailure"/> when the
+    /// constraint name is missing (e.g., localized SQL Server error messages).
+    /// </summary>
+    bool IsUniqueConstraintViolation(DbException exception);
+
+    /// <summary>
+    /// Reports whether the exception represents a transient, retry-eligible database failure
+    /// (deadlock victim, serialization failure, lock-request timeout).
+    /// </summary>
+    bool IsTransientFailure(DbException exception);
 }
 
-internal abstract record RelationalWriteExceptionClassification
+public abstract record RelationalWriteExceptionClassification
 {
     public abstract record ConstraintViolation : RelationalWriteExceptionClassification
     {

@@ -62,6 +62,38 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
         return classification is not null;
     }
 
+    public bool IsForeignKeyViolation(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        // SQL Server error 547 covers FOREIGN KEY (INSERT/UPDATE), REFERENCE (DELETE),
+        // and CHECK constraint violations. Pair the numeric code with a kind match so
+        // CHECK-547 messages are not misclassified as reference conflicts, while still
+        // letting FK/REFERENCE messages through even when the constraint name is absent.
+        return exception is SqlException sqlException
+            && sqlException.Number == ForeignKeyConstraintViolationNumber
+            && ForeignKeyConstraintKindRegex().IsMatch(sqlException.Message);
+    }
+
+    public bool IsUniqueConstraintViolation(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        // SQL Server surfaces unique-constraint violations as 2627 (UNIQUE KEY) and unique-index
+        // violations as 2601; rely on the numeric codes so localized or reworded server messages
+        // still produce a 409 write-conflict.
+        return exception is SqlException sqlException
+            && sqlException.Number is UniqueConstraintViolationNumber or UniqueIndexViolationNumber;
+    }
+
+    public bool IsTransientFailure(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return exception is SqlException sqlException
+            && sqlException.Number is DeadlockVictimNumber or LockRequestTimeoutNumber;
+    }
+
     private static RelationalWriteExceptionClassification BuildConstraintClassification(
         string message,
         Regex constraintNamePattern,
@@ -92,9 +124,17 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
     )]
     private static partial Regex UniqueIndexNameRegex();
 
+    // SQL Server error 547 phrasing differs by statement: INSERT/UPDATE produce
+    // "FOREIGN KEY constraint \"...\"", while DELETE produces "REFERENCE constraint \"...\"".
     [GeneratedRegex(
-        """\bforeign\s+key\s+constraint\s+["'](?<constraintName>[^"']+)["']""",
+        """\b(?:foreign\s+key|reference)\s+constraint\s+["'](?<constraintName>[^"']+)["']""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
     )]
     private static partial Regex ForeignKeyConstraintNameRegex();
+
+    [GeneratedRegex(
+        """\b(?:foreign\s+key|reference)\s+constraint\b""",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
+    )]
+    private static partial Regex ForeignKeyConstraintKindRegex();
 }
