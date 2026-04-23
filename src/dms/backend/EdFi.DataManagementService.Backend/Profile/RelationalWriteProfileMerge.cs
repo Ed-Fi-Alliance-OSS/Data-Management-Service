@@ -12,14 +12,13 @@ using EdFi.DataManagementService.Core.Profile;
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Input contract for the profile merge synthesizer. Slice 3 supports the root-table
-/// scope and any root-attached separate-table non-collection
-/// (<see cref="DbTableKind.RootExtension"/>) scopes. Collection candidates remain
-/// fenced out in slice 3 at BOTH levels: top-level <see cref="RootWriteRowBuffer.CollectionCandidates"/>
-/// and nested <see cref="RootExtensionWriteRowBuffer.CollectionCandidates"/> under any
-/// root-extension row. Any non-<see cref="DbTableKind.RootExtension"/> buffer kind under
-/// <see cref="RootWriteRowBuffer.RootExtensionRows"/> is rejected fail-closed; additional
-/// table plans carrying collection or deeper scopes belong to later slices.
+/// Request contract for the profile merge synthesizer. Slice 4 narrows the earlier Slice 3
+/// rejection of root-level <see cref="CollectionWriteCandidate"/>s: root-attached base
+/// collection candidates (<see cref="DbTableKind.Collection"/>) are now accepted when they
+/// carry neither nested <c>CollectionCandidates</c> nor <c>AttachedAlignedScopeData</c>.
+/// Nested candidates, attached-aligned scope data, collection candidates under
+/// <see cref="RootExtensionWriteRowBuffer"/>, and non-Collection root table kinds remain
+/// fenced — they land in Slice 5 or are structurally invalid.
 /// </summary>
 internal sealed record RelationalWriteProfileMergeRequest
 {
@@ -55,13 +54,33 @@ internal sealed record RelationalWriteProfileMergeRequest
                 nameof(flattenedWriteSet)
             );
         }
-        if (!FlattenedWriteSet.RootRow.CollectionCandidates.IsDefaultOrEmpty)
+        foreach (var candidate in FlattenedWriteSet.RootRow.CollectionCandidates)
         {
-            throw new ArgumentException(
-                "Slice 3 profile merge fences root-level collection candidates; they must be "
-                    + "addressed in a later slice.",
-                nameof(flattenedWriteSet)
-            );
+            if (!candidate.CollectionCandidates.IsDefaultOrEmpty)
+            {
+                throw new ArgumentException(
+                    "Slice 4 profile merge does not yet support nested CollectionCandidates under a "
+                        + "top-level collection candidate; they will land in Slice 5.",
+                    nameof(flattenedWriteSet)
+                );
+            }
+            if (!candidate.AttachedAlignedScopeData.IsDefaultOrEmpty)
+            {
+                throw new ArgumentException(
+                    "Slice 4 profile merge does not yet support AttachedAlignedScopeData on a "
+                        + "top-level collection candidate; they will land in Slice 5.",
+                    nameof(flattenedWriteSet)
+                );
+            }
+            if (candidate.TableWritePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.Collection)
+            {
+                throw new ArgumentException(
+                    "Slice 4 profile merge top-level collection candidates must carry "
+                        + "DbTableKind.Collection (root-attached base collection). Other root-candidate table kinds are fenced and must be addressed in a later slice.",
+                    nameof(flattenedWriteSet)
+                );
+            }
+            // Root-attached base collection candidate → passes the gate.
         }
         foreach (var extensionRow in FlattenedWriteSet.RootRow.RootExtensionRows)
         {
@@ -160,7 +179,30 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         );
 
         // 1. Root-table merge.
-        tableStates.Add(SynthesizeRootTable(request, resolvedReferenceLookups));
+        var rootTableState = SynthesizeRootTable(request, resolvedReferenceLookups);
+        tableStates.Add(rootTableState);
+
+        // Root physical row identity values: the merged root row's values, used as the
+        // parent-key-part source for any top-level collection candidates.
+        IReadOnlyList<FlattenedWriteValue> rootPhysicalRowIdentityValues =
+            rootTableState.MergedRows.Length > 0
+                ? rootTableState.MergedRows[0].Values
+                : request.FlattenedWriteSet.RootRow.Values;
+
+        // 1a. Top-level collection merge — runs unconditionally so that stored-only
+        //     "delete-all-visible" scenarios (Blocker #2 fix: spec Section 7.7) are driven
+        //     from the union of request-side, stored-side, and DB-side sources rather than
+        //     only when request-side candidates are present.
+        var collectionOutcome = SynthesizeTopLevelCollectionScopes(
+            request,
+            rootPhysicalRowIdentityValues,
+            resolvedReferenceLookups,
+            tableStates
+        );
+        if (collectionOutcome is not null)
+        {
+            return collectionOutcome.Value;
+        }
 
         // 2. Per-separate-table merge for every non-root table in dependency order. Plans may
         //    legitimately carry non-RootExtension tables that the executor's slice-fence has
@@ -615,6 +657,559 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             );
         }
         return scopeNode;
+    }
+
+    /// <summary>
+    /// Synthesizes merged collection rows for all top-level collection candidates attached
+    /// to the root row. Called once per synthesizer pass after the separate-table loop
+    /// (spec Section 4.2 / 4.3). Returns a non-null <see cref="ProfileMergeOutcome.Reject"/>
+    /// on a creatability-denied item; appends collection table states to
+    /// <paramref name="tableStates"/> on success and returns <c>null</c>.
+    /// </summary>
+    private static ProfileMergeOutcome? SynthesizeTopLevelCollectionScopes(
+        RelationalWriteProfileMergeRequest request,
+        IReadOnlyList<FlattenedWriteValue> rootPhysicalRowIdentityValues,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        List<RelationalWriteMergedTableState> tableStates
+    )
+    {
+        var topLevelCollectionCandidates = request.FlattenedWriteSet.RootRow.CollectionCandidates;
+        var profileRequest = request.ProfileRequest;
+        var profileAppliedContext = request.ProfileAppliedContext;
+        var currentState = request.CurrentState;
+        var writableRequestBody = request.WritableRequestBody;
+        var resourceWritePlan = request.WritePlan;
+
+        // Group candidates by table (JsonScope) so we process each scope once.
+        var candidatesByScope = topLevelCollectionCandidates
+            .GroupBy(c => c.TableWritePlan.TableModel.JsonScope.Canonical)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Build a scope topology index so we can identify root-attached
+        // (TopLevelBaseCollection) tables without relying solely on request-side
+        // candidates. This drives Blocker #2 fix: stored-only delete-all-visible scopes
+        // are visited even when CollectionCandidates is empty for that scope.
+        var scopeTopology = ScopeTopologyIndex.BuildFromWritePlan(resourceWritePlan);
+
+        // Iterate in TablePlansInDependencyOrder so first-rejection-wins is deterministic across runs.
+        foreach (var tablePlan in resourceWritePlan.TablePlansInDependencyOrder)
+        {
+            var jsonScope = tablePlan.TableModel.JsonScope.Canonical;
+
+            // Only process root-attached base collection tables (Blocker #2: iterate from
+            // topology, not solely from request-side candidates).
+            if (scopeTopology.GetTopology(jsonScope) is not ScopeTopologyKind.TopLevelBaseCollection)
+            {
+                continue;
+            }
+
+            candidatesByScope.TryGetValue(jsonScope, out var candidates);
+            var requestCandidatesForScope = candidates is null
+                ? ImmutableArray<CollectionWriteCandidate>.Empty
+                : candidates.ToImmutableArray();
+
+            var visibleRequestItemsForScope = profileRequest
+                .VisibleRequestCollectionItems.Where(i => i.Address.JsonScope == jsonScope)
+                .ToImmutableArray();
+
+            var visibleStoredRowsForScope = profileAppliedContext is null
+                ? ImmutableArray<VisibleStoredCollectionRow>.Empty
+                : profileAppliedContext
+                    .VisibleStoredCollectionRows.Where(r => r.Address.JsonScope == jsonScope)
+                    .ToImmutableArray();
+
+            var currentRowsForScope = currentState is null
+                ? ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+                : ProjectCurrentRowsForScope(currentState, tablePlan, rootPhysicalRowIdentityValues);
+
+            // No-op scope: all four sources empty → nothing to do for this collection table.
+            if (
+                requestCandidatesForScope.Length == 0
+                && visibleRequestItemsForScope.Length == 0
+                && visibleStoredRowsForScope.Length == 0
+                && currentRowsForScope.Length == 0
+            )
+            {
+                continue;
+            }
+
+            // Defense-in-depth shape fence: nested candidates or attached aligned scope
+            // data must not reach the emission site (constructor gate already rejects, but
+            // this catches any path that might slip through).
+            foreach (var candidate in requestCandidatesForScope)
+            {
+                if (!candidate.CollectionCandidates.IsDefaultOrEmpty)
+                {
+                    throw new InvalidOperationException(
+                        $"Top-level collection candidate for scope '{jsonScope}' carries nested "
+                            + "CollectionCandidates. Defense-in-depth emission fence triggered."
+                    );
+                }
+                if (!candidate.AttachedAlignedScopeData.IsDefaultOrEmpty)
+                {
+                    throw new InvalidOperationException(
+                        $"Top-level collection candidate for scope '{jsonScope}' carries "
+                            + "AttachedAlignedScopeData. Defense-in-depth emission fence triggered."
+                    );
+                }
+            }
+
+            // 1. Build scope-local planner input from the unified source set.
+            var parentScopeAddress = new ScopeInstanceAddress(
+                "$",
+                ImmutableArray<AncestorCollectionInstance>.Empty
+            );
+
+            var input = new ProfileTopLevelCollectionScopeInput(
+                JsonScope: jsonScope,
+                ParentScopeAddress: parentScopeAddress,
+                RequestCandidates: requestCandidatesForScope,
+                VisibleRequestItems: visibleRequestItemsForScope,
+                VisibleStoredRows: visibleStoredRowsForScope,
+                CurrentRows: currentRowsForScope
+            );
+
+            // 2. Call the planner. Invariant violations throw and propagate as fail-closed.
+            var planResult = ProfileTopLevelCollectionPlanner.Plan(input);
+
+            // 3. Handle result.
+            if (planResult is ProfileTopLevelCollectionPlanResult.CreatabilityRejection rejection)
+            {
+                return ProfileMergeOutcome.Reject(
+                    new ProfileCreatabilityRejection(jsonScope, rejection.Reason)
+                );
+            }
+
+            if (planResult is not ProfileTopLevelCollectionPlanResult.Success success)
+            {
+                throw new InvalidOperationException(
+                    $"Unhandled ProfileTopLevelCollectionPlanResult type '{planResult?.GetType().Name}' for scope '{jsonScope}'."
+                );
+            }
+
+            // 4. Translate plan entries to merged rows in sequence order.
+            var mergedRows = new List<RelationalWriteMergedTableRow>(success.Plan.Sequence.Length);
+
+            // Blocker #1 fix: CurrentRows must contain ALL rows currently in the DB for
+            // this scope — including omitted-visible rows that the planner excluded from
+            // Sequence. The persister's delete-by-absence logic relies on the set-difference
+            // (StableRowIdentity in CurrentRows but not in MergedRows → delete). Building
+            // currentCollectionRows only from plan Sequence entries means omitted-visible
+            // rows are invisible to the persister and are never deleted.
+            var currentCollectionRows = currentRowsForScope.Select(snap => snap.ProjectedCurrentRow).ToList();
+
+            // Build a lookup from candidate identity key → VisibleRequestCollectionItem so we
+            // can find the concrete request item node for matched-update entries without a
+            // separate linear scan each time.
+            var candidateKeyToRequestItem = BuildCandidateKeyToRequestItemLookup(visibleRequestItemsForScope);
+
+            for (var i = 0; i < success.Plan.Sequence.Length; i++)
+            {
+                var finalOrdinal = i + 1;
+                var entry = success.Plan.Sequence[i];
+
+                switch (entry)
+                {
+                    case ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry matchedEntry:
+                    {
+                        // Resolve the concrete request item node from the writable request body.
+                        var candidateKey = BuildCandidateIdentityKey(
+                            matchedEntry.RequestCandidate.SemanticIdentityValues
+                        );
+                        if (!candidateKeyToRequestItem.TryGetValue(candidateKey, out var requestItem))
+                        {
+                            throw new InvalidOperationException(
+                                $"MatchedUpdateEntry for scope '{jsonScope}' could not locate a "
+                                    + "VisibleRequestCollectionItem for the candidate's semantic identity."
+                            );
+                        }
+
+                        var concreteRequestItemNode = ResolveCollectionItemNode(
+                            writableRequestBody,
+                            requestItem.RequestJsonPath
+                        );
+
+                        if (concreteRequestItemNode is null)
+                        {
+                            throw new InvalidOperationException(
+                                $"Top-level collection merge for scope '{jsonScope}' could not navigate "
+                                    + $"the request body to item path '{requestItem.RequestJsonPath}'. "
+                                    + "The visible request item must correspond to an existing array element."
+                            );
+                        }
+
+                        var mergedRow = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+                            resourceWritePlan,
+                            tablePlan,
+                            profileRequest,
+                            matchedEntry.StoredRow,
+                            matchedEntry.RequestCandidate,
+                            matchedEntry.HiddenMemberPaths,
+                            finalOrdinal,
+                            rootPhysicalRowIdentityValues,
+                            concreteRequestItemNode,
+                            resolvedReferenceLookups
+                        );
+                        mergedRows.Add(mergedRow);
+                        break;
+                    }
+
+                    case ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry hiddenEntry:
+                    {
+                        // Clone stored row values and overwrite ordinal column.
+                        var cloned = hiddenEntry.StoredRow.ProjectedCurrentRow.Values.ToArray();
+                        cloned[tablePlan.CollectionMergePlan!.OrdinalBindingIndex] =
+                            new FlattenedWriteValue.Literal(finalOrdinal);
+                        var mergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(tablePlan, cloned);
+                        mergedRows.Add(mergedRow);
+                        break;
+                    }
+
+                    case ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry insertEntry:
+                    {
+                        // Rewrite parent key parts, stamp ordinal, build merged row.
+                        var withParentKey = RelationalWriteRowHelpers.RewriteParentKeyPartValues(
+                            tablePlan,
+                            insertEntry.RequestCandidate.Values,
+                            rootPhysicalRowIdentityValues
+                        );
+                        var stamped = withParentKey.ToArray();
+                        stamped[tablePlan.CollectionMergePlan!.OrdinalBindingIndex] =
+                            new FlattenedWriteValue.Literal(finalOrdinal);
+                        var mergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(tablePlan, stamped);
+                        mergedRows.Add(mergedRow);
+                        break;
+                    }
+
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unhandled plan entry type '{entry?.GetType().Name}' for scope '{jsonScope}'."
+                        );
+                }
+            }
+
+            tableStates.Add(
+                new RelationalWriteMergedTableState(tablePlan, currentCollectionRows, mergedRows)
+            );
+        }
+
+        return null; // All scopes processed without rejection.
+    }
+
+    /// <summary>
+    /// Builds a lookup from candidate identity key (same format as the planner uses) to the
+    /// matching <see cref="VisibleRequestCollectionItem"/>. Used to resolve the concrete
+    /// request item node for matched-update entries.
+    /// </summary>
+    private static Dictionary<string, VisibleRequestCollectionItem> BuildCandidateKeyToRequestItemLookup(
+        ImmutableArray<VisibleRequestCollectionItem> visibleRequestItems
+    )
+    {
+        var result = new Dictionary<string, VisibleRequestCollectionItem>(StringComparer.Ordinal);
+        foreach (var item in visibleRequestItems)
+        {
+            // Build the same key the planner uses for VisibleRequestItems (via AddressKey).
+            var addressKey = BuildAddressIdentityKey(item.Address.SemanticIdentityInOrder);
+            result.TryAdd(addressKey, item);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Builds a string key from the candidate's raw CLR semantic identity values by
+    /// wrapping each value in a <see cref="JsonValue"/> and serializing to JSON string form,
+    /// then joining with a pipe delimiter. Mirrors the planner's <c>BuildCandidateIdentityKey</c>.
+    /// </summary>
+    private static string BuildCandidateIdentityKey(IReadOnlyList<object?> semanticIdentityValues) =>
+        string.Join(
+            "|",
+            semanticIdentityValues.Select(v =>
+                v is null ? "null" : JsonValue.Create(v)?.ToJsonString() ?? "null"
+            )
+        );
+
+    /// <summary>
+    /// Builds a string key from a <see cref="CollectionRowAddress"/>'s semantic identity
+    /// parts by serializing each part's JSON value, then joining with a pipe delimiter.
+    /// Mirrors the planner's <c>BuildSemanticIdentityKey</c>.
+    /// </summary>
+    private static string BuildAddressIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
+        string.Join("|", identityParts.Select(p => p.Value?.ToJsonString() ?? "null"));
+
+    /// <summary>
+    /// Projects the current DB rows for a single top-level collection table into
+    /// <see cref="CurrentCollectionRowSnapshot"/> instances. Filters to rows whose
+    /// parent physical identity columns match <paramref name="rootPhysicalRowIdentityValues"/>,
+    /// then extracts <see cref="CurrentCollectionRowSnapshot.StableRowIdentity"/>,
+    /// <see cref="CurrentCollectionRowSnapshot.SemanticIdentityInOrder"/>, and
+    /// <see cref="CurrentCollectionRowSnapshot.StoredOrdinal"/> from the table plan's
+    /// binding indexes. Rows are returned sorted by ascending <c>StoredOrdinal</c>.
+    /// </summary>
+    private static ImmutableArray<CurrentCollectionRowSnapshot> ProjectCurrentRowsForScope(
+        RelationalWriteCurrentState currentState,
+        TableWritePlan tablePlan,
+        IReadOnlyList<FlattenedWriteValue> rootPhysicalRowIdentityValues
+    )
+    {
+        var hydratedRows = TryFindHydratedRowsForTable(currentState, tablePlan);
+        if (hydratedRows is null || hydratedRows.Count == 0)
+        {
+            return ImmutableArray<CurrentCollectionRowSnapshot>.Empty;
+        }
+
+        var mergePlan =
+            tablePlan.CollectionMergePlan
+            ?? throw new InvalidOperationException(
+                $"Collection table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' does not have a compiled collection merge plan."
+            );
+
+        // Build a lookup of parent-scope-locator column names → binding indexes so we can
+        // match each DB row against rootPhysicalRowIdentityValues.
+        var immediateParentColumns = tablePlan.TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
+        var parentBindingIndexes = immediateParentColumns
+            .Select(col => RelationalWriteMergeSupport.FindBindingIndex(tablePlan, col))
+            .ToArray();
+
+        // Build expected parent identity values from rootPhysicalRowIdentityValues using the
+        // parent binding indexes.  rootPhysicalRowIdentityValues is indexed by PhysicalRowIdentity
+        // column order on the ROOT table; for top-level collection tables the parent key part
+        // index maps directly to the root table's physical identity columns.
+        var projectedAll = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydratedRows);
+
+        var snapshots = new List<CurrentCollectionRowSnapshot>(projectedAll.Length);
+        foreach (var projectedRow in projectedAll)
+        {
+            // Filter: every parent-scope-locator column must match rootPhysicalRowIdentityValues.
+            var parentMatches = true;
+            for (var pi = 0; pi < parentBindingIndexes.Length; pi++)
+            {
+                var parentBindingIdx = parentBindingIndexes[pi];
+
+                // rootPhysicalRowIdentityValues uses the ParentKeyPart.Index to find the right
+                // value. The binding's source carries the ParentKeyPart.Index.
+                if (
+                    tablePlan.ColumnBindings[parentBindingIdx].Source
+                    is WriteValueSource.ParentKeyPart parentKeyPart
+                )
+                {
+                    var expectedValue = rootPhysicalRowIdentityValues[parentKeyPart.Index];
+                    var actualValue = projectedRow.Values[parentBindingIdx];
+
+                    if (!FlattenedWriteValueEquals(expectedValue, actualValue))
+                    {
+                        parentMatches = false;
+                        break;
+                    }
+                }
+                // If not a ParentKeyPart source, we still compare by literal equality.
+                else if (
+                    pi < rootPhysicalRowIdentityValues.Count
+                    && !FlattenedWriteValueEquals(
+                        rootPhysicalRowIdentityValues[pi],
+                        projectedRow.Values[parentBindingIdx]
+                    )
+                )
+                {
+                    parentMatches = false;
+                    break;
+                }
+            }
+
+            if (!parentMatches)
+            {
+                continue;
+            }
+
+            // Extract stable row identity.
+            var stableRowIdentityValue = projectedRow.Values[mergePlan.StableRowIdentityBindingIndex];
+            long stableRowIdentity;
+            if (stableRowIdentityValue is FlattenedWriteValue.Literal lit && lit.Value is long l)
+            {
+                stableRowIdentity = l;
+            }
+            else if (stableRowIdentityValue is FlattenedWriteValue.Literal lit2 && lit2.Value is not null)
+            {
+                stableRowIdentity = Convert.ToInt64(lit2.Value);
+            }
+            else
+            {
+                stableRowIdentity = 0L;
+            }
+
+            // Extract ordinal.
+            var ordinalValue = projectedRow.Values[mergePlan.OrdinalBindingIndex];
+            int storedOrdinal;
+            if (ordinalValue is FlattenedWriteValue.Literal ordLit && ordLit.Value is int ordInt)
+            {
+                storedOrdinal = ordInt;
+            }
+            else if (ordinalValue is FlattenedWriteValue.Literal ordLit2 && ordLit2.Value is not null)
+            {
+                storedOrdinal = Convert.ToInt32(ordLit2.Value);
+            }
+            else
+            {
+                storedOrdinal = 0;
+            }
+
+            // Extract semantic identity parts.
+            var identityParts = mergePlan
+                .SemanticIdentityBindings.Select(binding =>
+                {
+                    var bindingVal = projectedRow.Values[binding.BindingIndex];
+                    var rawValue = bindingVal is FlattenedWriteValue.Literal valLit ? valLit.Value : null;
+                    JsonNode? jsonNode = rawValue is null ? null : JsonValue.Create(rawValue);
+                    return new SemanticIdentityPart(
+                        binding.RelativePath.Canonical,
+                        jsonNode,
+                        IsPresent: rawValue is not null
+                    );
+                })
+                .ToImmutableArray();
+
+            snapshots.Add(
+                new CurrentCollectionRowSnapshot(
+                    stableRowIdentity,
+                    identityParts,
+                    storedOrdinal,
+                    projectedRow
+                )
+            );
+        }
+
+        return [.. snapshots.OrderBy(s => s.StoredOrdinal)];
+    }
+
+    /// <summary>
+    /// Compares two <see cref="FlattenedWriteValue"/> instances by their underlying literal
+    /// values for parent-scope filtering.
+    /// </summary>
+    private static bool FlattenedWriteValueEquals(FlattenedWriteValue a, FlattenedWriteValue b)
+    {
+        if (a is FlattenedWriteValue.Literal litA && b is FlattenedWriteValue.Literal litB)
+        {
+            if (litA.Value is null && litB.Value is null)
+            {
+                return true;
+            }
+
+            if (litA.Value is null || litB.Value is null)
+            {
+                return false;
+            }
+
+            // Convert both to string for comparison to handle numeric type mismatches
+            // (e.g., long vs int from different projection paths).
+            return string.Equals(
+                Convert.ToString(litA.Value),
+                Convert.ToString(litB.Value),
+                StringComparison.Ordinal
+            );
+        }
+
+        // Non-literal values don't participate in parent-key filtering.
+        return ReferenceEquals(a, b);
+    }
+
+    /// <summary>
+    /// Resolves a concrete JSON array item node from <paramref name="requestBody"/> using a
+    /// path like <c>$.classPeriods[0]</c>. Used as a fallback when the built-in
+    /// <see cref="RelationalWriteFlattener.TryGetRelativeLeafNode"/> cannot navigate
+    /// array-indexed paths directly.
+    /// </summary>
+    private static JsonNode? ResolveCollectionItemNode(JsonNode requestBody, string requestJsonPath)
+    {
+        // Simple path walker: splits on '[' and ']' to handle array-indexed paths.
+        // E.g. "$.classPeriods[0]" → navigate to "classPeriods" array, then element 0.
+        try
+        {
+            JsonNode? current = requestBody;
+            // Strip leading "$." or "$"
+            var path = requestJsonPath.StartsWith("$.", StringComparison.Ordinal)
+                ? requestJsonPath[2..]
+                : requestJsonPath.TrimStart('$').TrimStart('.');
+
+            foreach (var segment in SplitJsonPathSegments(path))
+            {
+                if (current is null)
+                {
+                    return null;
+                }
+
+                if (int.TryParse(segment, out var arrayIndex))
+                {
+                    current = current is JsonArray arr && arrayIndex < arr.Count ? arr[arrayIndex] : null;
+                }
+                else
+                {
+                    current = current is JsonObject obj ? obj[segment] : null;
+                }
+            }
+
+            return current;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static IEnumerable<string> SplitJsonPathSegments(string path)
+    {
+        // Split "addresses[0]" into ["addresses", "0"]
+        var segments = new List<string>();
+        var remaining = path;
+        while (!string.IsNullOrEmpty(remaining))
+        {
+            var dotIdx = remaining.IndexOf('.');
+            var bracketIdx = remaining.IndexOf('[');
+
+            if (dotIdx == -1 && bracketIdx == -1)
+            {
+                segments.Add(remaining);
+                break;
+            }
+
+            int nextIdx;
+            if (dotIdx == -1)
+            {
+                nextIdx = bracketIdx;
+            }
+            else if (bracketIdx == -1)
+            {
+                nextIdx = dotIdx;
+            }
+            else
+            {
+                nextIdx = Math.Min(dotIdx, bracketIdx);
+            }
+
+            if (nextIdx > 0)
+            {
+                segments.Add(remaining[..nextIdx]);
+            }
+
+            if (nextIdx == bracketIdx)
+            {
+                var closeIdx = remaining.IndexOf(']', bracketIdx);
+                if (closeIdx > bracketIdx + 1)
+                {
+                    segments.Add(remaining[(bracketIdx + 1)..closeIdx]);
+                    remaining = remaining[(closeIdx + 1)..].TrimStart('.');
+                }
+                else
+                {
+                    break;
+                }
+            }
+            else
+            {
+                remaining = remaining[(dotIdx + 1)..];
+            }
+        }
+
+        return segments;
     }
 
     private static IReadOnlyList<object?[]>? TryFindHydratedRowsForTable(
