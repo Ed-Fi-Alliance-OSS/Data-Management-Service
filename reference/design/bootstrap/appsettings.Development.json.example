@@ -5,7 +5,7 @@
   "ConfigurationServiceSettings": {
     "BaseUrl": "http://localhost:8081",
     "ClientId": "CMSReadOnlyAccess",
-    "ClientSecret": "ValidClientSecret1234567890!Abcd",
+    "ClientSecret": "<bootstrap-provisioned-local-secret>",
     "Scope": "edfi_admin_api/readonly_access"
   },
   "AppSettings": {

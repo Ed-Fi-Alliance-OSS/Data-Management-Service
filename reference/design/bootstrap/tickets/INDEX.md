@@ -25,6 +25,8 @@ backend-redesign story docs.
   validation run over that already-selected staged file set.
 - Story 02 depends on Story 00's staged schema and security inputs, and it is the gate for advertising any
   built-in extension seed support because it delivers the top-level `SeedLoader` contract.
+  **Story 02 is externally blocked** by ODS-6738 (BulkLoadClient JSONL support) and DMS-1119 (published
+  seed artifact packages); it is design-complete but not implementation-ready end to end.
 - Story 03 reuses the parameter surfaces and mechanisms delivered by the other slices where applicable, but
   it is not a blanket prerequisite chain for every Story 03 task. Treat the main design and each companion
   story as the authority for the specific dependency of a given implementation task.
@@ -34,11 +36,12 @@ backend-redesign story docs.
 - Use these docs together with [`../bootstrap-design.md`](../bootstrap-design.md).
 - If a change is not needed to satisfy the **Design-Complete Criteria** section of the main bootstrap
   design, it is out of scope.
-- `start-local-dms.ps1` is the single developer-facing bootstrap surface for the local workflow; these docs
-  do not introduce a wrapper entry point or second bootstrap architecture.
+- The composable phase-oriented commands are the normative bootstrap contract. `start-local-dms.ps1` is
+  the infrastructure-lifecycle phase command; `bootstrap-local-dms.ps1` is optional thin convenience
+  packaging for the common developer path when present, and is not a second control plane.
 - Story wording about "skip/resume" is satisfied by safe skip behavior plus optional same-invocation
-  continuation on `start-local-dms.ps1`; these docs do not define a persisted cross-invocation resume
-  mechanism.
+  continuation on the infra-lifecycle phase command; these docs do not define a persisted
+  cross-invocation resume mechanism.
 - Step 7 is the only phase that resolves target DMS instance IDs; all subsequent phases consume the
   selected set without re-querying CMS.
 - "Selected ApiSchema drives DDL" means the selected schema set drives the DDL target/version/hash
@@ -50,6 +53,8 @@ backend-redesign story docs.
   claim set to the embedded claims metadata.
 - Story 03 owns the repo-local `.bootstrap/` workspace hygiene and the user-facing migration note for the
   narrowed `-NoDmsInstance` contract. **Note:** The `.gitignore` update for `.bootstrap/` must be delivered
-  first or concurrently with Story 00 to prevent accidental commits of staged artifacts.
+  first or concurrently with Story 00 to prevent accidental commits of staged artifacts. The consolidated
+  breaking-changes reference for all four behavior changes is in
+  [`bootstrap-design.md` Section 15](../bootstrap-design.md#15-breaking-changes-and-migration-notes).
 - These docs do not add post-bootstrap runners, a persisted state-file control plane, new tenant models, or
   a second bootstrap architecture.

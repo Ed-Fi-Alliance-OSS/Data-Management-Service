@@ -418,6 +418,9 @@ coveragereport
 
 # Development appsettings
 **/*.Tests.Integration/appsettings.Test.json
+
+# Bootstrap scratch workspace — staged schema, claims, and seed files must never be committed
+eng/docker-compose/.bootstrap/
 **/*.Frontend.AspNetCore/appsettings.Development.json
 
 # Bulk load related

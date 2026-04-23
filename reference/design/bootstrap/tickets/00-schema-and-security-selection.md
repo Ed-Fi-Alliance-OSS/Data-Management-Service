@@ -28,9 +28,24 @@ physical schema footprint for the run. Core-only selection yields only core tabl
 extension such as Sample yields the tables required by that combined schema set. A database provisioned for a
 different extension selection is incompatible existing state for this story's bootstrap run.
 This story also makes the default-profile migration explicit: the current `eng/docker-compose` baseline
-includes TPDM in `SCHEMA_PACKAGES`, but DMS-916 v1 intentionally narrows the normative bootstrap default to
-core only when `-Extensions` is omitted. TPDM is therefore outside this story's initial supported extension
-surface unless a later design change adds it explicitly.
+includes TPDM in `SCHEMA_PACKAGES`, but TPDM is not available as of Ed-Fi 6.2 and is therefore outside
+this story's supported extension surface. Specifying `TPDM` via `-Extensions` produces a fast-fail with a
+clear unsupported-extension message.
+
+Within the composable bootstrap design, schema selection and staging are owned exclusively by the
+`prepare-dms-schema.ps1` phase command (see `command-boundaries.md` §3.1). Claims and security staging are
+owned exclusively by `prepare-dms-claims.ps1` (see `command-boundaries.md` §3.2). Both commands run without
+Docker services and hand their staged outputs — the staged schema workspace and the staged claims workspace
+— to the downstream infrastructure and provisioning phases.
+
+**Mode-to-security summary (normative):** Standard `-Extensions` mode — including the omitted-`-Extensions`
+core-only case — provides automatic schema-and-security selection: the chosen extension set drives both the
+staged ApiSchema files and the matching staged claimset fragments via the single extension mapping defined
+below. Expert `-ApiSchemaPath` mode does not auto-derive security: when the staged schema set includes any
+non-core schema, the caller must supply explicit `-ClaimsDirectoryPath` input, and bootstrap fails fast if
+it is missing. Core-only `-ApiSchemaPath` runs may rely on embedded claims only. This story does not promise
+automatic claimset loading from schema alone in expert mode, and no later phase retro-fits expert-mode
+security defaults.
 
 ## Acceptance Criteria
 
@@ -62,27 +77,23 @@ surface unless a later design change adds it explicitly.
   declared in the embedded `Claims.json`. Bootstrap fails fast when a staged fragment references an unknown
   claim set name.
 - Expert `-ApiSchemaPath` mode validates explicit non-core security input presence and staged-fragment
-  structure, but it does not pre-certify full authorization completeness for every staged non-core resource.
-  Runtime authorization failures for incomplete expert-supplied fragments remain possible and are not masked
-  as built-in extension defaults.
+  structure, but it does not guarantee full authorization coverage for arbitrary custom non-core resources.
+  Runtime authorization failures for incomplete expert-supplied fragments remain possible.
 - Same-checkout reruns reuse the existing staged claims workspace only when the intended fragment set is
   identical. If the intended security inputs differ, bootstrap fails fast with teardown guidance rather than
   rewriting a directory that may still be bind-mounted into CMS or attempting in-place replacement of
   populated CMS claims data.
-- Claim-fragment validation in bootstrap is bounded rather than fully semantic: staged fragments must be
-  parseable, must target claim set names that already exist in embedded `Claims.json`, must not collide by
-  filename in the staged workspace, and must not duplicate the same effective `(normalized resource claim,
-  effective claim set name)` attachment under the current CMS composition behavior.
-- Bootstrap does not attempt to certify the fully composed authorization graph beyond that bounded preflight.
-- CMS startup remains the authoritative composition gate for broader semantic composition outcomes.
+- Claim-fragment validation in bootstrap is structural only: staged fragments must be
+  parseable, must target claim set names that already exist in embedded `Claims.json`, and must not collide
+  by filename in the staged workspace. Bootstrap does not check attachment overlap or perform semantic
+  composition reasoning; CMS startup is the authoritative composition gate for those outcomes.
 - Extension-derived and developer-supplied claimset fragments are staged into one workspace directory with
   fail-fast validation for:
   - missing directory,
   - no `*-claimset.json` files,
   - malformed JSON,
   - filename collisions,
-  - unknown claim set names referenced by staged fragments,
-  - duplicate effective `(normalized resource claim, effective claim set name)` attachments.
+  - unknown claim set names referenced by staged fragments.
 - Every bootstrap-managed extension fragment in the supported v1 mapping preserves ordinary developer access
   by attaching `EdFiSandbox` permissions for the extension resources it contributes. Extension entries that
   eventually advertise built-in seed support must additionally attach the required `SeedLoader` permissions
@@ -112,6 +123,8 @@ surface unless a later design change adds it explicitly.
 - CMS claims mode is driven from the staged inputs:
   - Embedded mode for core-only bootstrap,
   - Hybrid mode when one or more staged fragments exist.
+- `TPDM` is not a supported value for `-Extensions`. TPDM is not available as of Ed-Fi 6.2; specifying it
+  produces a fast-fail with a clear unsupported-extension message rather than silent fallback.
 - Only extensions backed by current schema and security artifacts appear in the DMS-916 v1 mapping and
   valid-extension surface. Deferred extensions are not advertised as accepted `-Extensions` values.
 
@@ -121,21 +134,24 @@ surface unless a later design change adds it explicitly.
    delivered first or concurrently with this story to prevent accidental commits of staged artifacts. If
    Story 03 delivery is not concurrent, this story must carry that one-line `.gitignore` entry itself.
 1. Add or refine the schema/security parameter surface for `-Extensions`, `-ApiSchemaPath`, and
-   `-ClaimsDirectoryPath`.
-2. Implement one extension artifact mapping that drives schema-package resolution, security-fragment
-   resolution, and extension seed-package resolution from the same selected extension set, with
-   `EdFiSandbox` coverage required for every supported extension and `SeedLoader` coverage required only
-   where built-in seed support is advertised.
-3. Implement schema-resolution logic that stages the selected schema files once, normalizes `-ApiSchemaPath`
-   to one core plus zero or more extensions, computes `EffectiveSchemaHash` from that staged set using the
-   existing DMS algorithm, and fails fast if the hash tool exits non-zero. It hands the resulting DDL
-   target/hash context to the later schema-provisioning safety flow as the exact physical schema contract for the run.
-4. Implement additive security-fragment staging into one bootstrap workspace, including duplicate-filename
-   detection, malformed-JSON validation, unknown-claim-set validation, the bounded duplicate-effective-
-   attachment check for `(normalized resource claim, effective claim set name)` under current CMS
-   composition semantics, and the environment-variable selection for Embedded versus Hybrid mode plus the
+   `-ClaimsDirectoryPath` across `prepare-dms-schema.ps1` (schema inputs) and `prepare-dms-claims.ps1`
+   (security inputs) per the command boundary contracts in `command-boundaries.md` §3.1–§3.2.
+2. Implement one extension artifact mapping (shared by both phase commands) that drives schema-package
+   resolution, security-fragment resolution, and extension seed-package resolution from the same selected
+   extension set, with `EdFiSandbox` coverage required for every supported extension and `SeedLoader`
+   coverage required only where built-in seed support is advertised. Ensure `TPDM` is absent from this
+   mapping and produces a fast-fail unsupported-extension error when specified via `-Extensions`.
+3. Implement schema-resolution logic in `prepare-dms-schema.ps1`: stage the selected schema files once,
+   normalize `-ApiSchemaPath` to one core plus zero or more extensions, compute `EffectiveSchemaHash` from
+   that staged set using the existing DMS algorithm, and fail fast if the hash tool exits non-zero. Hand
+   the resulting DDL target/hash context to the later schema-provisioning safety flow as the exact physical
+   schema contract for the run.
+4. Implement additive security-fragment staging in `prepare-dms-claims.ps1`: stage fragments into one
+   bootstrap workspace, with duplicate-filename detection, malformed-JSON validation, unknown-claim-set
+   validation, and the environment-variable selection for Embedded versus Hybrid mode plus the
    compose/runtime wiring in `local-config.yml` that points CMS at the staged workspace through
-   `DMS_CONFIG_CLAIMS_HOST_DIRECTORY`.
+   `DMS_CONFIG_CLAIMS_HOST_DIRECTORY`. Bootstrap validation stays structural; CMS remains the authority for
+   final composition outcomes.
 5. Restrict the v1 extension mapping and operator-facing validation messages to extensions backed by current
    schema and security artifacts; keep deferred extensions out of the advertised support surface.
 6. Remove standard bootstrap dependence on `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` when
@@ -164,3 +180,4 @@ surface unless a later design change adds it explicitly.
 ## Design References
 
 - [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3, 4, 8, 9.3, and 11
+- [`../command-boundaries.md`](../command-boundaries.md), §3.1 (`prepare-dms-schema.ps1`) and §3.2 (`prepare-dms-claims.ps1`)
