@@ -1,0 +1,66 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Sample",
+    "projectEndpointName": "sample",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": true,
+    "description": "Profile separate-table merge fixture — Sample extension project. Contributes an _ext row under ProfileSeparateTableMergeItem carrying two scalar bindings (extVisibleScalar, extHiddenScalar) plus a SchoolTypeDescriptor FK binding (sampleCategoryDescriptor). The Slice 3 separate-table tests exercise visible-present overlay, hidden scalar preservation, and hidden descriptor-FK preservation on a root-attached RootExtension table.",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {},
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {},
+    "resourceSchemas": {
+      "profileSeparateTableMergeItemExtensions": {
+        "resourceName": "ProfileSeparateTableMergeItem",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
+        "documentPathsMapping": {
+          "SampleCategoryDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$._ext.sample.sampleCategoryDescriptor"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "sample": {
+                  "type": "object",
+                  "properties": {
+                    "extVisibleScalar": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "extHiddenScalar": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "sampleCategoryDescriptor": {
+                      "type": "string",
+                      "maxLength": 306
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

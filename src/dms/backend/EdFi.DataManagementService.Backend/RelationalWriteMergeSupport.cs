@@ -100,24 +100,24 @@ internal static class RelationalWriteMergeSupport
 
     /// <summary>
     /// Builds a normalized-by-column projection of a single hydrated table row, keyed
-    /// by column name. Includes every column in <paramref name="rootTableModel"/>.Columns,
+    /// by column name. Includes every column in <paramref name="tableModel"/>.Columns,
     /// both binding-backed and alias-only. Each value is normalized via
     /// <see cref="NormalizeHydratedValue"/> so Date/Time comparisons in downstream
     /// key-unification agreement checks match the binding-indexed projection's
     /// normalization.
     /// </summary>
-    internal static IReadOnlyDictionary<DbColumnName, object?> BuildCurrentRootRowByColumnName(
-        DbTableModel rootTableModel,
+    internal static IReadOnlyDictionary<DbColumnName, object?> BuildCurrentRowByColumnName(
+        DbTableModel tableModel,
         IReadOnlyList<object?> hydratedRow
     )
     {
-        ArgumentNullException.ThrowIfNull(rootTableModel);
+        ArgumentNullException.ThrowIfNull(tableModel);
         ArgumentNullException.ThrowIfNull(hydratedRow);
 
         var result = new Dictionary<DbColumnName, object?>();
-        for (var columnOrdinal = 0; columnOrdinal < rootTableModel.Columns.Count; columnOrdinal++)
+        for (var columnOrdinal = 0; columnOrdinal < tableModel.Columns.Count; columnOrdinal++)
         {
-            var column = rootTableModel.Columns[columnOrdinal];
+            var column = tableModel.Columns[columnOrdinal];
             result[column.ColumnName] = NormalizeHydratedValue(column, hydratedRow[columnOrdinal]);
         }
         return result;

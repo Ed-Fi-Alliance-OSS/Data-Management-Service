@@ -198,6 +198,12 @@ internal sealed class DefaultRelationalWriteExecutor(
                         );
                 }
 
+                // After projection, the projected request/context pair is authoritative for the
+                // remainder of the profile-aware executor path.
+                var effectiveProfileRequest =
+                    profileAppliedWriteContext?.Request ?? profileWriteContext.Request;
+                var profileWritableBody = effectiveProfileRequest.WritableRequestBody;
+
                 // Step 3: Contract validation
                 var httpMethod = request.OperationKind == RelationalWriteOperationKind.Post ? "POST" : "PUT";
                 var contractValidationFailures = profileAppliedWriteContext is not null
@@ -248,11 +254,39 @@ internal sealed class DefaultRelationalWriteExecutor(
                         topologyIndex
                     )
                     : ProfileSliceFenceClassifier.ClassifyForCreateNew(
-                        profileWriteContext.Request,
+                        effectiveProfileRequest,
                         topologyIndex
                     );
 
-                if (requiredFamily != RequiredSliceFamily.RootTableOnly)
+                // Slice 3 widens the fence for root-attached separate-table scopes
+                // (e.g. $._ext.sample on School). Collection-aligned separate-table scopes
+                // (DbTableKind.CollectionExtensionScope) remain fenced for slice 5 because
+                // ScopeTopologyIndex classifies both root-attached and collection-aligned
+                // separate-table scopes under the same SeparateTableNonCollection family.
+                // The fence inspects the scopes actually exercised by the current profiled
+                // request — not the whole write plan — so mixed plans that carry an unused
+                // collection-aligned table alongside a supported root-attached scope are
+                // allowed through as long as the request itself touches only supported
+                // scopes. This preserves the Task 5 "mixed plan, unused collection scope"
+                // contract without splitting the topology / family enums.
+                bool fencePassed = requiredFamily switch
+                {
+                    RequiredSliceFamily.RootTableOnly => true,
+                    RequiredSliceFamily.SeparateTableNonCollection =>
+                        !RequestExercisesCollectionAlignedSeparateTableScope(
+                            request.WritePlan,
+                            effectiveProfileRequest,
+                            profileAppliedWriteContext
+                        ),
+                    RequiredSliceFamily.TopLevelCollection => false,
+                    RequiredSliceFamily.NestedAndExtensionCollections => false,
+                    _ => throw new InvalidOperationException(
+                        $"Unhandled RequiredSliceFamily '{requiredFamily}' at the slice-3 fence gate. "
+                            + "A new family was added without updating the executor's fence switch."
+                    ),
+                };
+
+                if (!fencePassed)
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return BuildSliceFenceResult(request.OperationKind, requiredFamily);
@@ -270,22 +304,41 @@ internal sealed class DefaultRelationalWriteExecutor(
                         executionRequest.OperationKind,
                         executionRequest.TargetContext,
                         executionRequest.WritePlan,
-                        executionRequest.SelectedBody,
-                        resolvedReferences
+                        profileWritableBody,
+                        resolvedReferences,
+                        // Profile Slice 3 decision matrix: separate-table outcome comes from
+                        // scope metadata (RequestScopeState/StoredScopeState), not inferred
+                        // buffer presence. The shaper may emit a visible-present scope with
+                        // no bound scalar data (e.g. _ext: { sample: {} } when all members
+                        // are absent under the profile); the synthesizer must still see a
+                        // buffer so Insert/Update overlay can run. See
+                        // reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor/03-separate-table-profile-merge.md:60.
+                        emitEmptyRootExtensionBuffers: true
                     )
                 );
 
-                mergeResult = _profileMergeSynthesizer.Synthesize(
+                var profileMergeOutcome = _profileMergeSynthesizer.Synthesize(
                     new RelationalWriteProfileMergeRequest(
                         executionRequest.WritePlan,
                         profileFlattenedWriteSet,
-                        executionRequest.SelectedBody,
+                        profileWritableBody,
                         currentState,
-                        profileWriteContext.Request,
+                        effectiveProfileRequest,
                         profileAppliedWriteContext,
                         resolvedReferences
                     )
                 );
+
+                if (profileMergeOutcome.IsRejection)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildProfileCreatabilityRejectionResult(
+                        request.OperationKind,
+                        profileWriteContext.ProfileName
+                    );
+                }
+
+                mergeResult = profileMergeOutcome.MergeResult!;
             }
             else
             {
@@ -624,6 +677,73 @@ internal sealed class DefaultRelationalWriteExecutor(
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the current profiled request exercises at least one scope
+    /// whose owner table is a <see cref="DbTableKind.CollectionExtensionScope"/> — a
+    /// separate-table non-collection scope aligned to a collection row. Slice 3 keeps these
+    /// fenced; slice 5 will lift the fence. Inspecting the exercised scopes (request/stored
+    /// scope states + visible collection items/rows) rather than the whole write plan keeps
+    /// mixed plans that carry an unused collection-aligned table alongside a supported
+    /// root-attached scope passable — the Task 5 synthesizer contract already permits those
+    /// mixed plans so long as the current request does not touch the collection-aligned
+    /// scope. Ownership is resolved via
+    /// <see cref="ProfileBindingClassificationCore.ResolveOwnerTablePlan"/> so the fence
+    /// uses identical prefix semantics to per-table binding classification.
+    /// </summary>
+    private static bool RequestExercisesCollectionAlignedSeparateTableScope(
+        ResourceWritePlan writePlan,
+        ProfileAppliedWriteRequest profileRequest,
+        ProfileAppliedWriteContext? profileAppliedContext
+    )
+    {
+        foreach (var scopeState in profileRequest.RequestScopeStates)
+        {
+            if (scopeState.Visibility == ProfileVisibilityKind.Hidden)
+            {
+                // Mirrors ProfileSliceFenceClassifier.ClassifyForCreateNew: hidden
+                // request-side scopes are preserve-only and do not escalate slice family,
+                // so they must not count as "exercised" for the collection-aligned fence.
+                // Stored-side hidden scopes still participate below (the classifier's
+                // existing rule: hidden stored scopes still require the owning slice to
+                // preserve them correctly).
+                continue;
+            }
+            if (IsCollectionAlignedOwner(scopeState.Address.JsonScope, writePlan))
+            {
+                return true;
+            }
+        }
+        if (
+            profileRequest.VisibleRequestCollectionItems.Any(item =>
+                IsCollectionAlignedOwner(item.Address.JsonScope, writePlan)
+            )
+        )
+        {
+            return true;
+        }
+        if (profileAppliedContext is null)
+        {
+            return false;
+        }
+        if (
+            profileAppliedContext.StoredScopeStates.Any(state =>
+                IsCollectionAlignedOwner(state.Address.JsonScope, writePlan)
+            )
+        )
+        {
+            return true;
+        }
+        return profileAppliedContext.VisibleStoredCollectionRows.Any(row =>
+            IsCollectionAlignedOwner(row.Address.JsonScope, writePlan)
+        );
+    }
+
+    private static bool IsCollectionAlignedOwner(string scopeAddress, ResourceWritePlan writePlan)
+    {
+        var owner = ProfileBindingClassificationCore.ResolveOwnerTablePlan(scopeAddress, writePlan);
+        return owner?.TableModel.IdentityMetadata.TableKind is DbTableKind.CollectionExtensionScope;
     }
 
     private async Task<InSessionTargetResolution> ResolveCreateVsExistingPostTargetAsync(

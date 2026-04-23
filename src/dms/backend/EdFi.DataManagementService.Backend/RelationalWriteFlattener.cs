@@ -263,7 +263,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups
             );
 
-            if (!HasBoundScopeData(scopeObject) && collectionCandidates.Count == 0)
+            if (
+                !flatteningInput.EmitEmptyRootExtensionBuffers
+                && !HasBoundScopeData(scopeObject)
+                && collectionCandidates.Count == 0
+            )
             {
                 continue;
             }

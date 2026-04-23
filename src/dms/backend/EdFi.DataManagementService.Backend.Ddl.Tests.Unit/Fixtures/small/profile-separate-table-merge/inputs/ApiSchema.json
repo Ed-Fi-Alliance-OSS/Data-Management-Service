@@ -1,0 +1,121 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": false,
+    "description": "Profile separate-table merge fixture: exercises root-attached _ext row under a writable profile that hides/shows specific bindings on the separate table. Also contributes the SchoolTypeDescriptor referenced by the Sample extension's hidden-descriptor FK binding.",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "profileseparatetablemergeitems": "profileSeparateTableMergeItems",
+      "schooltypedescriptors": "schoolTypeDescriptors"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {
+      "ProfileSeparateTableMergeItem": "profileSeparateTableMergeItems",
+      "SchoolTypeDescriptor": "schoolTypeDescriptors"
+    },
+    "resourceSchemas": {
+      "profileSeparateTableMergeItems": {
+        "resourceName": "ProfileSeparateTableMergeItem",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.profileSeparateTableMergeItemId"
+        ],
+        "documentPathsMapping": {
+          "ProfileSeparateTableMergeItemId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.profileSeparateTableMergeItemId"
+          },
+          "DisplayName": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.displayName"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "profileSeparateTableMergeItemId": {
+              "type": "integer"
+            },
+            "displayName": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "profileSeparateTableMergeItemId"
+          ]
+        }
+      },
+      "schoolTypeDescriptors": {
+        "resourceName": "SchoolTypeDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.namespace",
+          "$.codeValue"
+        ],
+        "documentPathsMapping": {
+          "Namespace": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.namespace"
+          },
+          "CodeValue": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.codeValue"
+          },
+          "ShortDescription": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.shortDescription"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "shortDescription": {
+              "type": "string",
+              "maxLength": 75
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue",
+            "shortDescription"
+          ]
+        }
+      }
+    }
+  }
+}

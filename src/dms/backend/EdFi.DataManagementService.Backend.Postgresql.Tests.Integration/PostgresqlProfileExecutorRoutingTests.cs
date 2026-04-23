@@ -124,9 +124,13 @@ file static class ProfileRoutingTestSupport
         JsonNode requestBody
     )
     {
-        // The extension scope below is intentional. Routing fixtures that use this helper
-        // expect the slice-fence family name to appear in the failure message, so the profile
-        // must include a non-root scope that forces a non-root-table-only classification.
+        // The scopes below are intentional. Routing fixtures that use this helper expect the
+        // slice-fence family name to appear in the failure message. Slice 3 narrowed the fence
+        // so it only fires on scopes actually exercised by the current profiled request whose
+        // owner table is a CollectionExtensionScope. The fixture's extension collection scope
+        // $._ext.sample.addresses[*]._ext.sample is exactly that shape, so including it here
+        // keeps the fence firing under the new narrow behavior. Root-attached $._ext.sample
+        // stays for realism (a typical profile spans root + extension scopes).
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
         var rootScopeState = new RequestScopeState(
             Address: new ScopeInstanceAddress("$", []),
@@ -138,12 +142,21 @@ file static class ProfileRoutingTestSupport
             Visibility: ProfileVisibilityKind.VisiblePresent,
             Creatable: true
         );
+        // Collection-aligned (CollectionExtensionScope) scope — its owner table is a
+        // CollectionExtensionScope DbTableKind, which the slice-3 narrow fence targets.
+        // Immediate parent resolves to $._ext.sample (NonCollection), so the ancestor chain
+        // is empty and the contract validator needs no additional identity parts.
+        var collectionAlignedScopeState = new RequestScopeState(
+            Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+            Visibility: ProfileVisibilityKind.VisibleAbsent,
+            Creatable: true
+        );
 
         return new BackendProfileWriteContext(
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: requestBody,
                 RootResourceCreatable: true,
-                RequestScopeStates: [rootScopeState, extensionScopeState],
+                RequestScopeStates: [rootScopeState, extensionScopeState, collectionAlignedScopeState],
                 VisibleRequestCollectionItems: []
             ),
             ProfileName: "test-profile",

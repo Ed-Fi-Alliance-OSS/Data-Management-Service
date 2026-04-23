@@ -78,6 +78,11 @@ public class Given_Classifier_with_key_unification_plan
 [TestFixture]
 public class Given_Classifier_with_ParentKeyPart_source_on_root_table
 {
+    // Plan-shape invariant: root tables must never carry ParentKeyPart bindings — that is
+    // only legitimate on non-root (separate) tables, where the core classifies it as
+    // StorageManaged so the separate-table persister can handle parent-key rewriting. The
+    // root-table wrapper reinstates this fail-closed guard around the shared core, which
+    // itself accepts ParentKeyPart for the separate-table classifier's use.
     private Action _act = null!;
 
     [SetUp]
@@ -92,7 +97,9 @@ public class Given_Classifier_with_ParentKeyPart_source_on_root_table
     [Test]
     public void It_throws_InvalidOperationException_for_plan_shape_violation()
     {
-        _act.Should().Throw<InvalidOperationException>().WithMessage("*plan-shape violation*");
+        _act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*profile-aware binding classifier does not support*");
     }
 }
 
@@ -344,7 +351,7 @@ public class Given_Classifier_for_ExistingDocument_with_stored_scope_unresolvabl
     {
         _act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Stored scope*does not resolve to any root-table binding*");
+            .WithMessage("*Stored scope*does not resolve to any binding*");
     }
 }
 
@@ -374,8 +381,71 @@ public class Given_Classifier_for_ExistingDocument_with_hidden_member_path_unres
     {
         _act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Hidden member path*does not resolve to any root-table binding under that scope*");
+            .WithMessage("*Hidden member path*does not resolve to any binding under that scope*");
     }
+}
+
+[TestFixture]
+public class Given_Classifier_for_root_table_with_stored_context_containing_unrelated_extension_scope_does_not_false_fail
+{
+    // Task 2 table-ownership invariant (root-side): a realistic existing-document profile
+    // context carries stored scope states for every scope on the resource — including
+    // extension scopes like $._ext.sample when classifying the ROOT table ($). A naive
+    // "equal-or-descendant" filter would readmit every scope here (everything is a
+    // descendant of $), so an extension-owned stored scope like $._ext.sample would false-
+    // fail against the root table's bindings ("Stored scope '$._ext.sample' does not
+    // resolve to any binding on table 'edfi.Host'"). The correct rule is table-ownership:
+    // a stored scope is relevant to this table only when the longest table-backed prefix
+    // of its address equals this table's scope. This fixture pins the invariant so a
+    // regression to a simple subtree filter re-surfaces immediately.
+    private ProfileRootTableBindingClassification _result = null!;
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Plan: root table ($) with $.firstName scalar binding, plus a RootExtension child
+        // table at $._ext.sample carrying its own scalar binding. Classifying the root must
+        // ignore any stored scope owned by the extension table.
+        var plan = ProfileTestDoubles.BuildRootPlusRootExtensionPlan(
+            extensionBindings: new ProfileTestDoubles.RootExtensionBindingSpec(
+                "FavoriteColor",
+                ProfileTestDoubles.RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var request = ProfileTestDoubles.CreateRequest(
+            writableBody: null,
+            rootResourceCreatable: true,
+            ProfileTestDoubles.RequestVisiblePresentScope("$"),
+            ProfileTestDoubles.RequestVisiblePresentScope("$._ext.sample")
+        );
+        // Stored side mirrors the request: BOTH the root stored scope ($, with a hidden
+        // member path naming a root-table binding so the drift check still passes for the
+        // root side) AND an extension-owned stored scope ($._ext.sample) are present. The
+        // extension-owned stored scope must be ignored when classifying the root table.
+        var context = ProfileTestDoubles.CreateContext(
+            request,
+            visibleStoredBody: null,
+            ProfileTestDoubles.StoredVisiblePresentScope("$", "firstName"),
+            ProfileTestDoubles.StoredVisiblePresentScope("$._ext.sample", "favoriteColor")
+        );
+        try
+        {
+            _result = new ProfileRootTableBindingClassifier().Classify(plan, request, context);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_does_not_throw_on_extension_owned_stored_scope() => _thrown.Should().BeNull();
+
+    [Test]
+    public void It_classifies_the_root_scalar_binding_as_HiddenPreserved() =>
+        _result.BindingsByIndex[0].Should().Be(RootBindingDisposition.HiddenPreserved);
 }
 
 [TestFixture]
