@@ -459,23 +459,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_a_precise_unknown_failure_for_delete_requests()
-    {
-        var deleteRequest = A.Fake<IDeleteRequest>();
-        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_schoolResourceInfo);
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new DeleteResult.UnknownFailure(
-                    "Relational DELETE is not implemented for resource 'Ed-Fi.School'."
-                )
-            );
-    }
-
-    [Test]
     public async Task It_returns_a_precise_not_implemented_failure_for_query_requests()
     {
         var firstDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-eeeeeeeeeeee"));
@@ -1895,6 +1878,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             descriptorHandler,
+            _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
             _readMaterializer,
@@ -1973,6 +1957,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             descriptorHandler,
+            _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
             _readMaterializer,
