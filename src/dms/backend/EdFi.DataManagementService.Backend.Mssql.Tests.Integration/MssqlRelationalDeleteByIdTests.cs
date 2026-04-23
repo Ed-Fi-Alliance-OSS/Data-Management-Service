@@ -435,11 +435,14 @@ public class Given_A_Mssql_Relational_Delete_By_Id
     {
         var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
 
+        // dms.Document has an enabled trigger; SQL Server disallows OUTPUT without INTO on
+        // triggered tables (error 334). Use SCOPE_IDENTITY() instead, matching the descriptor
+        // INSERT in DescriptorWriteHandler.BuildMssqlInsertCommand.
         return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId]
             VALUES (@documentUuid, @resourceKeyId);
+            SELECT CAST(SCOPE_IDENTITY() AS bigint);
             """,
             new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@resourceKeyId", resourceKeyId)
@@ -477,11 +480,13 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         );
 
     private Task<long> InsertSchoolAddressAsync(long schoolDocumentId, int ordinal, string city) =>
+        // Use SCOPE_IDENTITY() rather than OUTPUT to stay safe against any enabled triggers
+        // on the target table (SQL Server error 334 forbids OUTPUT-without-INTO on triggered tables).
         _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO [edfi].[SchoolAddress] ([Ordinal], [School_DocumentId], [City])
-            OUTPUT INSERTED.[CollectionItemId]
             VALUES (@ordinal, @schoolDocumentId, @city);
+            SELECT CAST(SCOPE_IDENTITY() AS bigint);
             """,
             new SqlParameter("@ordinal", ordinal),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
