@@ -18,10 +18,9 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
-        # FK-violation scenarios (formerly 01-04) were extracted into
-        # DeleteResourcesReferenceValidation.feature so they can carry the relational-backend
-        # tag without conflicting with the "Scenario: 00 Background" seed guardrail in this file.
-        # See DMS-1011.
+        # FK-violation delete scenarios live in DeleteResourcesReferenceValidation.feature so they
+        # can carry the relational-backend tag without conflicting with the "Scenario: 00 Background"
+        # seed guardrail in this file.
 
         @API-180
         Scenario: 05 Verify response when deleting
