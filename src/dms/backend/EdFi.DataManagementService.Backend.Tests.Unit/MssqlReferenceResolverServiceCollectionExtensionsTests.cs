@@ -54,6 +54,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteExceptionClassifier>();
         var writeConstraintResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteConstraintResolver>();
+        var deleteConstraintResolver =
+            scope.ServiceProvider.GetRequiredService<IRelationalDeleteConstraintResolver>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
@@ -73,6 +75,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<MssqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
+        deleteConstraintResolver.Should().BeOfType<RelationalDeleteConstraintResolver>();
     }
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)

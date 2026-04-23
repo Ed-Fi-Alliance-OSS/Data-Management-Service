@@ -76,6 +76,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var noProfilePersister = scope.ServiceProvider.GetRequiredService<IRelationalWritePersister>();
         var writeExceptionClassifier =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteExceptionClassifier>();
+        var deleteConstraintResolver =
+            scope.ServiceProvider.GetRequiredService<IRelationalDeleteConstraintResolver>();
         var descriptorWriteHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
         var targetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
@@ -105,12 +107,49 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
         noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
         writeExceptionClassifier.Should().BeOfType<NoOpRelationalWriteExceptionClassifier>();
+        deleteConstraintResolver.Should().BeOfType<RelationalDeleteConstraintResolver>();
         descriptorWriteHandler.Should().BeOfType<DescriptorWriteHandler>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);
+    }
+
+    [Test]
+    public void It_registers_the_delete_constraint_resolver_as_a_singleton_shared_across_scopes()
+    {
+        // The resolver caches its per-model-set index in a ConditionalWeakTable; registering as
+        // Singleton (rather than Scoped, which is the default for this composition surface) is
+        // what lets the cache survive beyond a single request. Asserting both lifetime and
+        // instance identity pins the decision so a future "make everything Scoped" sweep doesn't
+        // silently defeat the cache.
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+
+        services.AddReferenceResolver<
+            ExecutorBackedReferenceResolverAdapterFactory,
+            TestRelationalCommandExecutor,
+            TestRelationalWriteSessionFactory,
+            TestDocumentHydrator,
+            TestSessionDocumentHydrator
+        >();
+
+        var descriptor = services.Single(s => s.ServiceType == typeof(IRelationalDeleteConstraintResolver));
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        descriptor.ImplementationType.Should().Be<RelationalDeleteConstraintResolver>();
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var firstScope = serviceProvider.CreateScope();
+        using var secondScope = serviceProvider.CreateScope();
+
+        var firstResolver =
+            firstScope.ServiceProvider.GetRequiredService<IRelationalDeleteConstraintResolver>();
+        var secondResolver =
+            secondScope.ServiceProvider.GetRequiredService<IRelationalDeleteConstraintResolver>();
+
+        firstResolver.Should().BeSameAs(secondResolver);
     }
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)

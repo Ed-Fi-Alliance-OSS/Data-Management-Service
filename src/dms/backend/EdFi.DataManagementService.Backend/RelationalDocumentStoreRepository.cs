@@ -29,6 +29,7 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalReadMaterializer readMaterializer,
     IReadableProfileProjector readableProfileProjector,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
+    IRelationalDeleteConstraintResolver deleteConstraintResolver,
     IRelationalWriteSessionFactory writeSessionFactory
 ) : IDocumentStoreRepository, IQueryHandler
 {
@@ -52,6 +53,8 @@ public sealed class RelationalDocumentStoreRepository(
         readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
         writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
+    private readonly IRelationalDeleteConstraintResolver _deleteConstraintResolver =
+        deleteConstraintResolver ?? throw new ArgumentNullException(nameof(deleteConstraintResolver));
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
 
@@ -328,6 +331,8 @@ public sealed class RelationalDocumentStoreRepository(
                             sessionCommandExecutor,
                             deleteCommand,
                             _writeExceptionClassifier,
+                            _deleteConstraintResolver,
+                            mappingSet.Model,
                             _logger,
                             documentUuid,
                             traceId,

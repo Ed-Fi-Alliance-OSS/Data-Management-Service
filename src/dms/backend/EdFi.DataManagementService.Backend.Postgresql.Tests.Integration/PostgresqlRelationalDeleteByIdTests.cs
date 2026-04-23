@@ -208,13 +208,23 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
     }
 
     [Test]
-    public async Task It_returns_delete_failure_reference_when_the_document_is_referenced_by_another_document()
+    public async Task It_returns_delete_failure_reference_with_the_resolved_referencing_resource_name_when_the_document_is_referenced_by_another_document()
     {
         // Seed a Program document, then stitch a School document with a
         // SchoolExtensionAddressSponsorReference row that FK-references the Program via
         // FK_SchoolExtensionAddressSponsorReference_Program_RefKey (ON DELETE NO ACTION).
         // Deleting the Program must be refused by the database and surface as
-        // DeleteResult.DeleteFailureReference through the classifier chain.
+        // DeleteResult.DeleteFailureReference(["School"]) through the classifier +
+        // constraint-resolver chain.
+        //
+        // This also exercises the cross-resource model walk: the violated FK lives on a grandchild
+        // table of the School resource while the delete target is Program. The resolver has to
+        // scan across all ConcreteResourcesInNameOrder to land on School. The fixture's compiled
+        // model has no concrete descriptor resource and no direct root-to-root cross-resource FKs
+        // (DMS routes cross-resource references through dms.Document), so this grandchild-child
+        // case is the sharpest cross-resource proof available here; descriptor-delete +
+        // FK-violation behaviour is covered exhaustively by the Given_Descriptor_Write_Handler_Delete
+        // unit fixture.
         var programDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-0000-0000-0000-000000000100"));
         var programDocumentId = await InsertDocumentAsync(programDocumentUuid.Value, "Ed-Fi", "Program");
         await InsertProgramAsync(programDocumentId, "Robotics");
@@ -237,7 +247,13 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             repository.DeleteDocumentById(CreateDeleteRequest(_unrelatedResourceInfo, programDocumentUuid))
         );
 
-        delete.Should().BeOfType<DeleteResult.DeleteFailureReference>();
+        var reference = delete.Should().BeOfType<DeleteResult.DeleteFailureReference>().Subject;
+        reference
+            .ReferencingDocumentResourceNames.Should()
+            .BeEquivalentTo(
+                ["School"],
+                "the FK lives on a grandchild table of the School resource, so the resolver must walk the compiled model across resources and surface the ROOT resource name — not the child table name"
+            );
         (await CountDocumentsAsync(programDocumentUuid))
             .Should()
             .Be(

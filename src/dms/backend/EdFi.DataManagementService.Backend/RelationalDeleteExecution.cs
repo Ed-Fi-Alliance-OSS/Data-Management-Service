@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
@@ -32,6 +33,8 @@ internal static class RelationalDeleteExecution
         IRelationalCommandExecutor commandExecutor,
         RelationalCommand command,
         IRelationalWriteExceptionClassifier classifier,
+        IRelationalDeleteConstraintResolver constraintResolver,
+        DerivedRelationalModelSet modelSet,
         ILogger logger,
         DocumentUuid documentUuid,
         TraceId traceId,
@@ -42,10 +45,11 @@ internal static class RelationalDeleteExecution
         ArgumentNullException.ThrowIfNull(commandExecutor);
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(classifier);
+        ArgumentNullException.ThrowIfNull(constraintResolver);
+        ArgumentNullException.ThrowIfNull(modelSet);
         ArgumentNullException.ThrowIfNull(logger);
 
         var scopeLabel = ScopeLabel(targetKind);
-        var referencedLabel = $"(referenced {scopeLabel})";
 
         try
         {
@@ -61,15 +65,16 @@ internal static class RelationalDeleteExecution
         }
         catch (DbException ex) when (classifier.IsForeignKeyViolation(ex))
         {
-            logger.LogDebug(
+            return MapForeignKeyViolation(
                 ex,
-                "FK constraint violation on {ScopeLabel} DELETE for {DocumentUuid} - {TraceId}",
-                scopeLabel,
-                documentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                classifier,
+                constraintResolver,
+                modelSet,
+                logger,
+                documentUuid,
+                traceId,
+                scopeLabel
             );
-
-            return new DeleteResult.DeleteFailureReference([referencedLabel]);
         }
         catch (DbException ex) when (classifier.IsTransientFailure(ex))
         {
@@ -106,4 +111,81 @@ internal static class RelationalDeleteExecution
             DeleteTargetKind.Descriptor => "descriptor",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown DeleteTargetKind."),
         };
+
+    /// <summary>
+    /// Translates a FK-violation <see cref="DbException"/> into a
+    /// <see cref="DeleteResult.DeleteFailureReference"/>. The caller's catch filter has already
+    /// asserted <see cref="IRelationalWriteExceptionClassifier.IsForeignKeyViolation"/>, so
+    /// <see cref="IRelationalWriteExceptionClassifier.TryClassify"/> is guaranteed to return a
+    /// non-null classification — either
+    /// <see cref="RelationalWriteExceptionClassification.ForeignKeyConstraintViolation"/> when the
+    /// constraint name was extractable, or
+    /// <see cref="RelationalWriteExceptionClassification.UnrecognizedWriteFailure"/> when it was not
+    /// (pgsql <c>ConstraintName</c> null, mssql localized or unparseable message).
+    /// </summary>
+    private static DeleteResult.DeleteFailureReference MapForeignKeyViolation(
+        DbException exception,
+        IRelationalWriteExceptionClassifier classifier,
+        IRelationalDeleteConstraintResolver constraintResolver,
+        DerivedRelationalModelSet modelSet,
+        ILogger logger,
+        DocumentUuid documentUuid,
+        TraceId traceId,
+        string scopeLabel
+    )
+    {
+        var sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(traceId.Value);
+
+        classifier.TryClassify(exception, out var classification);
+
+        if (classification is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation foreignKey)
+        {
+            var referencing = constraintResolver.TryResolveReferencingResource(
+                modelSet,
+                foreignKey.ConstraintName
+            );
+
+            if (referencing is { } resource)
+            {
+                logger.LogDebug(
+                    exception,
+                    "FK constraint '{ConstraintName}' violation on {ScopeLabel} DELETE for {DocumentUuid} -> referencing resource '{ReferencingResource}' - {TraceId}",
+                    foreignKey.ConstraintName,
+                    scopeLabel,
+                    documentUuid.Value,
+                    resource.ResourceName,
+                    sanitizedTraceId
+                );
+
+                return new DeleteResult.DeleteFailureReference([resource.ResourceName]);
+            }
+
+            // Constraint name surfaced by the driver but the compiled relational model has no
+            // matching FK — drift between the deployed DDL and the runtime model. Emit a Warning so
+            // operators notice, and return an empty names array so the response layer can render a
+            // generic conflict message.
+            logger.LogWarning(
+                exception,
+                "FK constraint '{ConstraintName}' violation on {ScopeLabel} DELETE for {DocumentUuid} could not be mapped to a resource in the compiled model - {TraceId}",
+                foreignKey.ConstraintName,
+                scopeLabel,
+                documentUuid.Value,
+                sanitizedTraceId
+            );
+
+            return new DeleteResult.DeleteFailureReference([]);
+        }
+
+        // IsForeignKeyViolation reported true but no constraint name was extractable. Expected with
+        // some pgsql / mssql driver + locale combinations; not actionable.
+        logger.LogInformation(
+            exception,
+            "FK constraint violation on {ScopeLabel} DELETE for {DocumentUuid} without an extractable constraint name - {TraceId}",
+            scopeLabel,
+            documentUuid.Value,
+            sanitizedTraceId
+        );
+
+        return new DeleteResult.DeleteFailureReference([]);
+    }
 }
