@@ -727,6 +727,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 A.Fake<IRelationalReadMaterializer>(),
                 A.Fake<IReadableProfileProjector>(),
                 new NoOpRelationalWriteExceptionClassifier(),
+                A.Fake<IRelationalDeleteConstraintResolver>(),
                 A.Fake<IRelationalWriteSessionFactory>()
             );
 

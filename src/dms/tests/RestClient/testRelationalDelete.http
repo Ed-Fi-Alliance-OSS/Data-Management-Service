@@ -1,0 +1,313 @@
+### DMS-1011 — Map FK Violations to Delete Conflict Responses
+#
+# Manual walkthrough of the 4 FK-violation DELETE scenarios the ticket covers
+# (from src/dms/tests/.../Features/References/DeleteReferenceValidation.feature).
+#
+# Prereqs:
+#   /e2e start --relational          # dedicated edfi schema in edfi_datamanagementservice_relational
+#   /e2e status                      # confirm dms-local-dms-1 is healthy
+#
+# End-to-end self-contained: section 1 mints the Config-Service + DMS tokens so no manual
+# token paste is needed. Execute from top to bottom with the VS Code REST Client extension.
+
+@dmsPort=8080
+@configPort=8081
+@dataApi=http://localhost:{{dmsPort}}/data
+
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=ValidClientSecret1234567890!Abcd
+
+# Relational DB + password match eng/docker-compose/.env.e2e.relational.
+@relationalDbName=edfi_datamanagementservice_relational
+@postgresPassword=abcdefgh1!
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. Bootstrap — Configuration Service token, vendor, DMS instance, application, DMS token
+# ──────────────────────────────────────────────────────────────────────────────
+
+### 1.1 Configuration-Service token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+### 1.2 Create a vendor scoped to the ed-fi namespace
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "DMS-1011 Demo Vendor {{$randomInt 0 9999999}}",
+    "contactName": "Relational Backend",
+    "contactEmailAddress": "demo@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@vendorId={{createVendor.response.body.id}}
+
+### 1.3 Create a DMS instance pointing at the RELATIONAL database
+# The connection string MUST target the dedicated relational database provisioned by
+# provision-relational-e2e-database.ps1 — NOT the default edfi_datamanagementservice.
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "DMS-1011 Relational Instance",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password={{postgresPassword}};database={{relationalDbName}};"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
+### 1.4 Create an application with the NoFurtherAuthorizationRequired claim set
+# (matches what the E2E relational-backend runs use — avoids namespace-authz noise while
+# demoing the 409 contract)
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "DMS-1011 Relational Demo",
+    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "educationOrganizationIds": [ 255, 255901 ],
+    "dmsInstanceIds": [ {{dmsInstanceId}} ]
+}
+
+###
+@clientId={{createApplication.response.body.key}}
+@clientSecret={{createApplication.response.body.secret}}
+
+### 1.5 Reload claim sets so the NoFurtherAuthRequired set is visible to DMS
+POST http://localhost:{{dmsPort}}/management/reload-claimsets
+
+### 1.6 Exchange the client credentials for a DMS bearer token
+# Use HTTP Basic auth (not form-body) because the generated client_secret can contain
+# characters that are significant in application/x-www-form-urlencoded — notably '&',
+# which would be interpreted as a field separator and truncate the secret server-side,
+# causing the DMS /oauth/token endpoint to reject the request with "Malformed Authorization
+# header". The REST Client extension base64-encodes the `basic <id>:<secret>` value as a
+# whole, so characters inside the secret do not need additional escaping.
+# @name dmsTokenRequest
+POST http://localhost:{{dmsPort}}/oauth/token
+Authorization: basic {{clientId}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken={{dmsTokenRequest.response.body.access_token}}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 2. Seed baseline descriptors + School (reused across scenarios)
+# ──────────────────────────────────────────────────────────────────────────────
+
+### 2.1 GradeLevelDescriptor — First grade
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+    "codeValue": "First grade",
+    "shortDescription": "First grade"
+}
+
+### 2.2 EducationOrganizationCategoryDescriptor — school
+# @name edOrgCategoryDescriptor
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+    "codeValue": "school",
+    "shortDescription": "school"
+}
+
+###
+@edOrgCategoryDescriptorId={{edOrgCategoryDescriptor.response.body.id}}
+
+### 2.3 CalendarTypeDescriptor — Student Specific (scenario 01)
+POST {{dataApi}}/ed-fi/calendarTypeDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/CalendarTypeDescriptor",
+    "codeValue": "Student Specific",
+    "shortDescription": "Student Specific"
+}
+
+### 2.4 LocalEducationAgencyCategoryDescriptor — School (scenario 04)
+POST {{dataApi}}/ed-fi/localEducationAgencyCategoryDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
+    "codeValue": "School",
+    "shortDescription": "School"
+}
+
+### 2.5 School 255901107 — used by scenarios 01 (Calendar target) and 02 (pre-existing reference)
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolId": 255901107,
+    "nameOfInstitution": "Grand Bend Elementary School",
+    "educationOrganizationCategories": [
+        { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school" }
+    ],
+    "gradeLevels": [
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade" }
+    ]
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 3. Scenarios — each ends in a DELETE that must return 409 with the specific
+#    referencing resource name in the detail.
+# ──────────────────────────────────────────────────────────────────────────────
+
+### 3.1 Scenario 01 — SchoolYearType referenced by Calendar
+# Expect: 409, detail "...referenced by existing Calendar item(s)."
+# @name schoolYear2022
+POST {{dataApi}}/ed-fi/schoolYearTypes
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolYear": 2022,
+    "currentSchoolYear": false,
+    "schoolYearDescription": "2021-2022"
+}
+
+###
+@schoolYear2022Id={{schoolYear2022.response.body.id}}
+
+### POST Calendar referencing School 255901107 + SchoolYearType 2022
+# @name calendar2010605675
+POST {{dataApi}}/ed-fi/calendars
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "calendarCode": "2010605675",
+    "schoolReference": { "schoolId": 255901107 },
+    "schoolYearTypeReference": { "schoolYear": 2022 },
+    "calendarTypeDescriptor": "uri://ed-fi.org/CalendarTypeDescriptor#Student Specific"
+}
+
+###
+@calendar2010605675Id={{calendar2010605675.response.body.id}}
+
+### DELETE the referenced SchoolYearType — expect 409 referencing "Calendar"
+DELETE {{dataApi}}/ed-fi/schoolYearTypes/{{schoolYear2022Id}}
+Authorization: bearer {{dmsToken}}
+
+### 3.2 Scenario 02 — EducationOrganizationCategoryDescriptor referenced by School
+# The School in 2.5 already references this descriptor.
+# Expect: 409, detail "...referenced by existing School item(s)."
+DELETE {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors/{{edOrgCategoryDescriptorId}}
+Authorization: bearer {{dmsToken}}
+
+### 3.3 Scenario 03 — Student referenced by StudentEducationOrganizationAssociation
+# Expect: 409, detail "...referenced by existing StudentEducationOrganizationAssociation item(s)."
+# @name student604824
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "studentUniqueId": "604824",
+    "birthDate": "2010-01-13",
+    "firstName": "Traci",
+    "lastSurname": "Mathews"
+}
+
+###
+@student604824Id={{student604824.response.body.id}}
+
+### POST the association
+POST {{dataApi}}/ed-fi/studentEducationOrganizationAssociations
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "educationOrganizationReference": { "educationOrganizationId": 255901107 },
+    "studentReference": { "studentUniqueId": "604824" }
+}
+
+### DELETE the referenced Student — expect 409 referencing "StudentEducationOrganizationAssociation"
+DELETE {{dataApi}}/ed-fi/students/{{student604824Id}}
+Authorization: bearer {{dmsToken}}
+
+### 3.4 Scenario 04 — LocalEducationAgency referenced by School
+# Expect: 409, detail "...referenced by existing School item(s)."
+# @name lea333
+POST {{dataApi}}/ed-fi/localEducationAgencies
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "localEducationAgencyId": 333,
+    "nameOfInstitution": "Grand Bend Delete",
+    "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#School",
+    "categories": [
+        { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school" }
+    ]
+}
+
+###
+@lea333Id={{lea333.response.body.id}}
+
+### POST a second School that references the LEA
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolId": 255901108,
+    "nameOfInstitution": "Grand Bend Elementary School (LEA ref)",
+    "educationOrganizationCategories": [
+        { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school" }
+    ],
+    "gradeLevels": [
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade" }
+    ],
+    "localEducationAgencyReference": { "localEducationAgencyId": 333 }
+}
+
+### DELETE the referenced LEA — expect 409 referencing "School"
+DELETE {{dataApi}}/ed-fi/localEducationAgencies/{{lea333Id}}
+Authorization: bearer {{dmsToken}}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. Happy path — remove the blocker, retry the delete
+# ──────────────────────────────────────────────────────────────────────────────
+# Closes the loop: the same SchoolYearType 2022 that returned 409 in scenario 01
+# now succeeds once its referencing Calendar is gone. Proves the 409 is reversible
+# (i.e. it really is a temporary dependent-item conflict, not a permanent rejection).
+
+### 4.1 DELETE the referencing Calendar first — expect 204
+DELETE {{dataApi}}/ed-fi/calendars/{{calendar2010605675Id}}
+Authorization: bearer {{dmsToken}}
+
+### 4.2 Retry DELETE on the SchoolYearType — now expect 204
+DELETE {{dataApi}}/ed-fi/schoolYearTypes/{{schoolYear2022Id}}
+Authorization: bearer {{dmsToken}}

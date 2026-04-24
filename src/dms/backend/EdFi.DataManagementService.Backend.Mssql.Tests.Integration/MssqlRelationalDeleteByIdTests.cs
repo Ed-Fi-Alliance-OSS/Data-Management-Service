@@ -215,13 +215,27 @@ public class Given_A_Mssql_Relational_Delete_By_Id
     }
 
     [Test]
-    public async Task It_returns_delete_failure_reference_when_the_document_is_referenced_by_another_document()
+    public async Task It_returns_delete_failure_reference_with_the_resolved_referencing_resource_name_when_the_document_is_referenced_by_another_document()
     {
         // Seed a Program document, then stitch a School document with a
         // SchoolExtensionAddressSponsorReference row that FK-references the Program via
         // FK_SchoolExtensionAddressSponsorReference_Program_RefKey (ON DELETE NO ACTION).
         // Deleting the Program must be refused by the database and surface as
-        // DeleteResult.DeleteFailureReference through the classifier chain.
+        // DeleteResult.DeleteFailureReference(["School"]) through the classifier +
+        // constraint-resolver chain.
+        //
+        // This also exercises the cross-resource model walk: the violated FK lives on a grandchild
+        // table of the School resource while the delete target is Program. On MSSQL the driver
+        // wraps error 547 and surfaces a "REFERENCE constraint '...'" message (different phrasing
+        // from INSERT/UPDATE's "FOREIGN KEY constraint '...'") — MssqlRelationalWriteExceptionClassifier's
+        // ForeignKeyConstraintNameRegex must accept both forms for this assertion to hold.
+        //
+        // A localized / missing-constraint-name fallback assertion at integration level is not
+        // feasible here: Microsoft.Data.SqlClient.SqlException is sealed with no public
+        // constructor, so the test harness can't forge a localized 547. That branch is covered
+        // by the RelationalDocumentStoreRepositoryTests / Given_Descriptor_Write_Handler_Delete
+        // unit fixtures, which exercise UnrecognizedWriteFailure directly through the classifier
+        // stub.
         var programDocumentUuid = new DocumentUuid(Guid.Parse("eeeeeeee-0000-0000-0000-000000000100"));
         var programDocumentId = await InsertDocumentAsync(programDocumentUuid.Value, "Ed-Fi", "Program");
         await InsertProgramAsync(programDocumentId, "Robotics");
@@ -244,7 +258,13 @@ public class Given_A_Mssql_Relational_Delete_By_Id
             repository.DeleteDocumentById(CreateDeleteRequest(_unrelatedResourceInfo, programDocumentUuid))
         );
 
-        delete.Should().BeOfType<DeleteResult.DeleteFailureReference>();
+        var reference = delete.Should().BeOfType<DeleteResult.DeleteFailureReference>().Subject;
+        reference
+            .ReferencingDocumentResourceNames.Should()
+            .BeEquivalentTo(
+                ["School"],
+                "the FK lives on a grandchild table of the School resource, so the resolver must walk the compiled model across resources and surface the ROOT resource name — not the child table name"
+            );
         (await CountDocumentsAsync(programDocumentUuid))
             .Should()
             .Be(

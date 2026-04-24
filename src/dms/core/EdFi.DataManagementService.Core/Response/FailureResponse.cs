@@ -131,8 +131,17 @@ public static class FailureResponse
 
     public static JsonNode ForDataConflict(string[] dependentItemNames, TraceId traceId)
     {
+        // The relational delete path can surface an FK violation without a resolvable
+        // referencing resource name (constraint name missing from the driver, or not mapped to
+        // the compiled model). In that case the backend passes an empty array and the response
+        // layer emits a generic fallback — same type/title/status, just no "{names}" segment.
+        var detail =
+            dependentItemNames.Length == 0
+                ? "The requested action cannot be performed because this item is referenced by existing item(s)."
+                : $"The requested action cannot be performed because this item is referenced by existing {string.Join(", ", dependentItemNames)} item(s).";
+
         return CreateBaseJsonObject(
-            detail: $"The requested action cannot be performed because this item is referenced by existing {string.Join(", ", dependentItemNames)} item(s).",
+            detail: detail,
             type: $"{_dataConflictTypePrefix}:dependent-item-exists",
             title: "Dependent Item Exists",
             status: 409,

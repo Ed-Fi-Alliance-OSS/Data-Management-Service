@@ -20,6 +20,7 @@ internal sealed class DescriptorWriteHandler(
     IRelationalWriteTargetLookupService targetLookupService,
     IRelationalCommandExecutor commandExecutor,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
+    IRelationalDeleteConstraintResolver deleteConstraintResolver,
     ILogger<DescriptorWriteHandler> logger
 ) : IDescriptorWriteHandler
 {
@@ -29,6 +30,8 @@ internal sealed class DescriptorWriteHandler(
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
         writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
+    private readonly IRelationalDeleteConstraintResolver _deleteConstraintResolver =
+        deleteConstraintResolver ?? throw new ArgumentNullException(nameof(deleteConstraintResolver));
     private readonly ILogger<DescriptorWriteHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -301,6 +304,8 @@ internal sealed class DescriptorWriteHandler(
                 _commandExecutor,
                 command,
                 _writeExceptionClassifier,
+                _deleteConstraintResolver,
+                mappingSet.Model,
                 _logger,
                 documentUuid,
                 traceId,

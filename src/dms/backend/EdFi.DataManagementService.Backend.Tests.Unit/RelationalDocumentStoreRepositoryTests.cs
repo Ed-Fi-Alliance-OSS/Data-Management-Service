@@ -4,16 +4,17 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -50,6 +51,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private IReadableProfileProjector _readableProfileProjector = null!;
     private IRelationalCommandExecutor _commandExecutor = null!;
     private ConfigurableRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+    private IRelationalDeleteConstraintResolver _deleteConstraintResolver = null!;
+    private RecordingLogger<RelationalDocumentStoreRepository> _logger = null!;
     private RecordingWriteSessionFactory _writeSessionFactory = null!;
     private RelationalWriteExecutorRequest _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorRequest> _capturedExecutorRequests = null!;
@@ -66,6 +69,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _readableProfileProjector = A.Fake<IReadableProfileProjector>();
         _commandExecutor = A.Fake<IRelationalCommandExecutor>();
         _writeExceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier();
+        _deleteConstraintResolver = A.Fake<IRelationalDeleteConstraintResolver>();
+        _logger = new RecordingLogger<RelationalDocumentStoreRepository>();
         _writeSessionFactory = new RecordingWriteSessionFactory(_commandExecutor);
         _capturedExecutorRequests = [];
         A.CallTo(() =>
@@ -85,7 +90,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             );
 
         _sut = new RelationalDocumentStoreRepository(
-            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _logger,
             _writeExecutor,
             _targetLookupService,
             new DefaultDescriptorWriteHandler(),
@@ -95,6 +100,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readMaterializer,
             _readableProfileProjector,
             _writeExceptionClassifier,
+            _deleteConstraintResolver,
             _writeSessionFactory
         );
     }
@@ -1751,6 +1757,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readMaterializer,
             _readableProfileProjector,
             new NoOpRelationalWriteExceptionClassifier(),
+            _deleteConstraintResolver,
             _writeSessionFactory
         );
 
@@ -1793,6 +1800,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readMaterializer,
             _readableProfileProjector,
             new NoOpRelationalWriteExceptionClassifier(),
+            _deleteConstraintResolver,
             _writeSessionFactory
         );
 
@@ -1884,6 +1892,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readMaterializer,
             _readableProfileProjector,
             _writeExceptionClassifier,
+            _deleteConstraintResolver,
             _writeSessionFactory
         );
 
@@ -1963,6 +1972,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readMaterializer,
             _readableProfileProjector,
             _writeExceptionClassifier,
+            _deleteConstraintResolver,
             _writeSessionFactory
         );
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
@@ -2038,13 +2048,68 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_delete_failure_reference_when_the_classifier_reports_a_foreign_key_violation(
+    public async Task It_returns_delete_failure_reference_with_the_resolved_resource_name_when_the_resolver_finds_the_owning_resource(
         SqlDialect dialect
     )
     {
+        const string constraintName = "FK_Calendar_SchoolRef";
+        var referencingResource = new QualifiedResourceName("Ed-Fi", "Calendar");
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo, dialect);
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteThrows(new StubDbException("constraint violation"));
         _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(constraintName);
+        A.CallTo(() =>
+                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
+            )
+            .Returns(referencingResource);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet);
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
+        _writeExceptionClassifier.IsForeignKeyViolationCallCount.Should().Be(1);
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        // Match on the exact MappingSet.Model reference — a narrowing of the any-matcher that
+        // catches a regression where the repository stops forwarding mappingSet.Model to the
+        // resolver (e.g., accidentally wires a stale or null model set). The fake would
+        // otherwise accept any DerivedRelationalModelSet and hide the wire-through bug.
+        A.CallTo(() =>
+                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
+            )
+            .MustHaveHappenedOnceExactly();
+        // Match on the log payload so the assertion fails if the FK-resolution Debug log is
+        // removed or demoted — an unrelated "Entering..." Debug log is always emitted by
+        // DeleteDocumentById, so a bare `r.Level == Debug` check would pass even without the new
+        // line.
+        _logger
+            .Records.Should()
+            .ContainSingle(r =>
+                r.Level == LogLevel.Debug
+                && r.Message.Contains(constraintName, StringComparison.Ordinal)
+                && r.Message.Contains(referencingResource.ResourceName, StringComparison.Ordinal)
+            );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_an_empty_reference_failure_and_logs_information_when_the_classifier_cannot_extract_a_constraint_name(
+        SqlDialect dialect
+    )
+    {
+        // IsForeignKeyViolation is true but TryClassify reports UnrecognizedWriteFailure —
+        // pgsql 23503 with a null ConstraintName, or mssql 547 with a localized / unparseable
+        // message. Resolver must NOT be called; log level is Information.
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteThrows(new StubDbException("constraint violation"));
+        _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
+        _writeExceptionClassifier.ClassificationToReturn = RelationalWriteExceptionClassification
+            .UnrecognizedWriteFailure
+            .Instance;
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(
             CreateSupportedMappingSet(_schoolResourceInfo, dialect)
@@ -2052,8 +2117,55 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference(["(referenced document)"]));
-        _writeExceptionClassifier.IsForeignKeyViolationCallCount.Should().Be(1);
+        result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
+        A.CallTo(() =>
+                _deleteConstraintResolver.TryResolveReferencingResource(
+                    A<DerivedRelationalModelSet>._,
+                    A<string>._
+                )
+            )
+            .MustNotHaveHappened();
+        _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Information);
+        // Decisions #4 splits Information (missing constraint name) from Warning (unresolved
+        // constraint name). A bare Contain(Information) would pass even if a refactor accidentally
+        // fired both branches for the same failure — assert Warning is absent to pin the split.
+        _logger.Records.Should().NotContain(r => r.Level == LogLevel.Warning);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_an_empty_reference_failure_and_logs_warning_when_the_resolver_cannot_map_the_constraint_name(
+        SqlDialect dialect
+    )
+    {
+        // Classifier hands off a real constraint name, but the resolver cannot find it in the
+        // compiled model — drift between deployed DDL and runtime model. Log level is Warning.
+        const string constraintName = "FK_Unknown_To_Model";
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo, dialect);
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteThrows(new StubDbException("constraint violation"));
+        _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(constraintName);
+        A.CallTo(() =>
+                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
+            )
+            .Returns((QualifiedResourceName?)null);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet);
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
+        A.CallTo(() =>
+                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
+            )
+            .MustHaveHappenedOnceExactly();
+        _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Warning);
+        // Decisions #4 splits Warning (unresolved constraint name) from Information (missing
+        // constraint name). A bare Contain(Warning) would pass even if a refactor accidentally
+        // fired both branches for the same failure — assert Information is absent to pin the split.
+        _logger.Records.Should().NotContain(r => r.Level == LogLevel.Information);
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -2645,43 +2757,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         {
             DisposeCallCount++;
             return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class ConfigurableRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
-    {
-        public bool IsForeignKeyViolationToReturn { get; set; }
-
-        public bool IsTransientFailureToReturn { get; set; }
-
-        public int IsForeignKeyViolationCallCount { get; private set; }
-
-        public int IsTransientFailureCallCount { get; private set; }
-
-        public bool TryClassify(
-            DbException exception,
-            [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
-        )
-        {
-            classification = null;
-            return false;
-        }
-
-        public bool IsForeignKeyViolation(DbException exception)
-        {
-            IsForeignKeyViolationCallCount++;
-            return IsForeignKeyViolationToReturn;
-        }
-
-        // RelationalDocumentStoreRepository does not consume unique-violation classification today
-        // (descriptor POST runs through DescriptorWriteHandler). The interface method stays a
-        // fixed-false stub until a non-descriptor path exercises it.
-        public bool IsUniqueConstraintViolation(DbException exception) => false;
-
-        public bool IsTransientFailure(DbException exception)
-        {
-            IsTransientFailureCallCount++;
-            return IsTransientFailureToReturn;
         }
     }
 

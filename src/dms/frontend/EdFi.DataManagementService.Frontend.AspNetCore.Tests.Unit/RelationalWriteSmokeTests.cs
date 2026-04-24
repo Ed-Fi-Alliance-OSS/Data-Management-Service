@@ -432,6 +432,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton<IRelationalWriteExceptionClassifier>(
                     new NoOpRelationalWriteExceptionClassifier()
                 );
+                services.AddSingleton(A.Fake<IRelationalDeleteConstraintResolver>());
                 services.AddSingleton<IRelationalWriteSessionFactory>(
                     A.Fake<IRelationalWriteSessionFactory>()
                 );

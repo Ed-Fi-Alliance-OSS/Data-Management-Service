@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -210,6 +211,7 @@ public class Given_Descriptor_Write_Response_Etags
             targetLookupService,
             commandExecutor,
             new NoOpRelationalWriteExceptionClassifier(),
+            A.Fake<IRelationalDeleteConstraintResolver>(),
             NullLogger<DescriptorWriteHandler>.Instance
         );
     }

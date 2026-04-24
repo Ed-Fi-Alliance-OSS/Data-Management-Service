@@ -67,12 +67,12 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
         ArgumentNullException.ThrowIfNull(exception);
 
         // SQL Server error 547 covers FOREIGN KEY (INSERT/UPDATE), REFERENCE (DELETE),
-        // and CHECK constraint violations. Pair the numeric code with a kind match so
-        // CHECK-547 messages are not misclassified as reference conflicts, while still
-        // letting FK/REFERENCE messages through even when the constraint name is absent.
+        // and CHECK constraint violations. Exclude the CHECK phrasing explicitly so 547s
+        // fall through as FK violations even on localized servers where the English
+        // "FOREIGN KEY" / "REFERENCE" tokens are absent.
         return exception is SqlException sqlException
             && sqlException.Number == ForeignKeyConstraintViolationNumber
-            && ForeignKeyConstraintKindRegex().IsMatch(sqlException.Message);
+            && !CheckConstraintKindRegex().IsMatch(sqlException.Message);
     }
 
     public bool IsUniqueConstraintViolation(DbException exception)
@@ -132,9 +132,6 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
     )]
     private static partial Regex ForeignKeyConstraintNameRegex();
 
-    [GeneratedRegex(
-        """\b(?:foreign\s+key|reference)\s+constraint\b""",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
-    )]
-    private static partial Regex ForeignKeyConstraintKindRegex();
+    [GeneratedRegex("""\bcheck\s+constraint\b""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex CheckConstraintKindRegex();
 }
