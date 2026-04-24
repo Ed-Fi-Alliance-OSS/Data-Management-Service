@@ -16,7 +16,7 @@ The design contract landed alongside `DMS-622`. This story delivers the runtime 
 - a defensive pass-through short-circuit in `ReadableProfileProjector` and `ProfileResponseFilter`, and
 - the corresponding unit and E2E tests.
 
-This story is a prerequisite for the runtime behavior of `DMS-622` (link injection). The DMS-622 story no longer carries a feature-local projector task for `link` preservation; preservation is a consequence of the contract enforced here.
+This story is a prerequisite for the runtime behavior of the link-injection implementation story (`06a-link-injection-implementation.md`, Jira TBD). That story does not carry a feature-local projector task for `link` preservation; preservation is a consequence of the contract enforced here. The `DMS-622` design spike that authored the link-injection contract likewise does not own preservation behavior — it assumes the contract defined in this story.
 
 Align with:
 
@@ -29,7 +29,7 @@ Align with:
 
 Blocks:
 
-- `DMS-622` — `reference/design/backend-redesign/epics/08-relational-read-path/06-link-injection.md`. DMS-622's runtime link-preservation behavior under readable profiles depends on this story.
+- `reference/design/backend-redesign/epics/08-relational-read-path/06a-link-injection-implementation.md` (Jira TBD). The link-injection implementation's runtime link-preservation behavior under readable profiles depends on this story. (The design contract itself landed alongside the `DMS-622` spike at `06-link-injection.md`.)
 
 Coordinates with:
 
@@ -41,7 +41,7 @@ Coordinates with:
 - `src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs:23-29` no longer defines a private `_serverGeneratedFields` literal; it imports the shared constant. Generated OpenAPI schema output is unchanged (regression-tested).
 - `src/dms/core/EdFi.DataManagementService.Core/Profile/ProfileDataValidator.cs` rejects, with a validation error, any profile whose `MemberSelection.IncludeOnly` or `MemberSelection.ExcludeOnly` set contains a server-generated field name. The rejection surfaces through the same validation-result shape as the existing "identity fields cannot be excluded" error. Validation runs at profile load via `CachedProfileService.GetOrFetchProfileStoreAsync`; there is no per-request cost.
 - `src/dms/core/EdFi.DataManagementService.Core/Profile/ReadableProfileProjector.cs` and `Profile/ProfileResponseFilter.cs` short-circuit on server-generated field names before consulting `PropertyNameSet`, so those fields pass through regardless of `IncludeOnly` membership. This guard is defensive (the validator is the primary enforcement point) but is required so a loosened validator cannot silently degrade response shapes.
-- Link preservation under readable profiles is asserted by the tests introduced in this story rather than by DMS-622. DMS-622 no longer carries a `link`-preservation acceptance criterion or feature-local projector task.
+- Link preservation under readable profiles is asserted by the tests introduced in this story rather than by the link-injection implementation story (`06a-link-injection-implementation.md`). That story does not carry a `link`-preservation acceptance criterion or feature-local projector task.
 - Unit tests in `ProfileDataValidatorTests` cover:
   - a profile naming `link`, `id`, `_etag`, or `_lastModifiedDate` in `IncludeOnly` fails validation,
   - the same names in `ExcludeOnly` fail validation,

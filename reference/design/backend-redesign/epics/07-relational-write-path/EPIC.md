@@ -42,7 +42,7 @@ Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` re
 - `DMS-1118` — `01a-c6-stored-state-projection-and-hidden-member-paths.md` — Stored-State Projection + HiddenMemberPaths Computation (Core, Tier 3)
 - `DMS-1113` — `01a-c7-readable-profile-projection.md` — Readable Profile Projection After Reconstitution (Core, Tier 0 — independent, no C-story dependencies)
 - `DMS-1112` — `01a-c8-typed-profile-error-classification.md` — Typed Profile Error Classification (Core, Tier 0 — shared type contract)
-- *TBD* — `01d-profile-namespace-and-server-generated-fields.md` — Enforce the Core profile namespace rule so server-generated fields (`id`, `link`, `_etag`, `_lastModifiedDate`) are not profile-addressable, passing through readable-profile projection by construction; blocks `DMS-622`
+- *TBD* — `01d-profile-namespace-and-server-generated-fields.md` — Enforce the Core profile namespace rule so server-generated fields (`id`, `link`, `_etag`, `_lastModifiedDate`) are not profile-addressable, passing through readable-profile projection by construction; blocks the link-injection implementation story (`06a-link-injection-implementation.md`, Jira TBD)
 - `DMS-1106` — `01b-profile-write-context.md` — Integrate the Core/backend profile write contract
 - `DMS-1105` — `01c-current-document-for-profile-projection.md` — Load/reconstitute the current stored document for profiled update/upserts
 - `DMS-983` — `02-flattening-executor.md` — Flatten validated write bodies into row buffers and collection candidates using compiled mapping (thin slice)

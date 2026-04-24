@@ -101,7 +101,7 @@ keys consistent with existing DMS responses:
   "schoolId": 255901,
   "link": {
     "rel": "School",
-    "href": "/ed-fi/schools/550e8400e29b41d4a716446655440000"
+    "href": "/ed-fi/schools/550e8400-e29b-41d4-a716-446655440000"
   }
 }
 ```
@@ -208,7 +208,7 @@ with no column-name pattern inference:
 
 This derivation is the same rule that sources the `<RootDocumentIdColumn>` placeholder used
 by the existing collection-hydration SQL at
-[flattening-reconstitution.md](flattening-reconstitution.md) §8, so link injection and
+[flattening-reconstitution.md](flattening-reconstitution.md) §6.1, so link injection and
 collection hydration consume one shared contract and neither special-cases by table kind.
 
 This mirrors the descriptor URI projection pattern
@@ -522,8 +522,10 @@ cache truncate. No etag carve-out.
 
 - [DMS-622](https://edfi.atlassian.net/browse/DMS-622) — Jira ticket.
 - [DMS-988 — Relational Read Path Epic](../epics/08-relational-read-path/EPIC.md) — parent epic.
-- [06-link-injection.md](../epics/08-relational-read-path/06-link-injection.md) — story realizing
-  this design.
+- [06-link-injection.md](../epics/08-relational-read-path/06-link-injection.md) — design spike
+  (DMS-622) that authored this document.
+- [06a-link-injection-implementation.md](../epics/08-relational-read-path/06a-link-injection-implementation.md)
+  — implementation story realizing this design.
 - [02-reference-identity-projection.md](../epics/08-relational-read-path/02-reference-identity-projection.md)
   — prerequisite identity-projection story this design extends.
 - [data-model.md](data-model.md) — `dms.Document`, `dms.ResourceKey`, abstract identity tables.
