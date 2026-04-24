@@ -234,6 +234,21 @@ public class Given_MssqlRelationalWriteExceptionClassifier
         _sut.IsForeignKeyViolation(exception).Should().BeFalse();
     }
 
+    [Test]
+    public void It_reports_foreign_key_violation_for_error_547_without_english_fk_tokens()
+    {
+        // Localized SQL Server servers emit 547 messages that lack the English
+        // "FOREIGN KEY" / "REFERENCE constraint" tokens. Error 547 alone — absent a CHECK
+        // phrasing — is still treated as an FK violation so the delete path produces a
+        // best-effort 409 instead of falling through to UnknownFailure.
+        var exception = CreateSqlException(
+            547,
+            "The DELETE statement conflicted with a constraint \"FK_Foo_Bar\"."
+        );
+
+        _sut.IsForeignKeyViolation(exception).Should().BeTrue();
+    }
+
     [TestCase(2627)]
     [TestCase(2601)]
     [TestCase(1205)]
