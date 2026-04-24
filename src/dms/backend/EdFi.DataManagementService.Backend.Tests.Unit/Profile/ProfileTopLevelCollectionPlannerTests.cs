@@ -27,6 +27,31 @@ internal static class Slice4Builders
         string value
     ) => [new SemanticIdentityPart(relativePath, JsonValue.Create(value), IsPresent: true)];
 
+    /// <summary>
+    /// Builds a single-part semantic identity whose value is an already-canonicalized Int64.
+    /// Used for reference-backed and descriptor-backed identity tests where canonicalization
+    /// has already occurred before the planner sees the values.
+    /// </summary>
+    public static ImmutableArray<SemanticIdentityPart> BuildSemanticIdentityLong(
+        string relativePath,
+        long value
+    ) => [new SemanticIdentityPart(relativePath, JsonValue.Create(value), IsPresent: true)];
+
+    /// <summary>
+    /// Builds a two-part semantic identity where both parts carry canonicalized Int64 values.
+    /// Used for reference-backed identity tests (e.g. schoolId + educationOrganizationId).
+    /// </summary>
+    public static ImmutableArray<SemanticIdentityPart> BuildSemanticIdentityTwoPartLong(
+        string relativePath1,
+        long value1,
+        string relativePath2,
+        long value2
+    ) =>
+        [
+            new SemanticIdentityPart(relativePath1, JsonValue.Create(value1), IsPresent: true),
+            new SemanticIdentityPart(relativePath2, JsonValue.Create(value2), IsPresent: true),
+        ];
+
     public static ScopeInstanceAddress RootScopeAddress() =>
         new("$", ImmutableArray<AncestorCollectionInstance>.Empty);
 
@@ -2135,5 +2160,447 @@ public class Given_Planner_multi_insert_preserves_request_order_among_inserts
             .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
         entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW3");
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Task 6 — Reference-backed identity: matched update
+// Identity parts: schoolId=4242L, educationOrganizationId=255901L (two-part Int64).
+// Verifies the planner treats canonicalized Int64 reference parts as plain identity
+// values and emits a MatchedUpdateEntry when all four streams agree.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_top_level_collection_with_reference_backed_semantic_identity_matched_update
+{
+    private ProfileTopLevelCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        const string scope = "$.studentSchoolAssociations[*]";
+        var identity = Slice4Builders.BuildSemanticIdentityTwoPartLong(
+            "schoolId",
+            4242L,
+            "educationOrganizationId",
+            255901L
+        );
+
+        var current = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            identity,
+            storedOrdinal: 1,
+            stableRowIdentity: 99L
+        );
+        var stored = Slice4Builders.BuildVisibleStoredCollectionRow(scope, identity);
+        var candidate = Slice4Builders.BuildCollectionWriteCandidate(scope, identity, requestOrder: 0);
+        var requestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
+            scope,
+            identity,
+            creatable: true,
+            requestJsonPath: "$.studentSchoolAssociations[0]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: scope,
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate],
+            VisibleRequestItems: [requestItem],
+            VisibleStoredRows: [stored],
+            CurrentRows: [current]
+        );
+
+        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_returns_Success() =>
+        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+
+    [Test]
+    public void It_returns_sequence_with_one_entry()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_returns_a_MatchedUpdateEntry()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>();
+    }
+
+    [Test]
+    public void It_returns_MatchedUpdateEntry_with_correct_StableRowIdentity()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        entry.StoredRow.StableRowIdentity.Should().Be(99L);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Task 6 — Reference-backed identity: delete-by-absence
+// Stored row is present in VisibleStoredRows and CurrentRows but absent from the
+// request. The planner should produce no output entry for that slot; the persister's
+// delete-by-absence handles the actual removal.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_top_level_collection_with_reference_backed_semantic_identity_delete_by_absence
+{
+    private ProfileTopLevelCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        const string scope = "$.studentSchoolAssociations[*]";
+        // id1 is the kept item (present in request); id2 is deleted by absence (omitted from request).
+        var id1 = Slice4Builders.BuildSemanticIdentityTwoPartLong(
+            "schoolId",
+            4242L,
+            "educationOrganizationId",
+            255901L
+        );
+        var id2 = Slice4Builders.BuildSemanticIdentityTwoPartLong(
+            "schoolId",
+            9999L,
+            "educationOrganizationId",
+            255901L
+        );
+
+        var current1 = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            id1,
+            storedOrdinal: 1,
+            stableRowIdentity: 10L
+        );
+        var current2 = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            id2,
+            storedOrdinal: 2,
+            stableRowIdentity: 20L
+        );
+
+        var stored1 = Slice4Builders.BuildVisibleStoredCollectionRow(scope, id1);
+        var stored2 = Slice4Builders.BuildVisibleStoredCollectionRow(scope, id2);
+
+        // Request only includes id1 — id2 is absent (delete-by-absence).
+        var candidate1 = Slice4Builders.BuildCollectionWriteCandidate(scope, id1, requestOrder: 0);
+        var request1 = Slice4Builders.BuildVisibleRequestCollectionItem(
+            scope,
+            id1,
+            creatable: true,
+            requestJsonPath: "$.studentSchoolAssociations[0]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: scope,
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate1],
+            VisibleRequestItems: [request1],
+            VisibleStoredRows: [stored1, stored2],
+            CurrentRows: [current1, current2]
+        );
+
+        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_returns_Success() =>
+        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+
+    [Test]
+    public void It_returns_sequence_with_one_entry_not_two()
+    {
+        // The absent id2 slot is omitted from the output; persister deletes it by absence.
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_returns_MatchedUpdateEntry_for_id1()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>();
+    }
+
+    [Test]
+    public void It_returns_MatchedUpdateEntry_with_stableRowIdentity_10()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        entry.StoredRow.StableRowIdentity.Should().Be(10L);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Task 6 — Reference-backed identity: insert-when-creatable
+// A new request item with a two-part Int64 identity that is not in VisibleStoredRows.
+// Creatable=true → planner emits a VisibleInsertEntry.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_top_level_collection_with_reference_backed_semantic_identity_insert_when_creatable
+{
+    private ProfileTopLevelCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        const string scope = "$.studentSchoolAssociations[*]";
+        var identity = Slice4Builders.BuildSemanticIdentityTwoPartLong(
+            "schoolId",
+            4242L,
+            "educationOrganizationId",
+            255901L
+        );
+
+        // No stored rows — this is a brand-new item.
+        var candidate = Slice4Builders.BuildCollectionWriteCandidate(scope, identity, requestOrder: 0);
+        var requestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
+            scope,
+            identity,
+            creatable: true,
+            requestJsonPath: "$.studentSchoolAssociations[0]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: scope,
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate],
+            VisibleRequestItems: [requestItem],
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_returns_Success() =>
+        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+
+    [Test]
+    public void It_returns_sequence_with_one_entry()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_returns_a_VisibleInsertEntry()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Task 6 — Descriptor-backed identity: matched update
+// All four streams use a single canonicalized Int64 descriptor id (42L).
+// Verifies the planner treats the Int64 descriptor id as a plain identity value
+// and emits a MatchedUpdateEntry when all four streams agree.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_top_level_collection_with_descriptor_backed_semantic_identity_matched_update
+{
+    private ProfileTopLevelCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        const string scope = "$.gradeLevels[*]";
+        // Descriptor id has been canonicalized to the Int64 primary key 42L before reaching the planner.
+        var identity = Slice4Builders.BuildSemanticIdentityLong("gradeLevelDescriptorId", 42L);
+
+        var current = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            identity,
+            storedOrdinal: 1,
+            stableRowIdentity: 77L
+        );
+        var stored = Slice4Builders.BuildVisibleStoredCollectionRow(scope, identity);
+        var candidate = Slice4Builders.BuildCollectionWriteCandidate(scope, identity, requestOrder: 0);
+        var requestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
+            scope,
+            identity,
+            creatable: true,
+            requestJsonPath: "$.gradeLevels[0]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: scope,
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate],
+            VisibleRequestItems: [requestItem],
+            VisibleStoredRows: [stored],
+            CurrentRows: [current]
+        );
+
+        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_returns_Success() =>
+        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+
+    [Test]
+    public void It_returns_sequence_with_one_entry()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_returns_a_MatchedUpdateEntry()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>();
+    }
+
+    [Test]
+    public void It_returns_MatchedUpdateEntry_with_correct_StableRowIdentity()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        entry.StoredRow.StableRowIdentity.Should().Be(77L);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Task 6 — Descriptor-backed identity: delete-by-absence
+// Stored row with descriptor id 42L is present in VisibleStoredRows and CurrentRows
+// but absent from the request. Descriptor id 50L is present in the request.
+// Planner emits one MatchedUpdateEntry for 50L; the 42L slot is omitted.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_top_level_collection_with_descriptor_backed_semantic_identity_delete_by_absence
+{
+    private ProfileTopLevelCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        const string scope = "$.gradeLevels[*]";
+        var id42 = Slice4Builders.BuildSemanticIdentityLong("gradeLevelDescriptorId", 42L);
+        var id50 = Slice4Builders.BuildSemanticIdentityLong("gradeLevelDescriptorId", 50L);
+
+        var current42 = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            id42,
+            storedOrdinal: 1,
+            stableRowIdentity: 42L
+        );
+        var current50 = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            id50,
+            storedOrdinal: 2,
+            stableRowIdentity: 50L
+        );
+
+        var stored42 = Slice4Builders.BuildVisibleStoredCollectionRow(scope, id42);
+        var stored50 = Slice4Builders.BuildVisibleStoredCollectionRow(scope, id50);
+
+        // Request only includes id50 — id42 is deleted by absence.
+        var candidate50 = Slice4Builders.BuildCollectionWriteCandidate(scope, id50, requestOrder: 0);
+        var request50 = Slice4Builders.BuildVisibleRequestCollectionItem(
+            scope,
+            id50,
+            creatable: true,
+            requestJsonPath: "$.gradeLevels[0]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: scope,
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate50],
+            VisibleRequestItems: [request50],
+            VisibleStoredRows: [stored42, stored50],
+            CurrentRows: [current42, current50]
+        );
+
+        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_returns_Success() =>
+        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+
+    [Test]
+    public void It_returns_sequence_with_one_entry_not_two()
+    {
+        // id42 slot omitted by delete-by-absence; id50 matched.
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_returns_MatchedUpdateEntry_for_id50()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>();
+    }
+
+    [Test]
+    public void It_returns_MatchedUpdateEntry_with_stableRowIdentity_50()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        entry.StoredRow.StableRowIdentity.Should().Be(50L);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Task 6 — Descriptor-backed identity: insert-when-creatable
+// A new request item with a single canonicalized Int64 descriptor id (42L) that is
+// not in VisibleStoredRows. Creatable=true → planner emits a VisibleInsertEntry.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_top_level_collection_with_descriptor_backed_semantic_identity_insert_when_creatable
+{
+    private ProfileTopLevelCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        const string scope = "$.gradeLevels[*]";
+        var identity = Slice4Builders.BuildSemanticIdentityLong("gradeLevelDescriptorId", 42L);
+
+        // No stored rows — brand-new descriptor item.
+        var candidate = Slice4Builders.BuildCollectionWriteCandidate(scope, identity, requestOrder: 0);
+        var requestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
+            scope,
+            identity,
+            creatable: true,
+            requestJsonPath: "$.gradeLevels[0]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: scope,
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate],
+            VisibleRequestItems: [requestItem],
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_returns_Success() =>
+        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+
+    [Test]
+    public void It_returns_sequence_with_one_entry()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_returns_a_VisibleInsertEntry()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
     }
 }
