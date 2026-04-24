@@ -364,7 +364,7 @@
                   "semantic_identity_bindings_in_order": [
                     {
                       "relative_path": "$.programReference.programName",
-                      "binding_index": 4
+                      "binding_index": 5
                     }
                   ],
                   "stable_row_identity_binding_index": 0,
@@ -1154,7 +1154,7 @@
                   "semantic_identity_bindings_in_order": [
                     {
                       "relative_path": "$.programReference.programName",
-                      "binding_index": 4
+                      "binding_index": 5
                     }
                   ],
                   "stable_row_identity_binding_index": 0,
