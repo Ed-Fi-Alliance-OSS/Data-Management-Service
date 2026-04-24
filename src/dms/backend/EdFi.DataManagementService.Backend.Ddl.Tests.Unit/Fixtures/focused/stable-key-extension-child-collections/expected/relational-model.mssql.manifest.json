@@ -287,7 +287,7 @@
       ]
     },
     {
-      "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollectionItemId_Program_DocumentId",
+      "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollectionItemId_Program_ProgramName",
       "table": {
         "schema": "sample",
         "name": "SchoolExtensionAddressSponsorReference"
@@ -296,7 +296,7 @@
       "is_unique": true,
       "key_columns": [
         "BaseCollectionItemId",
-        "Program_DocumentId"
+        "Program_ProgramName"
       ]
     },
     {
@@ -1262,7 +1262,7 @@
             "semantic_identity_bindings": [
               {
                 "relative_path": "$.programReference.programName",
-                "column": "Program_DocumentId"
+                "column": "Program_ProgramName"
               }
             ]
           },
@@ -1278,10 +1278,10 @@
             },
             {
               "kind": "Unique",
-              "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollectionItemId_Program_DocumentId",
+              "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollectionItemId_Program_ProgramName",
               "columns": [
                 "BaseCollectionItemId",
-                "Program_DocumentId"
+                "Program_ProgramName"
               ]
             },
             {
