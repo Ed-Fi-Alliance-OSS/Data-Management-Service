@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
@@ -782,7 +783,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                         visibleStoredRowsForScope,
                         tablePlan,
                         descriptorIdentityIndices,
-                        resolvedReferenceLookups
+                        resolvedReferenceLookups,
+                        currentRowsForScope
                     );
 
             var input = new ProfileTopLevelCollectionScopeInput(
@@ -1029,7 +1031,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         foreach (var item in requestItems)
         {
             var identity = item.Address.SemanticIdentityInOrder;
-            var ordinalPath = ParseOrdinalPathFromRequestJsonPath(item.RequestJsonPath);
+            var ordinalPath = RelationalJsonPathSupport
+                .ParseConcretePath(new JsonPath(item.RequestJsonPath))
+                .OrdinalPath;
             var canonicalized = CanonicalizeIdentityParts(
                 identity,
                 bindings,
@@ -1054,14 +1058,17 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// For each <see cref="VisibleStoredCollectionRow"/> in <paramref name="storedRows"/>,
     /// replaces the <see cref="SemanticIdentityPart"/> values at every descriptor-identity
     /// index with the resolved Int64 descriptor id, looked up by URI from the request-cycle
-    /// cache. Throws <see cref="InvalidOperationException"/> with phrase
-    /// "descriptor URI not resolvable at merge boundary" if a stored URI is not in the cache.
+    /// cache. When a stored URI is not in the cache (e.g. delete-by-absence: the row was
+    /// omitted from the request body), falls back to extracting the Int64 from the matching
+    /// <see cref="CurrentCollectionRowSnapshot"/> — see <see cref="CanonicalizeStoredIdentityParts"/>
+    /// for the fallback strategy and its failure conditions.
     /// </summary>
     private static ImmutableArray<VisibleStoredCollectionRow> CanonicalizeDescriptorStoredRows(
         ImmutableArray<VisibleStoredCollectionRow> storedRows,
         TableWritePlan tablePlan,
         IReadOnlyList<int> descriptorIdentityIndices,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
     )
     {
         if (storedRows.IsDefaultOrEmpty)
@@ -1072,15 +1079,18 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         var bindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
         var builder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(storedRows.Length);
 
-        foreach (var row in storedRows)
+        for (var storedRowIndex = 0; storedRowIndex < storedRows.Length; storedRowIndex++)
         {
+            var row = storedRows[storedRowIndex];
             var identity = row.Address.SemanticIdentityInOrder;
             var canonicalized = CanonicalizeStoredIdentityParts(
                 identity,
                 bindings,
                 descriptorIdentityIndices,
                 tablePlan,
-                resolvedReferenceLookups
+                resolvedReferenceLookups,
+                currentRows,
+                storedRowIndex
             );
 
             builder.Add(row with { Address = row.Address with { SemanticIdentityInOrder = canonicalized } });
@@ -1154,15 +1164,40 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
     /// <summary>
     /// Rewrites the descriptor-backed parts of <paramref name="identity"/> for stored-side
-    /// rows by looking up URI → Int64 from the request-cycle cache. Throws when a stored
-    /// URI is not in the cache (fail-closed sentinel for integration diagnostics).
+    /// rows by looking up URI → Int64 from the request-cycle cache.
+    ///
+    /// <para><b>Cache-miss fallback (delete-by-absence support):</b>
+    /// When a stored URI is not in the request-cycle cache — which happens during a PUT that
+    /// omits a previously-stored collection item, because the omitted item's descriptor URI
+    /// was never resolved as part of the current request body — the method falls back to
+    /// extracting the Int64 descriptor id directly from the matching
+    /// <see cref="CurrentCollectionRowSnapshot"/>.</para>
+    ///
+    /// <para><b>Matching strategy:</b>
+    /// <list type="number">
+    ///   <item>If the identity has non-descriptor (scalar) parts: match by those scalar parts
+    ///   across <paramref name="currentRows"/> to find the corresponding current row, then copy
+    ///   its descriptor id at the same index position.</item>
+    ///   <item>If the identity is descriptor-only AND
+    ///   <c>currentRows.Length == storedRows.Length</c>: use positional correspondence —
+    ///   <c>VisibleStoredRows[storedRowIndex]</c> maps to <c>currentRows[storedRowIndex]</c>.
+    ///   This holds because both arrays are ordered by stored-ordinal (planner invariants
+    ///   <c>ValidateStoredOrdinalOrder</c> + <c>ProjectCurrentRowsForScope OrderBy</c>) and no
+    ///   hidden rows can interleave when the identity is descriptor-only (all rows are visible
+    ///   since there are no scalar parts to hide on).</item>
+    ///   <item>If the identity is descriptor-only AND the counts differ (hidden rows are
+    ///   interleaved — structurally possible but not expected in practice): throw with a
+    ///   diagnostic message rather than silently producing an incorrect result.</item>
+    /// </list></para>
     /// </summary>
     private static ImmutableArray<SemanticIdentityPart> CanonicalizeStoredIdentityParts(
         ImmutableArray<SemanticIdentityPart> identity,
         IReadOnlyList<CollectionSemanticIdentityBinding> bindings,
         IReadOnlyList<int> descriptorIdentityIndices,
         TableWritePlan tablePlan,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        int storedRowIndex
     )
     {
         ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
@@ -1207,7 +1242,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             var wildcardPath = column.SourceJsonPath.Value.Canonical;
 
             if (
-                !resolvedReferenceLookups.TryGetDescriptorIdByUri(
+                resolvedReferenceLookups.TryGetDescriptorIdByUri(
                     column.TargetResource.Value,
                     wildcardPath,
                     uri,
@@ -1215,19 +1250,44 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 )
             )
             {
+                // Cache hit: use the request-cycle resolved id.
+                builder ??= identity.ToBuilder();
+                builder[idx] = new SemanticIdentityPart(
+                    part.RelativePath,
+                    JsonValue.Create(descriptorId),
+                    IsPresent: true
+                );
+                continue;
+            }
+
+            // Cache miss: the stored row references a descriptor URI that was not resolved
+            // as part of the current request (typical in delete-by-absence). Fall back to
+            // extracting the Int64 id from the matching CurrentCollectionRowSnapshot.
+            var fallbackId = TryResolveDescriptorIdFromCurrentRows(
+                identity,
+                descriptorIdentityIndices,
+                idx,
+                currentRows,
+                storedRowIndex
+            );
+
+            if (fallbackId is null)
+            {
                 throw new InvalidOperationException(
                     $"descriptor URI not resolvable at merge boundary: stored descriptor URI '{uri}' "
                         + $"for column '{column.ColumnName.Value}' (path '{wildcardPath}') "
-                        + $"was not found in the request-cycle descriptor resolution cache. "
-                        + "This typically means the stored row references a descriptor that is not "
-                        + "present in the current request body."
+                        + "was not found in the request-cycle descriptor resolution cache and could not "
+                        + "be matched against current rows. "
+                        + "This can happen when the identity is descriptor-only, the stored rows contain "
+                        + "hidden rows interleaved with visible rows, and the cache does not hold the URI. "
+                        + $"Visible stored row count: {currentRows.Length}, stored row index: {storedRowIndex}."
                 );
             }
 
             builder ??= identity.ToBuilder();
             builder[idx] = new SemanticIdentityPart(
                 part.RelativePath,
-                JsonValue.Create(descriptorId),
+                JsonValue.Create(fallbackId.Value),
                 IsPresent: true
             );
         }
@@ -1236,48 +1296,141 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     }
 
     /// <summary>
-    /// Parses the ordinal path from a concrete request JSON path such as
-    /// <c>$.addresses[2]</c> → <c>[2]</c>. Extracts all <c>[N]</c> integer segments
-    /// in order. Returns an empty array on null/empty input.
+    /// Attempts to resolve a descriptor Int64 id for <paramref name="descriptorIdx"/> in
+    /// <paramref name="identity"/> by matching against <paramref name="currentRows"/>.
+    ///
+    /// <para>Two strategies are tried in order:</para>
+    /// <list type="number">
+    ///   <item>Scalar-part matching: if the identity has non-descriptor parts at positions
+    ///   not in <paramref name="descriptorIndices"/>, find the unique current row whose
+    ///   semantic identity matches all scalar parts and copy its descriptor part at the same
+    ///   index position.</item>
+    ///   <item>Positional matching (descriptor-only): if no scalar parts exist and
+    ///   <paramref name="currentRows"/> has the same count as the visible stored rows (implied
+    ///   by the caller's <paramref name="storedRowIndex"/> range), use
+    ///   <c>currentRows[storedRowIndex]</c> directly.</item>
+    /// </list>
+    /// <para>Returns <c>null</c> when no match is found and the caller should throw.</para>
     /// </summary>
-    private static int[] ParseOrdinalPathFromRequestJsonPath(string requestJsonPath)
+    private static long? TryResolveDescriptorIdFromCurrentRows(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<int> descriptorIndices,
+        int descriptorIdx,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        int storedRowIndex
+    )
     {
-        if (string.IsNullOrEmpty(requestJsonPath))
+        if (currentRows.IsDefault || currentRows.Length == 0)
         {
-            return [];
+            return null;
         }
 
-        List<int> ordinals = [];
-        var searchStart = 0;
+        // Build the set of non-descriptor index positions (scalar parts).
+        var scalarIndices = Enumerable
+            .Range(0, identity.Length)
+            .Where(i => !descriptorIndices.Contains(i))
+            .ToList();
 
-        while (true)
+        if (scalarIndices.Count > 0)
         {
-            var openIdx = requestJsonPath.IndexOf('[', searchStart);
-
-            if (openIdx < 0)
+            // Strategy 1: match by scalar parts.
+            // Find the unique current row whose semantic identity matches all scalar parts at
+            // the same index positions as the stored row's scalar parts.
+            CurrentCollectionRowSnapshot? matched = null;
+            foreach (var currentRow in currentRows)
             {
-                break;
+                var currentIdentity = currentRow.SemanticIdentityInOrder;
+                if (currentIdentity.Length != identity.Length)
+                {
+                    continue;
+                }
+
+                var allScalarsMatch = true;
+                foreach (var scalarIdx in scalarIndices)
+                {
+                    var storedPart = identity[scalarIdx];
+                    var currentPart = currentIdentity[scalarIdx];
+
+                    // Both must be present and have the same value.
+                    if (!storedPart.IsPresent || !currentPart.IsPresent)
+                    {
+                        allScalarsMatch = false;
+                        break;
+                    }
+
+                    var storedJson = storedPart.Value?.ToJsonString();
+                    var currentJson = currentPart.Value?.ToJsonString();
+                    if (!string.Equals(storedJson, currentJson, StringComparison.Ordinal))
+                    {
+                        allScalarsMatch = false;
+                        break;
+                    }
+                }
+
+                if (!allScalarsMatch)
+                {
+                    continue;
+                }
+
+                if (matched is not null)
+                {
+                    // Ambiguous match — more than one current row has the same scalar parts.
+                    // Cannot safely choose one; return null and let the caller throw.
+                    return null;
+                }
+
+                matched = currentRow;
             }
 
-            var closeIdx = requestJsonPath.IndexOf(']', openIdx + 1);
-
-            if (closeIdx <= openIdx + 1)
+            if (matched is null)
             {
-                searchStart = openIdx + 1;
-                continue;
+                return null;
             }
 
-            var segment = requestJsonPath[(openIdx + 1)..closeIdx];
-
-            if (int.TryParse(segment, out var ordinal))
+            // Extract the descriptor id at the same index position from the matched current row.
+            var matchedIdentity = matched.SemanticIdentityInOrder;
+            if (descriptorIdx >= matchedIdentity.Length)
             {
-                ordinals.Add(ordinal);
+                return null;
             }
 
-            searchStart = closeIdx + 1;
+            var matchedPart = matchedIdentity[descriptorIdx];
+            if (!matchedPart.IsPresent || matchedPart.Value is null)
+            {
+                return null;
+            }
+
+            if (matchedPart.Value is JsonValue matchedJv && matchedJv.TryGetValue<long>(out var matchedId))
+            {
+                return matchedId;
+            }
+
+            return null;
         }
 
-        return [.. ordinals];
+        // Strategy 2: positional matching (descriptor-only identity).
+        // Safe when currentRows.Length equals the number of visible stored rows, which is
+        // the case when no hidden rows interleave (there are no scalar parts to hide on,
+        // so all rows are visible in the profile projection).
+        if (storedRowIndex < currentRows.Length)
+        {
+            var positionalRow = currentRows[storedRowIndex];
+            var positionalIdentity = positionalRow.SemanticIdentityInOrder;
+            if (descriptorIdx < positionalIdentity.Length)
+            {
+                var positionalPart = positionalIdentity[descriptorIdx];
+                if (
+                    positionalPart.IsPresent
+                    && positionalPart.Value is JsonValue positionalJv
+                    && positionalJv.TryGetValue<long>(out var positionalId)
+                )
+                {
+                    return positionalId;
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
