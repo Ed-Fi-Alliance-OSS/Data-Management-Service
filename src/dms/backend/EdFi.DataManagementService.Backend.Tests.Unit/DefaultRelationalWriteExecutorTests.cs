@@ -4373,6 +4373,114 @@ public class Given_Default_Relational_Write_Executor
             .Contain("NestedAndExtensionCollections");
     }
 
+    [Test]
+    public async Task Given_Executor_for_TopLevelCollection_family_with_reference_backed_semantic_identity_passes_fence()
+    {
+        // Slice 4 must NOT gate on SemanticIdentitySource — a collection table whose identity
+        // comes from a reference-derived fallback (ReferenceFallback) is still a plain
+        // DbTableKind.Collection table and must pass the TopLevelCollectionFenceGate.
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = FenceTestPlans.CreateCollectionTablePlanWithReferenceBackedIdentity(
+            "$.programs[*]",
+            "Programs"
+        );
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel, collectionPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan, collectionPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
+            resourceWritePlan,
+            [("$.profileScope", ScopeKind.NonCollection)]
+        );
+        // SemanticIdentityInOrder carries one part whose RelativePath matches the binding
+        // declared in the collection plan's identity metadata ($.programReference.programId).
+        // SemanticIdentityInOrder uses scope-relative paths (no "$." prefix) — these must
+        // match the compiled SemanticIdentityRelativePathsInOrder produced by
+        // CompiledScopeAdapterFactory.BuildSemanticIdentityPaths, which strips the scope prefix.
+        // For binding path "$.programReference.programId" under scope "$.programs[*]", the
+        // compiled relative path is "programReference.programId".
+        var collectionRowAddress = new CollectionRowAddress(
+            "$.programs[*]",
+            new ScopeInstanceAddress("$", []),
+            [
+                new SemanticIdentityPart(
+                    "programReference.programId",
+                    System.Text.Json.Nodes.JsonValue.Create(100L),
+                    IsPresent: true
+                ),
+            ]
+        );
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$.profileScope", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems:
+                [
+                    new VisibleRequestCollectionItem(collectionRowAddress, Creatable: true, "$.programs[0]"),
+                ]
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(255901),
+                    new FlattenedWriteValue.Literal("Lincoln High"),
+                ]
+            )
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(
+                1,
+                "reference-backed semantic identity must NOT trigger the fence — fence passes to flattener"
+            );
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(1, "profile merge synthesizer must be called after fence passes");
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
     private sealed class StubDbException(string message) : DbException(message);
 }
 
@@ -4518,6 +4626,140 @@ file static class FenceTestPlans
                 new WriteColumnBinding(docIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
             ],
             KeyUnificationPlans: []
+        );
+    }
+
+    /// <summary>
+    /// Builds a minimal top-level collection plan whose semantic identity comes from a
+    /// reference-derived fallback column (<see cref="ColumnKind.DocumentFk"/>), with
+    /// <see cref="CollectionSemanticIdentitySource.ReferenceFallback"/> recorded on the
+    /// <see cref="DbTableIdentityMetadata"/>. Used to prove that the executor fence does
+    /// NOT gate on semantic-identity source — a reference-backed collection must still
+    /// pass <c>TopLevelCollectionFenceGate</c>.
+    /// </summary>
+    public static TableWritePlan CreateCollectionTablePlanWithReferenceBackedIdentity(
+        string jsonScope,
+        string tableName
+    )
+    {
+        var collectionKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("CollectionItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var parentKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ParentDocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        // Reference-derived FK column — the semantic identity for this collection is the
+        // document-id of the referenced entity (e.g. programReference → Program).
+        var referenceFkColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ProgramDocumentId"),
+            Kind: ColumnKind.DocumentFk,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression("$.programReference.programId", []),
+            TargetResource: null
+        );
+
+        var columns = new DbColumnModel[]
+        {
+            collectionKeyColumn,
+            parentKeyColumn,
+            ordinalColumn,
+            referenceFkColumn,
+        };
+
+        // SemanticIdentityBinding points the relative path to the FK storage column.
+        var semanticIdentityBinding = new CollectionSemanticIdentityBinding(
+            RelativePath: new JsonPathExpression("$.programReference.programId", []),
+            ColumnName: new DbColumnName("ProgramDocumentId")
+        );
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(_schema, tableName),
+            JsonScope: new JsonPathExpression(jsonScope, []),
+            Key: new TableKey(
+                "PK_" + tableName,
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                SemanticIdentityBindings: [semanticIdentityBinding]
+            )
+            {
+                SemanticIdentitySource = CollectionSemanticIdentitySource.ReferenceFallback,
+            },
+        };
+
+        // CollectionMergePlan.SemanticIdentityBindings binds the FK column at binding index 3
+        // (fourth entry in ColumnBindings: key=0, parent=1, ordinal=2, fk=3).
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: $"INSERT INTO edfi.\"{tableName}\" VALUES (@CollectionItemId, @ParentDocumentId, @Ordinal, @ProgramDocumentId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, columns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionKeyColumn,
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    parentKeyColumn,
+                    new WriteValueSource.DocumentId(),
+                    "ParentDocumentId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    referenceFkColumn,
+                    new WriteValueSource.Precomputed(),
+                    "ProgramDocumentId"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        RelativePath: new JsonPathExpression("$.programReference.programId", []),
+                        BindingIndex: 3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: $"UPDATE edfi.\"{tableName}\" SET \"Ordinal\" = @Ordinal WHERE \"CollectionItemId\" = @CollectionItemId",
+                DeleteByStableRowIdentitySql: $"DELETE FROM edfi.\"{tableName}\" WHERE \"CollectionItemId\" = @CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
         );
     }
 }
