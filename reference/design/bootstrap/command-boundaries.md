@@ -72,12 +72,12 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 |---|---|
 | **Preconditions** | Staged claims workspace (`eng/docker-compose/.bootstrap/claims/`) present when CMS is included (normal flow). |
 | **Inputs** | `-InfraOnly` (exclude DMS container from Docker startup); `-DmsBaseUrl <url>` (health endpoint of IDE-hosted DMS; valid only with `-InfraOnly`); `-Rebuild` / `-r`; `-IdentityProvider`; `-EnableConfig` (legacy compat, not a meaningful opt-out in the normative flow); teardown flags `-d`/`-v` |
-| **Outputs** | Running Docker services; healthy Config Service; healthy DMS container (non-`-InfraOnly` path) |
-| **Side effects** | Docker Compose up/down; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); polls `$DmsBaseUrl/health` with timeout when `-DmsBaseUrl` is provided |
-| **Failure conditions** | Docker compose start failure; health-wait timeout for any service; `-DmsBaseUrl` health-wait timeout |
+| **Outputs** | Running Docker services; claims-ready Config Service; healthy DMS container (non-`-InfraOnly` path) |
+| **Side effects** | Docker Compose up/down; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); after `/health` is green, probes `/authorizationMetadata?claimSetName=<name>` for `EdFiSandbox` and each staged additional claim set name when hybrid claims are staged; polls `$DmsBaseUrl/health` with timeout when `-DmsBaseUrl` is provided |
+| **Failure conditions** | Docker compose start failure; health-wait timeout for any service; Config Service `/authorizationMetadata` readiness probe fails for `EdFiSandbox` or any staged additional claim set name; `-DmsBaseUrl` health-wait timeout |
 | **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; configure DMS instances; create CMS clients; load seed data; accept schema or claims parameters |
 
-**Boundary note:** `-InfraOnly` and `-DmsBaseUrl` are Docker-layer controls — they decide whether and which DMS health endpoint to poll. They do not express schema selection, continuation policy, or any concern owned by another phase.
+**Boundary note:** `-InfraOnly` and `-DmsBaseUrl` are Docker-layer controls - they decide whether and which DMS health endpoint to poll. Config Service readiness in this phase is the claims-ready gate for later phases: `/health` must be green, and bootstrap must be able to query `/authorizationMetadata?claimSetName=...` successfully for `EdFiSandbox` plus each staged additional claim set name when hybrid claims are staged. These controls do not express schema selection, post-health sequencing, or any concern owned by another phase. Once health is confirmed, any later step is owned by wrapper orchestration or by the developer invoking the next phase command explicitly.
 
 ---
 
@@ -89,12 +89,12 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 |---|---|
 | **Preconditions** | Config Service healthy and claims-loaded (Docker service ready). |
 | **Inputs** | `-NoDmsInstance` (narrow reuse escape hatch: valid only when exactly one existing instance is present); `-SchoolYearRange <range>` (school-year path); `-AddSmokeTestCredentials` (creates CMS-only test application) |
-| **Outputs** | One or more DMS instance records in CMS; `CMSReadOnlyAccess` client record for IDE-hosted DMS; `EdFiSandbox` application when `-AddSmokeTestCredentials` is set; repo-local run-context file `eng/docker-compose/.bootstrap/run-context.json` containing the resolved instance ID set and downstream connection metadata for the current run |
-| **Side effects** | CMS API calls to `Add-DmsInstance` / `Add-DmsSchoolYearInstances`; writes `eng/docker-compose/.bootstrap/run-context.json` for later phases; writes `CMSReadOnlyAccess` client credentials to printed output and/or `appsettings.Development.json` guidance |
+| **Outputs** | One or more DMS instance records in CMS; `CMSReadOnlyAccess` client record for IDE-hosted DMS; `EdFiSandbox` application when `-AddSmokeTestCredentials` is set; selected instance IDs printed to stdout for the caller to consume or forward |
+| **Side effects** | CMS API calls to `Add-DmsInstance` / `Add-DmsSchoolYearInstances`; prints selected instance IDs and `CMSReadOnlyAccess` client credentials to output; no files written beyond CMS records |
 | **Failure conditions** | Config Service unreachable; `-NoDmsInstance` with 0 or >1 existing instances; `-NoDmsInstance` with `-SchoolYearRange` (invalid combination) |
-| **Must NOT do** | Create `SeedLoader` credentials (those belong to `load-dms-seed-data.ps1`); perform DDL work; re-query CMS for instance IDs in later phases (this is the one and only resolution phase for the run); accept schema or claims parameters |
+| **Must NOT do** | Create `SeedLoader` credentials (those belong to `load-dms-seed-data.ps1`); perform DDL work; write persisted runtime state to disk for later phases; accept schema or claims parameters |
 
-**Boundary note:** This is the only phase permitted to resolve target DMS instance IDs. All later phases consume the selected instance set from `eng/docker-compose/.bootstrap/run-context.json` for the current run. At minimum, that JSON handoff records the selected instance IDs, the connection details later phases require, and whether the run is single-instance or school-year-qualified. No subsequent phase may perform a second CMS discovery pass.
+**Boundary note:** This phase creates or confirms the DMS instance records that downstream phases target. Selected instance IDs are printed to stdout; the thin wrapper may capture and forward them in memory during a single invocation. When phase commands are run separately, downstream phases resolve target instances through their own explicit selectors (`-InstanceId`, `-SchoolYear`) via a CMS-backed lookup — a deliberate tradeoff that makes each phase independently re-runnable without hidden disk artifacts.
 
 ---
 
@@ -104,14 +104,14 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 
 | Item | Detail |
 |---|---|
-| **Preconditions** | Instance IDs and connection strings from `eng/docker-compose/.bootstrap/run-context.json` written by `configure-local-dms-instance.ps1`; staged schema workspace and expected `EffectiveSchemaHash` from `prepare-dms-schema.ps1`; Config Service and PostgreSQL reachable. |
-| **Inputs** | Instance connection strings (derived from `eng/docker-compose/.bootstrap/run-context.json`, not user-supplied directly); staged schema paths (read from `eng/docker-compose/.bootstrap/ApiSchema/`) |
+| **Preconditions** | At least one resolvable DMS instance in CMS (explicit via `-InstanceId` or `-SchoolYear`, or exactly one instance present for auto-selection); staged schema workspace and expected `EffectiveSchemaHash` from `prepare-dms-schema.ps1`; Config Service and PostgreSQL reachable. |
+| **Inputs** | `-InstanceId <guid[]>` (explicit target selector; omit when exactly one instance exists); `-SchoolYear <int[]>` (school-year filter; omit when exactly one instance exists); staged schema paths (read from `eng/docker-compose/.bootstrap/ApiSchema/`) |
 | **Outputs** | Provisioned or validated databases for each target instance; printed IDE next-step guidance (staged schema path, `appsettings` values, `CMSReadOnlyAccess` credentials) after infra-only shape completes |
 | **Side effects** | Invokes authoritative SchemaTools/runtime provisioning path; exits non-zero if provisioning or validation fails |
-| **Failure conditions** | SchemaTools/runtime provisioning exits non-zero; stored `EffectiveSchemaHash` mismatches expected hash for a target instance; connection to target database fails |
-| **Must NOT do** | Accept user-facing schema-selection parameters; repair or work around a failed SchemaTools path; run inside DMS startup via `AppSettings__DeployDatabaseOnStartup`; silently reuse a database provisioned for a different schema selection; resolve schema files; query CMS |
+| **Failure conditions** | Zero matching instances found; multiple matching instances found without an explicit `-InstanceId` or `-SchoolYear` selector; SchemaTools/runtime provisioning exits non-zero; stored `EffectiveSchemaHash` mismatches expected hash for a target instance; connection to target database fails |
+| **Must NOT do** | Accept user-facing schema-selection parameters; repair or work around a failed SchemaTools path; run inside DMS startup via `AppSettings__DeployDatabaseOnStartup`; silently reuse a database provisioned for a different schema selection; resolve schema files; create or mutate instance records in CMS |
 
-**Boundary note:** `AppSettings__DeployDatabaseOnStartup=false` is always set. Schema provisioning is entirely owned by this phase; DMS startup never performs it.
+**Boundary note:** `AppSettings__DeployDatabaseOnStartup=false` is always set. Schema provisioning is entirely owned by this phase; DMS startup never performs it. Selector resolution rule: when exactly one DMS instance exists in CMS and no selector is supplied, auto-select it; when multiple instances exist and no explicit `-InstanceId` or `-SchoolYear` is provided, fail fast with guidance to supply an explicit selector.
 
 ---
 
@@ -122,32 +122,32 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 | Item | Detail |
 |---|---|
 | **Preconditions** | Live DMS process healthy (`/health` returns 200); CMS remains reachable so this phase can create `SeedLoader` credentials immediately before BulkLoadClient invocation. Blocked externally: ODS-6738 (BulkLoadClient JSONL support) and DMS-1119 (published seed artifacts). See Story 02. |
-| **Inputs** | `-LoadSeedData`; `-SeedTemplate Minimal\|Populated` (mutually exclusive with `-SeedDataPath`); `-SeedDataPath <path>` (custom JSONL); `-SchoolYearRange <range>` (multi-year iteration) |
+| **Inputs** | `-InstanceId <guid[]>` (explicit target selector; omit when exactly one instance exists); `-LoadSeedData`; `-SeedTemplate Minimal\|Populated` (mutually exclusive with `-SeedDataPath`); `-SeedDataPath <path>` (custom JSONL); `-SchoolYear <int[]>` (school-year filter; omit when exactly one instance exists) |
 | **Outputs** | Seeded DMS instance(s); seed workspace cleaned up on success |
 | **Side effects** | Creates `SeedLoader` application via `Add-CmsClient` / `Add-Application`; resolves BulkLoadClient package; copies JSONL into seed workspace; invokes BulkLoadClient once per school year; retains seed workspace on failure |
-| **Failure conditions** | `-SeedTemplate` with Mode 3 (`-ApiSchemaPath`) run; `-SeedTemplate` and `-SeedDataPath` both supplied; BulkLoadClient exits non-zero; seed package unavailable; DMS health endpoint unreachable; filename collisions in seed workspace |
+| **Failure conditions** | Zero matching instances found; multiple matching instances found without an explicit `-InstanceId` or `-SchoolYear` selector; `-SeedTemplate` with Mode 3 (`-ApiSchemaPath`) run; `-SeedTemplate` and `-SeedDataPath` both supplied; BulkLoadClient exits non-zero; seed package unavailable; DMS health endpoint unreachable; filename collisions in seed workspace |
 | **Must NOT do** | Create `CMSReadOnlyAccess` or smoke-test credentials (those belong to `configure-local-dms-instance.ps1`); reuse `SeedLoader` credentials for smoke tests; perform DDL work; accept schema or claims parameters |
 
-**Boundary note:** Story 02 blockers (ODS-6738, DMS-1119) prevent end-to-end delivery. This phase is designed and documented as blocked-but-ready. The design does not normalize the legacy direct-SQL path as the target state.
+**Boundary note:** Story 02 blockers (ODS-6738, DMS-1119) prevent end-to-end delivery. This phase is designed and documented as blocked-but-ready. The design does not normalize the legacy direct-SQL path as the target state. Selector resolution rule: when exactly one DMS instance exists in CMS and no selector is supplied, auto-select it; when multiple instances exist and no explicit `-InstanceId` or `-SchoolYear` is provided, fail fast with guidance to supply an explicit selector.
 
 ---
 
 ### 3.7 `bootstrap-local-dms.ps1` — Thin Convenience Wrapper (Optional)
 
-**Delivery status:** Convenience packaging only. The wrapper is optional, may forward `-ConfigFile`, and owns no policy. The composable phase commands remain the authoritative bootstrap contract for DMS-916.
+**Delivery status:** Convenience packaging only. The wrapper is optional and owns no policy. The composable phase commands remain the authoritative bootstrap contract for DMS-916.
 
 **Primary concern:** Sequence the above phase commands in the correct order for the common happy path.
 
 | Item | Detail |
 |---|---|
 | **Preconditions** | None additional beyond what phase commands require. |
-| **Inputs** | `-ConfigFile <path>` (optional; path to a JSON defaults file). Each phase command reads its own relevant keys from that file directly. The wrapper does not extract or re-route individual parameter values. |
+| **Inputs** | `-Extensions <name>` (forwarded to `prepare-dms-schema.ps1`); `-ApiSchemaPath <path>` (forwarded to `prepare-dms-schema.ps1`); `-ClaimsDirectoryPath <path>` (forwarded to `prepare-dms-claims.ps1`); `-InfraOnly` (forwarded to `start-local-dms.ps1`); `-DmsBaseUrl <url>` (forwarded to `start-local-dms.ps1`); `-IdentityProvider` (forwarded to `start-local-dms.ps1`); `-SchoolYearRange <range>` (forwarded to `configure-local-dms-instance.ps1` for the school-year instance-creation workflow); `-InstanceId <guid[]>` (forwarded to `provision-dms-schema.ps1` and `load-dms-seed-data.ps1`); `-LoadSeedData` (forwarded to `load-dms-seed-data.ps1`); `-SeedTemplate` (forwarded to `load-dms-seed-data.ps1`); `-SeedDataPath <path>` (forwarded to `load-dms-seed-data.ps1`); `-Rebuild`/`-r`; `-AddSmokeTestCredentials` |
 | **Outputs** | Delegated entirely to the phase commands it calls |
 | **Side effects** | Delegates to phase commands; prints next-step guidance when a phase is intentionally omitted |
-| **Failure conditions** | Propagates non-zero exit from any called phase command; fails fast if `-ConfigFile` is supplied but the file is not valid JSON |
-| **Must NOT do** | Extract individual parameter values from the config file and forward them by name to phase commands; own schema logic; perform claims parsing; inspect database state; synthesize credentials; implement retry or continuation policy; absorb any concern owned by a phase command |
+| **Failure conditions** | Propagates non-zero exit from any called phase command |
+| **Must NOT do** | Own schema logic; perform claims parsing; inspect database state; synthesize credentials; implement retry or continuation policy; write runtime state to disk; absorb any concern owned by a phase command |
 
-**Boundary note:** The wrapper sequences phase commands, may forward `-ConfigFile` unchanged, and may print next-step guidance. It never owns policy, schema or claims logic, credential behavior, or per-phase parameter handling. Validation ownership is precise: the wrapper may validate only that the file is well-formed JSON. Each phase consumes only the keys it owns, and a phase command invoked directly with `-ConfigFile` must not reject keys owned by other phases. A lightweight example key list may be documented as a reader aid, but it is illustrative rather than a second config-schema contract.
+**Boundary note:** The wrapper sequences phase commands, forwards real developer-facing flags to the appropriate phase, and may print next-step guidance. During a single invocation the wrapper may capture instance IDs returned by `configure-local-dms-instance.ps1` and forward them as explicit `-InstanceId` arguments to later phases in the same process. The wrapper's school-year flag is `-SchoolYearRange`, matching the instance-creation phase it calls; downstream manual selector flags remain `-SchoolYear <int[]>` on `provision-dms-schema.ps1` and `load-dms-seed-data.ps1`. It never owns schema policy, claims logic, credential behavior, or continuation policy.
 
 ---
 
@@ -158,9 +158,9 @@ prepare-dms-schema.ps1
   -> prepare-dms-claims.ps1
        -> start-local-dms.ps1 -InfraOnly  (starts PostgreSQL, Keycloak/OpenIddict, Config Service)
             -> configure-local-dms-instance.ps1  (CMS HTTP API ready)
-                 -> provision-dms-schema.ps1  (instance IDs + staged schema)
+                 -> provision-dms-schema.ps1  (-InstanceId passed by wrapper in-memory, or explicit selector in manual flow)
                       -> start-local-dms.ps1  (starts DMS container; or IDE-hosted DMS starts here)
-                           -> load-dms-seed-data.ps1  (live DMS + SeedLoader credentials)
+                           -> load-dms-seed-data.ps1  (-InstanceId passed by wrapper in-memory or explicit selector, live DMS + SeedLoader credentials)
 ```
 
 Each phase begins only when all of its required inputs are ready. No phase polls for or waits on
@@ -179,7 +179,8 @@ The following concerns are each owned by exactly one phase:
 | `EffectiveSchemaHash` computation | `prepare-dms-schema.ps1` | Compute an alternate hash |
 | Claims fragment staging and validation | `prepare-dms-claims.ps1` | Accept or validate claims parameters |
 | Docker service startup and health waiting | `start-local-dms.ps1` | Start or stop Docker services |
-| DMS instance ID resolution | `configure-local-dms-instance.ps1` | Query CMS for instance IDs |
+| DMS instance and client record creation | `configure-local-dms-instance.ps1` | Create or modify DMS instance records |
+| Downstream instance target selection | `provision-dms-schema.ps1`, `load-dms-seed-data.ps1` (each phase resolves its own selectors) | Resolve target instances on behalf of another phase |
 | `CMSReadOnlyAccess` client provisioning | `configure-local-dms-instance.ps1` | Create IDE-access CMS clients |
 | Smoke-test credentials | `configure-local-dms-instance.ps1` | Create `EdFiSandbox` application |
 | DDL provisioning and hash validation | `provision-dms-schema.ps1` | Perform or bypass DDL work |
@@ -191,29 +192,19 @@ The following concerns are each owned by exactly one phase:
 
 ## 6. Parameter Surface by Owner
 
-Each phase accepts only the parameters relevant to its concern. Every phase command may also accept
-an optional `-ConfigFile <path>` parameter; when present, the phase reads its own relevant keys
-from that file before applying CLI flags. CLI flags always take precedence over config file values.
-The wrapper may pass `-ConfigFile` through unchanged and does nothing else with it.
-
-Ownership rule for validation:
-
-- The wrapper may validate that the shared defaults file is well-formed JSON.
-- A phase command validates only the keys it owns and must tolerate keys owned by other phases in the same file.
-- A phase command invoked directly with `-ConfigFile` must fail on malformed JSON or invalid values for its owned keys, but not on the mere presence of keys outside its ownership.
+Each phase accepts only the parameters relevant to its concern.
 
 | Phase command | Owned parameters |
 |---|---|
-| `prepare-dms-schema.ps1` | `-Extensions`, `-ApiSchemaPath`, `-ConfigFile` |
-| `prepare-dms-claims.ps1` | `-ClaimsDirectoryPath`, `-AddExtensionSecurityMetadata` (legacy compat), `-ConfigFile` |
-| `start-local-dms.ps1` | `-InfraOnly`, `-DmsBaseUrl`, `-Rebuild`/`-r`, `-IdentityProvider`, `-EnableConfig` (legacy compat), `-d`/`-v`, `-ConfigFile` |
-| `configure-local-dms-instance.ps1` | `-NoDmsInstance`, `-SchoolYearRange`, `-AddSmokeTestCredentials`, `-ConfigFile` |
-| `provision-dms-schema.ps1` | *(no user-facing schema flags; connection inputs derived from instance list)*; `-ConfigFile` |
-| `load-dms-seed-data.ps1` | `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath`, `-SchoolYearRange`, `-ConfigFile` |
-| `bootstrap-local-dms.ps1` | `-ConfigFile` *(only; all per-phase defaults come from the config file, not from wrapper params)* |
+| `prepare-dms-schema.ps1` | `-Extensions`, `-ApiSchemaPath` |
+| `prepare-dms-claims.ps1` | `-ClaimsDirectoryPath`, `-AddExtensionSecurityMetadata` (legacy compat) |
+| `start-local-dms.ps1` | `-InfraOnly`, `-DmsBaseUrl`, `-Rebuild`/`-r`, `-IdentityProvider`, `-EnableConfig` (legacy compat), `-d`/`-v` |
+| `configure-local-dms-instance.ps1` | `-NoDmsInstance`, `-SchoolYearRange`, `-AddSmokeTestCredentials` |
+| `provision-dms-schema.ps1` | `-InstanceId <guid[]>`, `-SchoolYear <int[]>` |
+| `load-dms-seed-data.ps1` | `-InstanceId <guid[]>`, `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath`, `-SchoolYear <int[]>` |
+| `bootstrap-local-dms.ps1` | `-Extensions`, `-ApiSchemaPath`, `-ClaimsDirectoryPath`, `-InfraOnly`, `-DmsBaseUrl`, `-IdentityProvider`, `-SchoolYearRange`, `-InstanceId <guid[]>`, `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath <path>`, `-Rebuild`/`-r`, `-AddSmokeTestCredentials` |
 
-The wrapper has no parameter surface beyond `-ConfigFile`. Adding a new parameter to a phase command does
-not require a wrapper change.
+Adding a new parameter to a phase command requires a corresponding wrapper parameter only when the developer-facing happy path benefits from that flag.
 
 ---
 
@@ -235,6 +226,35 @@ The thin wrapper `bootstrap-local-dms.ps1` must never become the owner of:
 Violating any of these prohibitions converts the wrapper back into the monolithic control plane
 this design exists to remove.
 
-**Allowed extension:** The wrapper may forward a single `-ConfigFile <path>` argument unchanged to each
-phase command. Each phase reads its own keys; the wrapper does not extract, route, rename, or interpret
-individual values. See `bootstrap-design.md` Section 9.4.2.
+**Allowed extension:** The wrapper may capture instance IDs returned during `configure-local-dms-instance.ps1` invocation and forward them as explicit `-InstanceId` values to later phases within the same process execution. No state is written to disk for this purpose.
+
+---
+
+## 8. Selector Resolution Examples
+
+The selector resolution rule (auto-select on exactly one match; fail fast otherwise) applies to both
+`provision-dms-schema.ps1` (§3.5) and `load-dms-seed-data.ps1` (§3.6) identically. The examples below
+use `provision-dms-schema.ps1` but the behavior is the same for the seed phase.
+
+```powershell
+# One instance in CMS — auto-selected, no flag required
+pwsh eng/docker-compose/provision-dms-schema.ps1
+
+# Multiple instances — explicit ID selector required
+pwsh eng/docker-compose/provision-dms-schema.ps1 -InstanceId "a1b2c3d4-1234-5678-abcd-000000000001"
+
+# Multiple instances — school-year selector (each year is targeted)
+pwsh eng/docker-compose/provision-dms-schema.ps1 -SchoolYear 2025,2026
+
+# Fail-fast output when multiple instances exist and no selector is supplied:
+# ERROR: 2 DMS instance(s) found in CMS without an explicit selector.
+#        Supply -InstanceId <guid> or -SchoolYear <int> to target a specific instance.
+#        Exit code: non-zero.
+```
+
+**Wrapper path:** The thin wrapper captures instance IDs from `configure-local-dms-instance.ps1` in memory
+and forwards them as `-InstanceId` to downstream phases within the same invocation — developers never
+copy-paste GUIDs between phases when using the wrapper.
+
+**Manual phase path:** Each phase command resolves its own selectors independently. No shared disk artifact
+exists for this purpose; each phase contacts CMS directly.

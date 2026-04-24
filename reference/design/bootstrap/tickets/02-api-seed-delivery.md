@@ -18,8 +18,9 @@ bootstrap-side guardrails needed to keep the seed path deterministic and safe to
 contract for built-in seed delivery is also part of this slice: the design fixes one authoritative
 `SeedLoader` inventory for core templates and requires extension seed support to travel with extension
 security metadata rather than ad hoc grant derivation. CMS-only smoke-test credential creation is a separate
-workflow concern: it may run earlier against the step-7-selected target set, but it is not part of this
-story's dependency chain and its credentials are never reused for seed delivery. Custom `-SeedDataPath`
+workflow concern: it may run earlier against the target instances selected by
+`configure-local-dms-instance.ps1`, but it is not part of this story's dependency chain and its credentials
+are never reused for seed delivery. Custom `-SeedDataPath`
 directories remain supported as compatible payload sources when the run's staged schema/security inputs are
 intended to cover them, but bootstrap does not preflight-certify arbitrary JSONL content.
 
@@ -91,9 +92,12 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
   artifacts already honor the external JSONL ordering contract consumed by BulkLoadClient.
 - Seed loading surfaces the tool's terminal summary or terminal error diagnostics; bootstrap passes those
   diagnostics through rather than inventing a second accounting layer or a DMS-owned result taxonomy.
-- Per [`INDEX.md`](INDEX.md), Step 7 remains the only target-resolution phase for the run. `SeedLoader`
-  credential bootstrap and every BulkLoadClient invocation consume the already selected target set and must
-  not perform a second CMS discovery pass.
+- `configure-local-dms-instance.ps1` is the sole phase that creates or selects DMS instance IDs for the
+  run. `SeedLoader` credential bootstrap and every BulkLoadClient invocation receive those instance IDs
+  via in-memory forwarding within a single wrapper invocation, or via explicit `-InstanceId`/`-SchoolYear`
+  selectors in a manual phase flow; they must not perform their own CMS instance creation, broad
+  target-selection policy, or non-selector-driven discovery pass.
+  See [`INDEX.md`](INDEX.md) Scope Guardrails for the selector resolution rules.
 - BulkLoadClient invocation uses:
   - the DMS base URL for the current flow,
   - the token URL derived from the selected identity provider,
@@ -135,8 +139,10 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
 6. Implement the BulkLoadClient invocation path, including identity-provider-aware token-url selection,
    repo-aligned school-year route qualification, the per-year loop for `-SchoolYearRange`, self-contained
    per-year `/connect/token/{schoolYear}` token-url construction, pass-through of terminal tool diagnostics,
-   and strict reuse of the step-7-selected target set without a second CMS discovery pass during seed
-   delivery. Retry policy, request batching, endpoint inference internals, result-taxonomy details, and other
+   and use of the instance IDs resolved by `configure-local-dms-instance.ps1` (forwarded in-memory by the
+   wrapper, or supplied via explicit `-InstanceId`/`-SchoolYear` selectors in a manual phase flow) without
+   performing CMS instance creation, broad target-selection policy, or non-selector-driven discovery during
+   seed delivery. Retry policy, request batching, endpoint inference internals, result-taxonomy details, and other
    tool-owned runtime behavior remain outside this story.
 7. Keep seed loading opt-in through `-LoadSeedData` without introducing a second suppressor flag or control
    plane.

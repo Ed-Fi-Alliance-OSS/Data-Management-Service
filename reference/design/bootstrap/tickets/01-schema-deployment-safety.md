@@ -54,9 +54,12 @@ be provisioned or validated.
 
 ## Tasks
 
-1. Implement the `configure-local-dms-instance.ps1`-to-`provision-dms-schema.ps1` handoff: resolve the
-   target connection details from the DMS instances selected or created for the run and supply the staged
-   schema context produced by Story 00 to `provision-dms-schema.ps1`.
+1. Supply `provision-dms-schema.ps1` with target instance details from `configure-local-dms-instance.ps1`:
+   within a single wrapper invocation, accept in-memory instance IDs forwarded by `bootstrap-local-dms.ps1`;
+   in a manual phase flow, resolve target instances through explicit `-InstanceId <guid[]>` or
+   `-SchoolYear <int[]>` selectors via CMS-backed lookup (auto-select when exactly one match, fail fast
+   on zero or multiple without an explicit selector). Supply the staged schema context produced by
+   Story 00 alongside those resolved target details.
 2. Inside `provision-dms-schema.ps1`, consume the staged schema paths and expected `EffectiveSchemaHash`
    produced by Story 00 and pass them unchanged into the authoritative provisioning helper.
 3. Implement `provision-dms-schema.ps1` as an unconditional invocation of the authoritative
