@@ -154,7 +154,7 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
                         table.JsonScope,
                         identityBinding.ReferenceJsonPath
                     ),
-                    binding.FkColumn
+                    identityBinding.Column
                 )
             );
         }
