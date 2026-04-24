@@ -1,0 +1,30 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "v1",
+  "effective_schema_hash": "b2f94938fc758230fc8cf8b75a483cfe39b39558365fa15c8b711ff16fdff810",
+  "resource_key_count": 2,
+  "resource_key_seed_hash": "3f4100845fd234c31689525e02a344e042ec3e11c81ef4405143942137997c00",
+  "schema_components": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "1.0.0",
+      "is_extension_project": false,
+      "project_hash": "47900a59d53132b3f0716dbc8c3d84c2503d73ec3663efc83c39162132e04edf"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "Program",
+      "resource_version": "1.0.0"
+    },
+    {
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "resource_version": "1.0.0"
+    }
+  ]
+}

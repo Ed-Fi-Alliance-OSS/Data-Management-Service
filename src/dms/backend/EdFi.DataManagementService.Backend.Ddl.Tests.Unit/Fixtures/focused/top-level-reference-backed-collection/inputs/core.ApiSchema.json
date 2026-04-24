@@ -1,0 +1,123 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": false,
+    "abstractResources": {},
+    "resourceSchemas": {
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          },
+          "ProgramReference": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "Program",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.programId",
+                "referenceJsonPath": "$.programs[*].programReference.programId"
+              },
+              {
+                "identityJsonPath": "$.programName",
+                "referenceJsonPath": "$.programs[*].programReference.programName"
+              }
+            ]
+          }
+        },
+        "arrayUniquenessConstraints": [],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": ["$.schoolId"],
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            },
+            "programs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "programReference": {
+                    "type": "object",
+                    "properties": {
+                      "programId": {
+                        "type": "integer"
+                      },
+                      "programName": {
+                        "type": "string",
+                        "maxLength": 60
+                      }
+                    }
+                  },
+                  "primaryIndicator": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "required": ["schoolId"]
+        }
+      },
+      "programs": {
+        "resourceName": "Program",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {
+          "ProgramId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.programId"
+          },
+          "ProgramName": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.programName"
+          }
+        },
+        "arrayUniquenessConstraints": [],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": ["$.programId", "$.programName"],
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "programId": {
+              "type": "integer"
+            },
+            "programName": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          },
+          "required": ["programId", "programName"]
+        }
+      }
+    }
+  }
+}
