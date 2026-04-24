@@ -38,7 +38,7 @@ public class Given_Descriptor_Write_Handler_Delete
         fixture.Classifier.ClassificationToReturn =
             new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(constraintName);
         A.CallTo(() =>
-                fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, constraintName)
+                fixture.Resolver.TryResolveReferencingResource(fixture.MappingSet.Model, constraintName)
             )
             .Returns(referencingResource);
 
@@ -52,11 +52,26 @@ public class Given_Descriptor_Write_Handler_Delete
         result
             .Should()
             .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
+        // Match on the exact MappingSet.Model reference — a narrowing of the any-matcher that
+        // catches a regression where the handler stops forwarding mappingSet.Model to the
+        // resolver (e.g., accidentally wires null or a stale model set from elsewhere). The
+        // fake would otherwise accept any DerivedRelationalModelSet and hide the wire-through
+        // bug all the way to the end-to-end suite.
         A.CallTo(() =>
-                fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, constraintName)
+                fixture.Resolver.TryResolveReferencingResource(fixture.MappingSet.Model, constraintName)
             )
             .MustHaveHappenedOnceExactly();
-        fixture.Logger.Records.Should().Contain(r => r.Level == LogLevel.Debug);
+        // Match on the log payload so the assertion fails if the FK-resolution Debug log is
+        // removed or demoted — an unrelated "Deleting descriptor document..." Debug log is
+        // always emitted before the FK path runs, so a bare `r.Level == Debug` check would pass
+        // even without the new line.
+        fixture
+            .Logger.Records.Should()
+            .ContainSingle(r =>
+                r.Level == LogLevel.Debug
+                && r.Message.Contains(constraintName, StringComparison.Ordinal)
+                && r.Message.Contains(referencingResource.ResourceName, StringComparison.Ordinal)
+            );
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -98,7 +113,7 @@ public class Given_Descriptor_Write_Handler_Delete
         fixture.Classifier.ClassificationToReturn =
             new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(constraintName);
         A.CallTo(() =>
-                fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, constraintName)
+                fixture.Resolver.TryResolveReferencingResource(fixture.MappingSet.Model, constraintName)
             )
             .Returns((QualifiedResourceName?)null);
 
@@ -111,7 +126,7 @@ public class Given_Descriptor_Write_Handler_Delete
 
         result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
         A.CallTo(() =>
-                fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, constraintName)
+                fixture.Resolver.TryResolveReferencingResource(fixture.MappingSet.Model, constraintName)
             )
             .MustHaveHappenedOnceExactly();
         fixture.Logger.Records.Should().Contain(r => r.Level == LogLevel.Warning);

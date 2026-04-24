@@ -2054,22 +2054,18 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         const string constraintName = "FK_Calendar_SchoolRef";
         var referencingResource = new QualifiedResourceName("Ed-Fi", "Calendar");
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo, dialect);
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteThrows(new StubDbException("constraint violation"));
         _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
         _writeExceptionClassifier.ClassificationToReturn =
             new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(constraintName);
         A.CallTo(() =>
-                _deleteConstraintResolver.TryResolveReferencingResource(
-                    A<DerivedRelationalModelSet>._,
-                    constraintName
-                )
+                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
             )
             .Returns(referencingResource);
 
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet);
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
@@ -2078,14 +2074,25 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
         _writeExceptionClassifier.IsForeignKeyViolationCallCount.Should().Be(1);
         _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        // Match on the exact MappingSet.Model reference — a narrowing of the any-matcher that
+        // catches a regression where the repository stops forwarding mappingSet.Model to the
+        // resolver (e.g., accidentally wires a stale or null model set). The fake would
+        // otherwise accept any DerivedRelationalModelSet and hide the wire-through bug.
         A.CallTo(() =>
-                _deleteConstraintResolver.TryResolveReferencingResource(
-                    A<DerivedRelationalModelSet>._,
-                    constraintName
-                )
+                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
             )
             .MustHaveHappenedOnceExactly();
-        _logger.Records.Should().Contain(r => r.Level == LogLevel.Debug);
+        // Match on the log payload so the assertion fails if the FK-resolution Debug log is
+        // removed or demoted — an unrelated "Entering..." Debug log is always emitted by
+        // DeleteDocumentById, so a bare `r.Level == Debug` check would pass even without the new
+        // line.
+        _logger
+            .Records.Should()
+            .ContainSingle(r =>
+                r.Level == LogLevel.Debug
+                && r.Message.Contains(constraintName, StringComparison.Ordinal)
+                && r.Message.Contains(referencingResource.ResourceName, StringComparison.Ordinal)
+            );
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -2130,31 +2137,24 @@ public class Given_RelationalDocumentStoreRepositoryTests
         // Classifier hands off a real constraint name, but the resolver cannot find it in the
         // compiled model — drift between deployed DDL and runtime model. Log level is Warning.
         const string constraintName = "FK_Unknown_To_Model";
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo, dialect);
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteThrows(new StubDbException("constraint violation"));
         _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
         _writeExceptionClassifier.ClassificationToReturn =
             new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(constraintName);
         A.CallTo(() =>
-                _deleteConstraintResolver.TryResolveReferencingResource(
-                    A<DerivedRelationalModelSet>._,
-                    constraintName
-                )
+                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
             )
             .Returns((QualifiedResourceName?)null);
 
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet);
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
         A.CallTo(() =>
-                _deleteConstraintResolver.TryResolveReferencingResource(
-                    A<DerivedRelationalModelSet>._,
-                    constraintName
-                )
+                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
             )
             .MustHaveHappenedOnceExactly();
         _logger.Records.Should().Contain(r => r.Level == LogLevel.Warning);

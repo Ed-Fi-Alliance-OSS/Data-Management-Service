@@ -212,6 +212,45 @@ public class Given_Relational_Delete_Constraint_Resolver
     }
 
     [Test]
+    public void It_builds_the_per_model_set_index_exactly_once_across_repeated_lookups()
+    {
+        // The resolver memoizes its index per DerivedRelationalModelSet via
+        // ConditionalWeakTable. A simple return-value-consistency check cannot distinguish
+        // "memoized" from "rebuilt every call", so this test wraps the resource list in a
+        // counter and asserts it is enumerated exactly once across a mix of hit and miss
+        // lookups. If a future refactor dropped the cache, this assertion would fail.
+        var resources = new[]
+        {
+            BuildResource(
+                CalendarResource,
+                keyId: 1,
+                BuildTable("Calendar", BuildForeignKey("FK_Calendar_SchoolRef"))
+            ),
+            BuildResource(
+                SchoolResource,
+                keyId: 2,
+                BuildTable("School", BuildForeignKey("FK_School_LocalEdAgencyRef"))
+            ),
+        };
+        var counting = new EnumerationCountingList<ConcreteResourceModel>(resources);
+        var modelSet = BuildModelSet(resources, concreteResourcesOverride: counting);
+
+        _sut.TryResolveReferencingResource(modelSet, "FK_Calendar_SchoolRef").Should().Be(CalendarResource);
+        _sut.TryResolveReferencingResource(modelSet, "FK_School_LocalEdAgencyRef")
+            .Should()
+            .Be(SchoolResource);
+        _sut.TryResolveReferencingResource(modelSet, "FK_Unknown").Should().BeNull();
+        _sut.TryResolveReferencingResource(modelSet, "FK_Calendar_SchoolRef").Should().Be(CalendarResource);
+
+        counting
+            .EnumerationCount.Should()
+            .Be(
+                1,
+                "the resolver must build the index once per model set — repeated lookups hit the ConditionalWeakTable cache"
+            );
+    }
+
+    [Test]
     public void It_keeps_the_first_owner_when_two_resources_share_the_same_foreign_key_constraint_name()
     {
         // Cross-resource FK-name duplication is legitimate when multiple resources share a
@@ -233,7 +272,13 @@ public class Given_Relational_Delete_Constraint_Resolver
         result.Should().Be(CalendarResource);
     }
 
-    private static DerivedRelationalModelSet BuildModelSet(params ConcreteResourceModel[] resources)
+    private static DerivedRelationalModelSet BuildModelSet(params ConcreteResourceModel[] resources) =>
+        BuildModelSet(resources, concreteResourcesOverride: null);
+
+    private static DerivedRelationalModelSet BuildModelSet(
+        ConcreteResourceModel[] resources,
+        IReadOnlyList<ConcreteResourceModel>? concreteResourcesOverride
+    )
     {
         var keys = resources.Select(r => r.ResourceKey).ToList();
 
@@ -249,12 +294,37 @@ public class Given_Relational_Delete_Constraint_Resolver
             ),
             SqlDialect.Pgsql,
             ProjectSchemasInEndpointOrder: [],
-            ConcreteResourcesInNameOrder: resources,
+            ConcreteResourcesInNameOrder: concreteResourcesOverride ?? resources,
             AbstractIdentityTablesInNameOrder: [],
             AbstractUnionViewsInNameOrder: [],
             IndexesInCreateOrder: [],
             TriggersInCreateOrder: []
         );
+    }
+
+    /// <summary>
+    /// Wraps an <see cref="IReadOnlyList{T}"/> so the test can observe how many times the
+    /// resolver enumerates <see cref="DerivedRelationalModelSet.ConcreteResourcesInNameOrder"/>.
+    /// The resolver's index build does a single <c>foreach</c> over the list; repeated lookups
+    /// that go through the memoized index must not touch the enumerator again.
+    /// </summary>
+    private sealed class EnumerationCountingList<T>(IReadOnlyList<T> inner) : IReadOnlyList<T>
+    {
+        private readonly IReadOnlyList<T> _inner = inner;
+
+        public int EnumerationCount { get; private set; }
+
+        public int Count => _inner.Count;
+
+        public T this[int index] => _inner[index];
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            EnumerationCount++;
+            return _inner.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private static ConcreteResourceModel BuildResource(

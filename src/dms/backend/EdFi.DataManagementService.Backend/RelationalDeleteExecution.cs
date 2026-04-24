@@ -115,13 +115,19 @@ internal static class RelationalDeleteExecution
     /// <summary>
     /// Translates a FK-violation <see cref="DbException"/> into a
     /// <see cref="DeleteResult.DeleteFailureReference"/>. The caller's catch filter has already
-    /// asserted <see cref="IRelationalWriteExceptionClassifier.IsForeignKeyViolation"/>, so
-    /// <see cref="IRelationalWriteExceptionClassifier.TryClassify"/> is guaranteed to return a
-    /// non-null classification — either
-    /// <see cref="RelationalWriteExceptionClassification.ForeignKeyConstraintViolation"/> when the
-    /// constraint name was extractable, or
-    /// <see cref="RelationalWriteExceptionClassification.UnrecognizedWriteFailure"/> when it was not
-    /// (pgsql <c>ConstraintName</c> null, mssql localized or unparseable message).
+    /// asserted <see cref="IRelationalWriteExceptionClassifier.IsForeignKeyViolation"/>. Two
+    /// branches are handled:
+    /// <list type="bullet">
+    /// <item><see cref="RelationalWriteExceptionClassification.ForeignKeyConstraintViolation"/> — the
+    /// constraint name was extractable and is routed through <paramref name="constraintResolver"/>.</item>
+    /// <item>anything else (including a classifier that declines to classify) — treated as an
+    /// FK violation without an extractable constraint name; the empty-names
+    /// <see cref="DeleteResult.DeleteFailureReference"/> is returned and an Information log is
+    /// emitted. Observed today with pgsql missing <c>ConstraintName</c> and mssql localized 547
+    /// messages; we do not require the public
+    /// <see cref="IRelationalWriteExceptionClassifier"/> contract to guarantee a non-null
+    /// classification on this branch.</item>
+    /// </list>
     /// </summary>
     private static DeleteResult.DeleteFailureReference MapForeignKeyViolation(
         DbException exception,
@@ -136,7 +142,7 @@ internal static class RelationalDeleteExecution
     {
         var sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(traceId.Value);
 
-        classifier.TryClassify(exception, out var classification);
+        _ = classifier.TryClassify(exception, out var classification);
 
         if (classification is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation foreignKey)
         {
