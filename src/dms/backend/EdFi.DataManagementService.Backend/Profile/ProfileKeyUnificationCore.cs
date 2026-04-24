@@ -115,14 +115,15 @@ internal static class ProfileKeyUnificationCore
         ImmutableHashSet<int> resolverOwnedBindingIndices
     )
     {
-        var hiddenSet = context.HiddenMemberPaths.ToImmutableHashSet(StringComparer.Ordinal);
+        var hiddenMemberPaths = context.HiddenMemberPaths;
         ResolveOneCore(
             tableWritePlan,
             keyUnificationPlan,
             context.CurrentRowByColumnName,
             context.RequestItemNode,
             context.ResolvedReferenceLookups,
-            member => ClassifyMemberVisibilityFromHiddenSet(tableWritePlan, member, hiddenSet),
+            member => ClassifyMemberVisibilityFromHiddenSet(tableWritePlan, member, hiddenMemberPaths),
+            context.OrdinalPath.IsDefault ? ReadOnlySpan<int>.Empty : context.OrdinalPath.AsSpan(),
             mergedRowValuesMutable,
             valueAssigned,
             resolverOwnedBindingIndices
@@ -157,6 +158,7 @@ internal static class ProfileKeyUnificationCore
                     profileAppliedContext,
                     candidateScopes
                 ),
+            ReadOnlySpan<int>.Empty,
             mergedRowValuesMutable,
             valueAssigned,
             resolverOwnedBindingIndices
@@ -170,6 +172,7 @@ internal static class ProfileKeyUnificationCore
         JsonNode writableRequestBody,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         Func<KeyUnificationMemberWritePlan, MemberVisibility> classifyVisibility,
+        ReadOnlySpan<int> ordinalPath,
         FlattenedWriteValue[] mergedRowValuesMutable,
         bool[] valueAssigned,
         ImmutableHashSet<int> resolverOwnedBindingIndices
@@ -187,7 +190,8 @@ internal static class ProfileKeyUnificationCore
                 visibility,
                 currentRowByColumnName,
                 writableRequestBody,
-                resolvedReferenceLookups
+                resolvedReferenceLookups,
+                ordinalPath
             );
 
             if (member.PresenceIsSynthetic && member.PresenceBindingIndex is int presenceBindingIndex)
@@ -321,11 +325,17 @@ internal static class ProfileKeyUnificationCore
     }
 
     /// <summary>
-    /// Row-level visibility classifier: uses an explicit <paramref name="hiddenSet"/> (from
+    /// Row-level visibility classifier: uses an explicit
+    /// <paramref name="hiddenMemberPaths"/> array (from
     /// <see cref="ProfileCollectionRowKeyUnificationContext.HiddenMemberPaths"/>) instead of
-    /// the scope-state machinery. A member whose scope-relative governing path matches any
-    /// hidden path entry is <see cref="MemberVisibility.HiddenGoverned"/>; all others are
-    /// <see cref="MemberVisibility.VisiblePresent"/>.
+    /// the scope-state machinery. Delegates hidden-path matching to
+    /// <see cref="ProfileMemberGovernanceRules.IsHiddenGoverned"/> with
+    /// <see cref="ProfileMemberGovernanceRules.MatchKindFor(KeyUnificationMemberWritePlan)"/>
+    /// so that <see cref="KeyUnificationMemberWritePlan.ReferenceDerivedMember"/> gets
+    /// <see cref="ProfileMemberGovernanceRules.HiddenPathMatchKind.ReferenceRooted"/>
+    /// semantics — hiding any descendant of a reference root (e.g.
+    /// <c>schoolReference.schoolId</c>) preserves the entire reference-derived storage
+    /// family, matching the scope-state path in <see cref="ClassifyMemberVisibility"/>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -334,7 +344,7 @@ internal static class ProfileKeyUnificationCore
     /// <c>CanonicalScopeRelativeMemberPaths</c> convention used by
     /// <c>VisibleStoredCollectionRow.HiddenMemberPaths</c>. The absolute binding path and the
     /// absolute reference-object path must therefore be stripped via <see cref="StripScopePrefix"/>
-    /// before the <c>hiddenSet</c> lookup — exactly as the scope-state path in
+    /// before the lookup — exactly as the scope-state path in
     /// <see cref="ClassifyMemberVisibility"/> does.
     /// </para>
     /// <para>
@@ -344,24 +354,25 @@ internal static class ProfileKeyUnificationCore
     /// Both produce the bare form that matches entries in the hidden set.
     /// </para>
     /// <para>
-    /// <b>Strip-scope asymmetry:</b> the <paramref name="hiddenSet"/> is assumed to contain member
-    /// paths relative to <c>tableWritePlan.TableModel.JsonScope</c> — the table's own scope, not a
-    /// nested sub-scope. The scope-state path (<see cref="ClassifyMemberVisibility"/>) reduces paths
-    /// against the longest-match candidate scope, which may be nested; the row-level path here
-    /// assumes the caller has already normalized hidden paths to the table's JsonScope. In Slice 4,
-    /// callers populate <c>HiddenMemberPaths</c> from
-    /// <see cref="ProfileCollectionRowKeyUnificationContext.HiddenMemberPaths"/>, which Core emits
-    /// at the table's JsonScope. If a future caller needs nested-scope hidden paths, this classifier
-    /// must be extended to accept an explicit strip-scope parameter.
+    /// <b>Strip-scope asymmetry:</b> <paramref name="hiddenMemberPaths"/> is assumed to contain
+    /// member paths relative to <c>tableWritePlan.TableModel.JsonScope</c> — the table's own
+    /// scope, not a nested sub-scope. The scope-state path
+    /// (<see cref="ClassifyMemberVisibility"/>) reduces paths against the longest-match
+    /// candidate scope, which may be nested; the row-level path here assumes the caller has
+    /// already normalized hidden paths to the table's JsonScope. In Slice 4, callers populate
+    /// <c>HiddenMemberPaths</c> from
+    /// <see cref="ProfileCollectionRowKeyUnificationContext.HiddenMemberPaths"/>, which Core
+    /// emits at the table's JsonScope. If a future caller needs nested-scope hidden paths,
+    /// this classifier must be extended to accept an explicit strip-scope parameter.
     /// </para>
     /// </remarks>
     private static MemberVisibility ClassifyMemberVisibilityFromHiddenSet(
         TableWritePlan tableWritePlan,
         KeyUnificationMemberWritePlan member,
-        ImmutableHashSet<string> hiddenSet
+        ImmutableArray<string> hiddenMemberPaths
     )
     {
-        if (hiddenSet.IsEmpty)
+        if (hiddenMemberPaths.IsDefaultOrEmpty)
         {
             return MemberVisibility.VisiblePresent;
         }
@@ -382,7 +393,11 @@ internal static class ProfileKeyUnificationCore
             _ => strippedMemberPath,
         };
 
-        return hiddenSet.Contains(governingPath)
+        return ProfileMemberGovernanceRules.IsHiddenGoverned(
+            governingPath,
+            hiddenMemberPaths,
+            ProfileMemberGovernanceRules.MatchKindFor(member)
+        )
             ? MemberVisibility.HiddenGoverned
             : MemberVisibility.VisiblePresent;
     }
@@ -393,7 +408,8 @@ internal static class ProfileKeyUnificationCore
         MemberVisibility visibility,
         IReadOnlyDictionary<DbColumnName, object?> currentRowByColumnName,
         JsonNode writableRequestBody,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
     ) =>
         visibility switch
         {
@@ -408,7 +424,7 @@ internal static class ProfileKeyUnificationCore
                 member,
                 writableRequestBody,
                 resolvedReferenceLookups,
-                ReadOnlySpan<int>.Empty
+                ordinalPath
             ),
             _ => throw new InvalidOperationException(
                 $"Unhandled member visibility '{visibility}' on table '{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}'."
