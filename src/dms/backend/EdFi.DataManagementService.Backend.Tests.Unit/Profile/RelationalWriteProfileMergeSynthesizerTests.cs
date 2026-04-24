@@ -3336,11 +3336,13 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
 
 /// <summary>
 /// Fixture: stored row carries a descriptor URI that is NOT present in the request-cycle
-/// cache. The synthesizer must throw with the specific diagnostic phrase
-/// "descriptor URI not resolvable at merge boundary".
+/// cache AND there are no current rows to fall back to. This is a truly pathological case —
+/// Core claims a visible stored row exists, but the backend has no corresponding current rows
+/// for the scope (e.g., data inconsistency between Core and backend). The synthesizer must
+/// throw with the specific diagnostic phrase "descriptor URI not resolvable at merge boundary".
 /// </summary>
 [TestFixture]
-public class Given_top_level_collection_with_descriptor_backed_identity_throws_when_stored_uri_not_in_cache
+public class Given_top_level_collection_with_descriptor_backed_identity_throws_when_stored_uri_not_in_cache_and_no_current_rows
 {
     private Action _synthesizeAction = null!;
 
@@ -3366,11 +3368,11 @@ public class Given_top_level_collection_with_descriptor_backed_identity_throws_w
             creatable: true
         );
 
-        // Stored row references a DIFFERENT URI that is NOT in the cache.
+        // Stored row references a URI that is NOT in the cache.
         const string unknownUri = "uri://ed-fi.org/AddressTypeDescriptor#UNKNOWN";
         var storedRow = DescriptorCanonicalizeBuilders.BuildStoredRowWithUri(unknownUri);
 
-        // Cache only contains the known URI.
+        // Cache only contains the known URI — not the unknown one.
         var resolvedRefs = DescriptorCanonicalizeBuilders.BuildResolvedReferenceSetWithDescriptor(
             DescriptorCanonicalizeBuilders.AddressTypeUri,
             DescriptorCanonicalizeBuilders.AddressTypeId
@@ -3395,14 +3397,14 @@ public class Given_top_level_collection_with_descriptor_backed_identity_throws_w
             [storedRow]
         );
 
+        // Pathological case: NO current rows for the collection scope.
+        // Core says there is a visible stored row, but the backend current state has none —
+        // an inconsistency that makes the positional/scalar-part fallback unable to help.
         var currentState = DescriptorCanonicalizeBuilders.BuildCurrentState(
             rootPlan,
             collectionPlan,
             documentId: 345L,
-            collectionRows:
-            [
-                [1L, 345L, 1, DescriptorCanonicalizeBuilders.AddressTypeId],
-            ]
+            collectionRows: [] // Empty — no current rows available for fallback.
         );
 
         var flattened = new FlattenedWriteSet(
@@ -3435,6 +3437,139 @@ public class Given_top_level_collection_with_descriptor_backed_identity_throws_w
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*descriptor URI not resolvable at merge boundary*");
+}
+
+/// <summary>
+/// Fixture: delete-by-absence with descriptor-backed identity. The stored document has two
+/// addresses (URI A and URI B); the PUT request includes only address A. URI B is absent from
+/// the request body and therefore absent from the request-cycle descriptor-resolution cache.
+///
+/// <para>The canonicalization must NOT throw. Instead it falls back to the matching
+/// <see cref="CurrentCollectionRowSnapshot"/> via positional correspondence (both arrays are
+/// ordered by stored ordinal and the identity is descriptor-only so no hidden rows
+/// interleave).</para>
+///
+/// <para>The planner emits a <c>MatchedUpdateEntry</c> for address A and omits the visible
+/// slot for address B (delete-by-absence). The resulting merged state must contain one merged
+/// row and two current rows (so the persister can calculate the deletion via set-difference).</para>
+/// </summary>
+[TestFixture]
+public class Given_top_level_collection_with_descriptor_backed_identity_delete_by_absence_matches_without_throwing
+{
+    private ProfileMergeOutcome _outcome;
+
+    // Two descriptor URIs/ids used in this fixture.
+    private const string AddressTypeUriA = DescriptorCanonicalizeBuilders.AddressTypeUri; // "Physical"
+    private const long AddressTypeIdA = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
+    private const string AddressTypeUriB = "uri://ed-fi.org/AddressTypeDescriptor#Home";
+    private const long AddressTypeIdB = 99L;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = DescriptorCanonicalizeBuilders.BuildPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        // Request body includes ONLY address A — address B is omitted (delete-by-absence).
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(new JsonObject { ["addressTypeDescriptor"] = AddressTypeUriA }),
+        };
+
+        // Backend candidate for address A (the one being updated/kept).
+        var candidateA = DescriptorCanonicalizeBuilders.BuildCandidate(collectionPlan, AddressTypeIdA);
+
+        // Request item for address A (URI string from Core).
+        var requestItemA = DescriptorCanonicalizeBuilders.BuildRequestItemWithUri(
+            AddressTypeUriA,
+            creatable: true
+        );
+
+        // Both stored rows are visible per profile.
+        var storedRowA = DescriptorCanonicalizeBuilders.BuildStoredRowWithUri(AddressTypeUriA);
+        var storedRowB = DescriptorCanonicalizeBuilders.BuildStoredRowWithUri(AddressTypeUriB);
+
+        // Cache contains ONLY URI A — URI B is absent (it was not in the request body).
+        var resolvedRefs = DescriptorCanonicalizeBuilders.BuildResolvedReferenceSetWithDescriptor(
+            AddressTypeUriA,
+            AddressTypeIdA
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [requestItemA]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray<StoredScopeState>.Empty,
+            [storedRowA, storedRowB] // Both stored rows visible.
+        );
+
+        // Current DB state: two rows — one for each address.
+        // Layout: [CollectionItemId, ParentDocumentId, Ordinal, DescriptorId]
+        // Row for address A is at ordinal 1; row for address B is at ordinal 2.
+        var currentState = DescriptorCanonicalizeBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId: 345L,
+            collectionRows:
+            [
+                [1L, 345L, 1, AddressTypeIdA],
+                [2L, 345L, 2, AddressTypeIdB],
+            ]
+        );
+
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal(345L)],
+                collectionCandidates: [candidateA]
+            )
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: resolvedRefs
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_has_merge_result() => _outcome.MergeResult.Should().NotBeNull();
+
+    /// <summary>
+    /// Only address A is in the plan sequence (address B was omitted → delete-by-absence).
+    /// </summary>
+    [Test]
+    public void It_produces_one_merged_collection_row() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    /// <summary>
+    /// Both current rows are tracked so the persister can delete address B by absence.
+    /// </summary>
+    [Test]
+    public void It_has_two_current_collection_rows() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(2);
 }
 
 /// <summary>
