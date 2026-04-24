@@ -38,14 +38,7 @@ public class Given_MssqlRelationalCommandExecutor
             new RecordingDbCommand(
                 CreateReader(
                     CreateLookupTable(
-                        (
-                            documentReferentialId.Value,
-                            101L,
-                            (short)11,
-                            (short)11,
-                            false,
-                            "$.schoolId=255901"
-                        ),
+                        (documentReferentialId.Value, 101L, (short)11, (short)11, false, "$.schoolId=255901"),
                         (
                             descriptorReferentialId.Value,
                             202L,

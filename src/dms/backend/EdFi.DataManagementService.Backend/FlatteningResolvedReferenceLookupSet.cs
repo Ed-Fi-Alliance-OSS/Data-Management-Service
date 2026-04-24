@@ -16,10 +16,17 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     private readonly Dictionary<string, IdentityBindingLookup>[] _identityBindingByColumnByBindingIndex;
     private readonly Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> _descriptorIdMapsByKey;
     private readonly Dictionary<string, QualifiedResourceName> _descriptorResourceByPath;
+    private readonly Dictionary<DescriptorUriLookupKey, long> _descriptorIdByUri;
 
     private readonly record struct IdentityBindingLookup(
         int IdentityBindingIndex,
         ReferenceIdentityBinding IdentityBinding
+    );
+
+    private readonly record struct DescriptorUriLookupKey(
+        QualifiedResourceName DescriptorResource,
+        string WildcardPath,
+        string Uri
     );
 
     private FlatteningResolvedReferenceLookupSet(
@@ -27,7 +34,8 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         OrdinalPathMap<ResolvedDocumentReference>?[] documentReferenceMapsByBindingIndex,
         Dictionary<string, IdentityBindingLookup>[] identityBindingByColumnByBindingIndex,
         Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> descriptorIdMapsByKey,
-        Dictionary<string, QualifiedResourceName> descriptorResourceByPath
+        Dictionary<string, QualifiedResourceName> descriptorResourceByPath,
+        Dictionary<DescriptorUriLookupKey, long> descriptorIdByUri
     )
     {
         _documentReferenceBindings =
@@ -42,6 +50,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             descriptorIdMapsByKey ?? throw new ArgumentNullException(nameof(descriptorIdMapsByKey));
         _descriptorResourceByPath =
             descriptorResourceByPath ?? throw new ArgumentNullException(nameof(descriptorResourceByPath));
+        _descriptorIdByUri = descriptorIdByUri ?? throw new ArgumentNullException(nameof(descriptorIdByUri));
     }
 
     public static FlatteningResolvedReferenceLookupSet Create(
@@ -114,8 +123,68 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             documentReferenceMapsByBindingIndex,
             BuildIdentityBindingByColumnByBindingIndex(documentReferenceBindings),
             descriptorIdMapsByKey,
-            BuildDescriptorResourceByPath(writePlan)
+            BuildDescriptorResourceByPath(writePlan),
+            BuildDescriptorIdByUri(resolvedReferences)
         );
+    }
+
+    /// <summary>
+    /// Looks up a resolved descriptor id by URI string. Used at the top-level collection
+    /// merge boundary to canonicalize stored-side descriptor URIs to Int64 ids. Returns
+    /// <c>true</c> and sets <paramref name="descriptorId"/> when the URI is found in the
+    /// request-cycle resolution cache; returns <c>false</c> otherwise.
+    /// </summary>
+    public bool TryGetDescriptorIdByUri(
+        QualifiedResourceName descriptorResource,
+        string wildcardPath,
+        string uri,
+        out long descriptorId
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(wildcardPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(uri);
+
+        var key = new DescriptorUriLookupKey(descriptorResource, wildcardPath, uri);
+        return _descriptorIdByUri.TryGetValue(key, out descriptorId);
+    }
+
+    private static Dictionary<DescriptorUriLookupKey, long> BuildDescriptorIdByUri(
+        ResolvedReferenceSet resolvedReferences
+    )
+    {
+        Dictionary<DescriptorUriLookupKey, long> result = [];
+
+        foreach (var entry in resolvedReferences.SuccessfulDescriptorReferencesByPath)
+        {
+            var parsedPath = RelationalJsonPathSupport.ParseConcretePath(entry.Key);
+            var descriptorResource = RelationalWriteSupport.ToQualifiedResourceName(
+                entry.Value.Reference.ResourceInfo
+            );
+            var identityElements = entry.Value.Reference.DocumentIdentity.DocumentIdentityElements;
+
+            // Descriptor identity has exactly one element whose IdentityValue is the URI string.
+            if (identityElements.Length == 0)
+            {
+                continue;
+            }
+
+            var uri = identityElements[0].IdentityValue;
+
+            if (string.IsNullOrEmpty(uri))
+            {
+                continue;
+            }
+
+            var lookupKey = new DescriptorUriLookupKey(descriptorResource, parsedPath.WildcardPath, uri);
+
+            // Use TryAdd to handle duplicate URIs mapping to the same id (same descriptor
+            // referenced at multiple positions). If different ids appear for the same URI
+            // and resource, the first wins — the resolver invariant already ensures a given
+            // URI resolves to a single id within a request.
+            result.TryAdd(lookupKey, entry.Value.DocumentId);
+        }
+
+        return result;
     }
 
     public long? GetDocumentId(int bindingIndex, ReadOnlySpan<int> ordinalPath)

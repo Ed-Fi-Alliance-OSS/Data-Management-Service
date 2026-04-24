@@ -755,17 +755,42 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             }
 
             // 1. Build scope-local planner input from the unified source set.
+            //    Descriptor-backed semantic identity parts arrive from Core as URI strings,
+            //    but the planner matches against backend-side Int64 ids. Canonicalize the
+            //    two Core-emitted streams before handing them to the planner.
             var parentScopeAddress = new ScopeInstanceAddress(
                 "$",
                 ImmutableArray<AncestorCollectionInstance>.Empty
             );
 
+            var descriptorIdentityIndices = ResolveDescriptorIdentityIndices(tablePlan);
+
+            var canonicalizedVisibleRequestItems =
+                descriptorIdentityIndices.Count == 0
+                    ? visibleRequestItemsForScope
+                    : CanonicalizeDescriptorRequestItems(
+                        visibleRequestItemsForScope,
+                        tablePlan,
+                        descriptorIdentityIndices,
+                        resolvedReferenceLookups
+                    );
+
+            var canonicalizedVisibleStoredRows =
+                descriptorIdentityIndices.Count == 0
+                    ? visibleStoredRowsForScope
+                    : CanonicalizeDescriptorStoredRows(
+                        visibleStoredRowsForScope,
+                        tablePlan,
+                        descriptorIdentityIndices,
+                        resolvedReferenceLookups
+                    );
+
             var input = new ProfileTopLevelCollectionScopeInput(
                 JsonScope: jsonScope,
                 ParentScopeAddress: parentScopeAddress,
                 RequestCandidates: requestCandidatesForScope,
-                VisibleRequestItems: visibleRequestItemsForScope,
-                VisibleStoredRows: visibleStoredRowsForScope,
+                VisibleRequestItems: canonicalizedVisibleRequestItems,
+                VisibleStoredRows: canonicalizedVisibleStoredRows,
                 CurrentRows: currentRowsForScope
             );
 
@@ -800,8 +825,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             // Build a lookup from candidate identity key → VisibleRequestCollectionItem so we
             // can find the concrete request item node for matched-update entries without a
-            // separate linear scan each time.
-            var candidateKeyToRequestItem = BuildCandidateKeyToRequestItemLookup(visibleRequestItemsForScope);
+            // separate linear scan each time. Use the canonicalized items so descriptor
+            // identity parts (URI → Int64) match the candidate's already-resolved Int64 values.
+            var candidateKeyToRequestItem = BuildCandidateKeyToRequestItemLookup(
+                canonicalizedVisibleRequestItems
+            );
 
             for (var i = 0; i < success.Plan.Sequence.Length; i++)
             {
@@ -936,6 +964,321 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// </summary>
     private static string BuildAddressIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
         string.Join("|", identityParts.Select(p => p.Value?.ToJsonString() ?? "null"));
+
+    // ── Descriptor-URI canonicalization helpers ────────────────────────────
+
+    /// <summary>
+    /// Returns the zero-based positions within the table's
+    /// <see cref="DbTableIdentityMetadata.SemanticIdentityBindings"/> that require
+    /// URI-to-Int64 canonicalization (i.e. those backed by a <see cref="ColumnKind.DescriptorFk"/>
+    /// column). Returns an empty list when no descriptor-backed parts exist.
+    /// </summary>
+    private static IReadOnlyList<int> ResolveDescriptorIdentityIndices(TableWritePlan tablePlan)
+    {
+        var bindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
+
+        if (bindings.Count == 0)
+        {
+            return [];
+        }
+
+        List<int>? result = null;
+
+        for (var i = 0; i < bindings.Count; i++)
+        {
+            var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                c.ColumnName.Equals(bindings[i].ColumnName)
+            );
+
+            if (column?.Kind == ColumnKind.DescriptorFk)
+            {
+                if (result is null)
+                {
+                    result = [];
+                }
+
+                result.Add(i);
+            }
+        }
+
+        return result ?? (IReadOnlyList<int>)[];
+    }
+
+    /// <summary>
+    /// For each <see cref="VisibleRequestCollectionItem"/> in
+    /// <paramref name="requestItems"/>, replaces the <see cref="SemanticIdentityPart"/>
+    /// values at every descriptor-identity index with the resolved Int64 descriptor id.
+    /// Items whose descriptor lookup returns null are left unchanged (the planner's
+    /// invariant check will surface the mismatch as a fail-closed error).
+    /// </summary>
+    private static ImmutableArray<VisibleRequestCollectionItem> CanonicalizeDescriptorRequestItems(
+        ImmutableArray<VisibleRequestCollectionItem> requestItems,
+        TableWritePlan tablePlan,
+        IReadOnlyList<int> descriptorIdentityIndices,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        if (requestItems.IsDefaultOrEmpty)
+        {
+            return requestItems;
+        }
+
+        var bindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
+        var builder = ImmutableArray.CreateBuilder<VisibleRequestCollectionItem>(requestItems.Length);
+
+        foreach (var item in requestItems)
+        {
+            var identity = item.Address.SemanticIdentityInOrder;
+            var ordinalPath = ParseOrdinalPathFromRequestJsonPath(item.RequestJsonPath);
+            var canonicalized = CanonicalizeIdentityParts(
+                identity,
+                bindings,
+                descriptorIdentityIndices,
+                tablePlan,
+                ordinalPath,
+                resolvedReferenceLookups
+            );
+
+            builder.Add(
+                item with
+                {
+                    Address = item.Address with { SemanticIdentityInOrder = canonicalized },
+                }
+            );
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// For each <see cref="VisibleStoredCollectionRow"/> in <paramref name="storedRows"/>,
+    /// replaces the <see cref="SemanticIdentityPart"/> values at every descriptor-identity
+    /// index with the resolved Int64 descriptor id, looked up by URI from the request-cycle
+    /// cache. Throws <see cref="InvalidOperationException"/> with phrase
+    /// "descriptor URI not resolvable at merge boundary" if a stored URI is not in the cache.
+    /// </summary>
+    private static ImmutableArray<VisibleStoredCollectionRow> CanonicalizeDescriptorStoredRows(
+        ImmutableArray<VisibleStoredCollectionRow> storedRows,
+        TableWritePlan tablePlan,
+        IReadOnlyList<int> descriptorIdentityIndices,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        if (storedRows.IsDefaultOrEmpty)
+        {
+            return storedRows;
+        }
+
+        var bindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
+        var builder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(storedRows.Length);
+
+        foreach (var row in storedRows)
+        {
+            var identity = row.Address.SemanticIdentityInOrder;
+            var canonicalized = CanonicalizeStoredIdentityParts(
+                identity,
+                bindings,
+                descriptorIdentityIndices,
+                tablePlan,
+                resolvedReferenceLookups
+            );
+
+            builder.Add(row with { Address = row.Address with { SemanticIdentityInOrder = canonicalized } });
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Rewrites the descriptor-backed parts of <paramref name="identity"/> in-place for
+    /// request-side items. Positions not in <paramref name="descriptorIdentityIndices"/>
+    /// are copied unchanged. Returns the same array reference when no part changes.
+    /// </summary>
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeIdentityParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<CollectionSemanticIdentityBinding> bindings,
+        IReadOnlyList<int> descriptorIdentityIndices,
+        TableWritePlan tablePlan,
+        ReadOnlySpan<int> ordinalPath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var idx in descriptorIdentityIndices)
+        {
+            if (idx >= identity.Length || idx >= bindings.Count)
+            {
+                continue;
+            }
+
+            var part = identity[idx];
+
+            if (!part.IsPresent || part.Value is null)
+            {
+                continue;
+            }
+
+            var binding = bindings[idx];
+            var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                c.ColumnName.Equals(binding.ColumnName)
+            );
+
+            if (column?.TargetResource is null || column.SourceJsonPath is null)
+            {
+                continue;
+            }
+
+            var wildcardPath = column.SourceJsonPath.Value.Canonical;
+            var descriptorId = resolvedReferenceLookups.GetDescriptorId(
+                column.TargetResource.Value,
+                wildcardPath,
+                ordinalPath
+            );
+
+            if (descriptorId is null)
+            {
+                continue;
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[idx] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(descriptorId.Value),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Rewrites the descriptor-backed parts of <paramref name="identity"/> for stored-side
+    /// rows by looking up URI → Int64 from the request-cycle cache. Throws when a stored
+    /// URI is not in the cache (fail-closed sentinel for integration diagnostics).
+    /// </summary>
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeStoredIdentityParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<CollectionSemanticIdentityBinding> bindings,
+        IReadOnlyList<int> descriptorIdentityIndices,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var idx in descriptorIdentityIndices)
+        {
+            if (idx >= identity.Length || idx >= bindings.Count)
+            {
+                continue;
+            }
+
+            var part = identity[idx];
+
+            if (!part.IsPresent || part.Value is null)
+            {
+                continue;
+            }
+
+            // Check if the value is already an Int64 (already canonicalized or numeric).
+            if (part.Value is JsonValue jv && jv.TryGetValue<long>(out _))
+            {
+                continue;
+            }
+
+            var uri = part.Value.ToString();
+
+            if (string.IsNullOrEmpty(uri))
+            {
+                continue;
+            }
+
+            var binding = bindings[idx];
+            var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                c.ColumnName.Equals(binding.ColumnName)
+            );
+
+            if (column?.TargetResource is null || column.SourceJsonPath is null)
+            {
+                continue;
+            }
+
+            var wildcardPath = column.SourceJsonPath.Value.Canonical;
+
+            if (
+                !resolvedReferenceLookups.TryGetDescriptorIdByUri(
+                    column.TargetResource.Value,
+                    wildcardPath,
+                    uri,
+                    out var descriptorId
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    $"descriptor URI not resolvable at merge boundary: stored descriptor URI '{uri}' "
+                        + $"for column '{column.ColumnName.Value}' (path '{wildcardPath}') "
+                        + $"was not found in the request-cycle descriptor resolution cache. "
+                        + "This typically means the stored row references a descriptor that is not "
+                        + "present in the current request body."
+                );
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[idx] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(descriptorId),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Parses the ordinal path from a concrete request JSON path such as
+    /// <c>$.addresses[2]</c> → <c>[2]</c>. Extracts all <c>[N]</c> integer segments
+    /// in order. Returns an empty array on null/empty input.
+    /// </summary>
+    private static int[] ParseOrdinalPathFromRequestJsonPath(string requestJsonPath)
+    {
+        if (string.IsNullOrEmpty(requestJsonPath))
+        {
+            return [];
+        }
+
+        List<int> ordinals = [];
+        var searchStart = 0;
+
+        while (true)
+        {
+            var openIdx = requestJsonPath.IndexOf('[', searchStart);
+
+            if (openIdx < 0)
+            {
+                break;
+            }
+
+            var closeIdx = requestJsonPath.IndexOf(']', openIdx + 1);
+
+            if (closeIdx <= openIdx + 1)
+            {
+                searchStart = openIdx + 1;
+                continue;
+            }
+
+            var segment = requestJsonPath[(openIdx + 1)..closeIdx];
+
+            if (int.TryParse(segment, out var ordinal))
+            {
+                ordinals.Add(ordinal);
+            }
+
+            searchStart = closeIdx + 1;
+        }
+
+        return [.. ordinals];
+    }
 
     /// <summary>
     /// Projects the current DB rows for a single top-level collection table into
