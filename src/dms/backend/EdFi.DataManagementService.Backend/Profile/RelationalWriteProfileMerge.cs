@@ -1167,6 +1167,17 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Rewrites the descriptor-backed parts of <paramref name="identity"/> for stored-side
     /// rows by looking up URI → Int64 from the request-cycle cache.
     ///
+    /// <para><b>Slice 4 fence shape:</b>
+    /// Slice 4 does not add an executor-level fence on descriptor-backed top-level collection
+    /// identity — rejecting at the planner/executor would block the common cases this method
+    /// handles correctly (URI in cache; mixed scalar+descriptor identity; descriptor-only
+    /// without hidden rows). Instead, the single structurally-ambiguous case — descriptor-only
+    /// identity with hidden rows interleaved in current rows and a URI cache miss — is narrowed
+    /// to a runtime fail-closed throw below. That combination is rare in standard Ed-Fi
+    /// profiles but must not silently return an incorrect descriptor id. A later slice may
+    /// widen support by seeding the descriptor resolver from the stored body or adding a
+    /// planner-level reject; until then the throw is the Slice 4 fence.</para>
+    ///
     /// <para><b>Cache-miss fallback (delete-by-absence support):</b>
     /// When a stored URI is not in the request-cycle cache — which happens during a PUT that
     /// omits a previously-stored collection item, because the omitted item's descriptor URI
