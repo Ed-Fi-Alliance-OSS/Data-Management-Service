@@ -98,7 +98,11 @@ public class Given_Descriptor_Write_Handler_Delete
                 fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, A<string>._)
             )
             .MustNotHaveHappened();
-        fixture.Logger.Records.Should().Contain(r => r.Level == LogLevel.Information);
+        fixture.Logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Information);
+        // Decisions #4 splits Information (missing constraint name) from Warning (unresolved
+        // constraint name). A bare Contain(Information) would pass even if a refactor accidentally
+        // fired both branches for the same failure — assert Warning is absent to pin the split.
+        fixture.Logger.Records.Should().NotContain(r => r.Level == LogLevel.Warning);
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -129,7 +133,11 @@ public class Given_Descriptor_Write_Handler_Delete
                 fixture.Resolver.TryResolveReferencingResource(fixture.MappingSet.Model, constraintName)
             )
             .MustHaveHappenedOnceExactly();
-        fixture.Logger.Records.Should().Contain(r => r.Level == LogLevel.Warning);
+        fixture.Logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Warning);
+        // Decisions #4 splits Warning (unresolved constraint name) from Information (missing
+        // constraint name). A bare Contain(Warning) would pass even if a refactor accidentally
+        // fired both branches for the same failure — assert Information is absent to pin the split.
+        fixture.Logger.Records.Should().NotContain(r => r.Level == LogLevel.Information);
     }
 
     private sealed class Fixture

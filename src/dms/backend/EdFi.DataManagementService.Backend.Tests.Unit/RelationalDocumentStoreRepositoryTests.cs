@@ -2125,7 +2125,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .MustNotHaveHappened();
-        _logger.Records.Should().Contain(r => r.Level == LogLevel.Information);
+        _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Information);
+        // Decisions #4 splits Information (missing constraint name) from Warning (unresolved
+        // constraint name). A bare Contain(Information) would pass even if a refactor accidentally
+        // fired both branches for the same failure — assert Warning is absent to pin the split.
+        _logger.Records.Should().NotContain(r => r.Level == LogLevel.Warning);
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -2157,7 +2161,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
             )
             .MustHaveHappenedOnceExactly();
-        _logger.Records.Should().Contain(r => r.Level == LogLevel.Warning);
+        _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Warning);
+        // Decisions #4 splits Warning (unresolved constraint name) from Information (missing
+        // constraint name). A bare Contain(Warning) would pass even if a refactor accidentally
+        // fired both branches for the same failure — assert Information is absent to pin the split.
+        _logger.Records.Should().NotContain(r => r.Level == LogLevel.Information);
     }
 
     [TestCase(SqlDialect.Pgsql)]
