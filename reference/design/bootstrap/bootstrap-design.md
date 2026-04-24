@@ -77,8 +77,9 @@ to verify the design without re-reading every section.
 
 1. The normative bootstrap contract is the composable set of phase commands in
    `command-boundaries.md`, not a monolithic control plane.
-2. The wrapper, if implemented, is sequencing convenience only. It may forward `-ConfigFile` unchanged and
-   must not own schema, claims, provisioning, credential, retry, or continuation policy.
+2. The wrapper, if implemented, is sequencing convenience only. It exposes direct developer-facing flags
+   (forwarded to the appropriate phase command) and must not own schema, claims, provisioning, credential,
+   retry, or continuation policy.
 3. `ApiSchema.json` selection is the source of truth for API surface, security pairing in standard mode,
    and the exact DDL target for the run.
 4. Standard mode means `-Extensions`, including the omitted-`-Extensions` core-only case. Expert mode
@@ -99,6 +100,12 @@ to verify the design without re-reading every section.
 - **Thin wrapper**: `bootstrap-local-dms.ps1` as optional sequencing convenience only.
 - **Same-invocation continuation**: `-InfraOnly -DmsBaseUrl` continuing the current run against an
   IDE-hosted DMS process.
+- **Explicit selectors**: `-InstanceId <guid[]>` and `-SchoolYear <int[]>` flags passed to downstream
+  phase commands (`provision-dms-schema.ps1`, `load-dms-seed-data.ps1`) to identify target DMS instances
+  when the thin wrapper is not orchestrating the run.
+- **Single-match auto-selection**: when no explicit selector is supplied and exactly one DMS instance
+  exists in the current tenant scope, downstream phase commands auto-select that instance. Zero or multiple
+  instances without an explicit selector is a fast-fail error.
 - **Exact physical schema**: the concrete relational footprint implied by the selected staged schema set;
   this is the DDL target for the run.
 
@@ -351,7 +358,7 @@ Modes 1 and 2 cover the vast majority of development workflows. Use these for da
 **Mode 1 - Default (core Ed-Fi only)**
 
 Omit `-Extensions` entirely. Bootstrap resolves only the standard core Data Standard schema package
-(e.g. `EdFi.DataStandard52.ApiSchema`; exact package name to be confirmed before Story 01) host-side with
+(e.g. `EdFi.DataStandard52.ApiSchema`; **exact package name must be confirmed against the NuGet feed before Story 00 implementation begins**, not Story 01) host-side with
 `EdFi.DataManagementService.ApiSchemaDownloader`, stages the extracted `ApiSchema.json` into
 `eng/docker-compose/.bootstrap/ApiSchema/`, and computes the expected `EffectiveSchemaHash` from that
 staged file. Until a dedicated downloader README exists, the authoritative downloader CLI contract for this
@@ -915,15 +922,16 @@ by implementers.
       before rerun.
     - `-NoDmsInstance` is not supported with `-SchoolYearRange`; multi-year existing-instance
       reuse is intentionally out of scope for DMS-916.
-    - Step 7 is the only phase allowed to resolve target DMS instance IDs for the run. All later
-      phases consume the selected set from this step and never call `Get-DmsInstances` or perform
-      a second CMS discovery pass.
+    - Step 7 is the only phase allowed to create target DMS instance records or apply broad
+      target-selection policy for the run. All later phases consume the selected set from this step
+      during a single wrapper invocation, or in manual phase flows resolve only their explicit
+      `-InstanceId` / `-SchoolYear` selectors through CMS-backed lookup.
     - This must complete before bootstrap can provision or validate the target databases in step 8
 
 7a. Optional smoke-test credential bootstrap             [Existing + Proposed] - Section 7
     - Runs only when -AddSmokeTestCredentials is set
-    - Uses the target instance IDs already selected in step 7 and does not call `Get-DmsInstances`
-      or perform a second CMS discovery pass
+    - Uses the target instance IDs already selected in step 7 and does not perform instance
+      creation, broad target-selection policy, or non-selector-driven discovery
     - Add-CmsClient
     - Get-CmsToken
     - Add-Vendor
@@ -968,8 +976,8 @@ by implementers.
     - Runs after DMS is confirmed healthy: either in the Docker flow (after step 9 health wait)
       or after `start-local-dms.ps1 -InfraOnly -DmsBaseUrl` confirms the external DMS endpoint
       health and exits; `start-local-dms.ps1` does not perform or own this step
-    - Uses the target instance IDs already selected in step 7 and does not call `Get-DmsInstances`
-      or perform a second CMS discovery pass
+    - Uses the target instance IDs already selected in step 7 and does not perform instance
+      creation, broad target-selection policy, or non-selector-driven discovery
     - Does not depend on step 7a; `load-dms-seed-data.ps1` creates a separate SeedLoader
       application even when smoke-test credentials were not requested
     - Add-CmsClient          (system admin client in CMS)
@@ -1013,7 +1021,9 @@ by implementers.
 - The `-InfraOnly` path ([Starting Infrastructure Without DMS](#122-starting-infrastructure-without-dms))
   always diverges at step 9. Without `-DmsBaseUrl`, bootstrap stops after step 8 with IDE next-step
   guidance, though step 7a may already have created smoke-test credentials if requested. With
-  `-DmsBaseUrl`, steps 9-11 run against that external DMS endpoint.
+  `-DmsBaseUrl`, the overall bootstrap can continue against that external DMS endpoint, but
+  `start-local-dms.ps1` owns only step 9 health waiting; steps 10-11 remain later phase execution
+  through wrapper orchestration or explicit invocation of `load-dms-seed-data.ps1`.
 
 ### Failure and Recovery
 
@@ -1025,8 +1035,8 @@ re-runs after a partial failure.
 | 2 - Resolve ApiSchema.json selection | Conditionally | Same-checkout reruns reuse the existing staged schema workspace only when the intended staged schema set is identical. If the intended set differs, bootstrap fails fast and requires teardown rather than mutating a workspace that a running DMS host or already-provisioned database may still depend on. |
 | 5 - Prepare security environment | Conditionally | Same-checkout reruns reuse the existing staged claims workspace only when the intended fragment set is identical. If the intended set differs, bootstrap fails fast and requires teardown because DMS-916 does not replace populated CMS claims in place (see [Section 4.4](#44-security-configuration-in-the-bootstrap-sequence)). |
 | 6 - Config Service start | Conditionally | Normal `docker compose up` idempotency is sufficient only when step 5 reused the identical staged claims workspace or when CMS is not yet running. DMS-916 does not hot-reload claims or replace the stored claims document through startup on a populated config database. |
-| 7 - Instance creation | No | `Add-DmsInstance` creates new configuration records on every call. Use `-NoDmsInstance` only for narrow reruns where exactly one existing instance already exists in the current tenant scope and `-SchoolYearRange` is not set. If zero or multiple instances are present, bootstrap fails fast and requires teardown or manual environment preparation before rerun. This phase writes the selected target set for the current run to a small repo-local handoff file under `eng/docker-compose/.bootstrap/`, and later phases consume that file rather than rediscovering instances through CMS. |
-| 7a - Smoke-test credential bootstrap | Conditionally | Bootstrap treats the smoke-test application as a bootstrap-managed CMS record with a fixed display name and target scope. On rerun, it reuses or replaces that known record deterministically for the selected target set instead of accumulating new application records. This step consumes the step-7-selected target set from the run-context file and does not call `Get-DmsInstances` again. Because it depends only on CMS readiness and the selected targets, it is valid during infra-only preparation. |
+| 7 - Instance creation | No | `Add-DmsInstance` creates new configuration records on every call. Use `-NoDmsInstance` only for narrow reruns where exactly one existing instance already exists in the current tenant scope and `-SchoolYearRange` is not set. If zero or multiple instances are present, bootstrap fails fast and requires teardown or manual environment preparation before rerun. When invoked through the thin wrapper, the instance IDs returned by this phase are captured in memory and forwarded as explicit `-InstanceId` arguments to later phases within the same invocation; no file is written. |
+| 7a - Smoke-test credential bootstrap | Conditionally | Bootstrap treats the smoke-test application as a bootstrap-managed CMS record with a fixed display name and target scope. On rerun, it reuses or replaces that known record deterministically for the selected target set instead of accumulating new application records. This step uses the instance IDs from step 7 (passed in-memory within the same invocation) and does not perform instance creation, broad target-selection policy, or non-selector-driven discovery. Because it depends only on CMS readiness and the selected targets, it is valid during infra-only preparation. |
 | 8 - Schema provisioning / validation | Yes | Each rerun invokes the same authoritative SchemaTools/runtime-owned provisioning and validation path over the staged schema set. Successful reruns either no-op or complete required provisioning before DMS starts; any state the shared path rejects fails fast with its diagnostics rather than a bootstrap-owned decision table (see [Section 11.3](#113-proposed-ddl-provisioning-hook)). |
 | 9 - DMS start / availability | Yes | DMS startup is re-attemptable after step 8 completes. Schema work is already finished before this step begins. |
 | 10 - Seed-loader credential bootstrap | Conditionally | Bootstrap treats the SeedLoader application as a bootstrap-managed CMS record with a fixed display name and target scope. On rerun, it reuses or replaces that known record deterministically for the selected target set instead of accumulating new application records. Credentials remain ephemeral and intentionally are not restored from local state (see [Credential Lifecycle](#credential-lifecycle)). This flow remains independent of optional smoke-test credential creation in step 7a. |
@@ -1384,8 +1394,8 @@ dependency boundary explicit:
 
 - **Trigger**: runs only when `-AddSmokeTestCredentials` is set.
 - **Claim set**: `EdFiSandbox`.
-- **Target binding**: uses the DMS instance IDs already selected in step 7 and never calls
-  `Get-DmsInstances` or performs a second CMS discovery pass.
+- **Target binding**: uses the DMS instance IDs already selected in step 7 and never performs
+  instance creation, broad target-selection policy, or non-selector-driven discovery.
 - **Dependency gate**: depends only on CMS readiness and the selected target set. It does not require a live
   DMS endpoint, DMS health wait, or `-DmsBaseUrl`, so it is valid in `-InfraOnly` mode.
 - **Purpose**: surfaces credentials for smoke tooling or manual verification only. BulkLoadClient does not
@@ -1400,8 +1410,8 @@ dependency boundary explicit:
 - **Claim set**: a dedicated `SeedLoader` claim set that grants the bootstrap writer permissions required
   by the built-in seed manifests plus any staged `SeedLoader` permissions that the run brings in through
   selected extensions or additive claims fragments.
-- **Target binding**: uses the DMS instance IDs already selected in step 7 and never calls
-  `Get-DmsInstances` or performs a second CMS discovery pass.
+- **Target binding**: uses the DMS instance IDs already selected in step 7 and never performs
+  instance creation, broad target-selection policy, or non-selector-driven discovery.
 - **Namespace prefixes**: must cover the namespaces present in the selected seed source. For Ed-Fi-provided
   seed packages, the baseline set is `uri://ed-fi.org` and `uri://gbisd.edu`, plus the namespace prefix for
   each loaded extension (for example, `uri://sample.ed-fi.org`). When `-Extensions` is used (see
@@ -1558,7 +1568,8 @@ Steps 8-9. Authoritative schema preparation and DMS availability
 Step 10. Seed-loader credential bootstrap
   - Runs only when `-LoadSeedData` is set.
   - Begins only after step 9 confirms a live DMS endpoint for the current flow.
-  - Reuses the selected target instance set from step 7; no second CMS discovery pass occurs.
+  - Reuses the selected target instance set from step 7; no instance creation, broad
+    target-selection policy, or non-selector-driven discovery occurs.
   - Does not depend on step 7a; bootstrap creates a separate `SeedLoader` application even when
     smoke-test credentials were never requested.
   - `Add-Application` -> `$seedKey` / `$seedSecret` for the `SeedLoader` claim set
@@ -1779,12 +1790,10 @@ or second control plane. Phase commands are the normative contract; `bootstrap-l
 convenience packaging only, not a mandatory design deliverable.
 
 > **Wrapper simplicity rule (precise, read with [`command-boundaries.md` Section 3.7](command-boundaries.md#37-bootstrap-local-dmsps1--thin-convenience-wrapper-optional)).**
-> The wrapper sequences phase commands and forwards `-ConfigFile` unchanged. Accepting `-ConfigFile` does
-> not make the wrapper a policy owner: each phase reads its own keys from that file (see
-> [Section 9.4.2](#942-wrapper-defaults-configuration-file)), and the wrapper never parses, translates,
-> or re-routes individual parameter values. Adding, renaming, or removing any phase parameter — CLI flag
-> or config file key — is a change to the owning phase command alone and never requires wrapper-specific
-> logic.
+> The wrapper sequences phase commands and forwards direct developer-facing flags to the appropriate phase.
+> The wrapper never parses, translates, or re-routes individual parameter values beyond forwarding them.
+> Adding, renaming, or removing any phase parameter is a change to the owning phase command alone and
+> never requires wrapper-specific logic.
 
 ### 9.1 Infrastructure Phase Command
 
@@ -1866,13 +1875,25 @@ was considered during the ODS audit, but it is intentionally out of scope for DM
 
 #### 9.3.1 V1 Top-Level Surface
 
-For the common developer path, the thin convenience wrapper exposes exactly one parameter:
+The thin convenience wrapper exposes direct developer-facing flags that it forwards to the appropriate phase command:
 
 | Command | Parameter | Required | Purpose |
 |---------|-----------|----------|---------|
-| `bootstrap-local-dms.ps1` | `-ConfigFile <path>` | No | Path to a JSON defaults file; each phase reads its own keys before CLI overrides apply. |
+| `bootstrap-local-dms.ps1` | `-Extensions <name>` | No | Forwarded to `prepare-dms-schema.ps1`; selects standard extensions. |
+| `bootstrap-local-dms.ps1` | `-ApiSchemaPath <path>` | No | Forwarded to `prepare-dms-schema.ps1`; expert custom-schema path. |
+| `bootstrap-local-dms.ps1` | `-ClaimsDirectoryPath <path>` | No | Forwarded to `prepare-dms-claims.ps1`. |
+| `bootstrap-local-dms.ps1` | `-InfraOnly` | No | Forwarded to `start-local-dms.ps1`; excludes DMS container. |
+| `bootstrap-local-dms.ps1` | `-DmsBaseUrl <url>` | No | Forwarded to `start-local-dms.ps1`; IDE-hosted DMS endpoint. |
+| `bootstrap-local-dms.ps1` | `-IdentityProvider` | No | Forwarded to `start-local-dms.ps1`; supports the same keycloak vs self-contained infrastructure choice as the owning phase command. |
+| `bootstrap-local-dms.ps1` | `-SchoolYearRange <range>` | No | Forwarded to `configure-local-dms-instance.ps1` for the school-year instance-creation workflow. Downstream manual selectors remain `-SchoolYear <int[]>` on `provision-dms-schema.ps1` and `load-dms-seed-data.ps1`. |
+| `bootstrap-local-dms.ps1` | `-InstanceId <guid[]>` | No | Forwarded to `provision-dms-schema.ps1` and `load-dms-seed-data.ps1`. |
+| `bootstrap-local-dms.ps1` | `-LoadSeedData` | No | Forwarded to `load-dms-seed-data.ps1`. |
+| `bootstrap-local-dms.ps1` | `-SeedTemplate Minimal\|Populated` | No | Forwarded to `load-dms-seed-data.ps1`. |
+| `bootstrap-local-dms.ps1` | `-SeedDataPath <path>` | No | Forwarded to `load-dms-seed-data.ps1`; supports custom JSONL directories without moving seed-source ownership into the wrapper. |
+| `bootstrap-local-dms.ps1` | `-Rebuild` / `-r` | No | Forwarded to `start-local-dms.ps1`; forces Docker image rebuild. |
+| `bootstrap-local-dms.ps1` | `-AddSmokeTestCredentials` | No | Forwarded to `configure-local-dms-instance.ps1`. |
 
-All behavioral flags - schema selection, claims configuration, instance management, seed loading - belong to the phase command that owns each concern. Adding a new parameter to any phase command never requires a wrapper change. See [Section 9.4.2](#942-wrapper-defaults-configuration-file) for the config-file rules and [`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner) for the complete per-phase distribution.
+All behavioral flags belong to the phase command that owns each concern. Adding a new parameter to any phase command requires a corresponding wrapper parameter only when the developer-facing happy path benefits from that flag. See [`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner) for the complete per-phase distribution.
 
 #### 9.3.2 Infrastructure Phase Parameters (`start-local-dms.ps1`)
 
@@ -1893,8 +1914,8 @@ only as a backward-compatibility switch, not as a meaningful opt-out on the cano
 | `-EnableConfig` | Switch | - | Existing (script compatibility) | Retained on `start-local-dms.ps1` for compatibility. The story-aligned bootstrap flow always includes the Config Service, so this is not treated as a meaningful opt-out on the canonical bootstrap contract. |
 | `-EnableSwaggerUI` | Switch | — | Existing | Include Swagger UI container |
 | `-IdentityProvider` | String | `self-contained` | Existing | Identity provider: `keycloak` or `self-contained` |
-| `-InfraOnly` | Switch | - | **Proposed** | Exclude the DMS container from Docker startup. Bootstrap still performs the pre-DMS steps through instance creation and schema provisioning/validation. With `-DmsBaseUrl`, the same invocation then continues against an external DMS endpoint; without it, the run stops after reporting IDE next steps. This pre-DMS-only shape is terminal for that invocation: DMS-916 does not define a later bootstrap "resume" that picks up unfinished post-start work from the stopped run. ([IDE Debugging Workflow](#12-ide-debugging-workflow)) |
-| `-DmsBaseUrl` | String | - | **Proposed** | External IDE-hosted DMS endpoint used only with `-InfraOnly`. When omitted, `-InfraOnly` stops after the pre-DMS phase; when set, bootstrap automatically waits for that external DMS process to become healthy, then continues against it. Seed loading remains a separate phase command that requires a healthy DMS endpoint when invoked. |
+| `-InfraOnly` | Switch | - | **Proposed** | Exclude the DMS container from Docker startup. Bootstrap still performs the pre-DMS steps through instance creation and schema provisioning/validation. With `-DmsBaseUrl`, the same invocation then continues through infrastructure-owned health waiting against an external DMS endpoint; without it, the run stops after reporting IDE next steps. This pre-DMS-only shape is terminal for that invocation: DMS-916 does not define a later bootstrap "resume" that picks up unfinished post-start work from the stopped run. ([IDE Debugging Workflow](#12-ide-debugging-workflow)) |
+| `-DmsBaseUrl` | String | - | **Proposed** | External IDE-hosted DMS endpoint used only with `-InfraOnly`. When omitted, `-InfraOnly` stops after the pre-DMS phase; when set, `start-local-dms.ps1` automatically waits for that external DMS process to become healthy, then stops. Any later DMS-dependent work remains owned by wrapper orchestration or by the next phase command explicitly invoked. Seed loading remains a separate phase command that requires a healthy DMS endpoint when invoked. |
 
 **Breaking-change note:** The DMS-916 definition of `-NoDmsInstance` (owned by `configure-local-dms-instance.ps1`) deliberately narrows the current behavior. Existing scripts that used it on a fresh stack as a generic "skip creation" switch must now either drop the flag or pre-create exactly one intended target instance before rerunning. See also [Section 15](#15-breaking-changes-and-migration-notes) for the consolidated migration reference.
 
@@ -1948,9 +1969,14 @@ Phase commands may be called individually for targeted re-runs, or sequenced thr
 wrapper (`bootstrap-local-dms.ps1`) for the happy path. Common invocations:
 
 ```powershell
-# Full bootstrap via thin wrapper (the wrapper contributes only -ConfigFile;
-# each phase reads its own defaults from that file)
-pwsh eng/docker-compose/bootstrap-local-dms.ps1 -ConfigFile .\my-bootstrap-defaults.json
+# Full bootstrap via thin wrapper — core only, no seed data
+pwsh eng/docker-compose/bootstrap-local-dms.ps1
+
+# Full bootstrap with sample extension and seed data
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -Extensions sample -LoadSeedData -SeedTemplate Minimal
+
+# Multi-year bootstrap
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -SchoolYearRange "2025-2026" -LoadSeedData -SeedTemplate Minimal
 
 # Infrastructure phase only (no DMS container; prints IDE next-step guidance)
 pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
@@ -1966,36 +1992,18 @@ No shell/session preparation is required before invoking any phase command. The 
 documented elsewhere — `-Extensions`, authoritative step-8 schema-provisioning, `-InfraOnly`,
 `-DmsBaseUrl` — apply regardless of whether phase commands are called individually or through the wrapper.
 
-#### 9.4.2 Wrapper Defaults Configuration File
+#### 9.4.2 Wrapper Direct-Flag Interface
 
-The wrapper may accept one optional `-ConfigFile <path>` for stable day-to-day defaults. Each phase reads
-only its own keys from that file; the wrapper does not interpret them.
+The wrapper exposes direct developer-facing flags and forwards each flag unchanged to the phase command
+that owns it. No configuration file is read; no shared defaults layer exists. For the school-year
+workflow, that means the wrapper exposes the same `-SchoolYearRange` flag owned by
+`configure-local-dms-instance.ps1`; downstream manual selector flags remain `-SchoolYear <int[]>` on
+`provision-dms-schema.ps1` and `load-dms-seed-data.ps1`. The complete flag-to-phase mapping is in
+[Section 9.3.1](#931-v1-top-level-surface) and [`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner).
 
-Rules:
-
-- Precedence is CLI flag on the owning phase, then config-file value, then built-in default.
-- The file must be valid JSON.
-- The wrapper treats the file as a transport for per-phase defaults, not as a second policy surface.
-- Each phase reads only the keys it owns.
-- A phase command invoked directly with `-ConfigFile` validates only the keys it owns and must not reject keys owned by other phases.
-- Expert-only, destructive, or mode-changing inputs stay on the owning phase command.
-
-**Illustrative only:** If the team finds it useful for readability, this section may include a small
-non-normative example of common top-level keys, similar to the earlier Section 9.4.2 table. That example is
-only a reader aid. It is not required to be exhaustive, and it does not create a second shared config-schema
-contract beyond the phase-owned parameters.
-
-Example top-level keys that a defaults file might carry:
-
-| Key | Read by |
-|---|---|
-| `Extensions` | `prepare-dms-schema.ps1` |
-| `IdentityProvider` | `start-local-dms.ps1` |
-| `AddSmokeTestCredentials` | `configure-local-dms-instance.ps1` |
-| `SchoolYearRange` | `configure-local-dms-instance.ps1`, `load-dms-seed-data.ps1` |
-| `LoadSeedData` | `load-dms-seed-data.ps1` |
-| `SeedTemplate` | `load-dms-seed-data.ps1` |
-| `SeedDataPath` | `load-dms-seed-data.ps1` |
+Within a single wrapper invocation, instance IDs returned by `configure-local-dms-instance.ps1` are
+captured in memory and forwarded as explicit `-InstanceId` arguments to `provision-dms-schema.ps1` and
+`load-dms-seed-data.ps1`. No state is written to disk for this purpose.
 
 #### 9.4.1 Recommended Bootstrap Output
 
@@ -2057,12 +2065,80 @@ CI environments may suppress color output. The summary table is always emitted o
 The normative wrapper contract is [`command-boundaries.md` Section 3.7](command-boundaries.md#37-bootstrap-local-dmsps1--thin-convenience-wrapper-optional). In this design the wrapper does only four things:
 
 - call phase commands in dependency order,
-- forward `-ConfigFile` unchanged when supplied,
+- forward direct developer-facing flags to the appropriate phase command,
 - print next-step guidance after an intentionally omitted phase,
 - propagate a failing phase's non-zero exit code.
 
 Everything else - schema/claims/credential/state/continuation/policy ownership - is prohibited by Section 3.7
 and is not restated here.
+
+#### 9.4.4 Manual Phase Command Flow
+
+The wrapper and the individual phase commands are complementary: use the wrapper for the common developer
+happy path; invoke phase commands directly for targeted re-runs, CI-level scripting, or debugging a single
+phase without repeating earlier work.
+
+A canonical manual flow (core schema, single instance):
+
+```powershell
+# Stage schema and claims (Docker not required)
+pwsh eng/docker-compose/prepare-dms-schema.ps1
+pwsh eng/docker-compose/prepare-dms-claims.ps1
+
+# Start infrastructure (PostgreSQL, identity provider, Config Service)
+pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
+
+# Create DMS instance — prints selected instance GUID to stdout
+pwsh eng/docker-compose/configure-local-dms-instance.ps1
+
+# Provision schema (auto-selects the one existing instance)
+pwsh eng/docker-compose/provision-dms-schema.ps1
+
+# Start DMS container
+pwsh eng/docker-compose/start-local-dms.ps1
+
+# Load seed data (auto-selects the one existing instance)
+pwsh eng/docker-compose/load-dms-seed-data.ps1 -LoadSeedData -SeedTemplate Minimal
+```
+
+When re-running only a downstream phase after a partial failure, supply an explicit selector if more than
+one instance exists:
+
+```powershell
+# Re-run seed delivery against a specific instance (two instances present)
+$instanceId = "a1b2c3d4-1234-5678-abcd-000000000001"
+pwsh eng/docker-compose/load-dms-seed-data.ps1 `
+    -InstanceId $instanceId `
+    -LoadSeedData -SeedTemplate Minimal
+```
+
+#### 9.4.5 Selector Resolution Examples
+
+Selector behavior for `provision-dms-schema.ps1` and `load-dms-seed-data.ps1` follows the same rule:
+auto-select when exactly one DMS instance exists in CMS; fail fast when zero or multiple instances exist
+without an explicit selector. See [`command-boundaries.md` Section 8](command-boundaries.md#8-selector-resolution-examples)
+for the compact reference form.
+
+```powershell
+# Auto-selection: exactly one instance — no selector required
+pwsh eng/docker-compose/provision-dms-schema.ps1
+# Bootstrap finds one DMS instance and proceeds.
+
+# Explicit selector: multiple instances — target a specific one by ID
+pwsh eng/docker-compose/provision-dms-schema.ps1 -InstanceId "a1b2c3d4-1234-5678-abcd-000000000001"
+
+# Multi-year selector: target instances by school year
+pwsh eng/docker-compose/provision-dms-schema.ps1 -SchoolYear 2025,2026
+
+# Fail-fast: two instances exist, no selector supplied
+# ERROR: 2 DMS instance(s) found in CMS without an explicit selector.
+#        Supply -InstanceId <guid> or -SchoolYear <int> to target a specific instance.
+#        Exit code: non-zero.
+```
+
+The same rule and examples apply to `load-dms-seed-data.ps1`. When the thin wrapper orchestrates a full
+run, instance IDs from `configure-local-dms-instance.ps1` are forwarded in memory — the developer never
+needs to copy-paste GUIDs between phases in the wrapper path.
 
 ### 9.5 Bootstrap Working Directory
 
@@ -2076,7 +2152,6 @@ The workspace is scratch-only bootstrap state; it must be excluded from source c
 - `eng/docker-compose/.bootstrap/claims/` - staged `*-claimset.json` files bind-mounted into CMS
 - `eng/docker-compose/.bootstrap/ApiSchema/` - staged `ApiSchema*.json` files used for hashing and for both Docker-hosted and IDE-hosted DMS runs
 - `eng/docker-compose/.bootstrap/seed/` - merged JSONL files for the current seed-loading run
-- `eng/docker-compose/.bootstrap/run-context.json` - small repo-local JSON handoff for the current run, written after step 7 and consumed by later phases instead of a second CMS discovery pass
 
 **Lifecycle**
 
@@ -2085,7 +2160,6 @@ The workspace is scratch-only bootstrap state; it must be excluded from source c
 - The claims directory follows the same rule: bootstrap materializes it on first run, reuses it unchanged when the intended staged claims set is identical, and fails fast with teardown guidance when the intended set differs.
 - The seed directory is deleted and recreated from scratch only when `-LoadSeedData` runs.
 - The seed directory is deleted on successful completion of the seed step and left in place on failure for debugging.
-- The run-context file is rewritten for each successful step-7 target-selection pass. It is intentionally narrow: at minimum it records the selected instance IDs, the downstream connection details later phases require, and whether the run is single-instance or school-year-qualified.
 - `start-local-dms.ps1 -d -v` removes the entire `eng/docker-compose/.bootstrap/` tree.
 - The repo adds `eng/docker-compose/.bootstrap/` to `.gitignore`; staged claims and merged seed files must never be committed.
 - Concurrent bootstrap runs against the same workspace are not supported because they would share the same staged directories.
@@ -2105,15 +2179,17 @@ confirms its health.
 ## 10. School-Year Range Handling
 
 The only multi-instance concern kept in the normative DMS-916 design is the existing
-`-SchoolYearRange` developer workflow. Broader multi-tenant orchestration concerns are intentionally left
-outside this story.
+`-SchoolYearRange` developer workflow. That flag is owned by `configure-local-dms-instance.ps1`; when the
+thin wrapper is used, it exposes the same `-SchoolYearRange` input and forwards it unchanged to that phase.
+Broader multi-tenant orchestration concerns are intentionally left outside this story.
 
 ### 10.1 School-Year Instance Creation
 
-`-SchoolYearRange` on `start-local-dms.ps1` (for example, `"2022-2026"`) creates one DMS instance per
-school year. The range is a closed interval inclusive on both ends: `"2022-2026"` enumerates school years
-2022, 2023, 2024, 2025, and 2026. The format is `"<startYear>-<endYear>"` where both values are four-digit
-integers and `endYear >= startYear`; any other format causes a pre-flight validation error.
+`-SchoolYearRange` on `configure-local-dms-instance.ps1` (or on `bootstrap-local-dms.ps1`, which forwards
+it to that phase) creates one DMS instance per school year. The range is a closed interval inclusive on both
+ends: `"2022-2026"` enumerates school years 2022, 2023, 2024, 2025, and 2026. The format is
+`"<startYear>-<endYear>"` where both values are four-digit integers and `endYear >= startYear`; any other
+format causes a pre-flight validation error.
 
 `Add-DmsSchoolYearInstances` in `Dms-Management.psm1` is the primary helper for this path. It loops from
 `$StartYear` to `$EndYear`, calls `Add-DmsInstance` for each year, then calls `Add-DmsInstanceRouteContext`
@@ -2476,9 +2552,11 @@ chooses an external DMS endpoint:
 - `-InfraOnly` alone completes the pre-DMS phase: infrastructure startup, claims staging, instance creation,
   optional smoke-test credential creation, and schema provisioning/validation. It then stops and prints the
   settings the next IDE-hosted DMS launch must use.
-- `-InfraOnly -DmsBaseUrl <url>` continues into the post-start phase against that explicit external DMS
-  endpoint: automatic DMS health wait plus the SeedLoader-and-seed continuation when `-LoadSeedData` is
-  selected. Optional smoke-test credentials, when requested, were already created in the pre-DMS phase.
+- `-InfraOnly -DmsBaseUrl <url>` continues only through the health-wait portion of the post-start path
+  against that explicit external DMS endpoint. Once health is confirmed, any later DMS-dependent work
+  remains owned by wrapper orchestration or by the next explicit phase command, such as
+  `load-dms-seed-data.ps1` when `-LoadSeedData` is selected. Optional smoke-test credentials, when
+  requested, were already created in the pre-DMS phase.
 
 **Relationship with `-NoDmsInstance`**: `-NoDmsInstance` skips creating DMS instance records in the Config Service but still starts the DMS container in the normal flow. `-InfraOnly` skips the DMS container entirely. When `-InfraOnly` is used, `-NoDmsInstance` is typically omitted because the IDE-hosted DMS process still reads instance records from the Config Service just as the containerized DMS would. If `-NoDmsInstance` is used in this workflow, the same narrow step-7 reuse rule applies: exactly one existing instance must already be present, `-SchoolYearRange` is not supported, and later phases consume that selected target rather than rediscovering it.
 
@@ -2582,14 +2660,15 @@ The broader bootstrap contract remains the composable phase sequence defined in
 
 **Continuation rule**: Instance creation and schema provisioning are Config Service / database concerns and
 do not require DMS to be running. When a run chooses `-DmsBaseUrl`, `start-local-dms.ps1` automatically
-waits for the IDE-hosted DMS process to become healthy before any post-start work begins. The bootstrap
-script cannot start the IDE process - the developer must start DMS in the IDE before or during that health
-wait window. Optional smoke-test credentials remain in the pre-DMS phase and do not depend on this wait.
-DMS-916 intentionally does **not** define a stopped-then-resume second bootstrap invocation. `-InfraOnly`
-without `-DmsBaseUrl` is a terminal pre-DMS preparation shape for manual IDE startup against an already
-prepared environment, not a checkpoint from which a later bootstrap run picks up unfinished DMS-dependent
-work. Any run that intends SeedLoader credential bootstrap or seed loading must declare that up front via
-`-InfraOnly -DmsBaseUrl`.
+waits for the IDE-hosted DMS process to become healthy before any later DMS-dependent phase is invoked. The
+bootstrap script cannot start the IDE process - the developer must start DMS in the IDE before or during
+that health wait window. Optional smoke-test credentials remain in the pre-DMS phase and do not depend on
+this wait. DMS-916 intentionally does **not** define a stopped-then-resume second bootstrap invocation.
+`-InfraOnly` without `-DmsBaseUrl` is a terminal pre-DMS preparation shape for manual IDE startup against
+an already prepared environment, not a checkpoint from which a later bootstrap run picks up unfinished
+DMS-dependent work. Any run that intends SeedLoader credential bootstrap or seed loading must declare that
+up front via `-InfraOnly -DmsBaseUrl`, but those later steps remain phase-owned rather than
+`start-local-dms.ps1` behavior.
 
 **Proposed mechanism**: Add a `-DmsBaseUrl` parameter to `start-local-dms.ps1` that selects the external
 IDE-hosted DMS endpoint used during the `-InfraOnly` continuation flow:
@@ -2626,7 +2705,7 @@ bootstrapped environment, but that is a new availability run, not a resume of un
 work from the earlier stopped invocation.
 
 When `-DmsBaseUrl` is provided alongside `-InfraOnly`, the script continues from that same pre-DMS phase
-into the external-endpoint phase:
+into the external-endpoint health-wait phase:
 
 1. Starts Docker infrastructure (PostgreSQL, Kafka, Config Service) but not the DMS container.
 2. Waits for Config Service readiness. In DMS-916 this means `/health` is green and bootstrap can
@@ -2643,10 +2722,11 @@ into the external-endpoint phase:
 7. Automatically waits for the developer-started DMS process to become healthy at `$DmsBaseUrl` by polling
    the health endpoint at a configurable interval with a maximum timeout. Success is defined as an HTTP
    200 response from the health endpoint; timeout or persistent non-success is fatal for the run.
-8. When `-LoadSeedData` is set, the continuation path stops after confirming DMS health and hands off to
-   `load-dms-seed-data.ps1`, which owns SeedLoader credential bootstrap and seed loading targeting
-   `$DmsBaseUrl` and the same target instance set selected earlier in the run. The continuation path does
-   not call `Get-DmsInstances` again.
+8. After confirming DMS health, `start-local-dms.ps1` is done. If the run also requested seed loading,
+   wrapper orchestration or the developer then invokes `load-dms-seed-data.ps1`, which owns SeedLoader
+   credential bootstrap and seed loading targeting `$DmsBaseUrl` and the same target instance set selected
+   earlier in the run. `start-local-dms.ps1` does not call `Get-DmsInstances` again and does not own the
+   post-health handoff policy.
 
 **Debugging during and after bootstrap**: IDE debugging must work both *during* bootstrap (the DMS process receives live API calls as seed data loads, exercising the full request path under the debugger) and *after* bootstrap (subsequent debug sessions reuse an already-bootstrapped environment without re-running seed loading). The `-DmsBaseUrl` mechanism satisfies both scenarios:
 
@@ -2715,15 +2795,17 @@ these rows, it is outside the intended scope of this design spike.
 > work read as "Designed, implementation pending" rather than as fully achieved. "Blocking dependency /
 > gap" names the specific pending item (story, ticket, or cross-team dependency) so a stakeholder can
 > trace each non-ready row to its owner without re-reading Sections 14.2 and 14.3.
+>
+> **Design-spike evaluation rule.** DMS-916 is a design spike. For spike close-out purposes, **"Design completeness = Designed" is the success criterion for each row.** "Delivery readiness" and "Blocking dependency / gap" are informational tracking data — they name what remains for implementation teams and are not deductions against the design deliverable. A criterion marked "Designed" in the design-completeness column is satisfied for spike purposes even when delivery readiness is pending or externally blocked.
 
 | Ticket acceptance criterion | Evidence in this document | Design completeness | Delivery readiness | Blocking dependency / gap |
 |-----------------------------|---------------------------|---------------------|--------------------|---------------------------|
 | ApiSchema.json selection - how developers choose core, extensions, or custom path | Sections 3.3, 8.2, 8.4, 9.3 | Designed | Designed, implementation pending | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md) |
-| Security database configuration from ApiSchema.json | Sections 4.3-4.5, 9.3 (`-ClaimsDirectoryPath`) | Designed | Designed, implementation pending. Standard `-Extensions` mode covers automatic schema-and-security selection; expert `-ApiSchemaPath` mode requires explicit `-ClaimsDirectoryPath` companion input when non-core schemas are present. | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md) |
+| Security database configuration from ApiSchema.json | Sections 4.3-4.5, 9.3 (`-ClaimsDirectoryPath`) | Designed. **Accepted scoping note:** Standard `-Extensions` mode (including omitted-`-Extensions` core-only) provides fully automatic schema-and-security selection; this covers the normal developer path in its entirety. Expert `-ApiSchemaPath` mode intentionally requires explicit `-ClaimsDirectoryPath` for non-core schemas — automatic security derivation from arbitrary custom schemas is outside bootstrap's appropriate scope and is documented as an approved design decision in `command-boundaries.md` Section 3.2 and Story 00. This scoped interpretation fully satisfies the acceptance criterion for the normal development path. | Designed, implementation pending. | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md) |
 | Database schema provisioning - DDL hook separated from seed data loading, driven by selected ApiSchema.json | Sections 3.2, 5 step 8, 11.3-11.5 | Designed under the strong interpretation above. Selected schema drives the DDL target/version/`EffectiveSchemaHash` validation path and the exact physical schema provisioned for that run. | Designed, implementation pending. Bootstrap delegates to the SchemaTools / runtime-owned provisioning path; readiness is gated on that surface remaining stable. | [`tickets/01-schema-deployment-safety.md`](tickets/01-schema-deployment-safety.md); SchemaTools dependency in Section 14.3 |
-| Sample data loading - API-based JSON/JSONL loading replacing direct SQL, with Ed-Fi packages or developer-supplied JSONL directories paired with compatible schema/security inputs | Section 6 | Designed | Not deliverable end to end today | ODS-6738 (BulkLoadClient JSONL) and DMS-1119 (seed artifact packages); see Sections 14.2 and 14.3 |
+| Sample data loading - API-based JSON/JSONL loading replacing direct SQL, with Ed-Fi packages or developer-supplied JSONL directories paired with compatible schema/security inputs | Section 6 | Designed. All DMS-side design decisions are complete: BulkLoadClient consumption contract (Section 6.1), seed-source selection (`-SeedTemplate` / `-SeedDataPath`, Section 6.2), combined seed workspace with collision detection (Section 6.3.1), per-year invocation for school-year paths (Section 10), and the schema/security-staged compatibility boundary for `-SeedDataPath`. The design target — API-based JSONL replacement of the deprecated direct-SQL path — is fully specified. | Design complete (design spike deliverable achieved). End-to-end delivery blocked by external dependencies; see Sections 14.2 and 14.3. | ODS-6738 (BulkLoadClient JSONL) and DMS-1119 (seed artifact packages); see Sections 14.2 and 14.3 |
 | Extension selection - parameterized `-Extensions` flag driving schema and security automatically, and driving built-in seed data automatically only where the extension mapping defines built-in seed support | Sections 3.3, 8.2-8.4 | Designed | Designed, implementation pending. The combined `-Extensions` plus `-ClaimsDirectoryPath` additive-claims staging path is not yet implemented. | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md); see Section 14.2 |
-| Credential bootstrapping - enhancements for seed data loading support | Section 7 | Designed | Designed, implementation pending. The `SeedLoader` claim set is not yet defined in the embedded CMS claims resource. | [`tickets/02-api-seed-delivery.md`](tickets/02-api-seed-delivery.md); see Section 14.2 |
+| Credential bootstrapping - enhancements for seed data loading support | Section 7 | Designed. Both credential flows are fully specified: CMS-only `EdFiSandbox` smoke-test credentials (Section 7.2.1) and the separate DMS-dependent `SeedLoader` credential flow (Section 7.2.2), including the complete `SeedLoader` permission table (resource claim URI patterns, authorization strategies, operations). Adding the `SeedLoader` top-level claim set to the embedded CMS `Claims.json` is the very first implementation task in Story 02 Task 3 — the design specifies exactly what to add. | Designed, implementation pending. Story 02 Task 3 owns adding the `SeedLoader` claim set to `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json`; this is the first deliverable from that story and unblocks all DMS-side seed delivery. | [`tickets/02-api-seed-delivery.md`](tickets/02-api-seed-delivery.md) Task 3; see Section 14.2 |
 | Bootstrap entry point and safe skip behavior — composable phase commands with optional same-invocation continuation | Sections 1, 9, 9.2–9.5 | Designed. The normative contract is the composable phase commands in `command-boundaries.md`; any thin wrapper is convenience only. "Skip/resume" means safe skip behavior across phase commands plus optional same-invocation continuation via `-InfraOnly -DmsBaseUrl`, not a persisted resume model. | Designed, implementation pending across the phase commands and the optional thin wrapper. | [`tickets/03-entry-point-and-ide-workflow.md`](tickets/03-entry-point-and-ide-workflow.md) and the phase-command implementation tickets |
 | IDE debugging workflow - running DMS in IDE against Docker infrastructure | Section 12 | Designed | Designed, implementation pending. `-InfraOnly` and the `-DmsBaseUrl` continuation behavior are not yet implemented in `start-local-dms.ps1`. | [`tickets/03-entry-point-and-ide-workflow.md`](tickets/03-entry-point-and-ide-workflow.md); see Section 14.2 |
 | Backend redesign awareness - forward-compatible with relational tables replacing JSONB | Section 11 | Designed | Achieved as a forward-compatibility property of this design; no separate implementation deliverable is required beyond honoring the SchemaTools provisioning boundary. | None within this story; tracked as the SchemaTools cross-team dependency in Section 14.3. |
@@ -2731,13 +2813,26 @@ these rows, it is outside the intended scope of this design spike.
 
 ### 14.2 Operationally Blocked Criteria
 
-| Capability | Blocking condition | Owning companion story / dependency |
+#### DMS-Internal Implementation Prerequisites (design complete; no external dependency)
+
+The following items are fully designed in this document and their companion stories. No external team action
+is required. The first deliverable from each owning story unblocks all downstream work in that story.
+
+| Capability | What remains | Owning story task |
 |---|---|---|
-| API-based seed data loading (`-LoadSeedData` via BulkLoadClient) | BulkLoadClient does not yet support `--input-format jsonl` or `--data <directory>` | ODS-6738 (concrete ODS-team implementation dependency) |
-| Seed-loader credential bootstrap (`SeedLoader` claim set) | `SeedLoader` claim set is not yet defined in the embedded CMS claims resource (`src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json`) | [`tickets/02-api-seed-delivery.md`](tickets/02-api-seed-delivery.md) |
-| Built-in seed package resolution (`-SeedTemplate` and any future built-in extension seed packages) | The required published JSONL seed artifacts and their package coordinates are not yet available as a stable bootstrap dependency | DMS-1119 or the follow-on artifact-delivery work that publishes those seed packages |
-| Additive extension + explicit-claims staging | The combined `-Extensions` / `-ClaimsDirectoryPath` staging path is not yet implemented | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md) |
-| `-InfraOnly` flag for IDE debugging | Not yet implemented in `start-local-dms.ps1` | [`tickets/03-entry-point-and-ide-workflow.md`](tickets/03-entry-point-and-ide-workflow.md) |
+| `SeedLoader` claim set | Add the top-level `SeedLoader` definition and required core permissions to `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json`. The exact permission table is in Section 7.2.2. This is the first deliverable from Story 02 and is prerequisite to all seed-delivery testing. | [`tickets/02-api-seed-delivery.md`](tickets/02-api-seed-delivery.md) Task 3 |
+| Additive extension + explicit-claims staging | Implement the combined `-Extensions` / `-ClaimsDirectoryPath` staging path per the command-boundary contracts in `command-boundaries.md` Sections 3.1–3.2. | [`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md) Task 4 |
+| `-InfraOnly` flag for IDE debugging | Implement the `-InfraOnly` switch and `-DmsBaseUrl` continuation behavior on `start-local-dms.ps1` per Story 03. | [`tickets/03-entry-point-and-ide-workflow.md`](tickets/03-entry-point-and-ide-workflow.md) Task 1 |
+
+#### External Cross-Team Blockers (design complete; blocked on other teams)
+
+The following items are design-complete on the DMS side. Delivery is blocked on cross-team dependencies.
+See Section 14.3 for unblocking actions.
+
+| Capability | Blocking condition | External dependency |
+|---|---|---|
+| API-based seed data loading (`-LoadSeedData` via BulkLoadClient) | BulkLoadClient does not yet support `--input-format jsonl` or `--data <directory>` | ODS-6738 (ODS team) |
+| Built-in seed package resolution (`-SeedTemplate` and any future built-in extension seed packages) | The required published JSONL seed artifacts and their package coordinates are not yet available as a stable bootstrap dependency | DMS-1119 |
 
 ### 14.3 Blocking Cross-Team Dependencies
 
@@ -2745,6 +2840,7 @@ these rows, it is outside the intended scope of this design spike.
 |---|---|---|
 | `--input-format jsonl` support in BulkLoadClient | ODS team | ODS-6738: extend `EdFi.BulkLoadClient` with JSONL mode. The bootstrap consumption contract is in [Section 6.1](#61-bulkloadclient-bootstrap-consumption-contract). This dependency must land before DMS-916 can deliver the intended direct-SQL replacement described in [`tickets/02-api-seed-delivery.md`](tickets/02-api-seed-delivery.md). |
 | SchemaTools provisioning contract for the relational backend | DMS backend redesign team | The v1 bootstrap design assumes `dms-schema ddl provision` (or an equivalent runtime-owned provisioning surface) remains the authoritative pre-start provisioning and validation path over the staged schema set. If the backend team changes that surface, its inputs, or where final serviceability validation lives, step 8 must be re-pointed to the new authoritative path rather than preserving bootstrap-owned safety rules. |
+| SchemaTools CLI version stability | DMS backend redesign team | Bootstrap depends on a stable SchemaTools CLI invocation shape (command name, argument surface, exit code `0`/non-zero contract). A major version break in the SchemaTools CLI could cause bootstrap to invoke with an incorrect argument surface rather than receiving a clean non-zero exit code. Before Story 01 implementation begins, the SchemaTools team should confirm that the CLI surface used by bootstrap (`dms-schema hash`, `dms-schema ddl provision`, documented arguments) is stable or publish a migration note alongside any breaking CLI change. Bootstrap does not require a minimum-version enforcement mechanism, but the team should verify the CLI surface against the README before Story 01 implementation. |
 
 Until these blockers are resolved, the intended API-based replacement path cannot be delivered end to end.
 The design target remains replacement of the deprecated direct-SQL path (`setup-database-template.psm1`);
@@ -2777,5 +2873,5 @@ or contributors.
 | 1 | Default schema profile when `-Extensions` is omitted | `SCHEMA_PACKAGES` staged Data Standard 5.2 **plus TPDM** by default in the existing `eng/docker-compose` flow | Bootstrap resolves and stages **core only** (`EdFi.DataStandard52.ApiSchema`) when `-Extensions` is omitted | Remove any assumption that TPDM artifacts are present by default; omit `-Extensions` for core-only runs |
 | 2 | TPDM in the v1 `-Extensions` surface | TPDM was implied as a bundled default via the `SCHEMA_PACKAGES` environment variable | TPDM is **not a supported value** for `-Extensions` in the DMS-916 v1 surface; specifying it produces a fast-fail with a clear error message | Remove `-Extensions TPDM` from any scripts; do not assume TPDM support is available in the DMS-916 bootstrap path |
 | 3 | `-NoDmsInstance` semantics | Generic "skip instance creation" switch used on fresh stacks as a convenient no-op | **Narrow rerun escape hatch only:** valid only when exactly one existing instance is present in the current tenant scope, and invalid with `-SchoolYearRange`; zero or multiple instances fail fast requiring teardown or manual preparation | Drop the flag on fresh-stack runs, or pre-create exactly one target instance before rerunning with `-NoDmsInstance` |
-| 4 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | These parameters are **owned by `load-dms-seed-data.ps1`**; `start-local-dms.ps1` no longer accepts them | Call `load-dms-seed-data.ps1` directly for seed loading, or use `bootstrap-local-dms.ps1 -ConfigFile` which orchestrates the phase commands including seed loading |
-
+| 4 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | These parameters are **owned by `load-dms-seed-data.ps1`**; `start-local-dms.ps1` no longer accepts them | Call `load-dms-seed-data.ps1` directly for seed loading, or use `bootstrap-local-dms.ps1 -LoadSeedData [-SeedTemplate <name>]` which orchestrates the phase commands including seed loading |
+| 5 | Persisted instance-ID hand-off via `.bootstrap/run-context.json` | `configure-local-dms-instance.ps1` wrote selected instance IDs to `.bootstrap/run-context.json`; downstream phases read that file to resolve their target set | Instance IDs are **forwarded in-memory** within the same wrapper invocation. Separate phase-command invocations use explicit `-InstanceId <guid[]>` or `-SchoolYear <int[]>` selectors with CMS-backed lookup; no disk artifact is written | Remove any scripts that read or depend on `.bootstrap/run-context.json`; use explicit `-InstanceId` or `-SchoolYear` selectors when invoking `provision-dms-schema.ps1` or `load-dms-seed-data.ps1` independently |

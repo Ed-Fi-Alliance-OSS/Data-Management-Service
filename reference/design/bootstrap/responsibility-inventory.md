@@ -95,11 +95,13 @@ workspace produced by `prepare-dms-schema.ps1`.
 ### 2.4 Authoritative Schema Provisioning - `provision-dms-schema.ps1`
 
 Invokes the shared SchemaTools/runtime-owned path to provision or validate target databases.
-Depends on the instance list from `configure-local-dms-instance.ps1` and the staged-schema
+Resolves target DMS instances via explicit `-InstanceId` or `-SchoolYear` selectors supplied by
+the caller, or auto-selects when exactly one instance exists in CMS. Depends on the staged-schema
 manifest from `prepare-dms-schema.ps1`. Runs before any DMS process serves requests.
 
 | Responsibility | Design reference |
 |---|---|
+| Accept `-InstanceId <guid[]>` and `-SchoolYear <int[]>` selectors; auto-select when exactly one DMS instance exists in CMS; fail fast when zero or multiple match without an explicit selector | [`command-boundaries.md` §3.5](command-boundaries.md#35-provision-dms-schemaps1--authoritative-schema-provisioning), Story 01 |
 | Collect target connection strings from the selected DMS instances | Section 11, Story 01 |
 | Pass staged schema paths and expected `EffectiveSchemaHash` into the SchemaTools/runtime path | Section 11, Story 01 |
 | Invoke the authoritative SchemaTools/runtime provisioning and validation path (unconditional) | Section 11, Story 01 |
@@ -122,12 +124,15 @@ Runs after the Config Service is ready.
 | Create DMS instance via `Add-DmsInstance` (default path) | Section 5, Story 03 |
 | Create school-year DMS instances via `Add-DmsSchoolYearInstances` (school-year path) | Section 10, Story 03 |
 | Implement narrow `-NoDmsInstance` reuse: proceed only when exactly one existing instance is present; fail on 0 or >1 | Section 9, Story 03 |
-| Resolve target instance IDs once; write them to the repo-local run-context file for downstream phases; never re-query CMS in later steps | Section 5, Story 03 |
+| Print selected instance IDs to stdout for the caller to consume; the thin wrapper may capture and forward them in-memory to downstream phases within the same invocation | Section 5, Story 03 |
 | Provision or validate the bootstrap-time fixed `CMSReadOnlyAccess` client for IDE-hosted DMS | Section 12, Story 03 |
 | Create smoke-test application via `Add-CmsClient` / `Add-Application` (`EdFiSandbox`) when `-AddSmokeTestCredentials` is set | Section 7, Story 03 |
 
-Instance ID resolution is the only target-resolution phase for the run. All later phases consume the
-selected set from the repo-local run-context file without performing a second CMS discovery pass.
+This phase creates or confirms the DMS instance records that downstream phases target. Selected
+instance IDs are printed to stdout; the thin wrapper may capture and forward them in-memory. When
+phase commands are run separately, downstream phases resolve target instances through their own
+explicit `-InstanceId` or `-SchoolYear` selectors via CMS-backed lookup, with single-match
+auto-selection when exactly one instance exists and no selector is supplied.
 
 ---
 
@@ -140,6 +145,7 @@ DMS-1119 (published seed artifacts). See Story 02 for the explicit blocker docum
 
 | Responsibility | Design reference |
 |---|---|
+| Accept `-InstanceId <guid[]>` and `-SchoolYear <int[]>` selectors; auto-select when exactly one DMS instance exists in CMS; fail fast when zero or multiple match without an explicit selector | [`command-boundaries.md` §3.6](command-boundaries.md#36-load-dms-seed-dataps1--seed-delivery), Story 02 |
 | Validate `-SeedTemplate` and `-SeedDataPath` mutual exclusion | Section 6, Story 02 |
 | Validate that expert mode (`-ApiSchemaPath`) rejects `-SeedTemplate` | Section 6, Story 02 |
 | Resolve repo-pinned BulkLoadClient package; fail fast if unavailable | Section 6, Story 02 |
@@ -191,7 +197,7 @@ it does not consume.
 | `prepare-dms-claims.ps1` | After `prepare-dms-schema.ps1` | Staged-schema manifest |
 | `start-local-dms.ps1 -InfraOnly` | After schema and claims are staged | Staged claims workspace for CMS mount |
 | `configure-local-dms-instance.ps1` | After Config Service is claims-ready | CMS HTTP API |
-| `provision-dms-schema.ps1` | After instance IDs are resolved | Instance connection strings and staged schema manifest |
+| `provision-dms-schema.ps1` | After at least one DMS instance exists in CMS | Resolvable DMS instance(s) in CMS (explicit `-InstanceId`/`-SchoolYear` or single-match auto-selection); staged-schema manifest |
 | `start-local-dms.ps1` (DMS start) | After provisioning completes | Provisioned databases |
 | `load-dms-seed-data.ps1` | After DMS is healthy | Live DMS HTTP API and `SeedLoader` credentials |
 
