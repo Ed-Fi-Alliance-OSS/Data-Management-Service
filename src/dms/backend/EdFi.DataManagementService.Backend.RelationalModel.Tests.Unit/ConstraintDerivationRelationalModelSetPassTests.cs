@@ -1740,13 +1740,14 @@ public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
         var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
             _addressTable,
             "BusRoute_DocumentId",
-            "AddressSchool_DocumentId"
+            "AddressSchool_SchoolId",
+            "AddressSchool_EducationOrganizationId"
         );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "AddressSchool_DocumentId");
+            .Equal("BusRoute_DocumentId", "AddressSchool_SchoolId", "AddressSchool_EducationOrganizationId");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
     }
 
@@ -1764,7 +1765,7 @@ public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
         _addressTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("AddressSchool_DocumentId", "AddressSchool_DocumentId");
+            .Equal("AddressSchool_SchoolId", "AddressSchool_EducationOrganizationId");
     }
 
     /// <summary>
@@ -1776,13 +1777,14 @@ public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
         var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
             _periodTable,
             "ParentCollectionItemId",
-            "PeriodSchool_DocumentId"
+            "PeriodSchool_SchoolId",
+            "PeriodSchool_EducationOrganizationId"
         );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("ParentCollectionItemId", "PeriodSchool_DocumentId");
+            .Equal("ParentCollectionItemId", "PeriodSchool_SchoolId", "PeriodSchool_EducationOrganizationId");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
     }
 
@@ -1800,7 +1802,7 @@ public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
         _periodTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("PeriodSchool_DocumentId", "PeriodSchool_DocumentId");
+            .Equal("PeriodSchool_SchoolId", "PeriodSchool_EducationOrganizationId");
     }
 }
 

@@ -1453,15 +1453,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.assessmentBatteryPartReference.assessmentBatteryPartName",
-                  "column": "AssessmentBatteryPart_DocumentId"
+                  "column": "AssessmentBatteryPart_AssessmentBatteryPartName"
                 },
                 {
                   "relative_path": "$.assessmentBatteryPartReference.assessmentIdentifier",
-                  "column": "AssessmentBatteryPart_DocumentId"
+                  "column": "AssessmentBatteryPart_AssessmentIdentifier"
                 },
                 {
                   "relative_path": "$.assessmentBatteryPartReference.namespace",
-                  "column": "AssessmentBatteryPart_DocumentId"
+                  "column": "AssessmentBatteryPart_Namespace"
                 }
               ]
             },
@@ -1469,10 +1469,12 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_f82da38521",
+                "name": "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_4bb6947438",
                 "columns": [
                   "AssessmentAdministration_DocumentId",
-                  "AssessmentBatteryPart_DocumentId"
+                  "AssessmentBatteryPart_AssessmentBatteryPartName",
+                  "AssessmentBatteryPart_AssessmentIdentifier",
+                  "AssessmentBatteryPart_Namespace"
                 ]
               },
               {
@@ -1991,15 +1993,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.objectiveAssessmentReference.assessmentIdentifier",
-                  "column": "ObjectiveAssessment_DocumentId"
+                  "column": "ObjectiveAssessment_AssessmentIdentifier"
                 },
                 {
                   "relative_path": "$.objectiveAssessmentReference.namespace",
-                  "column": "ObjectiveAssessment_DocumentId"
+                  "column": "ObjectiveAssessment_Namespace"
                 },
                 {
                   "relative_path": "$.objectiveAssessmentReference.identificationCode",
-                  "column": "ObjectiveAssessment_DocumentId"
+                  "column": "ObjectiveAssessment_IdentificationCode"
                 }
               ]
             },
@@ -2007,10 +2009,12 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentBatteryPartObjectiveAssessment_Assessme_7a38152000",
+                "name": "UX_AssessmentBatteryPartObjectiveAssessment_Assessme_326d1a484a",
                 "columns": [
                   "AssessmentBatteryPart_DocumentId",
-                  "ObjectiveAssessment_DocumentId"
+                  "ObjectiveAssessment_AssessmentIdentifier",
+                  "ObjectiveAssessment_Namespace",
+                  "ObjectiveAssessment_IdentificationCode"
                 ]
               },
               {
@@ -2554,7 +2558,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.learningStandardReference.learningStandardId",
-                  "column": "LearningStandard_DocumentId"
+                  "column": "LearningStandard_LearningStandardId"
                 }
               ]
             },
@@ -2562,10 +2566,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentItemLearningStandard_AssessmentItem_Doc_da085e0260",
+                "name": "UX_AssessmentItemLearningStandard_AssessmentItem_Doc_02f2a01565",
                 "columns": [
                   "AssessmentItem_DocumentId",
-                  "LearningStandard_DocumentId"
+                  "LearningStandard_LearningStandardId"
                 ]
               },
               {
@@ -3257,7 +3261,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.learningStandardReference.learningStandardId",
-                  "column": "LearningStandard_DocumentId"
+                  "column": "LearningStandard_LearningStandardId"
                 }
               ]
             },
@@ -3265,18 +3269,18 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentScoreRangeLearningStandardLearningStand_a09b7bf908",
+                "name": "UX_AssessmentScoreRangeLearningStandardLearningStand_16fe3bf10a",
                 "columns": [
                   "AssessmentScoreRangeLearningStandard_DocumentId",
-                  "Ordinal"
+                  "LearningStandard_LearningStandardId"
                 ]
               },
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentScoreRangeLearningStandardLearningStand_ee43f2bbdf",
+                "name": "UX_AssessmentScoreRangeLearningStandardLearningStand_a09b7bf908",
                 "columns": [
                   "AssessmentScoreRangeLearningStandard_DocumentId",
-                  "LearningStandard_DocumentId"
+                  "Ordinal"
                 ]
               },
               {
@@ -5121,15 +5125,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.programReference.educationOrganizationId",
-                  "column": "SectionOrProgramChoiceProgram_DocumentId"
+                  "column": "SectionOrProgramChoiceProgram_EducationOrganizationId"
                 },
                 {
                   "relative_path": "$.programReference.programName",
-                  "column": "SectionOrProgramChoiceProgram_DocumentId"
+                  "column": "SectionOrProgramChoiceProgram_ProgramName"
                 },
                 {
                   "relative_path": "$.programReference.programTypeDescriptor",
-                  "column": "SectionOrProgramChoiceProgram_DocumentId"
+                  "column": "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce"
                 }
               ]
             },
@@ -5137,10 +5141,12 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentProgram_Assessment_DocumentId_SectionOr_3491ec6823",
+                "name": "UX_AssessmentProgram_Assessment_DocumentId_SectionOr_e86e377669",
                 "columns": [
                   "Assessment_DocumentId",
-                  "SectionOrProgramChoiceProgram_DocumentId"
+                  "SectionOrProgramChoiceProgram_EducationOrganizationId",
+                  "SectionOrProgramChoiceProgram_ProgramName",
+                  "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce"
                 ]
               },
               {
@@ -5540,23 +5546,23 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.sectionReference.localCourseCode",
-                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                  "column": "SectionOrProgramChoiceSection_LocalCourseCode"
                 },
                 {
                   "relative_path": "$.sectionReference.schoolId",
-                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                  "column": "SectionOrProgramChoiceSection_SchoolId"
                 },
                 {
                   "relative_path": "$.sectionReference.schoolYear",
-                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                  "column": "SectionOrProgramChoiceSection_SchoolYear"
                 },
                 {
                   "relative_path": "$.sectionReference.sessionName",
-                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                  "column": "SectionOrProgramChoiceSection_SessionName"
                 },
                 {
                   "relative_path": "$.sectionReference.sectionIdentifier",
-                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                  "column": "SectionOrProgramChoiceSection_SectionIdentifier"
                 }
               ]
             },
@@ -5564,10 +5570,14 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentSection_Assessment_DocumentId_SectionOr_9a956ae02c",
+                "name": "UX_AssessmentSection_Assessment_DocumentId_SectionOr_57563f8adb",
                 "columns": [
                   "Assessment_DocumentId",
-                  "SectionOrProgramChoiceSection_DocumentId"
+                  "SectionOrProgramChoiceSection_LocalCourseCode",
+                  "SectionOrProgramChoiceSection_SchoolId",
+                  "SectionOrProgramChoiceSection_SchoolYear",
+                  "SectionOrProgramChoiceSection_SessionName",
+                  "SectionOrProgramChoiceSection_SectionIdentifier"
                 ]
               },
               {
@@ -6498,11 +6508,11 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.classPeriodReference.classPeriodName",
-                  "column": "ClassPeriod_DocumentId"
+                  "column": "ClassPeriod_ClassPeriodName"
                 },
                 {
                   "relative_path": "$.classPeriodReference.schoolId",
-                  "column": "ClassPeriod_DocumentId"
+                  "column": "ClassPeriod_SchoolId"
                 }
               ]
             },
@@ -6510,10 +6520,11 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_BellScheduleClassPeriod_BellSchedule_DocumentId_C_92e01df297",
+                "name": "UX_BellScheduleClassPeriod_BellSchedule_DocumentId_C_37a27de3a4",
                 "columns": [
                   "BellSchedule_DocumentId",
-                  "ClassPeriod_DocumentId"
+                  "ClassPeriod_ClassPeriodName",
+                  "ClassPeriod_SchoolId"
                 ]
               },
               {
@@ -9530,15 +9541,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.programReference.educationOrganizationId",
-                  "column": "ProgramProgram_DocumentId"
+                  "column": "ProgramProgram_EducationOrganizationId"
                 },
                 {
                   "relative_path": "$.programReference.programName",
-                  "column": "ProgramProgram_DocumentId"
+                  "column": "ProgramProgram_ProgramName"
                 },
                 {
                   "relative_path": "$.programReference.programTypeDescriptor",
-                  "column": "ProgramProgram_DocumentId"
+                  "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
                 }
               ]
             },
@@ -9546,10 +9557,12 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CohortProgram_Cohort_DocumentId_ProgramProgram_DocumentId",
+                "name": "UX_CohortProgram_Cohort_DocumentId_ProgramProgram_Ed_0297989492",
                 "columns": [
                   "Cohort_DocumentId",
-                  "ProgramProgram_DocumentId"
+                  "ProgramProgram_EducationOrganizationId",
+                  "ProgramProgram_ProgramName",
+                  "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
                 ]
               },
               {
@@ -18745,15 +18758,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.courseProgramReference.educationOrganizationId",
-                  "column": "CourseProgram_DocumentId"
+                  "column": "CourseProgram_EducationOrganizationId"
                 },
                 {
                   "relative_path": "$.courseProgramReference.programName",
-                  "column": "CourseProgram_DocumentId"
+                  "column": "CourseProgram_ProgramName"
                 },
                 {
                   "relative_path": "$.courseProgramReference.programTypeDescriptor",
-                  "column": "CourseProgram_DocumentId"
+                  "column": "CourseProgram_ProgramTypeDescriptor_DescriptorId"
                 }
               ]
             },
@@ -18761,10 +18774,12 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CourseTranscriptCourseProgram_CourseProgram_Docum_c44523dbfa",
+                "name": "UX_CourseTranscriptCourseProgram_CourseProgram_Educa_c3e8c04762",
                 "columns": [
                   "CourseTranscript_DocumentId",
-                  "CourseProgram_DocumentId"
+                  "CourseProgram_EducationOrganizationId",
+                  "CourseProgram_ProgramName",
+                  "CourseProgram_ProgramTypeDescriptor_DescriptorId"
                 ]
               },
               {
@@ -19438,23 +19453,23 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.sectionReference.localCourseCode",
-                  "column": "Section_DocumentId"
+                  "column": "Section_LocalCourseCode"
                 },
                 {
                   "relative_path": "$.sectionReference.schoolId",
-                  "column": "Section_DocumentId"
+                  "column": "Section_SchoolId"
                 },
                 {
                   "relative_path": "$.sectionReference.schoolYear",
-                  "column": "Section_DocumentId"
+                  "column": "Section_SchoolYear"
                 },
                 {
                   "relative_path": "$.sectionReference.sessionName",
-                  "column": "Section_DocumentId"
+                  "column": "Section_SessionName"
                 },
                 {
                   "relative_path": "$.sectionReference.sectionIdentifier",
-                  "column": "Section_DocumentId"
+                  "column": "Section_SectionIdentifier"
                 }
               ]
             },
@@ -19462,10 +19477,14 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CourseTranscriptSection_CourseTranscript_Document_49864a49c3",
+                "name": "UX_CourseTranscriptSection_CourseTranscript_Document_e2cdca0127",
                 "columns": [
                   "CourseTranscript_DocumentId",
-                  "Section_DocumentId"
+                  "Section_LocalCourseCode",
+                  "Section_SchoolId",
+                  "Section_SchoolYear",
+                  "Section_SessionName",
+                  "Section_SectionIdentifier"
                 ]
               },
               {
@@ -20703,7 +20722,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.learningStandardReference.learningStandardId",
-                  "column": "LearningStandard_DocumentId"
+                  "column": "LearningStandard_LearningStandardId"
                 }
               ]
             },
@@ -20711,10 +20730,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CourseLearningStandard_Course_DocumentId_Learning_911d755b74",
+                "name": "UX_CourseLearningStandard_Course_DocumentId_Learning_16a0c06ff5",
                 "columns": [
                   "Course_DocumentId",
-                  "LearningStandard_DocumentId"
+                  "LearningStandard_LearningStandardId"
                 ]
               },
               {
@@ -23276,7 +23295,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.staffReference.staffUniqueId",
-                  "column": "Staff_DocumentId"
+                  "column": "Staff_StaffUniqueId"
                 }
               ]
             },
@@ -23284,10 +23303,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_DisciplineActionStaff_DisciplineAction_DocumentId_124e7952b7",
+                "name": "UX_DisciplineActionStaff_DisciplineAction_DocumentId_80c2cacb0e",
                 "columns": [
                   "DisciplineAction_DocumentId",
-                  "Staff_DocumentId"
+                  "Staff_StaffUniqueId"
                 ]
               },
               {
@@ -23467,19 +23486,19 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.studentDisciplineIncidentBehaviorAssociationReference.behaviorDescriptor",
-                  "column": "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+                  "column": "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b"
                 },
                 {
                   "relative_path": "$.studentDisciplineIncidentBehaviorAssociationReference.incidentIdentifier",
-                  "column": "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+                  "column": "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier"
                 },
                 {
                   "relative_path": "$.studentDisciplineIncidentBehaviorAssociationReference.schoolId",
-                  "column": "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+                  "column": "StudentDisciplineIncidentBehaviorAssociation_SchoolId"
                 },
                 {
                   "relative_path": "$.studentDisciplineIncidentBehaviorAssociationReference.studentUniqueId",
-                  "column": "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+                  "column": "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId"
                 }
               ]
             },
@@ -23495,10 +23514,13 @@
               },
               {
                 "kind": "Unique",
-                "name": "UX_DisciplineActionStudentDisciplineIncidentBehavior_7cf2b5d17f",
+                "name": "UX_DisciplineActionStudentDisciplineIncidentBehavior_b466808d9a",
                 "columns": [
                   "DisciplineAction_DocumentId",
-                  "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+                  "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b",
+                  "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier",
+                  "StudentDisciplineIncidentBehaviorAssociation_SchoolId",
+                  "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId"
                 ]
               },
               {
@@ -25409,7 +25431,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.derivativeSourceEducationContentReference.contentIdentifier",
-                  "column": "DerivativeSourceEducationContent_DocumentId"
+                  "column": "DerivativeSourceEducationContent_ContentIdentifier"
                 }
               ]
             },
@@ -25417,10 +25439,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationContentDerivativeSourceEducationContent__89fc2a26d9",
+                "name": "UX_EducationContentDerivativeSourceEducationContent__4392092b6a",
                 "columns": [
                   "EducationContent_DocumentId",
-                  "DerivativeSourceEducationContent_DocumentId"
+                  "DerivativeSourceEducationContent_ContentIdentifier"
                 ]
               },
               {
@@ -32540,7 +32562,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.learningStandardReference.learningStandardId",
-                  "column": "LearningStandard_DocumentId"
+                  "column": "LearningStandard_LearningStandardId"
                 }
               ]
             },
@@ -32548,10 +32570,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_GradebookEntryLearningStandard_GradebookEntry_Doc_1bf44ab247",
+                "name": "UX_GradebookEntryLearningStandard_GradebookEntry_Doc_c5d8152b41",
                 "columns": [
                   "GradebookEntry_DocumentId",
-                  "LearningStandard_DocumentId"
+                  "LearningStandard_LearningStandardId"
                 ]
               },
               {
@@ -35151,11 +35173,11 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.courseReference.courseCode",
-                  "column": "CourseCourse_DocumentId"
+                  "column": "CourseCourse_CourseCode"
                 },
                 {
                   "relative_path": "$.courseReference.educationOrganizationId",
-                  "column": "CourseCourse_DocumentId"
+                  "column": "CourseCourse_EducationOrganizationId"
                 }
               ]
             },
@@ -35171,10 +35193,11 @@
               },
               {
                 "kind": "Unique",
-                "name": "UX_GraduationPlanCreditsByCoursCours_ParentCollectio_6bc659eb69",
+                "name": "UX_GraduationPlanCreditsByCoursCours_ParentCollectio_c35f23bfff",
                 "columns": [
                   "ParentCollectionItemId",
-                  "CourseCourse_DocumentId"
+                  "CourseCourse_CourseCode",
+                  "CourseCourse_EducationOrganizationId"
                 ]
               },
               {
@@ -36684,7 +36707,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.educationContentReference.contentIdentifier",
-                  "column": "EducationContentSourceEducationContent_DocumentId"
+                  "column": "EducationContentSourceEducationContent_ContentIdentifier"
                 }
               ]
             },
@@ -36692,10 +36715,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionPrescriptionEducationContent_Educatio_869ba11ab6",
+                "name": "UX_InterventionPrescriptionEducationContent_Educatio_f84b1cb5c0",
                 "columns": [
                   "InterventionPrescription_DocumentId",
-                  "EducationContentSourceEducationContent_DocumentId"
+                  "EducationContentSourceEducationContent_ContentIdentifier"
                 ]
               },
               {
@@ -37825,7 +37848,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.educationContentReference.contentIdentifier",
-                  "column": "EducationContentSourceEducationContent_DocumentId"
+                  "column": "EducationContentSourceEducationContent_ContentIdentifier"
                 }
               ]
             },
@@ -37833,10 +37856,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionStudyEducationContent_EducationConten_f642697bf7",
+                "name": "UX_InterventionStudyEducationContent_EducationConten_cadb0b8fa5",
                 "columns": [
                   "InterventionStudy_DocumentId",
-                  "EducationContentSourceEducationContent_DocumentId"
+                  "EducationContentSourceEducationContent_ContentIdentifier"
                 ]
               },
               {
@@ -39509,7 +39532,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.educationContentReference.contentIdentifier",
-                  "column": "EducationContentSourceEducationContent_DocumentId"
+                  "column": "EducationContentSourceEducationContent_ContentIdentifier"
                 }
               ]
             },
@@ -39517,10 +39540,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionEducationContent_EducationContentSour_462424c1aa",
+                "name": "UX_InterventionEducationContent_EducationContentSour_c555e0f713",
                 "columns": [
                   "Intervention_DocumentId",
-                  "EducationContentSourceEducationContent_DocumentId"
+                  "EducationContentSourceEducationContent_ContentIdentifier"
                 ]
               },
               {
@@ -39675,11 +39698,11 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.interventionPrescriptionReference.educationOrganizationId",
-                  "column": "InterventionPrescriptionInterventionPrescription_DocumentId"
+                  "column": "InterventionPrescriptionInterventionPrescription_Edu_532babb247"
                 },
                 {
                   "relative_path": "$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode",
-                  "column": "InterventionPrescriptionInterventionPrescription_DocumentId"
+                  "column": "InterventionPrescriptionInterventionPrescription_Int_409fc39d28"
                 }
               ]
             },
@@ -39687,10 +39710,11 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionInterventionPrescription_Intervention_ffb7d2a7c8",
+                "name": "UX_InterventionInterventionPrescription_Intervention_380283827c",
                 "columns": [
                   "Intervention_DocumentId",
-                  "InterventionPrescriptionInterventionPrescription_DocumentId"
+                  "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
+                  "InterventionPrescriptionInterventionPrescription_Int_409fc39d28"
                 ]
               },
               {
@@ -40215,7 +40239,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.staffReference.staffUniqueId",
-                  "column": "Staff_DocumentId"
+                  "column": "Staff_StaffUniqueId"
                 }
               ]
             },
@@ -40223,10 +40247,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionStaff_Intervention_DocumentId_Staff_DocumentId",
+                "name": "UX_InterventionStaff_Intervention_DocumentId_Staff_S_3e129604cc",
                 "columns": [
                   "Intervention_DocumentId",
-                  "Staff_DocumentId"
+                  "Staff_StaffUniqueId"
                 ]
               },
               {
@@ -47507,15 +47531,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.assessmentItemReference.assessmentIdentifier",
-                  "column": "AssessmentItemAssessmentItem_DocumentId"
+                  "column": "AssessmentItemAssessmentItem_AssessmentIdentifier"
                 },
                 {
                   "relative_path": "$.assessmentItemReference.namespace",
-                  "column": "AssessmentItemAssessmentItem_DocumentId"
+                  "column": "AssessmentItemAssessmentItem_Namespace"
                 },
                 {
                   "relative_path": "$.assessmentItemReference.identificationCode",
-                  "column": "AssessmentItemAssessmentItem_DocumentId"
+                  "column": "AssessmentItemAssessmentItem_IdentificationCode"
                 }
               ]
             },
@@ -47523,10 +47547,12 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_d5ab1e380e",
+                "name": "UX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_4b6df1abe0",
                 "columns": [
                   "ObjectiveAssessment_DocumentId",
-                  "AssessmentItemAssessmentItem_DocumentId"
+                  "AssessmentItemAssessmentItem_AssessmentIdentifier",
+                  "AssessmentItemAssessmentItem_Namespace",
+                  "AssessmentItemAssessmentItem_IdentificationCode"
                 ]
               },
               {
@@ -47675,7 +47701,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.learningStandardReference.learningStandardId",
-                  "column": "LearningStandard_DocumentId"
+                  "column": "LearningStandard_LearningStandardId"
                 }
               ]
             },
@@ -47683,10 +47709,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ObjectiveAssessmentLearningStandard_LearningStand_0bc58ebc36",
+                "name": "UX_ObjectiveAssessmentLearningStandard_LearningStand_e69ce7016a",
                 "columns": [
                   "ObjectiveAssessment_DocumentId",
-                  "LearningStandard_DocumentId"
+                  "LearningStandard_LearningStandardId"
                 ]
               },
               {
@@ -56857,7 +56883,7 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.learningStandardReference.learningStandardId",
-                  "column": "LearningStandard_DocumentId"
+                  "column": "LearningStandard_LearningStandardId"
                 }
               ]
             },
@@ -56865,10 +56891,10 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ProgramLearningStandard_LearningStandard_Document_13485098ba",
+                "name": "UX_ProgramLearningStandard_LearningStandard_Learning_6861b63a7c",
                 "columns": [
                   "Program_DocumentId",
-                  "LearningStandard_DocumentId"
+                  "LearningStandard_LearningStandardId"
                 ]
               },
               {
@@ -58438,51 +58464,51 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.gradeReference.gradeTypeDescriptor",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_GradeTypeDescriptor_DescriptorId"
                 },
                 {
                   "relative_path": "$.gradeReference.gradingPeriodDescriptor",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_GradingPeriodDescriptor_DescriptorId"
                 },
                 {
                   "relative_path": "$.gradeReference.gradingPeriodName",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_GradingPeriodName"
                 },
                 {
                   "relative_path": "$.gradeReference.schoolId",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_GradingPeriodReferenceSchoolId"
                 },
                 {
                   "relative_path": "$.gradeReference.gradingPeriodSchoolYear",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_GradingPeriodSchoolYear"
                 },
                 {
                   "relative_path": "$.gradeReference.beginDate",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_BeginDate"
                 },
                 {
                   "relative_path": "$.gradeReference.localCourseCode",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_LocalCourseCode"
                 },
                 {
                   "relative_path": "$.gradeReference.schoolId",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_StudentSectionAssociationReferenceSchoolId"
                 },
                 {
                   "relative_path": "$.gradeReference.schoolYear",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_SchoolYear"
                 },
                 {
                   "relative_path": "$.gradeReference.sectionIdentifier",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_SectionIdentifier"
                 },
                 {
                   "relative_path": "$.gradeReference.sessionName",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_SessionName"
                 },
                 {
                   "relative_path": "$.gradeReference.studentUniqueId",
-                  "column": "Grade_DocumentId"
+                  "column": "Grade_StudentUniqueId"
                 }
               ]
             },
@@ -58490,10 +58516,21 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ReportCardGrade_Grade_DocumentId_ReportCard_DocumentId",
+                "name": "UX_ReportCardGrade_Grade_BeginDate_GradingPeriodName_57b1756af9",
                 "columns": [
                   "ReportCard_DocumentId",
-                  "Grade_DocumentId"
+                  "Grade_GradeTypeDescriptor_DescriptorId",
+                  "Grade_GradingPeriodDescriptor_DescriptorId",
+                  "Grade_GradingPeriodName",
+                  "Grade_GradingPeriodReferenceSchoolId",
+                  "Grade_GradingPeriodSchoolYear",
+                  "Grade_BeginDate",
+                  "Grade_LocalCourseCode",
+                  "Grade_StudentSectionAssociationReferenceSchoolId",
+                  "Grade_SchoolYear",
+                  "Grade_SectionIdentifier",
+                  "Grade_SessionName",
+                  "Grade_StudentUniqueId"
                 ]
               },
               {
@@ -58783,35 +58820,35 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.studentCompetencyObjectiveReference.gradingPeriodDescriptor",
-                  "column": "StudentCompetencyObjective_DocumentId"
+                  "column": "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId"
                 },
                 {
                   "relative_path": "$.studentCompetencyObjectiveReference.gradingPeriodName",
-                  "column": "StudentCompetencyObjective_DocumentId"
+                  "column": "StudentCompetencyObjective_GradingPeriodName"
                 },
                 {
                   "relative_path": "$.studentCompetencyObjectiveReference.gradingPeriodSchoolId",
-                  "column": "StudentCompetencyObjective_DocumentId"
+                  "column": "StudentCompetencyObjective_GradingPeriodSchoolId"
                 },
                 {
                   "relative_path": "$.studentCompetencyObjectiveReference.gradingPeriodSchoolYear",
-                  "column": "StudentCompetencyObjective_DocumentId"
+                  "column": "StudentCompetencyObjective_GradingPeriodSchoolYear"
                 },
                 {
                   "relative_path": "$.studentCompetencyObjectiveReference.objectiveEducationOrganizationId",
-                  "column": "StudentCompetencyObjective_DocumentId"
+                  "column": "StudentCompetencyObjective_ObjectiveEducationOrganizationId"
                 },
                 {
                   "relative_path": "$.studentCompetencyObjectiveReference.objective",
-                  "column": "StudentCompetencyObjective_DocumentId"
+                  "column": "StudentCompetencyObjective_Objective"
                 },
                 {
                   "relative_path": "$.studentCompetencyObjectiveReference.objectiveGradeLevelDescriptor",
-                  "column": "StudentCompetencyObjective_DocumentId"
+                  "column": "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d"
                 },
                 {
                   "relative_path": "$.studentCompetencyObjectiveReference.studentUniqueId",
-                  "column": "StudentCompetencyObjective_DocumentId"
+                  "column": "StudentCompetencyObjective_StudentUniqueId"
                 }
               ]
             },
@@ -58827,10 +58864,17 @@
               },
               {
                 "kind": "Unique",
-                "name": "UX_ReportCardStudentCompetencyObjective_ReportCard_D_39bd501a86",
+                "name": "UX_ReportCardStudentCompetencyObjective_ReportCard_D_e144fd689c",
                 "columns": [
                   "ReportCard_DocumentId",
-                  "StudentCompetencyObjective_DocumentId"
+                  "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId",
+                  "StudentCompetencyObjective_GradingPeriodName",
+                  "StudentCompetencyObjective_GradingPeriodSchoolId",
+                  "StudentCompetencyObjective_GradingPeriodSchoolYear",
+                  "StudentCompetencyObjective_ObjectiveEducationOrganizationId",
+                  "StudentCompetencyObjective_Objective",
+                  "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d",
+                  "StudentCompetencyObjective_StudentUniqueId"
                 ]
               },
               {
@@ -59758,15 +59802,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.programReference.educationOrganizationId",
-                  "column": "Program_DocumentId"
+                  "column": "Program_EducationOrganizationId"
                 },
                 {
                   "relative_path": "$.programReference.programName",
-                  "column": "Program_DocumentId"
+                  "column": "Program_ProgramName"
                 },
                 {
                   "relative_path": "$.programReference.programTypeDescriptor",
-                  "column": "Program_DocumentId"
+                  "column": "Program_ProgramTypeDescriptor_DescriptorId"
                 }
               ]
             },
@@ -59782,10 +59826,12 @@
               },
               {
                 "kind": "Unique",
-                "name": "UX_RestraintEventProgram_Program_DocumentId_Restrain_4b9304020d",
+                "name": "UX_RestraintEventProgram_Program_EducationOrganizati_cae2e28241",
                 "columns": [
                   "RestraintEvent_DocumentId",
-                  "Program_DocumentId"
+                  "Program_EducationOrganizationId",
+                  "Program_ProgramName",
+                  "Program_ProgramTypeDescriptor_DescriptorId"
                 ]
               },
               {
@@ -64197,11 +64243,11 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.classPeriodReference.classPeriodName",
-                  "column": "ClassPeriod_DocumentId"
+                  "column": "ClassPeriod_ClassPeriodName"
                 },
                 {
                   "relative_path": "$.classPeriodReference.schoolId",
-                  "column": "ClassPeriod_DocumentId"
+                  "column": "ClassPeriod_SchoolId"
                 }
               ]
             },
@@ -64209,10 +64255,11 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SectionClassPeriod_ClassPeriod_DocumentId_Section_DocumentId",
+                "name": "UX_SectionClassPeriod_ClassPeriod_ClassPeriodName_Sc_afa44148d8",
                 "columns": [
                   "Section_DocumentId",
-                  "ClassPeriod_DocumentId"
+                  "ClassPeriod_ClassPeriodName",
+                  "ClassPeriod_SchoolId"
                 ]
               },
               {
@@ -64644,15 +64691,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.programReference.educationOrganizationId",
-                  "column": "Program_DocumentId"
+                  "column": "Program_EducationOrganizationId"
                 },
                 {
                   "relative_path": "$.programReference.programName",
-                  "column": "Program_DocumentId"
+                  "column": "Program_ProgramName"
                 },
                 {
                   "relative_path": "$.programReference.programTypeDescriptor",
-                  "column": "Program_DocumentId"
+                  "column": "Program_ProgramTypeDescriptor_DescriptorId"
                 }
               ]
             },
@@ -64668,10 +64715,12 @@
               },
               {
                 "kind": "Unique",
-                "name": "UX_SectionProgram_Program_DocumentId_Section_DocumentId",
+                "name": "UX_SectionProgram_Program_EducationOrganizationId_Pr_049ec1876e",
                 "columns": [
                   "Section_DocumentId",
-                  "Program_DocumentId"
+                  "Program_EducationOrganizationId",
+                  "Program_ProgramName",
+                  "Program_ProgramTypeDescriptor_DescriptorId"
                 ]
               },
               {
@@ -65342,11 +65391,11 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.academicWeekReference.schoolId",
-                  "column": "AcademicWeek_DocumentId"
+                  "column": "AcademicWeek_SchoolId"
                 },
                 {
                   "relative_path": "$.academicWeekReference.weekIdentifier",
-                  "column": "AcademicWeek_DocumentId"
+                  "column": "AcademicWeek_WeekIdentifier"
                 }
               ]
             },
@@ -65354,10 +65403,11 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SessionAcademicWeek_AcademicWeek_DocumentId_Sessi_687b6f9c21",
+                "name": "UX_SessionAcademicWeek_AcademicWeek_SchoolId_WeekIde_2381b14237",
                 "columns": [
                   "Session_DocumentId",
-                  "AcademicWeek_DocumentId"
+                  "AcademicWeek_SchoolId",
+                  "AcademicWeek_WeekIdentifier"
                 ]
               },
               {
@@ -65539,19 +65589,19 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.gradingPeriodReference.gradingPeriodDescriptor",
-                  "column": "GradingPeriod_DocumentId"
+                  "column": "GradingPeriod_GradingPeriodDescriptor_DescriptorId"
                 },
                 {
                   "relative_path": "$.gradingPeriodReference.gradingPeriodName",
-                  "column": "GradingPeriod_DocumentId"
+                  "column": "GradingPeriod_GradingPeriodName"
                 },
                 {
                   "relative_path": "$.gradingPeriodReference.schoolId",
-                  "column": "GradingPeriod_DocumentId"
+                  "column": "GradingPeriod_SchoolId"
                 },
                 {
                   "relative_path": "$.gradingPeriodReference.schoolYear",
-                  "column": "GradingPeriod_DocumentId"
+                  "column": "GradingPeriod_SchoolYear"
                 }
               ]
             },
@@ -65559,10 +65609,13 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SessionGradingPeriod_GradingPeriod_DocumentId_Ses_a3287e9c5b",
+                "name": "UX_SessionGradingPeriod_GradingPeriod_GradingPeriodN_b43c7334a2",
                 "columns": [
                   "Session_DocumentId",
-                  "GradingPeriod_DocumentId"
+                  "GradingPeriod_GradingPeriodDescriptor_DescriptorId",
+                  "GradingPeriod_GradingPeriodName",
+                  "GradingPeriod_SchoolId",
+                  "GradingPeriod_SchoolYear"
                 ]
               },
               {
@@ -71531,11 +71584,11 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.credentialReference.credentialIdentifier",
-                  "column": "Credential_DocumentId"
+                  "column": "Credential_CredentialIdentifier"
                 },
                 {
                   "relative_path": "$.credentialReference.stateOfIssueStateAbbreviationDescriptor",
-                  "column": "Credential_DocumentId"
+                  "column": "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId"
                 }
               ]
             },
@@ -71543,10 +71596,11 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffCredential_Credential_DocumentId_Staff_DocumentId",
+                "name": "UX_StaffCredential_Credential_CredentialIdentifier_C_973c543fa1",
                 "columns": [
                   "Staff_DocumentId",
-                  "Credential_DocumentId"
+                  "Credential_CredentialIdentifier",
+                  "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId"
                 ]
               },
               {
@@ -78577,27 +78631,27 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.reportCardReference.educationOrganizationId",
-                  "column": "ReportCard_DocumentId"
+                  "column": "ReportCard_EducationOrganizationId"
                 },
                 {
                   "relative_path": "$.reportCardReference.gradingPeriodDescriptor",
-                  "column": "ReportCard_DocumentId"
+                  "column": "ReportCard_GradingPeriodDescriptor_DescriptorId"
                 },
                 {
                   "relative_path": "$.reportCardReference.gradingPeriodName",
-                  "column": "ReportCard_DocumentId"
+                  "column": "ReportCard_GradingPeriodName"
                 },
                 {
                   "relative_path": "$.reportCardReference.gradingPeriodSchoolId",
-                  "column": "ReportCard_DocumentId"
+                  "column": "ReportCard_GradingPeriodSchoolId"
                 },
                 {
                   "relative_path": "$.reportCardReference.gradingPeriodSchoolYear",
-                  "column": "ReportCard_DocumentId"
+                  "column": "ReportCard_GradingPeriodSchoolYear"
                 },
                 {
                   "relative_path": "$.reportCardReference.studentUniqueId",
-                  "column": "ReportCard_DocumentId"
+                  "column": "ReportCard_StudentUniqueId"
                 }
               ]
             },
@@ -78613,10 +78667,15 @@
               },
               {
                 "kind": "Unique",
-                "name": "UX_StudentAcademicRecordReportCard_ReportCard_Docume_0ddac2c9e6",
+                "name": "UX_StudentAcademicRecordReportCard_ReportCard_Educat_ea0b34ae86",
                 "columns": [
                   "StudentAcademicRecord_DocumentId",
-                  "ReportCard_DocumentId"
+                  "ReportCard_EducationOrganizationId",
+                  "ReportCard_GradingPeriodDescriptor_DescriptorId",
+                  "ReportCard_GradingPeriodName",
+                  "ReportCard_GradingPeriodSchoolId",
+                  "ReportCard_GradingPeriodSchoolYear",
+                  "ReportCard_StudentUniqueId"
                 ]
               },
               {
@@ -84261,23 +84320,23 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.sectionReference.localCourseCode",
-                  "column": "Section_DocumentId"
+                  "column": "Section_LocalCourseCode"
                 },
                 {
                   "relative_path": "$.sectionReference.schoolId",
-                  "column": "Section_DocumentId"
+                  "column": "Section_SchoolId"
                 },
                 {
                   "relative_path": "$.sectionReference.schoolYear",
-                  "column": "Section_DocumentId"
+                  "column": "Section_SchoolYear"
                 },
                 {
                   "relative_path": "$.sectionReference.sessionName",
-                  "column": "Section_DocumentId"
+                  "column": "Section_SessionName"
                 },
                 {
                   "relative_path": "$.sectionReference.sectionIdentifier",
-                  "column": "Section_DocumentId"
+                  "column": "Section_SectionIdentifier"
                 }
               ]
             },
@@ -84293,10 +84352,14 @@
               },
               {
                 "kind": "Unique",
-                "name": "UX_StudentCohortAssociationSection_Section_DocumentI_e4715cd1ec",
+                "name": "UX_StudentCohortAssociationSection_Section_LocalCour_98c45b1e89",
                 "columns": [
                   "StudentCohortAssociation_DocumentId",
-                  "Section_DocumentId"
+                  "Section_LocalCourseCode",
+                  "Section_SchoolId",
+                  "Section_SchoolYear",
+                  "Section_SessionName",
+                  "Section_SectionIdentifier"
                 ]
               },
               {
@@ -84907,27 +84970,27 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.generalStudentProgramAssociationReference.beginDate",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896"
                 },
                 {
                   "relative_path": "$.generalStudentProgramAssociationReference.educationOrganizationId",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96"
                 },
                 {
                   "relative_path": "$.generalStudentProgramAssociationReference.programEducationOrganizationId",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821"
                 },
                 {
                   "relative_path": "$.generalStudentProgramAssociationReference.programName",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582"
                 },
                 {
                   "relative_path": "$.generalStudentProgramAssociationReference.programTypeDescriptor",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c"
                 },
                 {
                   "relative_path": "$.generalStudentProgramAssociationReference.studentUniqueId",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e"
                 }
               ]
             },
@@ -84935,10 +84998,15 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_857a6cc358",
+                "name": "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_ab170bd480",
                 "columns": [
                   "StudentCompetencyObjective_DocumentId",
-                  "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e"
                 ]
               },
               {
@@ -85187,31 +85255,31 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.studentSectionAssociationReference.beginDate",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93"
                 },
                 {
                   "relative_path": "$.studentSectionAssociationReference.localCourseCode",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36"
                 },
                 {
                   "relative_path": "$.studentSectionAssociationReference.schoolId",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38"
                 },
                 {
                   "relative_path": "$.studentSectionAssociationReference.schoolYear",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7"
                 },
                 {
                   "relative_path": "$.studentSectionAssociationReference.sectionIdentifier",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922"
                 },
                 {
                   "relative_path": "$.studentSectionAssociationReference.sessionName",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab"
                 },
                 {
                   "relative_path": "$.studentSectionAssociationReference.studentUniqueId",
-                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6"
                 }
               ]
             },
@@ -85219,10 +85287,16 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentCompetencyObjectiveStudentSectionAssociati_3f9aab491f",
+                "name": "UX_StudentCompetencyObjectiveStudentSectionAssociati_598c5a5bc4",
                 "columns": [
                   "StudentCompetencyObjective_DocumentId",
-                  "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6"
                 ]
               },
               {
@@ -101116,15 +101190,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.alternativeGraduationPlanReference.educationOrganizationId",
-                  "column": "AlternativeGraduationPlan_DocumentId"
+                  "column": "AlternativeGraduationPlan_EducationOrganizationId"
                 },
                 {
                   "relative_path": "$.alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
-                  "column": "AlternativeGraduationPlan_DocumentId"
+                  "column": "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181"
                 },
                 {
                   "relative_path": "$.alternativeGraduationPlanReference.graduationSchoolYear",
-                  "column": "AlternativeGraduationPlan_DocumentId"
+                  "column": "AlternativeGraduationPlan_GraduationSchoolYear"
                 }
               ]
             },
@@ -101132,18 +101206,20 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_620cf4ccf8",
+                "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_5c46992811",
                 "columns": [
                   "StudentSchoolAssociation_DocumentId",
-                  "Ordinal"
+                  "AlternativeGraduationPlan_EducationOrganizationId",
+                  "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
+                  "AlternativeGraduationPlan_GraduationSchoolYear"
                 ]
               },
               {
                 "kind": "Unique",
-                "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_64d4374eea",
+                "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_620cf4ccf8",
                 "columns": [
                   "StudentSchoolAssociation_DocumentId",
-                  "AlternativeGraduationPlan_DocumentId"
+                  "Ordinal"
                 ]
               },
               {
@@ -103993,15 +104069,15 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.programReference.educationOrganizationId",
-                  "column": "Program_DocumentId"
+                  "column": "Program_EducationOrganizationId"
                 },
                 {
                   "relative_path": "$.programReference.programName",
-                  "column": "Program_DocumentId"
+                  "column": "Program_ProgramName"
                 },
                 {
                   "relative_path": "$.programReference.programTypeDescriptor",
-                  "column": "Program_DocumentId"
+                  "column": "Program_ProgramTypeDescriptor_DescriptorId"
                 }
               ]
             },
@@ -104017,10 +104093,12 @@
               },
               {
                 "kind": "Unique",
-                "name": "UX_StudentSectionAssociationProgram_Program_Document_e1803f1bfc",
+                "name": "UX_StudentSectionAssociationProgram_Program_Educatio_9e1819d245",
                 "columns": [
                   "StudentSectionAssociation_DocumentId",
-                  "Program_DocumentId"
+                  "Program_EducationOrganizationId",
+                  "Program_ProgramName",
+                  "Program_ProgramTypeDescriptor_DescriptorId"
                 ]
               },
               {
@@ -104638,11 +104716,11 @@
               "semantic_identity_bindings": [
                 {
                   "relative_path": "$.classPeriodReference.classPeriodName",
-                  "column": "ClassPeriod_DocumentId"
+                  "column": "ClassPeriod_ClassPeriodName"
                 },
                 {
                   "relative_path": "$.classPeriodReference.schoolId",
-                  "column": "ClassPeriod_DocumentId"
+                  "column": "ClassPeriod_SchoolId"
                 }
               ]
             },
@@ -104650,10 +104728,11 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentSectionAttendanceEventClassPeriod_ClassPer_32827dac6f",
+                "name": "UX_StudentSectionAttendanceEventClassPeriod_ClassPer_28655b60bb",
                 "columns": [
                   "StudentSectionAttendanceEvent_DocumentId",
-                  "ClassPeriod_DocumentId"
+                  "ClassPeriod_ClassPeriodName",
+                  "ClassPeriod_SchoolId"
                 ]
               },
               {

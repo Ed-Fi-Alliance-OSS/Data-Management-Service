@@ -3605,7 +3605,7 @@
       ]
     },
     {
-      "name": "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_f82da38521",
+      "name": "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_4bb6947438",
       "table": {
         "schema": "edfi",
         "name": "AssessmentAdministrationAssessmentBatteryPart"
@@ -3614,7 +3614,9 @@
       "is_unique": true,
       "key_columns": [
         "AssessmentAdministration_DocumentId",
-        "AssessmentBatteryPart_DocumentId"
+        "AssessmentBatteryPart_AssessmentBatteryPartName",
+        "AssessmentBatteryPart_AssessmentIdentifier",
+        "AssessmentBatteryPart_Namespace"
       ]
     },
     {
@@ -3944,7 +3946,7 @@
       ]
     },
     {
-      "name": "UX_AssessmentBatteryPartObjectiveAssessment_Assessme_7a38152000",
+      "name": "UX_AssessmentBatteryPartObjectiveAssessment_Assessme_326d1a484a",
       "table": {
         "schema": "edfi",
         "name": "AssessmentBatteryPartObjectiveAssessment"
@@ -3953,7 +3955,9 @@
       "is_unique": true,
       "key_columns": [
         "AssessmentBatteryPart_DocumentId",
-        "ObjectiveAssessment_DocumentId"
+        "ObjectiveAssessment_AssessmentIdentifier",
+        "ObjectiveAssessment_Namespace",
+        "ObjectiveAssessment_IdentificationCode"
       ]
     },
     {
@@ -4111,7 +4115,7 @@
       ]
     },
     {
-      "name": "UX_AssessmentItemLearningStandard_AssessmentItem_Doc_da085e0260",
+      "name": "UX_AssessmentItemLearningStandard_AssessmentItem_Doc_02f2a01565",
       "table": {
         "schema": "edfi",
         "name": "AssessmentItemLearningStandard"
@@ -4120,7 +4124,7 @@
       "is_unique": true,
       "key_columns": [
         "AssessmentItem_DocumentId",
-        "LearningStandard_DocumentId"
+        "LearningStandard_LearningStandardId"
       ]
     },
     {
@@ -4439,7 +4443,7 @@
       ]
     },
     {
-      "name": "UX_AssessmentProgram_Assessment_DocumentId_SectionOr_3491ec6823",
+      "name": "UX_AssessmentProgram_Assessment_DocumentId_SectionOr_e86e377669",
       "table": {
         "schema": "edfi",
         "name": "AssessmentProgram"
@@ -4448,7 +4452,9 @@
       "is_unique": true,
       "key_columns": [
         "Assessment_DocumentId",
-        "SectionOrProgramChoiceProgram_DocumentId"
+        "SectionOrProgramChoiceProgram_EducationOrganizationId",
+        "SectionOrProgramChoiceProgram_ProgramName",
+        "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce"
       ]
     },
     {
@@ -4618,6 +4624,19 @@
       ]
     },
     {
+      "name": "UX_AssessmentScoreRangeLearningStandardLearningStand_16fe3bf10a",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentScoreRangeLearningStandardLearningStandard"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "AssessmentScoreRangeLearningStandard_DocumentId",
+        "LearningStandard_LearningStandardId"
+      ]
+    },
+    {
       "name": "UX_AssessmentScoreRangeLearningStandardLearningStand_a09b7bf908",
       "table": {
         "schema": "edfi",
@@ -4628,19 +4647,6 @@
       "key_columns": [
         "AssessmentScoreRangeLearningStandard_DocumentId",
         "Ordinal"
-      ]
-    },
-    {
-      "name": "UX_AssessmentScoreRangeLearningStandardLearningStand_ee43f2bbdf",
-      "table": {
-        "schema": "edfi",
-        "name": "AssessmentScoreRangeLearningStandardLearningStandard"
-      },
-      "kind": "UniqueConstraint",
-      "is_unique": true,
-      "key_columns": [
-        "AssessmentScoreRangeLearningStandard_DocumentId",
-        "LearningStandard_DocumentId"
       ]
     },
     {
@@ -4673,7 +4679,7 @@
       ]
     },
     {
-      "name": "UX_AssessmentSection_Assessment_DocumentId_SectionOr_9a956ae02c",
+      "name": "UX_AssessmentSection_Assessment_DocumentId_SectionOr_57563f8adb",
       "table": {
         "schema": "edfi",
         "name": "AssessmentSection"
@@ -4682,7 +4688,11 @@
       "is_unique": true,
       "key_columns": [
         "Assessment_DocumentId",
-        "SectionOrProgramChoiceSection_DocumentId"
+        "SectionOrProgramChoiceSection_LocalCourseCode",
+        "SectionOrProgramChoiceSection_SchoolId",
+        "SectionOrProgramChoiceSection_SchoolYear",
+        "SectionOrProgramChoiceSection_SessionName",
+        "SectionOrProgramChoiceSection_SectionIdentifier"
       ]
     },
     {
@@ -4852,7 +4862,7 @@
       ]
     },
     {
-      "name": "UX_BellScheduleClassPeriod_BellSchedule_DocumentId_C_92e01df297",
+      "name": "UX_BellScheduleClassPeriod_BellSchedule_DocumentId_C_37a27de3a4",
       "table": {
         "schema": "edfi",
         "name": "BellScheduleClassPeriod"
@@ -4861,7 +4871,8 @@
       "is_unique": true,
       "key_columns": [
         "BellSchedule_DocumentId",
-        "ClassPeriod_DocumentId"
+        "ClassPeriod_ClassPeriodName",
+        "ClassPeriod_SchoolId"
       ]
     },
     {
@@ -5647,7 +5658,7 @@
       ]
     },
     {
-      "name": "UX_CohortProgram_Cohort_DocumentId_ProgramProgram_DocumentId",
+      "name": "UX_CohortProgram_Cohort_DocumentId_ProgramProgram_Ed_0297989492",
       "table": {
         "schema": "edfi",
         "name": "CohortProgram"
@@ -5656,7 +5667,9 @@
       "is_unique": true,
       "key_columns": [
         "Cohort_DocumentId",
-        "ProgramProgram_DocumentId"
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -7864,7 +7877,7 @@
       ]
     },
     {
-      "name": "UX_CourseLearningStandard_Course_DocumentId_Learning_911d755b74",
+      "name": "UX_CourseLearningStandard_Course_DocumentId_Learning_16a0c06ff5",
       "table": {
         "schema": "edfi",
         "name": "CourseLearningStandard"
@@ -7873,7 +7886,7 @@
       "is_unique": true,
       "key_columns": [
         "Course_DocumentId",
-        "LearningStandard_DocumentId"
+        "LearningStandard_LearningStandardId"
       ]
     },
     {
@@ -8517,7 +8530,7 @@
       ]
     },
     {
-      "name": "UX_CourseTranscriptCourseProgram_CourseProgram_Docum_c44523dbfa",
+      "name": "UX_CourseTranscriptCourseProgram_CourseProgram_Educa_c3e8c04762",
       "table": {
         "schema": "edfi",
         "name": "CourseTranscriptCourseProgram"
@@ -8526,7 +8539,9 @@
       "is_unique": true,
       "key_columns": [
         "CourseTranscript_DocumentId",
-        "CourseProgram_DocumentId"
+        "CourseProgram_EducationOrganizationId",
+        "CourseProgram_ProgramName",
+        "CourseProgram_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -8722,7 +8737,7 @@
       ]
     },
     {
-      "name": "UX_CourseTranscriptSection_CourseTranscript_Document_49864a49c3",
+      "name": "UX_CourseTranscriptSection_CourseTranscript_Document_e2cdca0127",
       "table": {
         "schema": "edfi",
         "name": "CourseTranscriptSection"
@@ -8731,7 +8746,11 @@
       "is_unique": true,
       "key_columns": [
         "CourseTranscript_DocumentId",
-        "Section_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier"
       ]
     },
     {
@@ -9263,7 +9282,7 @@
       ]
     },
     {
-      "name": "UX_DisciplineActionStaff_DisciplineAction_DocumentId_124e7952b7",
+      "name": "UX_DisciplineActionStaff_DisciplineAction_DocumentId_80c2cacb0e",
       "table": {
         "schema": "edfi",
         "name": "DisciplineActionStaff"
@@ -9272,7 +9291,7 @@
       "is_unique": true,
       "key_columns": [
         "DisciplineAction_DocumentId",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -9342,7 +9361,7 @@
       ]
     },
     {
-      "name": "UX_DisciplineActionStudentDisciplineIncidentBehavior_7cf2b5d17f",
+      "name": "UX_DisciplineActionStudentDisciplineIncidentBehavior_b466808d9a",
       "table": {
         "schema": "edfi",
         "name": "DisciplineActionStudentDisciplineIncidentBehaviorAssociation"
@@ -9351,7 +9370,10 @@
       "is_unique": true,
       "key_columns": [
         "DisciplineAction_DocumentId",
-        "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+        "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b",
+        "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier",
+        "StudentDisciplineIncidentBehaviorAssociation_SchoolId",
+        "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId"
       ]
     },
     {
@@ -9832,7 +9854,7 @@
       ]
     },
     {
-      "name": "UX_EducationContentDerivativeSourceEducationContent__89fc2a26d9",
+      "name": "UX_EducationContentDerivativeSourceEducationContent__4392092b6a",
       "table": {
         "schema": "edfi",
         "name": "EducationContentDerivativeSourceEducationContent"
@@ -9841,7 +9863,7 @@
       "is_unique": true,
       "key_columns": [
         "EducationContent_DocumentId",
-        "DerivativeSourceEducationContent_DocumentId"
+        "DerivativeSourceEducationContent_ContentIdentifier"
       ]
     },
     {
@@ -11942,7 +11964,7 @@
       ]
     },
     {
-      "name": "UX_GradebookEntryLearningStandard_GradebookEntry_Doc_1bf44ab247",
+      "name": "UX_GradebookEntryLearningStandard_GradebookEntry_Doc_c5d8152b41",
       "table": {
         "schema": "edfi",
         "name": "GradebookEntryLearningStandard"
@@ -11951,7 +11973,7 @@
       "is_unique": true,
       "key_columns": [
         "GradebookEntry_DocumentId",
-        "LearningStandard_DocumentId"
+        "LearningStandard_LearningStandardId"
       ]
     },
     {
@@ -12255,7 +12277,7 @@
       ]
     },
     {
-      "name": "UX_GraduationPlanCreditsByCoursCours_ParentCollectio_6bc659eb69",
+      "name": "UX_GraduationPlanCreditsByCoursCours_ParentCollectio_c35f23bfff",
       "table": {
         "schema": "edfi",
         "name": "GraduationPlanCreditsByCoursCours"
@@ -12264,7 +12286,8 @@
       "is_unique": true,
       "key_columns": [
         "ParentCollectionItemId",
-        "CourseCourse_DocumentId"
+        "CourseCourse_CourseCode",
+        "CourseCourse_EducationOrganizationId"
       ]
     },
     {
@@ -12819,7 +12842,7 @@
       ]
     },
     {
-      "name": "UX_InterventionEducationContent_EducationContentSour_462424c1aa",
+      "name": "UX_InterventionEducationContent_EducationContentSour_c555e0f713",
       "table": {
         "schema": "edfi",
         "name": "InterventionEducationContent"
@@ -12828,7 +12851,7 @@
       "is_unique": true,
       "key_columns": [
         "Intervention_DocumentId",
-        "EducationContentSourceEducationContent_DocumentId"
+        "EducationContentSourceEducationContent_ContentIdentifier"
       ]
     },
     {
@@ -12871,7 +12894,7 @@
       ]
     },
     {
-      "name": "UX_InterventionInterventionPrescription_Intervention_ffb7d2a7c8",
+      "name": "UX_InterventionInterventionPrescription_Intervention_380283827c",
       "table": {
         "schema": "edfi",
         "name": "InterventionInterventionPrescription"
@@ -12880,7 +12903,8 @@
       "is_unique": true,
       "key_columns": [
         "Intervention_DocumentId",
-        "InterventionPrescriptionInterventionPrescription_DocumentId"
+        "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
+        "InterventionPrescriptionInterventionPrescription_Int_409fc39d28"
       ]
     },
     {
@@ -13275,7 +13299,7 @@
       ]
     },
     {
-      "name": "UX_InterventionPrescriptionEducationContent_Educatio_869ba11ab6",
+      "name": "UX_InterventionPrescriptionEducationContent_Educatio_f84b1cb5c0",
       "table": {
         "schema": "edfi",
         "name": "InterventionPrescriptionEducationContent"
@@ -13284,7 +13308,7 @@
       "is_unique": true,
       "key_columns": [
         "InterventionPrescription_DocumentId",
-        "EducationContentSourceEducationContent_DocumentId"
+        "EducationContentSourceEducationContent_ContentIdentifier"
       ]
     },
     {
@@ -13452,7 +13476,7 @@
       ]
     },
     {
-      "name": "UX_InterventionStaff_Intervention_DocumentId_Staff_DocumentId",
+      "name": "UX_InterventionStaff_Intervention_DocumentId_Staff_S_3e129604cc",
       "table": {
         "schema": "edfi",
         "name": "InterventionStaff"
@@ -13461,7 +13485,7 @@
       "is_unique": true,
       "key_columns": [
         "Intervention_DocumentId",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -13693,7 +13717,7 @@
       ]
     },
     {
-      "name": "UX_InterventionStudyEducationContent_EducationConten_f642697bf7",
+      "name": "UX_InterventionStudyEducationContent_EducationConten_cadb0b8fa5",
       "table": {
         "schema": "edfi",
         "name": "InterventionStudyEducationContent"
@@ -13702,7 +13726,7 @@
       "is_unique": true,
       "key_columns": [
         "InterventionStudy_DocumentId",
-        "EducationContentSourceEducationContent_DocumentId"
+        "EducationContentSourceEducationContent_ContentIdentifier"
       ]
     },
     {
@@ -15734,7 +15758,7 @@
       ]
     },
     {
-      "name": "UX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_d5ab1e380e",
+      "name": "UX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_4b6df1abe0",
       "table": {
         "schema": "edfi",
         "name": "ObjectiveAssessmentAssessmentItem"
@@ -15743,7 +15767,9 @@
       "is_unique": true,
       "key_columns": [
         "ObjectiveAssessment_DocumentId",
-        "AssessmentItemAssessmentItem_DocumentId"
+        "AssessmentItemAssessmentItem_AssessmentIdentifier",
+        "AssessmentItemAssessmentItem_Namespace",
+        "AssessmentItemAssessmentItem_IdentificationCode"
       ]
     },
     {
@@ -15785,7 +15811,7 @@
       ]
     },
     {
-      "name": "UX_ObjectiveAssessmentLearningStandard_LearningStand_0bc58ebc36",
+      "name": "UX_ObjectiveAssessmentLearningStandard_LearningStand_e69ce7016a",
       "table": {
         "schema": "edfi",
         "name": "ObjectiveAssessmentLearningStandard"
@@ -15794,7 +15820,7 @@
       "is_unique": true,
       "key_columns": [
         "ObjectiveAssessment_DocumentId",
-        "LearningStandard_DocumentId"
+        "LearningStandard_LearningStandardId"
       ]
     },
     {
@@ -18185,7 +18211,7 @@
       ]
     },
     {
-      "name": "UX_ProgramLearningStandard_LearningStandard_Document_13485098ba",
+      "name": "UX_ProgramLearningStandard_LearningStandard_Learning_6861b63a7c",
       "table": {
         "schema": "edfi",
         "name": "ProgramLearningStandard"
@@ -18194,7 +18220,7 @@
       "is_unique": true,
       "key_columns": [
         "Program_DocumentId",
-        "LearningStandard_DocumentId"
+        "LearningStandard_LearningStandardId"
       ]
     },
     {
@@ -18506,7 +18532,7 @@
       ]
     },
     {
-      "name": "UX_ReportCardGrade_Grade_DocumentId_ReportCard_DocumentId",
+      "name": "UX_ReportCardGrade_Grade_BeginDate_GradingPeriodName_57b1756af9",
       "table": {
         "schema": "edfi",
         "name": "ReportCardGrade"
@@ -18515,7 +18541,18 @@
       "is_unique": true,
       "key_columns": [
         "ReportCard_DocumentId",
-        "Grade_DocumentId"
+        "Grade_GradeTypeDescriptor_DescriptorId",
+        "Grade_GradingPeriodDescriptor_DescriptorId",
+        "Grade_GradingPeriodName",
+        "Grade_GradingPeriodReferenceSchoolId",
+        "Grade_GradingPeriodSchoolYear",
+        "Grade_BeginDate",
+        "Grade_LocalCourseCode",
+        "Grade_StudentSectionAssociationReferenceSchoolId",
+        "Grade_SchoolYear",
+        "Grade_SectionIdentifier",
+        "Grade_SessionName",
+        "Grade_StudentUniqueId"
       ]
     },
     {
@@ -18651,7 +18688,7 @@
       ]
     },
     {
-      "name": "UX_ReportCardStudentCompetencyObjective_ReportCard_D_39bd501a86",
+      "name": "UX_ReportCardStudentCompetencyObjective_ReportCard_D_e144fd689c",
       "table": {
         "schema": "edfi",
         "name": "ReportCardStudentCompetencyObjective"
@@ -18660,7 +18697,14 @@
       "is_unique": true,
       "key_columns": [
         "ReportCard_DocumentId",
-        "StudentCompetencyObjective_DocumentId"
+        "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId",
+        "StudentCompetencyObjective_GradingPeriodName",
+        "StudentCompetencyObjective_GradingPeriodSchoolId",
+        "StudentCompetencyObjective_GradingPeriodSchoolYear",
+        "StudentCompetencyObjective_ObjectiveEducationOrganizationId",
+        "StudentCompetencyObjective_Objective",
+        "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d",
+        "StudentCompetencyObjective_StudentUniqueId"
       ]
     },
     {
@@ -18794,7 +18838,7 @@
       ]
     },
     {
-      "name": "UX_RestraintEventProgram_Program_DocumentId_Restrain_4b9304020d",
+      "name": "UX_RestraintEventProgram_Program_EducationOrganizati_cae2e28241",
       "table": {
         "schema": "edfi",
         "name": "RestraintEventProgram"
@@ -18803,7 +18847,9 @@
       "is_unique": true,
       "key_columns": [
         "RestraintEvent_DocumentId",
-        "Program_DocumentId"
+        "Program_EducationOrganizationId",
+        "Program_ProgramName",
+        "Program_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -19949,7 +19995,7 @@
       ]
     },
     {
-      "name": "UX_SectionClassPeriod_ClassPeriod_DocumentId_Section_DocumentId",
+      "name": "UX_SectionClassPeriod_ClassPeriod_ClassPeriodName_Sc_afa44148d8",
       "table": {
         "schema": "edfi",
         "name": "SectionClassPeriod"
@@ -19958,7 +20004,8 @@
       "is_unique": true,
       "key_columns": [
         "Section_DocumentId",
-        "ClassPeriod_DocumentId"
+        "ClassPeriod_ClassPeriodName",
+        "ClassPeriod_SchoolId"
       ]
     },
     {
@@ -20127,7 +20174,7 @@
       ]
     },
     {
-      "name": "UX_SectionProgram_Program_DocumentId_Section_DocumentId",
+      "name": "UX_SectionProgram_Program_EducationOrganizationId_Pr_049ec1876e",
       "table": {
         "schema": "edfi",
         "name": "SectionProgram"
@@ -20136,7 +20183,9 @@
       "is_unique": true,
       "key_columns": [
         "Section_DocumentId",
-        "Program_DocumentId"
+        "Program_EducationOrganizationId",
+        "Program_ProgramName",
+        "Program_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -20245,7 +20294,7 @@
       ]
     },
     {
-      "name": "UX_SessionAcademicWeek_AcademicWeek_DocumentId_Sessi_687b6f9c21",
+      "name": "UX_SessionAcademicWeek_AcademicWeek_SchoolId_WeekIde_2381b14237",
       "table": {
         "schema": "edfi",
         "name": "SessionAcademicWeek"
@@ -20254,7 +20303,8 @@
       "is_unique": true,
       "key_columns": [
         "Session_DocumentId",
-        "AcademicWeek_DocumentId"
+        "AcademicWeek_SchoolId",
+        "AcademicWeek_WeekIdentifier"
       ]
     },
     {
@@ -20311,7 +20361,7 @@
       ]
     },
     {
-      "name": "UX_SessionGradingPeriod_GradingPeriod_DocumentId_Ses_a3287e9c5b",
+      "name": "UX_SessionGradingPeriod_GradingPeriod_GradingPeriodN_b43c7334a2",
       "table": {
         "schema": "edfi",
         "name": "SessionGradingPeriod"
@@ -20320,7 +20370,10 @@
       "is_unique": true,
       "key_columns": [
         "Session_DocumentId",
-        "GradingPeriod_DocumentId"
+        "GradingPeriod_GradingPeriodDescriptor_DescriptorId",
+        "GradingPeriod_GradingPeriodName",
+        "GradingPeriod_SchoolId",
+        "GradingPeriod_SchoolYear"
       ]
     },
     {
@@ -20847,7 +20900,7 @@
       ]
     },
     {
-      "name": "UX_StaffCredential_Credential_DocumentId_Staff_DocumentId",
+      "name": "UX_StaffCredential_Credential_CredentialIdentifier_C_973c543fa1",
       "table": {
         "schema": "edfi",
         "name": "StaffCredential"
@@ -20856,7 +20909,8 @@
       "is_unique": true,
       "key_columns": [
         "Staff_DocumentId",
-        "Credential_DocumentId"
+        "Credential_CredentialIdentifier",
+        "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId"
       ]
     },
     {
@@ -23735,7 +23789,7 @@
       ]
     },
     {
-      "name": "UX_StudentAcademicRecordReportCard_ReportCard_Docume_0ddac2c9e6",
+      "name": "UX_StudentAcademicRecordReportCard_ReportCard_Educat_ea0b34ae86",
       "table": {
         "schema": "edfi",
         "name": "StudentAcademicRecordReportCard"
@@ -23744,7 +23798,12 @@
       "is_unique": true,
       "key_columns": [
         "StudentAcademicRecord_DocumentId",
-        "ReportCard_DocumentId"
+        "ReportCard_EducationOrganizationId",
+        "ReportCard_GradingPeriodDescriptor_DescriptorId",
+        "ReportCard_GradingPeriodName",
+        "ReportCard_GradingPeriodSchoolId",
+        "ReportCard_GradingPeriodSchoolYear",
+        "ReportCard_StudentUniqueId"
       ]
     },
     {
@@ -25124,7 +25183,7 @@
       ]
     },
     {
-      "name": "UX_StudentCohortAssociationSection_Section_DocumentI_e4715cd1ec",
+      "name": "UX_StudentCohortAssociationSection_Section_LocalCour_98c45b1e89",
       "table": {
         "schema": "edfi",
         "name": "StudentCohortAssociationSection"
@@ -25133,7 +25192,11 @@
       "is_unique": true,
       "key_columns": [
         "StudentCohortAssociation_DocumentId",
-        "Section_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier"
       ]
     },
     {
@@ -25305,7 +25368,7 @@
       ]
     },
     {
-      "name": "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_857a6cc358",
+      "name": "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_ab170bd480",
       "table": {
         "schema": "edfi",
         "name": "StudentCompetencyObjectiveGeneralStudentProgramAssociation"
@@ -25314,7 +25377,12 @@
       "is_unique": true,
       "key_columns": [
         "StudentCompetencyObjective_DocumentId",
-        "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+        "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e"
       ]
     },
     {
@@ -25362,7 +25430,7 @@
       ]
     },
     {
-      "name": "UX_StudentCompetencyObjectiveStudentSectionAssociati_3f9aab491f",
+      "name": "UX_StudentCompetencyObjectiveStudentSectionAssociati_598c5a5bc4",
       "table": {
         "schema": "edfi",
         "name": "StudentCompetencyObjectiveStudentSectionAssociation"
@@ -25371,7 +25439,13 @@
       "is_unique": true,
       "key_columns": [
         "StudentCompetencyObjective_DocumentId",
-        "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+        "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab",
+        "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6"
       ]
     },
     {
@@ -29899,6 +29973,21 @@
       ]
     },
     {
+      "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_5c46992811",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolAssociationAlternativeGraduationPlan"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "StudentSchoolAssociation_DocumentId",
+        "AlternativeGraduationPlan_EducationOrganizationId",
+        "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
+        "AlternativeGraduationPlan_GraduationSchoolYear"
+      ]
+    },
+    {
       "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_620cf4ccf8",
       "table": {
         "schema": "edfi",
@@ -29909,19 +29998,6 @@
       "key_columns": [
         "StudentSchoolAssociation_DocumentId",
         "Ordinal"
-      ]
-    },
-    {
-      "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_64d4374eea",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSchoolAssociationAlternativeGraduationPlan"
-      },
-      "kind": "UniqueConstraint",
-      "is_unique": true,
-      "key_columns": [
-        "StudentSchoolAssociation_DocumentId",
-        "AlternativeGraduationPlan_DocumentId"
       ]
     },
     {
@@ -30592,7 +30668,7 @@
       ]
     },
     {
-      "name": "UX_StudentSectionAssociationProgram_Program_Document_e1803f1bfc",
+      "name": "UX_StudentSectionAssociationProgram_Program_Educatio_9e1819d245",
       "table": {
         "schema": "edfi",
         "name": "StudentSectionAssociationProgram"
@@ -30601,7 +30677,9 @@
       "is_unique": true,
       "key_columns": [
         "StudentSectionAssociation_DocumentId",
-        "Program_DocumentId"
+        "Program_EducationOrganizationId",
+        "Program_ProgramName",
+        "Program_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -30700,7 +30778,7 @@
       ]
     },
     {
-      "name": "UX_StudentSectionAttendanceEventClassPeriod_ClassPer_32827dac6f",
+      "name": "UX_StudentSectionAttendanceEventClassPeriod_ClassPer_28655b60bb",
       "table": {
         "schema": "edfi",
         "name": "StudentSectionAttendanceEventClassPeriod"
@@ -30709,7 +30787,8 @@
       "is_unique": true,
       "key_columns": [
         "StudentSectionAttendanceEvent_DocumentId",
-        "ClassPeriod_DocumentId"
+        "ClassPeriod_ClassPeriodName",
+        "ClassPeriod_SchoolId"
       ]
     },
     {
@@ -33008,7 +33087,7 @@
       ]
     },
     {
-      "name": "UX_BusRouteProgram_BusRoute_DocumentId_Program_DocumentId",
+      "name": "UX_BusRouteProgram_BusRoute_DocumentId_Program_Educa_152b59d1d5",
       "table": {
         "schema": "sample",
         "name": "BusRouteProgram"
@@ -33017,7 +33096,9 @@
       "is_unique": true,
       "key_columns": [
         "BusRoute_DocumentId",
-        "Program_DocumentId"
+        "Program_EducationOrganizationId",
+        "Program_ProgramName",
+        "Program_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -33437,7 +33518,7 @@
       ]
     },
     {
-      "name": "UX_ContactExtensionEducationContent_Contact_Document_9d650dff90",
+      "name": "UX_ContactExtensionEducationContent_Contact_Document_d1106f4d5c",
       "table": {
         "schema": "sample",
         "name": "ContactExtensionEducationContent"
@@ -33446,7 +33527,7 @@
       "is_unique": true,
       "key_columns": [
         "Contact_DocumentId",
-        "EducationContent_DocumentId"
+        "EducationContent_ContentIdentifier"
       ]
     },
     {
@@ -33543,7 +33624,7 @@
       ]
     },
     {
-      "name": "UX_ContactExtensionStudentProgramAssociation_Contact_6fdfd686a9",
+      "name": "UX_ContactExtensionStudentProgramAssociation_Contact_b3edb731b2",
       "table": {
         "schema": "sample",
         "name": "ContactExtensionStudentProgramAssociation"
@@ -33552,7 +33633,12 @@
       "is_unique": true,
       "key_columns": [
         "Contact_DocumentId",
-        "StudentProgramAssociation_DocumentId"
+        "StudentProgramAssociation_BeginDate",
+        "StudentProgramAssociation_EducationOrganizationId",
+        "StudentProgramAssociation_ProgramEducationOrganizationId",
+        "StudentProgramAssociation_ProgramName",
+        "StudentProgramAssociation_ProgramTypeDescriptor_DescriptorId",
+        "StudentProgramAssociation_StudentUniqueId"
       ]
     },
     {
@@ -33618,7 +33704,7 @@
       ]
     },
     {
-      "name": "UX_SchoolExtensionDirectlyOwnedBus_DirectlyOwnedBus__4cb94cc0bf",
+      "name": "UX_SchoolExtensionDirectlyOwnedBus_DirectlyOwnedBus__f395c17fcc",
       "table": {
         "schema": "sample",
         "name": "SchoolExtensionDirectlyOwnedBus"
@@ -33627,7 +33713,7 @@
       "is_unique": true,
       "key_columns": [
         "School_DocumentId",
-        "DirectlyOwnedBus_DocumentId"
+        "DirectlyOwnedBus_BusId"
       ]
     },
     {
@@ -34341,7 +34427,7 @@
       ]
     },
     {
-      "name": "UX_StudentContactAssociationExtensionStaffEducationO_4dbc7d41db",
+      "name": "UX_StudentContactAssociationExtensionStaffEducationO_2f8d888edb",
       "table": {
         "schema": "sample",
         "name": "StudentContactAssociationExtensionStaffEducationOrga_709a93ba3a"
@@ -34350,7 +34436,10 @@
       "is_unique": true,
       "key_columns": [
         "StudentContactAssociation_DocumentId",
-        "StaffEducationOrganizationEmploymentAssociation_DocumentId"
+        "StaffEducationOrganizationEmploymentAssociation_Educ_aecac5928f",
+        "StaffEducationOrganizationEmploymentAssociation_Empl_d9c1171fb4",
+        "StaffEducationOrganizationEmploymentAssociation_HireDate",
+        "StaffEducationOrganizationEmploymentAssociation_StaffUniqueId"
       ]
     },
     {
@@ -35154,7 +35243,7 @@
       ]
     },
     {
-      "name": "UX_StudentGraduationPlanAssociationStudentContactAss_2671b9f98a",
+      "name": "UX_StudentGraduationPlanAssociationStudentContactAss_3b980903fb",
       "table": {
         "schema": "sample",
         "name": "StudentGraduationPlanAssociationStudentContactAssociation"
@@ -35163,7 +35252,8 @@
       "is_unique": true,
       "key_columns": [
         "StudentGraduationPlanAssociation_DocumentId",
-        "StudentContactAssociation_DocumentId"
+        "StudentContactAssociation_ContactUniqueId",
+        "StudentContactAssociation_StudentUniqueId"
       ]
     },
     {
@@ -35296,7 +35386,7 @@
       ]
     },
     {
-      "name": "UX_StudentSectionAssociationExtensionRelatedGeneralS_b06563af57",
+      "name": "UX_StudentSectionAssociationExtensionRelatedGeneralS_b1b6ac2802",
       "table": {
         "schema": "sample",
         "name": "StudentSectionAssociationExtensionRelatedGeneralStud_00521721f5"
@@ -35305,7 +35395,12 @@
       "is_unique": true,
       "key_columns": [
         "StudentSectionAssociation_DocumentId",
-        "RelatedGeneralStudentProgramAssociation_DocumentId"
+        "RelatedGeneralStudentProgramAssociation_BeginDate",
+        "RelatedGeneralStudentProgramAssociation_EducationOrganizationId",
+        "RelatedGeneralStudentProgramAssociation_ProgramEduca_79002f6014",
+        "RelatedGeneralStudentProgramAssociation_ProgramName",
+        "RelatedGeneralStudentProgramAssociation_ProgramTypeD_abfb5157a1",
+        "RelatedGeneralStudentProgramAssociation_StudentUniqueId"
       ]
     },
     {
@@ -49382,15 +49477,15 @@
             "semantic_identity_bindings": [
               {
                 "relative_path": "$.assessmentBatteryPartReference.assessmentBatteryPartName",
-                "column": "AssessmentBatteryPart_DocumentId"
+                "column": "AssessmentBatteryPart_AssessmentBatteryPartName"
               },
               {
                 "relative_path": "$.assessmentBatteryPartReference.assessmentIdentifier",
-                "column": "AssessmentBatteryPart_DocumentId"
+                "column": "AssessmentBatteryPart_AssessmentIdentifier"
               },
               {
                 "relative_path": "$.assessmentBatteryPartReference.namespace",
-                "column": "AssessmentBatteryPart_DocumentId"
+                "column": "AssessmentBatteryPart_Namespace"
               }
             ]
           },
@@ -49398,10 +49493,12 @@
           "constraints": [
             {
               "kind": "Unique",
-              "name": "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_f82da38521",
+              "name": "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_4bb6947438",
               "columns": [
                 "AssessmentAdministration_DocumentId",
-                "AssessmentBatteryPart_DocumentId"
+                "AssessmentBatteryPart_AssessmentBatteryPartName",
+                "AssessmentBatteryPart_AssessmentIdentifier",
+                "AssessmentBatteryPart_Namespace"
               ]
             },
             {
@@ -52926,15 +53023,15 @@
             "semantic_identity_bindings": [
               {
                 "relative_path": "$.alternativeGraduationPlanReference.educationOrganizationId",
-                "column": "AlternativeGraduationPlan_DocumentId"
+                "column": "AlternativeGraduationPlan_EducationOrganizationId"
               },
               {
                 "relative_path": "$.alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
-                "column": "AlternativeGraduationPlan_DocumentId"
+                "column": "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181"
               },
               {
                 "relative_path": "$.alternativeGraduationPlanReference.graduationSchoolYear",
-                "column": "AlternativeGraduationPlan_DocumentId"
+                "column": "AlternativeGraduationPlan_GraduationSchoolYear"
               }
             ]
           },
@@ -52942,18 +53039,20 @@
           "constraints": [
             {
               "kind": "Unique",
-              "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_620cf4ccf8",
+              "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_5c46992811",
               "columns": [
                 "StudentSchoolAssociation_DocumentId",
-                "Ordinal"
+                "AlternativeGraduationPlan_EducationOrganizationId",
+                "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
+                "AlternativeGraduationPlan_GraduationSchoolYear"
               ]
             },
             {
               "kind": "Unique",
-              "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_64d4374eea",
+              "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_620cf4ccf8",
               "columns": [
                 "StudentSchoolAssociation_DocumentId",
-                "AlternativeGraduationPlan_DocumentId"
+                "Ordinal"
               ]
             },
             {
