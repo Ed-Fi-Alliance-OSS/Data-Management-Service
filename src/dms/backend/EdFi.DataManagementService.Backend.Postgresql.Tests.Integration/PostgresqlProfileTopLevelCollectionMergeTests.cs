@@ -894,6 +894,47 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_Merge
     }
 
     [Test]
+    public async Task It_creates_new_profiled_post_with_creatable_collection_items()
+    {
+        var writeBody = PostgresqlProfileTopLevelCollectionMergeSupport.CreateSchoolBody(
+            SchoolId,
+            "Austin",
+            "Dallas"
+        );
+        var result = await ExecuteProfiledPostAsync(
+            writeBody,
+            requestItems:
+            [
+                new PostgresqlProfileTopLevelCollectionRequestItem("Austin", Creatable: true),
+                new PostgresqlProfileTopLevelCollectionRequestItem("Dallas", Creatable: true),
+            ],
+            visibleStoredRows: [],
+            "pgsql-top-level-collection-creatable-post"
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        var documentId = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadDocumentIdAsync(
+            _database,
+            SchoolDocumentUuid
+        );
+        var after = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressesAsync(
+            _database,
+            documentId
+        );
+
+        after.Should().HaveCount(2);
+        after[0].SchoolDocumentId.Should().Be(documentId);
+        after[0].Ordinal.Should().Be(1);
+        after[0].City.Should().Be("Austin");
+        after[0].CollectionItemId.Should().BeGreaterThan(0);
+        after[1].SchoolDocumentId.Should().Be(documentId);
+        after[1].Ordinal.Should().Be(2);
+        after[1].City.Should().Be("Dallas");
+        after[1].CollectionItemId.Should().BeGreaterThan(0);
+        after[1].CollectionItemId.Should().NotBe(after[0].CollectionItemId);
+    }
+
+    [Test]
     public async Task It_allows_existing_visible_updates_when_creatable_false_and_rejects_new_items()
     {
         var before = await SeedAndReadAddressesAsync("Austin", "Dallas", "Houston");
