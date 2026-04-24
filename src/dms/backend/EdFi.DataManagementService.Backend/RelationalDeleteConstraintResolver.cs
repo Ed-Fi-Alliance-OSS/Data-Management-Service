@@ -5,6 +5,7 @@
 
 using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -36,8 +37,11 @@ public interface IRelationalDeleteConstraintResolver
     );
 }
 
-internal sealed class RelationalDeleteConstraintResolver : IRelationalDeleteConstraintResolver
+internal sealed class RelationalDeleteConstraintResolver(ILogger<RelationalDeleteConstraintResolver> logger)
+    : IRelationalDeleteConstraintResolver
 {
+    private readonly ILogger<RelationalDeleteConstraintResolver> _logger = logger;
+
     private readonly ConditionalWeakTable<
         DerivedRelationalModelSet,
         IReadOnlyDictionary<string, QualifiedResourceName>
@@ -60,11 +64,11 @@ internal sealed class RelationalDeleteConstraintResolver : IRelationalDeleteCons
         return index.TryGetValue(constraintName, out var resource) ? resource : null;
     }
 
-    private static IReadOnlyDictionary<string, QualifiedResourceName> BuildIndex(
-        DerivedRelationalModelSet modelSet
-    )
+    private IReadOnlyDictionary<string, QualifiedResourceName> BuildIndex(DerivedRelationalModelSet modelSet)
     {
-        Dictionary<string, QualifiedResourceName> byConstraintName = new(StringComparer.Ordinal);
+        Dictionary<string, (QualifiedResourceName Resource, DbTableName OwningTable)> entries = new(
+            StringComparer.Ordinal
+        );
 
         foreach (var concreteResource in modelSet.ConcreteResourcesInNameOrder)
         {
@@ -78,18 +82,45 @@ internal sealed class RelationalDeleteConstraintResolver : IRelationalDeleteCons
                         .Select(fk => fk.Name)
                 )
                 {
-                    // First-writer-wins. Cross-resource duplicates are legitimate when multiple
-                    // resources share a superclass table at the DDL layer (e.g. every concrete
-                    // descriptor resource enumerates FK_Descriptor_Document pointing at the shared
-                    // dms.Descriptor table). Because at most one physical FK corresponds to each
-                    // emitted name, Postgres/MSSQL can only ever surface one owning resource per
-                    // violation; keeping the first match preserves correct resolution for uniquely-
-                    // owned FKs without crashing the whole model index on the shared-superclass case.
-                    byConstraintName.TryAdd(constraintName, resource);
+                    if (!entries.TryAdd(constraintName, (resource, table.Table)))
+                    {
+                        var existing = entries[constraintName];
+
+                        // Shared-superclass case: the same physical FK is enumerated once per
+                        // concrete resource that shares the superclass table (e.g. every concrete
+                        // descriptor resource carries FK_Descriptor_Document on the shared
+                        // dms.Descriptor table). First-writer-wins is correct here and stays silent.
+                        if (existing.OwningTable == table.Table)
+                        {
+                            continue;
+                        }
+
+                        // Cross-table duplicate — a DDL-level canary. Names are supposed to be
+                        // unique per physical FK (see ConstraintNaming + SqlIdentifierShortening),
+                        // so two different owning tables sharing one constraint name means either
+                        // dialect-limit truncation collapsed two names or the naming scheme
+                        // produced a collision. The driver can only surface one name per DELETE
+                        // violation, so first-writer-wins still applies, but a Warning lets ops
+                        // observe that 409 responses on {ConstraintName} may cite the wrong
+                        // referencing resource.
+                        _logger.LogWarning(
+                            "Delete-constraint index detected a duplicate foreign key name across "
+                                + "different owning tables: constraint '{ConstraintName}' is owned by "
+                                + "resource '{FirstResource}' on table '{FirstTable}' and resource "
+                                + "'{SecondResource}' on table '{SecondTable}'. Keeping the first "
+                                + "entry; DELETE 409 responses surfacing this constraint may cite "
+                                + "the wrong referencing resource.",
+                            constraintName,
+                            existing.Resource,
+                            existing.OwningTable,
+                            resource,
+                            table.Table
+                        );
+                    }
                 }
             }
         }
 
-        return byConstraintName;
+        return entries.ToDictionary(e => e.Key, e => e.Value.Resource, StringComparer.Ordinal);
     }
 }

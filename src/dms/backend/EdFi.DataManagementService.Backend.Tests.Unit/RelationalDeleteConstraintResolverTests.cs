@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -25,11 +27,13 @@ public class Given_Relational_Delete_Constraint_Resolver
     );
 
     private RelationalDeleteConstraintResolver _sut = null!;
+    private RecordingLogger<RelationalDeleteConstraintResolver> _logger = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _sut = new RelationalDeleteConstraintResolver();
+        _logger = new RecordingLogger<RelationalDeleteConstraintResolver>();
+        _sut = new RelationalDeleteConstraintResolver(_logger);
     }
 
     [Test]
@@ -251,25 +255,59 @@ public class Given_Relational_Delete_Constraint_Resolver
     }
 
     [Test]
-    public void It_keeps_the_first_owner_when_two_resources_share_the_same_foreign_key_constraint_name()
+    public void It_keeps_the_first_owner_silently_when_duplicate_constraint_names_share_the_same_owning_table()
     {
-        // Cross-resource FK-name duplication is legitimate when multiple resources share a
-        // superclass table at the DDL layer — for example, every concrete descriptor resource
-        // enumerates FK_Descriptor_Document pointing at the shared dms.Descriptor table. Because
-        // at most one physical FK corresponds to each emitted name, the driver can only ever
-        // surface one owning resource per violation; first-writer-wins therefore preserves correct
-        // resolution for uniquely-owned FKs without crashing the whole model index on the shared-
-        // superclass case. The iteration order here is ConcreteResourcesInNameOrder, so the
-        // resource added first (CalendarResource) owns the entry.
-        const string duplicateName = "FK_Duplicated_Name";
+        // Shared-superclass case: every concrete descriptor resource enumerates
+        // FK_Descriptor_Document pointing at the shared dms.Descriptor table. The same physical
+        // FK appears under multiple resources, but the owning table is identical — first-
+        // writer-wins is correct and must stay silent (no warning noise during normal operation).
+        const string duplicateName = "FK_Descriptor_Document";
+        var modelSet = BuildModelSet(
+            BuildResource(
+                EducationOrgCategoryDescriptorResource,
+                keyId: 1,
+                BuildTable("Descriptor", BuildForeignKey(duplicateName))
+            ),
+            BuildResource(
+                CalendarResource,
+                keyId: 2,
+                BuildTable("Descriptor", BuildForeignKey(duplicateName))
+            )
+        );
+
+        var result = _sut.TryResolveReferencingResource(modelSet, duplicateName);
+
+        result.Should().Be(EducationOrgCategoryDescriptorResource);
+        _logger.Records.Should().NotContain(r => r.Level == LogLevel.Warning);
+    }
+
+    [Test]
+    public void It_warns_and_keeps_the_first_owner_when_duplicate_constraint_names_come_from_different_owning_tables()
+    {
+        // Cross-table duplicate: a DDL-level canary. FK names are supposed to be globally unique
+        // per physical FK (see ConstraintNaming + SqlIdentifierShortening in the plan notes),
+        // so two different owning tables sharing one constraint name means either dialect-limit
+        // truncation collapsed two names or the naming scheme produced a collision. The driver
+        // can only surface one name per DELETE violation, so first-writer-wins still applies,
+        // but the resolver must emit a Warning so the observability surface flags the DDL bug.
+        const string duplicateName = "FK_Collided_Name";
         var modelSet = BuildModelSet(
             BuildResource(CalendarResource, keyId: 1, BuildTable("Calendar", BuildForeignKey(duplicateName))),
             BuildResource(SchoolResource, keyId: 2, BuildTable("School", BuildForeignKey(duplicateName)))
         );
 
+        // Triggers BuildIndex.
         var result = _sut.TryResolveReferencingResource(modelSet, duplicateName);
 
         result.Should().Be(CalendarResource);
+        _logger
+            .Records.Should()
+            .ContainSingle(r =>
+                r.Level == LogLevel.Warning
+                && r.Message.Contains(duplicateName, StringComparison.Ordinal)
+                && r.Message.Contains("Calendar", StringComparison.Ordinal)
+                && r.Message.Contains("School", StringComparison.Ordinal)
+            );
     }
 
     private static DerivedRelationalModelSet BuildModelSet(params ConcreteResourceModel[] resources) =>

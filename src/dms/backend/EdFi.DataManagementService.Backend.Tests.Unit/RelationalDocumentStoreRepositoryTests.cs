@@ -4,10 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -2759,71 +2759,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             return ValueTask.CompletedTask;
         }
     }
-
-    private sealed class ConfigurableRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
-    {
-        public bool IsForeignKeyViolationToReturn { get; set; }
-
-        public bool IsTransientFailureToReturn { get; set; }
-
-        public RelationalWriteExceptionClassification? ClassificationToReturn { get; set; }
-
-        public int IsForeignKeyViolationCallCount { get; private set; }
-
-        public int IsTransientFailureCallCount { get; private set; }
-
-        public int TryClassifyCallCount { get; private set; }
-
-        public bool TryClassify(
-            DbException exception,
-            [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
-        )
-        {
-            TryClassifyCallCount++;
-            classification = ClassificationToReturn;
-            return classification is not null;
-        }
-
-        public bool IsForeignKeyViolation(DbException exception)
-        {
-            IsForeignKeyViolationCallCount++;
-            return IsForeignKeyViolationToReturn;
-        }
-
-        // RelationalDocumentStoreRepository does not consume unique-violation classification today
-        // (descriptor POST runs through DescriptorWriteHandler). The interface method stays a
-        // fixed-false stub until a non-descriptor path exercises it.
-        public bool IsUniqueConstraintViolation(DbException exception) => false;
-
-        public bool IsTransientFailure(DbException exception)
-        {
-            IsTransientFailureCallCount++;
-            return IsTransientFailureToReturn;
-        }
-    }
-
-    private sealed class RecordingLogger<T> : ILogger<T>
-    {
-        public List<LogRecord> Records { get; } = [];
-
-        IDisposable? ILogger.BeginScope<TState>(TState state) => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            ArgumentNullException.ThrowIfNull(formatter);
-            Records.Add(new LogRecord(logLevel, formatter(state, exception), exception));
-        }
-    }
-
-    private sealed record LogRecord(LogLevel Level, string Message, Exception? Exception);
 
     private static IRelationalGetRequest CreateGetRequest(
         DocumentUuid documentUuid,
