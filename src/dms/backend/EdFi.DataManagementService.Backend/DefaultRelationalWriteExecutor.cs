@@ -269,6 +269,10 @@ internal sealed class DefaultRelationalWriteExecutor(
                 // allowed through as long as the request itself touches only supported
                 // scopes. This preserves the Task 5 "mixed plan, unused collection scope"
                 // contract without splitting the topology / family enums.
+                // Slice 4 widens the fence further: TopLevelCollection requests now pass the
+                // fence via TopLevelCollectionFenceGate, unless the request also exercises a
+                // collection-aligned separate-table scope (Slice 3's guard is preserved for
+                // that edge case).
                 bool fencePassed = requiredFamily switch
                 {
                     RequiredSliceFamily.RootTableOnly => true,
@@ -278,7 +282,12 @@ internal sealed class DefaultRelationalWriteExecutor(
                             effectiveProfileRequest,
                             profileAppliedWriteContext
                         ),
-                    RequiredSliceFamily.TopLevelCollection => false,
+                    RequiredSliceFamily.TopLevelCollection => TopLevelCollectionFenceGate(
+                        request.WritePlan,
+                        topologyIndex,
+                        effectiveProfileRequest,
+                        profileAppliedWriteContext
+                    ),
                     RequiredSliceFamily.NestedAndExtensionCollections => false,
                     _ => throw new InvalidOperationException(
                         $"Unhandled RequiredSliceFamily '{requiredFamily}' at the slice-3 fence gate. "
@@ -677,6 +686,103 @@ internal sealed class DefaultRelationalWriteExecutor(
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
+    }
+
+    /// <summary>
+    /// Gate for the Slice 4 TopLevelCollection family. Returns <c>true</c> (pass fence) when the
+    /// request exercises only topology already supported by slices 1-4. Root/root-extension
+    /// inlined scopes are allowed through by their inherited topology; collection-descendant
+    /// inlined scopes and collection-aligned separate-table scopes remain fenced until a later
+    /// slice defines their merge contract.
+    /// </summary>
+    private static bool TopLevelCollectionFenceGate(
+        ResourceWritePlan writePlan,
+        ScopeTopologyIndex topologyIndex,
+        ProfileAppliedWriteRequest profileRequest,
+        ProfileAppliedWriteContext? profileAppliedContext
+    ) =>
+        !RequestExercisesUnsupportedTopLevelCollectionScope(
+            writePlan,
+            topologyIndex,
+            profileRequest,
+            profileAppliedContext
+        )
+        && !RequestExercisesCollectionAlignedSeparateTableScope(
+            writePlan,
+            profileRequest,
+            profileAppliedContext
+        );
+
+    /// <summary>
+    /// Returns <c>true</c> when the current profiled request exercises a
+    /// <see cref="ScopeTopologyKind.TopLevelBaseCollection"/> scope that is not the backing
+    /// table's collection row scope itself. This preserves earlier-slice root/root-extension
+    /// inlined support while keeping inlined top-level collections and collection-descendant
+    /// inlined non-collection scopes fenced.
+    /// </summary>
+    private static bool RequestExercisesUnsupportedTopLevelCollectionScope(
+        ResourceWritePlan writePlan,
+        ScopeTopologyIndex topologyIndex,
+        ProfileAppliedWriteRequest profileRequest,
+        ProfileAppliedWriteContext? profileAppliedContext
+    )
+    {
+        foreach (var scopeState in profileRequest.RequestScopeStates)
+        {
+            if (scopeState.Visibility == ProfileVisibilityKind.Hidden)
+            {
+                continue;
+            }
+
+            if (IsUnsupportedTopLevelCollectionScope(scopeState.Address.JsonScope, writePlan, topologyIndex))
+            {
+                return true;
+            }
+        }
+
+        if (
+            profileRequest.VisibleRequestCollectionItems.Any(item =>
+                IsUnsupportedTopLevelCollectionScope(item.Address.JsonScope, writePlan, topologyIndex)
+            )
+        )
+        {
+            return true;
+        }
+
+        if (profileAppliedContext is null)
+        {
+            return false;
+        }
+
+        if (
+            profileAppliedContext.StoredScopeStates.Any(state =>
+                IsUnsupportedTopLevelCollectionScope(state.Address.JsonScope, writePlan, topologyIndex)
+            )
+        )
+        {
+            return true;
+        }
+
+        return profileAppliedContext.VisibleStoredCollectionRows.Any(row =>
+            IsUnsupportedTopLevelCollectionScope(row.Address.JsonScope, writePlan, topologyIndex)
+        );
+    }
+
+    private static bool IsUnsupportedTopLevelCollectionScope(
+        string scopeAddress,
+        ResourceWritePlan writePlan,
+        ScopeTopologyIndex topologyIndex
+    )
+    {
+        if (topologyIndex.GetTopology(scopeAddress) != ScopeTopologyKind.TopLevelBaseCollection)
+        {
+            return false;
+        }
+
+        var owner = ProfileBindingClassificationCore.ResolveOwnerTablePlan(scopeAddress, writePlan);
+        return owner is null
+            || owner.TableModel.IdentityMetadata.TableKind is not DbTableKind.Collection
+            || !string.Equals(owner.TableModel.JsonScope.Canonical, scopeAddress, StringComparison.Ordinal);
     }
 
     /// <summary>

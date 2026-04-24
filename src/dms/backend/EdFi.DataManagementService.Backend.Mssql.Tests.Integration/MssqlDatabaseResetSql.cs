@@ -42,10 +42,22 @@ internal static class MssqlDatabaseResetSql
                 [TableName] sysname NOT NULL,
                 [QualifiedName] nvarchar(517) NOT NULL,
                 [EscapedQualifiedName] nvarchar(517) NOT NULL,
-                [HasIdentity] bit NOT NULL
+                [HasIdentity] bit NOT NULL,
+                [IdentitySeed] decimal(38, 0) NULL,
+                [IdentityIncrement] decimal(38, 0) NULL,
+                [IdentityLastValue] decimal(38, 0) NULL
             );
 
-            INSERT INTO @targetTables ([SchemaName], [TableName], [QualifiedName], [EscapedQualifiedName], [HasIdentity])
+            INSERT INTO @targetTables (
+                [SchemaName],
+                [TableName],
+                [QualifiedName],
+                [EscapedQualifiedName],
+                [HasIdentity],
+                [IdentitySeed],
+                [IdentityIncrement],
+                [IdentityLastValue]
+            )
             SELECT
                 schemas.[name],
                 tables.[name],
@@ -59,10 +71,22 @@ internal static class MssqlDatabaseResetSql
                     )
                     THEN CAST(1 AS bit)
                     ELSE CAST(0 AS bit)
-                END
+                END,
+                identity_columns.[seed_value],
+                identity_columns.[increment_value],
+                identity_columns.[last_value]
             FROM sys.tables tables
             INNER JOIN sys.schemas schemas
                 ON schemas.[schema_id] = tables.[schema_id]
+            OUTER APPLY (
+                SELECT TOP (1)
+                    CONVERT(decimal(38, 0), identity_columns.[seed_value]) AS [seed_value],
+                    CONVERT(decimal(38, 0), identity_columns.[increment_value]) AS [increment_value],
+                    CONVERT(decimal(38, 0), identity_columns.[last_value]) AS [last_value]
+                FROM sys.identity_columns identity_columns
+                WHERE identity_columns.[object_id] = tables.[object_id]
+                ORDER BY identity_columns.[column_id]
+            ) identity_columns
             WHERE tables.[is_ms_shipped] = 0
               AND schemas.[name] NOT IN (N'dbo', N'guest', N'INFORMATION_SCHEMA', N'sys'){{excludedTableFilter}};
 
@@ -103,13 +127,23 @@ internal static class MssqlDatabaseResetSql
                 CAST(
                     N'DBCC CHECKIDENT ('''
                     + [EscapedQualifiedName]
-                    + N''', RESEED, 0) WITH NO_INFOMSGS;'
+                    + N''', RESEED, '
+                    + CONVERT(
+                        nvarchar(100),
+                        CASE
+                            WHEN [IdentityLastValue] IS NULL THEN [IdentitySeed]
+                            ELSE [IdentitySeed] - [IdentityIncrement]
+                        END
+                    )
+                    + N') WITH NO_INFOMSGS;'
                     AS nvarchar(max)
                 ),
                 @lineBreak
             )
             FROM @targetTables
-            WHERE [HasIdentity] = 1;
+            WHERE [HasIdentity] = 1
+              AND [IdentitySeed] IS NOT NULL
+              AND [IdentityIncrement] IS NOT NULL;
 
             SELECT @restartSequenceSql = STRING_AGG(
                 CAST(
