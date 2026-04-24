@@ -3996,6 +3996,383 @@ public class Given_Default_Relational_Write_Executor
         }
     }
 
+    // ── Slice 4 executor fence routing tests ────────────────────────────────
+
+    [Test]
+    public async Task Given_Executor_for_TopLevelCollection_family_with_root_inlined_scope_passes_fence()
+    {
+        // Slice 4 composes with earlier slices: a top-level collection row stream plus
+        // a root-hosted inlined scope must still reach the profile merge synthesizer.
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        // Use CreateRootPlan() which has the proper 3-column shape (DocumentId, SchoolId, Name)
+        // so FlattenedWriteSet can provide matching values for all ColumnBindings.
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = FenceTestPlans.CreateCollectionTablePlan(
+            "$.addresses[*]",
+            "Addresses",
+            DbTableKind.Collection
+        );
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel, collectionPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan, collectionPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
+            resourceWritePlan,
+            [("$.profileScope", ScopeKind.NonCollection)]
+        );
+        var collectionRowAddress = new CollectionRowAddress(
+            "$.addresses[*]",
+            new ScopeInstanceAddress("$", []),
+            []
+        );
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$.profileScope", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems:
+                [
+                    new VisibleRequestCollectionItem(collectionRowAddress, Creatable: true, "$.addresses[0]"),
+                ]
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(255901),
+                    new FlattenedWriteValue.Literal("Lincoln High"),
+                ]
+            )
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(1, "TopLevelCollection without collection-aligned separate-table scope must reach flattener");
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(1, "profile merge must run once the Slice 4 fence passes");
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    [Test]
+    public async Task Given_Executor_for_TopLevelCollection_family_with_collection_descendant_inlined_scope_still_fences()
+    {
+        // Slice 4 supports the table-backed collection row stream, not inlined descendant
+        // scope metadata stored inside that row. Those descendants remain a later-slice shape.
+        var writableBody = JsonNode.Parse("""{"schoolId":255901,"addresses":[{"city":"Austin"}]}""")!;
+        var rootPlan = FenceTestPlans.RootTablePlan();
+        var collectionPlan = FenceTestPlans.CreateCollectionTablePlan(
+            "$.addresses[*]",
+            "Addresses",
+            DbTableKind.Collection
+        );
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel, collectionPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan, collectionPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
+            resourceWritePlan,
+            [("$.addresses[*].mileInfo", ScopeKind.NonCollection)]
+        );
+        var addressInstance = new AncestorCollectionInstance(
+            JsonScope: "$.addresses[*]",
+            SemanticIdentityInOrder: []
+        );
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$.addresses[*].mileInfo", [addressInstance]),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(0, "collection-descendant inlined scopes remain fenced before flattening");
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Which.FailureMessage.Should()
+            .Contain("TopLevelCollection");
+    }
+
+    [Test]
+    public async Task Given_Executor_for_TopLevelCollection_family_with_collection_extension_scope_still_fences()
+    {
+        // Slice 4 preserves Slice 3's guard: when a request maxed at TopLevelCollection also
+        // exercises a CollectionExtensionScope, the fence must still reject.
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = FenceTestPlans.RootTablePlan();
+        var collectionPlan = FenceTestPlans.CreateCollectionTablePlan(
+            "$.addresses[*]",
+            "Addresses",
+            DbTableKind.Collection
+        );
+        var collectionExtPlan = FenceTestPlans.CreateTablePlan(
+            "$.addresses[*]._ext.sample",
+            "AddressesExtSample",
+            DbTableKind.CollectionExtensionScope
+        );
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder:
+            [
+                rootPlan.TableModel,
+                collectionPlan.TableModel,
+                collectionExtPlan.TableModel,
+            ],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(
+            resourceModel,
+            [rootPlan, collectionPlan, collectionExtPlan]
+        );
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+        var collectionRowAddress = new CollectionRowAddress(
+            "$.addresses[*]",
+            new ScopeInstanceAddress("$", []),
+            []
+        );
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                    // $.addresses[*]._ext.sample is a CollectionExtensionScope whose
+                    // ancestor chain must include the $.addresses[*] collection instance
+                    // so the contract validator does not reject before the fence runs.
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress(
+                            "$.addresses[*]._ext.sample",
+                            [
+                                new AncestorCollectionInstance(
+                                    JsonScope: "$.addresses[*]",
+                                    SemanticIdentityInOrder: []
+                                ),
+                            ]
+                        ),
+                        Visibility: ProfileVisibilityKind.VisibleAbsent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems:
+                [
+                    new VisibleRequestCollectionItem(collectionRowAddress, Creatable: true, "$.addresses[0]"),
+                ]
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(0, "fence must fire before flattening when TopLevelCollection + CollectionExtensionScope");
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "profile merge must not run when Slice 3 guard triggers inside Slice 4 family");
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Which.FailureMessage.Should()
+            .Contain("TopLevelCollection");
+    }
+
+    [Test]
+    public async Task Given_Executor_for_NestedAndExtensionCollections_still_fences()
+    {
+        // Regression: NestedAndExtensionCollections must remain fenced after Slice 4.
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = FenceTestPlans.RootTablePlan();
+        var parentCollectionPlan = FenceTestPlans.CreateCollectionTablePlan(
+            "$.addresses[*]",
+            "Addresses",
+            DbTableKind.Collection
+        );
+        var nestedCollectionPlan = FenceTestPlans.CreateCollectionTablePlan(
+            "$.addresses[*].periods[*]",
+            "AddressPeriods",
+            DbTableKind.Collection
+        );
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder:
+            [
+                rootPlan.TableModel,
+                parentCollectionPlan.TableModel,
+                nestedCollectionPlan.TableModel,
+            ],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(
+            resourceModel,
+            [rootPlan, parentCollectionPlan, nestedCollectionPlan]
+        );
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+        var parentAddressInstance = new AncestorCollectionInstance(
+            JsonScope: "$.addresses[*]",
+            SemanticIdentityInOrder: []
+        );
+        var nestedRowAddress = new CollectionRowAddress(
+            "$.addresses[*].periods[*]",
+            new ScopeInstanceAddress("$.addresses[*]", [parentAddressInstance]),
+            []
+        );
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems:
+                [
+                    new VisibleRequestCollectionItem(
+                        nestedRowAddress,
+                        Creatable: true,
+                        "$.addresses[0].periods[0]"
+                    ),
+                ]
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(0, "fence must fire before flattening for NestedAndExtensionCollections");
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "profile merge must not run for nested/extension collections");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Which.FailureMessage.Should()
+            .Contain("NestedAndExtensionCollections");
+    }
+
     private sealed class StubDbException(string message) : DbException(message);
 }
 
@@ -4009,6 +4386,95 @@ file static class FenceTestPlans
     private static readonly DbSchemaName _schema = new("edfi");
 
     public static TableWritePlan RootTablePlan() => CreateTablePlan("$", "School", DbTableKind.Root);
+
+    public static TableWritePlan CreateCollectionTablePlan(
+        string jsonScope,
+        string tableName,
+        DbTableKind tableKind
+    )
+    {
+        var collectionKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("CollectionItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var parentKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ParentDocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+
+        var columns = new DbColumnModel[] { collectionKeyColumn, parentKeyColumn, ordinalColumn };
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(_schema, tableName),
+            JsonScope: new JsonPathExpression(jsonScope, []),
+            Key: new TableKey(
+                "PK_" + tableName,
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: tableKind,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: $"INSERT INTO edfi.\"{tableName}\" VALUES (@CollectionItemId, @ParentDocumentId, @Ordinal)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, columns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionKeyColumn,
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    parentKeyColumn,
+                    new WriteValueSource.DocumentId(),
+                    "ParentDocumentId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings: [],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: $"UPDATE edfi.\"{tableName}\" SET \"Ordinal\" = @Ordinal WHERE \"CollectionItemId\" = @CollectionItemId",
+                DeleteByStableRowIdentitySql: $"DELETE FROM edfi.\"{tableName}\" WHERE \"CollectionItemId\" = @CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
 
     public static TableWritePlan CreateTablePlan(string jsonScope, string tableName, DbTableKind tableKind)
     {

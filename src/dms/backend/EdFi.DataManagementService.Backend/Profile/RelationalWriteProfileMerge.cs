@@ -811,7 +811,6 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 switch (entry)
                 {
                     case ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry matchedEntry:
-                    {
                         // Resolve the concrete request item node from the writable request body.
                         var candidateKey = BuildCandidateIdentityKey(
                             matchedEntry.RequestCandidate.SemanticIdentityValues
@@ -852,21 +851,20 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                         );
                         mergedRows.Add(mergedRow);
                         break;
-                    }
 
                     case ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry hiddenEntry:
-                    {
                         // Clone stored row values and overwrite ordinal column.
                         var cloned = hiddenEntry.StoredRow.ProjectedCurrentRow.Values.ToArray();
                         cloned[tablePlan.CollectionMergePlan!.OrdinalBindingIndex] =
                             new FlattenedWriteValue.Literal(finalOrdinal);
-                        var mergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(tablePlan, cloned);
-                        mergedRows.Add(mergedRow);
+                        var hiddenMergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(
+                            tablePlan,
+                            cloned
+                        );
+                        mergedRows.Add(hiddenMergedRow);
                         break;
-                    }
 
                     case ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry insertEntry:
-                    {
                         // Rewrite parent key parts, stamp ordinal, build merged row.
                         var withParentKey = RelationalWriteRowHelpers.RewriteParentKeyPartValues(
                             tablePlan,
@@ -876,10 +874,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                         var stamped = withParentKey.ToArray();
                         stamped[tablePlan.CollectionMergePlan!.OrdinalBindingIndex] =
                             new FlattenedWriteValue.Literal(finalOrdinal);
-                        var mergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(tablePlan, stamped);
-                        mergedRows.Add(mergedRow);
+                        var insertMergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(
+                            tablePlan,
+                            stamped
+                        );
+                        mergedRows.Add(insertMergedRow);
                         break;
-                    }
 
                     default:
                         throw new InvalidOperationException(
