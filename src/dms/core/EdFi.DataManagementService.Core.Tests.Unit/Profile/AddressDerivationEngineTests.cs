@@ -464,4 +464,84 @@ public class AddressDerivationEngineTests
             _resultWithMissing.SemanticIdentityInOrder[0].Value.Should().BeNull();
         }
     }
+
+    [TestFixture]
+    public class Given_dotted_semantic_identity_path : AddressDerivationEngineTests
+    {
+        private static IReadOnlyList<CompiledScopeDescriptor> DottedPathCatalog() =>
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: []
+                ),
+                new(
+                    JsonScope: "$.classPeriods[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: ["classPeriodReference.classPeriodName"],
+                    CanonicalScopeRelativeMemberPaths: []
+                ),
+            ];
+
+        [Test]
+        public void It_reads_present_dotted_path_value()
+        {
+            var engine = new AddressDerivationEngine(DottedPathCatalog());
+            var item = JsonNode.Parse("""{"classPeriodReference":{"classPeriodName":"First"}}""")!;
+            var result = engine.DeriveCollectionRowAddress("$.classPeriods[*]", item, []);
+            var part = result.SemanticIdentityInOrder.Single();
+            part.RelativePath.Should().Be("classPeriodReference.classPeriodName");
+            part.IsPresent.Should().BeTrue();
+            part.Value!.ToJsonString().Should().Be("\"First\"");
+        }
+
+        [Test]
+        public void It_emits_absent_part_when_middle_segment_missing()
+        {
+            var engine = new AddressDerivationEngine(DottedPathCatalog());
+            var item = JsonNode.Parse("""{"otherReference":{"classPeriodName":"First"}}""")!;
+            var result = engine.DeriveCollectionRowAddress("$.classPeriods[*]", item, []);
+            var part = result.SemanticIdentityInOrder.Single();
+            part.IsPresent.Should().BeFalse();
+            part.Value.Should().BeNull();
+        }
+
+        [Test]
+        public void It_emits_absent_part_when_leaf_segment_missing()
+        {
+            var engine = new AddressDerivationEngine(DottedPathCatalog());
+            var item = JsonNode.Parse("""{"classPeriodReference":{}}""")!;
+            var result = engine.DeriveCollectionRowAddress("$.classPeriods[*]", item, []);
+            var part = result.SemanticIdentityInOrder.Single();
+            part.IsPresent.Should().BeFalse();
+            part.Value.Should().BeNull();
+        }
+
+        [Test]
+        public void It_emits_present_null_part_when_leaf_explicitly_null()
+        {
+            var engine = new AddressDerivationEngine(DottedPathCatalog());
+            var item = JsonNode.Parse("""{"classPeriodReference":{"classPeriodName":null}}""")!;
+            var result = engine.DeriveCollectionRowAddress("$.classPeriods[*]", item, []);
+            var part = result.SemanticIdentityInOrder.Single();
+            part.IsPresent.Should().BeTrue();
+            part.Value.Should().BeNull();
+        }
+
+        [Test]
+        public void It_emits_absent_part_when_intermediate_value_not_object()
+        {
+            var engine = new AddressDerivationEngine(DottedPathCatalog());
+            var item = JsonNode.Parse("""{"classPeriodReference":"scalar"}""")!;
+            var result = engine.DeriveCollectionRowAddress("$.classPeriods[*]", item, []);
+            var part = result.SemanticIdentityInOrder.Single();
+            part.IsPresent.Should().BeFalse();
+            part.Value.Should().BeNull();
+        }
+    }
 }
