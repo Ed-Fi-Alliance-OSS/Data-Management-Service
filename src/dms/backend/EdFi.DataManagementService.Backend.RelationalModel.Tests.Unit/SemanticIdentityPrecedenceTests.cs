@@ -260,7 +260,7 @@ public class Given_A_Seeded_Reference_Fallback_And_A_Matching_Array_Uniqueness
         _addressTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("AddressSchool_DocumentId", "AddressSchool_DocumentId");
+            .Equal("AddressSchool_SchoolId", "AddressSchool_EducationOrganizationId");
 
         _addressTable
             .IdentityMetadata.SemanticIdentitySource.Should()
@@ -356,11 +356,11 @@ file static class SemanticIdentityPrecedenceFixture
         [
             new CollectionSemanticIdentityBinding(
                 JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
-                new DbColumnName("AddressSchool_DocumentId")
+                new DbColumnName("AddressSchool_SchoolId")
             ),
             new CollectionSemanticIdentityBinding(
                 JsonPathExpressionCompiler.Compile("$.schoolReference.educationOrganizationId"),
-                new DbColumnName("AddressSchool_DocumentId")
+                new DbColumnName("AddressSchool_EducationOrganizationId")
             ),
         ];
     }

@@ -1573,21 +1573,22 @@ public class Given_Array_Uniqueness_Constraint_Derivation
     }
 
     /// <summary>
-    /// It should map reference identity paths to document id.
+    /// It should map reference identity paths to per-part raw scalar columns.
     /// </summary>
     [Test]
-    public void It_should_map_reference_identity_paths_to_document_id()
+    public void It_should_map_reference_identity_paths_to_per_part_raw_scalar_columns()
     {
         var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
             _addressTable,
             "BusRoute_DocumentId",
-            "School_DocumentId"
+            "School_SchoolId",
+            "School_EducationOrganizationId"
         );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "School_DocumentId");
+            .Equal("BusRoute_DocumentId", "School_SchoolId", "School_EducationOrganizationId");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
     }
 
@@ -1641,7 +1642,7 @@ public class Given_Array_Uniqueness_Constraint_Derivation
         _addressTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("School_DocumentId", "School_DocumentId");
+            .Equal("School_SchoolId", "School_EducationOrganizationId");
     }
 
     /// <summary>
@@ -2522,7 +2523,7 @@ public class Given_Extension_Child_Array_Uniqueness_Constraint_Derivation
         _sponsorReferenceTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("Program_DocumentId");
+            .Equal("Program_ProgramName");
     }
 
     private static JsonObject BuildExtensionProjectSchemaWithChildArrayUniquenessConstraints()
