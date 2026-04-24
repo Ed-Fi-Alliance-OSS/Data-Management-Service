@@ -206,13 +206,11 @@ public class AddressDerivationEngine(IReadOnlyList<CompiledScopeDescriptor> scop
 
         var builder = ImmutableArray.CreateBuilder<SemanticIdentityPart>(relativePathsInOrder.Length);
 
-        var obj = item.AsObject();
-
         foreach (var relativePath in relativePathsInOrder)
         {
-            if (obj.TryGetPropertyValue(relativePath, out var value))
+            if (TryNavigateRelativePath(item, relativePath, out var present, out var leaf))
             {
-                builder.Add(new SemanticIdentityPart(relativePath, value?.DeepClone(), true));
+                builder.Add(new SemanticIdentityPart(relativePath, leaf?.DeepClone(), present));
             }
             else
             {
@@ -221,5 +219,48 @@ public class AddressDerivationEngine(IReadOnlyList<CompiledScopeDescriptor> scop
         }
 
         return builder.MoveToImmutable();
+    }
+
+    private static bool TryNavigateRelativePath(
+        JsonNode startNode,
+        string relativePath,
+        out bool present,
+        out JsonNode? leafValue
+    )
+    {
+        present = false;
+        leafValue = null;
+
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            return false;
+        }
+
+        var segments = relativePath.Split('.');
+        JsonNode? cursor = startNode;
+
+        for (var i = 0; i < segments.Length; i++)
+        {
+            if (cursor is not JsonObject objNode)
+            {
+                return false;
+            }
+
+            if (!objNode.TryGetPropertyValue(segments[i], out var next))
+            {
+                return false;
+            }
+
+            if (i == segments.Length - 1)
+            {
+                present = true;
+                leafValue = next;
+                return true;
+            }
+
+            cursor = next;
+        }
+
+        return false;
     }
 }
