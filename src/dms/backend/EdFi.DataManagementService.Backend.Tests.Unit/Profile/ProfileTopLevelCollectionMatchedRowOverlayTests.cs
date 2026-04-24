@@ -1043,3 +1043,246 @@ public class Given_overlay_rejects_ClearOnVisibleAbsent_disposition_if_produced
     public void It_names_ClearOnVisibleAbsent_in_message() =>
         _thrown!.Message.Should().Contain(nameof(RootBindingDisposition.ClearOnVisibleAbsent));
 }
+
+// ── Fixture 10: Reference-derived k-u member with descendant hidden path ──────
+
+/// <summary>
+/// Regression test for the <c>ClassifyMemberVisibilityFromHiddenSet</c> bug where the
+/// row-level classifier used exact-match <c>hiddenSet.Contains</c> instead of
+/// <see cref="ProfileMemberGovernanceRules.IsHiddenGoverned"/> with
+/// <see cref="ProfileMemberGovernanceRules.HiddenPathMatchKind.ReferenceRooted"/> for
+/// <see cref="KeyUnificationMemberWritePlan.ReferenceDerivedMember"/>. With the bug, a
+/// hidden descendant path like <c>schoolReference.schoolId</c> fails to govern the
+/// reference-derived member whose governing path is the reference root
+/// <c>schoolReference</c>, so the k-u resolver evaluates the member from the request
+/// instead of preserving the stored canonical value.
+/// </summary>
+[TestFixture]
+public class Given_overlay_matched_row_with_reference_derived_ku_member_and_descendant_hidden_path_preserves_stored_canonical
+{
+    private RelationalWriteMergedTableRow _result = null!;
+    private int _canonicalIndex;
+
+    // Layout: [0]=CollectionItemId, [1]=ParentDocId, [2]=Ordinal,
+    //         [3]=KU_Canonical (resolver-owned), [4]=SchoolRef_DocumentId (FK),
+    //         [5]=SchoolRef_SchoolId (reference-derived k-u member)
+    [SetUp]
+    public void Setup()
+    {
+        var (resourcePlan, collectionPlan, canonicalIdx) = BuildReferenceDerivedKuPlan();
+        _canonicalIndex = canonicalIdx;
+
+        var request = CreateRequest();
+
+        // Stored: canonical = 1001, FK = 99L, derived = 1001
+        var storedRow = BuildStoredRow([null, null, 1, 1001, 99L, 1001], stableRowIdentity: 500L);
+
+        // Request: derived = 2002 (must be ignored — whole reference family is
+        // governed via a descendant hidden path)
+        var requestCandidate = BuildCustomRequestCandidate(collectionPlan, [null, null, 1, null, 77L, 2002]);
+
+        // Hide a descendant of the reference root ("schoolReference"): the classifier
+        // must treat the ReferenceDerivedMember whose governing path is "schoolReference"
+        // as HiddenGoverned (ReferenceRooted match), so canonical comes from stored row.
+        _result = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+            resourcePlan,
+            collectionPlan,
+            request,
+            storedRow,
+            requestCandidate,
+            hiddenMemberPaths: ["schoolReference.schoolId"],
+            finalOrdinal: 1,
+            parentPhysicalRowIdentityValues: [new FlattenedWriteValue.Literal(42L)],
+            concreteRequestItemNode: new JsonObject(),
+            resolvedReferenceLookups: EmptyResolvedReferenceLookups(resourcePlan)
+        );
+    }
+
+    [Test]
+    public void It_preserves_stored_canonical_value() =>
+        ((FlattenedWriteValue.Literal)_result.Values[_canonicalIndex]).Value.Should().Be(1001);
+
+    private static (ResourceWritePlan, TableWritePlan, int CanonicalIndex) BuildReferenceDerivedKuPlan()
+    {
+        var schema = new DbSchemaName("edfi");
+        var referenceObjectPath = new JsonPathExpression(
+            "$.schoolRefs[*].schoolReference",
+            [
+                new JsonPathSegment.Property("schoolRefs"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("schoolReference"),
+            ]
+        );
+
+        var collectionKeyColumn = StoredColumn(
+            "CollectionItemId",
+            ColumnKind.CollectionKey,
+            isNullable: false
+        );
+        var parentKeyColumn = StoredColumn("ParentDocumentId", ColumnKind.ParentKeyPart, isNullable: false);
+        var ordinalColumn = StoredColumn("Ordinal", ColumnKind.Ordinal, isNullable: false);
+        var canonicalColumn = StoredColumn(
+            "KU_Canonical",
+            ColumnKind.Scalar,
+            new RelationalScalarType(ScalarKind.Int32)
+        );
+        var fkColumn = StoredColumn(
+            "SchoolRef_DocumentId",
+            ColumnKind.DocumentFk,
+            new RelationalScalarType(ScalarKind.Int64)
+        );
+        var derivedColumn = StoredColumn(
+            "SchoolRef_SchoolId",
+            ColumnKind.Scalar,
+            new RelationalScalarType(ScalarKind.Int32),
+            sourceJsonPath: new JsonPathExpression(
+                "$.schoolRefs[*].schoolReference.schoolId",
+                [new JsonPathSegment.Property("schoolId")]
+            )
+        );
+
+        var allColumns = new[]
+        {
+            collectionKeyColumn,
+            parentKeyColumn,
+            ordinalColumn,
+            canonicalColumn,
+            fkColumn,
+            derivedColumn,
+        };
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(schema, "SchoolRef"),
+            JsonScope: new JsonPathExpression(
+                "$.schoolRefs[*]",
+                [new JsonPathSegment.Property("schoolRefs"), new JsonPathSegment.AnyArrayElement()]
+            ),
+            Key: new TableKey(
+                "PK_SchoolRef",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: allColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var referenceSource = new ReferenceDerivedValueSourceMetadata(
+            BindingIndex: 0,
+            ReferenceObjectPath: referenceObjectPath,
+            IdentityJsonPath: new JsonPathExpression(
+                "$.schoolId",
+                [new JsonPathSegment.Property("schoolId")]
+            ),
+            ReferenceJsonPath: new JsonPathExpression(
+                "$.schoolRefs[*].schoolReference.schoolId",
+                [new JsonPathSegment.Property("schoolId")]
+            )
+        );
+
+        const int canonicalBindingIndex = 3;
+
+        var kuPlan = new KeyUnificationWritePlan(
+            CanonicalColumn: canonicalColumn.ColumnName,
+            CanonicalBindingIndex: canonicalBindingIndex,
+            MembersInOrder:
+            [
+                new KeyUnificationMemberWritePlan.ReferenceDerivedMember(
+                    MemberPathColumn: derivedColumn.ColumnName,
+                    RelativePath: new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
+                    ReferenceSource: referenceSource,
+                    PresenceColumn: null,
+                    PresenceBindingIndex: null,
+                    PresenceIsSynthetic: false
+                ),
+            ]
+        );
+
+        var collectionPlan = new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.SchoolRef VALUES (...)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, allColumns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionKeyColumn,
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    parentKeyColumn,
+                    new WriteValueSource.DocumentId(),
+                    "ParentDocumentId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(canonicalColumn, new WriteValueSource.Precomputed(), "KU_Canonical"),
+                new WriteColumnBinding(
+                    fkColumn,
+                    new WriteValueSource.DocumentReference(0),
+                    "SchoolRef_DocumentId"
+                ),
+                new WriteColumnBinding(
+                    derivedColumn,
+                    new WriteValueSource.ReferenceDerived(referenceSource),
+                    "SchoolRef_SchoolId"
+                ),
+            ],
+            KeyUnificationPlans: [kuPlan],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings: [],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.SchoolRef SET x = @x WHERE CollectionItemId = @CollectionItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.SchoolRef WHERE CollectionItemId = @CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+
+        var docRefBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: referenceObjectPath,
+            Table: tableModel.Table,
+            FkColumn: fkColumn.ColumnName,
+            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            IdentityBindings: []
+        );
+
+        var rootTableModel = AdapterFactoryTestFixtures.BuildRootTableModel();
+        var rootPlan = AdapterFactoryTestFixtures.BuildRootTableWritePlan(rootTableModel);
+
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTableModel,
+            TablesInDependencyOrder: [rootTableModel, tableModel],
+            DocumentReferenceBindings: [docRefBinding],
+            DescriptorEdgeSources: []
+        );
+
+        return (
+            new ResourceWritePlan(resourceModel, [rootPlan, collectionPlan]),
+            collectionPlan,
+            canonicalBindingIndex
+        );
+    }
+}

@@ -116,6 +116,7 @@ internal static class ProfileTopLevelCollectionMatchedRowOverlay
                 RequestItemNode: concreteRequestItemNode,
                 CurrentRowByColumnName: currentRowByColumnName,
                 HiddenMemberPaths: hiddenMemberPaths,
+                OrdinalPath: requestCandidate.OrdinalPath,
                 ResolvedReferenceLookups: resolvedReferenceLookups
             );
             var valueAssigned = new bool[values.Length];

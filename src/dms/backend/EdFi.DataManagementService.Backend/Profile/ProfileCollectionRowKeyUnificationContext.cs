@@ -29,6 +29,13 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// Hidden member paths from the matched <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>.
 /// Replaces the scope-state-derived hidden-path set used by the root and separate-table resolvers.
 /// </param>
+/// <param name="OrdinalPath">
+/// Ordinal path of the matched request candidate, used to key
+/// <see cref="FlatteningResolvedReferenceLookupSet"/> lookups for visible descriptor and
+/// reference-derived key-unification members. Empty for non-collection resolvers; for
+/// top-level collection rows this carries the candidate's occurrence ordinals
+/// (e.g. <c>[0]</c> for <c>$.classPeriods[0]</c>).
+/// </param>
 /// <param name="ResolvedReferenceLookups">
 /// Resolved reference lookups compiled once per synthesis pass, reused across all
 /// key-unification plans evaluated for the row.
@@ -37,5 +44,6 @@ internal sealed record ProfileCollectionRowKeyUnificationContext(
     JsonNode RequestItemNode,
     IReadOnlyDictionary<DbColumnName, object?> CurrentRowByColumnName,
     ImmutableArray<string> HiddenMemberPaths,
+    ImmutableArray<int> OrdinalPath,
     FlatteningResolvedReferenceLookupSet ResolvedReferenceLookups
 );

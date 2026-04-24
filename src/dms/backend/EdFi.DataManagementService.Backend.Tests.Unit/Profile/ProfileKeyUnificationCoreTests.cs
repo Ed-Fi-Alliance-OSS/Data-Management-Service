@@ -329,12 +329,15 @@ internal static class CollectionRowContextBuilder
         ResourceWritePlan plan,
         JsonNode requestItemNode,
         IReadOnlyDictionary<DbColumnName, object?> currentRow,
-        ImmutableArray<string> hiddenMemberPaths
+        ImmutableArray<string> hiddenMemberPaths,
+        ImmutableArray<int> ordinalPath = default,
+        FlatteningResolvedReferenceLookupSet? resolvedReferenceLookups = null
     ) =>
         new(
             RequestItemNode: requestItemNode,
             CurrentRowByColumnName: currentRow,
             HiddenMemberPaths: hiddenMemberPaths,
-            ResolvedReferenceLookups: EmptyResolvedReferenceLookups(plan)
+            OrdinalPath: ordinalPath.IsDefault ? ImmutableArray<int>.Empty : ordinalPath,
+            ResolvedReferenceLookups: resolvedReferenceLookups ?? EmptyResolvedReferenceLookups(plan)
         );
 }
