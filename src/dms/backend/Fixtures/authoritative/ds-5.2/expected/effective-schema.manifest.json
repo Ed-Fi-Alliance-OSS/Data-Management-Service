@@ -1,7 +1,7 @@
 {
   "api_schema_format_version": "1.0.0",
   "relational_mapping_version": "v1",
-  "effective_schema_hash": "e33844bc8b3bceae7f180d72903daf1989aa506509a4b7b909b7112f05e0d978",
+  "effective_schema_hash": "b75ab5ef2f2b9ddbedfbfafcfcb0db81857762980b46542d68226ac64b5a2f25",
   "resource_key_count": 351,
   "resource_key_seed_hash": "fae376b7b81722efe1878226a49200d74ae68febac7d21f5121a0824236e981b",
   "schema_components": [
@@ -10,7 +10,7 @@
       "project_name": "Ed-Fi",
       "project_version": "5.2.0",
       "is_extension_project": false,
-      "project_hash": "54f6bb2fa20002a1a1940b6f76b30047bad4099fd1ca032ce5351fd43b5e314a"
+      "project_hash": "a51ff511cd685b9828019c202f9250fcdcfa5e491c1ba8deb4306d87ce8f29d6"
     }
   ],
   "resource_keys": [
