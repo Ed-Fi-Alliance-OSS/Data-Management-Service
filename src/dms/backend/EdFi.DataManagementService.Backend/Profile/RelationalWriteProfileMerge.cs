@@ -1090,7 +1090,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 tablePlan,
                 resolvedReferenceLookups,
                 currentRows,
-                storedRowIndex
+                storedRowIndex,
+                storedRows.Length
             );
 
             builder.Add(row with { Address = row.Address with { SemanticIdentityInOrder = canonicalized } });
@@ -1197,7 +1198,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         TableWritePlan tablePlan,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
-        int storedRowIndex
+        int storedRowIndex,
+        int storedRowsLength
     )
     {
         ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
@@ -1268,7 +1270,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 descriptorIdentityIndices,
                 idx,
                 currentRows,
-                storedRowIndex
+                storedRowIndex,
+                storedRowsLength
             );
 
             if (fallbackId is null)
@@ -1280,7 +1283,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                         + "be matched against current rows. "
                         + "This can happen when the identity is descriptor-only, the stored rows contain "
                         + "hidden rows interleaved with visible rows, and the cache does not hold the URI. "
-                        + $"Visible stored row count: {currentRows.Length}, stored row index: {storedRowIndex}."
+                        + $"Current rows count: {currentRows.Length}, stored rows count: {storedRowsLength}, stored row index: {storedRowIndex}."
                 );
             }
 
@@ -1305,10 +1308,13 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     ///   not in <paramref name="descriptorIndices"/>, find the unique current row whose
     ///   semantic identity matches all scalar parts and copy its descriptor part at the same
     ///   index position.</item>
-    ///   <item>Positional matching (descriptor-only): if no scalar parts exist and
-    ///   <paramref name="currentRows"/> has the same count as the visible stored rows (implied
-    ///   by the caller's <paramref name="storedRowIndex"/> range), use
-    ///   <c>currentRows[storedRowIndex]</c> directly.</item>
+    ///   <item>Positional matching (descriptor-only): if no scalar parts exist AND
+    ///   <paramref name="currentRows"/><c>.Length == </c><paramref name="storedRowsLength"/>
+    ///   (all stored rows are covered by current rows one-to-one), use
+    ///   <c>currentRows[storedRowIndex]</c> directly. When the counts differ, the positional
+    ///   assumption does not hold (a profile Filter has hidden some stored rows while all DB
+    ///   rows remain in <paramref name="currentRows"/>), so <c>null</c> is returned and the
+    ///   caller throws rather than silently picking the wrong row.</item>
     /// </list>
     /// <para>Returns <c>null</c> when no match is found and the caller should throw.</para>
     /// </summary>
@@ -1317,7 +1323,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         IReadOnlyList<int> descriptorIndices,
         int descriptorIdx,
         ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
-        int storedRowIndex
+        int storedRowIndex,
+        int storedRowsLength
     )
     {
         if (currentRows.IsDefault || currentRows.Length == 0)
@@ -1409,9 +1416,17 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         }
 
         // Strategy 2: positional matching (descriptor-only identity).
-        // Safe when currentRows.Length equals the number of visible stored rows, which is
-        // the case when no hidden rows interleave (there are no scalar parts to hide on,
-        // so all rows are visible in the profile projection).
+        // Safe ONLY when currentRows.Length == storedRowsLength, which guarantees a one-to-one
+        // ordinal correspondence between visible stored rows and current DB rows. When the
+        // counts differ (a profile Filter has restricted the visible stored rows while the DB
+        // still holds the full set in currentRows), positional indexing would pick the wrong
+        // row — return null so the caller throws with a diagnostic instead of silently
+        // corrupting data.
+        if (currentRows.Length != storedRowsLength)
+        {
+            return null;
+        }
+
         if (storedRowIndex < currentRows.Length)
         {
             var positionalRow = currentRows[storedRowIndex];

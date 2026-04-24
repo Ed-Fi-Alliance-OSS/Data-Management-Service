@@ -3945,3 +3945,589 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
     public void It_has_one_current_row() =>
         _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(1);
 }
+
+/// <summary>
+/// Shared helpers for two-part mixed-identity (city scalar + addressTypeDescriptor FK)
+/// collection fixtures used by the scalar-parts fallback and counts-differ tests.
+/// </summary>
+internal static class MixedIdentityBuilders
+{
+    public const string CollectionScope = "$.addresses[*]";
+    public const string DescriptorPath = "$.addresses[*].addressTypeDescriptor";
+    public const string DescriptorRelativePath = "$.addressTypeDescriptor";
+
+    public static readonly QualifiedResourceName AddressTypeDescriptorResource =
+        DescriptorCanonicalizeBuilders.AddressTypeDescriptorResource;
+
+    public const string PhysicalUri = DescriptorCanonicalizeBuilders.AddressTypeUri; // "uri://ed-fi.org/AddressTypeDescriptor#Physical"
+    public const long PhysicalId = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
+    public const string MailingUri = "uri://ed-fi.org/AddressTypeDescriptor#Mailing";
+    public const long MailingId = 50L;
+
+    /// <summary>
+    /// Builds the five-column mixed-identity collection plan:
+    ///   [0] CollectionItemId (CollectionKey)
+    ///   [1] ParentDocumentId (ParentKeyPart)
+    ///   [2] Ordinal           (Ordinal)
+    ///   [3] CityName          (Scalar)        — semantic identity index 0
+    ///   [4] AddressTypeDescriptor_Id (DescriptorFk) — semantic identity index 1
+    /// </summary>
+    public static (ResourceWritePlan Plan, TableWritePlan CollectionPlan, TableWritePlan RootPlan) BuildPlan()
+    {
+        var collectionKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("CollectionItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var parentKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ParentDocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var cityColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("CityName"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: Path("$.addresses[*].city"),
+            TargetResource: null
+        );
+        var descriptorColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("AddressTypeDescriptor_Id"),
+            Kind: ColumnKind.DescriptorFk,
+            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: false,
+            SourceJsonPath: Path(DescriptorPath),
+            TargetResource: AddressTypeDescriptorResource
+        );
+
+        var allColumns = new DbColumnModel[]
+        {
+            collectionKeyColumn,
+            parentKeyColumn,
+            ordinalColumn,
+            cityColumn,
+            descriptorColumn,
+        };
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "MixedAddresses"),
+            JsonScope: Path(CollectionScope),
+            Key: new TableKey(
+                "PK_MixedAddresses",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: allColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(Path("$.city"), cityColumn.ColumnName),
+                    new CollectionSemanticIdentityBinding(
+                        Path(DescriptorRelativePath),
+                        descriptorColumn.ColumnName
+                    ),
+                ]
+            ),
+        };
+
+        var collectionPlan = new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"MixedAddresses\" VALUES (@CollectionItemId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, allColumns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionKeyColumn,
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    parentKeyColumn,
+                    new WriteValueSource.DocumentId(),
+                    "ParentDocumentId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    cityColumn,
+                    new WriteValueSource.Scalar(
+                        Path("$.addresses[*].city"),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "CityName"
+                ),
+                new WriteColumnBinding(
+                    descriptorColumn,
+                    new WriteValueSource.DescriptorReference(
+                        AddressTypeDescriptorResource,
+                        Path(DescriptorPath),
+                        DescriptorValuePath: null
+                    ),
+                    "AddressTypeDescriptor_Id"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(Path("$.city"), 3),
+                    new CollectionMergeSemanticIdentityBinding(Path(DescriptorRelativePath), 4),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.\"MixedAddresses\" SET X=@X WHERE \"CollectionItemId\"=@CollectionItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.\"MixedAddresses\" WHERE \"CollectionItemId\"=@CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 4, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+
+        var rootDocId = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var rootTableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "MixedStudent"),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                "PK_MixedStudent",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [rootDocId],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+        var rootPlan = new TableWritePlan(
+            TableModel: rootTableModel,
+            InsertSql: "INSERT INTO edfi.\"MixedStudent\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 1, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(rootDocId, new WriteValueSource.DocumentId(), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        var plan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "MixedStudent"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootTableModel,
+                TablesInDependencyOrder: [rootTableModel, tableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: false,
+                        DescriptorValuePath: Path(DescriptorPath),
+                        Table: tableModel.Table,
+                        FkColumn: descriptorColumn.ColumnName,
+                        DescriptorResource: AddressTypeDescriptorResource
+                    ),
+                ]
+            ),
+            [rootPlan, collectionPlan]
+        );
+
+        return (plan, collectionPlan, rootPlan);
+    }
+
+    /// <summary>Builds a two-column semantic identity: city (scalar) + descriptor URI (string).</summary>
+    public static ImmutableArray<SemanticIdentityPart> BuildStoredIdentity(
+        string city,
+        string descriptorUri
+    ) =>
+        [
+            new SemanticIdentityPart("$.city", JsonValue.Create(city), IsPresent: true),
+            new SemanticIdentityPart(
+                DescriptorRelativePath,
+                JsonValue.Create(descriptorUri),
+                IsPresent: true
+            ),
+        ];
+
+    public static VisibleStoredCollectionRow BuildStoredRow(string city, string descriptorUri) =>
+        new(
+            new CollectionRowAddress(
+                CollectionScope,
+                new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
+                BuildStoredIdentity(city, descriptorUri)
+            ),
+            ImmutableArray<string>.Empty
+        );
+
+    public static VisibleRequestCollectionItem BuildRequestItem(
+        string city,
+        string descriptorUri,
+        int requestOrder
+    ) =>
+        new(
+            new CollectionRowAddress(
+                CollectionScope,
+                new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
+                [
+                    new SemanticIdentityPart("$.city", JsonValue.Create(city), IsPresent: true),
+                    new SemanticIdentityPart(
+                        DescriptorRelativePath,
+                        JsonValue.Create(descriptorUri),
+                        IsPresent: true
+                    ),
+                ]
+            ),
+            Creatable: true,
+            RequestJsonPath: $"$.addresses[{requestOrder}]"
+        );
+
+    public static CollectionWriteCandidate BuildCandidate(
+        TableWritePlan collectionPlan,
+        string city,
+        long descriptorId,
+        int requestOrder
+    )
+    {
+        var values = new FlattenedWriteValue[]
+        {
+            new FlattenedWriteValue.Literal(null), // CollectionItemId
+            new FlattenedWriteValue.Literal(null), // ParentDocumentId
+            new FlattenedWriteValue.Literal(null), // Ordinal
+            new FlattenedWriteValue.Literal(city), // CityName
+            new FlattenedWriteValue.Literal(descriptorId), // DescriptorId
+        };
+        return new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [requestOrder],
+            requestOrder: requestOrder,
+            values: values,
+            semanticIdentityValues: [city, descriptorId]
+        );
+    }
+
+    private static JsonPathExpression Path(string canonical) => new(canonical, []);
+}
+
+/// <summary>
+/// Fixture: two-part mixed identity (city scalar + addressTypeDescriptor FK).
+/// The stored document has two rows: Austin/Physical and Dallas/Mailing.
+/// The PUT request includes only Austin/Physical — Physical URI is in the request-cycle
+/// descriptor cache but Mailing URI is NOT (delete-by-absence for the Dallas row).
+///
+/// <para>The canonicalization must NOT throw. The scalar-parts fallback (Strategy 1) matches
+/// the Dallas stored row by its city="Dallas" scalar against the current rows and extracts
+/// the Mailing descriptor id from the matched current row.</para>
+///
+/// <para>The planner emits a <c>MatchedUpdateEntry</c> for Austin and omits Dallas (delete-by-absence).
+/// The merged state must contain one merged row and two current rows.</para>
+/// </summary>
+[TestFixture]
+public class Given_top_level_collection_with_mixed_identity_and_cache_miss_resolves_via_scalar_parts
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan, rootPlan) = MixedIdentityBuilders.BuildPlan();
+
+        // Request body: only Austin/Physical — Dallas/Mailing is omitted.
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(
+                new JsonObject
+                {
+                    ["city"] = "Austin",
+                    ["addressTypeDescriptor"] = MixedIdentityBuilders.PhysicalUri,
+                }
+            ),
+        };
+
+        // Candidate for the Austin/Physical request item (id from flattener).
+        var candidateAustin = MixedIdentityBuilders.BuildCandidate(
+            collectionPlan,
+            "Austin",
+            MixedIdentityBuilders.PhysicalId,
+            requestOrder: 0
+        );
+
+        // Request item: Austin/Physical URI (string from Core).
+        var requestItemAustin = MixedIdentityBuilders.BuildRequestItem(
+            "Austin",
+            MixedIdentityBuilders.PhysicalUri,
+            requestOrder: 0
+        );
+
+        // Both stored rows visible per profile.
+        var storedRowAustin = MixedIdentityBuilders.BuildStoredRow(
+            "Austin",
+            MixedIdentityBuilders.PhysicalUri
+        );
+        var storedRowDallas = MixedIdentityBuilders.BuildStoredRow(
+            "Dallas",
+            MixedIdentityBuilders.MailingUri
+        );
+
+        // Cache contains ONLY Physical (Austin's URI) — Mailing (Dallas) is absent.
+        var resolvedRefs = DescriptorCanonicalizeBuilders.BuildResolvedReferenceSetWithDescriptor(
+            MixedIdentityBuilders.PhysicalUri,
+            MixedIdentityBuilders.PhysicalId
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [requestItemAustin]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray<StoredScopeState>.Empty,
+            [storedRowAustin, storedRowDallas] // Both stored rows visible.
+        );
+
+        // Current DB state: two rows — Austin (typeId=42) and Dallas (typeId=50).
+        // Layout: [CollectionItemId, ParentDocumentId, Ordinal, CityName, DescriptorId]
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                DocumentId: 345L,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [345L],
+                    ]
+                ),
+                new HydratedTableRows(
+                    collectionPlan.TableModel,
+                    [
+                        [1L, 345L, 1, "Austin", MixedIdentityBuilders.PhysicalId],
+                        [2L, 345L, 2, "Dallas", MixedIdentityBuilders.MailingId],
+                    ]
+                ),
+            ],
+            []
+        );
+
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal(345L)],
+                collectionCandidates: [candidateAustin]
+            )
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: resolvedRefs
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_has_merge_result() => _outcome.MergeResult.Should().NotBeNull();
+
+    /// <summary>
+    /// Only Austin/Physical is in the plan sequence (Dallas/Mailing was omitted → delete-by-absence).
+    /// </summary>
+    [Test]
+    public void It_produces_one_merged_collection_row() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    /// <summary>
+    /// Both current rows are tracked so the persister can delete Dallas/Mailing by absence.
+    /// </summary>
+    [Test]
+    public void It_has_two_current_collection_rows() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(2);
+}
+
+/// <summary>
+/// Fixture: descriptor-only identity where the visible stored rows count differs from the
+/// current DB rows count (simulating a profile Filter that restricts visible stored rows while
+/// the DB holds all rows in currentRows). The positional fallback must NOT silently pick the
+/// wrong row — instead it must return null and trigger the throw.
+///
+/// <para>Setup: 1 visible stored row (Physical URI, cache miss) but 2 current DB rows.
+/// The positional guard enforces storedRows.Length == currentRows.Length before using
+/// positional correspondence. Here they differ (1 vs 2), so the guard fires and the
+/// synthesizer throws.</para>
+/// </summary>
+[TestFixture]
+public class Given_top_level_collection_with_descriptor_only_identity_throws_when_row_counts_differ
+{
+    private Action _synthesizeAction = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = DescriptorCanonicalizeBuilders.BuildPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["addressTypeDescriptor"] = DescriptorCanonicalizeBuilders.AddressTypeUri }
+            ),
+        };
+
+        // Candidate for the Physical request item.
+        var candidate = DescriptorCanonicalizeBuilders.BuildCandidate(
+            collectionPlan,
+            DescriptorCanonicalizeBuilders.AddressTypeId
+        );
+        // Request item with Physical URI.
+        var requestItem = DescriptorCanonicalizeBuilders.BuildRequestItemWithUri(
+            DescriptorCanonicalizeBuilders.AddressTypeUri,
+            creatable: true
+        );
+
+        // Only ONE visible stored row (Physical URI) — simulates a profile Filter that hid
+        // the Mailing row from the stored snapshot, giving 1 visible stored row.
+        var storedRowPhysical = DescriptorCanonicalizeBuilders.BuildStoredRowWithUri(
+            DescriptorCanonicalizeBuilders.AddressTypeUri
+        );
+
+        // Cache is EMPTY — Physical URI not resolved in this request cycle (cache miss).
+        var resolvedRefs = new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [requestItem]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray<StoredScopeState>.Empty,
+            [storedRowPhysical] // 1 visible stored row.
+        );
+
+        // Current DB state has TWO rows — counts differ from the 1 visible stored row.
+        // This simulates the profile-filtered scenario described in Issue 1.
+        var currentState = DescriptorCanonicalizeBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId: 345L,
+            collectionRows:
+            [
+                [1L, 345L, 1, DescriptorCanonicalizeBuilders.AddressTypeId], // Physical (id=42)
+                [2L, 345L, 2, 50L], // Mailing (id=50) — hidden from stored snapshot
+            ]
+        );
+
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal(345L)],
+                collectionCandidates: [candidate]
+            )
+        );
+
+        _synthesizeAction = () =>
+            BuildProfileSynthesizer()
+                .Synthesize(
+                    new RelationalWriteProfileMergeRequest(
+                        writePlan: plan,
+                        flattenedWriteSet: flattened,
+                        writableRequestBody: body,
+                        currentState: currentState,
+                        profileRequest: request,
+                        profileAppliedContext: context,
+                        resolvedReferences: resolvedRefs
+                    )
+                );
+    }
+
+    [Test]
+    public void It_throws_with_diagnostic_message() =>
+        _synthesizeAction
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*descriptor URI not resolvable at merge boundary*");
+
+    [Test]
+    public void It_includes_current_rows_count_in_message() =>
+        _synthesizeAction.Should().Throw<InvalidOperationException>().WithMessage("*Current rows count: 2*");
+
+    [Test]
+    public void It_includes_stored_rows_count_in_message() =>
+        _synthesizeAction.Should().Throw<InvalidOperationException>().WithMessage("*stored rows count: 1*");
+}
