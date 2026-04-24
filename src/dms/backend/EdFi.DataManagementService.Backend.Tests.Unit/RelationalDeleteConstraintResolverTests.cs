@@ -212,24 +212,25 @@ public class Given_Relational_Delete_Constraint_Resolver
     }
 
     [Test]
-    public void It_throws_when_two_resources_share_the_same_foreign_key_constraint_name()
+    public void It_keeps_the_first_owner_when_two_resources_share_the_same_foreign_key_constraint_name()
     {
-        // Deterministic FK naming must produce unique names across the emitted inventory; a
-        // collision means the emitter has drifted. The resolver fails fast at index-build time
-        // so operators notice the drift loudly rather than silently picking a first match.
+        // Cross-resource FK-name duplication is legitimate when multiple resources share a
+        // superclass table at the DDL layer — for example, every concrete descriptor resource
+        // enumerates FK_Descriptor_Document pointing at the shared dms.Descriptor table. Because
+        // at most one physical FK corresponds to each emitted name, the driver can only ever
+        // surface one owning resource per violation; first-writer-wins therefore preserves correct
+        // resolution for uniquely-owned FKs without crashing the whole model index on the shared-
+        // superclass case. The iteration order here is ConcreteResourcesInNameOrder, so the
+        // resource added first (CalendarResource) owns the entry.
         const string duplicateName = "FK_Duplicated_Name";
         var modelSet = BuildModelSet(
             BuildResource(CalendarResource, keyId: 1, BuildTable("Calendar", BuildForeignKey(duplicateName))),
             BuildResource(SchoolResource, keyId: 2, BuildTable("School", BuildForeignKey(duplicateName)))
         );
 
-        var act = () => _sut.TryResolveReferencingResource(modelSet, duplicateName);
+        var result = _sut.TryResolveReferencingResource(modelSet, duplicateName);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Duplicate foreign-key constraint name '" + duplicateName + "'*Ed-Fi.Calendar*Ed-Fi.School*"
-            );
+        result.Should().Be(CalendarResource);
     }
 
     private static DerivedRelationalModelSet BuildModelSet(params ConcreteResourceModel[] resources)

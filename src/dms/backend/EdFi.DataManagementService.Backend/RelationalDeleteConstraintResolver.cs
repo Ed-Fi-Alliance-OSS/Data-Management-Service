@@ -78,23 +78,18 @@ internal sealed class RelationalDeleteConstraintResolver : IRelationalDeleteCons
                         .Select(fk => fk.Name)
                 )
                 {
-                    if (byConstraintName.TryGetValue(constraintName, out var existing))
-                    {
-                        throw new InvalidOperationException(
-                            $"Duplicate foreign-key constraint name '{constraintName}' found on "
-                                + $"resources '{FormatResource(existing)}' and '{FormatResource(resource)}'. "
-                                + "Constraint names must be unique across the compiled relational model."
-                        );
-                    }
-
-                    byConstraintName.Add(constraintName, resource);
+                    // First-writer-wins. Cross-resource duplicates are legitimate when multiple
+                    // resources share a superclass table at the DDL layer (e.g. every concrete
+                    // descriptor resource enumerates FK_Descriptor_Document pointing at the shared
+                    // dms.Descriptor table). Because at most one physical FK corresponds to each
+                    // emitted name, Postgres/MSSQL can only ever surface one owning resource per
+                    // violation; keeping the first match preserves correct resolution for uniquely-
+                    // owned FKs without crashing the whole model index on the shared-superclass case.
+                    byConstraintName.TryAdd(constraintName, resource);
                 }
             }
         }
 
         return byConstraintName;
     }
-
-    private static string FormatResource(QualifiedResourceName resource) =>
-        $"{resource.ProjectName}.{resource.ResourceName}";
 }
