@@ -18532,7 +18532,7 @@
       ]
     },
     {
-      "name": "UX_ReportCardGrade_Grade_BeginDate_GradingPeriodName_57b1756af9",
+      "name": "UX_ReportCardGrade_Grade_BeginDate_GradingPeriodName_088798dbf3",
       "table": {
         "schema": "edfi",
         "name": "ReportCardGrade"
@@ -18544,11 +18544,10 @@
         "Grade_GradeTypeDescriptor_DescriptorId",
         "Grade_GradingPeriodDescriptor_DescriptorId",
         "Grade_GradingPeriodName",
-        "Grade_GradingPeriodReferenceSchoolId",
+        "SchoolId_Unified",
         "Grade_GradingPeriodSchoolYear",
         "Grade_BeginDate",
         "Grade_LocalCourseCode",
-        "Grade_StudentSectionAssociationReferenceSchoolId",
         "Grade_SchoolYear",
         "Grade_SectionIdentifier",
         "Grade_SessionName",

@@ -273,9 +273,9 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Positive_Fixture(S
         );
         AssertSemanticIdentityUnique(
             "SchoolExtensionAddressSponsorReference",
-            ["Program_DocumentId"],
+            ["Program_ProgramName"],
             "BaseCollectionItemId",
-            "Program_DocumentId"
+            "Program_ProgramName"
         );
     }
 

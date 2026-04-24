@@ -110,7 +110,7 @@ public class Given_RuntimePlanFixtureModelSetBuilder_FocusedStableKeyExtensionCh
         sponsorReferenceTable
             .IdentityMetadata.SemanticIdentityBindings.Select(static binding => binding.ColumnName.Value)
             .Should()
-            .Equal("Program_DocumentId");
+            .Equal("Program_ProgramName");
     }
 
     private DbTableModel RequireTable(string scope)
