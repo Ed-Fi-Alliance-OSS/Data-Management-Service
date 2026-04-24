@@ -744,8 +744,8 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Resolves the physical column used for an array uniqueness path, binding to the reference FK column when
-    /// the path matches a reference identity component.
+    /// Resolves the physical column used for an array uniqueness path, binding to the per-identity-part raw
+    /// scalar column when the path matches a reference identity component.
     /// </summary>
     private static DbColumnName ResolveArrayUniquenessColumn(
         DbTableModel table,
@@ -766,7 +766,17 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 );
             }
 
-            return binding.FkColumn;
+            var identityBinding = binding.IdentityBindings.FirstOrDefault(ib =>
+                string.Equals(ib.ReferenceJsonPath.Canonical, path.Canonical, StringComparison.Ordinal)
+            );
+
+            if (identityBinding is not null)
+            {
+                return UnifiedAliasColumnResolver.ResolveStorageColumnName(table, identityBinding.Column);
+            }
+
+            // Defensive: if no matching identity binding is found, fall through to the
+            // column-by-path lookup so the missing-column diagnostic surfaces downstream.
         }
 
         if (!columnsByTable.TryGetValue(table.Table, out var columnsByPath))

@@ -148,7 +148,10 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
 
         foreach (var identityBinding in binding.IdentityBindings)
         {
-            var storageColumnName = ResolveStorageColumnName(table, identityBinding.Column);
+            var storageColumnName = UnifiedAliasColumnResolver.ResolveStorageColumnName(
+                table,
+                identityBinding.Column
+            );
             compiledBindings.Add(
                 new CollectionSemanticIdentityBinding(
                     DeriveScopeRelativeSemanticIdentityPath(
@@ -162,30 +165,6 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
 
         bindings = compiledBindings.ToArray();
         return true;
-    }
-
-    /// <summary>
-    /// Resolves a per-part identity column name to its canonical storage column. When the column has
-    /// <see cref="ColumnStorage.UnifiedAlias"/> storage, the canonical column is returned so that downstream
-    /// write-plan compilation can locate the column in its stored-column binding index. When the column is
-    /// already stored or not found in the table (defensive), the original name is returned unchanged.
-    /// </summary>
-    private static DbColumnName ResolveStorageColumnName(DbTableModel table, DbColumnName columnName)
-    {
-        var column = table.Columns.FirstOrDefault(c => c.ColumnName.Equals(columnName));
-
-        if (column is null)
-        {
-            // Defensive: leave untouched — missing column will surface downstream as a diagnostic.
-            return columnName;
-        }
-
-        if (column.Storage is ColumnStorage.UnifiedAlias unifiedAlias)
-        {
-            return unifiedAlias.CanonicalColumn;
-        }
-
-        return columnName;
     }
 
     /// <summary>
