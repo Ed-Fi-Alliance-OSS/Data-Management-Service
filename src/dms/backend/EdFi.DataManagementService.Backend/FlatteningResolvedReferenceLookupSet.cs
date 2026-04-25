@@ -134,6 +134,12 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     /// <c>true</c> and sets <paramref name="descriptorId"/> when the URI is found in the
     /// request-cycle resolution cache; returns <c>false</c> otherwise.
     /// </summary>
+    /// <remarks>
+    /// The cache is keyed by the lowercase form of the URI because the resolver pipeline
+    /// (<c>DescriptorExtractor.CreateDescriptorReference</c>) lowercases descriptor URIs
+    /// before publishing them. Normalize the input URI here so callers can pass the raw
+    /// stored-document or request value without prior normalization.
+    /// </remarks>
     public bool TryGetDescriptorIdByUri(
         QualifiedResourceName descriptorResource,
         string wildcardPath,
@@ -144,7 +150,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         ArgumentException.ThrowIfNullOrWhiteSpace(wildcardPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(uri);
 
-        var key = new DescriptorUriLookupKey(descriptorResource, wildcardPath, uri);
+        var key = new DescriptorUriLookupKey(descriptorResource, wildcardPath, uri.ToLowerInvariant());
         return _descriptorIdByUri.TryGetValue(key, out descriptorId);
     }
 
@@ -175,7 +181,13 @@ internal sealed class FlatteningResolvedReferenceLookupSet
                 continue;
             }
 
-            var lookupKey = new DescriptorUriLookupKey(descriptorResource, parsedPath.WildcardPath, uri);
+            // Normalize the URI to lowercase so lookup matches whether the caller has the
+            // already-lowercased resolver value or the raw stored-document casing.
+            var lookupKey = new DescriptorUriLookupKey(
+                descriptorResource,
+                parsedPath.WildcardPath,
+                uri.ToLowerInvariant()
+            );
 
             // Use TryAdd to handle duplicate URIs mapping to the same id (same descriptor
             // referenced at multiple positions). If different ids appear for the same URI

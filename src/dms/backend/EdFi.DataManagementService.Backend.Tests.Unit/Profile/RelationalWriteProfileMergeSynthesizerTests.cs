@@ -3335,6 +3335,127 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
 }
 
 /// <summary>
+/// Regression: in production, <c>DescriptorExtractor.CreateDescriptorReference</c> lowercases
+/// descriptor URIs before publishing them into <see cref="ResolvedReferenceSet"/>, but Core's
+/// <c>AddressDerivationEngine</c> reads the raw JSON value (typically mixed-case) into
+/// <see cref="VisibleStoredCollectionRow"/> identity parts. The URI-keyed cache lookup must
+/// normalize the input on both insert and probe so the documented "URI in cache" path works
+/// reliably against typical mixed-case Ed-Fi descriptor URIs (e.g.
+/// <c>uri://ed-fi.org/AddressTypeDescriptor#Physical</c>).
+/// </summary>
+[TestFixture]
+public class Given_top_level_collection_with_descriptor_backed_semantic_identity_matches_when_uri_case_differs_between_cache_and_stored_row
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = DescriptorCanonicalizeBuilders.BuildPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["addressTypeDescriptor"] = DescriptorCanonicalizeBuilders.AddressTypeUri }
+            ),
+        };
+
+        var candidate = DescriptorCanonicalizeBuilders.BuildCandidate(
+            collectionPlan,
+            DescriptorCanonicalizeBuilders.AddressTypeId
+        );
+
+        // Mixed-case URI on the request item (raw JSON input).
+        var requestItem = DescriptorCanonicalizeBuilders.BuildRequestItemWithUri(
+            DescriptorCanonicalizeBuilders.AddressTypeUri,
+            creatable: true
+        );
+
+        // Mixed-case URI on the stored row (raw JSON from stored doc).
+        var storedRow = DescriptorCanonicalizeBuilders.BuildStoredRowWithUri(
+            DescriptorCanonicalizeBuilders.AddressTypeUri
+        );
+
+        // Cache populated with the LOWERCASED URI as production's DescriptorExtractor produces.
+        var resolvedRefs = DescriptorCanonicalizeBuilders.BuildResolvedReferenceSetWithDescriptor(
+            DescriptorCanonicalizeBuilders.AddressTypeUri.ToLowerInvariant(),
+            DescriptorCanonicalizeBuilders.AddressTypeId
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [requestItem]
+        );
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray<StoredScopeState>.Empty,
+            [storedRow]
+        );
+
+        // Two current DB rows; only one is visible to this profile (descriptor-only identity
+        // with a hidden row interleaved). This makes the URI-cache hit load-bearing: the
+        // positional / scalar-parts fallback would refuse with "row counts differ" because the
+        // current and stored row counts diverge, so the test will fail without the case-
+        // insensitive lookup.
+        var currentState = DescriptorCanonicalizeBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId: 345L,
+            collectionRows:
+            [
+                [1L, 345L, 1, DescriptorCanonicalizeBuilders.AddressTypeId],
+                [
+                    2L,
+                    345L,
+                    2,
+                    99L, /* hidden row's descriptor id */
+                ],
+            ]
+        );
+
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal(345L)],
+                collectionCandidates: [candidate]
+            )
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: resolvedRefs
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_produces_two_merged_rows_one_visible_update_and_one_hidden_preserve() =>
+        // Without case-insensitive URI lookup the cache miss falls through to the count-divergence
+        // throw at CanonicalizeStoredIdentityParts, so this length assertion is the regression gate.
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(2);
+}
+
+/// <summary>
 /// Fixture: stored row carries a descriptor URI that is NOT present in the request-cycle
 /// cache AND there are no current rows to fall back to. This is a truly pathological case —
 /// Core claims a visible stored row exists, but the backend has no corresponding current rows
