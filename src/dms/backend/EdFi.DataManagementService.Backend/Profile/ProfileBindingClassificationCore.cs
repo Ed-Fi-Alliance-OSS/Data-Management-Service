@@ -209,10 +209,9 @@ internal static class ProfileBindingClassificationCore
         // Fail-closed metadata-drift check: every stored scope and every hidden member path
         // must resolve to at least one binding on this table. Anything that doesn't is
         // upstream Core / write-plan contract drift, not silent under-preservation.
-        // Bypassed when hiddenMemberPathsOverride is supplied (row-level primitive path).
-        // The caller has already synthesised hidden paths from the enclosing scope's
-        // VisibleStoredCollectionRow.HiddenMemberPaths; there is no stored scope context
-        // to cross-check here.
+        // Skipped when hiddenMemberPathsOverride is supplied (row-level primitive path)
+        // because there is no stored scope context to cross-check; the row-level path runs
+        // its own narrower hidden-path coverage check below instead.
         if (profileAppliedContext is not null && hiddenMemberPathsOverride is null)
         {
             ValidateStoredScopeMetadata(
@@ -223,7 +222,70 @@ internal static class ProfileBindingClassificationCore
             );
         }
 
+        // Row-level hidden-path coverage check. Mirrors the hidden-path half of
+        // ValidateStoredScopeMetadata but operates against the single set of caller-supplied
+        // paths under the table's own JsonScope. Without this, a row HiddenMemberPath that
+        // does not match any governed binding under the table's scope would be silently
+        // ignored — risking under-preservation when upstream emits a hidden path that the
+        // table's bindings cannot honour.
+        if (hiddenMemberPathsOverride is ImmutableArray<string> rowHiddenPaths && rowHiddenPaths.Length > 0)
+        {
+            ValidateRowLevelHiddenPathCoverage(tableWritePlan, rowHiddenPaths, bindingsByContainingScope);
+        }
+
         return dispositions.ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Verifies that every row-supplied hidden member path resolves to at least one governed
+    /// binding under the table's own JsonScope. The row-level primitive path lacks a
+    /// stored-scope-state cross-check (no stored scope context exists for collection rows),
+    /// so this narrower check is the sole defense against upstream drift in
+    /// <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>: a hidden path that names
+    /// a member with no matching binding on this table would otherwise be silently ignored.
+    /// Throws <see cref="InvalidOperationException"/> when any path fails to match.
+    /// </summary>
+    private static void ValidateRowLevelHiddenPathCoverage(
+        TableWritePlan tableWritePlan,
+        ImmutableArray<string> rowHiddenPaths,
+        Dictionary<string, List<GovernedBindingEntry>> bindingsByContainingScope
+    )
+    {
+        var tableScopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+        if (
+            !bindingsByContainingScope.TryGetValue(tableScopeCanonical, out var bindingsUnderScope)
+            || bindingsUnderScope.Count == 0
+        )
+        {
+            // No governed bindings under this table's scope at all — every row hidden path is
+            // unmatchable. Surface the first one in the diagnostic.
+            throw new InvalidOperationException(
+                $"Row-level hidden member path '{rowHiddenPaths[0]}' on table "
+                    + $"'{FormatTable(tableWritePlan)}' does not resolve to any binding under "
+                    + $"scope '{tableScopeCanonical}': the table has no governed bindings under "
+                    + "that scope. Upstream Core / write-plan contract drift."
+            );
+        }
+
+        foreach (var hiddenPath in rowHiddenPaths)
+        {
+            var singleHiddenPath = ImmutableArray.Create(hiddenPath);
+            var matched = bindingsUnderScope.Exists(entry =>
+                ProfileMemberGovernanceRules.IsHiddenGoverned(
+                    entry.GoverningPath,
+                    singleHiddenPath,
+                    entry.MatchKind
+                )
+            );
+            if (!matched)
+            {
+                throw new InvalidOperationException(
+                    $"Row-level hidden member path '{hiddenPath}' on table "
+                        + $"'{FormatTable(tableWritePlan)}' does not resolve to any binding under "
+                        + $"scope '{tableScopeCanonical}'. Upstream Core / write-plan contract drift."
+                );
+            }
+        }
     }
 
     /// <summary>

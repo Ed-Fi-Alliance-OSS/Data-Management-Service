@@ -231,3 +231,55 @@ public class Given_row_level_primitive_with_no_collection_RequestScopeState_clas
     public void It_classifies_storage_managed_bindings_as_StorageManaged() =>
         _dispositions[0].Should().Be(RootBindingDisposition.StorageManaged);
 }
+
+/// <summary>
+/// Verifies that the row-level primitive path fails closed when a row-supplied hidden
+/// member path does not resolve to any binding under the table's scope. Prior to this
+/// check, an unmatched VisibleStoredCollectionRow.HiddenMemberPaths entry was silently
+/// ignored — risking under-preservation against upstream Core / write-plan drift.
+/// </summary>
+[TestFixture]
+public class Given_row_level_primitive_with_unresolved_hidden_path_fails_closed
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Collection plan has bindings under "$.addresses[*]" for addressType (and others).
+        // Supply a hidden path that no binding's governing path matches.
+        var plan = AdapterFactoryTestFixtures.BuildRootAndCollectionPlan();
+        var collectionTable = plan.TablePlansInDependencyOrder[1];
+        var resolverOwnedIndices = ProfileBindingClassificationCore.CollectResolverOwnedIndices(
+            collectionTable
+        );
+
+        var request = ProfileTestDoubles.CreateRequest();
+
+        try
+        {
+            ProfileBindingClassificationCore.ClassifyBindingsWithExplicitHiddenPaths(
+                plan,
+                collectionTable,
+                request,
+                resolverOwnedIndices,
+                hiddenMemberPaths: ["nonexistentMember"]
+            );
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException() =>
+        _thrown.Should().BeOfType<InvalidOperationException>();
+
+    [Test]
+    public void It_names_the_unresolved_hidden_path() =>
+        _thrown!.Message.Should().Contain("nonexistentMember");
+
+    [Test]
+    public void It_mentions_the_table_scope() => _thrown!.Message.Should().Contain("$.addresses[*]");
+}

@@ -48,6 +48,19 @@ The slice fence remains in place for any profiled write involving:
 - collection-aligned extension child collections, or
 - profiled guarded no-op.
 
+In addition, this slice carries a single narrow runtime fail-closed fence inside
+the supported top-level collection path: descriptor-only top-level collection
+identity when hidden-row interleaving exists and a stored descriptor URI is
+absent from the request-cycle descriptor resolution cache. The common descriptor
+cases — URI in cache, mixed scalar+descriptor identity, and descriptor-only
+identity without hidden rows — remain supported. The narrow case is structurally
+ambiguous (no scalar parts to match on, and current-row count differs from
+stored-row count so positional correspondence does not hold) and is converted to
+a deterministic throw at the merge boundary rather than silently producing an
+incorrect descriptor id. A later slice may widen support by seeding the
+descriptor resolver from the DB descriptor projection or by reverse-mapping
+DB descriptor ids to URIs.
+
 ## Design Constraints
 
 - Current-row partitioning into visible vs hidden must be driven by emitted stored-row metadata, not inferred from current DB rows alone.

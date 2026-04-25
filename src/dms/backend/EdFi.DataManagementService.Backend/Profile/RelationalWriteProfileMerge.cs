@@ -1427,12 +1427,32 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         }
 
         // Strategy 2: positional matching (descriptor-only identity).
-        // Safe ONLY when currentRows.Length == storedRowsLength, which guarantees a one-to-one
-        // ordinal correspondence between visible stored rows and current DB rows. When the
-        // counts differ (a profile Filter has restricted the visible stored rows while the DB
-        // still holds the full set in currentRows), positional indexing would pick the wrong
-        // row — return null so the caller throws with a diagnostic instead of silently
-        // corrupting data.
+        //
+        // This branch is an inference under an upstream ordering contract, not a validation
+        // mechanism. It assumes BOTH:
+        //   1. Core emits VisibleStoredCollectionRows in stored-body iteration order
+        //      (StoredSideExistenceLookupBuilder.WalkCollection iterates the stored JSON
+        //      array in index order), AND
+        //   2. The stored JSON body's array order matches the DB's stored-ordinal column
+        //      order for this collection.
+        // Both hold under the current Core/projection contract; together they imply that
+        // VisibleStoredRows[storedRowIndex] corresponds to currentRows[storedRowIndex] when
+        // currentRows is sorted by StoredOrdinal (see ProjectCurrentRowsForScope). This
+        // method does NOT independently verify the correspondence — a structural check
+        // would require resolving each current row's Int64 descriptor id back to its URI
+        // (a DB roundtrip against the descriptor projection), which is out of scope for
+        // Slice 4. If the upstream contract is broken (body out of ordinal order, or
+        // VisibleStoredRows mis-ordered), positional rewrite would silently swap descriptor
+        // ids before the planner runs and downstream invariants would pass against the
+        // rewritten values. A later slice may add the reverse-resolution check; until then
+        // this is a documented residual risk fenced behind the count-equality guard.
+        //
+        // Safe ONLY when currentRows.Length == storedRowsLength, which is a necessary (not
+        // sufficient) condition for one-to-one ordinal correspondence. When the counts
+        // differ (a profile Filter has restricted the visible stored rows while the DB
+        // still holds the full set in currentRows), positional indexing would pick the
+        // wrong row — return null so the caller throws with a diagnostic instead of
+        // silently corrupting data.
         if (currentRows.Length != storedRowsLength)
         {
             return null;
@@ -1500,8 +1520,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         var projectedAll = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydratedRows);
 
         var snapshots = new List<CurrentCollectionRowSnapshot>(projectedAll.Length);
-        foreach (var projectedRow in projectedAll)
+        for (var rowIndex = 0; rowIndex < projectedAll.Length; rowIndex++)
         {
+            var projectedRow = projectedAll[rowIndex];
+            var hydratedRow = hydratedRows[rowIndex];
             // Filter: every parent-scope-locator column must match rootPhysicalRowIdentityValues.
             var parentMatches = true;
             for (var pi = 0; pi < parentBindingIndexes.Length; pi++)
@@ -1543,37 +1565,28 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 continue;
             }
 
-            // Extract stable row identity.
-            var stableRowIdentityValue = projectedRow.Values[mergePlan.StableRowIdentityBindingIndex];
-            long stableRowIdentity;
-            if (stableRowIdentityValue is FlattenedWriteValue.Literal lit && lit.Value is long l)
-            {
-                stableRowIdentity = l;
-            }
-            else if (stableRowIdentityValue is FlattenedWriteValue.Literal lit2 && lit2.Value is not null)
-            {
-                stableRowIdentity = Convert.ToInt64(lit2.Value);
-            }
-            else
-            {
-                stableRowIdentity = 0L;
-            }
+            // Extract stable row identity. PhysicalRowIdentity columns are NOT NULL in the DB
+            // and are projected as a FlattenedWriteValue.Literal carrying a numeric CLR value
+            // (typically long, sometimes int from narrower projection paths). Fail closed if the
+            // projection produces anything else — silently defaulting would collide identities
+            // (multiple rows hashed to 0) and mask upstream binding mis-mapping.
+            long stableRowIdentity = ExtractRequiredInt64(
+                projectedRow.Values[mergePlan.StableRowIdentityBindingIndex],
+                tablePlan,
+                mergePlan.StableRowIdentityBindingIndex,
+                "stable row identity"
+            );
 
-            // Extract ordinal.
-            var ordinalValue = projectedRow.Values[mergePlan.OrdinalBindingIndex];
-            int storedOrdinal;
-            if (ordinalValue is FlattenedWriteValue.Literal ordLit && ordLit.Value is int ordInt)
-            {
-                storedOrdinal = ordInt;
-            }
-            else if (ordinalValue is FlattenedWriteValue.Literal ordLit2 && ordLit2.Value is not null)
-            {
-                storedOrdinal = Convert.ToInt32(ordLit2.Value);
-            }
-            else
-            {
-                storedOrdinal = 0;
-            }
+            // Extract ordinal. The ordinal column is NOT NULL in the DB and is projected as a
+            // FlattenedWriteValue.Literal carrying an int (sometimes a wider numeric type from
+            // certain backends). Fail closed if the projection produces anything else —
+            // silently defaulting would tie ordering and mask upstream binding mis-mapping.
+            int storedOrdinal = ExtractRequiredInt32(
+                projectedRow.Values[mergePlan.OrdinalBindingIndex],
+                tablePlan,
+                mergePlan.OrdinalBindingIndex,
+                "stored ordinal"
+            );
 
             // Extract semantic identity parts.
             var identityParts = mergePlan
@@ -1590,12 +1603,25 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 })
                 .ToImmutableArray();
 
+            // Build a column-name-keyed view of the hydrated row covering every column on
+            // the table model — including UnifiedAlias columns that the binding-indexed
+            // projection (above) skips because they are not in ColumnBindings. Hidden
+            // key-unification preservation in the matched-row overlay reads MemberPathColumn
+            // and PresenceColumn by physical column name; those are required-UnifiedAlias
+            // per KeyUnificationWritePlanCompiler and would not be present in a binding-only
+            // view.
+            var currentRowByColumnName = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(
+                tablePlan.TableModel,
+                hydratedRow
+            );
+
             snapshots.Add(
                 new CurrentCollectionRowSnapshot(
                     stableRowIdentity,
                     identityParts,
                     storedOrdinal,
-                    projectedRow
+                    projectedRow,
+                    currentRowByColumnName
                 )
             );
         }
@@ -1632,6 +1658,103 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         // Non-literal values don't participate in parent-key filtering.
         return ReferenceEquals(a, b);
+    }
+
+    /// <summary>
+    /// Describes a projected current-state binding for diagnostic messages. Distinguishes
+    /// non-literal binding shapes from null literals and from typed literal values.
+    /// </summary>
+    private static string DescribeProjectedKind(FlattenedWriteValue value)
+    {
+        if (value is not FlattenedWriteValue.Literal literal)
+        {
+            return value.GetType().Name;
+        }
+        return literal.Value is null ? "null literal" : literal.Value.GetType().Name;
+    }
+
+    /// <summary>
+    /// Extracts a required Int64 value from a projected current-state binding. Throws when
+    /// the binding is not a <see cref="FlattenedWriteValue.Literal"/>, when its value is
+    /// <c>null</c>, or when the value cannot be coerced to <see cref="long"/>. Used for
+    /// columns that are NOT NULL in the DB (stable row identity, ordinal-keyed columns) so
+    /// projection drift surfaces deterministically rather than silently producing 0.
+    /// </summary>
+    private static long ExtractRequiredInt64(
+        FlattenedWriteValue value,
+        TableWritePlan tablePlan,
+        int bindingIndex,
+        string columnRole
+    )
+    {
+        if (value is not FlattenedWriteValue.Literal literal || literal.Value is null)
+        {
+            throw new InvalidOperationException(
+                $"Required {columnRole} column at binding index {bindingIndex} on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
+                    + $"{DescribeProjectedKind(value)}; "
+                    + "expected a non-null numeric literal. Current-state projection drift."
+            );
+        }
+        if (literal.Value is long l)
+        {
+            return l;
+        }
+        try
+        {
+            return Convert.ToInt64(literal.Value);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            throw new InvalidOperationException(
+                $"Required {columnRole} column at binding index {bindingIndex} on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
+                    + $"'{literal.Value.GetType().Name}' that cannot be coerced to Int64. "
+                    + "Current-state projection drift.",
+                ex
+            );
+        }
+    }
+
+    /// <summary>
+    /// Extracts a required Int32 value from a projected current-state binding. Same intent as
+    /// <see cref="ExtractRequiredInt64"/>: fail closed on projection drift rather than default
+    /// to 0 and silently break sort order or duplicate-detection.
+    /// </summary>
+    private static int ExtractRequiredInt32(
+        FlattenedWriteValue value,
+        TableWritePlan tablePlan,
+        int bindingIndex,
+        string columnRole
+    )
+    {
+        if (value is not FlattenedWriteValue.Literal literal || literal.Value is null)
+        {
+            throw new InvalidOperationException(
+                $"Required {columnRole} column at binding index {bindingIndex} on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
+                    + $"{DescribeProjectedKind(value)}; "
+                    + "expected a non-null numeric literal. Current-state projection drift."
+            );
+        }
+        if (literal.Value is int i)
+        {
+            return i;
+        }
+        try
+        {
+            return Convert.ToInt32(literal.Value);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            throw new InvalidOperationException(
+                $"Required {columnRole} column at binding index {bindingIndex} on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
+                    + $"'{literal.Value.GetType().Name}' that cannot be coerced to Int32. "
+                    + "Current-state projection drift.",
+                ex
+            );
+        }
     }
 
     /// <summary>

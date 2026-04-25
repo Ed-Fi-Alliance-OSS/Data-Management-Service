@@ -5,7 +5,6 @@
 
 using System.Collections.Immutable;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Profile;
 
@@ -108,10 +107,10 @@ internal static class ProfileTopLevelCollectionMatchedRowOverlay
         // in place. Only needed when the table has key-unification plans.
         if (tableWritePlan.KeyUnificationPlans.Length > 0)
         {
-            var currentRowByColumnName = ProjectCurrentRowByColumnName(
-                tableWritePlan,
-                storedRow.ProjectedCurrentRow.Values
-            );
+            // Use the snapshot's column-name-keyed projection (built once at projection time
+            // from the raw hydrated row) so hidden member preservation reads UnifiedAlias
+            // MemberPathColumn / PresenceColumn values that are absent from ColumnBindings.
+            var currentRowByColumnName = storedRow.CurrentRowByColumnName;
             var kuContext = new ProfileCollectionRowKeyUnificationContext(
                 RequestItemNode: concreteRequestItemNode,
                 CurrentRowByColumnName: currentRowByColumnName,
@@ -199,27 +198,6 @@ internal static class ProfileTopLevelCollectionMatchedRowOverlay
             };
         }
         return values;
-    }
-
-    /// <summary>
-    /// Projects the binding-indexed stored row values into a column-name keyed dictionary
-    /// for key-unification member lookups. Each stored value is a
-    /// <see cref="FlattenedWriteValue.Literal"/> carrying the raw CLR object from the
-    /// current-state projection.
-    /// </summary>
-    private static IReadOnlyDictionary<DbColumnName, object?> ProjectCurrentRowByColumnName(
-        TableWritePlan tableWritePlan,
-        ImmutableArray<FlattenedWriteValue> storedValues
-    )
-    {
-        var result = new Dictionary<DbColumnName, object?>(tableWritePlan.ColumnBindings.Length);
-        for (var i = 0; i < tableWritePlan.ColumnBindings.Length; i++)
-        {
-            var columnName = tableWritePlan.ColumnBindings[i].Column.ColumnName;
-            var value = storedValues[i] is FlattenedWriteValue.Literal literal ? literal.Value : null;
-            result[columnName] = value;
-        }
-        return result;
     }
 
     /// <summary>

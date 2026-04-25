@@ -70,9 +70,27 @@ internal static class OverlayTestFixtures
 
     /// <summary>
     /// Builds a stored row snapshot with the given values. The values array must have
-    /// exactly 4 entries (matching the collection table binding count).
+    /// exactly 4 entries (matching the collection table binding count). The per-column-name
+    /// dictionary covers the same binding-backed values so tests that exercise hidden
+    /// key-unification on bindable columns can resolve them; tests targeting UnifiedAlias
+    /// columns supply their own snapshot via <see cref="CurrentCollectionRowSnapshot"/>
+    /// constructor directly.
     /// </summary>
-    public static CurrentCollectionRowSnapshot BuildStoredRow(object?[] values, long stableRowIdentity = 100L)
+    public static CurrentCollectionRowSnapshot BuildStoredRow(
+        object?[] values,
+        long stableRowIdentity = 100L
+    ) => BuildStoredRow(values, collectionPlan: null, stableRowIdentity);
+
+    /// <summary>
+    /// Overload that, when supplied with a collection plan, populates the per-column-name
+    /// dictionary for every binding's column. Use when a test needs hidden k-u member lookup
+    /// to find a binding-backed column by name.
+    /// </summary>
+    public static CurrentCollectionRowSnapshot BuildStoredRow(
+        object?[] values,
+        TableWritePlan? collectionPlan,
+        long stableRowIdentity = 100L
+    )
     {
         var flatValues = values
             .Select(v => (FlattenedWriteValue)new FlattenedWriteValue.Literal(v))
@@ -82,12 +100,31 @@ internal static class OverlayTestFixtures
             flatValues,
             ImmutableArray<FlattenedWriteValue>.Empty
         );
+
+        IReadOnlyDictionary<DbColumnName, object?> currentRowByColumnName = collectionPlan is null
+            ? new Dictionary<DbColumnName, object?>()
+            : BuildBindingBackedColumnNameDict(collectionPlan, values);
+
         return new CurrentCollectionRowSnapshot(
             stableRowIdentity,
             ImmutableArray<SemanticIdentityPart>.Empty,
             1,
-            projectedRow
+            projectedRow,
+            currentRowByColumnName
         );
+    }
+
+    private static IReadOnlyDictionary<DbColumnName, object?> BuildBindingBackedColumnNameDict(
+        TableWritePlan collectionPlan,
+        object?[] values
+    )
+    {
+        var dict = new Dictionary<DbColumnName, object?>(collectionPlan.ColumnBindings.Length);
+        for (var i = 0; i < collectionPlan.ColumnBindings.Length && i < values.Length; i++)
+        {
+            dict[collectionPlan.ColumnBindings[i].Column.ColumnName] = values[i];
+        }
+        return dict;
     }
 
     /// <summary>
@@ -478,9 +515,12 @@ public class Given_overlay_matched_row_preserves_canonical_key_unification_stora
         // Production-shape request: no collection RequestScopeState.
         var request = CreateRequest();
 
-        // Stored: member = "STORED_MEMBER" (canonical is also "STORED_MEMBER" via k-u resolution)
+        // Stored: member = "STORED_MEMBER" (canonical is also "STORED_MEMBER" via k-u resolution).
+        // Pass the collection plan so the column-name-keyed projection covers PeriodName,
+        // which the hidden key-unification member resolver looks up by physical column name.
         var storedRow = BuildStoredRow(
             [null, null, 1, "STORED_MEMBER", "STORED_MEMBER"],
+            collectionPlan,
             stableRowIdentity: 300L
         );
 
@@ -677,8 +717,13 @@ public class Given_overlay_matched_row_preserves_synthetic_presence_for_hidden_m
         // Production-shape request: no collection RequestScopeState.
         var request = CreateRequest();
 
-        // Stored row: presence = true (non-null), member = "STORED"
-        var storedRow = BuildStoredRow([null, null, 1, "STORED", true, "STORED"], stableRowIdentity: 400L);
+        // Stored row: presence = true (non-null), member = "STORED". Pass the collection plan so
+        // the column-name-keyed projection covers PeriodName for hidden k-u member lookup.
+        var storedRow = BuildStoredRow(
+            [null, null, 1, "STORED", true, "STORED"],
+            collectionPlan,
+            stableRowIdentity: 400L
+        );
 
         // Request: member = "REQUEST" (should not affect hidden member)
         var requestCandidate = BuildCustomRequestCandidate(
@@ -1074,8 +1119,13 @@ public class Given_overlay_matched_row_with_reference_derived_ku_member_and_desc
 
         var request = CreateRequest();
 
-        // Stored: canonical = 1001, FK = 99L, derived = 1001
-        var storedRow = BuildStoredRow([null, null, 1, 1001, 99L, 1001], stableRowIdentity: 500L);
+        // Stored: canonical = 1001, FK = 99L, derived = 1001. Pass the collection plan so the
+        // column-name-keyed projection covers SchoolRef_SchoolId for hidden k-u member lookup.
+        var storedRow = BuildStoredRow(
+            [null, null, 1, 1001, 99L, 1001],
+            collectionPlan,
+            stableRowIdentity: 500L
+        );
 
         // Request: derived = 2002 (must be ignored — whole reference family is
         // governed via a descendant hidden path)
@@ -1283,6 +1333,248 @@ public class Given_overlay_matched_row_with_reference_derived_ku_member_and_desc
             new ResourceWritePlan(resourceModel, [rootPlan, collectionPlan]),
             collectionPlan,
             canonicalBindingIndex
+        );
+    }
+}
+
+// ── Fixture 7: Hidden k-u member path column lives outside ColumnBindings ─────
+
+/// <summary>
+/// Verifies that the matched-row overlay preserves the stored canonical value when the
+/// hidden key-unification member's <see cref="KeyUnificationMemberWritePlan.ScalarMember.MemberPathColumn"/>
+/// is an alias-only column on the table model — present in <see cref="DbTableModel.Columns"/>
+/// but absent from <see cref="TableWritePlan.ColumnBindings"/>. This mirrors the production
+/// invariant from <c>KeyUnificationWritePlanCompiler</c> (member path columns must use
+/// <see cref="ColumnStorage.UnifiedAlias"/> storage, which is non-writable and therefore
+/// not bound). The lookup must come from the snapshot's <see cref="CurrentCollectionRowSnapshot.CurrentRowByColumnName"/>
+/// dictionary; a binding-only projection would not contain the alias column and the
+/// resolver would throw "requires stored column ... was not present" — silently breaking
+/// hidden k-u preservation in production.
+/// </summary>
+[TestFixture]
+public class Given_overlay_matched_row_with_alias_only_member_column_preserves_stored_canonical
+{
+    private RelationalWriteMergedTableRow _result = null!;
+    private int _canonicalIndex;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (resourcePlan, collectionPlan, canonicalIdx, aliasMemberColumnName) =
+            BuildAliasOnlyMemberKuPlan();
+        _canonicalIndex = canonicalIdx;
+
+        var request = CreateRequest();
+
+        // Stored canonical: 1001. The alias-only member column carries 1001 in the raw
+        // hydrated current state; the overlay must read it via CurrentRowByColumnName.
+        var storedRow = BuildAliasOnlyStoredRow(
+            collectionPlan: collectionPlan,
+            aliasColumnName: aliasMemberColumnName,
+            aliasColumnValue: 1001,
+            bindingValues: [null, null, 1, 1001],
+            stableRowIdentity: 700L
+        );
+
+        var requestCandidate = BuildCustomRequestCandidate(collectionPlan, [null, null, 1, null]);
+
+        _result = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+            resourcePlan,
+            collectionPlan,
+            request,
+            storedRow,
+            requestCandidate,
+            // Mark the entire member's relative path hidden so the resolver routes through
+            // EvaluateHiddenMember and consults CurrentRowByColumnName.
+            hiddenMemberPaths: ["aliasMember"],
+            finalOrdinal: 1,
+            parentPhysicalRowIdentityValues: [new FlattenedWriteValue.Literal(42L)],
+            concreteRequestItemNode: new JsonObject(),
+            resolvedReferenceLookups: EmptyResolvedReferenceLookups(resourcePlan)
+        );
+    }
+
+    [Test]
+    public void It_preserves_stored_canonical_value_via_alias_lookup() =>
+        ((FlattenedWriteValue.Literal)_result.Values[_canonicalIndex]).Value.Should().Be(1001);
+
+    /// <summary>
+    /// Builds a snapshot where the per-column dictionary contains the alias-only member
+    /// column even though it is absent from ColumnBindings. The binding-indexed values
+    /// only carry the bound columns; the dict carries every column on the table model.
+    /// </summary>
+    private static CurrentCollectionRowSnapshot BuildAliasOnlyStoredRow(
+        TableWritePlan collectionPlan,
+        DbColumnName aliasColumnName,
+        object aliasColumnValue,
+        object?[] bindingValues,
+        long stableRowIdentity
+    )
+    {
+        var flatValues = bindingValues
+            .Select(v => (FlattenedWriteValue)new FlattenedWriteValue.Literal(v))
+            .ToImmutableArray();
+
+        var dict = new Dictionary<DbColumnName, object?>(collectionPlan.ColumnBindings.Length + 1);
+        for (var i = 0; i < collectionPlan.ColumnBindings.Length && i < bindingValues.Length; i++)
+        {
+            dict[collectionPlan.ColumnBindings[i].Column.ColumnName] = bindingValues[i];
+        }
+        dict[aliasColumnName] = aliasColumnValue;
+
+        return new CurrentCollectionRowSnapshot(
+            stableRowIdentity,
+            ImmutableArray<SemanticIdentityPart>.Empty,
+            1,
+            new RelationalWriteMergedTableRow(flatValues, ImmutableArray<FlattenedWriteValue>.Empty),
+            dict
+        );
+    }
+
+    private static (
+        ResourceWritePlan,
+        TableWritePlan,
+        int CanonicalIndex,
+        DbColumnName AliasMemberColumnName
+    ) BuildAliasOnlyMemberKuPlan()
+    {
+        var schema = new DbSchemaName("edfi");
+
+        var collectionKeyColumn = StoredColumn(
+            "CollectionItemId",
+            ColumnKind.CollectionKey,
+            isNullable: false
+        );
+        var parentDocColumn = StoredColumn("ParentDocId", ColumnKind.ParentKeyPart, isNullable: false);
+        var ordinalColumn = StoredColumn("Ordinal", ColumnKind.Ordinal, isNullable: false);
+        var canonicalColumn = StoredColumn(
+            "KU_Canonical",
+            ColumnKind.Scalar,
+            new RelationalScalarType(ScalarKind.Int32)
+        );
+
+        // Alias-only member column. Constructed with ColumnStorage.UnifiedAlias so IsWritable
+        // is false; deliberately NOT bound in ColumnBindings to mirror production shape.
+        var aliasMemberColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("AliasMember"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
+            IsNullable: true,
+            SourceJsonPath: new JsonPathExpression(
+                "$.aliasItems[*].aliasMember",
+                [new JsonPathSegment.Property("aliasMember")]
+            ),
+            TargetResource: null,
+            Storage: new ColumnStorage.UnifiedAlias(
+                CanonicalColumn: canonicalColumn.ColumnName,
+                PresenceColumn: null
+            )
+        );
+
+        var allColumns = new[]
+        {
+            collectionKeyColumn,
+            parentDocColumn,
+            ordinalColumn,
+            canonicalColumn,
+            aliasMemberColumn,
+        };
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(schema, "AliasItem"),
+            JsonScope: new JsonPathExpression(
+                "$.aliasItems[*]",
+                [new JsonPathSegment.Property("aliasItems"), new JsonPathSegment.AnyArrayElement()]
+            ),
+            Key: new TableKey(
+                "PK_AliasItem",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: allColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentDocId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentDocId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        const int canonicalBindingIndex = 3;
+
+        var kuPlan = new KeyUnificationWritePlan(
+            CanonicalColumn: canonicalColumn.ColumnName,
+            CanonicalBindingIndex: canonicalBindingIndex,
+            MembersInOrder:
+            [
+                new KeyUnificationMemberWritePlan.ScalarMember(
+                    MemberPathColumn: aliasMemberColumn.ColumnName,
+                    RelativePath: new JsonPathExpression(
+                        "$.aliasItems[*].aliasMember",
+                        [new JsonPathSegment.Property("aliasMember")]
+                    ),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    PresenceColumn: null,
+                    PresenceBindingIndex: null,
+                    PresenceIsSynthetic: false
+                ),
+            ]
+        );
+
+        var collectionPlan = new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.AliasItem VALUES (...)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, allColumns.Length, 65535),
+            // Bind only the four "real" columns; aliasMemberColumn is intentionally absent.
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionKeyColumn,
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(parentDocColumn, new WriteValueSource.DocumentId(), "ParentDocId"),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(canonicalColumn, new WriteValueSource.Precomputed(), "KU_Canonical"),
+            ],
+            KeyUnificationPlans: [kuPlan],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings: [],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.AliasItem SET x=@x WHERE CollectionItemId=@CollectionItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.AliasItem WHERE CollectionItemId=@CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+
+        var rootTableModel = AdapterFactoryTestFixtures.BuildRootTableModel();
+        var rootPlan = AdapterFactoryTestFixtures.BuildRootTableWritePlan(rootTableModel);
+
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTableModel,
+            TablesInDependencyOrder: [rootTableModel, tableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return (
+            new ResourceWritePlan(resourceModel, [rootPlan, collectionPlan]),
+            collectionPlan,
+            canonicalBindingIndex,
+            aliasMemberColumn.ColumnName
         );
     }
 }

@@ -534,11 +534,18 @@ internal sealed record ProfileTopLevelCollectionScopeInput(
     ImmutableArray<CurrentCollectionRowSnapshot> CurrentRows
 );
 
+/// <summary>
+/// Snapshot of a single current-state collection row, paired with both its binding-indexed
+/// projection (used for overlay/comparison) and its column-name-keyed projection covering
+/// every column on the table model (used by hidden key-unification preservation, which must
+/// read alias-only columns that are absent from <see cref="TableWritePlan.ColumnBindings"/>).
+/// </summary>
 internal sealed record CurrentCollectionRowSnapshot(
     long StableRowIdentity,
     ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder,
     int StoredOrdinal,
-    RelationalWriteMergedTableRow ProjectedCurrentRow
+    RelationalWriteMergedTableRow ProjectedCurrentRow,
+    IReadOnlyDictionary<DbColumnName, object?> CurrentRowByColumnName
 );
 
 internal sealed record ProfileTopLevelCollectionPlan(

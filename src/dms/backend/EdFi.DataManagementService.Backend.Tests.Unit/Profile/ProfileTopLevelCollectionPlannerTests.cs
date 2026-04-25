@@ -84,7 +84,8 @@ internal static class Slice4Builders
             new RelationalWriteMergedTableRow(
                 ImmutableArray<FlattenedWriteValue>.Empty,
                 ImmutableArray<FlattenedWriteValue>.Empty
-            )
+            ),
+            CurrentRowByColumnName: new Dictionary<DbColumnName, object?>()
         );
 
     /// <summary>
