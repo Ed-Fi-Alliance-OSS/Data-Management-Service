@@ -522,8 +522,8 @@ CREATE TABLE IF NOT EXISTS "sample"."SchoolExtensionAddressSponsorReference"
     "Program_DocumentId" bigint NULL,
     "Program_ProgramName" varchar(20) NULL,
     CONSTRAINT "PK_SchoolExtensionAddressSponsorReference" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolExtensionAddressSponsorReference_BaseCollec_320d72732a" UNIQUE ("BaseCollectionItemId", "Program_DocumentId"),
     CONSTRAINT "UX_SchoolExtensionAddressSponsorReference_BaseCollec_62da5d3142" UNIQUE ("BaseCollectionItemId", "Ordinal"),
-    CONSTRAINT "UX_SchoolExtensionAddressSponsorReference_BaseCollec_734658f3de" UNIQUE ("BaseCollectionItemId", "Program_ProgramName"),
     CONSTRAINT "CK_SchoolExtensionAddressSponsorReference_Program_AllNone" CHECK (("Program_DocumentId" IS NULL AND "Program_ProgramName" IS NULL) OR ("Program_DocumentId" IS NOT NULL AND "Program_ProgramName" IS NOT NULL))
 );
 

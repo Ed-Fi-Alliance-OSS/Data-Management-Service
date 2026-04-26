@@ -1573,22 +1573,21 @@ public class Given_Array_Uniqueness_Constraint_Derivation
     }
 
     /// <summary>
-    /// It should map reference identity paths to per-part raw scalar columns.
+    /// It should map reference identity paths to the reference document id column.
     /// </summary>
     [Test]
-    public void It_should_map_reference_identity_paths_to_per_part_raw_scalar_columns()
+    public void It_should_map_reference_identity_paths_to_the_reference_document_id_column()
     {
         var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
             _addressTable,
             "BusRoute_DocumentId",
-            "School_SchoolId",
-            "School_EducationOrganizationId"
+            "School_DocumentId"
         );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "School_SchoolId", "School_EducationOrganizationId");
+            .Equal("BusRoute_DocumentId", "School_DocumentId");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
     }
 
@@ -1642,7 +1641,7 @@ public class Given_Array_Uniqueness_Constraint_Derivation
         _addressTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("School_SchoolId", "School_EducationOrganizationId");
+            .Equal("School_DocumentId", "School_DocumentId");
     }
 
     /// <summary>
@@ -1741,14 +1740,13 @@ public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
         var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
             _addressTable,
             "BusRoute_DocumentId",
-            "AddressSchool_SchoolId",
-            "AddressSchool_EducationOrganizationId"
+            "AddressSchool_DocumentId"
         );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "AddressSchool_SchoolId", "AddressSchool_EducationOrganizationId");
+            .Equal("BusRoute_DocumentId", "AddressSchool_DocumentId");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
     }
 
@@ -1766,7 +1764,7 @@ public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
         _addressTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("AddressSchool_SchoolId", "AddressSchool_EducationOrganizationId");
+            .Equal("AddressSchool_DocumentId", "AddressSchool_DocumentId");
     }
 
     /// <summary>
@@ -1778,14 +1776,13 @@ public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
         var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
             _periodTable,
             "ParentCollectionItemId",
-            "PeriodSchool_SchoolId",
-            "PeriodSchool_EducationOrganizationId"
+            "PeriodSchool_DocumentId"
         );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("ParentCollectionItemId", "PeriodSchool_SchoolId", "PeriodSchool_EducationOrganizationId");
+            .Equal("ParentCollectionItemId", "PeriodSchool_DocumentId");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
     }
 
@@ -1803,7 +1800,7 @@ public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
         _periodTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("PeriodSchool_SchoolId", "PeriodSchool_EducationOrganizationId");
+            .Equal("PeriodSchool_DocumentId", "PeriodSchool_DocumentId");
     }
 }
 
@@ -2523,7 +2520,7 @@ public class Given_Extension_Child_Array_Uniqueness_Constraint_Derivation
         _sponsorReferenceTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("Program_ProgramName");
+            .Equal("Program_DocumentId");
     }
 
     private static JsonObject BuildExtensionProjectSchemaWithChildArrayUniquenessConstraints()

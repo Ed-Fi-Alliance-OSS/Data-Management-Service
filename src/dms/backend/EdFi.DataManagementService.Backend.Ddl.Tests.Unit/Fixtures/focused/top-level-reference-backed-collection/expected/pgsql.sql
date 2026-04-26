@@ -485,7 +485,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolProgram"
     "PrimaryIndicator" boolean NULL,
     CONSTRAINT "PK_SchoolProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SchoolProgram_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SchoolProgram_ProgramReference_ProgramId_ProgramN_727882f58e" UNIQUE ("School_DocumentId", "ProgramReference_ProgramId", "ProgramReference_ProgramName"),
+    CONSTRAINT "UX_SchoolProgram_ProgramReference_DocumentId_School_DocumentId" UNIQUE ("School_DocumentId", "ProgramReference_DocumentId"),
     CONSTRAINT "CK_SchoolProgram_ProgramReference_AllNone" CHECK (("ProgramReference_DocumentId" IS NULL AND "ProgramReference_ProgramId" IS NULL AND "ProgramReference_ProgramName" IS NULL) OR ("ProgramReference_DocumentId" IS NOT NULL AND "ProgramReference_ProgramId" IS NOT NULL AND "ProgramReference_ProgramName" IS NOT NULL))
 );
 

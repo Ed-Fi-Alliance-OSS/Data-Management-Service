@@ -148,17 +148,13 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
 
         foreach (var identityBinding in binding.IdentityBindings)
         {
-            var storageColumnName = UnifiedAliasColumnResolver.ResolveStorageColumnName(
-                table,
-                identityBinding.Column
-            );
             compiledBindings.Add(
                 new CollectionSemanticIdentityBinding(
                     DeriveScopeRelativeSemanticIdentityPath(
                         table.JsonScope,
                         identityBinding.ReferenceJsonPath
                     ),
-                    storageColumnName
+                    binding.FkColumn
                 )
             );
         }

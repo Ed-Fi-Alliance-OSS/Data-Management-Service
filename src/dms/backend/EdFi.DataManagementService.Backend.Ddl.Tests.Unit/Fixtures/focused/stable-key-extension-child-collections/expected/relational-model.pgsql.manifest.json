@@ -274,6 +274,19 @@
       ]
     },
     {
+      "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollec_320d72732a",
+      "table": {
+        "schema": "sample",
+        "name": "SchoolExtensionAddressSponsorReference"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "Program_DocumentId"
+      ]
+    },
+    {
       "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollec_62da5d3142",
       "table": {
         "schema": "sample",
@@ -284,19 +297,6 @@
       "key_columns": [
         "BaseCollectionItemId",
         "Ordinal"
-      ]
-    },
-    {
-      "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollec_734658f3de",
-      "table": {
-        "schema": "sample",
-        "name": "SchoolExtensionAddressSponsorReference"
-      },
-      "kind": "UniqueConstraint",
-      "is_unique": true,
-      "key_columns": [
-        "BaseCollectionItemId",
-        "Program_ProgramName"
       ]
     },
     {
@@ -1262,7 +1262,7 @@
             "semantic_identity_bindings": [
               {
                 "relative_path": "$.programReference.programName",
-                "column": "Program_ProgramName"
+                "column": "Program_DocumentId"
               }
             ]
           },
@@ -1270,18 +1270,18 @@
           "constraints": [
             {
               "kind": "Unique",
-              "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollec_62da5d3142",
+              "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollec_320d72732a",
               "columns": [
                 "BaseCollectionItemId",
-                "Ordinal"
+                "Program_DocumentId"
               ]
             },
             {
               "kind": "Unique",
-              "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollec_734658f3de",
+              "name": "UX_SchoolExtensionAddressSponsorReference_BaseCollec_62da5d3142",
               "columns": [
                 "BaseCollectionItemId",
-                "Program_ProgramName"
+                "Ordinal"
               ]
             },
             {

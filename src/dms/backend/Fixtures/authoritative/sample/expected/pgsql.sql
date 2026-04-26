@@ -630,7 +630,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentProgram"
     "SectionOrProgramChoiceProgram_ProgramName" varchar(60) NULL,
     "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" bigint NULL,
     CONSTRAINT "PK_AssessmentProgram" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_AssessmentProgram_Assessment_DocumentId_SectionOr_e86e377669" UNIQUE ("Assessment_DocumentId", "SectionOrProgramChoiceProgram_EducationOrganizationId", "SectionOrProgramChoiceProgram_ProgramName", "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce"),
+    CONSTRAINT "UX_AssessmentProgram_Assessment_DocumentId_SectionOr_3491ec6823" UNIQUE ("Assessment_DocumentId", "SectionOrProgramChoiceProgram_DocumentId"),
     CONSTRAINT "UX_AssessmentProgram_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentProgram_SectionOrProgramChoiceProgram_AllNone" CHECK (("SectionOrProgramChoiceProgram_DocumentId" IS NULL AND "SectionOrProgramChoiceProgram_EducationOrganizationId" IS NULL AND "SectionOrProgramChoiceProgram_ProgramName" IS NULL AND "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" IS NULL) OR ("SectionOrProgramChoiceProgram_DocumentId" IS NOT NULL AND "SectionOrProgramChoiceProgram_EducationOrganizationId" IS NOT NULL AND "SectionOrProgramChoiceProgram_ProgramName" IS NOT NULL AND "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" IS NOT NULL))
 );
@@ -661,7 +661,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentSection"
     "SectionOrProgramChoiceSection_SessionName" varchar(60) NULL,
     "SectionOrProgramChoiceSection_SectionIdentifier" varchar(255) NULL,
     CONSTRAINT "PK_AssessmentSection" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_AssessmentSection_Assessment_DocumentId_SectionOr_57563f8adb" UNIQUE ("Assessment_DocumentId", "SectionOrProgramChoiceSection_LocalCourseCode", "SectionOrProgramChoiceSection_SchoolId", "SectionOrProgramChoiceSection_SchoolYear", "SectionOrProgramChoiceSection_SessionName", "SectionOrProgramChoiceSection_SectionIdentifier"),
+    CONSTRAINT "UX_AssessmentSection_Assessment_DocumentId_SectionOr_9a956ae02c" UNIQUE ("Assessment_DocumentId", "SectionOrProgramChoiceSection_DocumentId"),
     CONSTRAINT "UX_AssessmentSection_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentSection_SectionOrProgramChoiceSection_AllNone" CHECK (("SectionOrProgramChoiceSection_DocumentId" IS NULL AND "SectionOrProgramChoiceSection_LocalCourseCode" IS NULL AND "SectionOrProgramChoiceSection_SchoolId" IS NULL AND "SectionOrProgramChoiceSection_SchoolYear" IS NULL AND "SectionOrProgramChoiceSection_SessionName" IS NULL AND "SectionOrProgramChoiceSection_SectionIdentifier" IS NULL) OR ("SectionOrProgramChoiceSection_DocumentId" IS NOT NULL AND "SectionOrProgramChoiceSection_LocalCourseCode" IS NOT NULL AND "SectionOrProgramChoiceSection_SchoolId" IS NOT NULL AND "SectionOrProgramChoiceSection_SchoolYear" IS NOT NULL AND "SectionOrProgramChoiceSection_SessionName" IS NOT NULL AND "SectionOrProgramChoiceSection_SectionIdentifier" IS NOT NULL))
 );
@@ -692,7 +692,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationAssessmentBatteryPart
     "AssessmentBatteryPart_AssessmentIdentifier" varchar(60) NULL,
     "AssessmentBatteryPart_Namespace" varchar(255) NULL,
     CONSTRAINT "PK_AssessmentAdministrationAssessmentBatteryPart" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_4bb6947438" UNIQUE ("AssessmentAdministration_DocumentId", "AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace"),
+    CONSTRAINT "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_f82da38521" UNIQUE ("AssessmentAdministration_DocumentId", "AssessmentBatteryPart_DocumentId"),
     CONSTRAINT "UX_AssessmentAdministrationAssessmentBatteryPart_Ord_d486c4ed4f" UNIQUE ("AssessmentAdministration_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentAdministrationAssessmentBatteryPart_Ass_1e5a040b5b" CHECK (("AssessmentBatteryPart_DocumentId" IS NULL AND "AssessmentBatteryPart_AssessmentBatteryPartName" IS NULL AND "AssessmentBatteryPart_AssessmentIdentifier" IS NULL AND "AssessmentBatteryPart_Namespace" IS NULL) OR ("AssessmentBatteryPart_DocumentId" IS NOT NULL AND "AssessmentBatteryPart_AssessmentBatteryPartName" IS NOT NULL AND "AssessmentBatteryPart_AssessmentIdentifier" IS NOT NULL AND "AssessmentBatteryPart_Namespace" IS NOT NULL))
 );
@@ -738,7 +738,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipationAdminist
     "LoginId" varchar(60) NULL,
     CONSTRAINT "PK_AssessmentAdministrationParticipationAdministrati_34716c11e4" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_AssessmentAdministrationParticipationAdministrati_8dbd03f2ec" UNIQUE ("AssessmentAdministrationParticipation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentAdministrationParticipationAdministrati_b0477e2aa1" UNIQUE ("AssessmentAdministrationParticipation_DocumentId", "AdministrationPointOfContactEducationOrganization_Ed_205063b290", "ElectronicMailAddress"),
+    CONSTRAINT "UX_AssessmentAdministrationParticipationAdministrati_b37704df03" UNIQUE ("AssessmentAdministrationParticipation_DocumentId", "AdministrationPointOfContactEducationOrganization_DocumentId", "ElectronicMailAddress"),
     CONSTRAINT "CK_AssessmentAdministrationParticipationAdministrati_2542fdbab1" CHECK (("AdministrationPointOfContactEducationOrganization_DocumentId" IS NULL AND "AdministrationPointOfContactEducationOrganization_Ed_205063b290" IS NULL) OR ("AdministrationPointOfContactEducationOrganization_DocumentId" IS NOT NULL AND "AdministrationPointOfContactEducationOrganization_Ed_205063b290" IS NOT NULL))
 );
 
@@ -765,7 +765,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPartObjectiveAssessment"
     "ObjectiveAssessment_Namespace" varchar(255) NULL,
     "ObjectiveAssessment_IdentificationCode" varchar(60) NULL,
     CONSTRAINT "PK_AssessmentBatteryPartObjectiveAssessment" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_AssessmentBatteryPartObjectiveAssessment_Assessme_326d1a484a" UNIQUE ("AssessmentBatteryPart_DocumentId", "ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode"),
+    CONSTRAINT "UX_AssessmentBatteryPartObjectiveAssessment_Assessme_7a38152000" UNIQUE ("AssessmentBatteryPart_DocumentId", "ObjectiveAssessment_DocumentId"),
     CONSTRAINT "UX_AssessmentBatteryPartObjectiveAssessment_Ordinal__f014360295" UNIQUE ("AssessmentBatteryPart_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentBatteryPartObjectiveAssessment_Objectiv_ade19199cf" CHECK (("ObjectiveAssessment_DocumentId" IS NULL AND "ObjectiveAssessment_AssessmentIdentifier" IS NULL AND "ObjectiveAssessment_Namespace" IS NULL AND "ObjectiveAssessment_IdentificationCode" IS NULL) OR ("ObjectiveAssessment_DocumentId" IS NOT NULL AND "ObjectiveAssessment_AssessmentIdentifier" IS NOT NULL AND "ObjectiveAssessment_Namespace" IS NOT NULL AND "ObjectiveAssessment_IdentificationCode" IS NOT NULL))
 );
@@ -797,7 +797,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItemLearningStandard"
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
     CONSTRAINT "PK_AssessmentItemLearningStandard" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_AssessmentItemLearningStandard_AssessmentItem_Doc_02f2a01565" UNIQUE ("AssessmentItem_DocumentId", "LearningStandard_LearningStandardId"),
+    CONSTRAINT "UX_AssessmentItemLearningStandard_AssessmentItem_Doc_da085e0260" UNIQUE ("AssessmentItem_DocumentId", "LearningStandard_DocumentId"),
     CONSTRAINT "UX_AssessmentItemLearningStandard_Ordinal_Assessment_ece4718a8d" UNIQUE ("AssessmentItem_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentItemLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
@@ -845,8 +845,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandardLearningS
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
     CONSTRAINT "PK_AssessmentScoreRangeLearningStandardLearningStandard" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_AssessmentScoreRangeLearningStandardLearningStand_16fe3bf10a" UNIQUE ("AssessmentScoreRangeLearningStandard_DocumentId", "LearningStandard_LearningStandardId"),
     CONSTRAINT "UX_AssessmentScoreRangeLearningStandardLearningStand_a09b7bf908" UNIQUE ("AssessmentScoreRangeLearningStandard_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_AssessmentScoreRangeLearningStandardLearningStand_ee43f2bbdf" UNIQUE ("AssessmentScoreRangeLearningStandard_DocumentId", "LearningStandard_DocumentId"),
     CONSTRAINT "CK_AssessmentScoreRangeLearningStandardLearningStand_a5ae381a8e" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
 
@@ -896,7 +896,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleClassPeriod"
     "ClassPeriod_ClassPeriodName" varchar(60) NULL,
     "ClassPeriod_SchoolId" bigint NULL,
     CONSTRAINT "PK_BellScheduleClassPeriod" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_BellScheduleClassPeriod_BellSchedule_DocumentId_C_37a27de3a4" UNIQUE ("BellSchedule_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId"),
+    CONSTRAINT "UX_BellScheduleClassPeriod_BellSchedule_DocumentId_C_92e01df297" UNIQUE ("BellSchedule_DocumentId", "ClassPeriod_DocumentId"),
     CONSTRAINT "UX_BellScheduleClassPeriod_Ordinal_BellSchedule_DocumentId" UNIQUE ("BellSchedule_DocumentId", "Ordinal"),
     CONSTRAINT "CK_BellScheduleClassPeriod_ClassPeriod_AllNone" CHECK (("ClassPeriod_DocumentId" IS NULL AND "ClassPeriod_ClassPeriodName" IS NULL AND "ClassPeriod_SchoolId" IS NULL) OR ("ClassPeriod_DocumentId" IS NOT NULL AND "ClassPeriod_ClassPeriodName" IS NOT NULL AND "ClassPeriod_SchoolId" IS NOT NULL))
 );
@@ -1086,7 +1086,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CohortProgram"
     "ProgramProgram_ProgramName" varchar(60) NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_CohortProgram" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_CohortProgram_Cohort_DocumentId_ProgramProgram_Ed_0297989492" UNIQUE ("Cohort_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CohortProgram_Cohort_DocumentId_ProgramProgram_DocumentId" UNIQUE ("Cohort_DocumentId", "ProgramProgram_DocumentId"),
     CONSTRAINT "UX_CohortProgram_Ordinal_Cohort_DocumentId" UNIQUE ("Cohort_DocumentId", "Ordinal"),
     CONSTRAINT "CK_CohortProgram_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
@@ -1485,7 +1485,7 @@ CREATE TABLE IF NOT EXISTS "sample"."ContactExtensionEducationContent"
     "EducationContent_DocumentId" bigint NULL,
     "EducationContent_ContentIdentifier" varchar(225) NULL,
     CONSTRAINT "PK_ContactExtensionEducationContent" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_ContactExtensionEducationContent_Contact_Document_d1106f4d5c" UNIQUE ("Contact_DocumentId", "EducationContent_ContentIdentifier"),
+    CONSTRAINT "UX_ContactExtensionEducationContent_Contact_Document_9d650dff90" UNIQUE ("Contact_DocumentId", "EducationContent_DocumentId"),
     CONSTRAINT "UX_ContactExtensionEducationContent_Ordinal_Contact_DocumentId" UNIQUE ("Contact_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ContactExtensionEducationContent_EducationContent_AllNone" CHECK (("EducationContent_DocumentId" IS NULL AND "EducationContent_ContentIdentifier" IS NULL) OR ("EducationContent_DocumentId" IS NOT NULL AND "EducationContent_ContentIdentifier" IS NOT NULL))
 );
@@ -1514,7 +1514,7 @@ CREATE TABLE IF NOT EXISTS "sample"."ContactExtensionStudentProgramAssociation"
     "StudentProgramAssociation_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     "StudentProgramAssociation_StudentUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_ContactExtensionStudentProgramAssociation" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_ContactExtensionStudentProgramAssociation_Contact_b3edb731b2" UNIQUE ("Contact_DocumentId", "StudentProgramAssociation_BeginDate", "StudentProgramAssociation_EducationOrganizationId", "StudentProgramAssociation_ProgramEducationOrganizationId", "StudentProgramAssociation_ProgramName", "StudentProgramAssociation_ProgramTypeDescriptor_DescriptorId", "StudentProgramAssociation_StudentUniqueId"),
+    CONSTRAINT "UX_ContactExtensionStudentProgramAssociation_Contact_6fdfd686a9" UNIQUE ("Contact_DocumentId", "StudentProgramAssociation_DocumentId"),
     CONSTRAINT "UX_ContactExtensionStudentProgramAssociation_Ordinal_10395359a5" UNIQUE ("Contact_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ContactExtensionStudentProgramAssociation_Student_c0956c3a6d" CHECK (("StudentProgramAssociation_DocumentId" IS NULL AND "StudentProgramAssociation_BeginDate" IS NULL AND "StudentProgramAssociation_EducationOrganizationId" IS NULL AND "StudentProgramAssociation_ProgramEducationOrganizationId" IS NULL AND "StudentProgramAssociation_ProgramName" IS NULL AND "StudentProgramAssociation_ProgramTypeDescriptor_DescriptorId" IS NULL AND "StudentProgramAssociation_StudentUniqueId" IS NULL) OR ("StudentProgramAssociation_DocumentId" IS NOT NULL AND "StudentProgramAssociation_BeginDate" IS NOT NULL AND "StudentProgramAssociation_EducationOrganizationId" IS NOT NULL AND "StudentProgramAssociation_ProgramEducationOrganizationId" IS NOT NULL AND "StudentProgramAssociation_ProgramName" IS NOT NULL AND "StudentProgramAssociation_ProgramTypeDescriptor_DescriptorId" IS NOT NULL AND "StudentProgramAssociation_StudentUniqueId" IS NOT NULL))
 );
@@ -1769,7 +1769,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseLearningStandard"
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
     CONSTRAINT "PK_CourseLearningStandard" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_CourseLearningStandard_Course_DocumentId_Learning_16a0c06ff5" UNIQUE ("Course_DocumentId", "LearningStandard_LearningStandardId"),
+    CONSTRAINT "UX_CourseLearningStandard_Course_DocumentId_Learning_911d755b74" UNIQUE ("Course_DocumentId", "LearningStandard_DocumentId"),
     CONSTRAINT "UX_CourseLearningStandard_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal"),
     CONSTRAINT "CK_CourseLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
@@ -1928,7 +1928,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCourseProgram"
     "CourseProgram_ProgramName" varchar(60) NULL,
     "CourseProgram_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_CourseTranscriptCourseProgram" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_CourseTranscriptCourseProgram_CourseProgram_Educa_c3e8c04762" UNIQUE ("CourseTranscript_DocumentId", "CourseProgram_EducationOrganizationId", "CourseProgram_ProgramName", "CourseProgram_ProgramTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseTranscriptCourseProgram_CourseProgram_Docum_c44523dbfa" UNIQUE ("CourseTranscript_DocumentId", "CourseProgram_DocumentId"),
     CONSTRAINT "UX_CourseTranscriptCourseProgram_Ordinal_CourseTrans_b17878ced7" UNIQUE ("CourseTranscript_DocumentId", "Ordinal"),
     CONSTRAINT "CK_CourseTranscriptCourseProgram_CourseProgram_AllNone" CHECK (("CourseProgram_DocumentId" IS NULL AND "CourseProgram_EducationOrganizationId" IS NULL AND "CourseProgram_ProgramName" IS NULL AND "CourseProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("CourseProgram_DocumentId" IS NOT NULL AND "CourseProgram_EducationOrganizationId" IS NOT NULL AND "CourseProgram_ProgramName" IS NOT NULL AND "CourseProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
@@ -1983,7 +1983,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptSection"
     "Section_SessionName" varchar(60) NULL,
     "Section_SectionIdentifier" varchar(255) NULL,
     CONSTRAINT "PK_CourseTranscriptSection" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_CourseTranscriptSection_CourseTranscript_Document_e2cdca0127" UNIQUE ("CourseTranscript_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier"),
+    CONSTRAINT "UX_CourseTranscriptSection_CourseTranscript_Document_49864a49c3" UNIQUE ("CourseTranscript_DocumentId", "Section_DocumentId"),
     CONSTRAINT "UX_CourseTranscriptSection_Ordinal_CourseTranscript_DocumentId" UNIQUE ("CourseTranscript_DocumentId", "Ordinal"),
     CONSTRAINT "CK_CourseTranscriptSection_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL))
 );
@@ -2116,7 +2116,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStaff"
     "Staff_DocumentId" bigint NULL,
     "Staff_StaffUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_DisciplineActionStaff" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_DisciplineActionStaff_DisciplineAction_DocumentId_80c2cacb0e" UNIQUE ("DisciplineAction_DocumentId", "Staff_StaffUniqueId"),
+    CONSTRAINT "UX_DisciplineActionStaff_DisciplineAction_DocumentId_124e7952b7" UNIQUE ("DisciplineAction_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "UX_DisciplineActionStaff_Ordinal_DisciplineAction_DocumentId" UNIQUE ("DisciplineAction_DocumentId", "Ordinal"),
     CONSTRAINT "CK_DisciplineActionStaff_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
 );
@@ -2133,7 +2133,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStudentDisciplineIncidentBeha
     "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_DisciplineActionStudentDisciplineIncidentBehaviorAssociation" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_DisciplineActionStudentDisciplineIncidentBehavior_10ccb6b8f8" UNIQUE ("DisciplineAction_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_DisciplineActionStudentDisciplineIncidentBehavior_b466808d9a" UNIQUE ("DisciplineAction_DocumentId", "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b", "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier", "StudentDisciplineIncidentBehaviorAssociation_SchoolId", "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId"),
+    CONSTRAINT "UX_DisciplineActionStudentDisciplineIncidentBehavior_7cf2b5d17f" UNIQUE ("DisciplineAction_DocumentId", "StudentDisciplineIncidentBehaviorAssociation_DocumentId"),
     CONSTRAINT "CK_DisciplineActionStudentDisciplineIncidentBehavior_df0c4bd841" CHECK (("StudentDisciplineIncidentBehaviorAssociation_DocumentId" IS NULL AND "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b" IS NULL AND "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier" IS NULL AND "StudentDisciplineIncidentBehaviorAssociation_SchoolId" IS NULL AND "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId" IS NULL) OR ("StudentDisciplineIncidentBehaviorAssociation_DocumentId" IS NOT NULL AND "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b" IS NOT NULL AND "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier" IS NOT NULL AND "StudentDisciplineIncidentBehaviorAssociation_SchoolId" IS NOT NULL AND "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId" IS NOT NULL))
 );
 
@@ -2262,7 +2262,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceEducationCont
     "DerivativeSourceEducationContent_DocumentId" bigint NULL,
     "DerivativeSourceEducationContent_ContentIdentifier" varchar(225) NULL,
     CONSTRAINT "PK_EducationContentDerivativeSourceEducationContent" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_EducationContentDerivativeSourceEducationContent__4392092b6a" UNIQUE ("EducationContent_DocumentId", "DerivativeSourceEducationContent_ContentIdentifier"),
+    CONSTRAINT "UX_EducationContentDerivativeSourceEducationContent__89fc2a26d9" UNIQUE ("EducationContent_DocumentId", "DerivativeSourceEducationContent_DocumentId"),
     CONSTRAINT "UX_EducationContentDerivativeSourceEducationContent__9c38152014" UNIQUE ("EducationContent_DocumentId", "Ordinal"),
     CONSTRAINT "CK_EducationContentDerivativeSourceEducationContent__4e0b2cb655" CHECK (("DerivativeSourceEducationContent_DocumentId" IS NULL AND "DerivativeSourceEducationContent_ContentIdentifier" IS NULL) OR ("DerivativeSourceEducationContent_DocumentId" IS NOT NULL AND "DerivativeSourceEducationContent_ContentIdentifier" IS NOT NULL))
 );
@@ -2743,7 +2743,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradeLearningStandardGrade"
     "LetterGradeEarned" varchar(20) NULL,
     "NumericGradeEarned" numeric(9,2) NULL,
     CONSTRAINT "PK_GradeLearningStandardGrade" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_GradeLearningStandardGrade_Grade_DocumentId_Learn_360c4f63f4" UNIQUE ("Grade_DocumentId", "LearningStandardGradeLearningStandard_LearningStandardId"),
+    CONSTRAINT "UX_GradeLearningStandardGrade_Grade_DocumentId_Learn_0359ea72b8" UNIQUE ("Grade_DocumentId", "LearningStandardGradeLearningStandard_DocumentId"),
     CONSTRAINT "UX_GradeLearningStandardGrade_Ordinal_Grade_DocumentId" UNIQUE ("Grade_DocumentId", "Ordinal"),
     CONSTRAINT "CK_GradeLearningStandardGrade_LearningStandardGradeL_1f16dbc03d" CHECK (("LearningStandardGradeLearningStandard_DocumentId" IS NULL AND "LearningStandardGradeLearningStandard_LearningStandardId" IS NULL) OR ("LearningStandardGradeLearningStandard_DocumentId" IS NOT NULL AND "LearningStandardGradeLearningStandard_LearningStandardId" IS NOT NULL))
 );
@@ -2789,7 +2789,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntryLearningStandard"
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
     CONSTRAINT "PK_GradebookEntryLearningStandard" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_GradebookEntryLearningStandard_GradebookEntry_Doc_c5d8152b41" UNIQUE ("GradebookEntry_DocumentId", "LearningStandard_LearningStandardId"),
+    CONSTRAINT "UX_GradebookEntryLearningStandard_GradebookEntry_Doc_1bf44ab247" UNIQUE ("GradebookEntry_DocumentId", "LearningStandard_DocumentId"),
     CONSTRAINT "UX_GradebookEntryLearningStandard_Ordinal_GradebookE_6d6dcdd200" UNIQUE ("GradebookEntry_DocumentId", "Ordinal"),
     CONSTRAINT "CK_GradebookEntryLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
@@ -2893,7 +2893,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessment"
     "RequiredPerformanceLevelIndicatorName" varchar(60) NULL,
     CONSTRAINT "PK_GraduationPlanRequiredAssessment" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_GraduationPlanRequiredAssessment_CollectionItemId_91af066ac8" UNIQUE ("CollectionItemId", "GraduationPlan_DocumentId"),
-    CONSTRAINT "UX_GraduationPlanRequiredAssessment_GraduationPlan_D_5f2736d802" UNIQUE ("GraduationPlan_DocumentId", "RequiredAssessmentAssessment_AssessmentIdentifier", "RequiredAssessmentAssessment_Namespace"),
+    CONSTRAINT "UX_GraduationPlanRequiredAssessment_GraduationPlan_D_36d58b154d" UNIQUE ("GraduationPlan_DocumentId", "RequiredAssessmentAssessment_DocumentId"),
     CONSTRAINT "UX_GraduationPlanRequiredAssessment_Ordinal_Graduati_ef919944b6" UNIQUE ("GraduationPlan_DocumentId", "Ordinal"),
     CONSTRAINT "CK_GraduationPlanRequiredAssessment_RequiredAssessme_a433388704" CHECK (("RequiredAssessmentAssessment_DocumentId" IS NULL AND "RequiredAssessmentAssessment_AssessmentIdentifier" IS NULL AND "RequiredAssessmentAssessment_Namespace" IS NULL) OR ("RequiredAssessmentAssessment_DocumentId" IS NOT NULL AND "RequiredAssessmentAssessment_AssessmentIdentifier" IS NOT NULL AND "RequiredAssessmentAssessment_Namespace" IS NOT NULL))
 );
@@ -2909,7 +2909,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCoursCours"
     "CourseCourse_EducationOrganizationId" bigint NULL,
     CONSTRAINT "PK_GraduationPlanCreditsByCoursCours" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_GraduationPlanCreditsByCoursCours_Ordinal_ParentC_aa33a1c93b" UNIQUE ("ParentCollectionItemId", "Ordinal"),
-    CONSTRAINT "UX_GraduationPlanCreditsByCoursCours_ParentCollectio_c35f23bfff" UNIQUE ("ParentCollectionItemId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId"),
+    CONSTRAINT "UX_GraduationPlanCreditsByCoursCours_ParentCollectio_6bc659eb69" UNIQUE ("ParentCollectionItemId", "CourseCourse_DocumentId"),
     CONSTRAINT "CK_GraduationPlanCreditsByCoursCours_CourseCourse_AllNone" CHECK (("CourseCourse_DocumentId" IS NULL AND "CourseCourse_CourseCode" IS NULL AND "CourseCourse_EducationOrganizationId" IS NULL) OR ("CourseCourse_DocumentId" IS NOT NULL AND "CourseCourse_CourseCode" IS NOT NULL AND "CourseCourse_EducationOrganizationId" IS NOT NULL))
 );
 
@@ -2988,7 +2988,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionEducationContent"
     "EducationContentSourceEducationContent_DocumentId" bigint NULL,
     "EducationContentSourceEducationContent_ContentIdentifier" varchar(225) NULL,
     CONSTRAINT "PK_InterventionEducationContent" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_InterventionEducationContent_EducationContentSour_c555e0f713" UNIQUE ("Intervention_DocumentId", "EducationContentSourceEducationContent_ContentIdentifier"),
+    CONSTRAINT "UX_InterventionEducationContent_EducationContentSour_462424c1aa" UNIQUE ("Intervention_DocumentId", "EducationContentSourceEducationContent_DocumentId"),
     CONSTRAINT "UX_InterventionEducationContent_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionEducationContent_EducationContentSour_d80b5eb036" CHECK (("EducationContentSourceEducationContent_DocumentId" IS NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NULL) OR ("EducationContentSourceEducationContent_DocumentId" IS NOT NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NOT NULL))
 );
@@ -3002,7 +3002,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionInterventionPrescription"
     "InterventionPrescriptionInterventionPrescription_Edu_532babb247" bigint NULL,
     "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" varchar(60) NULL,
     CONSTRAINT "PK_InterventionInterventionPrescription" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_InterventionInterventionPrescription_Intervention_380283827c" UNIQUE ("Intervention_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28"),
+    CONSTRAINT "UX_InterventionInterventionPrescription_Intervention_ffb7d2a7c8" UNIQUE ("Intervention_DocumentId", "InterventionPrescriptionInterventionPrescription_DocumentId"),
     CONSTRAINT "UX_InterventionInterventionPrescription_Ordinal_Inte_36922280a8" UNIQUE ("Intervention_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionInterventionPrescription_Intervention_8208563813" CHECK (("InterventionPrescriptionInterventionPrescription_DocumentId" IS NULL AND "InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS NULL AND "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS NULL) OR ("InterventionPrescriptionInterventionPrescription_DocumentId" IS NOT NULL AND "InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS NOT NULL AND "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS NOT NULL))
 );
@@ -3049,7 +3049,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStaff"
     "Staff_DocumentId" bigint NULL,
     "Staff_StaffUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_InterventionStaff" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_InterventionStaff_Intervention_DocumentId_Staff_S_3e129604cc" UNIQUE ("Intervention_DocumentId", "Staff_StaffUniqueId"),
+    CONSTRAINT "UX_InterventionStaff_Intervention_DocumentId_Staff_DocumentId" UNIQUE ("Intervention_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "UX_InterventionStaff_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionStaff_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
 );
@@ -3123,7 +3123,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionEducationContent"
     "EducationContentSourceEducationContent_DocumentId" bigint NULL,
     "EducationContentSourceEducationContent_ContentIdentifier" varchar(225) NULL,
     CONSTRAINT "PK_InterventionPrescriptionEducationContent" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_InterventionPrescriptionEducationContent_Educatio_f84b1cb5c0" UNIQUE ("InterventionPrescription_DocumentId", "EducationContentSourceEducationContent_ContentIdentifier"),
+    CONSTRAINT "UX_InterventionPrescriptionEducationContent_Educatio_869ba11ab6" UNIQUE ("InterventionPrescription_DocumentId", "EducationContentSourceEducationContent_DocumentId"),
     CONSTRAINT "UX_InterventionPrescriptionEducationContent_Ordinal__9d31a04054" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionPrescriptionEducationContent_Educatio_eada5cca98" CHECK (("EducationContentSourceEducationContent_DocumentId" IS NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NULL) OR ("EducationContentSourceEducationContent_DocumentId" IS NOT NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NOT NULL))
 );
@@ -3210,7 +3210,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyEducationContent"
     "EducationContentSourceEducationContent_DocumentId" bigint NULL,
     "EducationContentSourceEducationContent_ContentIdentifier" varchar(225) NULL,
     CONSTRAINT "PK_InterventionStudyEducationContent" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_InterventionStudyEducationContent_EducationConten_cadb0b8fa5" UNIQUE ("InterventionStudy_DocumentId", "EducationContentSourceEducationContent_ContentIdentifier"),
+    CONSTRAINT "UX_InterventionStudyEducationContent_EducationConten_f642697bf7" UNIQUE ("InterventionStudy_DocumentId", "EducationContentSourceEducationContent_DocumentId"),
     CONSTRAINT "UX_InterventionStudyEducationContent_Ordinal_Interve_fa4c1634e7" UNIQUE ("InterventionStudy_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionStudyEducationContent_EducationConten_22028ad2e5" CHECK (("EducationContentSourceEducationContent_DocumentId" IS NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NULL) OR ("EducationContentSourceEducationContent_DocumentId" IS NOT NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NOT NULL))
 );
@@ -3481,7 +3481,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAccountability"
     "GunFreeSchoolsActReportingStatusDescriptor_DescriptorId" bigint NULL,
     "SchoolChoiceImplementStatusDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_LocalEducationAgencyAccountability" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_LocalEducationAgencyAccountability_LocalEducation_71db052593" UNIQUE ("LocalEducationAgency_DocumentId", "LocalEducationAgencyAccountabilitySchoolYear_SchoolYear"),
+    CONSTRAINT "UX_LocalEducationAgencyAccountability_LocalEducation_ccf851bf3d" UNIQUE ("LocalEducationAgency_DocumentId", "LocalEducationAgencyAccountabilitySchoolYear_DocumentId"),
     CONSTRAINT "UX_LocalEducationAgencyAccountability_Ordinal_LocalE_196048a6ee" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal"),
     CONSTRAINT "CK_LocalEducationAgencyAccountability_LocalEducation_62f14354a9" CHECK (("LocalEducationAgencyAccountabilitySchoolYear_DocumentId" IS NULL AND "LocalEducationAgencyAccountabilitySchoolYear_SchoolYear" IS NULL) OR ("LocalEducationAgencyAccountabilitySchoolYear_DocumentId" IS NOT NULL AND "LocalEducationAgencyAccountabilitySchoolYear_SchoolYear" IS NOT NULL))
 );
@@ -3731,7 +3731,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentAssessmentItem"
     "AssessmentItemAssessmentItem_Namespace" varchar(255) NULL,
     "AssessmentItemAssessmentItem_IdentificationCode" varchar(60) NULL,
     CONSTRAINT "PK_ObjectiveAssessmentAssessmentItem" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_4b6df1abe0" UNIQUE ("ObjectiveAssessment_DocumentId", "AssessmentItemAssessmentItem_AssessmentIdentifier", "AssessmentItemAssessmentItem_Namespace", "AssessmentItemAssessmentItem_IdentificationCode"),
+    CONSTRAINT "UX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_d5ab1e380e" UNIQUE ("ObjectiveAssessment_DocumentId", "AssessmentItemAssessmentItem_DocumentId"),
     CONSTRAINT "UX_ObjectiveAssessmentAssessmentItem_Ordinal_Objecti_0ed98b769b" UNIQUE ("ObjectiveAssessment_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ObjectiveAssessmentAssessmentItem_AssessmentItemA_28c5d00730" CHECK (("AssessmentItemAssessmentItem_DocumentId" IS NULL AND "AssessmentItemAssessmentItem_AssessmentIdentifier" IS NULL AND "AssessmentItemAssessmentItem_Namespace" IS NULL AND "AssessmentItemAssessmentItem_IdentificationCode" IS NULL) OR ("AssessmentItemAssessmentItem_DocumentId" IS NOT NULL AND "AssessmentItemAssessmentItem_AssessmentIdentifier" IS NOT NULL AND "AssessmentItemAssessmentItem_Namespace" IS NOT NULL AND "AssessmentItemAssessmentItem_IdentificationCode" IS NOT NULL))
 );
@@ -3744,7 +3744,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentLearningStandard"
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
     CONSTRAINT "PK_ObjectiveAssessmentLearningStandard" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_ObjectiveAssessmentLearningStandard_LearningStand_e69ce7016a" UNIQUE ("ObjectiveAssessment_DocumentId", "LearningStandard_LearningStandardId"),
+    CONSTRAINT "UX_ObjectiveAssessmentLearningStandard_LearningStand_0bc58ebc36" UNIQUE ("ObjectiveAssessment_DocumentId", "LearningStandard_DocumentId"),
     CONSTRAINT "UX_ObjectiveAssessmentLearningStandard_Ordinal_Objec_17b21af036" UNIQUE ("ObjectiveAssessment_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ObjectiveAssessmentLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
@@ -4185,7 +4185,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramLearningStandard"
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
     CONSTRAINT "PK_ProgramLearningStandard" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_ProgramLearningStandard_LearningStandard_Learning_6861b63a7c" UNIQUE ("Program_DocumentId", "LearningStandard_LearningStandardId"),
+    CONSTRAINT "UX_ProgramLearningStandard_LearningStandard_Document_13485098ba" UNIQUE ("Program_DocumentId", "LearningStandard_DocumentId"),
     CONSTRAINT "UX_ProgramLearningStandard_Ordinal_Program_DocumentId" UNIQUE ("Program_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ProgramLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
@@ -4417,7 +4417,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGrade"
     "Grade_SessionName" varchar(60) NULL,
     "Grade_StudentUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_ReportCardGrade" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_ReportCardGrade_Grade_BeginDate_GradingPeriodName_088798dbf3" UNIQUE ("ReportCard_DocumentId", "Grade_GradeTypeDescriptor_DescriptorId", "Grade_GradingPeriodDescriptor_DescriptorId", "Grade_GradingPeriodName", "SchoolId_Unified", "Grade_GradingPeriodSchoolYear", "Grade_BeginDate", "Grade_LocalCourseCode", "Grade_SchoolYear", "Grade_SectionIdentifier", "Grade_SessionName", "Grade_StudentUniqueId"),
+    CONSTRAINT "UX_ReportCardGrade_Grade_DocumentId_ReportCard_DocumentId" UNIQUE ("ReportCard_DocumentId", "Grade_DocumentId"),
     CONSTRAINT "UX_ReportCardGrade_Ordinal_ReportCard_DocumentId" UNIQUE ("ReportCard_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ReportCardGrade_Grade_AllNone" CHECK (("Grade_DocumentId" IS NULL AND "Grade_GradeTypeDescriptor_DescriptorId" IS NULL AND "Grade_GradingPeriodDescriptor_DescriptorId" IS NULL AND "Grade_GradingPeriodName" IS NULL AND "Grade_GradingPeriodReferenceSchoolId" IS NULL AND "Grade_GradingPeriodSchoolYear" IS NULL AND "Grade_BeginDate" IS NULL AND "Grade_LocalCourseCode" IS NULL AND "Grade_StudentSectionAssociationReferenceSchoolId" IS NULL AND "Grade_SchoolYear" IS NULL AND "Grade_SectionIdentifier" IS NULL AND "Grade_SessionName" IS NULL AND "Grade_StudentUniqueId" IS NULL) OR ("Grade_DocumentId" IS NOT NULL AND "Grade_GradeTypeDescriptor_DescriptorId" IS NOT NULL AND "Grade_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "Grade_GradingPeriodName" IS NOT NULL AND "Grade_GradingPeriodReferenceSchoolId" IS NOT NULL AND "Grade_GradingPeriodSchoolYear" IS NOT NULL AND "Grade_BeginDate" IS NOT NULL AND "Grade_LocalCourseCode" IS NOT NULL AND "Grade_StudentSectionAssociationReferenceSchoolId" IS NOT NULL AND "Grade_SchoolYear" IS NOT NULL AND "Grade_SectionIdentifier" IS NOT NULL AND "Grade_SessionName" IS NOT NULL AND "Grade_StudentUniqueId" IS NOT NULL))
 );
@@ -4438,7 +4438,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardStudentCompetencyObjective"
     "StudentCompetencyObjective_StudentUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_ReportCardStudentCompetencyObjective" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ReportCardStudentCompetencyObjective_Ordinal_Repo_2bd6347db0" UNIQUE ("ReportCard_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ReportCardStudentCompetencyObjective_ReportCard_D_e144fd689c" UNIQUE ("ReportCard_DocumentId", "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId", "StudentCompetencyObjective_GradingPeriodName", "StudentCompetencyObjective_GradingPeriodSchoolId", "StudentCompetencyObjective_GradingPeriodSchoolYear", "StudentCompetencyObjective_ObjectiveEducationOrganizationId", "StudentCompetencyObjective_Objective", "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d", "StudentCompetencyObjective_StudentUniqueId"),
+    CONSTRAINT "UX_ReportCardStudentCompetencyObjective_ReportCard_D_39bd501a86" UNIQUE ("ReportCard_DocumentId", "StudentCompetencyObjective_DocumentId"),
     CONSTRAINT "CK_ReportCardStudentCompetencyObjective_StudentCompe_db810526a3" CHECK (("StudentCompetencyObjective_DocumentId" IS NULL AND "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" IS NULL AND "StudentCompetencyObjective_GradingPeriodName" IS NULL AND "StudentCompetencyObjective_GradingPeriodSchoolId" IS NULL AND "StudentCompetencyObjective_GradingPeriodSchoolYear" IS NULL AND "StudentCompetencyObjective_ObjectiveEducationOrganizationId" IS NULL AND "StudentCompetencyObjective_Objective" IS NULL AND "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" IS NULL AND "StudentCompetencyObjective_StudentUniqueId" IS NULL) OR ("StudentCompetencyObjective_DocumentId" IS NOT NULL AND "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "StudentCompetencyObjective_GradingPeriodName" IS NOT NULL AND "StudentCompetencyObjective_GradingPeriodSchoolId" IS NOT NULL AND "StudentCompetencyObjective_GradingPeriodSchoolYear" IS NOT NULL AND "StudentCompetencyObjective_ObjectiveEducationOrganizationId" IS NOT NULL AND "StudentCompetencyObjective_Objective" IS NOT NULL AND "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" IS NOT NULL AND "StudentCompetencyObjective_StudentUniqueId" IS NOT NULL))
 );
 
@@ -4474,7 +4474,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventProgram"
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_RestraintEventProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_RestraintEventProgram_Ordinal_RestraintEvent_DocumentId" UNIQUE ("RestraintEvent_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_RestraintEventProgram_Program_EducationOrganizati_cae2e28241" UNIQUE ("RestraintEvent_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_RestraintEventProgram_Program_DocumentId_Restrain_4b9304020d" UNIQUE ("RestraintEvent_DocumentId", "Program_DocumentId"),
     CONSTRAINT "CK_RestraintEventProgram_Program_AllNone" CHECK (("Program_DocumentId" IS NULL AND "Program_EducationOrganizationId" IS NULL AND "Program_ProgramName" IS NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("Program_DocumentId" IS NOT NULL AND "Program_EducationOrganizationId" IS NOT NULL AND "Program_ProgramName" IS NOT NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -4535,7 +4535,7 @@ CREATE TABLE IF NOT EXISTS "sample"."SchoolExtensionDirectlyOwnedBus"
     "DirectlyOwnedBus_DocumentId" bigint NULL,
     "DirectlyOwnedBus_BusId" varchar(60) NULL,
     CONSTRAINT "PK_SchoolExtensionDirectlyOwnedBus" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_SchoolExtensionDirectlyOwnedBus_DirectlyOwnedBus__f395c17fcc" UNIQUE ("School_DocumentId", "DirectlyOwnedBus_BusId"),
+    CONSTRAINT "UX_SchoolExtensionDirectlyOwnedBus_DirectlyOwnedBus__4cb94cc0bf" UNIQUE ("School_DocumentId", "DirectlyOwnedBus_DocumentId"),
     CONSTRAINT "UX_SchoolExtensionDirectlyOwnedBus_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal"),
     CONSTRAINT "CK_SchoolExtensionDirectlyOwnedBus_DirectlyOwnedBus_AllNone" CHECK (("DirectlyOwnedBus_DocumentId" IS NULL AND "DirectlyOwnedBus_BusId" IS NULL) OR ("DirectlyOwnedBus_DocumentId" IS NOT NULL AND "DirectlyOwnedBus_BusId" IS NOT NULL))
 );
@@ -4751,7 +4751,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionClassPeriod"
     "ClassPeriod_ClassPeriodName" varchar(60) NULL,
     "ClassPeriod_SchoolId" bigint NULL,
     CONSTRAINT "PK_SectionClassPeriod" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_SectionClassPeriod_ClassPeriod_ClassPeriodName_Sc_afa44148d8" UNIQUE ("Section_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId"),
+    CONSTRAINT "UX_SectionClassPeriod_ClassPeriod_DocumentId_Section_DocumentId" UNIQUE ("Section_DocumentId", "ClassPeriod_DocumentId"),
     CONSTRAINT "UX_SectionClassPeriod_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal"),
     CONSTRAINT "CK_SectionClassPeriod_ClassPeriod_AllNone" CHECK (("ClassPeriod_DocumentId" IS NULL AND "ClassPeriod_ClassPeriodName" IS NULL AND "ClassPeriod_SchoolId" IS NULL) OR ("ClassPeriod_DocumentId" IS NOT NULL AND "ClassPeriod_ClassPeriodName" IS NOT NULL AND "ClassPeriod_SchoolId" IS NOT NULL))
 );
@@ -4789,7 +4789,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionProgram"
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_SectionProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SectionProgram_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SectionProgram_Program_EducationOrganizationId_Pr_049ec1876e" UNIQUE ("Section_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_SectionProgram_Program_DocumentId_Section_DocumentId" UNIQUE ("Section_DocumentId", "Program_DocumentId"),
     CONSTRAINT "CK_SectionProgram_Program_AllNone" CHECK (("Program_DocumentId" IS NULL AND "Program_EducationOrganizationId" IS NULL AND "Program_ProgramName" IS NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("Program_DocumentId" IS NOT NULL AND "Program_EducationOrganizationId" IS NOT NULL AND "Program_ProgramName" IS NOT NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -4847,7 +4847,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SessionAcademicWeek"
     "AcademicWeek_SchoolId" bigint NULL,
     "AcademicWeek_WeekIdentifier" varchar(80) NULL,
     CONSTRAINT "PK_SessionAcademicWeek" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_SessionAcademicWeek_AcademicWeek_SchoolId_WeekIde_2381b14237" UNIQUE ("Session_DocumentId", "AcademicWeek_SchoolId", "AcademicWeek_WeekIdentifier"),
+    CONSTRAINT "UX_SessionAcademicWeek_AcademicWeek_DocumentId_Sessi_687b6f9c21" UNIQUE ("Session_DocumentId", "AcademicWeek_DocumentId"),
     CONSTRAINT "UX_SessionAcademicWeek_Ordinal_Session_DocumentId" UNIQUE ("Session_DocumentId", "Ordinal"),
     CONSTRAINT "CK_SessionAcademicWeek_AcademicWeek_AllNone" CHECK (("AcademicWeek_DocumentId" IS NULL AND "AcademicWeek_SchoolId" IS NULL AND "AcademicWeek_WeekIdentifier" IS NULL) OR ("AcademicWeek_DocumentId" IS NOT NULL AND "AcademicWeek_SchoolId" IS NOT NULL AND "AcademicWeek_WeekIdentifier" IS NOT NULL))
 );
@@ -4863,7 +4863,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SessionGradingPeriod"
     "GradingPeriod_SchoolId" bigint NULL,
     "GradingPeriod_SchoolYear" integer NULL,
     CONSTRAINT "PK_SessionGradingPeriod" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_SessionGradingPeriod_GradingPeriod_GradingPeriodN_b43c7334a2" UNIQUE ("Session_DocumentId", "GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "GradingPeriod_SchoolId", "GradingPeriod_SchoolYear"),
+    CONSTRAINT "UX_SessionGradingPeriod_GradingPeriod_DocumentId_Ses_a3287e9c5b" UNIQUE ("Session_DocumentId", "GradingPeriod_DocumentId"),
     CONSTRAINT "UX_SessionGradingPeriod_Ordinal_Session_DocumentId" UNIQUE ("Session_DocumentId", "Ordinal"),
     CONSTRAINT "CK_SessionGradingPeriod_GradingPeriod_AllNone" CHECK (("GradingPeriod_DocumentId" IS NULL AND "GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NULL AND "GradingPeriod_GradingPeriodName" IS NULL AND "GradingPeriod_SchoolId" IS NULL AND "GradingPeriod_SchoolYear" IS NULL) OR ("GradingPeriod_DocumentId" IS NOT NULL AND "GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "GradingPeriod_GradingPeriodName" IS NOT NULL AND "GradingPeriod_SchoolId" IS NOT NULL AND "GradingPeriod_SchoolYear" IS NOT NULL))
 );
@@ -4987,7 +4987,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffCredential"
     "Credential_CredentialIdentifier" varchar(60) NULL,
     "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_StaffCredential" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StaffCredential_Credential_CredentialIdentifier_C_973c543fa1" UNIQUE ("Staff_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StaffCredential_Credential_DocumentId_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Credential_DocumentId"),
     CONSTRAINT "UX_StaffCredential_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StaffCredential_Credential_AllNone" CHECK (("Credential_DocumentId" IS NULL AND "Credential_CredentialIdentifier" IS NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NULL) OR ("Credential_DocumentId" IS NOT NULL AND "Credential_CredentialIdentifier" IS NOT NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NOT NULL))
 );
@@ -5494,7 +5494,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAccountability"
     "CteGraduationRateInclusion" boolean NULL,
     CONSTRAINT "PK_StateEducationAgencyAccountability" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StateEducationAgencyAccountability_Ordinal_StateE_fe35c06a7f" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyAccountability_StateEducation_f62f94df32" UNIQUE ("StateEducationAgency_DocumentId", "StateEducationAgencyAccountabilitySchoolYear_SchoolYear"),
+    CONSTRAINT "UX_StateEducationAgencyAccountability_StateEducation_f8a5a91e16" UNIQUE ("StateEducationAgency_DocumentId", "StateEducationAgencyAccountabilitySchoolYear_DocumentId"),
     CONSTRAINT "CK_StateEducationAgencyAccountability_StateEducation_8c7fdef82e" CHECK (("StateEducationAgencyAccountabilitySchoolYear_DocumentId" IS NULL AND "StateEducationAgencyAccountabilitySchoolYear_SchoolYear" IS NULL) OR ("StateEducationAgencyAccountabilitySchoolYear_DocumentId" IS NOT NULL AND "StateEducationAgencyAccountabilitySchoolYear_SchoolYear" IS NOT NULL))
 );
 
@@ -5923,7 +5923,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordReportCard"
     "ReportCard_StudentUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_StudentAcademicRecordReportCard" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAcademicRecordReportCard_Ordinal_StudentAc_17f94eff71" UNIQUE ("StudentAcademicRecord_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAcademicRecordReportCard_ReportCard_Educat_ea0b34ae86" UNIQUE ("StudentAcademicRecord_DocumentId", "ReportCard_EducationOrganizationId", "ReportCard_GradingPeriodDescriptor_DescriptorId", "ReportCard_GradingPeriodName", "ReportCard_GradingPeriodSchoolId", "ReportCard_GradingPeriodSchoolYear", "ReportCard_StudentUniqueId"),
+    CONSTRAINT "UX_StudentAcademicRecordReportCard_ReportCard_Docume_0ddac2c9e6" UNIQUE ("StudentAcademicRecord_DocumentId", "ReportCard_DocumentId"),
     CONSTRAINT "CK_StudentAcademicRecordReportCard_ReportCard_AllNone" CHECK (("ReportCard_DocumentId" IS NULL AND "ReportCard_EducationOrganizationId" IS NULL AND "ReportCard_GradingPeriodDescriptor_DescriptorId" IS NULL AND "ReportCard_GradingPeriodName" IS NULL AND "ReportCard_GradingPeriodSchoolId" IS NULL AND "ReportCard_GradingPeriodSchoolYear" IS NULL AND "ReportCard_StudentUniqueId" IS NULL) OR ("ReportCard_DocumentId" IS NOT NULL AND "ReportCard_EducationOrganizationId" IS NOT NULL AND "ReportCard_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "ReportCard_GradingPeriodName" IS NOT NULL AND "ReportCard_GradingPeriodSchoolId" IS NOT NULL AND "ReportCard_GradingPeriodSchoolYear" IS NOT NULL AND "ReportCard_StudentUniqueId" IS NOT NULL))
 );
 
@@ -5994,7 +5994,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentItem"
     "TimeAssessed" varchar(30) NULL,
     CONSTRAINT "PK_StudentAssessmentItem" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAssessmentItem_Ordinal_StudentAssessment_DocumentId" UNIQUE ("StudentAssessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAssessmentItem_StudentAssessment_DocumentI_484b98923c" UNIQUE ("StudentAssessment_DocumentId", "StudentAssessmentItemAssessmentItem_AssessmentIdentifier", "StudentAssessmentItemAssessmentItem_IdentificationCode", "StudentAssessmentItemAssessmentItem_Namespace"),
+    CONSTRAINT "UX_StudentAssessmentItem_StudentAssessment_DocumentI_5093686703" UNIQUE ("StudentAssessment_DocumentId", "StudentAssessmentItemAssessmentItem_DocumentId"),
     CONSTRAINT "CK_StudentAssessmentItem_StudentAssessmentItemAssess_0066564949" CHECK (("StudentAssessmentItemAssessmentItem_DocumentId" IS NULL AND "StudentAssessmentItemAssessmentItem_AssessmentIdentifier" IS NULL AND "StudentAssessmentItemAssessmentItem_Namespace" IS NULL AND "StudentAssessmentItemAssessmentItem_IdentificationCode" IS NULL) OR ("StudentAssessmentItemAssessmentItem_DocumentId" IS NOT NULL AND "StudentAssessmentItemAssessmentItem_AssessmentIdentifier" IS NOT NULL AND "StudentAssessmentItemAssessmentItem_Namespace" IS NOT NULL AND "StudentAssessmentItemAssessmentItem_IdentificationCode" IS NOT NULL))
 );
 
@@ -6039,7 +6039,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessment"
     CONSTRAINT "PK_StudentAssessmentStudentObjectiveAssessment" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessment_Colle_11cd661841" UNIQUE ("CollectionItemId", "StudentAssessment_DocumentId"),
     CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessment_Ordin_43088e9edf" UNIQUE ("StudentAssessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessment_Stude_6837ea1f35" UNIQUE ("StudentAssessment_DocumentId", "StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7", "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919", "StudentObjectiveAssessmentObjectiveAssessment_Namespace"),
+    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessment_Stude_945821217e" UNIQUE ("StudentAssessment_DocumentId", "StudentObjectiveAssessmentObjectiveAssessment_DocumentId"),
     CONSTRAINT "CK_StudentAssessmentStudentObjectiveAssessment_Stude_5385c98250" CHECK (("StudentObjectiveAssessmentObjectiveAssessment_DocumentId" IS NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7" IS NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Namespace" IS NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919" IS NULL) OR ("StudentObjectiveAssessmentObjectiveAssessment_DocumentId" IS NOT NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7" IS NOT NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Namespace" IS NOT NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919" IS NOT NULL))
 );
 
@@ -6274,7 +6274,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociationSection"
     "Section_SectionIdentifier" varchar(255) NULL,
     CONSTRAINT "PK_StudentCohortAssociationSection" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentCohortAssociationSection_Ordinal_StudentCo_a25c1cc981" UNIQUE ("StudentCohortAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentCohortAssociationSection_Section_LocalCour_98c45b1e89" UNIQUE ("StudentCohortAssociation_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier"),
+    CONSTRAINT "UX_StudentCohortAssociationSection_Section_DocumentI_e4715cd1ec" UNIQUE ("StudentCohortAssociation_DocumentId", "Section_DocumentId"),
     CONSTRAINT "CK_StudentCohortAssociationSection_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL))
 );
 
@@ -6315,7 +6315,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveGeneralStudentProgr
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" bigint NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e" varchar(32) NULL,
     CONSTRAINT "PK_StudentCompetencyObjectiveGeneralStudentProgramAssociation" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_ab170bd480" UNIQUE ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e"),
+    CONSTRAINT "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_857a6cc358" UNIQUE ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"),
     CONSTRAINT "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_d11644e81b" UNIQUE ("StudentCompetencyObjective_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentCompetencyObjectiveGeneralStudentProgramAs_2dd870e284" CHECK (("StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e" IS NULL) OR ("StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e" IS NOT NULL))
 );
@@ -6334,7 +6334,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveStudentSectionAssoc
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab" varchar(60) NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6" varchar(32) NULL,
     CONSTRAINT "PK_StudentCompetencyObjectiveStudentSectionAssociation" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentCompetencyObjectiveStudentSectionAssociati_598c5a5bc4" UNIQUE ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6"),
+    CONSTRAINT "UX_StudentCompetencyObjectiveStudentSectionAssociati_3f9aab491f" UNIQUE ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"),
     CONSTRAINT "UX_StudentCompetencyObjectiveStudentSectionAssociati_598ed458c5" UNIQUE ("StudentCompetencyObjective_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentCompetencyObjectiveStudentSectionAssociati_61a8755a48" CHECK (("StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6" IS NULL) OR ("StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6" IS NOT NULL))
 );
@@ -6441,7 +6441,7 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentContactAssociationExtensionStaffEduc
     "StaffEducationOrganizationEmploymentAssociation_HireDate" date NULL,
     "StaffEducationOrganizationEmploymentAssociation_StaffUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_StudentContactAssociationExtensionStaffEducationO_3a8cfc2f54" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentContactAssociationExtensionStaffEducationO_2f8d888edb" UNIQUE ("StudentContactAssociation_DocumentId", "StaffEducationOrganizationEmploymentAssociation_Educ_aecac5928f", "StaffEducationOrganizationEmploymentAssociation_Empl_d9c1171fb4", "StaffEducationOrganizationEmploymentAssociation_HireDate", "StaffEducationOrganizationEmploymentAssociation_StaffUniqueId"),
+    CONSTRAINT "UX_StudentContactAssociationExtensionStaffEducationO_4dbc7d41db" UNIQUE ("StudentContactAssociation_DocumentId", "StaffEducationOrganizationEmploymentAssociation_DocumentId"),
     CONSTRAINT "UX_StudentContactAssociationExtensionStaffEducationO_d3dd2afa79" UNIQUE ("StudentContactAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentContactAssociationExtensionStaffEducationO_b9fe71c343" CHECK (("StaffEducationOrganizationEmploymentAssociation_DocumentId" IS NULL AND "StaffEducationOrganizationEmploymentAssociation_Educ_aecac5928f" IS NULL AND "StaffEducationOrganizationEmploymentAssociation_Empl_d9c1171fb4" IS NULL AND "StaffEducationOrganizationEmploymentAssociation_HireDate" IS NULL AND "StaffEducationOrganizationEmploymentAssociation_StaffUniqueId" IS NULL) OR ("StaffEducationOrganizationEmploymentAssociation_DocumentId" IS NOT NULL AND "StaffEducationOrganizationEmploymentAssociation_Educ_aecac5928f" IS NOT NULL AND "StaffEducationOrganizationEmploymentAssociation_Empl_d9c1171fb4" IS NOT NULL AND "StaffEducationOrganizationEmploymentAssociation_HireDate" IS NOT NULL AND "StaffEducationOrganizationEmploymentAssociation_StaffUniqueId" IS NOT NULL))
 );
@@ -6630,7 +6630,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationCohort
     "CohortYearTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TermDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationCohortYear" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationCohortYear_106ca6cd22" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "CohortYearTypeDescriptor_DescriptorId", "CohortYearSchoolYear_SchoolYear"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationCohortYear_33afeb7297" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "CohortYearTypeDescriptor_DescriptorId", "CohortYearSchoolYear_DocumentId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationCohortYear_cff344e2ac" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentEducationOrganizationAssociationCohortYear_7c20310bc3" CHECK (("CohortYearSchoolYear_DocumentId" IS NULL AND "CohortYearSchoolYear_SchoolYear" IS NULL) OR ("CohortYearSchoolYear_DocumentId" IS NOT NULL AND "CohortYearSchoolYear_SchoolYear" IS NOT NULL))
 );
@@ -6662,8 +6662,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDispla
     "DisplacedStudentEndDate" date NULL,
     "DisplacedStudentStartDate" date NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationDisplacedStudent" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationDisplacedS_6d118cf066" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "DisplacedStudentCrisisEvent_DocumentId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationDisplacedS_9cdb07e1a9" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationDisplacedS_da0d110565" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "DisplacedStudentCrisisEvent_CrisisEventName"),
     CONSTRAINT "CK_StudentEducationOrganizationAssociationDisplacedS_0e1de149a7" CHECK (("DisplacedStudentCrisisEvent_DocumentId" IS NULL AND "DisplacedStudentCrisisEvent_CrisisEventName" IS NULL) OR ("DisplacedStudentCrisisEvent_DocumentId" IS NOT NULL AND "DisplacedStudentCrisisEvent_CrisisEventName" IS NOT NULL))
 );
 
@@ -7149,7 +7149,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationE
     "ProficiencyDescriptor_DescriptorId" bigint NULL,
     "ProgressDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_StudentLanguageInstructionProgramAssociationEngli_4e9cf6c8c7" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationEngli_1d7d495f31" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear"),
+    CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationEngli_268944e25b" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId"),
     CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationEngli_f0e8c9857b" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentLanguageInstructionProgramAssociationEngli_eee4ac80b5" CHECK (("EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId" IS NULL AND "EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear" IS NULL) OR ("EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId" IS NOT NULL AND "EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear" IS NOT NULL))
 );
@@ -7425,7 +7425,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationElem
     "EvaluationElementRatingLevelDescriptor_DescriptorId" bigint NULL,
     "EvaluationElementNumericRating" numeric(6,3) NULL,
     CONSTRAINT "PK_StudentProgramEvaluationStudentEvaluationElement" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationElement__b12dec7075" UNIQUE ("StudentProgramEvaluation_DocumentId", "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd", "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb", "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f", "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8", "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178", "StudentEvaluationElementProgramEvaluationElement_ProgramName", "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466"),
+    CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationElement__2fabdcdd7e" UNIQUE ("StudentProgramEvaluation_DocumentId", "StudentEvaluationElementProgramEvaluationElement_DocumentId"),
     CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationElement__d25487010c" UNIQUE ("StudentProgramEvaluation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentProgramEvaluationStudentEvaluationElement__6e8c5ffb20" CHECK (("StudentEvaluationElementProgramEvaluationElement_DocumentId" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_ProgramName" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466" IS NULL) OR ("StudentEvaluationElementProgramEvaluationElement_DocumentId" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_ProgramName" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466" IS NOT NULL))
 );
@@ -7446,7 +7446,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationObje
     "EvaluationObjectiveRatingLevelDescriptor_DescriptorId" bigint NULL,
     "EvaluationObjectiveNumericRating" numeric(6,3) NULL,
     CONSTRAINT "PK_StudentProgramEvaluationStudentEvaluationObjective" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationObjectiv_a82db8a654" UNIQUE ("StudentProgramEvaluation_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950", "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982", "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23", "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726", "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84", "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0", "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76"),
+    CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationObjectiv_85741b6e4e" UNIQUE ("StudentProgramEvaluation_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId"),
     CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationObjectiv_fd20066fd8" UNIQUE ("StudentProgramEvaluation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentProgramEvaluationStudentEvaluationObjectiv_c05b8aa27a" CHECK (("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76" IS NULL) OR ("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76" IS NOT NULL))
 );
@@ -7520,8 +7520,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationAlternativeGraduation
     "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" bigint NULL,
     "AlternativeGraduationPlan_GraduationSchoolYear" integer NULL,
     CONSTRAINT "PK_StudentSchoolAssociationAlternativeGraduationPlan" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentSchoolAssociationAlternativeGraduationPlan_5c46992811" UNIQUE ("StudentSchoolAssociation_DocumentId", "AlternativeGraduationPlan_EducationOrganizationId", "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181", "AlternativeGraduationPlan_GraduationSchoolYear"),
     CONSTRAINT "UX_StudentSchoolAssociationAlternativeGraduationPlan_620cf4ccf8" UNIQUE ("StudentSchoolAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_StudentSchoolAssociationAlternativeGraduationPlan_64d4374eea" UNIQUE ("StudentSchoolAssociation_DocumentId", "AlternativeGraduationPlan_DocumentId"),
     CONSTRAINT "CK_StudentSchoolAssociationAlternativeGraduationPlan_b9e2a28562" CHECK (("AlternativeGraduationPlan_DocumentId" IS NULL AND "AlternativeGraduationPlan_EducationOrganizationId" IS NULL AND "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" IS NULL AND "AlternativeGraduationPlan_GraduationSchoolYear" IS NULL) OR ("AlternativeGraduationPlan_DocumentId" IS NOT NULL AND "AlternativeGraduationPlan_EducationOrganizationId" IS NOT NULL AND "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" IS NOT NULL AND "AlternativeGraduationPlan_GraduationSchoolYear" IS NOT NULL))
 );
 
@@ -7705,7 +7705,7 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentSectionAssociationExtensionRelatedGe
     "RelatedGeneralStudentProgramAssociation_ProgramTypeD_abfb5157a1" bigint NULL,
     "RelatedGeneralStudentProgramAssociation_StudentUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_StudentSectionAssociationExtensionRelatedGeneralS_9eacdab11d" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentSectionAssociationExtensionRelatedGeneralS_b1b6ac2802" UNIQUE ("StudentSectionAssociation_DocumentId", "RelatedGeneralStudentProgramAssociation_BeginDate", "RelatedGeneralStudentProgramAssociation_EducationOrganizationId", "RelatedGeneralStudentProgramAssociation_ProgramEduca_79002f6014", "RelatedGeneralStudentProgramAssociation_ProgramName", "RelatedGeneralStudentProgramAssociation_ProgramTypeD_abfb5157a1", "RelatedGeneralStudentProgramAssociation_StudentUniqueId"),
+    CONSTRAINT "UX_StudentSectionAssociationExtensionRelatedGeneralS_b06563af57" UNIQUE ("StudentSectionAssociation_DocumentId", "RelatedGeneralStudentProgramAssociation_DocumentId"),
     CONSTRAINT "UX_StudentSectionAssociationExtensionRelatedGeneralS_d89b85350f" UNIQUE ("StudentSectionAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentSectionAssociationExtensionRelatedGeneralS_11c44fcc92" CHECK (("RelatedGeneralStudentProgramAssociation_DocumentId" IS NULL AND "RelatedGeneralStudentProgramAssociation_BeginDate" IS NULL AND "RelatedGeneralStudentProgramAssociation_EducationOrganizationId" IS NULL AND "RelatedGeneralStudentProgramAssociation_ProgramEduca_79002f6014" IS NULL AND "RelatedGeneralStudentProgramAssociation_ProgramName" IS NULL AND "RelatedGeneralStudentProgramAssociation_ProgramTypeD_abfb5157a1" IS NULL AND "RelatedGeneralStudentProgramAssociation_StudentUniqueId" IS NULL) OR ("RelatedGeneralStudentProgramAssociation_DocumentId" IS NOT NULL AND "RelatedGeneralStudentProgramAssociation_BeginDate" IS NOT NULL AND "RelatedGeneralStudentProgramAssociation_EducationOrganizationId" IS NOT NULL AND "RelatedGeneralStudentProgramAssociation_ProgramEduca_79002f6014" IS NOT NULL AND "RelatedGeneralStudentProgramAssociation_ProgramName" IS NOT NULL AND "RelatedGeneralStudentProgramAssociation_ProgramTypeD_abfb5157a1" IS NOT NULL AND "RelatedGeneralStudentProgramAssociation_StudentUniqueId" IS NOT NULL))
 );
@@ -7721,7 +7721,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociationProgram"
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_StudentSectionAssociationProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentSectionAssociationProgram_Ordinal_StudentS_6b6c060479" UNIQUE ("StudentSectionAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentSectionAssociationProgram_Program_Educatio_9e1819d245" UNIQUE ("StudentSectionAssociation_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentSectionAssociationProgram_Program_Document_e1803f1bfc" UNIQUE ("StudentSectionAssociation_DocumentId", "Program_DocumentId"),
     CONSTRAINT "CK_StudentSectionAssociationProgram_Program_AllNone" CHECK (("Program_DocumentId" IS NULL AND "Program_EducationOrganizationId" IS NULL AND "Program_ProgramName" IS NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("Program_DocumentId" IS NOT NULL AND "Program_EducationOrganizationId" IS NOT NULL AND "Program_ProgramName" IS NOT NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -7759,7 +7759,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEventClassPeriod"
     "ClassPeriod_ClassPeriodName" varchar(60) NULL,
     "ClassPeriod_SchoolId" bigint NULL,
     CONSTRAINT "PK_StudentSectionAttendanceEventClassPeriod" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentSectionAttendanceEventClassPeriod_ClassPer_28655b60bb" UNIQUE ("StudentSectionAttendanceEvent_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId"),
+    CONSTRAINT "UX_StudentSectionAttendanceEventClassPeriod_ClassPer_32827dac6f" UNIQUE ("StudentSectionAttendanceEvent_DocumentId", "ClassPeriod_DocumentId"),
     CONSTRAINT "UX_StudentSectionAttendanceEventClassPeriod_Ordinal__2fbe6b01f4" UNIQUE ("StudentSectionAttendanceEvent_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentSectionAttendanceEventClassPeriod_ClassPeriod_AllNone" CHECK (("ClassPeriod_DocumentId" IS NULL AND "ClassPeriod_ClassPeriodName" IS NULL AND "ClassPeriod_SchoolId" IS NULL) OR ("ClassPeriod_DocumentId" IS NOT NULL AND "ClassPeriod_ClassPeriodName" IS NOT NULL AND "ClassPeriod_SchoolId" IS NOT NULL))
 );
@@ -7839,7 +7839,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationServ
     "ServiceProviderStaff_StaffUniqueId" varchar(32) NOT NULL,
     "PrimaryProvider" boolean NULL,
     CONSTRAINT "PK_StudentSpecialEducationProgramAssociationServiceProvider" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationServiceP_681b35bdf6" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "ServiceProviderStaff_StaffUniqueId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationServiceP_b990090a4c" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "ServiceProviderStaff_DocumentId"),
     CONSTRAINT "UX_StudentSpecialEducationProgramAssociationServiceP_d2796b93f8" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentSpecialEducationProgramAssociationServiceP_e5a600962c" CHECK (("ServiceProviderStaff_DocumentId" IS NULL AND "ServiceProviderStaff_StaffUniqueId" IS NULL) OR ("ServiceProviderStaff_DocumentId" IS NOT NULL AND "ServiceProviderStaff_StaffUniqueId" IS NOT NULL))
 );
@@ -7881,8 +7881,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationSpec
     "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3" varchar(32) NOT NULL,
     "PrimaryProvider" boolean NULL,
     CONSTRAINT "PK_StudentSpecialEducationProgramAssociationSpecialE_a4b7c2e86d" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_4725864b3d" UNIQUE ("ParentCollectionItemId", "SpecialEducationProgramServiceServiceProviderStaff_DocumentId"),
     CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_6d70610a74" UNIQUE ("ParentCollectionItemId", "Ordinal"),
-    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_e86ef5fced" UNIQUE ("ParentCollectionItemId", "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3"),
     CONSTRAINT "CK_StudentSpecialEducationProgramAssociationSpecialE_08fc636594" CHECK (("SpecialEducationProgramServiceServiceProviderStaff_DocumentId" IS NULL AND "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3" IS NULL) OR ("SpecialEducationProgramServiceServiceProviderStaff_DocumentId" IS NOT NULL AND "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3" IS NOT NULL))
 );
 
@@ -8383,7 +8383,7 @@ CREATE TABLE IF NOT EXISTS "sample"."BusRouteProgram"
     "Program_ProgramName" varchar(60) NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_BusRouteProgram" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_BusRouteProgram_BusRoute_DocumentId_Program_Educa_152b59d1d5" UNIQUE ("BusRoute_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_BusRouteProgram_BusRoute_DocumentId_Program_DocumentId" UNIQUE ("BusRoute_DocumentId", "Program_DocumentId"),
     CONSTRAINT "UX_BusRouteProgram_Ordinal_BusRoute_DocumentId" UNIQUE ("BusRoute_DocumentId", "Ordinal"),
     CONSTRAINT "CK_BusRouteProgram_Program_AllNone" CHECK (("Program_DocumentId" IS NULL AND "Program_EducationOrganizationId" IS NULL AND "Program_ProgramName" IS NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("Program_DocumentId" IS NOT NULL AND "Program_EducationOrganizationId" IS NOT NULL AND "Program_ProgramName" IS NOT NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
@@ -8628,7 +8628,7 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentGraduationPlanAssociationStudentCont
     "StudentContactAssociation_ContactUniqueId" varchar(32) NULL,
     "StudentContactAssociation_StudentUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_StudentGraduationPlanAssociationStudentContactAssociation" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentGraduationPlanAssociationStudentContactAss_3b980903fb" UNIQUE ("StudentGraduationPlanAssociation_DocumentId", "StudentContactAssociation_ContactUniqueId", "StudentContactAssociation_StudentUniqueId"),
+    CONSTRAINT "UX_StudentGraduationPlanAssociationStudentContactAss_2671b9f98a" UNIQUE ("StudentGraduationPlanAssociation_DocumentId", "StudentContactAssociation_DocumentId"),
     CONSTRAINT "UX_StudentGraduationPlanAssociationStudentContactAss_ee42742bf8" UNIQUE ("StudentGraduationPlanAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentGraduationPlanAssociationStudentContactAss_8c74736930" CHECK (("StudentContactAssociation_DocumentId" IS NULL AND "StudentContactAssociation_ContactUniqueId" IS NULL AND "StudentContactAssociation_StudentUniqueId" IS NULL) OR ("StudentContactAssociation_DocumentId" IS NOT NULL AND "StudentContactAssociation_ContactUniqueId" IS NOT NULL AND "StudentContactAssociation_StudentUniqueId" IS NOT NULL))
 );

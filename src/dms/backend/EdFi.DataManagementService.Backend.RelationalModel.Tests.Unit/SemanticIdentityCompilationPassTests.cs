@@ -68,7 +68,7 @@ public class Given_A_Reference_Backed_Collection_Without_Array_Uniqueness
         _addressTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("School_SchoolId", "School_EducationOrganizationId");
+            .Equal("School_DocumentId", "School_DocumentId");
 
         _addressTable
             .IdentityMetadata.SemanticIdentitySource.Should()
@@ -89,7 +89,7 @@ public class Given_A_Reference_Backed_Collection_Without_Array_Uniqueness
         _observedBindings
             .Select(binding => binding.ColumnName.Value)
             .Should()
-            .Equal("School_SchoolId", "School_EducationOrganizationId");
+            .Equal("School_DocumentId", "School_DocumentId");
     }
 
     /// <summary>

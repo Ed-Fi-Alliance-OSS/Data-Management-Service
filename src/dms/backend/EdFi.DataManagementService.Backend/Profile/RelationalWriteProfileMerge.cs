@@ -756,36 +756,58 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             }
 
             // 1. Build scope-local planner input from the unified source set.
-            //    Descriptor-backed semantic identity parts arrive from Core as URI strings,
-            //    but the planner matches against backend-side Int64 ids. Canonicalize the
-            //    two Core-emitted streams before handing them to the planner.
+            //    Reference- and descriptor-backed semantic identity parts arrive from Core
+            //    as document natural-key values / descriptor URI strings, but the planner
+            //    matches against backend-side Int64 ids. Canonicalize the Core-emitted
+            //    streams before handing them to the planner.
             var parentScopeAddress = new ScopeInstanceAddress(
                 "$",
                 ImmutableArray<AncestorCollectionInstance>.Empty
             );
 
+            var documentIdentityParts = ResolveDocumentReferenceIdentityParts(resourceWritePlan, tablePlan);
             var descriptorIdentityIndices = ResolveDescriptorIdentityIndices(tablePlan);
 
-            var canonicalizedVisibleRequestItems =
-                descriptorIdentityIndices.Count == 0
-                    ? visibleRequestItemsForScope
-                    : CanonicalizeDescriptorRequestItems(
-                        visibleRequestItemsForScope,
-                        tablePlan,
-                        descriptorIdentityIndices,
-                        resolvedReferenceLookups
-                    );
+            var canonicalizedVisibleRequestItems = visibleRequestItemsForScope;
+            if (documentIdentityParts.Count > 0)
+            {
+                canonicalizedVisibleRequestItems = CanonicalizeDocumentReferenceRequestItems(
+                    canonicalizedVisibleRequestItems,
+                    documentIdentityParts,
+                    resolvedReferenceLookups
+                );
+            }
+            if (descriptorIdentityIndices.Count > 0)
+            {
+                canonicalizedVisibleRequestItems = CanonicalizeDescriptorRequestItems(
+                    canonicalizedVisibleRequestItems,
+                    tablePlan,
+                    descriptorIdentityIndices,
+                    resolvedReferenceLookups
+                );
+            }
 
-            var canonicalizedVisibleStoredRows =
-                descriptorIdentityIndices.Count == 0
-                    ? visibleStoredRowsForScope
-                    : CanonicalizeDescriptorStoredRows(
-                        visibleStoredRowsForScope,
-                        tablePlan,
-                        descriptorIdentityIndices,
-                        resolvedReferenceLookups,
-                        currentRowsForScope
-                    );
+            var canonicalizedVisibleStoredRows = visibleStoredRowsForScope;
+            if (documentIdentityParts.Count > 0)
+            {
+                canonicalizedVisibleStoredRows = CanonicalizeDocumentReferenceStoredRows(
+                    canonicalizedVisibleStoredRows,
+                    documentIdentityParts,
+                    tablePlan,
+                    resolvedReferenceLookups,
+                    currentRowsForScope
+                );
+            }
+            if (descriptorIdentityIndices.Count > 0)
+            {
+                canonicalizedVisibleStoredRows = CanonicalizeDescriptorStoredRows(
+                    canonicalizedVisibleStoredRows,
+                    tablePlan,
+                    descriptorIdentityIndices,
+                    resolvedReferenceLookups,
+                    currentRowsForScope
+                );
+            }
 
             var input = new ProfileTopLevelCollectionScopeInput(
                 JsonScope: jsonScope,
@@ -966,6 +988,502 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// </summary>
     private static string BuildAddressIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
         string.Join("|", identityParts.Select(p => p.Value?.ToJsonString() ?? "null"));
+
+    // -- Document-reference canonicalization helpers ------------------------
+
+    /// <summary>
+    /// Returns the semantic-identity positions backed by a document-reference FK column, paired with the
+    /// reference binding metadata needed to resolve Core-emitted natural-key parts to the stored document id.
+    /// </summary>
+    private static IReadOnlyList<DocumentReferenceIdentityPart> ResolveDocumentReferenceIdentityParts(
+        ResourceWritePlan resourceWritePlan,
+        TableWritePlan tablePlan
+    )
+    {
+        var semanticBindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
+
+        if (semanticBindings.Count == 0)
+        {
+            return [];
+        }
+
+        List<DocumentReferenceIdentityPart>? result = null;
+
+        for (var identityIndex = 0; identityIndex < semanticBindings.Count; identityIndex++)
+        {
+            var semanticBinding = semanticBindings[identityIndex];
+            var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                c.ColumnName.Equals(semanticBinding.ColumnName)
+            );
+
+            if (column?.Kind != ColumnKind.DocumentFk)
+            {
+                continue;
+            }
+
+            result ??= [];
+            result.Add(
+                ResolveDocumentReferenceIdentityPart(
+                    resourceWritePlan,
+                    tablePlan,
+                    semanticBinding,
+                    identityIndex
+                )
+            );
+        }
+
+        return result ?? (IReadOnlyList<DocumentReferenceIdentityPart>)[];
+    }
+
+    private static DocumentReferenceIdentityPart ResolveDocumentReferenceIdentityPart(
+        ResourceWritePlan resourceWritePlan,
+        TableWritePlan tablePlan,
+        CollectionSemanticIdentityBinding semanticBinding,
+        int identityIndex
+    )
+    {
+        var documentBindings = resourceWritePlan.Model.DocumentReferenceBindings;
+
+        for (var bindingIndex = 0; bindingIndex < documentBindings.Count; bindingIndex++)
+        {
+            var documentBinding = documentBindings[bindingIndex];
+
+            if (
+                !documentBinding.Table.Equals(tablePlan.TableModel.Table)
+                || !documentBinding.FkColumn.Equals(semanticBinding.ColumnName)
+            )
+            {
+                continue;
+            }
+
+            foreach (var identityBinding in documentBinding.IdentityBindings)
+            {
+                var relativePath = BuildScopeRelativeCanonical(
+                    tablePlan.TableModel.JsonScope,
+                    identityBinding.ReferenceJsonPath
+                );
+
+                if (
+                    string.Equals(
+                        relativePath,
+                        semanticBinding.RelativePath.Canonical,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return new DocumentReferenceIdentityPart(
+                        identityIndex,
+                        bindingIndex,
+                        documentBinding,
+                        identityBinding
+                    );
+                }
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Document-reference semantic identity binding '{semanticBinding.RelativePath.Canonical}' "
+                + $"on table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' could not be "
+                + $"matched to document-reference metadata for FK column '{semanticBinding.ColumnName.Value}'."
+        );
+    }
+
+    private static string BuildScopeRelativeCanonical(JsonPathExpression jsonScope, JsonPathExpression path)
+    {
+        var scopeCanonical = jsonScope.Canonical;
+        var pathCanonical = path.Canonical;
+
+        if (string.Equals(pathCanonical, scopeCanonical, StringComparison.Ordinal))
+        {
+            return "$";
+        }
+
+        if (string.Equals(scopeCanonical, "$", StringComparison.Ordinal))
+        {
+            return pathCanonical;
+        }
+
+        var scopePrefix = scopeCanonical + ".";
+
+        return pathCanonical.StartsWith(scopePrefix, StringComparison.Ordinal)
+            ? "$." + pathCanonical[scopePrefix.Length..]
+            : pathCanonical;
+    }
+
+    /// <summary>
+    /// Replaces request-side document-reference natural-key identity parts with the resolved referenced
+    /// document id from the request-cycle reference cache.
+    /// </summary>
+    private static ImmutableArray<VisibleRequestCollectionItem> CanonicalizeDocumentReferenceRequestItems(
+        ImmutableArray<VisibleRequestCollectionItem> requestItems,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        if (requestItems.IsDefaultOrEmpty)
+        {
+            return requestItems;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<VisibleRequestCollectionItem>(requestItems.Length);
+
+        foreach (var item in requestItems)
+        {
+            var ordinalPath = RelationalJsonPathSupport
+                .ParseConcretePath(new JsonPath(item.RequestJsonPath))
+                .OrdinalPath;
+            var canonicalized = CanonicalizeRequestDocumentReferenceIdentityParts(
+                item.Address.SemanticIdentityInOrder,
+                documentIdentityParts,
+                resolvedReferenceLookups,
+                ordinalPath
+            );
+
+            builder.Add(
+                item with
+                {
+                    Address = item.Address with { SemanticIdentityInOrder = canonicalized },
+                }
+            );
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeRequestDocumentReferenceIdentityParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var documentIdentityPart in documentIdentityParts)
+        {
+            if (documentIdentityPart.IdentityIndex >= identity.Length)
+            {
+                continue;
+            }
+
+            var part = identity[documentIdentityPart.IdentityIndex];
+
+            if (!part.IsPresent)
+            {
+                continue;
+            }
+
+            var documentId = resolvedReferenceLookups.GetDocumentId(
+                documentIdentityPart.BindingIndex,
+                ordinalPath
+            );
+
+            if (documentId is null)
+            {
+                continue;
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[documentIdentityPart.IdentityIndex] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(documentId.Value),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Replaces stored-side document-reference natural-key identity parts with the stored referenced
+    /// document id by matching against the current row projection.
+    /// </summary>
+    private static ImmutableArray<VisibleStoredCollectionRow> CanonicalizeDocumentReferenceStoredRows(
+        ImmutableArray<VisibleStoredCollectionRow> storedRows,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        if (storedRows.IsDefaultOrEmpty)
+        {
+            return storedRows;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(storedRows.Length);
+
+        for (var storedRowIndex = 0; storedRowIndex < storedRows.Length; storedRowIndex++)
+        {
+            var row = storedRows[storedRowIndex];
+            var canonicalized = CanonicalizeStoredDocumentReferenceIdentityParts(
+                row.Address.SemanticIdentityInOrder,
+                documentIdentityParts,
+                tablePlan,
+                resolvedReferenceLookups,
+                currentRows,
+                storedRowIndex,
+                storedRows.Length
+            );
+
+            builder.Add(row with { Address = row.Address with { SemanticIdentityInOrder = canonicalized } });
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeStoredDocumentReferenceIdentityParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        int storedRowIndex,
+        int storedRowsLength
+    )
+    {
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var documentIdentityPart in documentIdentityParts)
+        {
+            if (documentIdentityPart.IdentityIndex >= identity.Length)
+            {
+                continue;
+            }
+
+            var part = identity[documentIdentityPart.IdentityIndex];
+
+            if (!part.IsPresent)
+            {
+                continue;
+            }
+
+            var documentId = TryResolveDocumentIdFromCurrentRows(
+                identity,
+                documentIdentityParts,
+                documentIdentityPart,
+                tablePlan,
+                resolvedReferenceLookups,
+                currentRows,
+                storedRowIndex,
+                storedRowsLength
+            );
+
+            if (documentId is null)
+            {
+                throw new InvalidOperationException(
+                    $"document reference not resolvable at merge boundary: stored reference "
+                        + $"'{documentIdentityPart.Binding.ReferenceObjectPath.Canonical}' for FK column "
+                        + $"'{documentIdentityPart.Binding.FkColumn.Value}' on table "
+                        + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' could not be "
+                        + "matched against current rows. "
+                        + $"Current rows count: {currentRows.Length}, stored rows count: {storedRowsLength}, stored row index: {storedRowIndex}."
+                );
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[documentIdentityPart.IdentityIndex] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(documentId.Value),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    private static long? TryResolveDocumentIdFromCurrentRows(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        DocumentReferenceIdentityPart targetPart,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        int storedRowIndex,
+        int storedRowsLength
+    )
+    {
+        if (currentRows.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var sameReferenceParts = documentIdentityParts
+            .Where(part =>
+                part.BindingIndex == targetPart.BindingIndex && part.IdentityIndex < identity.Length
+            )
+            .ToArray();
+
+        CurrentCollectionRowSnapshot? matched = null;
+
+        foreach (var currentRow in currentRows)
+        {
+            if (
+                !DocumentReferenceIdentityPartsMatch(
+                    identity,
+                    sameReferenceParts,
+                    tablePlan,
+                    resolvedReferenceLookups,
+                    currentRow
+                )
+            )
+            {
+                continue;
+            }
+
+            if (matched is not null)
+            {
+                matched = null;
+                break;
+            }
+
+            matched = currentRow;
+        }
+
+        if (matched is not null)
+        {
+            return TryGetInt64CurrentRowValue(matched, targetPart.Binding.FkColumn);
+        }
+
+        if (currentRows.Length == storedRowsLength && storedRowIndex < currentRows.Length)
+        {
+            return TryGetInt64CurrentRowValue(currentRows[storedRowIndex], targetPart.Binding.FkColumn);
+        }
+
+        return null;
+    }
+
+    private static bool DocumentReferenceIdentityPartsMatch(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        CurrentCollectionRowSnapshot currentRow
+    )
+    {
+        foreach (var documentIdentityPart in documentIdentityParts)
+        {
+            var storedPart = identity[documentIdentityPart.IdentityIndex];
+
+            if (
+                !TryBuildStoredDocumentReferenceIdentityJson(
+                    storedPart,
+                    documentIdentityPart,
+                    tablePlan,
+                    resolvedReferenceLookups,
+                    out var storedJson
+                )
+            )
+            {
+                return false;
+            }
+
+            if (
+                !currentRow.CurrentRowByColumnName.TryGetValue(
+                    documentIdentityPart.IdentityBinding.Column,
+                    out var currentValue
+                )
+            )
+            {
+                return false;
+            }
+
+            var currentJson = currentValue is null
+                ? "null"
+                : JsonValue.Create(currentValue)?.ToJsonString() ?? "null";
+
+            if (!string.Equals(storedJson, currentJson, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryBuildStoredDocumentReferenceIdentityJson(
+        SemanticIdentityPart storedPart,
+        DocumentReferenceIdentityPart documentIdentityPart,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        out string storedJson
+    )
+    {
+        storedJson = "null";
+
+        if (!storedPart.IsPresent)
+        {
+            return false;
+        }
+
+        var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+            c.ColumnName.Equals(documentIdentityPart.IdentityBinding.Column)
+        );
+
+        if (column?.Kind != ColumnKind.DescriptorFk)
+        {
+            storedJson = storedPart.Value?.ToJsonString() ?? "null";
+            return true;
+        }
+
+        if (storedPart.Value is JsonValue jsonValue && jsonValue.TryGetValue<long>(out var descriptorId))
+        {
+            storedJson = JsonValue.Create(descriptorId)?.ToJsonString() ?? "null";
+            return true;
+        }
+
+        var uri = storedPart.Value?.ToString();
+
+        if (
+            string.IsNullOrEmpty(uri)
+            || column.TargetResource is null
+            || column.SourceJsonPath is null
+            || !resolvedReferenceLookups.TryGetDescriptorIdByUri(
+                column.TargetResource.Value,
+                column.SourceJsonPath.Value.Canonical,
+                uri,
+                out descriptorId
+            )
+        )
+        {
+            return false;
+        }
+
+        storedJson = JsonValue.Create(descriptorId)?.ToJsonString() ?? "null";
+        return true;
+    }
+
+    private static long? TryGetInt64CurrentRowValue(
+        CurrentCollectionRowSnapshot currentRow,
+        DbColumnName columnName
+    )
+    {
+        if (!currentRow.CurrentRowByColumnName.TryGetValue(columnName, out var value) || value is null)
+        {
+            return null;
+        }
+
+        if (value is long longValue)
+        {
+            return longValue;
+        }
+
+        try
+        {
+            return Convert.ToInt64(value);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record DocumentReferenceIdentityPart(
+        int IdentityIndex,
+        int BindingIndex,
+        DocumentReferenceBinding Binding,
+        ReferenceIdentityBinding IdentityBinding
+    );
 
     // ── Descriptor-URI canonicalization helpers ────────────────────────────
 

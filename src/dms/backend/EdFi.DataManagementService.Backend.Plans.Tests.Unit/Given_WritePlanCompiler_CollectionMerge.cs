@@ -254,7 +254,7 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
 
         AssertCollectionMergePlan(
             tablePlan,
-            expectedSemanticIdentityBindings: [("$.programReference.programName", "Program_ProgramName")],
+            expectedSemanticIdentityBindings: [("$.programReference.programName", "Program_DocumentId")],
             expectedUpdateByStableRowIdentitySql: dialect switch
             {
                 SqlDialect.Pgsql => """

@@ -180,7 +180,7 @@ public class Given_A_Focused_Stable_Key_Positive_Fixture_For_Extension_Child_Col
         sponsorReferenceTable
             .IdentityMetadata.SemanticIdentityBindings.Select(static binding => binding.ColumnName.Value)
             .Should()
-            .Equal("Program_ProgramName");
+            .Equal("Program_DocumentId");
     }
 
     [Test]

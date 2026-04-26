@@ -131,7 +131,7 @@
       ]
     },
     {
-      "name": "UX_SchoolProgram_ProgramReference_ProgramId_ProgramName_School_DocumentId",
+      "name": "UX_SchoolProgram_ProgramReference_DocumentId_School_DocumentId",
       "table": {
         "schema": "edfi",
         "name": "SchoolProgram"
@@ -140,8 +140,7 @@
       "is_unique": true,
       "key_columns": [
         "School_DocumentId",
-        "ProgramReference_ProgramId",
-        "ProgramReference_ProgramName"
+        "ProgramReference_DocumentId"
       ]
     }
   ],
@@ -566,11 +565,11 @@
             "semantic_identity_bindings": [
               {
                 "relative_path": "$.programReference.programId",
-                "column": "ProgramReference_ProgramId"
+                "column": "ProgramReference_DocumentId"
               },
               {
                 "relative_path": "$.programReference.programName",
-                "column": "ProgramReference_ProgramName"
+                "column": "ProgramReference_DocumentId"
               }
             ]
           },
@@ -586,11 +585,10 @@
             },
             {
               "kind": "Unique",
-              "name": "UX_SchoolProgram_ProgramReference_ProgramId_ProgramName_School_DocumentId",
+              "name": "UX_SchoolProgram_ProgramReference_DocumentId_School_DocumentId",
               "columns": [
                 "School_DocumentId",
-                "ProgramReference_ProgramId",
-                "ProgramReference_ProgramName"
+                "ProgramReference_DocumentId"
               ]
             },
             {

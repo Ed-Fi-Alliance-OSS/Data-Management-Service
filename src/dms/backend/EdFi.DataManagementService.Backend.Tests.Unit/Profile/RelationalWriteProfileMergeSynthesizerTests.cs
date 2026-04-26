@@ -2873,6 +2873,462 @@ public class Given_Synthesize_top_level_collection_delete_all_visible_while_hidd
 }
 
 /// <summary>
+/// Shared helpers for document-reference-backed semantic identity canonicalization fixtures.
+/// </summary>
+internal static class DocumentReferenceCanonicalizeBuilders
+{
+    public const string CollectionScope = "$.addresses[*]";
+    public const string ReferenceObjectPath = "$.addresses[*].schoolReference";
+    public const string ReferenceConcretePath = "$.addresses[0].schoolReference";
+    public const string SchoolIdPath = "$.addresses[*].schoolReference.schoolId";
+    public const string EducationOrganizationIdPath =
+        "$.addresses[*].schoolReference.educationOrganizationId";
+    public const string SchoolIdRelativePath = "$.schoolReference.schoolId";
+    public const string EducationOrganizationIdRelativePath = "$.schoolReference.educationOrganizationId";
+    public const string SchoolId = "255901";
+    public const string EducationOrganizationId = "123";
+    public const long SchoolDocumentId = 501L;
+
+    public static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+
+    public static (ResourceWritePlan Plan, TableWritePlan CollectionPlan) BuildPlan()
+    {
+        var collectionPlan = BuildReferenceCollectionPlan();
+        var rootPlan = BuildRootPlan();
+
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: Path(ReferenceObjectPath),
+            Table: collectionPlan.TableModel.Table,
+            FkColumn: new DbColumnName("SchoolReference_DocumentId"),
+            TargetResource: SchoolResource,
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    Path("$.schoolId"),
+                    Path(SchoolIdPath),
+                    new DbColumnName("SchoolReference_SchoolId")
+                ),
+                new ReferenceIdentityBinding(
+                    Path("$.educationOrganizationId"),
+                    Path(EducationOrganizationIdPath),
+                    new DbColumnName("SchoolReference_EducationOrganizationId")
+                ),
+            ]
+        );
+
+        var plan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "Student"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder: [rootPlan.TableModel, collectionPlan.TableModel],
+                DocumentReferenceBindings: [binding],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, collectionPlan]
+        );
+        return (plan, collectionPlan);
+    }
+
+    public static CollectionWriteCandidate BuildCandidate(TableWritePlan collectionPlan)
+    {
+        var values = new FlattenedWriteValue[collectionPlan.ColumnBindings.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = new FlattenedWriteValue.Literal(null);
+        }
+
+        values[3] = new FlattenedWriteValue.Literal(SchoolDocumentId);
+        values[4] = new FlattenedWriteValue.Literal(SchoolId);
+        values[5] = new FlattenedWriteValue.Literal(EducationOrganizationId);
+
+        return new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            values: values,
+            semanticIdentityValues: [SchoolDocumentId, SchoolDocumentId]
+        );
+    }
+
+    public static VisibleRequestCollectionItem BuildRequestItem() =>
+        new(
+            new CollectionRowAddress(
+                CollectionScope,
+                new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
+                NaturalKeyIdentity()
+            ),
+            Creatable: true,
+            RequestJsonPath: "$.addresses[0]"
+        );
+
+    public static VisibleStoredCollectionRow BuildStoredRow() =>
+        new(
+            new CollectionRowAddress(
+                CollectionScope,
+                new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
+                NaturalKeyIdentity()
+            ),
+            ImmutableArray<string>.Empty
+        );
+
+    public static ResolvedReferenceSet BuildResolvedReferenceSet() =>
+        new(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            {
+                [new JsonPath(ReferenceConcretePath)] = new ResolvedDocumentReference(
+                    Reference: new DocumentReference(
+                        ResourceInfo: new BaseResourceInfo(
+                            new ProjectName("Ed-Fi"),
+                            new ResourceName("School"),
+                            false
+                        ),
+                        DocumentIdentity: new DocumentIdentity([
+                            new DocumentIdentityElement(new JsonPath("$.schoolId"), SchoolId),
+                            new DocumentIdentityElement(
+                                new JsonPath("$.educationOrganizationId"),
+                                EducationOrganizationId
+                            ),
+                        ]),
+                        ReferentialId: new ReferentialId(Guid.NewGuid()),
+                        Path: new JsonPath(ReferenceConcretePath)
+                    ),
+                    DocumentId: SchoolDocumentId,
+                    ResourceKeyId: 11
+                ),
+            },
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+
+    public static RelationalWriteCurrentState BuildCurrentState(
+        TableWritePlan rootPlan,
+        TableWritePlan collectionPlan,
+        long documentId
+    ) =>
+        new(
+            new DocumentMetadataRow(
+                DocumentId: documentId,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [documentId],
+                    ]
+                ),
+                new HydratedTableRows(
+                    collectionPlan.TableModel,
+                    [
+                        [1L, documentId, 1, SchoolDocumentId, SchoolId, EducationOrganizationId],
+                    ]
+                ),
+            ],
+            []
+        );
+
+    private static ImmutableArray<SemanticIdentityPart> NaturalKeyIdentity() =>
+        [
+            new SemanticIdentityPart(SchoolIdRelativePath, JsonValue.Create(SchoolId), IsPresent: true),
+            new SemanticIdentityPart(
+                EducationOrganizationIdRelativePath,
+                JsonValue.Create(EducationOrganizationId),
+                IsPresent: true
+            ),
+        ];
+
+    private static TableWritePlan BuildRootPlan()
+    {
+        var docIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "Student"),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                "PK_Student",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [docIdColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"Student\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 1, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(docIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan BuildReferenceCollectionPlan()
+    {
+        var collectionKeyColumn = Column("CollectionItemId", ColumnKind.CollectionKey);
+        var parentKeyColumn = Column("ParentDocumentId", ColumnKind.ParentKeyPart);
+        var ordinalColumn = Column("Ordinal", ColumnKind.Ordinal);
+        var fkColumn = Column(
+            "SchoolReference_DocumentId",
+            ColumnKind.DocumentFk,
+            new RelationalScalarType(ScalarKind.Int64)
+        );
+        var schoolIdColumn = Column(
+            "SchoolReference_SchoolId",
+            ColumnKind.Scalar,
+            new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            Path(SchoolIdPath)
+        );
+        var educationOrganizationIdColumn = Column(
+            "SchoolReference_EducationOrganizationId",
+            ColumnKind.Scalar,
+            new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            Path(EducationOrganizationIdPath)
+        );
+
+        var columns = new[]
+        {
+            collectionKeyColumn,
+            parentKeyColumn,
+            ordinalColumn,
+            fkColumn,
+            schoolIdColumn,
+            educationOrganizationIdColumn,
+        };
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddress"),
+            JsonScope: Path(CollectionScope),
+            Key: new TableKey(
+                "PK_StudentAddress",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(Path(SchoolIdRelativePath), fkColumn.ColumnName),
+                    new CollectionSemanticIdentityBinding(
+                        Path(EducationOrganizationIdRelativePath),
+                        fkColumn.ColumnName
+                    ),
+                ]
+            ),
+        };
+
+        var schoolIdReferenceSource = new ReferenceDerivedValueSourceMetadata(
+            BindingIndex: 0,
+            ReferenceObjectPath: Path(ReferenceObjectPath),
+            IdentityJsonPath: Path("$.schoolId"),
+            ReferenceJsonPath: Path(SchoolIdPath)
+        );
+        var educationOrganizationReferenceSource = new ReferenceDerivedValueSourceMetadata(
+            BindingIndex: 0,
+            ReferenceObjectPath: Path(ReferenceObjectPath),
+            IdentityJsonPath: Path("$.educationOrganizationId"),
+            ReferenceJsonPath: Path(EducationOrganizationIdPath)
+        );
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"StudentAddress\" VALUES (@CollectionItemId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, columns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionKeyColumn,
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    parentKeyColumn,
+                    new WriteValueSource.DocumentId(),
+                    "ParentDocumentId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    fkColumn,
+                    new WriteValueSource.DocumentReference(0),
+                    "SchoolReference_DocumentId"
+                ),
+                new WriteColumnBinding(
+                    schoolIdColumn,
+                    new WriteValueSource.ReferenceDerived(schoolIdReferenceSource),
+                    "SchoolReference_SchoolId"
+                ),
+                new WriteColumnBinding(
+                    educationOrganizationIdColumn,
+                    new WriteValueSource.ReferenceDerived(educationOrganizationReferenceSource),
+                    "SchoolReference_EducationOrganizationId"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(Path(SchoolIdRelativePath), 3),
+                    new CollectionMergeSemanticIdentityBinding(Path(EducationOrganizationIdRelativePath), 3),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.\"StudentAddress\" SET X=@X WHERE \"CollectionItemId\"=@CollectionItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.\"StudentAddress\" WHERE \"CollectionItemId\"=@CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 4, 5, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+
+    private static DbColumnModel Column(
+        string name,
+        ColumnKind kind,
+        RelationalScalarType? scalarType = null,
+        JsonPathExpression? sourceJsonPath = null
+    ) =>
+        new(
+            ColumnName: new DbColumnName(name),
+            Kind: kind,
+            ScalarType: scalarType,
+            IsNullable: false,
+            SourceJsonPath: sourceJsonPath,
+            TargetResource: null
+        );
+
+    private static JsonPathExpression Path(string canonical) => new(canonical, []);
+}
+
+/// <summary>
+/// Regression: reference-backed top-level collection identities must keep the original FK-based
+/// model. Core emits reference natural-key parts; the backend candidate and current rows use the
+/// resolved referenced document id for each semantic identity part.
+/// </summary>
+[TestFixture]
+public class Given_top_level_collection_with_document_reference_backed_semantic_identity_matches_when_core_emits_reference_identity_parts
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = DocumentReferenceCanonicalizeBuilders.BuildPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        const long documentId = 345L;
+
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(
+                new JsonObject
+                {
+                    ["schoolReference"] = new JsonObject
+                    {
+                        ["schoolId"] = DocumentReferenceCanonicalizeBuilders.SchoolId,
+                        ["educationOrganizationId"] =
+                            DocumentReferenceCanonicalizeBuilders.EducationOrganizationId,
+                    },
+                }
+            ),
+        };
+
+        var requestItem = DocumentReferenceCanonicalizeBuilders.BuildRequestItem();
+        var storedRow = DocumentReferenceCanonicalizeBuilders.BuildStoredRow();
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [requestItem]
+        );
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray<StoredScopeState>.Empty,
+            [storedRow]
+        );
+        var currentState = DocumentReferenceCanonicalizeBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId
+        );
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal(documentId)],
+                collectionCandidates: [DocumentReferenceCanonicalizeBuilders.BuildCandidate(collectionPlan)]
+            )
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: DocumentReferenceCanonicalizeBuilders.BuildResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_produces_one_merged_collection_row() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    [Test]
+    public void It_tracks_one_current_collection_row() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(1);
+}
+
+/// <summary>
 /// Shared helpers for descriptor-identity canonicalization fixtures.
 /// <para>
 /// These fixtures verify that URI strings emitted by Core for descriptor-backed semantic
