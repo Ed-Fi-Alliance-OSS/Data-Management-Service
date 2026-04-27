@@ -1,6 +1,6 @@
 ---
-jira:
-jira_url:
+jira: DMS-1145
+jira_url: https://edfi.atlassian.net/browse/DMS-1145
 ---
 
 # Story: Implement Link Injection
@@ -47,7 +47,7 @@ Builds on:
   binding columns; this story extends that same per-reference binding-column approach to also emit
   `link: { rel, href }`, adding one per-page logical auxiliary `dms.Document` lookup returning
   `(DocumentId, DocumentUuid, ResourceKeyId)`.
-- `../07-relational-write-path/01d-profile-namespace-and-server-generated-fields.md` (Jira TBD) —
+- `../07-relational-write-path/01d-profile-namespace-and-server-generated-fields.md` (DMS-1144) —
   establishes the Core profile namespace rule that keeps `link` outside profile addressability,
   so readable-profile projection preserves `link` by construction. Without this story, the
   projector would treat `link` as an ordinary member and strip it under `MemberSelection.IncludeOnly`

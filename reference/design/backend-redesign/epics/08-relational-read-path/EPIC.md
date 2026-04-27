@@ -34,4 +34,4 @@ Authorization filtering remains out of scope; however, the hydration and query e
 - `DMS-993` — `04-query-execution.md` — Execute root-table-only queries with deterministic paging
 - `DMS-994` — `05-descriptor-endpoints.md` — Serve descriptor GET/query endpoints from `dms.Descriptor` (no per-descriptor tables)
 - `DMS-622` — `06-link-injection.md` — Design spike: produce the link-injection contract for **document-reference** properties in GET responses (parity with ODS)
-- *TBD* — `06a-link-injection-implementation.md` — Implement link injection per the DMS-622 design; emit `{ rel, href }` on document references in relational-backend GET responses
+- `DMS-1145` — `06a-link-injection-implementation.md` — Implement link injection per the DMS-622 design; emit `{ rel, href }` on document references in relational-backend GET responses

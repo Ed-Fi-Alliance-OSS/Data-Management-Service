@@ -35,7 +35,7 @@ Align with:
 
 Blocks:
 
-- `06a-link-injection-implementation.md` (Jira TBD) — runtime implementation of the contract
+- `06a-link-injection-implementation.md` (DMS-1145) — runtime implementation of the contract
   defined by this spike.
 
 ## Acceptance Criteria

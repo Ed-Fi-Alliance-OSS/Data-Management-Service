@@ -1,6 +1,6 @@
 ---
-jira:
-jira_url:
+jira: DMS-1144
+jira_url: https://edfi.atlassian.net/browse/DMS-1144
 ---
 
 # Story: Profile Namespace and Server-Generated Fields
@@ -16,7 +16,7 @@ The design contract landed alongside `DMS-622`. This story delivers the runtime 
 - a defensive pass-through short-circuit in `ReadableProfileProjector` and `ProfileResponseFilter`, and
 - the corresponding unit and integration tests.
 
-This story is a prerequisite for the runtime behavior of the link-injection implementation story (`06a-link-injection-implementation.md`, Jira TBD). That story does not carry a feature-local projector task for `link` preservation; preservation is a consequence of the contract enforced here. The `DMS-622` design spike that authored the link-injection contract likewise does not own preservation behavior — it assumes the contract defined in this story.
+This story is a prerequisite for the runtime behavior of the link-injection implementation story (`06a-link-injection-implementation.md`, DMS-1145). That story does not carry a feature-local projector task for `link` preservation; preservation is a consequence of the contract enforced here. The `DMS-622` design spike that authored the link-injection contract likewise does not own preservation behavior — it assumes the contract defined in this story.
 
 Align with:
 
@@ -29,7 +29,7 @@ Align with:
 
 Blocks:
 
-- `reference/design/backend-redesign/epics/08-relational-read-path/06a-link-injection-implementation.md` (Jira TBD). The link-injection implementation's runtime link-preservation behavior under readable profiles depends on this story. (The design contract itself landed alongside the `DMS-622` spike at `06-link-injection.md`.)
+- `reference/design/backend-redesign/epics/08-relational-read-path/06a-link-injection-implementation.md` (DMS-1145). The link-injection implementation's runtime link-preservation behavior under readable profiles depends on this story. (The design contract itself landed alongside the `DMS-622` spike at `06-link-injection.md`.)
 
 Coordinates with:
 
