@@ -118,6 +118,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
+    private RecordingLogger<RelationalDocumentStoreRepository> _recordingLogger = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -131,7 +132,8 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
     public async Task Setup()
     {
         await _database.ResetAsync();
-        _serviceProvider = CreateServiceProvider();
+        _recordingLogger = new RecordingLogger<RelationalDocumentStoreRepository>();
+        _serviceProvider = CreateServiceProvider(_recordingLogger);
     }
 
     [TearDown]
@@ -260,6 +262,19 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
                 1,
                 "the Program row must still be present when the database refuses the DELETE due to an active reference"
             );
+
+        // Diagnostics AC: prove the FK-violation Debug log emitted by
+        // RelationalDeleteExecution.MapForeignKeyViolation carries the real driver-supplied
+        // constraint name, the resolved referencing resource, and the original PostgresException —
+        // not a wrapped or swallowed exception. DeleteDocumentById emits an unrelated 'Entering'
+        // Debug record on every call, so filter by message shape rather than by total count.
+        var fkLog = _recordingLogger
+            .Records.Should()
+            .ContainSingle(r => r.Level == LogLevel.Debug && r.Message.Contains("FK constraint '"))
+            .Subject;
+        fkLog.Message.Should().Contain("FK_SchoolExtensionAddressSponsorReference_Program_RefKey");
+        fkLog.Message.Should().Contain("referencing resource 'School'");
+        fkLog.Exception.Should().BeOfType<PostgresException>();
     }
 
     [Test]
@@ -555,12 +570,15 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         );
     }
 
-    private static ServiceProvider CreateServiceProvider()
+    private static ServiceProvider CreateServiceProvider(
+        RecordingLogger<RelationalDocumentStoreRepository> recordingLogger
+    )
     {
         ServiceCollection services = new();
 
         services.AddSingleton<IHostApplicationLifetime, DeleteByIdNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton<ILogger<RelationalDocumentStoreRepository>>(recordingLogger);
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
