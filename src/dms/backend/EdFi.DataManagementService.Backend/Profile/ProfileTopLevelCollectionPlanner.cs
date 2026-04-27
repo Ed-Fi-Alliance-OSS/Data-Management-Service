@@ -500,27 +500,18 @@ internal static class ProfileTopLevelCollectionPlanner
     }
 
     /// <summary>
-    /// Builds a string key from a <see cref="SemanticIdentityPart"/> array by serializing each
-    /// part's value to its JSON string form and joining with a pipe delimiter. Used for
-    /// current-row, visible-stored, and visible-request-item identity lookups.
+    /// Builds a string key from a <see cref="SemanticIdentityPart"/> array, preserving
+    /// missing-vs-explicit-null semantics for current-row, visible-stored, visible-request-item,
+    /// and candidate identity lookups.
     /// </summary>
     private static string BuildSemanticIdentityKey(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join("|", identity.Select(p => p.Value?.ToJsonString() ?? "null"));
+        string.Join("|", identity.Select(FormatSemanticIdentityPartForKey));
 
     /// <summary>
-    /// Builds a string key from a <see cref="CollectionWriteCandidate"/> by wrapping each CLR
-    /// value in a <see cref="JsonValue"/> and serializing to its JSON string form, then joining
-    /// with a pipe delimiter. This normalizes CLR values (e.g. <c>"A1"</c>) to the same JSON
-    /// representation produced by <see cref="BuildAddressAsCandidateKey"/> (e.g. <c>"\"A1\""</c>)
-    /// so that candidate keys and address keys are always comparable.
+    /// Builds the same presence-aware semantic identity key for a <see cref="CollectionWriteCandidate"/>.
     /// </summary>
     private static string BuildCandidateIdentityKey(CollectionWriteCandidate candidate) =>
-        string.Join(
-            "|",
-            candidate.SemanticIdentityValues.Select(v =>
-                v is null ? "null" : JsonValue.Create(v)?.ToJsonString() ?? "null"
-            )
-        );
+        BuildSemanticIdentityKey(candidate.SemanticIdentityInOrder);
 
     /// <summary>
     /// Formats a candidate's semantic identity as a pipe-joined diagnostics string using the
@@ -539,7 +530,17 @@ internal static class ProfileTopLevelCollectionPlanner
     /// control characters.
     /// </summary>
     private static string FormatIdentity(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join(",", identity.Select(p => $"{p.RelativePath}={p.Value?.ToJsonString() ?? "null"}"));
+        string.Join(
+            ",",
+            identity.Select(p =>
+                p.IsPresent
+                    ? $"{p.RelativePath}={p.Value?.ToJsonString() ?? "null"}"
+                    : $"{p.RelativePath}=<missing>"
+            )
+        );
+
+    private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
+        $"{part.RelativePath}:{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
 }
 
 /// <summary>

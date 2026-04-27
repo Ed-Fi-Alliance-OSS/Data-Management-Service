@@ -2092,6 +2092,12 @@ internal static class CollectionSynthesizerBuilders
     public static ImmutableArray<SemanticIdentityPart> Identity(string value) =>
         [new SemanticIdentityPart(IdentityPath, JsonValue.Create(value), IsPresent: true)];
 
+    public static ImmutableArray<SemanticIdentityPart> ExplicitNullIdentity() =>
+        [new SemanticIdentityPart(IdentityPath, null, IsPresent: true)];
+
+    public static ImmutableArray<SemanticIdentityPart> MissingIdentity() =>
+        [new SemanticIdentityPart(IdentityPath, null, IsPresent: false)];
+
     // ── Write-plan / flattened-write-set builders ──────────────────────────
 
     /// <summary>
@@ -2172,6 +2178,13 @@ internal static class CollectionSynthesizerBuilders
         TableWritePlan collectionPlan,
         string identityValue,
         int requestOrder
+    ) => BuildCandidate(collectionPlan, Identity(identityValue), identityValue, requestOrder);
+
+    public static CollectionWriteCandidate BuildCandidate(
+        TableWritePlan collectionPlan,
+        ImmutableArray<SemanticIdentityPart> identity,
+        object? identityStorageValue,
+        int requestOrder
     )
     {
         var values = new FlattenedWriteValue[collectionPlan.ColumnBindings.Length];
@@ -2180,14 +2193,19 @@ internal static class CollectionSynthesizerBuilders
             values[i] = new FlattenedWriteValue.Literal(null);
         }
         // Stamp the identity field value at index 3
-        values[3] = new FlattenedWriteValue.Literal(identityValue);
+        values[3] = new FlattenedWriteValue.Literal(identityStorageValue);
+
+        var semanticIdentityValues = identity
+            .Select(part => part.Value is JsonValue jsonValue ? (object?)jsonValue.GetValue<object>() : null)
+            .ToArray();
 
         return new CollectionWriteCandidate(
             tableWritePlan: collectionPlan,
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [identityValue]
+            semanticIdentityValues: semanticIdentityValues,
+            semanticIdentityInOrder: identity
         );
     }
 
@@ -2214,12 +2232,18 @@ internal static class CollectionSynthesizerBuilders
         string identityValue,
         bool creatable,
         int arrayIndex
+    ) => BuildRequestItem(Identity(identityValue), creatable, arrayIndex);
+
+    public static VisibleRequestCollectionItem BuildRequestItem(
+        ImmutableArray<SemanticIdentityPart> identity,
+        bool creatable,
+        int arrayIndex
     ) =>
         new(
             new CollectionRowAddress(
                 CollectionScope,
                 new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
-                Identity(identityValue)
+                identity
             ),
             creatable,
             $"$.addresses[{arrayIndex}]"
@@ -2231,12 +2255,17 @@ internal static class CollectionSynthesizerBuilders
     public static VisibleStoredCollectionRow BuildStoredRow(
         string identityValue,
         ImmutableArray<string>? hiddenMemberPaths = null
+    ) => BuildStoredRow(Identity(identityValue), hiddenMemberPaths);
+
+    public static VisibleStoredCollectionRow BuildStoredRow(
+        ImmutableArray<SemanticIdentityPart> identity,
+        ImmutableArray<string>? hiddenMemberPaths = null
     ) =>
         new(
             new CollectionRowAddress(
                 CollectionScope,
                 new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
-                Identity(identityValue)
+                identity
             ),
             hiddenMemberPaths ?? ImmutableArray<string>.Empty
         );
@@ -2611,6 +2640,87 @@ public class Given_Synthesize_top_level_collection_with_matched_and_hidden_and_i
     [Test]
     public void It_has_three_current_collection_rows() =>
         _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(3);
+}
+
+/// <summary>
+/// Regression pin: an explicit-null semantic identity from Core's visible stored stream
+/// must still match the current DB row whose storage value is null.
+/// </summary>
+[TestFixture]
+public class Given_Synthesize_top_level_collection_with_explicit_null_identity
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        const long documentId = 345L;
+
+        var explicitNullIdentity = CollectionSynthesizerBuilders.ExplicitNullIdentity();
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(new JsonObject { ["identityField0"] = null }),
+        };
+
+        var candidate = CollectionSynthesizerBuilders.BuildCandidate(
+            collectionPlan,
+            explicitNullIdentity,
+            identityStorageValue: null,
+            requestOrder: 0
+        );
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem(
+                explicitNullIdentity,
+                creatable: true,
+                arrayIndex: 0
+            )
+        );
+
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+        var storedRow = CollectionSynthesizerBuilders.BuildStoredRow(explicitNullIdentity);
+        var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRow]);
+
+        object?[] dbRow = [10L, documentId, 1, null];
+        var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId,
+            [dbRow]
+        );
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(
+            rootPlan,
+            [candidate],
+            documentId
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_updates_the_existing_row_instead_of_inserting_a_new_one()
+    {
+        var mergedRows = _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows;
+        mergedRows.Should().ContainSingle();
+
+        var stableId = (FlattenedWriteValue.Literal)mergedRows[0].Values[0];
+        stableId.Value.Should().Be(10L);
+    }
 }
 
 /// <summary>

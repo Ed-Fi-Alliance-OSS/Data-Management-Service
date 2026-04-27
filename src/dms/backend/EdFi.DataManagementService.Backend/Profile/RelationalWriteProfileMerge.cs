@@ -809,13 +809,18 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 );
             }
 
+            var currentRowsForPlanner = AlignCurrentRowsWithVisibleStoredIdentityPresence(
+                currentRowsForScope,
+                canonicalizedVisibleStoredRows
+            );
+
             var input = new ProfileTopLevelCollectionScopeInput(
                 JsonScope: jsonScope,
                 ParentScopeAddress: parentScopeAddress,
                 RequestCandidates: requestCandidatesForScope,
                 VisibleRequestItems: canonicalizedVisibleRequestItems,
                 VisibleStoredRows: canonicalizedVisibleStoredRows,
-                CurrentRows: currentRowsForScope
+                CurrentRows: currentRowsForPlanner
             );
 
             // 2. Call the planner. Invariant violations throw and propagate as fail-closed.
@@ -845,7 +850,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             // (StableRowIdentity in CurrentRows but not in MergedRows → delete). Building
             // currentCollectionRows only from plan Sequence entries means omitted-visible
             // rows are invisible to the persister and are never deleted.
-            var currentCollectionRows = currentRowsForScope.Select(snap => snap.ProjectedCurrentRow).ToList();
+            var currentCollectionRows = currentRowsForPlanner
+                .Select(snap => snap.ProjectedCurrentRow)
+                .ToList();
 
             // Build a lookup from candidate identity key → VisibleRequestCollectionItem so we
             // can find the concrete request item node for matched-update entries without a
@@ -865,7 +872,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                     case ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry matchedEntry:
                         // Resolve the concrete request item node from the writable request body.
                         var candidateKey = BuildCandidateIdentityKey(
-                            matchedEntry.RequestCandidate.SemanticIdentityValues
+                            matchedEntry.RequestCandidate.SemanticIdentityInOrder
                         );
                         if (!candidateKeyToRequestItem.TryGetValue(candidateKey, out var requestItem))
                         {
@@ -969,25 +976,98 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     }
 
     /// <summary>
-    /// Builds a string key from the candidate's raw CLR semantic identity values by
-    /// wrapping each value in a <see cref="JsonValue"/> and serializing to JSON string form,
-    /// then joining with a pipe delimiter. Mirrors the planner's <c>BuildCandidateIdentityKey</c>.
+    /// Builds a string key from the candidate's semantic identity parts, preserving
+    /// missing-vs-explicit-null semantics. Mirrors the planner's <c>BuildCandidateIdentityKey</c>.
     /// </summary>
-    private static string BuildCandidateIdentityKey(IReadOnlyList<object?> semanticIdentityValues) =>
-        string.Join(
-            "|",
-            semanticIdentityValues.Select(v =>
-                v is null ? "null" : JsonValue.Create(v)?.ToJsonString() ?? "null"
-            )
-        );
+    private static string BuildCandidateIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
+        BuildAddressIdentityKey(identityParts);
 
     /// <summary>
-    /// Builds a string key from a <see cref="CollectionRowAddress"/>'s semantic identity
-    /// parts by serializing each part's JSON value, then joining with a pipe delimiter.
+    /// Builds a string key from a <see cref="CollectionRowAddress"/>'s semantic identity parts,
+    /// preserving missing-vs-explicit-null semantics.
     /// Mirrors the planner's <c>BuildSemanticIdentityKey</c>.
     /// </summary>
     private static string BuildAddressIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
-        string.Join("|", identityParts.Select(p => p.Value?.ToJsonString() ?? "null"));
+        string.Join("|", identityParts.Select(FormatSemanticIdentityPartForKey));
+
+    private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
+        $"{part.RelativePath}:{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
+
+    /// <summary>
+    /// Current DB projections only carry stored column values, so a null semantic identity value
+    /// cannot distinguish explicit JSON null from a missing member. Core's visible-stored stream
+    /// still has that presence bit, so copy it onto the matching visible current snapshots before
+    /// the presence-aware planner key is built.
+    /// </summary>
+    private static ImmutableArray<CurrentCollectionRowSnapshot> AlignCurrentRowsWithVisibleStoredIdentityPresence(
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        ImmutableArray<VisibleStoredCollectionRow> visibleStoredRows
+    )
+    {
+        if (currentRows.IsDefaultOrEmpty || visibleStoredRows.IsDefaultOrEmpty)
+        {
+            return currentRows;
+        }
+
+        var currentIndexesByValueKey = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        for (var i = 0; i < currentRows.Length; i++)
+        {
+            var valueKey = BuildSemanticIdentityValueKey(currentRows[i].SemanticIdentityInOrder);
+            if (!currentIndexesByValueKey.TryGetValue(valueKey, out var indexes))
+            {
+                indexes = [];
+                currentIndexesByValueKey.Add(valueKey, indexes);
+            }
+
+            indexes.Add(i);
+        }
+
+        ImmutableArray<CurrentCollectionRowSnapshot>.Builder? builder = null;
+        var assigned = new bool[currentRows.Length];
+
+        for (var storedIndex = 0; storedIndex < visibleStoredRows.Length; storedIndex++)
+        {
+            var storedIdentity = visibleStoredRows[storedIndex].Address.SemanticIdentityInOrder;
+            var valueKey = BuildSemanticIdentityValueKey(storedIdentity);
+
+            if (!currentIndexesByValueKey.TryGetValue(valueKey, out var currentIndexes))
+            {
+                continue;
+            }
+
+            int? currentIndex = currentIndexes.Count == 1 ? currentIndexes[0] : null;
+            if (
+                currentIndex is null
+                && currentRows.Length == visibleStoredRows.Length
+                && storedIndex < currentRows.Length
+                && string.Equals(
+                    BuildSemanticIdentityValueKey(currentRows[storedIndex].SemanticIdentityInOrder),
+                    valueKey,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                currentIndex = storedIndex;
+            }
+
+            if (currentIndex is not int index || assigned[index])
+            {
+                continue;
+            }
+
+            builder ??= currentRows.ToBuilder();
+            builder[index] = builder[index] with { SemanticIdentityInOrder = storedIdentity };
+            assigned[index] = true;
+        }
+
+        return builder is null ? currentRows : builder.MoveToImmutable();
+    }
+
+    private static string BuildSemanticIdentityValueKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
+        string.Join(
+            "|",
+            identityParts.Select(part => $"{part.RelativePath}:{part.Value?.ToJsonString() ?? "null"}")
+        );
 
     // -- Document-reference canonicalization helpers ------------------------
 

@@ -27,6 +27,12 @@ internal static class Slice4Builders
         string value
     ) => [new SemanticIdentityPart(relativePath, JsonValue.Create(value), IsPresent: true)];
 
+    public static ImmutableArray<SemanticIdentityPart> BuildSemanticIdentityNull(string relativePath) =>
+        [new SemanticIdentityPart(relativePath, null, IsPresent: true)];
+
+    public static ImmutableArray<SemanticIdentityPart> BuildSemanticIdentityMissing(string relativePath) =>
+        [new SemanticIdentityPart(relativePath, null, IsPresent: false)];
+
     /// <summary>
     /// Builds a single-part semantic identity whose value is an already-canonicalized Int64.
     /// Used for reference-backed and descriptor-backed identity tests where canonicalization
@@ -120,7 +126,8 @@ internal static class Slice4Builders
                 new FlattenedWriteValue.Literal(null),
                 tableWritePlan.ColumnBindings.Length
             ),
-            semanticIdentityValues: semanticIdentityValues
+            semanticIdentityValues: semanticIdentityValues,
+            semanticIdentityInOrder: identity
         );
     }
 
@@ -298,6 +305,49 @@ public class Given_Planner_with_visible_stored_row_lacking_current_row_counterpa
     [Test]
     public void It_names_the_invariant_category() =>
         _thrown!.Message.Should().Contain("reverse stored coverage");
+}
+
+[TestFixture]
+public class Given_Planner_with_visible_stored_null_identity_and_current_missing_identity
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var storedIdentity = Slice4Builders.BuildSemanticIdentityNull("addressId");
+        var currentIdentity = Slice4Builders.BuildSemanticIdentityMissing("addressId");
+        var currentRow = Slice4Builders.BuildCurrentCollectionRowSnapshot(currentIdentity, storedOrdinal: 1);
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
+            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
+            VisibleStoredRows:
+            [
+                Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", storedIdentity),
+            ],
+            CurrentRows: [currentRow]
+        );
+
+        try
+        {
+            ProfileTopLevelCollectionPlanner.Plan(input);
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_treats_missing_and_explicit_null_as_distinct_for_stored_coverage() =>
+        _thrown
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("reverse stored coverage");
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -781,6 +831,65 @@ public class Given_Planner_with_duplicate_request_candidates
     [Test]
     public void It_names_the_invariant_category() =>
         _thrown!.Message.Should().Contain("duplicate visible request candidate");
+}
+
+[TestFixture]
+public class Given_Planner_with_request_candidates_that_differ_by_missing_vs_explicit_null
+{
+    private ProfileTopLevelCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var missingIdentity = Slice4Builders.BuildSemanticIdentityMissing("addressId");
+        var nullIdentity = Slice4Builders.BuildSemanticIdentityNull("addressId");
+
+        var missingCandidate = Slice4Builders.BuildCollectionWriteCandidate(
+            "$.addresses[*]",
+            missingIdentity,
+            requestOrder: 0
+        );
+        var nullCandidate = Slice4Builders.BuildCollectionWriteCandidate(
+            "$.addresses[*]",
+            nullIdentity,
+            requestOrder: 1
+        );
+
+        var missingRequestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
+            "$.addresses[*]",
+            missingIdentity,
+            creatable: true,
+            requestJsonPath: "$.addresses[0]"
+        );
+        var nullRequestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
+            "$.addresses[*]",
+            nullIdentity,
+            creatable: true,
+            requestJsonPath: "$.addresses[1]"
+        );
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [missingCandidate, nullCandidate],
+            VisibleRequestItems: [missingRequestItem, nullRequestItem],
+            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
+            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+        );
+
+        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_returns_Success() =>
+        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+
+    [Test]
+    public void It_keeps_both_request_items()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence.Should().HaveCount(2);
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
