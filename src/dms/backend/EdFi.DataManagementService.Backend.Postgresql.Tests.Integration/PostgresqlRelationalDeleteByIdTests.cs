@@ -195,6 +195,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         (await CountReferentialIdentityRowsAsync(documentId.Value))
             .Should()
             .Be(0, "dms.ReferentialIdentity rows must cascade when the Document row is removed");
+        _recordingLogger.Records.Should().NotContain(r => r.Message.Contains("FK constraint '"));
     }
 
     [Test]
@@ -207,6 +208,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         );
 
         delete.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        _recordingLogger.Records.Should().NotContain(r => r.Message.Contains("FK constraint '"));
     }
 
     [Test]
@@ -297,6 +299,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         (await CountDocumentsAsync(documentUuid))
             .Should()
             .Be(1, "cross-resource DELETE must not remove the original School row");
+        _recordingLogger.Records.Should().NotContain(r => r.Message.Contains("FK constraint '"));
     }
 
     private async Task<TResult> InvokeAsync<TResult>(
