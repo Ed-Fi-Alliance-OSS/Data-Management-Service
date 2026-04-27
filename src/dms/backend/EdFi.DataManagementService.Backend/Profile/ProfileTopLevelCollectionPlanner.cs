@@ -47,7 +47,8 @@ internal static class ProfileTopLevelCollectionPlanner
     /// entry from <c>mergedVisibleSequence</c> in first-come-first-served order (matching the request's
     /// reordering of visibles). Visible slots reached after the merged cursor is exhausted are omitted;
     /// the persister's delete-by-absence mechanism handles their removal. Leftover merged entries
-    /// (new inserts beyond the previous visible count) are appended at the end after all current rows.</para>
+    /// (new inserts beyond the previous visible count) are appended after the last previously visible
+    /// row, or at the end when there was no previously visible row.</para>
     /// </summary>
     private static ProfileTopLevelCollectionPlanResult BuildMergedVisibleSequence(
         ProfileTopLevelCollectionScopeInput input
@@ -117,9 +118,20 @@ internal static class ProfileTopLevelCollectionPlanner
         var output = new List<ProfileTopLevelCollectionPlanEntry>(
             capacity: input.CurrentRows.Length + mergedVisibleSequence.Count
         );
-        var mergedCursor = 0;
-        foreach (var currentRow in input.CurrentRows)
+        var lastVisibleStoredIndex = -1;
+        for (var i = 0; i < input.CurrentRows.Length; i++)
         {
+            var currentKey = BuildSemanticIdentityKey(input.CurrentRows[i].SemanticIdentityInOrder);
+            if (visibleStoredByIdentity.ContainsKey(currentKey))
+            {
+                lastVisibleStoredIndex = i;
+            }
+        }
+
+        var mergedCursor = 0;
+        for (var i = 0; i < input.CurrentRows.Length; i++)
+        {
+            var currentRow = input.CurrentRows[i];
             var currentKey = BuildSemanticIdentityKey(currentRow.SemanticIdentityInOrder);
             if (!visibleStoredByIdentity.ContainsKey(currentKey))
             {
@@ -133,18 +145,30 @@ internal static class ProfileTopLevelCollectionPlanner
                 mergedCursor++;
             }
             // else: visible slot with no merged entry to consume → omitted, persister deletes by absence.
+
+            if (i == lastVisibleStoredIndex)
+            {
+                AppendRemainingMergedEntries();
+            }
         }
 
-        // Append any leftover merged entries (new inserts beyond previous visible count).
-        while (mergedCursor < mergedVisibleSequence.Count)
+        if (lastVisibleStoredIndex == -1)
         {
-            output.Add(mergedVisibleSequence[mergedCursor]);
-            mergedCursor++;
+            AppendRemainingMergedEntries();
         }
 
         return new ProfileTopLevelCollectionPlanResult.Success(
             new ProfileTopLevelCollectionPlan(output.ToImmutableArray())
         );
+
+        void AppendRemainingMergedEntries()
+        {
+            while (mergedCursor < mergedVisibleSequence.Count)
+            {
+                output.Add(mergedVisibleSequence[mergedCursor]);
+                mergedCursor++;
+            }
+        }
     }
 
     /// <summary>

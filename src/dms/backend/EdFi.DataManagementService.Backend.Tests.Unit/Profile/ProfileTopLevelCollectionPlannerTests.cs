@@ -1630,8 +1630,8 @@ public class Given_Planner_example_4_single_hidden_one_insert
 // ────────────────────────────────────────────────────────────────────────────────
 // Task 2.3 — Fixture 5: Example 5 — matched middle, trailing hidden, insert
 // current: [H@1, V1@2, H'@3]; request: [V1', NEW1]
-// expected: [HiddenPreserve(H), MatchedUpdate(V1), HiddenPreserve(H'), VisibleInsert(NEW1)]
-// NEW1 lands AFTER trailing H', not between V1_updated and H'.
+// expected: [HiddenPreserve(H), MatchedUpdate(V1), VisibleInsert(NEW1), HiddenPreserve(H')]
+// NEW1 lands after the last previously visible row, before the trailing hidden gap.
 // ────────────────────────────────────────────────────────────────────────────────
 
 [TestFixture]
@@ -1730,22 +1730,22 @@ public class Given_Planner_example_5_matched_middle_trailing_hidden_insert
     }
 
     [Test]
-    public void It_places_HiddenPreserve_Hprime_at_index_2()
+    public void It_places_VisibleInsert_NEW1_at_index_2()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[2].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
+    }
+
+    [Test]
+    public void It_places_HiddenPreserve_Hprime_at_index_3()
     {
         var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
         var entry = success
-            .Plan.Sequence[2]
+            .Plan.Sequence[3]
             .Should()
             .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(3L);
-    }
-
-    [Test]
-    public void It_places_VisibleInsert_NEW1_at_index_3()
-    {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[3].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
     }
 }
 
@@ -2010,27 +2010,27 @@ public class Given_Planner_kitchen_sink_reorder_delete_inserts_hidden_interleave
     }
 
     [Test]
-    public void It_places_HiddenPreserve_H2_at_index_4()
+    public void It_places_VisibleInsert_NEW_B_at_index_4()
     {
         var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[4]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
+            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
-        entry.StoredRow.StableRowIdentity.Should().Be(5L);
+        entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW_B");
     }
 
     [Test]
-    public void It_places_VisibleInsert_NEW_B_at_index_5()
+    public void It_places_HiddenPreserve_H2_at_index_5()
     {
         var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[5]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
-        entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW_B");
+        entry.StoredRow.StableRowIdentity.Should().Be(5L);
     }
 }
 
