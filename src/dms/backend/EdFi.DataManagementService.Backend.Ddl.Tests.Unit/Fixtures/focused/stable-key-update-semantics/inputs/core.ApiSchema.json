@@ -32,6 +32,15 @@
             "isRequired": false,
             "path": "$.addresses[*].city"
           },
+          "AddressTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "AddressTypeDescriptor",
+            "path": "$.addresses[*].addressTypeDescriptor"
+          },
           "AddressPeriodName": {
             "isReference": false,
             "isPartOfIdentity": false,
@@ -77,6 +86,10 @@
                     "type": "string",
                     "maxLength": 30
                   },
+                  "addressTypeDescriptor": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
                   "periods": {
                     "type": "array",
                     "items": {
@@ -95,6 +108,61 @@
           },
           "required": [
             "schoolId"
+          ]
+        }
+      },
+      "addressTypeDescriptors": {
+        "resourceName": "AddressTypeDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {
+          "Namespace": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.namespace"
+          },
+          "CodeValue": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.codeValue"
+          },
+          "ShortDescription": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.shortDescription"
+          }
+        },
+        "arrayUniquenessConstraints": [],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": [
+          "$.namespace",
+          "$.codeValue"
+        ],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "shortDescription": {
+              "type": "string",
+              "maxLength": 75
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue",
+            "shortDescription"
           ]
         }
       },

@@ -41,6 +41,94 @@ internal static class ProfileBindingClassificationCore
         // Sort scope canonicals longest-first so longest-prefix wins.
         var candidateScopes = BuildCandidateScopeSet(profileRequest, profileAppliedContext);
 
+        return ClassifyBindingsCore(
+            writePlan,
+            tableWritePlan,
+            profileRequest,
+            profileAppliedContext,
+            resolverOwnedBindingIndices,
+            candidateScopes,
+            hiddenMemberPathsOverride: null
+        );
+    }
+
+    /// <summary>
+    /// Row-level primitive: classifies every column binding on the supplied
+    /// <paramref name="tableWritePlan"/> using pre-computed
+    /// <paramref name="hiddenMemberPaths"/> supplied directly by the caller, bypassing
+    /// per-scope state derivation and the stored-scope metadata-drift check. Intended for
+    /// collection-row overlay where the caller synthesises hidden-path state from the
+    /// enclosing scope rather than from <see cref="ProfileAppliedWriteContext"/> stored
+    /// scope states.
+    /// </summary>
+    /// <param name="writePlan">The resource-level write plan.</param>
+    /// <param name="tableWritePlan">The single table being classified.</param>
+    /// <param name="profileRequest">
+    /// The profile-applied write request; used for <c>ClearOnVisibleAbsent</c> scope
+    /// lookup and as the source of candidate scope addresses.
+    /// </param>
+    /// <param name="resolverOwnedBindingIndices">
+    /// Binding indices that are managed by the key-unification resolver; classified
+    /// unconditionally as <see cref="RootBindingDisposition.StorageManaged"/>.
+    /// </param>
+    /// <param name="hiddenMemberPaths">
+    /// The pre-computed flat set of hidden member paths to apply. Every binding whose
+    /// governing path is hidden-governed by this set is classified as
+    /// <see cref="RootBindingDisposition.HiddenPreserved"/>. Pass
+    /// <see cref="ImmutableArray{T}.Empty"/> for no hidden members.
+    /// </param>
+    internal static ImmutableArray<RootBindingDisposition> ClassifyBindingsWithExplicitHiddenPaths(
+        ResourceWritePlan writePlan,
+        TableWritePlan tableWritePlan,
+        ProfileAppliedWriteRequest profileRequest,
+        ImmutableHashSet<int> resolverOwnedBindingIndices,
+        ImmutableArray<string> hiddenMemberPaths
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writePlan);
+        ArgumentNullException.ThrowIfNull(tableWritePlan);
+        ArgumentNullException.ThrowIfNull(profileRequest);
+        ArgumentNullException.ThrowIfNull(resolverOwnedBindingIndices);
+
+        // For collection-row classification the containing scope is always the table's own
+        // JsonScope. Core does not emit collection scopes in RequestScopeStates, so building
+        // candidateScopes from the request would yield an empty set and TryMatchLongestScope
+        // would return null for every binding, falling through to VisibleWritable — hiding the
+        // hidden-member-path override entirely. Use the table's own scope directly so the
+        // scope match is trivially correct and StripScopePrefix produces the bare member path.
+        var candidateScopes = ImmutableArray.Create(tableWritePlan.TableModel.JsonScope.Canonical);
+
+        return ClassifyBindingsCore(
+            writePlan,
+            tableWritePlan,
+            profileRequest,
+            profileAppliedContext: null,
+            resolverOwnedBindingIndices,
+            candidateScopes,
+            hiddenMemberPathsOverride: hiddenMemberPaths
+        );
+    }
+
+    /// <summary>
+    /// Shared core loop: iterates <paramref name="tableWritePlan"/>'s column bindings,
+    /// assigns a <see cref="RootBindingDisposition"/> to each one, optionally runs the
+    /// stored-scope metadata-drift check (only when
+    /// <paramref name="hiddenMemberPathsOverride"/> is <c>null</c> and
+    /// <paramref name="profileAppliedContext"/> is non-null), and returns the disposition
+    /// array. When <paramref name="hiddenMemberPathsOverride"/> is non-null, stored-scope
+    /// derivation and the drift check are both bypassed; the supplied hidden paths are used
+    /// directly for all bindings.
+    /// </summary>
+    private static ImmutableArray<RootBindingDisposition> ClassifyBindingsCore(
+        ResourceWritePlan writePlan,
+        TableWritePlan tableWritePlan,
+        ProfileAppliedWriteRequest profileRequest,
+        ProfileAppliedWriteContext? profileAppliedContext,
+        ImmutableHashSet<int> resolverOwnedBindingIndices,
+        ImmutableArray<string> candidateScopes,
+        ImmutableArray<string>? hiddenMemberPathsOverride
+    )
+    {
         // Records the (memberPath, governingPath, matchKind) inventory of every ordinary
         // binding that resolved to a profile-governed containing scope. `memberPath` is the
         // binding's own scope-relative path; `governingPath` is the path used for hidden-path
@@ -65,7 +153,8 @@ internal static class ProfileBindingClassificationCore
                 candidateScopes,
                 profileRequest,
                 profileAppliedContext,
-                bindingsByContainingScope
+                bindingsByContainingScope,
+                hiddenMemberPathsOverride
             );
         }
 
@@ -120,7 +209,10 @@ internal static class ProfileBindingClassificationCore
         // Fail-closed metadata-drift check: every stored scope and every hidden member path
         // must resolve to at least one binding on this table. Anything that doesn't is
         // upstream Core / write-plan contract drift, not silent under-preservation.
-        if (profileAppliedContext is not null)
+        // Skipped when hiddenMemberPathsOverride is supplied (row-level primitive path)
+        // because there is no stored scope context to cross-check; the row-level path runs
+        // its own narrower hidden-path coverage check below instead.
+        if (profileAppliedContext is not null && hiddenMemberPathsOverride is null)
         {
             ValidateStoredScopeMetadata(
                 writePlan,
@@ -130,7 +222,70 @@ internal static class ProfileBindingClassificationCore
             );
         }
 
+        // Row-level hidden-path coverage check. Mirrors the hidden-path half of
+        // ValidateStoredScopeMetadata but operates against the single set of caller-supplied
+        // paths under the table's own JsonScope. Without this, a row HiddenMemberPath that
+        // does not match any governed binding under the table's scope would be silently
+        // ignored — risking under-preservation when upstream emits a hidden path that the
+        // table's bindings cannot honour.
+        if (hiddenMemberPathsOverride is ImmutableArray<string> rowHiddenPaths && rowHiddenPaths.Length > 0)
+        {
+            ValidateRowLevelHiddenPathCoverage(tableWritePlan, rowHiddenPaths, bindingsByContainingScope);
+        }
+
         return dispositions.ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Verifies that every row-supplied hidden member path resolves to at least one governed
+    /// binding under the table's own JsonScope. The row-level primitive path lacks a
+    /// stored-scope-state cross-check (no stored scope context exists for collection rows),
+    /// so this narrower check is the sole defense against upstream drift in
+    /// <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>: a hidden path that names
+    /// a member with no matching binding on this table would otherwise be silently ignored.
+    /// Throws <see cref="InvalidOperationException"/> when any path fails to match.
+    /// </summary>
+    private static void ValidateRowLevelHiddenPathCoverage(
+        TableWritePlan tableWritePlan,
+        ImmutableArray<string> rowHiddenPaths,
+        Dictionary<string, List<GovernedBindingEntry>> bindingsByContainingScope
+    )
+    {
+        var tableScopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+        if (
+            !bindingsByContainingScope.TryGetValue(tableScopeCanonical, out var bindingsUnderScope)
+            || bindingsUnderScope.Count == 0
+        )
+        {
+            // No governed bindings under this table's scope at all — every row hidden path is
+            // unmatchable. Surface the first one in the diagnostic.
+            throw new InvalidOperationException(
+                $"Row-level hidden member path '{rowHiddenPaths[0]}' on table "
+                    + $"'{FormatTable(tableWritePlan)}' does not resolve to any binding under "
+                    + $"scope '{tableScopeCanonical}': the table has no governed bindings under "
+                    + "that scope. Upstream Core / write-plan contract drift."
+            );
+        }
+
+        foreach (var hiddenPath in rowHiddenPaths)
+        {
+            var singleHiddenPath = ImmutableArray.Create(hiddenPath);
+            var matched = bindingsUnderScope.Exists(entry =>
+                ProfileMemberGovernanceRules.IsHiddenGoverned(
+                    entry.GoverningPath,
+                    singleHiddenPath,
+                    entry.MatchKind
+                )
+            );
+            if (!matched)
+            {
+                throw new InvalidOperationException(
+                    $"Row-level hidden member path '{hiddenPath}' on table "
+                        + $"'{FormatTable(tableWritePlan)}' does not resolve to any binding under "
+                        + $"scope '{tableScopeCanonical}'. Upstream Core / write-plan contract drift."
+                );
+            }
+        }
     }
 
     /// <summary>
@@ -193,7 +348,8 @@ internal static class ProfileBindingClassificationCore
         ImmutableArray<string> candidateScopes,
         ProfileAppliedWriteRequest profileRequest,
         ProfileAppliedWriteContext? profileAppliedContext,
-        Dictionary<string, List<GovernedBindingEntry>> bindingsByContainingScope
+        Dictionary<string, List<GovernedBindingEntry>> bindingsByContainingScope,
+        ImmutableArray<string>? hiddenMemberPathsOverride
     )
     {
         var binding = tableWritePlan.ColumnBindings[bindingIndex];
@@ -212,15 +368,19 @@ internal static class ProfileBindingClassificationCore
                 // for separate-table rows mirroring the no-profile path.
                 return RootBindingDisposition.StorageManaged;
             case WriteValueSource.Ordinal:
-                // Ordinal implies collection-shaped behavior. Slice 3 is root-attached
-                // only; collections (and their Ordinal columns) are fenced for slice 4/5.
-                // Reaching this arm means upstream fencing failed.
-                throw new InvalidOperationException(
-                    $"Table '{FormatTable(tableWritePlan)}' contains a "
-                        + $"{nameof(WriteValueSource.Ordinal)} binding at index {bindingIndex}, "
-                        + "which the profile-aware binding classifier does not support in slice 3. "
-                        + "Collection-shaped scopes must be fenced upstream."
-                );
+                // Row-level callers may supply collection tables with Ordinal bindings.
+                // Those bindings are storage-managed (derived from row position). Non-collection
+                // callers fail-closed-reject Ordinal because it has no meaning there.
+                if (hiddenMemberPathsOverride is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Table '{FormatTable(tableWritePlan)}' contains a "
+                            + $"{nameof(WriteValueSource.Ordinal)} binding at index {bindingIndex}, "
+                            + "which the profile-aware binding classifier does not support in slice 3. "
+                            + "Collection-shaped scopes must be fenced upstream."
+                    );
+                }
+                return RootBindingDisposition.StorageManaged;
         }
 
         var bindingPath = ResolveBindingRootRelativePath(writePlan, binding, bindingIndex, tableWritePlan);
@@ -264,31 +424,24 @@ internal static class ProfileBindingClassificationCore
         }
         bindingsUnderScope.Add(new GovernedBindingEntry(memberPath, governingPath, matchKind));
 
-        if (profileAppliedContext is null)
-        {
-            return RootBindingDisposition.VisibleWritable;
-        }
-
-        var storedScope = ProfileMemberGovernanceRules.LookupStoredScope(
+        // Derive the effective hidden paths for this binding from either the caller-supplied
+        // override (row-level primitive path) or the stored scope (scope-state-derived path).
+        // Returns (hiddenPaths, whollyHidden) where whollyHidden is true only when the stored
+        // scope has Visibility == Hidden (entire scope is preserved). The explicit-override
+        // path never sets whollyHidden because callers that supply a hidden-paths set have
+        // already resolved scope-level visibility before classifying individual members.
+        var (hiddenPaths, whollyHidden) = DeriveHiddenPathsForBinding(
+            hiddenMemberPathsOverride,
             profileAppliedContext,
             containingScope
         );
-        if (storedScope is not null)
+
+        if (
+            whollyHidden
+            || ProfileMemberGovernanceRules.IsHiddenGoverned(governingPath, hiddenPaths, matchKind)
+        )
         {
-            if (storedScope.Visibility == ProfileVisibilityKind.Hidden)
-            {
-                return RootBindingDisposition.HiddenPreserved;
-            }
-            if (
-                ProfileMemberGovernanceRules.IsHiddenGoverned(
-                    governingPath,
-                    storedScope.HiddenMemberPaths,
-                    matchKind
-                )
-            )
-            {
-                return RootBindingDisposition.HiddenPreserved;
-            }
+            return RootBindingDisposition.HiddenPreserved;
         }
 
         var requestScope = ProfileMemberGovernanceRules.LookupRequestScope(profileRequest, containingScope);
@@ -298,6 +451,43 @@ internal static class ProfileBindingClassificationCore
         }
 
         return RootBindingDisposition.VisibleWritable;
+    }
+
+    /// <summary>
+    /// Returns the effective hidden-member-path set and whole-scope-hidden flag for a single
+    /// governed binding index. When <paramref name="hiddenMemberPathsOverride"/> is non-null
+    /// (row-level primitive path), the override is returned directly with
+    /// <c>whollyHidden = false</c>. Otherwise the stored scope for
+    /// <paramref name="containingScope"/> is looked up in <paramref name="profileAppliedContext"/>
+    /// (if available); its <see cref="StoredScopeState.HiddenMemberPaths"/> and
+    /// <c>Visibility == Hidden</c> flag are returned.
+    /// </summary>
+    private static (ImmutableArray<string> HiddenPaths, bool WhollyHidden) DeriveHiddenPathsForBinding(
+        ImmutableArray<string>? hiddenMemberPathsOverride,
+        ProfileAppliedWriteContext? profileAppliedContext,
+        string containingScope
+    )
+    {
+        if (hiddenMemberPathsOverride is ImmutableArray<string> explicitPaths)
+        {
+            return (explicitPaths, false);
+        }
+
+        if (profileAppliedContext is null)
+        {
+            return ([], false);
+        }
+
+        var storedScope = ProfileMemberGovernanceRules.LookupStoredScope(
+            profileAppliedContext,
+            containingScope
+        );
+        if (storedScope is null)
+        {
+            return ([], false);
+        }
+
+        return (storedScope.HiddenMemberPaths, storedScope.Visibility == ProfileVisibilityKind.Hidden);
     }
 
     /// <summary>

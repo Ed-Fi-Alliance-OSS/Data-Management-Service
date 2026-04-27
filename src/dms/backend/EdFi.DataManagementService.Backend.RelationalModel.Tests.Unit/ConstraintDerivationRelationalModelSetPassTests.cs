@@ -1573,10 +1573,10 @@ public class Given_Array_Uniqueness_Constraint_Derivation
     }
 
     /// <summary>
-    /// It should map reference identity paths to document id.
+    /// It should map reference identity paths to the reference document id column.
     /// </summary>
     [Test]
-    public void It_should_map_reference_identity_paths_to_document_id()
+    public void It_should_map_reference_identity_paths_to_the_reference_document_id_column()
     {
         var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
             _addressTable,

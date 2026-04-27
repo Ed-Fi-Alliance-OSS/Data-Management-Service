@@ -438,6 +438,197 @@ internal static class AdapterFactoryTestFixtures
     private static JsonPathExpression Path(string canonical, params JsonPathSegment[] segments) =>
         new(canonical, segments);
 
+    /// <summary>
+    /// Builds a DbTableModel whose TableKind is ExtensionCollection, used to test the Slice 4
+    /// constructor gate that fences non-base-Collection top-level candidates.
+    /// </summary>
+    public static DbTableModel BuildExtensionCollectionTableModel() =>
+        new(
+            Table: new DbTableName(new DbSchemaName("sample"), "SchoolExtensionIntervention"),
+            JsonScope: Path(
+                "$._ext.sample.interventions[*]",
+                new JsonPathSegment.Property("_ext"),
+                new JsonPathSegment.Property("sample"),
+                new JsonPathSegment.Property("interventions"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                "PK_SchoolExtensionIntervention",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                Column("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                Column("School_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                Column("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                Column(
+                    "InterventionCode",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    isNullable: false,
+                    sourceJsonPath: Path(
+                        "$._ext.sample.interventions[*].interventionCode",
+                        new JsonPathSegment.Property("interventionCode")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.ExtensionCollection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("School_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("School_DocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        Path(
+                            "$._ext.sample.interventions[*].interventionCode",
+                            new JsonPathSegment.Property("interventionCode")
+                        ),
+                        new DbColumnName("InterventionCode")
+                    ),
+                ]
+            ),
+        };
+
+    /// <summary>
+    /// Builds a TableWritePlan for an ExtensionCollection table, used to test the Slice 4
+    /// constructor gate that fences non-base-Collection top-level candidates.
+    /// </summary>
+    public static TableWritePlan BuildExtensionCollectionCandidateTableWritePlan(DbTableModel tableModel) =>
+        new(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO sample.\"SchoolExtensionIntervention\" VALUES (@CollectionItemId, @School_DocumentId, @Ordinal, @InterventionCode)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, tableModel.Columns.Count, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.DocumentId(),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(tableModel.Columns[2], new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    tableModel.Columns[3],
+                    new WriteValueSource.Scalar(
+                        Path(
+                            "$._ext.sample.interventions[*].interventionCode",
+                            new JsonPathSegment.Property("interventionCode")
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    "InterventionCode"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        Path(
+                            "$._ext.sample.interventions[*].interventionCode",
+                            new JsonPathSegment.Property("interventionCode")
+                        ),
+                        3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE sample.\"SchoolExtensionIntervention\" SET \"InterventionCode\" = @InterventionCode WHERE \"CollectionItemId\" = @CollectionItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM sample.\"SchoolExtensionIntervention\" WHERE \"CollectionItemId\" = @CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+
+    /// <summary>
+    /// Builds a DbTableModel whose TableKind is CollectionExtensionScope, used to construct
+    /// CandidateAttachedAlignedScopeData in Slice 4 gate tests.
+    /// </summary>
+    public static DbTableModel BuildCollectionExtensionScopeTableModel() =>
+        new(
+            Table: new DbTableName(new DbSchemaName("sample"), "SchoolExtensionAddress"),
+            JsonScope: Path(
+                "$.addresses[*]._ext.sample",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("_ext"),
+                new JsonPathSegment.Property("sample")
+            ),
+            Key: new TableKey(
+                "PK_SchoolExtensionAddress",
+                [new DbKeyColumn(new DbColumnName("BaseCollectionItemId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                Column("BaseCollectionItemId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                Column(
+                    "FavoriteColor",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    isNullable: true,
+                    sourceJsonPath: Path(
+                        "$.addresses[*]._ext.sample.favoriteColor",
+                        new JsonPathSegment.Property("favoriteColor")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.CollectionExtensionScope,
+                PhysicalRowIdentityColumns: [new DbColumnName("BaseCollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("BaseCollectionItemId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("BaseCollectionItemId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+    /// <summary>
+    /// Builds a TableWritePlan for a CollectionExtensionScope table.
+    /// </summary>
+    public static TableWritePlan BuildCollectionExtensionScopeTableWritePlan(DbTableModel tableModel) =>
+        new(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO sample.\"SchoolExtensionAddress\" VALUES (@BaseCollectionItemId, @FavoriteColor)",
+            UpdateSql: "UPDATE sample.\"SchoolExtensionAddress\" SET \"FavoriteColor\" = @FavoriteColor WHERE \"BaseCollectionItemId\" = @BaseCollectionItemId",
+            DeleteByParentSql: "DELETE FROM sample.\"SchoolExtensionAddress\" WHERE \"BaseCollectionItemId\" = @BaseCollectionItemId",
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, tableModel.Columns.Count, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.ParentKeyPart(0),
+                    "BaseCollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        Path(
+                            "$.addresses[*]._ext.sample.favoriteColor",
+                            new JsonPathSegment.Property("favoriteColor")
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    "FavoriteColor"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
     private static DbColumnModel Column(
         string columnName,
         ColumnKind kind,

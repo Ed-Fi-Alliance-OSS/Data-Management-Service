@@ -13,6 +13,9 @@ public static class ProvisionedSchemaManifestEmitter
 {
     private static readonly JsonWriterOptions _writerOptions = new() { Indented = true, NewLine = "\n" };
 
+    private static string NormalizeDefinition(string definition) =>
+        definition.Replace("\r\n", "\n").Replace("\r", "\n");
+
     public static string Emit(ProvisionedSchemaManifest manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
@@ -182,7 +185,7 @@ public static class ProvisionedSchemaManifestEmitter
             w.WriteStartObject();
             w.WriteString("schema_name", entry.SchemaName);
             w.WriteString("view_name", entry.ViewName);
-            w.WriteString("definition", entry.Definition);
+            w.WriteString("definition", NormalizeDefinition(entry.Definition));
             w.WriteEndObject();
         }
         w.WriteEndArray();
@@ -200,7 +203,7 @@ public static class ProvisionedSchemaManifestEmitter
             w.WriteString("trigger_name", entry.TriggerName);
             w.WriteString("event_manipulation", entry.EventManipulation);
             w.WriteString("action_timing", entry.ActionTiming);
-            w.WriteString("definition", entry.Definition);
+            w.WriteString("definition", NormalizeDefinition(entry.Definition));
             if (entry.FunctionName is null)
             {
                 w.WriteNull("function_name");
@@ -274,7 +277,7 @@ public static class ProvisionedSchemaManifestEmitter
                 w.WriteStringValue(paramType);
             }
             w.WriteEndArray();
-            w.WriteString("definition", entry.Definition);
+            w.WriteString("definition", NormalizeDefinition(entry.Definition));
             w.WriteEndObject();
         }
         w.WriteEndArray();
@@ -304,7 +307,10 @@ public static class ProvisionedSchemaManifestEmitter
         w.WriteEndObject();
     }
 
-    private static void WriteSchemaComponents(Utf8JsonWriter w, IReadOnlyList<SchemaComponentEntry> components)
+    private static void WriteSchemaComponents(
+        Utf8JsonWriter w,
+        IReadOnlyList<SchemaComponentEntry> components
+    )
     {
         w.WritePropertyName("schema_components");
         w.WriteStartArray();

@@ -1,0 +1,680 @@
+{
+  "dialect": "pgsql",
+  "effective_schema_hash": "b2f94938fc758230fc8cf8b75a483cfe39b39558365fa15c8b711ff16fdff810",
+  "relational_mapping_version": "v1",
+  "projects": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "1.0.0",
+      "is_extension": false,
+      "physical_schema": "edfi"
+    }
+  ],
+  "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Program",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    }
+  ],
+  "abstract_identity_tables": [],
+  "abstract_union_views": [],
+  "indexes": [
+    {
+      "name": "PK_Program",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_Program_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "ProgramId",
+        "ProgramName"
+      ]
+    },
+    {
+      "name": "UX_Program_RefKey",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId",
+        "ProgramId",
+        "ProgramName"
+      ]
+    },
+    {
+      "name": "PK_School",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_School_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "SchoolId"
+      ]
+    },
+    {
+      "name": "IX_SchoolProgram_ProgramReference_DocumentId_Program_3f36b63d4e",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolProgram"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ProgramReference_DocumentId",
+        "ProgramReference_ProgramId",
+        "ProgramReference_ProgramName"
+      ]
+    },
+    {
+      "name": "PK_SchoolProgram",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolProgram"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_SchoolProgram_Ordinal_School_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolProgram"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "School_DocumentId",
+        "Ordinal"
+      ]
+    },
+    {
+      "name": "UX_SchoolProgram_ProgramReference_DocumentId_School_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolProgram"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "School_DocumentId",
+        "ProgramReference_DocumentId"
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "name": "TR_Program_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ProgramId",
+        "ProgramName"
+      ],
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "Program",
+      "identity_elements": [
+        {
+          "column": "ProgramId",
+          "identity_json_path": "$.programId"
+        },
+        {
+          "column": "ProgramName",
+          "identity_json_path": "$.programName"
+        }
+      ]
+    },
+    {
+      "name": "TR_Program_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ProgramId",
+        "ProgramName"
+      ]
+    },
+    {
+      "name": "TR_School_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "SchoolId"
+      ],
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "identity_elements": [
+        {
+          "column": "SchoolId",
+          "identity_json_path": "$.schoolId"
+        }
+      ]
+    },
+    {
+      "name": "TR_School_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "SchoolId"
+      ]
+    },
+    {
+      "name": "TR_SchoolProgram_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolProgram"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "School_DocumentId"
+      ],
+      "identity_projection_columns": []
+    }
+  ],
+  "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "Program"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "Program",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Description",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 1024
+              },
+              "is_nullable": true,
+              "source_path": "$.description",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.programId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": false,
+              "source_path": "$.programName",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_Program_NK",
+              "columns": [
+                "ProgramId",
+                "ProgramName"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_Program_RefKey",
+              "columns": [
+                "DocumentId",
+                "ProgramId",
+                "ProgramName"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_Program_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "School"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "School",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.schoolId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_School_NK",
+              "columns": [
+                "SchoolId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_School_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "SchoolProgram",
+          "scope": "$.programs[*]",
+          "key_columns": [
+            {
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
+            }
+          ],
+          "columns": [
+            {
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "School_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramReference_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.programs[*].programReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramReference_ProgramId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.programs[*].programReference.programId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramReference_ProgramName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": true,
+              "source_path": "$.programs[*].programReference.programName",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "PrimaryIndicator",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.programs[*].primaryIndicator",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "School_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "School_DocumentId"
+            ],
+            "semantic_identity_bindings": [
+              {
+                "relative_path": "$.programReference.programId",
+                "column": "ProgramReference_DocumentId"
+              },
+              {
+                "relative_path": "$.programReference.programName",
+                "column": "ProgramReference_DocumentId"
+              }
+            ]
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_SchoolProgram_Ordinal_School_DocumentId",
+              "columns": [
+                "School_DocumentId",
+                "Ordinal"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_SchoolProgram_ProgramReference_DocumentId_School_DocumentId",
+              "columns": [
+                "School_DocumentId",
+                "ProgramReference_DocumentId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_SchoolProgram_ProgramReference_RefKey",
+              "columns": [
+                "ProgramReference_DocumentId",
+                "ProgramReference_ProgramId",
+                "ProgramReference_ProgramName"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Program"
+              },
+              "target_columns": [
+                "DocumentId",
+                "ProgramId",
+                "ProgramName"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_SchoolProgram_School",
+              "columns": [
+                "School_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "School"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_SchoolProgram_ProgramReference_AllNone",
+              "fk_column": "ProgramReference_DocumentId",
+              "dependent_columns": [
+                "ProgramReference_ProgramId",
+                "ProgramReference_ProgramName"
+              ]
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.programs[*].programReference",
+          "table": {
+            "schema": "edfi",
+            "name": "SchoolProgram"
+          },
+          "fk_column": "ProgramReference_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Program"
+          },
+          "identity_bindings": [
+            {
+              "identity_json_path": "$.programId",
+              "reference_json_path": "$.programs[*].programReference.programId",
+              "column": "ProgramReference_ProgramId"
+            },
+            {
+              "identity_json_path": "$.programName",
+              "reference_json_path": "$.programs[*].programReference.programName",
+              "column": "ProgramReference_ProgramName"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    }
+  ]
+}

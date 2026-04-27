@@ -94,7 +94,12 @@ public class Given_A_Reference_Fallback_And_An_Aligned_Extension_Array_Uniquenes
     /// </summary>
     private static void AssertUsesArrayUniqueness(DbTableModel addressTable)
     {
-        var referenceFallbackUniqueColumns = new[] { "BusRoute_DocumentId", "AddressSchool_DocumentId" };
+        var referenceFallbackUniqueColumns = new[]
+        {
+            "BusRoute_DocumentId",
+            "AddressSchool_SchoolId",
+            "AddressSchool_EducationOrganizationId",
+        };
 
         addressTable
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)

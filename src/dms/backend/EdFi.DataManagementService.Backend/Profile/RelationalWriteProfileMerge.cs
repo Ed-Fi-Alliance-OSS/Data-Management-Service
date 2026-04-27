@@ -7,19 +7,19 @@ using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Input contract for the profile merge synthesizer. Slice 3 supports the root-table
-/// scope and any root-attached separate-table non-collection
-/// (<see cref="DbTableKind.RootExtension"/>) scopes. Collection candidates remain
-/// fenced out in slice 3 at BOTH levels: top-level <see cref="RootWriteRowBuffer.CollectionCandidates"/>
-/// and nested <see cref="RootExtensionWriteRowBuffer.CollectionCandidates"/> under any
-/// root-extension row. Any non-<see cref="DbTableKind.RootExtension"/> buffer kind under
-/// <see cref="RootWriteRowBuffer.RootExtensionRows"/> is rejected fail-closed; additional
-/// table plans carrying collection or deeper scopes belong to later slices.
+/// Request contract for the profile merge synthesizer. Slice 4 narrows the earlier Slice 3
+/// rejection of root-level <see cref="CollectionWriteCandidate"/>s: root-attached base
+/// collection candidates (<see cref="DbTableKind.Collection"/>) are now accepted when they
+/// carry neither nested <c>CollectionCandidates</c> nor <c>AttachedAlignedScopeData</c>.
+/// Nested candidates, attached-aligned scope data, collection candidates under
+/// <see cref="RootExtensionWriteRowBuffer"/>, and non-Collection root table kinds remain
+/// fenced — they land in Slice 5 or are structurally invalid.
 /// </summary>
 internal sealed record RelationalWriteProfileMergeRequest
 {
@@ -55,13 +55,33 @@ internal sealed record RelationalWriteProfileMergeRequest
                 nameof(flattenedWriteSet)
             );
         }
-        if (!FlattenedWriteSet.RootRow.CollectionCandidates.IsDefaultOrEmpty)
+        foreach (var candidate in FlattenedWriteSet.RootRow.CollectionCandidates)
         {
-            throw new ArgumentException(
-                "Slice 3 profile merge fences root-level collection candidates; they must be "
-                    + "addressed in a later slice.",
-                nameof(flattenedWriteSet)
-            );
+            if (!candidate.CollectionCandidates.IsDefaultOrEmpty)
+            {
+                throw new ArgumentException(
+                    "Slice 4 profile merge does not yet support nested CollectionCandidates under a "
+                        + "top-level collection candidate; they will land in Slice 5.",
+                    nameof(flattenedWriteSet)
+                );
+            }
+            if (!candidate.AttachedAlignedScopeData.IsDefaultOrEmpty)
+            {
+                throw new ArgumentException(
+                    "Slice 4 profile merge does not yet support AttachedAlignedScopeData on a "
+                        + "top-level collection candidate; they will land in Slice 5.",
+                    nameof(flattenedWriteSet)
+                );
+            }
+            if (candidate.TableWritePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.Collection)
+            {
+                throw new ArgumentException(
+                    "Slice 4 profile merge top-level collection candidates must carry "
+                        + "DbTableKind.Collection (root-attached base collection). Other root-candidate table kinds are fenced and must be addressed in a later slice.",
+                    nameof(flattenedWriteSet)
+                );
+            }
+            // Root-attached base collection candidate → passes the gate.
         }
         foreach (var extensionRow in FlattenedWriteSet.RootRow.RootExtensionRows)
         {
@@ -160,7 +180,30 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         );
 
         // 1. Root-table merge.
-        tableStates.Add(SynthesizeRootTable(request, resolvedReferenceLookups));
+        var rootTableState = SynthesizeRootTable(request, resolvedReferenceLookups);
+        tableStates.Add(rootTableState);
+
+        // Root physical row identity values: the merged root row's values, used as the
+        // parent-key-part source for any top-level collection candidates.
+        IReadOnlyList<FlattenedWriteValue> rootPhysicalRowIdentityValues =
+            rootTableState.MergedRows.Length > 0
+                ? rootTableState.MergedRows[0].Values
+                : request.FlattenedWriteSet.RootRow.Values;
+
+        // 1a. Top-level collection merge — runs unconditionally so that stored-only
+        //     "delete-all-visible" scenarios (Blocker #2 fix: spec Section 7.7) are driven
+        //     from the union of request-side, stored-side, and DB-side sources rather than
+        //     only when request-side candidates are present.
+        var collectionOutcome = SynthesizeTopLevelCollectionScopes(
+            request,
+            rootPhysicalRowIdentityValues,
+            resolvedReferenceLookups,
+            tableStates
+        );
+        if (collectionOutcome is not null)
+        {
+            return collectionOutcome.Value;
+        }
 
         // 2. Per-separate-table merge for every non-root table in dependency order. Plans may
         //    legitimately carry non-RootExtension tables that the executor's slice-fence has
@@ -615,6 +658,2005 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             );
         }
         return scopeNode;
+    }
+
+    /// <summary>
+    /// Synthesizes merged collection rows for all top-level collection candidates attached
+    /// to the root row. Called once per synthesizer pass after the separate-table loop
+    /// (spec Section 4.2 / 4.3). Returns a non-null <see cref="ProfileMergeOutcome.Reject"/>
+    /// on a creatability-denied item; appends collection table states to
+    /// <paramref name="tableStates"/> on success and returns <c>null</c>.
+    /// </summary>
+    private static ProfileMergeOutcome? SynthesizeTopLevelCollectionScopes(
+        RelationalWriteProfileMergeRequest request,
+        IReadOnlyList<FlattenedWriteValue> rootPhysicalRowIdentityValues,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        List<RelationalWriteMergedTableState> tableStates
+    )
+    {
+        var topLevelCollectionCandidates = request.FlattenedWriteSet.RootRow.CollectionCandidates;
+        var profileRequest = request.ProfileRequest;
+        var profileAppliedContext = request.ProfileAppliedContext;
+        var currentState = request.CurrentState;
+        var writableRequestBody = request.WritableRequestBody;
+        var resourceWritePlan = request.WritePlan;
+
+        // Group candidates by table (JsonScope) so we process each scope once.
+        var candidatesByScope = topLevelCollectionCandidates
+            .GroupBy(c => c.TableWritePlan.TableModel.JsonScope.Canonical)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Build a scope topology index so we can identify root-attached
+        // (TopLevelBaseCollection) tables without relying solely on request-side
+        // candidates. This drives Blocker #2 fix: stored-only delete-all-visible scopes
+        // are visited even when CollectionCandidates is empty for that scope.
+        var scopeTopology = ScopeTopologyIndex.BuildFromWritePlan(resourceWritePlan);
+
+        // Iterate in TablePlansInDependencyOrder so first-rejection-wins is deterministic across runs.
+        foreach (var tablePlan in resourceWritePlan.TablePlansInDependencyOrder)
+        {
+            var jsonScope = tablePlan.TableModel.JsonScope.Canonical;
+
+            // Only process root-attached base collection tables (Blocker #2: iterate from
+            // topology, not solely from request-side candidates).
+            if (scopeTopology.GetTopology(jsonScope) is not ScopeTopologyKind.TopLevelBaseCollection)
+            {
+                continue;
+            }
+
+            candidatesByScope.TryGetValue(jsonScope, out var candidates);
+            var requestCandidatesForScope = candidates is null
+                ? ImmutableArray<CollectionWriteCandidate>.Empty
+                : candidates.ToImmutableArray();
+
+            var visibleRequestItemsForScope = profileRequest
+                .VisibleRequestCollectionItems.Where(i => i.Address.JsonScope == jsonScope)
+                .ToImmutableArray();
+
+            var visibleStoredRowsForScope = profileAppliedContext is null
+                ? ImmutableArray<VisibleStoredCollectionRow>.Empty
+                : profileAppliedContext
+                    .VisibleStoredCollectionRows.Where(r => r.Address.JsonScope == jsonScope)
+                    .ToImmutableArray();
+
+            var currentRowsForScope = currentState is null
+                ? ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+                : ProjectCurrentRowsForScope(currentState, tablePlan, rootPhysicalRowIdentityValues);
+
+            // No-op scope: all four sources empty → nothing to do for this collection table.
+            if (
+                requestCandidatesForScope.Length == 0
+                && visibleRequestItemsForScope.Length == 0
+                && visibleStoredRowsForScope.Length == 0
+                && currentRowsForScope.Length == 0
+            )
+            {
+                continue;
+            }
+
+            // Defense-in-depth shape fence: nested candidates or attached aligned scope
+            // data must not reach the emission site (constructor gate already rejects, but
+            // this catches any path that might slip through).
+            foreach (var candidate in requestCandidatesForScope)
+            {
+                if (!candidate.CollectionCandidates.IsDefaultOrEmpty)
+                {
+                    throw new InvalidOperationException(
+                        $"Top-level collection candidate for scope '{jsonScope}' carries nested "
+                            + "CollectionCandidates. Defense-in-depth emission fence triggered."
+                    );
+                }
+                if (!candidate.AttachedAlignedScopeData.IsDefaultOrEmpty)
+                {
+                    throw new InvalidOperationException(
+                        $"Top-level collection candidate for scope '{jsonScope}' carries "
+                            + "AttachedAlignedScopeData. Defense-in-depth emission fence triggered."
+                    );
+                }
+            }
+
+            // 1. Build scope-local planner input from the unified source set.
+            //    Reference- and descriptor-backed semantic identity parts arrive from Core
+            //    as document natural-key values / descriptor URI strings, but the planner
+            //    matches against backend-side Int64 ids. Canonicalize the Core-emitted
+            //    streams before handing them to the planner.
+            var parentScopeAddress = new ScopeInstanceAddress(
+                "$",
+                ImmutableArray<AncestorCollectionInstance>.Empty
+            );
+
+            var documentIdentityParts = ResolveDocumentReferenceIdentityParts(resourceWritePlan, tablePlan);
+            var descriptorIdentityIndices = ResolveDescriptorIdentityIndices(tablePlan);
+
+            var canonicalizedVisibleRequestItems = visibleRequestItemsForScope;
+            if (documentIdentityParts.Count > 0)
+            {
+                canonicalizedVisibleRequestItems = CanonicalizeDocumentReferenceRequestItems(
+                    canonicalizedVisibleRequestItems,
+                    documentIdentityParts,
+                    resolvedReferenceLookups
+                );
+            }
+            if (descriptorIdentityIndices.Count > 0)
+            {
+                canonicalizedVisibleRequestItems = CanonicalizeDescriptorRequestItems(
+                    canonicalizedVisibleRequestItems,
+                    tablePlan,
+                    descriptorIdentityIndices,
+                    resolvedReferenceLookups
+                );
+            }
+
+            var canonicalizedVisibleStoredRows = visibleStoredRowsForScope;
+            if (documentIdentityParts.Count > 0)
+            {
+                canonicalizedVisibleStoredRows = CanonicalizeDocumentReferenceStoredRows(
+                    canonicalizedVisibleStoredRows,
+                    documentIdentityParts,
+                    tablePlan,
+                    resolvedReferenceLookups,
+                    currentRowsForScope
+                );
+            }
+            if (descriptorIdentityIndices.Count > 0)
+            {
+                canonicalizedVisibleStoredRows = CanonicalizeDescriptorStoredRows(
+                    canonicalizedVisibleStoredRows,
+                    tablePlan,
+                    descriptorIdentityIndices,
+                    resolvedReferenceLookups,
+                    currentRowsForScope
+                );
+            }
+
+            var currentRowsForPlanner = AlignCurrentRowsWithVisibleStoredIdentityPresence(
+                currentRowsForScope,
+                canonicalizedVisibleStoredRows
+            );
+
+            var input = new ProfileTopLevelCollectionScopeInput(
+                JsonScope: jsonScope,
+                ParentScopeAddress: parentScopeAddress,
+                RequestCandidates: requestCandidatesForScope,
+                VisibleRequestItems: canonicalizedVisibleRequestItems,
+                VisibleStoredRows: canonicalizedVisibleStoredRows,
+                CurrentRows: currentRowsForPlanner
+            );
+
+            // 2. Call the planner. Invariant violations throw and propagate as fail-closed.
+            var planResult = ProfileTopLevelCollectionPlanner.Plan(input);
+
+            // 3. Handle result.
+            if (planResult is ProfileTopLevelCollectionPlanResult.CreatabilityRejection rejection)
+            {
+                return ProfileMergeOutcome.Reject(
+                    new ProfileCreatabilityRejection(jsonScope, rejection.Reason)
+                );
+            }
+
+            if (planResult is not ProfileTopLevelCollectionPlanResult.Success success)
+            {
+                throw new InvalidOperationException(
+                    $"Unhandled ProfileTopLevelCollectionPlanResult type '{planResult?.GetType().Name}' for scope '{jsonScope}'."
+                );
+            }
+
+            // 4. Translate plan entries to merged rows in sequence order.
+            var mergedRows = new List<RelationalWriteMergedTableRow>(success.Plan.Sequence.Length);
+
+            // Blocker #1 fix: CurrentRows must contain ALL rows currently in the DB for
+            // this scope — including omitted-visible rows that the planner excluded from
+            // Sequence. The persister's delete-by-absence logic relies on the set-difference
+            // (StableRowIdentity in CurrentRows but not in MergedRows → delete). Building
+            // currentCollectionRows only from plan Sequence entries means omitted-visible
+            // rows are invisible to the persister and are never deleted.
+            var currentCollectionRows = currentRowsForPlanner
+                .Select(snap => snap.ProjectedCurrentRow)
+                .ToList();
+
+            // Build a lookup from candidate identity key → VisibleRequestCollectionItem so we
+            // can find the concrete request item node for matched-update entries without a
+            // separate linear scan each time. Use the canonicalized items so descriptor
+            // identity parts (URI → Int64) match the candidate's already-resolved Int64 values.
+            var candidateKeyToRequestItem = BuildCandidateKeyToRequestItemLookup(
+                canonicalizedVisibleRequestItems
+            );
+
+            for (var i = 0; i < success.Plan.Sequence.Length; i++)
+            {
+                var finalOrdinal = i + 1;
+                var entry = success.Plan.Sequence[i];
+
+                switch (entry)
+                {
+                    case ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry matchedEntry:
+                        // Resolve the concrete request item node from the writable request body.
+                        var candidateKey = BuildCandidateIdentityKey(
+                            matchedEntry.RequestCandidate.SemanticIdentityInOrder
+                        );
+                        if (!candidateKeyToRequestItem.TryGetValue(candidateKey, out var requestItem))
+                        {
+                            throw new InvalidOperationException(
+                                $"MatchedUpdateEntry for scope '{jsonScope}' could not locate a "
+                                    + "VisibleRequestCollectionItem for the candidate's semantic identity."
+                            );
+                        }
+
+                        var concreteRequestItemNode = ResolveCollectionItemNode(
+                            writableRequestBody,
+                            requestItem.RequestJsonPath
+                        );
+
+                        if (concreteRequestItemNode is null)
+                        {
+                            throw new InvalidOperationException(
+                                $"Top-level collection merge for scope '{jsonScope}' could not navigate "
+                                    + $"the request body to item path '{requestItem.RequestJsonPath}'. "
+                                    + "The visible request item must correspond to an existing array element."
+                            );
+                        }
+
+                        var mergedRow = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+                            resourceWritePlan,
+                            tablePlan,
+                            profileRequest,
+                            matchedEntry.StoredRow,
+                            matchedEntry.RequestCandidate,
+                            matchedEntry.HiddenMemberPaths,
+                            finalOrdinal,
+                            rootPhysicalRowIdentityValues,
+                            concreteRequestItemNode,
+                            resolvedReferenceLookups
+                        );
+                        mergedRows.Add(mergedRow);
+                        break;
+
+                    case ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry hiddenEntry:
+                        // Clone stored row values and overwrite ordinal column.
+                        var cloned = hiddenEntry.StoredRow.ProjectedCurrentRow.Values.ToArray();
+                        cloned[tablePlan.CollectionMergePlan!.OrdinalBindingIndex] =
+                            new FlattenedWriteValue.Literal(finalOrdinal);
+                        var hiddenMergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(
+                            tablePlan,
+                            cloned
+                        );
+                        mergedRows.Add(hiddenMergedRow);
+                        break;
+
+                    case ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry insertEntry:
+                        // Rewrite parent key parts, stamp ordinal, build merged row.
+                        var withParentKey = RelationalWriteRowHelpers.RewriteParentKeyPartValues(
+                            tablePlan,
+                            insertEntry.RequestCandidate.Values,
+                            rootPhysicalRowIdentityValues
+                        );
+                        var stamped = withParentKey.ToArray();
+                        stamped[tablePlan.CollectionMergePlan!.OrdinalBindingIndex] =
+                            new FlattenedWriteValue.Literal(finalOrdinal);
+                        var insertMergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(
+                            tablePlan,
+                            stamped
+                        );
+                        mergedRows.Add(insertMergedRow);
+                        break;
+
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unhandled plan entry type '{entry?.GetType().Name}' for scope '{jsonScope}'."
+                        );
+                }
+            }
+
+            tableStates.Add(
+                new RelationalWriteMergedTableState(tablePlan, currentCollectionRows, mergedRows)
+            );
+        }
+
+        return null; // All scopes processed without rejection.
+    }
+
+    /// <summary>
+    /// Builds a lookup from candidate identity key (same format as the planner uses) to the
+    /// matching <see cref="VisibleRequestCollectionItem"/>. Used to resolve the concrete
+    /// request item node for matched-update entries.
+    /// </summary>
+    private static Dictionary<string, VisibleRequestCollectionItem> BuildCandidateKeyToRequestItemLookup(
+        ImmutableArray<VisibleRequestCollectionItem> visibleRequestItems
+    )
+    {
+        var result = new Dictionary<string, VisibleRequestCollectionItem>(StringComparer.Ordinal);
+        foreach (var item in visibleRequestItems)
+        {
+            // Build the same key the planner uses for VisibleRequestItems (via AddressKey).
+            var addressKey = BuildAddressIdentityKey(item.Address.SemanticIdentityInOrder);
+            result.TryAdd(addressKey, item);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Builds an order-based key from the candidate's semantic identity parts, preserving
+    /// missing-vs-explicit-null semantics. Mirrors the planner's <c>BuildCandidateIdentityKey</c>.
+    /// </summary>
+    private static string BuildCandidateIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
+        BuildAddressIdentityKey(identityParts);
+
+    /// <summary>
+    /// Builds an order-based key from a <see cref="CollectionRowAddress"/>'s semantic identity
+    /// parts, preserving missing-vs-explicit-null semantics. Mirrors the planner's
+    /// <c>BuildSemanticIdentityKey</c>. Relative path text is omitted because Core visible-row
+    /// addresses use bare scope-relative paths while backend candidates/current rows use
+    /// merge-plan paths that may retain the <c>$.</c> prefix.
+    /// </summary>
+    private static string BuildAddressIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
+        string.Join("|", identityParts.Select(FormatSemanticIdentityPartForKey));
+
+    private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
+        $"{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
+
+    /// <summary>
+    /// Current DB projections only carry stored column values, so a null semantic identity value
+    /// cannot distinguish explicit JSON null from a missing member. Core's visible-stored stream
+    /// still has that presence bit, so copy it onto the matching visible current snapshots before
+    /// the presence-aware planner key is built.
+    /// </summary>
+    private static ImmutableArray<CurrentCollectionRowSnapshot> AlignCurrentRowsWithVisibleStoredIdentityPresence(
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        ImmutableArray<VisibleStoredCollectionRow> visibleStoredRows
+    )
+    {
+        if (currentRows.IsDefaultOrEmpty || visibleStoredRows.IsDefaultOrEmpty)
+        {
+            return currentRows;
+        }
+
+        var currentIndexesByValueKey = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        for (var i = 0; i < currentRows.Length; i++)
+        {
+            var valueKey = BuildSemanticIdentityValueKey(currentRows[i].SemanticIdentityInOrder);
+            if (!currentIndexesByValueKey.TryGetValue(valueKey, out var indexes))
+            {
+                indexes = [];
+                currentIndexesByValueKey.Add(valueKey, indexes);
+            }
+
+            indexes.Add(i);
+        }
+
+        ImmutableArray<CurrentCollectionRowSnapshot>.Builder? builder = null;
+        var assigned = new bool[currentRows.Length];
+
+        for (var storedIndex = 0; storedIndex < visibleStoredRows.Length; storedIndex++)
+        {
+            var storedIdentity = visibleStoredRows[storedIndex].Address.SemanticIdentityInOrder;
+            var valueKey = BuildSemanticIdentityValueKey(storedIdentity);
+
+            if (!currentIndexesByValueKey.TryGetValue(valueKey, out var currentIndexes))
+            {
+                continue;
+            }
+
+            int? currentIndex = currentIndexes.Count == 1 ? currentIndexes[0] : null;
+            if (
+                currentIndex is null
+                && currentRows.Length == visibleStoredRows.Length
+                && storedIndex < currentRows.Length
+                && string.Equals(
+                    BuildSemanticIdentityValueKey(currentRows[storedIndex].SemanticIdentityInOrder),
+                    valueKey,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                currentIndex = storedIndex;
+            }
+
+            if (currentIndex is not int index || assigned[index])
+            {
+                continue;
+            }
+
+            builder ??= currentRows.ToBuilder();
+            builder[index] = builder[index] with { SemanticIdentityInOrder = storedIdentity };
+            assigned[index] = true;
+        }
+
+        return builder is null ? currentRows : builder.MoveToImmutable();
+    }
+
+    private static string BuildSemanticIdentityValueKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
+        string.Join("|", identityParts.Select(part => part.Value?.ToJsonString() ?? "null"));
+
+    // -- Document-reference canonicalization helpers ------------------------
+
+    /// <summary>
+    /// Returns the semantic-identity positions backed by a document-reference FK column, paired with the
+    /// reference binding metadata needed to resolve Core-emitted natural-key parts to the stored document id.
+    /// </summary>
+    private static IReadOnlyList<DocumentReferenceIdentityPart> ResolveDocumentReferenceIdentityParts(
+        ResourceWritePlan resourceWritePlan,
+        TableWritePlan tablePlan
+    )
+    {
+        var semanticBindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
+
+        if (semanticBindings.Count == 0)
+        {
+            return [];
+        }
+
+        List<DocumentReferenceIdentityPart>? result = null;
+
+        for (var identityIndex = 0; identityIndex < semanticBindings.Count; identityIndex++)
+        {
+            var semanticBinding = semanticBindings[identityIndex];
+            var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                c.ColumnName.Equals(semanticBinding.ColumnName)
+            );
+
+            if (column?.Kind != ColumnKind.DocumentFk)
+            {
+                continue;
+            }
+
+            result ??= [];
+            result.Add(
+                ResolveDocumentReferenceIdentityPart(
+                    resourceWritePlan,
+                    tablePlan,
+                    semanticBinding,
+                    identityIndex
+                )
+            );
+        }
+
+        return result ?? (IReadOnlyList<DocumentReferenceIdentityPart>)[];
+    }
+
+    private static DocumentReferenceIdentityPart ResolveDocumentReferenceIdentityPart(
+        ResourceWritePlan resourceWritePlan,
+        TableWritePlan tablePlan,
+        CollectionSemanticIdentityBinding semanticBinding,
+        int identityIndex
+    )
+    {
+        var documentBindings = resourceWritePlan.Model.DocumentReferenceBindings;
+
+        for (var bindingIndex = 0; bindingIndex < documentBindings.Count; bindingIndex++)
+        {
+            var documentBinding = documentBindings[bindingIndex];
+
+            if (
+                !documentBinding.Table.Equals(tablePlan.TableModel.Table)
+                || !documentBinding.FkColumn.Equals(semanticBinding.ColumnName)
+            )
+            {
+                continue;
+            }
+
+            foreach (var identityBinding in documentBinding.IdentityBindings)
+            {
+                var relativePath = BuildScopeRelativeCanonical(
+                    tablePlan.TableModel.JsonScope,
+                    identityBinding.ReferenceJsonPath
+                );
+
+                if (
+                    string.Equals(
+                        relativePath,
+                        semanticBinding.RelativePath.Canonical,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return new DocumentReferenceIdentityPart(
+                        identityIndex,
+                        bindingIndex,
+                        documentBinding,
+                        identityBinding
+                    );
+                }
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Document-reference semantic identity binding '{semanticBinding.RelativePath.Canonical}' "
+                + $"on table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' could not be "
+                + $"matched to document-reference metadata for FK column '{semanticBinding.ColumnName.Value}'."
+        );
+    }
+
+    private static string BuildScopeRelativeCanonical(JsonPathExpression jsonScope, JsonPathExpression path)
+    {
+        var scopeCanonical = jsonScope.Canonical;
+        var pathCanonical = path.Canonical;
+
+        if (string.Equals(pathCanonical, scopeCanonical, StringComparison.Ordinal))
+        {
+            return "$";
+        }
+
+        if (string.Equals(scopeCanonical, "$", StringComparison.Ordinal))
+        {
+            return pathCanonical;
+        }
+
+        var scopePrefix = scopeCanonical + ".";
+
+        return pathCanonical.StartsWith(scopePrefix, StringComparison.Ordinal)
+            ? "$." + pathCanonical[scopePrefix.Length..]
+            : pathCanonical;
+    }
+
+    /// <summary>
+    /// Replaces request-side document-reference natural-key identity parts with the resolved referenced
+    /// document id from the request-cycle reference cache.
+    /// </summary>
+    private static ImmutableArray<VisibleRequestCollectionItem> CanonicalizeDocumentReferenceRequestItems(
+        ImmutableArray<VisibleRequestCollectionItem> requestItems,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        if (requestItems.IsDefaultOrEmpty)
+        {
+            return requestItems;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<VisibleRequestCollectionItem>(requestItems.Length);
+
+        foreach (var item in requestItems)
+        {
+            var ordinalPath = RelationalJsonPathSupport
+                .ParseConcretePath(new JsonPath(item.RequestJsonPath))
+                .OrdinalPath;
+            var canonicalized = CanonicalizeRequestDocumentReferenceIdentityParts(
+                item.Address.SemanticIdentityInOrder,
+                documentIdentityParts,
+                resolvedReferenceLookups,
+                ordinalPath
+            );
+
+            builder.Add(
+                item with
+                {
+                    Address = item.Address with { SemanticIdentityInOrder = canonicalized },
+                }
+            );
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeRequestDocumentReferenceIdentityParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var documentIdentityPart in documentIdentityParts)
+        {
+            if (documentIdentityPart.IdentityIndex >= identity.Length)
+            {
+                continue;
+            }
+
+            var part = identity[documentIdentityPart.IdentityIndex];
+
+            if (!part.IsPresent)
+            {
+                continue;
+            }
+
+            var documentId = resolvedReferenceLookups.GetDocumentId(
+                documentIdentityPart.BindingIndex,
+                ordinalPath
+            );
+
+            if (documentId is null)
+            {
+                continue;
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[documentIdentityPart.IdentityIndex] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(documentId.Value),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Replaces stored-side document-reference natural-key identity parts with the stored referenced
+    /// document id by matching against the current row projection.
+    /// </summary>
+    private static ImmutableArray<VisibleStoredCollectionRow> CanonicalizeDocumentReferenceStoredRows(
+        ImmutableArray<VisibleStoredCollectionRow> storedRows,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        if (storedRows.IsDefaultOrEmpty)
+        {
+            return storedRows;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(storedRows.Length);
+
+        for (var storedRowIndex = 0; storedRowIndex < storedRows.Length; storedRowIndex++)
+        {
+            var row = storedRows[storedRowIndex];
+            var canonicalized = CanonicalizeStoredDocumentReferenceIdentityParts(
+                row.Address.SemanticIdentityInOrder,
+                documentIdentityParts,
+                tablePlan,
+                resolvedReferenceLookups,
+                currentRows,
+                storedRowIndex,
+                storedRows.Length
+            );
+
+            builder.Add(row with { Address = row.Address with { SemanticIdentityInOrder = canonicalized } });
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeStoredDocumentReferenceIdentityParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        int storedRowIndex,
+        int storedRowsLength
+    )
+    {
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var documentIdentityPart in documentIdentityParts)
+        {
+            if (documentIdentityPart.IdentityIndex >= identity.Length)
+            {
+                continue;
+            }
+
+            var part = identity[documentIdentityPart.IdentityIndex];
+
+            if (!part.IsPresent)
+            {
+                continue;
+            }
+
+            var documentId = TryResolveDocumentIdFromCurrentRows(
+                identity,
+                documentIdentityParts,
+                documentIdentityPart,
+                tablePlan,
+                resolvedReferenceLookups,
+                currentRows,
+                storedRowIndex,
+                storedRowsLength
+            );
+
+            if (documentId is null)
+            {
+                throw new InvalidOperationException(
+                    $"document reference not resolvable at merge boundary: stored reference "
+                        + $"'{documentIdentityPart.Binding.ReferenceObjectPath.Canonical}' for FK column "
+                        + $"'{documentIdentityPart.Binding.FkColumn.Value}' on table "
+                        + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' could not be "
+                        + "matched against current rows. "
+                        + "This can happen when the reference natural-key contains a descriptor URI absent "
+                        + "from the request-cycle cache, scalar-parts-only matching is ambiguous or absent, "
+                        + "and the current-row count differs from the stored-row count so positional "
+                        + "correspondence does not hold. "
+                        + $"Current rows count: {currentRows.Length}, stored rows count: {storedRowsLength}, stored row index: {storedRowIndex}."
+                );
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[documentIdentityPart.IdentityIndex] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(documentId.Value),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Resolves the referenced document id for a stored-side reference natural-key identity
+    /// by matching against current rows. Three strategies are tried in order, regardless of
+    /// whether the reference natural-key contains scalar parts, descriptor parts, or both:
+    ///
+    /// <list type="number">
+    ///   <item>Full natural-key match: every reference natural-key part (scalar + descriptor)
+    ///   must match. Used when the descriptor URI cache holds every descriptor part of the
+    ///   stored row's reference natural-key.</item>
+    ///   <item>Scalar-parts-only match: when a descriptor URI cache miss makes Strategy 1
+    ///   fail, match on the non-DescriptorFk natural-key parts and skip the descriptor parts
+    ///   entirely. If the remaining scalar parts uniquely identify a current row, the
+    ///   document id is read directly from that row's FK column. Mirrors the Strategy-1
+    ///   scalar fallback that <see cref="TryResolveDescriptorIdFromCurrentRows"/> uses for
+    ///   direct descriptor identity in the duplicate-scalar/different-descriptor shape.</item>
+    ///   <item>Positional fallback: when neither full-match nor scalar-only match yields a
+    ///   unique row, fall back to <c>currentRows[storedRowIndex]</c> when
+    ///   <c>currentRows.Length == storedRowsLength</c> (no hidden rows interleaved).</item>
+    /// </list>
+    ///
+    /// <para>Returns <c>null</c> when no strategy resolves; the caller throws.</para>
+    /// </summary>
+    private static long? TryResolveDocumentIdFromCurrentRows(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        DocumentReferenceIdentityPart targetPart,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        int storedRowIndex,
+        int storedRowsLength
+    )
+    {
+        if (currentRows.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var sameReferenceParts = documentIdentityParts
+            .Where(part =>
+                part.BindingIndex == targetPart.BindingIndex && part.IdentityIndex < identity.Length
+            )
+            .ToArray();
+
+        // Strategy 1: full natural-key match. Returns null on no-match or ambiguous match —
+        // the latter is rare for natural-key matching (natural-key uniqueness should
+        // disambiguate) but the helper guards it explicitly. Cache miss on any descriptor
+        // part also surfaces here as no-match.
+        var fullMatchId = TryResolveByReferenceFullMatch(
+            identity,
+            sameReferenceParts,
+            targetPart,
+            tablePlan,
+            resolvedReferenceLookups,
+            currentRows
+        );
+
+        if (fullMatchId is not null)
+        {
+            return fullMatchId;
+        }
+
+        // Strategy 2: scalar-parts-only match. When Strategy 1 fails because a descriptor URI
+        // is absent from the request-cycle cache, the remaining scalar parts of the reference
+        // natural-key may still uniquely identify the row. Skip every DescriptorFk part and
+        // match only on the scalar parts; if a unique row is found, use its FK column.
+        var scalarMatchId = TryResolveByReferenceScalarMatch(
+            identity,
+            sameReferenceParts,
+            targetPart,
+            tablePlan,
+            currentRows
+        );
+
+        if (scalarMatchId is not null)
+        {
+            return scalarMatchId;
+        }
+
+        // Strategy 3: positional fallback. Safe only when current and stored row counts
+        // agree (no hidden rows interleaved) — same fence as the descriptor identity path.
+        if (currentRows.Length == storedRowsLength && storedRowIndex < currentRows.Length)
+        {
+            return TryGetInt64CurrentRowValue(currentRows[storedRowIndex], targetPart.Binding.FkColumn);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Strategy 1 of <see cref="TryResolveDocumentIdFromCurrentRows"/>: locate a unique
+    /// current row that matches every reference natural-key part (scalar + descriptor) in
+    /// <paramref name="identity"/>, then return that row's FK column value. Returns
+    /// <c>null</c> when no row matches, when more than one row matches, or when a stored
+    /// descriptor URI cannot be resolved against the request-cycle cache.
+    /// </summary>
+    private static long? TryResolveByReferenceFullMatch(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> sameReferenceParts,
+        DocumentReferenceIdentityPart targetPart,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        CurrentCollectionRowSnapshot? matched = null;
+
+        foreach (var currentRow in currentRows)
+        {
+            if (
+                !DocumentReferenceIdentityPartsMatch(
+                    identity,
+                    sameReferenceParts,
+                    tablePlan,
+                    resolvedReferenceLookups,
+                    currentRow
+                )
+            )
+            {
+                continue;
+            }
+
+            if (matched is not null)
+            {
+                return null;
+            }
+
+            matched = currentRow;
+        }
+
+        return matched is null ? null : TryGetInt64CurrentRowValue(matched, targetPart.Binding.FkColumn);
+    }
+
+    /// <summary>
+    /// Strategy 2 of <see cref="TryResolveDocumentIdFromCurrentRows"/>: locate a unique
+    /// current row that matches every NON-descriptor reference natural-key part in
+    /// <paramref name="identity"/>, ignoring any DescriptorFk parts whose URI may be absent
+    /// from the request-cycle cache. Returns the matched row's FK column value, or
+    /// <c>null</c> when there are no scalar parts to match on, when no row matches, or when
+    /// more than one row matches (in which case the caller falls through to positional
+    /// matching).
+    /// </summary>
+    private static long? TryResolveByReferenceScalarMatch(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> sameReferenceParts,
+        DocumentReferenceIdentityPart targetPart,
+        TableWritePlan tablePlan,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        var scalarParts = sameReferenceParts
+            .Where(part =>
+            {
+                var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                    c.ColumnName.Equals(part.IdentityBinding.Column)
+                );
+                return column is not null && column.Kind != ColumnKind.DescriptorFk;
+            })
+            .ToArray();
+
+        if (scalarParts.Length == 0)
+        {
+            return null;
+        }
+
+        CurrentCollectionRowSnapshot? matched = null;
+
+        foreach (var currentRow in currentRows)
+        {
+            var allScalarsMatch = true;
+
+            foreach (var scalarPart in scalarParts)
+            {
+                var storedPart = identity[scalarPart.IdentityIndex];
+
+                if (!storedPart.IsPresent)
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+
+                if (
+                    !currentRow.CurrentRowByColumnName.TryGetValue(
+                        scalarPart.IdentityBinding.Column,
+                        out var currentValue
+                    )
+                )
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+
+                var storedJson = storedPart.Value?.ToJsonString() ?? "null";
+                var currentJson = currentValue is null
+                    ? "null"
+                    : JsonValue.Create(currentValue)?.ToJsonString() ?? "null";
+
+                if (!string.Equals(storedJson, currentJson, StringComparison.Ordinal))
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+            }
+
+            if (!allScalarsMatch)
+            {
+                continue;
+            }
+
+            if (matched is not null)
+            {
+                return null;
+            }
+
+            matched = currentRow;
+        }
+
+        return matched is null ? null : TryGetInt64CurrentRowValue(matched, targetPart.Binding.FkColumn);
+    }
+
+    private static bool DocumentReferenceIdentityPartsMatch(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        CurrentCollectionRowSnapshot currentRow
+    )
+    {
+        foreach (var documentIdentityPart in documentIdentityParts)
+        {
+            var storedPart = identity[documentIdentityPart.IdentityIndex];
+
+            if (
+                !TryBuildStoredDocumentReferenceIdentityJson(
+                    storedPart,
+                    documentIdentityPart,
+                    tablePlan,
+                    resolvedReferenceLookups,
+                    out var storedJson
+                )
+            )
+            {
+                return false;
+            }
+
+            if (
+                !currentRow.CurrentRowByColumnName.TryGetValue(
+                    documentIdentityPart.IdentityBinding.Column,
+                    out var currentValue
+                )
+            )
+            {
+                return false;
+            }
+
+            var currentJson = currentValue is null
+                ? "null"
+                : JsonValue.Create(currentValue)?.ToJsonString() ?? "null";
+
+            if (!string.Equals(storedJson, currentJson, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryBuildStoredDocumentReferenceIdentityJson(
+        SemanticIdentityPart storedPart,
+        DocumentReferenceIdentityPart documentIdentityPart,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        out string storedJson
+    )
+    {
+        storedJson = "null";
+
+        if (!storedPart.IsPresent)
+        {
+            return false;
+        }
+
+        var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+            c.ColumnName.Equals(documentIdentityPart.IdentityBinding.Column)
+        );
+
+        if (column?.Kind != ColumnKind.DescriptorFk)
+        {
+            storedJson = storedPart.Value?.ToJsonString() ?? "null";
+            return true;
+        }
+
+        if (storedPart.Value is JsonValue jsonValue && jsonValue.TryGetValue<long>(out var descriptorId))
+        {
+            storedJson = JsonValue.Create(descriptorId)?.ToJsonString() ?? "null";
+            return true;
+        }
+
+        var uri = storedPart.Value?.ToString();
+
+        if (
+            string.IsNullOrEmpty(uri)
+            || column.TargetResource is null
+            || !resolvedReferenceLookups.TryGetDescriptorIdByUri(
+                column.TargetResource.Value,
+                uri,
+                out descriptorId
+            )
+        )
+        {
+            return false;
+        }
+
+        storedJson = JsonValue.Create(descriptorId)?.ToJsonString() ?? "null";
+        return true;
+    }
+
+    private static long? TryGetInt64CurrentRowValue(
+        CurrentCollectionRowSnapshot currentRow,
+        DbColumnName columnName
+    )
+    {
+        if (!currentRow.CurrentRowByColumnName.TryGetValue(columnName, out var value) || value is null)
+        {
+            return null;
+        }
+
+        if (value is long longValue)
+        {
+            return longValue;
+        }
+
+        try
+        {
+            return Convert.ToInt64(value);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record DocumentReferenceIdentityPart(
+        int IdentityIndex,
+        int BindingIndex,
+        DocumentReferenceBinding Binding,
+        ReferenceIdentityBinding IdentityBinding
+    );
+
+    // ── Descriptor-URI canonicalization helpers ────────────────────────────
+
+    /// <summary>
+    /// Returns the zero-based positions within the table's
+    /// <see cref="DbTableIdentityMetadata.SemanticIdentityBindings"/> that require
+    /// URI-to-Int64 canonicalization (i.e. those backed by a <see cref="ColumnKind.DescriptorFk"/>
+    /// column). Returns an empty list when no descriptor-backed parts exist.
+    /// </summary>
+    private static IReadOnlyList<int> ResolveDescriptorIdentityIndices(TableWritePlan tablePlan)
+    {
+        var bindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
+
+        if (bindings.Count == 0)
+        {
+            return [];
+        }
+
+        List<int>? result = null;
+
+        for (var i = 0; i < bindings.Count; i++)
+        {
+            var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                c.ColumnName.Equals(bindings[i].ColumnName)
+            );
+
+            if (column?.Kind == ColumnKind.DescriptorFk)
+            {
+                if (result is null)
+                {
+                    result = [];
+                }
+
+                result.Add(i);
+            }
+        }
+
+        return result ?? (IReadOnlyList<int>)[];
+    }
+
+    /// <summary>
+    /// For each <see cref="VisibleRequestCollectionItem"/> in
+    /// <paramref name="requestItems"/>, replaces the <see cref="SemanticIdentityPart"/>
+    /// values at every descriptor-identity index with the resolved Int64 descriptor id.
+    /// Items whose descriptor lookup returns null are left unchanged (the planner's
+    /// invariant check will surface the mismatch as a fail-closed error).
+    /// </summary>
+    private static ImmutableArray<VisibleRequestCollectionItem> CanonicalizeDescriptorRequestItems(
+        ImmutableArray<VisibleRequestCollectionItem> requestItems,
+        TableWritePlan tablePlan,
+        IReadOnlyList<int> descriptorIdentityIndices,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        if (requestItems.IsDefaultOrEmpty)
+        {
+            return requestItems;
+        }
+
+        var bindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
+        var builder = ImmutableArray.CreateBuilder<VisibleRequestCollectionItem>(requestItems.Length);
+
+        foreach (var item in requestItems)
+        {
+            var identity = item.Address.SemanticIdentityInOrder;
+            var ordinalPath = RelationalJsonPathSupport
+                .ParseConcretePath(new JsonPath(item.RequestJsonPath))
+                .OrdinalPath;
+            var canonicalized = CanonicalizeIdentityParts(
+                identity,
+                bindings,
+                descriptorIdentityIndices,
+                tablePlan,
+                ordinalPath,
+                resolvedReferenceLookups
+            );
+
+            builder.Add(
+                item with
+                {
+                    Address = item.Address with { SemanticIdentityInOrder = canonicalized },
+                }
+            );
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// For each <see cref="VisibleStoredCollectionRow"/> in <paramref name="storedRows"/>,
+    /// replaces the <see cref="SemanticIdentityPart"/> values at every descriptor-identity
+    /// index with the resolved Int64 descriptor id, looked up by URI from the request-cycle
+    /// cache. When a stored URI is not in the cache (e.g. delete-by-absence: the row was
+    /// omitted from the request body), falls back to extracting the Int64 from the matching
+    /// <see cref="CurrentCollectionRowSnapshot"/> — see <see cref="CanonicalizeStoredIdentityParts"/>
+    /// for the fallback strategy and its failure conditions.
+    /// </summary>
+    private static ImmutableArray<VisibleStoredCollectionRow> CanonicalizeDescriptorStoredRows(
+        ImmutableArray<VisibleStoredCollectionRow> storedRows,
+        TableWritePlan tablePlan,
+        IReadOnlyList<int> descriptorIdentityIndices,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        if (storedRows.IsDefaultOrEmpty)
+        {
+            return storedRows;
+        }
+
+        var bindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
+        var builder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(storedRows.Length);
+
+        for (var storedRowIndex = 0; storedRowIndex < storedRows.Length; storedRowIndex++)
+        {
+            var row = storedRows[storedRowIndex];
+            var identity = row.Address.SemanticIdentityInOrder;
+            var canonicalized = CanonicalizeStoredIdentityParts(
+                identity,
+                bindings,
+                descriptorIdentityIndices,
+                tablePlan,
+                resolvedReferenceLookups,
+                currentRows,
+                storedRowIndex,
+                storedRows.Length
+            );
+
+            builder.Add(row with { Address = row.Address with { SemanticIdentityInOrder = canonicalized } });
+        }
+
+        return builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Rewrites the descriptor-backed parts of <paramref name="identity"/> in-place for
+    /// request-side items. Positions not in <paramref name="descriptorIdentityIndices"/>
+    /// are copied unchanged. Returns the same array reference when no part changes.
+    /// </summary>
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeIdentityParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<CollectionSemanticIdentityBinding> bindings,
+        IReadOnlyList<int> descriptorIdentityIndices,
+        TableWritePlan tablePlan,
+        ReadOnlySpan<int> ordinalPath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var idx in descriptorIdentityIndices)
+        {
+            if (idx >= identity.Length || idx >= bindings.Count)
+            {
+                continue;
+            }
+
+            var part = identity[idx];
+
+            if (!part.IsPresent || part.Value is null)
+            {
+                continue;
+            }
+
+            var binding = bindings[idx];
+            var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                c.ColumnName.Equals(binding.ColumnName)
+            );
+
+            if (column?.TargetResource is null || column.SourceJsonPath is null)
+            {
+                continue;
+            }
+
+            var wildcardPath = column.SourceJsonPath.Value.Canonical;
+            var descriptorId = resolvedReferenceLookups.GetDescriptorId(
+                column.TargetResource.Value,
+                wildcardPath,
+                ordinalPath
+            );
+
+            if (descriptorId is null)
+            {
+                continue;
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[idx] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(descriptorId.Value),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Rewrites the descriptor-backed parts of <paramref name="identity"/> for stored-side
+    /// rows by looking up URI → Int64 from the request-cycle cache.
+    ///
+    /// <para><b>Slice 4 fence shape:</b>
+    /// Slice 4 does not add an executor-level fence on descriptor-backed top-level collection
+    /// identity — rejecting at the planner/executor would block the common cases this method
+    /// handles correctly (URI in cache; mixed scalar+descriptor identity; descriptor-only
+    /// without hidden rows). Instead, the single structurally-ambiguous case — any identity
+    /// shape with hidden rows interleaved in current rows and a URI cache miss for a stored
+    /// row whose scalar match is ambiguous or absent — is narrowed to a runtime fail-closed
+    /// throw below. That combination is rare in standard Ed-Fi profiles but must not silently
+    /// return an incorrect descriptor id. A later slice may widen support by seeding the
+    /// descriptor resolver from the stored body or adding a planner-level reject; until then
+    /// the throw is the Slice 4 fence.</para>
+    ///
+    /// <para><b>Cache-miss fallback (delete-by-absence support):</b>
+    /// When a stored URI is not in the request-cycle cache — which happens during a PUT that
+    /// omits a previously-stored collection item, because the omitted item's descriptor URI
+    /// was never resolved as part of the current request body — the method falls back to
+    /// extracting the Int64 descriptor id directly from the matching
+    /// <see cref="CurrentCollectionRowSnapshot"/>.</para>
+    ///
+    /// <para><b>Matching strategy:</b>
+    /// <list type="number">
+    ///   <item>Scalar-part match (when identity has scalar parts): find the unique current
+    ///   row whose semantic identity matches all scalar parts and copy its descriptor id at
+    ///   the same index position. If multiple current rows share the same scalar values
+    ///   (duplicate-scalar/different-descriptor shape) or none match, fall through to
+    ///   positional matching.</item>
+    ///   <item>Positional match: when
+    ///   <c>currentRows.Length == storedRows.Length</c> (no hidden rows in scope), use
+    ///   <c>currentRows[storedRowIndex]</c> directly. Both arrays are ordered by
+    ///   stored-ordinal (planner invariants <c>ValidateStoredOrdinalOrder</c> +
+    ///   <c>ProjectCurrentRowsForScope OrderBy</c>), and count equality is equivalent to "no
+    ///   hidden rows interleaved", so positional correspondence holds for both
+    ///   descriptor-only and mixed scalar+descriptor identity.</item>
+    ///   <item>If counts differ (hidden rows are interleaved — structurally possible but not
+    ///   expected in practice): throw with a diagnostic message rather than silently
+    ///   producing an incorrect result.</item>
+    /// </list></para>
+    /// </summary>
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeStoredIdentityParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<CollectionSemanticIdentityBinding> bindings,
+        IReadOnlyList<int> descriptorIdentityIndices,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        int storedRowIndex,
+        int storedRowsLength
+    )
+    {
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var idx in descriptorIdentityIndices)
+        {
+            if (idx >= identity.Length || idx >= bindings.Count)
+            {
+                continue;
+            }
+
+            var part = identity[idx];
+
+            if (!part.IsPresent || part.Value is null)
+            {
+                continue;
+            }
+
+            // Check if the value is already an Int64 (already canonicalized or numeric).
+            if (part.Value is JsonValue jv && jv.TryGetValue<long>(out _))
+            {
+                continue;
+            }
+
+            var uri = part.Value.ToString();
+
+            if (string.IsNullOrEmpty(uri))
+            {
+                continue;
+            }
+
+            var binding = bindings[idx];
+            var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                c.ColumnName.Equals(binding.ColumnName)
+            );
+
+            if (column?.TargetResource is null || column.SourceJsonPath is null)
+            {
+                continue;
+            }
+
+            var wildcardPath = column.SourceJsonPath.Value.Canonical;
+
+            if (
+                resolvedReferenceLookups.TryGetDescriptorIdByUri(
+                    column.TargetResource.Value,
+                    uri,
+                    out var descriptorId
+                )
+            )
+            {
+                // Cache hit: use the request-cycle resolved id.
+                builder ??= identity.ToBuilder();
+                builder[idx] = new SemanticIdentityPart(
+                    part.RelativePath,
+                    JsonValue.Create(descriptorId),
+                    IsPresent: true
+                );
+                continue;
+            }
+
+            // Cache miss: the stored row references a descriptor URI that was not resolved
+            // as part of the current request (typical in delete-by-absence). Fall back to
+            // extracting the Int64 id from the matching CurrentCollectionRowSnapshot.
+            var fallbackId = TryResolveDescriptorIdFromCurrentRows(
+                identity,
+                descriptorIdentityIndices,
+                idx,
+                currentRows,
+                storedRowIndex,
+                storedRowsLength
+            );
+
+            if (fallbackId is null)
+            {
+                throw new InvalidOperationException(
+                    $"descriptor URI not resolvable at merge boundary: stored descriptor URI '{uri}' "
+                        + $"for column '{column.ColumnName.Value}' (path '{wildcardPath}') "
+                        + "was not found in the request-cycle descriptor resolution cache and could not "
+                        + "be matched against current rows. "
+                        + "This can happen when scalar matching is ambiguous or absent (or the identity is "
+                        + "descriptor-only), the stored rows contain hidden rows interleaved with visible "
+                        + "rows (current row count differs from stored row count), and the cache does not "
+                        + "hold the URI. "
+                        + $"Current rows count: {currentRows.Length}, stored rows count: {storedRowsLength}, stored row index: {storedRowIndex}."
+                );
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[idx] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(fallbackId.Value),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Attempts to resolve a descriptor Int64 id for <paramref name="descriptorIdx"/> in
+    /// <paramref name="identity"/> by matching against <paramref name="currentRows"/>.
+    ///
+    /// <para>Two strategies are tried in order, regardless of identity shape:</para>
+    /// <list type="number">
+    ///   <item>Scalar-part matching: if the identity has non-descriptor parts at positions
+    ///   not in <paramref name="descriptorIndices"/>, find the unique current row whose
+    ///   semantic identity matches all scalar parts and copy its descriptor part at the same
+    ///   index position. If no scalar parts exist, this strategy is skipped. If multiple
+    ///   current rows share the same scalar values (duplicate scalar parts that differ only
+    ///   on the descriptor part) or no scalar match is found, fall through to Strategy 2.</item>
+    ///   <item>Positional matching: if
+    ///   <paramref name="currentRows"/><c>.Length == </c><paramref name="storedRowsLength"/>
+    ///   (all stored rows are covered by current rows one-to-one — equivalent to "no hidden
+    ///   rows in scope"), use <c>currentRows[storedRowIndex]</c> directly. When the counts
+    ///   differ, hidden rows interleave with visible rows and positional correspondence does
+    ///   not hold, so <c>null</c> is returned and the caller throws rather than silently
+    ///   picking the wrong row.</item>
+    /// </list>
+    /// <para>Returns <c>null</c> when neither strategy produces a result and the caller
+    /// should throw.</para>
+    /// </summary>
+    private static long? TryResolveDescriptorIdFromCurrentRows(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<int> descriptorIndices,
+        int descriptorIdx,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        int storedRowIndex,
+        int storedRowsLength
+    )
+    {
+        if (currentRows.IsDefault || currentRows.Length == 0)
+        {
+            return null;
+        }
+
+        // Build the set of non-descriptor index positions (scalar parts).
+        var scalarIndices = Enumerable
+            .Range(0, identity.Length)
+            .Where(i => !descriptorIndices.Contains(i))
+            .ToList();
+
+        // Strategy 1: match by scalar parts (skipped when identity is descriptor-only).
+        // Find the unique current row whose semantic identity matches all scalar parts at
+        // the same index positions as the stored row's scalar parts. If the match is
+        // ambiguous (two rows share the same scalar values but differ on the descriptor
+        // part) or no row matches, fall through to Strategy 2 — count-equal positional
+        // correspondence safely disambiguates duplicate-scalar/different-descriptor rows
+        // when no hidden rows are interleaved.
+        if (scalarIndices.Count > 0)
+        {
+            var scalarMatchId = TryResolveByScalarMatch(identity, scalarIndices, descriptorIdx, currentRows);
+
+            if (scalarMatchId is not null)
+            {
+                return scalarMatchId;
+            }
+        }
+
+        // Strategy 2: positional matching.
+        //
+        // This branch is an inference under an upstream ordering contract, not a validation
+        // mechanism. It assumes BOTH:
+        //   1. Core emits VisibleStoredCollectionRows in stored-body iteration order
+        //      (StoredSideExistenceLookupBuilder.WalkCollection iterates the stored JSON
+        //      array in index order), AND
+        //   2. The stored JSON body's array order matches the DB's stored-ordinal column
+        //      order for this collection.
+        // Both hold under the current Core/projection contract; together they imply that
+        // VisibleStoredRows[storedRowIndex] corresponds to currentRows[storedRowIndex] when
+        // currentRows is sorted by StoredOrdinal (see ProjectCurrentRowsForScope). This
+        // method does NOT independently verify the correspondence — a structural check
+        // would require resolving each current row's Int64 descriptor id back to its URI
+        // (a DB roundtrip against the descriptor projection), which is out of scope for
+        // Slice 4. If the upstream contract is broken (body out of ordinal order, or
+        // VisibleStoredRows mis-ordered), positional rewrite would silently swap descriptor
+        // ids before the planner runs and downstream invariants would pass against the
+        // rewritten values. A later slice may add the reverse-resolution check; until then
+        // this is a documented residual risk fenced behind the count-equality guard.
+        //
+        // Safe ONLY when currentRows.Length == storedRowsLength. Count equality is a
+        // necessary (not sufficient) condition for one-to-one ordinal correspondence and is
+        // also equivalent here to "no hidden rows in scope" — currentRows holds all current
+        // DB rows, storedRowsLength counts visible stored rows, and equality between them
+        // means no row is hidden from the visible set. This makes positional fallback safe
+        // for both descriptor-only identity and mixed scalar+descriptor identity (including
+        // the duplicate-scalar/different-descriptor shape that Strategy 1 cannot
+        // disambiguate). When counts differ (a profile Filter has restricted the visible
+        // stored rows while the DB still holds the full set in currentRows), positional
+        // indexing would pick the wrong row — return null so the caller throws with a
+        // diagnostic instead of silently corrupting data.
+        if (currentRows.Length != storedRowsLength)
+        {
+            return null;
+        }
+
+        if (storedRowIndex < currentRows.Length)
+        {
+            var positionalRow = currentRows[storedRowIndex];
+            var positionalIdentity = positionalRow.SemanticIdentityInOrder;
+            if (descriptorIdx < positionalIdentity.Length)
+            {
+                var positionalPart = positionalIdentity[descriptorIdx];
+                if (
+                    positionalPart.IsPresent
+                    && positionalPart.Value is JsonValue positionalJv
+                    && positionalJv.TryGetValue<long>(out var positionalId)
+                )
+                {
+                    return positionalId;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Strategy 1 of <see cref="TryResolveDescriptorIdFromCurrentRows"/>: locate a unique
+    /// current row whose semantic identity matches <paramref name="identity"/> on every
+    /// scalar (non-descriptor) part, then return that row's descriptor id at
+    /// <paramref name="descriptorIdx"/>.
+    ///
+    /// <para>Returns <c>null</c> when no current row matches or when more than one current
+    /// row shares the same scalar values (the ambiguous-scalar case where rows differ only
+    /// on the descriptor part). Caller falls through to positional matching in both
+    /// cases.</para>
+    /// </summary>
+    private static long? TryResolveByScalarMatch(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<int> scalarIndices,
+        int descriptorIdx,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        CurrentCollectionRowSnapshot? matched = null;
+        foreach (var currentRow in currentRows)
+        {
+            var currentIdentity = currentRow.SemanticIdentityInOrder;
+            if (currentIdentity.Length != identity.Length)
+            {
+                continue;
+            }
+
+            var allScalarsMatch = true;
+            foreach (var scalarIdx in scalarIndices)
+            {
+                var storedPart = identity[scalarIdx];
+                var currentPart = currentIdentity[scalarIdx];
+
+                // Both must be present and have the same value.
+                if (!storedPart.IsPresent || !currentPart.IsPresent)
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+
+                var storedJson = storedPart.Value?.ToJsonString();
+                var currentJson = currentPart.Value?.ToJsonString();
+                if (!string.Equals(storedJson, currentJson, StringComparison.Ordinal))
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+            }
+
+            if (!allScalarsMatch)
+            {
+                continue;
+            }
+
+            if (matched is not null)
+            {
+                // Ambiguous match — more than one current row has the same scalar parts.
+                // Cannot safely choose one here; let the caller fall through to positional
+                // matching, which can disambiguate via stored-ordinal correspondence when
+                // counts are equal.
+                return null;
+            }
+
+            matched = currentRow;
+        }
+
+        if (matched is null)
+        {
+            return null;
+        }
+
+        // Extract the descriptor id at the same index position from the matched current row.
+        var matchedIdentity = matched.SemanticIdentityInOrder;
+        if (descriptorIdx >= matchedIdentity.Length)
+        {
+            return null;
+        }
+
+        var matchedPart = matchedIdentity[descriptorIdx];
+        if (!matchedPart.IsPresent || matchedPart.Value is null)
+        {
+            return null;
+        }
+
+        if (matchedPart.Value is JsonValue matchedJv && matchedJv.TryGetValue<long>(out var matchedId))
+        {
+            return matchedId;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Projects the current DB rows for a single top-level collection table into
+    /// <see cref="CurrentCollectionRowSnapshot"/> instances. Filters to rows whose
+    /// parent physical identity columns match <paramref name="rootPhysicalRowIdentityValues"/>,
+    /// then extracts <see cref="CurrentCollectionRowSnapshot.StableRowIdentity"/>,
+    /// <see cref="CurrentCollectionRowSnapshot.SemanticIdentityInOrder"/>, and
+    /// <see cref="CurrentCollectionRowSnapshot.StoredOrdinal"/> from the table plan's
+    /// binding indexes. Rows are returned sorted by ascending <c>StoredOrdinal</c>.
+    /// </summary>
+    private static ImmutableArray<CurrentCollectionRowSnapshot> ProjectCurrentRowsForScope(
+        RelationalWriteCurrentState currentState,
+        TableWritePlan tablePlan,
+        IReadOnlyList<FlattenedWriteValue> rootPhysicalRowIdentityValues
+    )
+    {
+        var hydratedRows = TryFindHydratedRowsForTable(currentState, tablePlan);
+        if (hydratedRows is null || hydratedRows.Count == 0)
+        {
+            return ImmutableArray<CurrentCollectionRowSnapshot>.Empty;
+        }
+
+        var mergePlan =
+            tablePlan.CollectionMergePlan
+            ?? throw new InvalidOperationException(
+                $"Collection table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' does not have a compiled collection merge plan."
+            );
+
+        // Build a lookup of parent-scope-locator column names → binding indexes so we can
+        // match each DB row against rootPhysicalRowIdentityValues.
+        var immediateParentColumns = tablePlan.TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
+        var parentBindingIndexes = immediateParentColumns
+            .Select(col => RelationalWriteMergeSupport.FindBindingIndex(tablePlan, col))
+            .ToArray();
+
+        // Build expected parent identity values from rootPhysicalRowIdentityValues using the
+        // parent binding indexes.  rootPhysicalRowIdentityValues is indexed by PhysicalRowIdentity
+        // column order on the ROOT table; for top-level collection tables the parent key part
+        // index maps directly to the root table's physical identity columns.
+        var projectedAll = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydratedRows);
+
+        var snapshots = new List<CurrentCollectionRowSnapshot>(projectedAll.Length);
+        for (var rowIndex = 0; rowIndex < projectedAll.Length; rowIndex++)
+        {
+            var projectedRow = projectedAll[rowIndex];
+            var hydratedRow = hydratedRows[rowIndex];
+            // Filter: every parent-scope-locator column must match rootPhysicalRowIdentityValues.
+            var parentMatches = true;
+            for (var pi = 0; pi < parentBindingIndexes.Length; pi++)
+            {
+                var parentBindingIdx = parentBindingIndexes[pi];
+
+                // rootPhysicalRowIdentityValues uses the ParentKeyPart.Index to find the right
+                // value. The binding's source carries the ParentKeyPart.Index.
+                if (
+                    tablePlan.ColumnBindings[parentBindingIdx].Source
+                    is WriteValueSource.ParentKeyPart parentKeyPart
+                )
+                {
+                    var expectedValue = rootPhysicalRowIdentityValues[parentKeyPart.Index];
+                    var actualValue = projectedRow.Values[parentBindingIdx];
+
+                    if (!FlattenedWriteValueEquals(expectedValue, actualValue))
+                    {
+                        parentMatches = false;
+                        break;
+                    }
+                }
+                // If not a ParentKeyPart source, we still compare by literal equality.
+                else if (
+                    pi < rootPhysicalRowIdentityValues.Count
+                    && !FlattenedWriteValueEquals(
+                        rootPhysicalRowIdentityValues[pi],
+                        projectedRow.Values[parentBindingIdx]
+                    )
+                )
+                {
+                    parentMatches = false;
+                    break;
+                }
+            }
+
+            if (!parentMatches)
+            {
+                continue;
+            }
+
+            // Extract stable row identity. PhysicalRowIdentity columns are NOT NULL in the DB
+            // and are projected as a FlattenedWriteValue.Literal carrying a numeric CLR value
+            // (typically long, sometimes int from narrower projection paths). Fail closed if the
+            // projection produces anything else — silently defaulting would collide identities
+            // (multiple rows hashed to 0) and mask upstream binding mis-mapping.
+            long stableRowIdentity = ExtractRequiredInt64(
+                projectedRow.Values[mergePlan.StableRowIdentityBindingIndex],
+                tablePlan,
+                mergePlan.StableRowIdentityBindingIndex,
+                "stable row identity"
+            );
+
+            // Extract ordinal. The ordinal column is NOT NULL in the DB and is projected as a
+            // FlattenedWriteValue.Literal carrying an int (sometimes a wider numeric type from
+            // certain backends). Fail closed if the projection produces anything else —
+            // silently defaulting would tie ordering and mask upstream binding mis-mapping.
+            int storedOrdinal = ExtractRequiredInt32(
+                projectedRow.Values[mergePlan.OrdinalBindingIndex],
+                tablePlan,
+                mergePlan.OrdinalBindingIndex,
+                "stored ordinal"
+            );
+
+            // Extract semantic identity parts.
+            var identityParts = mergePlan
+                .SemanticIdentityBindings.Select(binding =>
+                {
+                    var bindingVal = projectedRow.Values[binding.BindingIndex];
+                    var rawValue = bindingVal is FlattenedWriteValue.Literal valLit ? valLit.Value : null;
+                    JsonNode? jsonNode = rawValue is null ? null : JsonValue.Create(rawValue);
+                    return new SemanticIdentityPart(
+                        binding.RelativePath.Canonical,
+                        jsonNode,
+                        IsPresent: rawValue is not null
+                    );
+                })
+                .ToImmutableArray();
+
+            // Build a column-name-keyed view of the hydrated row covering every column on
+            // the table model — including UnifiedAlias columns that the binding-indexed
+            // projection (above) skips because they are not in ColumnBindings. Hidden
+            // key-unification preservation in the matched-row overlay reads MemberPathColumn
+            // and PresenceColumn by physical column name; those are required-UnifiedAlias
+            // per KeyUnificationWritePlanCompiler and would not be present in a binding-only
+            // view.
+            var currentRowByColumnName = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(
+                tablePlan.TableModel,
+                hydratedRow
+            );
+
+            snapshots.Add(
+                new CurrentCollectionRowSnapshot(
+                    stableRowIdentity,
+                    identityParts,
+                    storedOrdinal,
+                    projectedRow,
+                    currentRowByColumnName
+                )
+            );
+        }
+
+        return [.. snapshots.OrderBy(s => s.StoredOrdinal)];
+    }
+
+    /// <summary>
+    /// Compares two <see cref="FlattenedWriteValue"/> instances by their underlying literal
+    /// values for parent-scope filtering.
+    /// </summary>
+    private static bool FlattenedWriteValueEquals(FlattenedWriteValue a, FlattenedWriteValue b)
+    {
+        if (a is FlattenedWriteValue.Literal litA && b is FlattenedWriteValue.Literal litB)
+        {
+            if (litA.Value is null && litB.Value is null)
+            {
+                return true;
+            }
+
+            if (litA.Value is null || litB.Value is null)
+            {
+                return false;
+            }
+
+            // Convert both to string for comparison to handle numeric type mismatches
+            // (e.g., long vs int from different projection paths).
+            return string.Equals(
+                Convert.ToString(litA.Value),
+                Convert.ToString(litB.Value),
+                StringComparison.Ordinal
+            );
+        }
+
+        // Non-literal values don't participate in parent-key filtering.
+        return ReferenceEquals(a, b);
+    }
+
+    /// <summary>
+    /// Describes a projected current-state binding for diagnostic messages. Distinguishes
+    /// non-literal binding shapes from null literals and from typed literal values.
+    /// </summary>
+    private static string DescribeProjectedKind(FlattenedWriteValue value)
+    {
+        if (value is not FlattenedWriteValue.Literal literal)
+        {
+            return value.GetType().Name;
+        }
+        return literal.Value is null ? "null literal" : literal.Value.GetType().Name;
+    }
+
+    /// <summary>
+    /// Extracts a required Int64 value from a projected current-state binding. Throws when
+    /// the binding is not a <see cref="FlattenedWriteValue.Literal"/>, when its value is
+    /// <c>null</c>, or when the value cannot be coerced to <see cref="long"/>. Used for
+    /// columns that are NOT NULL in the DB (stable row identity, ordinal-keyed columns) so
+    /// projection drift surfaces deterministically rather than silently producing 0.
+    /// </summary>
+    private static long ExtractRequiredInt64(
+        FlattenedWriteValue value,
+        TableWritePlan tablePlan,
+        int bindingIndex,
+        string columnRole
+    )
+    {
+        if (value is not FlattenedWriteValue.Literal literal || literal.Value is null)
+        {
+            throw new InvalidOperationException(
+                $"Required {columnRole} column at binding index {bindingIndex} on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
+                    + $"{DescribeProjectedKind(value)}; "
+                    + "expected a non-null numeric literal. Current-state projection drift."
+            );
+        }
+        if (literal.Value is long l)
+        {
+            return l;
+        }
+        try
+        {
+            return Convert.ToInt64(literal.Value);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            throw new InvalidOperationException(
+                $"Required {columnRole} column at binding index {bindingIndex} on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
+                    + $"'{literal.Value.GetType().Name}' that cannot be coerced to Int64. "
+                    + "Current-state projection drift.",
+                ex
+            );
+        }
+    }
+
+    /// <summary>
+    /// Extracts a required Int32 value from a projected current-state binding. Same intent as
+    /// <see cref="ExtractRequiredInt64"/>: fail closed on projection drift rather than default
+    /// to 0 and silently break sort order or duplicate-detection.
+    /// </summary>
+    private static int ExtractRequiredInt32(
+        FlattenedWriteValue value,
+        TableWritePlan tablePlan,
+        int bindingIndex,
+        string columnRole
+    )
+    {
+        if (value is not FlattenedWriteValue.Literal literal || literal.Value is null)
+        {
+            throw new InvalidOperationException(
+                $"Required {columnRole} column at binding index {bindingIndex} on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
+                    + $"{DescribeProjectedKind(value)}; "
+                    + "expected a non-null numeric literal. Current-state projection drift."
+            );
+        }
+        if (literal.Value is int i)
+        {
+            return i;
+        }
+        try
+        {
+            return Convert.ToInt32(literal.Value);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            throw new InvalidOperationException(
+                $"Required {columnRole} column at binding index {bindingIndex} on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
+                    + $"'{literal.Value.GetType().Name}' that cannot be coerced to Int32. "
+                    + "Current-state projection drift.",
+                ex
+            );
+        }
+    }
+
+    /// <summary>
+    /// Resolves a concrete JSON array item node from <paramref name="requestBody"/> using a
+    /// path like <c>$.classPeriods[0]</c>. Used as a fallback when the built-in
+    /// <see cref="RelationalWriteFlattener.TryGetRelativeLeafNode"/> cannot navigate
+    /// array-indexed paths directly.
+    /// </summary>
+    private static JsonNode? ResolveCollectionItemNode(JsonNode requestBody, string requestJsonPath)
+    {
+        // Simple path walker: splits on '[' and ']' to handle array-indexed paths.
+        // E.g. "$.classPeriods[0]" → navigate to "classPeriods" array, then element 0.
+        try
+        {
+            JsonNode? current = requestBody;
+            // Strip leading "$." or "$"
+            var path = requestJsonPath.StartsWith("$.", StringComparison.Ordinal)
+                ? requestJsonPath[2..]
+                : requestJsonPath.TrimStart('$').TrimStart('.');
+
+            foreach (var segment in SplitJsonPathSegments(path))
+            {
+                if (current is null)
+                {
+                    return null;
+                }
+
+                if (int.TryParse(segment, out var arrayIndex))
+                {
+                    current = current is JsonArray arr && arrayIndex < arr.Count ? arr[arrayIndex] : null;
+                }
+                else
+                {
+                    current = current is JsonObject obj ? obj[segment] : null;
+                }
+            }
+
+            return current;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static IEnumerable<string> SplitJsonPathSegments(string path)
+    {
+        // Split "addresses[0]" into ["addresses", "0"]
+        var segments = new List<string>();
+        var remaining = path;
+        while (!string.IsNullOrEmpty(remaining))
+        {
+            var dotIdx = remaining.IndexOf('.');
+            var bracketIdx = remaining.IndexOf('[');
+
+            if (dotIdx == -1 && bracketIdx == -1)
+            {
+                segments.Add(remaining);
+                break;
+            }
+
+            int nextIdx;
+            if (dotIdx == -1)
+            {
+                nextIdx = bracketIdx;
+            }
+            else if (bracketIdx == -1)
+            {
+                nextIdx = dotIdx;
+            }
+            else
+            {
+                nextIdx = Math.Min(dotIdx, bracketIdx);
+            }
+
+            if (nextIdx > 0)
+            {
+                segments.Add(remaining[..nextIdx]);
+            }
+
+            if (nextIdx == bracketIdx)
+            {
+                var closeIdx = remaining.IndexOf(']', bracketIdx);
+                if (closeIdx > bracketIdx + 1)
+                {
+                    segments.Add(remaining[(bracketIdx + 1)..closeIdx]);
+                    remaining = remaining[(closeIdx + 1)..].TrimStart('.');
+                }
+                else
+                {
+                    break;
+                }
+            }
+            else
+            {
+                remaining = remaining[(dotIdx + 1)..];
+            }
+        }
+
+        return segments;
     }
 
     private static IReadOnlyList<object?[]>? TryFindHydratedRowsForTable(

@@ -744,8 +744,8 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Resolves the physical column used for an array uniqueness path, binding to the reference FK column when
-    /// the path matches a reference identity component.
+    /// Resolves the physical column used for an array uniqueness path, binding to the reference FK column
+    /// when the path matches a reference identity component.
     /// </summary>
     private static DbColumnName ResolveArrayUniquenessColumn(
         DbTableModel table,
