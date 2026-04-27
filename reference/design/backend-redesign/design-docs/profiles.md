@@ -20,6 +20,7 @@ This document is the API profiles deep dive for `overview.md`, focusing on:
 - [Scope](#scope)
 - [Goals and Constraints](#goals-and-constraints)
 - [Terms](#terms)
+- [Profile Namespace](#profile-namespace)
 - [Legacy Semantics to Preserve](#legacy-semantics-to-preserve)
 - [Ownership Boundary](#ownership-boundary)
 - [Everything DMS Core Is Expected to Own](#everything-dms-core-is-expected-to-own)
@@ -90,6 +91,22 @@ Related redesign discussion:
 - **Semantic collection identity**: the compiled non-empty key used to match persisted and requested collection items within a parent scope.
 - **Creatability**: the Core-owned answer to the "create new visible data here?" question, surfaced as `RootResourceCreatable`, `RequestScopeState.Creatable`, and `VisibleRequestCollectionItem.Creatable`.
 - **Deterministic post-merge sibling-order rule**: the rule used by both write execution and no-op detection to merge visible rows back into the full stored sibling sequence.
+
+## Profile Namespace
+
+The profile DSL addresses schema-authored members only: properties, references, collections, embedded objects, and extension members of the resource schema. Server-generated fields are not profile-addressable.
+
+Canonical server-generated field set: `id`, `link`, `_etag`, `_lastModifiedDate`.
+
+Consequences:
+
+- **Read**: server-generated fields pass through readable-profile projection whenever their enclosing object survives projection. This is a consequence of the namespace boundary, not a per-field exception. The readable projector does not decide whether to emit them.
+- **Write**: server-generated fields are rejected at input (pre-existing behavior). A writable profile has no surface to grant or deny them.
+- **Profile load validation**: a profile definition that references any server-generated field name in `MemberSelection.IncludeOnly` or `MemberSelection.ExcludeOnly` fails validation at profile load, peer to the existing "identity fields cannot be excluded" rule.
+
+This rule is what lets feature-scoped contracts like [link-injection.md](link-injection.md) specify `link` emission without a cross-layer profile carve-out: `link` is outside the profile namespace, so the readable projector preserves it by construction and no feature-local projector task is required.
+
+ODS enforces the equivalent rule structurally: server-generated fields do not appear in the resource-model dictionaries (`PropertyByName`, `ReferenceByName`, `CollectionByName`, `EmbeddedObjectByName`) that the profile filter validates against, so a profile XML naming `link` fails ODS profile validation at `ProfileResourceMembersFilterProvider.ValidateMembers`.
 
 ## Legacy Semantics to Preserve
 
@@ -1038,6 +1055,7 @@ Related redesign discussion:
 
 - invalid profile definitions fail metadata validation/compilation,
 - writable profiles that hide required semantic-identity fields fail validation/compilation rather than falling back at runtime,
+- profile definitions that reference server-generated field names (`id`, `link`, `_etag`, `_lastModifiedDate`) in `MemberSelection.IncludeOnly` or `MemberSelection.ExcludeOnly` fail validation/compilation at profile load; see [Profile Namespace](#profile-namespace),
 - invalid request usage of a readable vs writable profile fails before persistence logic runs,
 - Core/backend contract mismatches in emitted scope/row addresses or stored-side visibility metadata fail deterministically before DML or readable response shaping continues; backend does not guess or recover by ordinal,
 - submitted collection items that violate writable profile filters fail request validation,
