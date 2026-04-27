@@ -350,6 +350,65 @@ public class Given_Planner_with_visible_stored_null_identity_and_current_missing
             .Contain("reverse stored coverage");
 }
 
+[TestFixture]
+public class Given_Planner_with_equivalent_identity_values_and_different_relative_path_syntax
+{
+    private ProfileTopLevelCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var visibleIdentity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
+        var currentIdentity = Slice4Builders.BuildSemanticIdentity("$.addressId", "A1");
+        var currentRow = Slice4Builders.BuildCurrentCollectionRowSnapshot(
+            currentIdentity,
+            storedOrdinal: 1,
+            stableRowIdentity: 10L
+        );
+        var candidate = Slice4Builders.BuildCollectionWriteCandidate(
+            "$.addresses[*]",
+            visibleIdentity,
+            requestOrder: 0
+        );
+        var requestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
+            "$.addresses[*]",
+            visibleIdentity,
+            creatable: true,
+            requestJsonPath: "$.addresses[0]"
+        );
+        var storedRow = Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", visibleIdentity);
+
+        var input = new ProfileTopLevelCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [candidate],
+            VisibleRequestItems: [requestItem],
+            VisibleStoredRows: [storedRow],
+            CurrentRows: [currentRow]
+        );
+
+        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_returns_Success() =>
+        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+
+    [Test]
+    public void It_matches_the_current_row_by_ordered_presence_and_value()
+    {
+        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var entry = success
+            .Plan.Sequence.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
+            .Subject;
+
+        entry.StoredRow.StableRowIdentity.Should().Be(10L);
+    }
+}
+
 // ────────────────────────────────────────────────────────────────────────────────
 // Invariant 2 — Request-side coverage
 // ────────────────────────────────────────────────────────────────────────────────

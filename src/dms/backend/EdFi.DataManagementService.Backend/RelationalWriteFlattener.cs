@@ -1877,5 +1877,5 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         string.Join("|", identity.Select(part => FormatSemanticIdentityPartForKey(part)));
 
     private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
-        $"{part.RelativePath}:{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
+        $"{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
 }

@@ -976,22 +976,24 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     }
 
     /// <summary>
-    /// Builds a string key from the candidate's semantic identity parts, preserving
+    /// Builds an order-based key from the candidate's semantic identity parts, preserving
     /// missing-vs-explicit-null semantics. Mirrors the planner's <c>BuildCandidateIdentityKey</c>.
     /// </summary>
     private static string BuildCandidateIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
         BuildAddressIdentityKey(identityParts);
 
     /// <summary>
-    /// Builds a string key from a <see cref="CollectionRowAddress"/>'s semantic identity parts,
-    /// preserving missing-vs-explicit-null semantics.
-    /// Mirrors the planner's <c>BuildSemanticIdentityKey</c>.
+    /// Builds an order-based key from a <see cref="CollectionRowAddress"/>'s semantic identity
+    /// parts, preserving missing-vs-explicit-null semantics. Mirrors the planner's
+    /// <c>BuildSemanticIdentityKey</c>. Relative path text is omitted because Core visible-row
+    /// addresses use bare scope-relative paths while backend candidates/current rows use
+    /// merge-plan paths that may retain the <c>$.</c> prefix.
     /// </summary>
     private static string BuildAddressIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
         string.Join("|", identityParts.Select(FormatSemanticIdentityPartForKey));
 
     private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
-        $"{part.RelativePath}:{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
+        $"{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
 
     /// <summary>
     /// Current DB projections only carry stored column values, so a null semantic identity value
@@ -1064,10 +1066,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     }
 
     private static string BuildSemanticIdentityValueKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
-        string.Join(
-            "|",
-            identityParts.Select(part => $"{part.RelativePath}:{part.Value?.ToJsonString() ?? "null"}")
-        );
+        string.Join("|", identityParts.Select(part => part.Value?.ToJsonString() ?? "null"));
 
     // -- Document-reference canonicalization helpers ------------------------
 

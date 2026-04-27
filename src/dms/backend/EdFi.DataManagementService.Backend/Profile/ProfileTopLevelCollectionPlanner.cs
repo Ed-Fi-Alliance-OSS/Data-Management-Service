@@ -500,9 +500,12 @@ internal static class ProfileTopLevelCollectionPlanner
     }
 
     /// <summary>
-    /// Builds a string key from a <see cref="SemanticIdentityPart"/> array, preserving
+    /// Builds an order-based key from a <see cref="SemanticIdentityPart"/> array, preserving
     /// missing-vs-explicit-null semantics for current-row, visible-stored, visible-request-item,
-    /// and candidate identity lookups.
+    /// and candidate identity lookups. Relative paths are intentionally omitted from the key:
+    /// Core emits bare scope-relative paths while backend merge plans retain <c>$.</c>-prefixed
+    /// relative paths. The contract validator owns path compatibility; the planner only needs
+    /// deterministic identity part order, presence, and value.
     /// </summary>
     private static string BuildSemanticIdentityKey(ImmutableArray<SemanticIdentityPart> identity) =>
         string.Join("|", identity.Select(FormatSemanticIdentityPartForKey));
@@ -540,7 +543,7 @@ internal static class ProfileTopLevelCollectionPlanner
         );
 
     private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
-        $"{part.RelativePath}:{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
+        $"{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
 }
 
 /// <summary>
