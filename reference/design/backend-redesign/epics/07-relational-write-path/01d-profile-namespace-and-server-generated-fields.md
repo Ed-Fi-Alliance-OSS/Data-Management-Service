@@ -14,7 +14,7 @@ The design contract landed alongside `DMS-622`. This story delivers the runtime 
 - a canonical, shared constant set of server-generated field names in Core,
 - a validator rule in `ProfileDataValidator` that rejects profiles naming any of those fields,
 - a defensive pass-through short-circuit in `ReadableProfileProjector` and `ProfileResponseFilter`, and
-- the corresponding unit and E2E tests.
+- the corresponding unit and integration tests.
 
 This story is a prerequisite for the runtime behavior of the link-injection implementation story (`06a-link-injection-implementation.md`, Jira TBD). That story does not carry a feature-local projector task for `link` preservation; preservation is a consequence of the contract enforced here. The `DMS-622` design spike that authored the link-injection contract likewise does not own preservation behavior — it assumes the contract defined in this story.
 
@@ -41,7 +41,7 @@ Coordinates with:
 - `src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs:23-29` no longer defines a private `_serverGeneratedFields` literal; it imports the shared constant. Generated OpenAPI schema output is unchanged (regression-tested).
 - `src/dms/core/EdFi.DataManagementService.Core/Profile/ProfileDataValidator.cs` rejects, with a validation error, any profile whose `MemberSelection.IncludeOnly` or `MemberSelection.ExcludeOnly` set contains a server-generated field name. The rejection surfaces through the same validation-result shape as the existing "identity fields cannot be excluded" error. Validation runs at profile load via `CachedProfileService.GetOrFetchProfileStoreAsync`; there is no per-request cost.
 - `src/dms/core/EdFi.DataManagementService.Core/Profile/ReadableProfileProjector.cs` and `Profile/ProfileResponseFilter.cs` short-circuit on server-generated field names before consulting `PropertyNameSet`, so those fields pass through regardless of `IncludeOnly` membership. This guard is defensive (the validator is the primary enforcement point) but is required so a loosened validator cannot silently degrade response shapes.
-- Link preservation under readable profiles is asserted by the tests introduced in this story rather than by the link-injection implementation story (`06a-link-injection-implementation.md`). That story does not carry a `link`-preservation acceptance criterion or feature-local projector task.
+- Link preservation under readable profiles is enforced by the projector short-circuit owned here, not by a feature-local projector task in `06a-link-injection-implementation.md`. This story asserts preservation at the unit and integration layers (against fixtures whose `link` subtree is hand-populated, since runtime link emission is delivered by `06a`); the end-to-end scenario verifying preservation under real link emission is owned by `06a`'s test suite, where link emission actually runs.
 - Unit tests in `ProfileDataValidatorTests` cover:
   - a profile naming `link`, `id`, `_etag`, or `_lastModifiedDate` in `IncludeOnly` fails validation,
   - the same names in `ExcludeOnly` fail validation,
@@ -52,7 +52,7 @@ Coordinates with:
   - a fixture containing root-level `_etag` and `_lastModifiedDate` with `IncludeOnly` not listing them — both survive,
   - a regression fixture asserting that ordinary members still filter exactly as before (the short-circuit must not over-preserve).
 - `ProfileOpenApiSpecificationFilterTests` includes a regression test asserting that the refactor to consume the shared constant does not change writable- or readable-schema output for representative resources.
-- An E2E scenario in `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Features/.../ProfileReferenceFiltering.feature` stores a document containing a nested reference `link` and confirms the profiled GET response still includes the `link`.
+- An integration test in `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ProfileFilteringMiddlewareTests.cs` (or a sibling test file) constructs a request body whose nested reference carries a hand-populated `link` subtree, runs the real `ProfileFilteringMiddleware` with `ProfileResponseFilter` under an `IncludeOnly` profile that does not list `link`, and asserts the served body still includes `link` on the surviving reference. The hand-populated subtree stands in for runtime link emission until `06a-link-injection-implementation.md` lands; this story does not introduce an E2E scenario, because end-to-end coverage of profile preservation depends on real link emission and therefore belongs to `06a`'s test suite.
 
 ## Tasks
 
@@ -60,4 +60,4 @@ Coordinates with:
 2. Extend `Profile/ProfileDataValidator.cs` with the server-generated-field rejection rule. Surface the error through the same validation-result shape as the identity-field rule. Confirm it is invoked from `CachedProfileService.GetOrFetchProfileStoreAsync`; wire if needed.
 3. Add the pass-through short-circuit in `Profile/ReadableProfileProjector.cs` and `Profile/ProfileResponseFilter.cs` before the existing `PropertyNameSet.Contains` check.
 4. Add unit tests in `ProfileDataValidatorTests`, `ProfileResponseFilterTests`, `ReadableProfileProjectorTests`, and the regression test in `ProfileOpenApiSpecificationFilterTests`.
-5. Add the E2E scenario in `ProfileReferenceFiltering.feature` covering a nested reference `link` under a readable profile that does not list `link`.
+5. Add the integration test in `Middleware/ProfileFilteringMiddlewareTests.cs` (or a sibling test file) that runs the real middleware-plus-filter pipeline against a fixture whose nested reference carries a hand-populated `link` subtree under an `IncludeOnly` profile that does not list `link`, asserting `link` survives on the served body. Do not introduce an E2E scenario in this story; end-to-end coverage of profile preservation under real link emission belongs to `06a-link-injection-implementation.md`.

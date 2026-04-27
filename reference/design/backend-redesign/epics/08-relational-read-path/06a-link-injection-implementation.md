@@ -175,6 +175,15 @@ Soft dependency:
 - Caller-agnostic cache test: two callers who can both read the same source document — one
   authorized for the target, one not — receive the same cached intermediate JSON and the same
   `_etag` before profile projection and flag-off stripping are applied per caller.
+- An E2E scenario in
+  `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Profiles/ProfileReferenceFiltering.feature`
+  POSTs a document with a fully-defined nested document reference, GETs it under a readable
+  profile whose `MemberSelection.IncludeOnly` does not list `link`, and asserts the response
+  body still carries `link.rel` and `link.href` on the surviving reference. The profile
+  namespace contract that makes preservation work is enforced by
+  `../07-relational-write-path/01d-profile-namespace-and-server-generated-fields.md`; the
+  end-to-end assertion lives in this story because real link emission is delivered here, and
+  01d cannot run an E2E that depends on emission before this story lands.
 
 ## Tasks
 
@@ -234,10 +243,12 @@ Soft dependency:
    fingerprint, no advisory lock, no `dms.DocumentCachePlanFingerprint` table, no cache truncate,
    and no `ResourceLinksFlag` column are introduced. Flag flips are handled implicitly through
    `_etag` derivation from the served body.
-8. Tests: add unit, fixture, integration, and contract tests per the acceptance criteria. Include
-   feature-flag-on and flag-off coverage; a flag-flip-across-restart regression; source-readable
-   / target-denied authorization coverage; the caller-agnostic cache test; and an ODS baseline
-   parity check scoped to document references.
+8. Tests: add unit, fixture, integration, contract, and E2E tests per the acceptance criteria.
+   Include feature-flag-on and flag-off coverage; a flag-flip-across-restart regression;
+   source-readable / target-denied authorization coverage; the caller-agnostic cache test; an ODS
+   baseline parity check scoped to document references; and the profile-preservation E2E scenario
+   in `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Profiles/ProfileReferenceFiltering.feature`
+   relocated from `../07-relational-write-path/01d-profile-namespace-and-server-generated-fields.md`.
 
 ## Deferred Follow-On Work
 
