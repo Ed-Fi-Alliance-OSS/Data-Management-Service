@@ -22,7 +22,10 @@ internal static class PlanContractArgumentValidator
     public static T RequireNotNull<T>(T? value, string parameterName)
         where T : class
     {
-        ArgumentNullException.ThrowIfNull(value, parameterName);
+        if (value is null)
+        {
+            throw new ArgumentNullException(parameterName);
+        }
 
         return value;
     }

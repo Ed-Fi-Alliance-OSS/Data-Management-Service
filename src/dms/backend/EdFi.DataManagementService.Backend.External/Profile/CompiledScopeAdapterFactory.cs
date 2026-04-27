@@ -158,7 +158,9 @@ public static class CompiledScopeAdapterFactory
     {
         var parentTableScope = FindClosestTableAncestor(jsonScope, tableByScope);
         if (parentTableScope is null)
+        {
             return [];
+        }
 
         var parentTable = tableByScope[parentTableScope];
         var scopePrefix = jsonScope + ".";
@@ -189,7 +191,9 @@ public static class CompiledScopeAdapterFactory
         {
             var candidate = string.Join(".", segments[..len]);
             if (tableByScope.ContainsKey(candidate))
+            {
                 return candidate;
+            }
         }
 
         return tableByScope.ContainsKey("$") ? "$" : null;

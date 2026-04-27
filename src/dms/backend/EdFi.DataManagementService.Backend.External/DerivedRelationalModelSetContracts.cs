@@ -98,11 +98,13 @@ public sealed record ConcreteResourceModel(
     /// <summary>
     /// Query-field metadata extracted from ApiSchema.json for relational GET-many compilation.
     /// </summary>
+#pragma warning disable IDE0055
     public IReadOnlyDictionary<
         string,
         RelationalQueryFieldMapping
     > QueryFieldMappingsByQueryField { get; init; } =
         new Dictionary<string, RelationalQueryFieldMapping>(StringComparer.Ordinal);
+#pragma warning restore IDE0055
 }
 
 /// <summary>
