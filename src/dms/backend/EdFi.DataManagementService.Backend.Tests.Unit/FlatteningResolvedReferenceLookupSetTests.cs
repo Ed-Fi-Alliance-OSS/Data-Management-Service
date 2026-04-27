@@ -449,6 +449,94 @@ public class Given_FlatteningResolvedReferenceLookupSet
             );
     }
 
+    [Test]
+    public void It_resolves_descriptor_id_by_uri_independent_of_published_json_path()
+    {
+        // Regression: the URI lookup must hit on (resource, URI) alone — the design's
+        // "URI in cache" supported case (Slice 4 fence,
+        // 04-top-level-collection-merge.md:51-69) does not narrow by JSON path. The
+        // resolver invariant guarantees a given URI resolves to a single id within a
+        // request regardless of which path it appeared at.
+        var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
+            _writePlan,
+            new ResolvedReferenceSet(
+                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+                {
+                    // URI published at an inline reference path. A stored top-level
+                    // collection row whose column lives at a different path
+                    // ($.sections[*].schoolTypeDescriptor) must still canonicalize
+                    // via this cache entry.
+                    [new JsonPath("$.sections[0].schoolReference.schoolTypeDescriptor")] =
+                        CreateResolvedDescriptorReferenceWithUri(
+                            _schoolTypeDescriptorResourceInfo,
+                            "$.sections[0].schoolReference.schoolTypeDescriptor",
+                            "uri://ed-fi.org/SchoolTypeDescriptor#Elementary",
+                            documentId: 501L
+                        ),
+                },
+                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+                InvalidDocumentReferences: [],
+                InvalidDescriptorReferences: [],
+                DocumentReferenceOccurrences: [],
+                DescriptorReferenceOccurrences: []
+            )
+        );
+
+        lookupSet
+            .TryGetDescriptorIdByUri(
+                _schoolTypeDescriptorResource,
+                "uri://ed-fi.org/SchoolTypeDescriptor#Elementary",
+                out var descriptorId
+            )
+            .Should()
+            .BeTrue();
+        descriptorId.Should().Be(501L);
+
+        // Casing tolerance: lookup must match regardless of caller casing because
+        // the resolver pipeline lowercases descriptor URIs before publishing them.
+        lookupSet
+            .TryGetDescriptorIdByUri(
+                _schoolTypeDescriptorResource,
+                "URI://ED-FI.ORG/SchoolTypeDescriptor#elementary",
+                out var lowercasedId
+            )
+            .Should()
+            .BeTrue();
+        lowercasedId.Should().Be(501L);
+
+        // Negative: a different descriptor resource for the same URI string must miss.
+        lookupSet
+            .TryGetDescriptorIdByUri(
+                _schoolResource,
+                "uri://ed-fi.org/SchoolTypeDescriptor#Elementary",
+                out _
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    private static ResolvedDescriptorReference CreateResolvedDescriptorReferenceWithUri(
+        BaseResourceInfo resourceInfo,
+        string path,
+        string uri,
+        long documentId
+    )
+    {
+        return new ResolvedDescriptorReference(
+            new DescriptorReference(
+                resourceInfo,
+                new DocumentIdentity([
+                    new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
+                ]),
+                new ReferentialId(Guid.NewGuid()),
+                new JsonPath(path)
+            ),
+            documentId,
+            13
+        );
+    }
+
     private static ResolvedReferenceSet CreateResolvedReferenceSet()
     {
         return new ResolvedReferenceSet(

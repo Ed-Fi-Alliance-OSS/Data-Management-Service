@@ -25,7 +25,6 @@ internal sealed class FlatteningResolvedReferenceLookupSet
 
     private readonly record struct DescriptorUriLookupKey(
         QualifiedResourceName DescriptorResource,
-        string WildcardPath,
         string Uri
     );
 
@@ -135,22 +134,22 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     /// request-cycle resolution cache; returns <c>false</c> otherwise.
     /// </summary>
     /// <remarks>
-    /// The cache is keyed by the lowercase form of the URI because the resolver pipeline
-    /// (<c>DescriptorExtractor.CreateDescriptorReference</c>) lowercases descriptor URIs
-    /// before publishing them. Normalize the input URI here so callers can pass the raw
-    /// stored-document or request value without prior normalization.
+    /// The cache is keyed by descriptor resource and the lowercase form of the URI; the
+    /// JSON path the URI was published at is intentionally not part of the key, because
+    /// the resolver invariant guarantees a given URI resolves to a single id within a
+    /// request regardless of where it appeared. Lowercase normalization matches the
+    /// resolver pipeline (<c>DescriptorExtractor.CreateDescriptorReference</c>), letting
+    /// callers pass the raw stored-document or request value without prior normalization.
     /// </remarks>
     public bool TryGetDescriptorIdByUri(
         QualifiedResourceName descriptorResource,
-        string wildcardPath,
         string uri,
         out long descriptorId
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(wildcardPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(uri);
 
-        var key = new DescriptorUriLookupKey(descriptorResource, wildcardPath, uri.ToLowerInvariant());
+        var key = new DescriptorUriLookupKey(descriptorResource, uri.ToLowerInvariant());
         return _descriptorIdByUri.TryGetValue(key, out descriptorId);
     }
 
@@ -160,13 +159,12 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     {
         Dictionary<DescriptorUriLookupKey, long> result = [];
 
-        foreach (var entry in resolvedReferences.SuccessfulDescriptorReferencesByPath)
+        foreach (var resolved in resolvedReferences.SuccessfulDescriptorReferencesByPath.Values)
         {
-            var parsedPath = RelationalJsonPathSupport.ParseConcretePath(entry.Key);
             var descriptorResource = RelationalWriteSupport.ToQualifiedResourceName(
-                entry.Value.Reference.ResourceInfo
+                resolved.Reference.ResourceInfo
             );
-            var identityElements = entry.Value.Reference.DocumentIdentity.DocumentIdentityElements;
+            var identityElements = resolved.Reference.DocumentIdentity.DocumentIdentityElements;
 
             // Descriptor identity has exactly one element whose IdentityValue is the URI string.
             if (identityElements.Length == 0)
@@ -183,17 +181,13 @@ internal sealed class FlatteningResolvedReferenceLookupSet
 
             // Normalize the URI to lowercase so lookup matches whether the caller has the
             // already-lowercased resolver value or the raw stored-document casing.
-            var lookupKey = new DescriptorUriLookupKey(
-                descriptorResource,
-                parsedPath.WildcardPath,
-                uri.ToLowerInvariant()
-            );
+            var lookupKey = new DescriptorUriLookupKey(descriptorResource, uri.ToLowerInvariant());
 
             // Use TryAdd to handle duplicate URIs mapping to the same id (same descriptor
-            // referenced at multiple positions). If different ids appear for the same URI
-            // and resource, the first wins — the resolver invariant already ensures a given
-            // URI resolves to a single id within a request.
-            result.TryAdd(lookupKey, entry.Value.DocumentId);
+            // referenced at multiple positions/paths). The resolver invariant guarantees a
+            // given URI resolves to a single id within a request, so first-write-wins is
+            // safe regardless of which path the URI was first observed at.
+            result.TryAdd(lookupKey, resolved.DocumentId);
         }
 
         return result;

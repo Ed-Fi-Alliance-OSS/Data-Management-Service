@@ -1600,10 +1600,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         if (
             string.IsNullOrEmpty(uri)
             || column.TargetResource is null
-            || column.SourceJsonPath is null
             || !resolvedReferenceLookups.TryGetDescriptorIdByUri(
                 column.TargetResource.Value,
-                column.SourceJsonPath.Value.Canonical,
                 uri,
                 out descriptorId
             )
@@ -1941,7 +1939,6 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             if (
                 resolvedReferenceLookups.TryGetDescriptorIdByUri(
                     column.TargetResource.Value,
-                    wildcardPath,
                     uri,
                     out var descriptorId
                 )
