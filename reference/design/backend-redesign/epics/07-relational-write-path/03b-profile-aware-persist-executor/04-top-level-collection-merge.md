@@ -49,17 +49,21 @@ The slice fence remains in place for any profiled write involving:
 - profiled guarded no-op.
 
 In addition, this slice carries a single narrow runtime fail-closed fence inside
-the supported top-level collection path: descriptor-only top-level collection
-identity when hidden-row interleaving exists and a stored descriptor URI is
-absent from the request-cycle descriptor resolution cache. The common descriptor
-cases — URI in cache, mixed scalar+descriptor identity, and descriptor-only
-identity without hidden rows — remain supported. The narrow case is structurally
-ambiguous (no scalar parts to match on, and current-row count differs from
-stored-row count so positional correspondence does not hold) and is converted to
-a deterministic throw at the merge boundary rather than silently producing an
-incorrect descriptor id. A later slice may widen support by seeding the
-descriptor resolver from the DB descriptor projection or by reverse-mapping
-DB descriptor ids to URIs.
+the supported top-level collection path: top-level collection identity where a
+stored descriptor URI is absent from the request-cycle descriptor resolution
+cache, scalar-part matching cannot uniquely identify the corresponding current
+row (descriptor-only identity, or mixed identity where multiple current rows
+share the same scalar values and differ only on the descriptor part), AND
+current-row count differs from stored-row count so positional correspondence
+does not hold (hidden rows interleaved). The common descriptor cases — URI in
+cache, mixed scalar+descriptor identity with disambiguating scalars,
+duplicate-scalar/different-descriptor identity without hidden rows, and
+descriptor-only identity without hidden rows — remain supported via
+scalar-parts matching and count-equal positional fallback. The narrow case is
+structurally ambiguous and is converted to a deterministic throw at the merge
+boundary rather than silently producing an incorrect descriptor id. A later
+slice may widen support by seeding the descriptor resolver from the DB
+descriptor projection or by reverse-mapping DB descriptor ids to URIs.
 
 ## Design Constraints
 

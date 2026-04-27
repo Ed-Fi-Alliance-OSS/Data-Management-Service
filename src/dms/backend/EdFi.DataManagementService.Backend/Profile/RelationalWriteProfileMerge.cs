@@ -1689,12 +1689,13 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Slice 4 does not add an executor-level fence on descriptor-backed top-level collection
     /// identity — rejecting at the planner/executor would block the common cases this method
     /// handles correctly (URI in cache; mixed scalar+descriptor identity; descriptor-only
-    /// without hidden rows). Instead, the single structurally-ambiguous case — descriptor-only
-    /// identity with hidden rows interleaved in current rows and a URI cache miss — is narrowed
-    /// to a runtime fail-closed throw below. That combination is rare in standard Ed-Fi
-    /// profiles but must not silently return an incorrect descriptor id. A later slice may
-    /// widen support by seeding the descriptor resolver from the stored body or adding a
-    /// planner-level reject; until then the throw is the Slice 4 fence.</para>
+    /// without hidden rows). Instead, the single structurally-ambiguous case — any identity
+    /// shape with hidden rows interleaved in current rows and a URI cache miss for a stored
+    /// row whose scalar match is ambiguous or absent — is narrowed to a runtime fail-closed
+    /// throw below. That combination is rare in standard Ed-Fi profiles but must not silently
+    /// return an incorrect descriptor id. A later slice may widen support by seeding the
+    /// descriptor resolver from the stored body or adding a planner-level reject; until then
+    /// the throw is the Slice 4 fence.</para>
     ///
     /// <para><b>Cache-miss fallback (delete-by-absence support):</b>
     /// When a stored URI is not in the request-cycle cache — which happens during a PUT that
@@ -1705,19 +1706,21 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     ///
     /// <para><b>Matching strategy:</b>
     /// <list type="number">
-    ///   <item>If the identity has non-descriptor (scalar) parts: match by those scalar parts
-    ///   across <paramref name="currentRows"/> to find the corresponding current row, then copy
-    ///   its descriptor id at the same index position.</item>
-    ///   <item>If the identity is descriptor-only AND
-    ///   <c>currentRows.Length == storedRows.Length</c>: use positional correspondence —
-    ///   <c>VisibleStoredRows[storedRowIndex]</c> maps to <c>currentRows[storedRowIndex]</c>.
-    ///   This holds because both arrays are ordered by stored-ordinal (planner invariants
-    ///   <c>ValidateStoredOrdinalOrder</c> + <c>ProjectCurrentRowsForScope OrderBy</c>) and no
-    ///   hidden rows can interleave when the identity is descriptor-only (all rows are visible
-    ///   since there are no scalar parts to hide on).</item>
-    ///   <item>If the identity is descriptor-only AND the counts differ (hidden rows are
-    ///   interleaved — structurally possible but not expected in practice): throw with a
-    ///   diagnostic message rather than silently producing an incorrect result.</item>
+    ///   <item>Scalar-part match (when identity has scalar parts): find the unique current
+    ///   row whose semantic identity matches all scalar parts and copy its descriptor id at
+    ///   the same index position. If multiple current rows share the same scalar values
+    ///   (duplicate-scalar/different-descriptor shape) or none match, fall through to
+    ///   positional matching.</item>
+    ///   <item>Positional match: when
+    ///   <c>currentRows.Length == storedRows.Length</c> (no hidden rows in scope), use
+    ///   <c>currentRows[storedRowIndex]</c> directly. Both arrays are ordered by
+    ///   stored-ordinal (planner invariants <c>ValidateStoredOrdinalOrder</c> +
+    ///   <c>ProjectCurrentRowsForScope OrderBy</c>), and count equality is equivalent to "no
+    ///   hidden rows interleaved", so positional correspondence holds for both
+    ///   descriptor-only and mixed scalar+descriptor identity.</item>
+    ///   <item>If counts differ (hidden rows are interleaved — structurally possible but not
+    ///   expected in practice): throw with a diagnostic message rather than silently
+    ///   producing an incorrect result.</item>
     /// </list></para>
     /// </summary>
     private static ImmutableArray<SemanticIdentityPart> CanonicalizeStoredIdentityParts(
@@ -1810,8 +1813,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                         + $"for column '{column.ColumnName.Value}' (path '{wildcardPath}') "
                         + "was not found in the request-cycle descriptor resolution cache and could not "
                         + "be matched against current rows. "
-                        + "This can happen when the identity is descriptor-only, the stored rows contain "
-                        + "hidden rows interleaved with visible rows, and the cache does not hold the URI. "
+                        + "This can happen when scalar matching is ambiguous or absent (or the identity is "
+                        + "descriptor-only), the stored rows contain hidden rows interleaved with visible "
+                        + "rows (current row count differs from stored row count), and the cache does not "
+                        + "hold the URI. "
                         + $"Current rows count: {currentRows.Length}, stored rows count: {storedRowsLength}, stored row index: {storedRowIndex}."
                 );
             }
@@ -1831,21 +1836,24 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Attempts to resolve a descriptor Int64 id for <paramref name="descriptorIdx"/> in
     /// <paramref name="identity"/> by matching against <paramref name="currentRows"/>.
     ///
-    /// <para>Two strategies are tried in order:</para>
+    /// <para>Two strategies are tried in order, regardless of identity shape:</para>
     /// <list type="number">
     ///   <item>Scalar-part matching: if the identity has non-descriptor parts at positions
     ///   not in <paramref name="descriptorIndices"/>, find the unique current row whose
     ///   semantic identity matches all scalar parts and copy its descriptor part at the same
-    ///   index position.</item>
-    ///   <item>Positional matching (descriptor-only): if no scalar parts exist AND
+    ///   index position. If no scalar parts exist, this strategy is skipped. If multiple
+    ///   current rows share the same scalar values (duplicate scalar parts that differ only
+    ///   on the descriptor part) or no scalar match is found, fall through to Strategy 2.</item>
+    ///   <item>Positional matching: if
     ///   <paramref name="currentRows"/><c>.Length == </c><paramref name="storedRowsLength"/>
-    ///   (all stored rows are covered by current rows one-to-one), use
-    ///   <c>currentRows[storedRowIndex]</c> directly. When the counts differ, the positional
-    ///   assumption does not hold (a profile Filter has hidden some stored rows while all DB
-    ///   rows remain in <paramref name="currentRows"/>), so <c>null</c> is returned and the
-    ///   caller throws rather than silently picking the wrong row.</item>
+    ///   (all stored rows are covered by current rows one-to-one — equivalent to "no hidden
+    ///   rows in scope"), use <c>currentRows[storedRowIndex]</c> directly. When the counts
+    ///   differ, hidden rows interleave with visible rows and positional correspondence does
+    ///   not hold, so <c>null</c> is returned and the caller throws rather than silently
+    ///   picking the wrong row.</item>
     /// </list>
-    /// <para>Returns <c>null</c> when no match is found and the caller should throw.</para>
+    /// <para>Returns <c>null</c> when neither strategy produces a result and the caller
+    /// should throw.</para>
     /// </summary>
     private static long? TryResolveDescriptorIdFromCurrentRows(
         ImmutableArray<SemanticIdentityPart> identity,
@@ -1867,84 +1875,24 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             .Where(i => !descriptorIndices.Contains(i))
             .ToList();
 
+        // Strategy 1: match by scalar parts (skipped when identity is descriptor-only).
+        // Find the unique current row whose semantic identity matches all scalar parts at
+        // the same index positions as the stored row's scalar parts. If the match is
+        // ambiguous (two rows share the same scalar values but differ on the descriptor
+        // part) or no row matches, fall through to Strategy 2 — count-equal positional
+        // correspondence safely disambiguates duplicate-scalar/different-descriptor rows
+        // when no hidden rows are interleaved.
         if (scalarIndices.Count > 0)
         {
-            // Strategy 1: match by scalar parts.
-            // Find the unique current row whose semantic identity matches all scalar parts at
-            // the same index positions as the stored row's scalar parts.
-            CurrentCollectionRowSnapshot? matched = null;
-            foreach (var currentRow in currentRows)
+            var scalarMatchId = TryResolveByScalarMatch(identity, scalarIndices, descriptorIdx, currentRows);
+
+            if (scalarMatchId is not null)
             {
-                var currentIdentity = currentRow.SemanticIdentityInOrder;
-                if (currentIdentity.Length != identity.Length)
-                {
-                    continue;
-                }
-
-                var allScalarsMatch = true;
-                foreach (var scalarIdx in scalarIndices)
-                {
-                    var storedPart = identity[scalarIdx];
-                    var currentPart = currentIdentity[scalarIdx];
-
-                    // Both must be present and have the same value.
-                    if (!storedPart.IsPresent || !currentPart.IsPresent)
-                    {
-                        allScalarsMatch = false;
-                        break;
-                    }
-
-                    var storedJson = storedPart.Value?.ToJsonString();
-                    var currentJson = currentPart.Value?.ToJsonString();
-                    if (!string.Equals(storedJson, currentJson, StringComparison.Ordinal))
-                    {
-                        allScalarsMatch = false;
-                        break;
-                    }
-                }
-
-                if (!allScalarsMatch)
-                {
-                    continue;
-                }
-
-                if (matched is not null)
-                {
-                    // Ambiguous match — more than one current row has the same scalar parts.
-                    // Cannot safely choose one; return null and let the caller throw.
-                    return null;
-                }
-
-                matched = currentRow;
+                return scalarMatchId;
             }
-
-            if (matched is null)
-            {
-                return null;
-            }
-
-            // Extract the descriptor id at the same index position from the matched current row.
-            var matchedIdentity = matched.SemanticIdentityInOrder;
-            if (descriptorIdx >= matchedIdentity.Length)
-            {
-                return null;
-            }
-
-            var matchedPart = matchedIdentity[descriptorIdx];
-            if (!matchedPart.IsPresent || matchedPart.Value is null)
-            {
-                return null;
-            }
-
-            if (matchedPart.Value is JsonValue matchedJv && matchedJv.TryGetValue<long>(out var matchedId))
-            {
-                return matchedId;
-            }
-
-            return null;
         }
 
-        // Strategy 2: positional matching (descriptor-only identity).
+        // Strategy 2: positional matching.
         //
         // This branch is an inference under an upstream ordering contract, not a validation
         // mechanism. It assumes BOTH:
@@ -1965,12 +1913,17 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // rewritten values. A later slice may add the reverse-resolution check; until then
         // this is a documented residual risk fenced behind the count-equality guard.
         //
-        // Safe ONLY when currentRows.Length == storedRowsLength, which is a necessary (not
-        // sufficient) condition for one-to-one ordinal correspondence. When the counts
-        // differ (a profile Filter has restricted the visible stored rows while the DB
-        // still holds the full set in currentRows), positional indexing would pick the
-        // wrong row — return null so the caller throws with a diagnostic instead of
-        // silently corrupting data.
+        // Safe ONLY when currentRows.Length == storedRowsLength. Count equality is a
+        // necessary (not sufficient) condition for one-to-one ordinal correspondence and is
+        // also equivalent here to "no hidden rows in scope" — currentRows holds all current
+        // DB rows, storedRowsLength counts visible stored rows, and equality between them
+        // means no row is hidden from the visible set. This makes positional fallback safe
+        // for both descriptor-only identity and mixed scalar+descriptor identity (including
+        // the duplicate-scalar/different-descriptor shape that Strategy 1 cannot
+        // disambiguate). When counts differ (a profile Filter has restricted the visible
+        // stored rows while the DB still holds the full set in currentRows), positional
+        // indexing would pick the wrong row — return null so the caller throws with a
+        // diagnostic instead of silently corrupting data.
         if (currentRows.Length != storedRowsLength)
         {
             return null;
@@ -1992,6 +1945,98 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                     return positionalId;
                 }
             }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Strategy 1 of <see cref="TryResolveDescriptorIdFromCurrentRows"/>: locate a unique
+    /// current row whose semantic identity matches <paramref name="identity"/> on every
+    /// scalar (non-descriptor) part, then return that row's descriptor id at
+    /// <paramref name="descriptorIdx"/>.
+    ///
+    /// <para>Returns <c>null</c> when no current row matches or when more than one current
+    /// row shares the same scalar values (the ambiguous-scalar case where rows differ only
+    /// on the descriptor part). Caller falls through to positional matching in both
+    /// cases.</para>
+    /// </summary>
+    private static long? TryResolveByScalarMatch(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<int> scalarIndices,
+        int descriptorIdx,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        CurrentCollectionRowSnapshot? matched = null;
+        foreach (var currentRow in currentRows)
+        {
+            var currentIdentity = currentRow.SemanticIdentityInOrder;
+            if (currentIdentity.Length != identity.Length)
+            {
+                continue;
+            }
+
+            var allScalarsMatch = true;
+            foreach (var scalarIdx in scalarIndices)
+            {
+                var storedPart = identity[scalarIdx];
+                var currentPart = currentIdentity[scalarIdx];
+
+                // Both must be present and have the same value.
+                if (!storedPart.IsPresent || !currentPart.IsPresent)
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+
+                var storedJson = storedPart.Value?.ToJsonString();
+                var currentJson = currentPart.Value?.ToJsonString();
+                if (!string.Equals(storedJson, currentJson, StringComparison.Ordinal))
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+            }
+
+            if (!allScalarsMatch)
+            {
+                continue;
+            }
+
+            if (matched is not null)
+            {
+                // Ambiguous match — more than one current row has the same scalar parts.
+                // Cannot safely choose one here; let the caller fall through to positional
+                // matching, which can disambiguate via stored-ordinal correspondence when
+                // counts are equal.
+                return null;
+            }
+
+            matched = currentRow;
+        }
+
+        if (matched is null)
+        {
+            return null;
+        }
+
+        // Extract the descriptor id at the same index position from the matched current row.
+        var matchedIdentity = matched.SemanticIdentityInOrder;
+        if (descriptorIdx >= matchedIdentity.Length)
+        {
+            return null;
+        }
+
+        var matchedPart = matchedIdentity[descriptorIdx];
+        if (!matchedPart.IsPresent || matchedPart.Value is null)
+        {
+            return null;
+        }
+
+        if (matchedPart.Value is JsonValue matchedJv && matchedJv.TryGetValue<long>(out var matchedId))
+        {
+            return matchedId;
         }
 
         return null;

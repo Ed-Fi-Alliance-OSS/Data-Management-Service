@@ -4981,6 +4981,317 @@ public class Given_top_level_collection_with_mixed_identity_and_cache_miss_resol
 }
 
 /// <summary>
+/// Fixture: mixed identity (city scalar + addressTypeDescriptor FK) where two stored rows
+/// share the same scalar value (city = "Dallas") and differ only on the descriptor part —
+/// the duplicate-scalar/different-descriptor shape. The PUT request includes only
+/// Dallas/Physical, omitting Dallas/Mailing. The Physical URI is in the request-cycle
+/// descriptor cache; the Mailing URI is NOT (delete-by-absence cache miss for the omitted
+/// stored row).
+///
+/// <para>Strategy 1 (scalar-parts match) is ambiguous here — both current rows match
+/// city = "Dallas". The implementation must fall through to Strategy 2 (count-equal
+/// positional matching), which safely disambiguates because
+/// <c>currentRows.Length == storedRowsLength</c> implies no hidden rows are interleaved.
+/// The canonicalization must NOT throw.</para>
+///
+/// <para>The planner emits a <c>MatchedUpdateEntry</c> for Dallas/Physical and omits
+/// Dallas/Mailing (delete-by-absence). The merged state must contain one merged row and
+/// two current rows.</para>
+/// </summary>
+[TestFixture]
+public class Given_top_level_collection_with_mixed_identity_and_duplicate_scalar_resolves_via_positional_fallback
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan, rootPlan) = MixedIdentityBuilders.BuildPlan();
+
+        // Request body: only Dallas/Physical — Dallas/Mailing is omitted.
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(
+                new JsonObject
+                {
+                    ["city"] = "Dallas",
+                    ["addressTypeDescriptor"] = MixedIdentityBuilders.PhysicalUri,
+                }
+            ),
+        };
+
+        var candidatePhysical = MixedIdentityBuilders.BuildCandidate(
+            collectionPlan,
+            "Dallas",
+            MixedIdentityBuilders.PhysicalId,
+            requestOrder: 0
+        );
+
+        var requestItemPhysical = MixedIdentityBuilders.BuildRequestItem(
+            "Dallas",
+            MixedIdentityBuilders.PhysicalUri,
+            requestOrder: 0
+        );
+
+        // Both stored rows visible per profile, both with city = "Dallas".
+        // Stored body iteration order: Physical at index 0, Mailing at index 1.
+        var storedRowPhysical = MixedIdentityBuilders.BuildStoredRow(
+            "Dallas",
+            MixedIdentityBuilders.PhysicalUri
+        );
+        var storedRowMailing = MixedIdentityBuilders.BuildStoredRow(
+            "Dallas",
+            MixedIdentityBuilders.MailingUri
+        );
+
+        // Cache contains ONLY Physical (the request URI) — Mailing is absent (cache miss).
+        var resolvedRefs = DescriptorCanonicalizeBuilders.BuildResolvedReferenceSetWithDescriptor(
+            MixedIdentityBuilders.PhysicalUri,
+            MixedIdentityBuilders.PhysicalId
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [requestItemPhysical]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray<StoredScopeState>.Empty,
+            [storedRowPhysical, storedRowMailing] // Both stored rows visible, same city.
+        );
+
+        // Current DB state: two rows — Dallas/Physical (typeId=42) at ordinal 1 and
+        // Dallas/Mailing (typeId=50) at ordinal 2. Layout matches storedRow ordinal order so
+        // positional correspondence holds: currentRows[0] = Physical, currentRows[1] = Mailing.
+        // Layout: [CollectionItemId, ParentDocumentId, Ordinal, CityName, DescriptorId]
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                DocumentId: 345L,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-cccccccccccc"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [345L],
+                    ]
+                ),
+                new HydratedTableRows(
+                    collectionPlan.TableModel,
+                    [
+                        [1L, 345L, 1, "Dallas", MixedIdentityBuilders.PhysicalId],
+                        [2L, 345L, 2, "Dallas", MixedIdentityBuilders.MailingId],
+                    ]
+                ),
+            ],
+            []
+        );
+
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal(345L)],
+                collectionCandidates: [candidatePhysical]
+            )
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: resolvedRefs
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_has_merge_result() => _outcome.MergeResult.Should().NotBeNull();
+
+    /// <summary>
+    /// Only Dallas/Physical is in the plan sequence (Dallas/Mailing was omitted →
+    /// delete-by-absence). The positional fallback must have resolved the Mailing
+    /// stored row's descriptor id without throwing.
+    /// </summary>
+    [Test]
+    public void It_produces_one_merged_collection_row() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    /// <summary>
+    /// Both current rows are tracked so the persister can delete Dallas/Mailing by absence.
+    /// </summary>
+    [Test]
+    public void It_has_two_current_collection_rows() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(2);
+}
+
+/// <summary>
+/// Fixture: mixed identity (city scalar + addressTypeDescriptor FK) where two stored rows
+/// share the same city scalar and the visible stored row count differs from the current DB
+/// row count (simulating a profile Filter that restricts visible stored rows while the DB
+/// still holds the full set). With duplicate scalars Strategy 1 is ambiguous; Strategy 2
+/// must refuse to use positional correspondence when counts differ — instead the
+/// synthesizer must throw with a diagnostic.
+/// </summary>
+[TestFixture]
+public class Given_top_level_collection_with_mixed_identity_duplicate_scalar_throws_when_row_counts_differ
+{
+    private Action _synthesizeAction = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan, rootPlan) = MixedIdentityBuilders.BuildPlan();
+
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(
+                new JsonObject
+                {
+                    ["city"] = "Dallas",
+                    ["addressTypeDescriptor"] = MixedIdentityBuilders.PhysicalUri,
+                }
+            ),
+        };
+
+        var candidatePhysical = MixedIdentityBuilders.BuildCandidate(
+            collectionPlan,
+            "Dallas",
+            MixedIdentityBuilders.PhysicalId,
+            requestOrder: 0
+        );
+
+        var requestItemPhysical = MixedIdentityBuilders.BuildRequestItem(
+            "Dallas",
+            MixedIdentityBuilders.PhysicalUri,
+            requestOrder: 0
+        );
+
+        // Only ONE visible stored row (Mailing) — simulates a profile Filter that hid the
+        // Physical row from the stored snapshot.
+        var storedRowMailing = MixedIdentityBuilders.BuildStoredRow(
+            "Dallas",
+            MixedIdentityBuilders.MailingUri
+        );
+
+        // Cache contains ONLY Physical — Mailing URI not resolved (cache miss for the
+        // visible stored Mailing row).
+        var resolvedRefs = DescriptorCanonicalizeBuilders.BuildResolvedReferenceSetWithDescriptor(
+            MixedIdentityBuilders.PhysicalUri,
+            MixedIdentityBuilders.PhysicalId
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [requestItemPhysical]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray<StoredScopeState>.Empty,
+            [storedRowMailing] // 1 visible stored row.
+        );
+
+        // Current DB state: two rows with same city — counts differ from the 1 visible
+        // stored row. Strategy 1 finds two scalar matches (ambiguous); Strategy 2 must
+        // refuse positional fallback because currentRows.Length (2) != storedRowsLength (1).
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                DocumentId: 345L,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-dddddddddddd"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [345L],
+                    ]
+                ),
+                new HydratedTableRows(
+                    collectionPlan.TableModel,
+                    [
+                        [1L, 345L, 1, "Dallas", MixedIdentityBuilders.PhysicalId],
+                        [2L, 345L, 2, "Dallas", MixedIdentityBuilders.MailingId],
+                    ]
+                ),
+            ],
+            []
+        );
+
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal(345L)],
+                collectionCandidates: [candidatePhysical]
+            )
+        );
+
+        _synthesizeAction = () =>
+            BuildProfileSynthesizer()
+                .Synthesize(
+                    new RelationalWriteProfileMergeRequest(
+                        writePlan: plan,
+                        flattenedWriteSet: flattened,
+                        writableRequestBody: body,
+                        currentState: currentState,
+                        profileRequest: request,
+                        profileAppliedContext: context,
+                        resolvedReferences: resolvedRefs
+                    )
+                );
+    }
+
+    [Test]
+    public void It_throws_with_diagnostic_message() =>
+        _synthesizeAction
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*descriptor URI not resolvable at merge boundary*");
+
+    [Test]
+    public void It_includes_current_rows_count_in_message() =>
+        _synthesizeAction.Should().Throw<InvalidOperationException>().WithMessage("*Current rows count: 2*");
+
+    [Test]
+    public void It_includes_stored_rows_count_in_message() =>
+        _synthesizeAction.Should().Throw<InvalidOperationException>().WithMessage("*stored rows count: 1*");
+}
+
+/// <summary>
 /// Fixture: descriptor-only identity where the visible stored rows count differs from the
 /// current DB rows count (simulating a profile Filter that restricts visible stored rows while
 /// the DB holds all rows in currentRows). The positional fallback must NOT silently pick the
