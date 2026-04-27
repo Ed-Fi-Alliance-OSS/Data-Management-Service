@@ -53,6 +53,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
   - hidden parent-row preservation.
 - Nested second-pass logic must not delete collection-descendant scopes incorrectly when flattened buffers omit them.
 - Extension child collections must follow the same visibility and preservation rules as base collection data.
+- Stored descriptor URI canonicalization in nested and extension-child scopes must reuse the request-cycle resolution cache keyed by `(descriptor resource, URI)` only — no ancestor-context, scope-path, or column-path narrowing. The Slice 4 runtime fail-closed throw shape (URI absent from the cache, scalar-part matching is ambiguous or absent, and current-row count diverges from stored-row count) carries over unchanged into nested and extension-child scopes; this slice introduces no new fence shape.
 
 ## Runtime Decision Matrix
 
@@ -109,6 +110,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Root-level extension child collection matching and preservation
 - Collection-aligned extension child collection matching and preservation
 - Nested extension child collection matching and preservation
+- Nested or extension-child stored descriptor URI canonicalization via request-cycle cache hit when the URI was published only at a different scope path
 
 ### Integration tests
 
