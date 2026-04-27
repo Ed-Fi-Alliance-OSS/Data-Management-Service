@@ -5419,3 +5419,598 @@ public class Given_top_level_collection_with_descriptor_only_identity_throws_whe
     public void It_includes_stored_rows_count_in_message() =>
         _synthesizeAction.Should().Throw<InvalidOperationException>().WithMessage("*stored rows count: 1*");
 }
+
+/// <summary>
+/// Shared helpers for reference-backed top-level collection identity whose referenced
+/// document's natural key contains a descriptor URI part (the
+/// "<c>ProgramReference{programId, programTypeDescriptor}</c>" shape). The collection table
+/// denormalizes both natural-key parts into local columns:
+/// <c>ProgramReference_ProgramId</c> (Scalar) and
+/// <c>ProgramReference_ProgramTypeDescriptor_Id</c> (DescriptorFk).
+///
+/// <para>These helpers exercise the Strategy 2 scalar-parts-only fallback in
+/// <c>TryResolveDocumentIdFromCurrentRows</c> when the descriptor URI inside the reference
+/// natural key cannot be resolved against the request-cycle cache.</para>
+/// </summary>
+internal static class ReferenceWithDescriptorIdentityBuilders
+{
+    public const string CollectionScope = "$.programs[*]";
+    public const string ReferenceObjectPath = "$.programs[*].programReference";
+    public const string ProgramIdPath = "$.programs[*].programReference.programId";
+    public const string ProgramTypeDescriptorPath = "$.programs[*].programReference.programTypeDescriptor";
+    public const string ProgramIdRelativePath = "$.programReference.programId";
+    public const string ProgramTypeDescriptorRelativePath = "$.programReference.programTypeDescriptor";
+
+    public const string ProgramAId = "42";
+    public const string ProgramBId = "99";
+    public const string AthleticUri = "uri://ed-fi.org/ProgramTypeDescriptor#Athletic";
+    public const string CareerUri = "uri://ed-fi.org/ProgramTypeDescriptor#Career";
+    public const long AthleticDescriptorId = 10L;
+    public const long CareerDescriptorId = 20L;
+    public const long ProgramADocumentId = 501L;
+    public const long ProgramBDocumentId = 502L;
+
+    public static readonly QualifiedResourceName ProgramResource = new("Ed-Fi", "Program");
+    public static readonly QualifiedResourceName ProgramTypeDescriptorResource = new(
+        "Ed-Fi",
+        "ProgramTypeDescriptor"
+    );
+
+    public static (ResourceWritePlan Plan, TableWritePlan CollectionPlan, TableWritePlan RootPlan) BuildPlan()
+    {
+        var collectionPlan = BuildReferenceCollectionPlan();
+        var rootPlan = BuildRootPlan();
+
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: Path(ReferenceObjectPath),
+            Table: collectionPlan.TableModel.Table,
+            FkColumn: new DbColumnName("ProgramReference_DocumentId"),
+            TargetResource: ProgramResource,
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    Path("$.programId"),
+                    Path(ProgramIdPath),
+                    new DbColumnName("ProgramReference_ProgramId")
+                ),
+                new ReferenceIdentityBinding(
+                    Path("$.programTypeDescriptor"),
+                    Path(ProgramTypeDescriptorPath),
+                    new DbColumnName("ProgramReference_ProgramTypeDescriptor_Id")
+                ),
+            ]
+        );
+
+        var plan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "School"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder: [rootPlan.TableModel, collectionPlan.TableModel],
+                DocumentReferenceBindings: [binding],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: false,
+                        DescriptorValuePath: Path(ProgramTypeDescriptorPath),
+                        Table: collectionPlan.TableModel.Table,
+                        FkColumn: new DbColumnName("ProgramReference_ProgramTypeDescriptor_Id"),
+                        DescriptorResource: ProgramTypeDescriptorResource
+                    ),
+                ]
+            ),
+            [rootPlan, collectionPlan]
+        );
+        return (plan, collectionPlan, rootPlan);
+    }
+
+    public static ImmutableArray<SemanticIdentityPart> BuildStoredIdentity(
+        string programId,
+        string programTypeUri
+    ) =>
+        [
+            new SemanticIdentityPart(ProgramIdRelativePath, JsonValue.Create(programId), IsPresent: true),
+            new SemanticIdentityPart(
+                ProgramTypeDescriptorRelativePath,
+                JsonValue.Create(programTypeUri),
+                IsPresent: true
+            ),
+        ];
+
+    public static VisibleStoredCollectionRow BuildStoredRow(string programId, string programTypeUri) =>
+        new(
+            new CollectionRowAddress(
+                CollectionScope,
+                new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
+                BuildStoredIdentity(programId, programTypeUri)
+            ),
+            ImmutableArray<string>.Empty
+        );
+
+    public static ResolvedReferenceSet BuildEmptyResolvedReferenceSet() =>
+        new(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+
+    private static TableWritePlan BuildRootPlan()
+    {
+        var docIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "School"),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [docIdColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"School\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 1, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(docIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan BuildReferenceCollectionPlan()
+    {
+        var collectionKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("CollectionItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var parentKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ParentDocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var fkColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ProgramReference_DocumentId"),
+            Kind: ColumnKind.DocumentFk,
+            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: false,
+            SourceJsonPath: Path(ReferenceObjectPath),
+            TargetResource: ProgramResource
+        );
+        var programIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ProgramReference_ProgramId"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: Path(ProgramIdPath),
+            TargetResource: null
+        );
+        var programTypeDescriptorColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ProgramReference_ProgramTypeDescriptor_Id"),
+            Kind: ColumnKind.DescriptorFk,
+            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: false,
+            SourceJsonPath: Path(ProgramTypeDescriptorPath),
+            TargetResource: ProgramTypeDescriptorResource
+        );
+
+        var allColumns = new[]
+        {
+            collectionKeyColumn,
+            parentKeyColumn,
+            ordinalColumn,
+            fkColumn,
+            programIdColumn,
+            programTypeDescriptorColumn,
+        };
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "SchoolProgram"),
+            JsonScope: Path(CollectionScope),
+            Key: new TableKey(
+                "PK_SchoolProgram",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: allColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(Path(ProgramIdRelativePath), fkColumn.ColumnName),
+                    new CollectionSemanticIdentityBinding(
+                        Path(ProgramTypeDescriptorRelativePath),
+                        fkColumn.ColumnName
+                    ),
+                ]
+            ),
+        };
+
+        var programIdReferenceSource = new ReferenceDerivedValueSourceMetadata(
+            BindingIndex: 0,
+            ReferenceObjectPath: Path(ReferenceObjectPath),
+            IdentityJsonPath: Path("$.programId"),
+            ReferenceJsonPath: Path(ProgramIdPath)
+        );
+        var programTypeReferenceSource = new ReferenceDerivedValueSourceMetadata(
+            BindingIndex: 0,
+            ReferenceObjectPath: Path(ReferenceObjectPath),
+            IdentityJsonPath: Path("$.programTypeDescriptor"),
+            ReferenceJsonPath: Path(ProgramTypeDescriptorPath)
+        );
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"SchoolProgram\" VALUES (@CollectionItemId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, allColumns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionKeyColumn,
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    parentKeyColumn,
+                    new WriteValueSource.DocumentId(),
+                    "ParentDocumentId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    fkColumn,
+                    new WriteValueSource.DocumentReference(0),
+                    "ProgramReference_DocumentId"
+                ),
+                new WriteColumnBinding(
+                    programIdColumn,
+                    new WriteValueSource.ReferenceDerived(programIdReferenceSource),
+                    "ProgramReference_ProgramId"
+                ),
+                new WriteColumnBinding(
+                    programTypeDescriptorColumn,
+                    new WriteValueSource.ReferenceDerived(programTypeReferenceSource),
+                    "ProgramReference_ProgramTypeDescriptor_Id"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(Path(ProgramIdRelativePath), 3),
+                    new CollectionMergeSemanticIdentityBinding(Path(ProgramTypeDescriptorRelativePath), 3),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.\"SchoolProgram\" SET X=@X WHERE \"CollectionItemId\"=@CollectionItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.\"SchoolProgram\" WHERE \"CollectionItemId\"=@CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 4, 5, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+
+    private static JsonPathExpression Path(string canonical) => new(canonical, []);
+}
+
+/// <summary>
+/// Fixture: reference-backed top-level collection whose ProgramReference natural key
+/// contains a descriptor URI (programTypeDescriptor). One stored row is visible — its
+/// descriptor URI is absent from the request-cycle cache (delete-by-absence), and the
+/// scalar programId part of the natural key uniquely identifies the corresponding current
+/// row even though the visible-stored row count differs from the current DB row count
+/// (a hidden DB row is interleaved). Strategy 2 scalar-parts-only matching must resolve the
+/// document id without throwing.
+/// </summary>
+[TestFixture]
+public class Given_reference_backed_top_level_collection_with_descriptor_in_natural_key_resolves_via_scalar_parts_on_cache_miss
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan, rootPlan) = ReferenceWithDescriptorIdentityBuilders.BuildPlan();
+        const long parentDocumentId = 345L;
+
+        // PUT request body has no programs — delete-by-absence for the visible stored row.
+        var body = new JsonObject { ["programs"] = new JsonArray() };
+
+        // One visible stored row (Program B / Career) — Career URI is NOT in the cache.
+        var storedRowB = ReferenceWithDescriptorIdentityBuilders.BuildStoredRow(
+            ReferenceWithDescriptorIdentityBuilders.ProgramBId,
+            ReferenceWithDescriptorIdentityBuilders.CareerUri
+        );
+
+        // Cache is empty — request body has no references for this scope.
+        var resolvedRefs = ReferenceWithDescriptorIdentityBuilders.BuildEmptyResolvedReferenceSet();
+
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            ImmutableArray<VisibleRequestCollectionItem>.Empty
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray<StoredScopeState>.Empty,
+            [storedRowB] // 1 visible stored row.
+        );
+
+        // Current DB state: TWO rows. Row A (programId=42, Athletic, ordinal 1) is hidden
+        // by the profile (not in visible stored rows). Row B (programId=99, Career,
+        // ordinal 2) is the visible stored row. Counts differ (1 stored vs 2 current).
+        // Layout: [CollectionItemId, ParentDocumentId, Ordinal, ProgramReference_DocumentId,
+        //          ProgramReference_ProgramId, ProgramReference_ProgramTypeDescriptor_Id]
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                DocumentId: parentDocumentId,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-eeeeeeeeeeee"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [parentDocumentId],
+                    ]
+                ),
+                new HydratedTableRows(
+                    collectionPlan.TableModel,
+                    [
+                        [
+                            1L,
+                            parentDocumentId,
+                            1,
+                            ReferenceWithDescriptorIdentityBuilders.ProgramADocumentId,
+                            ReferenceWithDescriptorIdentityBuilders.ProgramAId,
+                            ReferenceWithDescriptorIdentityBuilders.AthleticDescriptorId,
+                        ],
+                        [
+                            2L,
+                            parentDocumentId,
+                            2,
+                            ReferenceWithDescriptorIdentityBuilders.ProgramBDocumentId,
+                            ReferenceWithDescriptorIdentityBuilders.ProgramBId,
+                            ReferenceWithDescriptorIdentityBuilders.CareerDescriptorId,
+                        ],
+                    ]
+                ),
+            ],
+            []
+        );
+
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal(parentDocumentId)],
+                collectionCandidates: ImmutableArray<CollectionWriteCandidate>.Empty
+            )
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: resolvedRefs
+                )
+            );
+    }
+
+    /// <summary>
+    /// The synthesizer must complete without throwing — Strategy 2 (scalar-parts-only
+    /// match on programId) resolved the visible stored Program B row's identity even
+    /// though the Career descriptor URI was absent from the request-cycle cache and
+    /// counts differed (1 stored vs 2 current). The exact plan composition (which rows
+    /// appear in <c>MergedRows</c> for delete-by-absence + hidden-preservation) is
+    /// already covered by the descriptor-only and mixed-identity fixtures; this fixture
+    /// only proves the cache-miss canonicalization path itself does not fail closed.
+    /// </summary>
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_has_merge_result() => _outcome.MergeResult.Should().NotBeNull();
+
+    [Test]
+    public void It_tracks_two_current_rows() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(2);
+}
+
+/// <summary>
+/// Fixture: reference-backed top-level collection whose ProgramReference natural key
+/// contains a descriptor URI. One visible stored row whose descriptor URI is absent from
+/// the cache; the scalar programId part of the natural key matches MULTIPLE current rows
+/// (ambiguous), and the visible-stored row count differs from the current DB row count so
+/// positional fallback also cannot resolve. The synthesizer must throw with a deterministic
+/// diagnostic naming the unresolvable document reference.
+/// </summary>
+[TestFixture]
+public class Given_reference_backed_top_level_collection_with_descriptor_in_natural_key_throws_when_scalars_ambiguous_and_counts_differ
+{
+    private Action _synthesizeAction = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan, rootPlan) = ReferenceWithDescriptorIdentityBuilders.BuildPlan();
+        const long parentDocumentId = 345L;
+
+        var body = new JsonObject { ["programs"] = new JsonArray() };
+
+        // One visible stored row (programId=42, Career URI). Career URI not in cache.
+        var storedRow = ReferenceWithDescriptorIdentityBuilders.BuildStoredRow(
+            ReferenceWithDescriptorIdentityBuilders.ProgramAId,
+            ReferenceWithDescriptorIdentityBuilders.CareerUri
+        );
+
+        var resolvedRefs = ReferenceWithDescriptorIdentityBuilders.BuildEmptyResolvedReferenceSet();
+
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            ImmutableArray<VisibleRequestCollectionItem>.Empty
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray<StoredScopeState>.Empty,
+            [storedRow] // 1 visible stored row.
+        );
+
+        // Current DB state: TWO rows BOTH with programId=42 but different program-type
+        // descriptors. Strategy 2 (scalar match on programId) is ambiguous — both rows
+        // match. Counts differ (1 stored vs 2 current) so Strategy 3 positional fallback
+        // is also fenced out.
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                DocumentId: parentDocumentId,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-ffffffffffff"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [parentDocumentId],
+                    ]
+                ),
+                new HydratedTableRows(
+                    collectionPlan.TableModel,
+                    [
+                        [
+                            1L,
+                            parentDocumentId,
+                            1,
+                            ReferenceWithDescriptorIdentityBuilders.ProgramADocumentId,
+                            ReferenceWithDescriptorIdentityBuilders.ProgramAId,
+                            ReferenceWithDescriptorIdentityBuilders.AthleticDescriptorId,
+                        ],
+                        [
+                            2L,
+                            parentDocumentId,
+                            2,
+                            ReferenceWithDescriptorIdentityBuilders.ProgramBDocumentId,
+                            ReferenceWithDescriptorIdentityBuilders.ProgramAId,
+                            ReferenceWithDescriptorIdentityBuilders.CareerDescriptorId,
+                        ],
+                    ]
+                ),
+            ],
+            []
+        );
+
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal(parentDocumentId)],
+                collectionCandidates: ImmutableArray<CollectionWriteCandidate>.Empty
+            )
+        );
+
+        _synthesizeAction = () =>
+            BuildProfileSynthesizer()
+                .Synthesize(
+                    new RelationalWriteProfileMergeRequest(
+                        writePlan: plan,
+                        flattenedWriteSet: flattened,
+                        writableRequestBody: body,
+                        currentState: currentState,
+                        profileRequest: request,
+                        profileAppliedContext: context,
+                        resolvedReferences: resolvedRefs
+                    )
+                );
+    }
+
+    [Test]
+    public void It_throws_with_diagnostic_message() =>
+        _synthesizeAction
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*document reference not resolvable at merge boundary*");
+
+    [Test]
+    public void It_includes_current_rows_count_in_message() =>
+        _synthesizeAction.Should().Throw<InvalidOperationException>().WithMessage("*Current rows count: 2*");
+
+    [Test]
+    public void It_includes_stored_rows_count_in_message() =>
+        _synthesizeAction.Should().Throw<InvalidOperationException>().WithMessage("*stored rows count: 1*");
+}

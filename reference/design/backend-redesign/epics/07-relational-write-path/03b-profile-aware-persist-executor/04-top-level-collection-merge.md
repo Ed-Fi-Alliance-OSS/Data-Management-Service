@@ -55,15 +55,22 @@ cache, scalar-part matching cannot uniquely identify the corresponding current
 row (descriptor-only identity, or mixed identity where multiple current rows
 share the same scalar values and differ only on the descriptor part), AND
 current-row count differs from stored-row count so positional correspondence
-does not hold (hidden rows interleaved). The common descriptor cases — URI in
-cache, mixed scalar+descriptor identity with disambiguating scalars,
-duplicate-scalar/different-descriptor identity without hidden rows, and
+does not hold (hidden rows interleaved). The same fence shape applies to
+reference-backed top-level collection identity whose referenced document's
+natural key contains a descriptor URI part — when that URI is absent from the
+cache and the remaining scalar parts of the reference natural-key cannot
+uniquely identify the current row, the same scalar-then-positional fallback
+chain runs, and the same counts-differ + scalar-ambiguous condition fences out
+to a runtime throw. The common descriptor cases — URI in cache, mixed
+scalar+descriptor identity with disambiguating scalars (whether the descriptor
+is part of the row identity directly or part of a referenced document's natural
+key), duplicate-scalar/different-descriptor identity without hidden rows, and
 descriptor-only identity without hidden rows — remain supported via
 scalar-parts matching and count-equal positional fallback. The narrow case is
 structurally ambiguous and is converted to a deterministic throw at the merge
-boundary rather than silently producing an incorrect descriptor id. A later
-slice may widen support by seeding the descriptor resolver from the DB
-descriptor projection or by reverse-mapping DB descriptor ids to URIs.
+boundary rather than silently producing an incorrect descriptor id or document
+id. A later slice may widen support by seeding the descriptor resolver from the
+DB descriptor projection or by reverse-mapping DB descriptor ids to URIs.
 
 ## Design Constraints
 

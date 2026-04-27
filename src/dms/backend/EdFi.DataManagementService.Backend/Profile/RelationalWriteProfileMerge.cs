@@ -1277,6 +1277,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                         + $"'{documentIdentityPart.Binding.FkColumn.Value}' on table "
                         + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' could not be "
                         + "matched against current rows. "
+                        + "This can happen when the reference natural-key contains a descriptor URI absent "
+                        + "from the request-cycle cache, scalar-parts-only matching is ambiguous or absent, "
+                        + "and the current-row count differs from the stored-row count so positional "
+                        + "correspondence does not hold. "
                         + $"Current rows count: {currentRows.Length}, stored rows count: {storedRowsLength}, stored row index: {storedRowIndex}."
                 );
             }
@@ -1292,6 +1296,28 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         return builder is null ? identity : builder.MoveToImmutable();
     }
 
+    /// <summary>
+    /// Resolves the referenced document id for a stored-side reference natural-key identity
+    /// by matching against current rows. Three strategies are tried in order, regardless of
+    /// whether the reference natural-key contains scalar parts, descriptor parts, or both:
+    ///
+    /// <list type="number">
+    ///   <item>Full natural-key match: every reference natural-key part (scalar + descriptor)
+    ///   must match. Used when the descriptor URI cache holds every descriptor part of the
+    ///   stored row's reference natural-key.</item>
+    ///   <item>Scalar-parts-only match: when a descriptor URI cache miss makes Strategy 1
+    ///   fail, match on the non-DescriptorFk natural-key parts and skip the descriptor parts
+    ///   entirely. If the remaining scalar parts uniquely identify a current row, the
+    ///   document id is read directly from that row's FK column. Mirrors the Strategy-1
+    ///   scalar fallback that <see cref="TryResolveDescriptorIdFromCurrentRows"/> uses for
+    ///   direct descriptor identity in the duplicate-scalar/different-descriptor shape.</item>
+    ///   <item>Positional fallback: when neither full-match nor scalar-only match yields a
+    ///   unique row, fall back to <c>currentRows[storedRowIndex]</c> when
+    ///   <c>currentRows.Length == storedRowsLength</c> (no hidden rows interleaved).</item>
+    /// </list>
+    ///
+    /// <para>Returns <c>null</c> when no strategy resolves; the caller throws.</para>
+    /// </summary>
     private static long? TryResolveDocumentIdFromCurrentRows(
         ImmutableArray<SemanticIdentityPart> identity,
         IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
@@ -1314,6 +1340,67 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             )
             .ToArray();
 
+        // Strategy 1: full natural-key match. Returns null on no-match or ambiguous match —
+        // the latter is rare for natural-key matching (natural-key uniqueness should
+        // disambiguate) but the helper guards it explicitly. Cache miss on any descriptor
+        // part also surfaces here as no-match.
+        var fullMatchId = TryResolveByReferenceFullMatch(
+            identity,
+            sameReferenceParts,
+            targetPart,
+            tablePlan,
+            resolvedReferenceLookups,
+            currentRows
+        );
+
+        if (fullMatchId is not null)
+        {
+            return fullMatchId;
+        }
+
+        // Strategy 2: scalar-parts-only match. When Strategy 1 fails because a descriptor URI
+        // is absent from the request-cycle cache, the remaining scalar parts of the reference
+        // natural-key may still uniquely identify the row. Skip every DescriptorFk part and
+        // match only on the scalar parts; if a unique row is found, use its FK column.
+        var scalarMatchId = TryResolveByReferenceScalarMatch(
+            identity,
+            sameReferenceParts,
+            targetPart,
+            tablePlan,
+            currentRows
+        );
+
+        if (scalarMatchId is not null)
+        {
+            return scalarMatchId;
+        }
+
+        // Strategy 3: positional fallback. Safe only when current and stored row counts
+        // agree (no hidden rows interleaved) — same fence as the descriptor identity path.
+        if (currentRows.Length == storedRowsLength && storedRowIndex < currentRows.Length)
+        {
+            return TryGetInt64CurrentRowValue(currentRows[storedRowIndex], targetPart.Binding.FkColumn);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Strategy 1 of <see cref="TryResolveDocumentIdFromCurrentRows"/>: locate a unique
+    /// current row that matches every reference natural-key part (scalar + descriptor) in
+    /// <paramref name="identity"/>, then return that row's FK column value. Returns
+    /// <c>null</c> when no row matches, when more than one row matches, or when a stored
+    /// descriptor URI cannot be resolved against the request-cycle cache.
+    /// </summary>
+    private static long? TryResolveByReferenceFullMatch(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> sameReferenceParts,
+        DocumentReferenceIdentityPart targetPart,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
         CurrentCollectionRowSnapshot? matched = null;
 
         foreach (var currentRow in currentRows)
@@ -1333,24 +1420,100 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             if (matched is not null)
             {
-                matched = null;
-                break;
+                return null;
             }
 
             matched = currentRow;
         }
 
-        if (matched is not null)
+        return matched is null ? null : TryGetInt64CurrentRowValue(matched, targetPart.Binding.FkColumn);
+    }
+
+    /// <summary>
+    /// Strategy 2 of <see cref="TryResolveDocumentIdFromCurrentRows"/>: locate a unique
+    /// current row that matches every NON-descriptor reference natural-key part in
+    /// <paramref name="identity"/>, ignoring any DescriptorFk parts whose URI may be absent
+    /// from the request-cycle cache. Returns the matched row's FK column value, or
+    /// <c>null</c> when there are no scalar parts to match on, when no row matches, or when
+    /// more than one row matches (in which case the caller falls through to positional
+    /// matching).
+    /// </summary>
+    private static long? TryResolveByReferenceScalarMatch(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> sameReferenceParts,
+        DocumentReferenceIdentityPart targetPart,
+        TableWritePlan tablePlan,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        var scalarParts = sameReferenceParts
+            .Where(part =>
+            {
+                var column = tablePlan.TableModel.Columns.FirstOrDefault(c =>
+                    c.ColumnName.Equals(part.IdentityBinding.Column)
+                );
+                return column is not null && column.Kind != ColumnKind.DescriptorFk;
+            })
+            .ToArray();
+
+        if (scalarParts.Length == 0)
         {
-            return TryGetInt64CurrentRowValue(matched, targetPart.Binding.FkColumn);
+            return null;
         }
 
-        if (currentRows.Length == storedRowsLength && storedRowIndex < currentRows.Length)
+        CurrentCollectionRowSnapshot? matched = null;
+
+        foreach (var currentRow in currentRows)
         {
-            return TryGetInt64CurrentRowValue(currentRows[storedRowIndex], targetPart.Binding.FkColumn);
+            var allScalarsMatch = true;
+
+            foreach (var scalarPart in scalarParts)
+            {
+                var storedPart = identity[scalarPart.IdentityIndex];
+
+                if (!storedPart.IsPresent)
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+
+                if (
+                    !currentRow.CurrentRowByColumnName.TryGetValue(
+                        scalarPart.IdentityBinding.Column,
+                        out var currentValue
+                    )
+                )
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+
+                var storedJson = storedPart.Value?.ToJsonString() ?? "null";
+                var currentJson = currentValue is null
+                    ? "null"
+                    : JsonValue.Create(currentValue)?.ToJsonString() ?? "null";
+
+                if (!string.Equals(storedJson, currentJson, StringComparison.Ordinal))
+                {
+                    allScalarsMatch = false;
+                    break;
+                }
+            }
+
+            if (!allScalarsMatch)
+            {
+                continue;
+            }
+
+            if (matched is not null)
+            {
+                return null;
+            }
+
+            matched = currentRow;
         }
 
-        return null;
+        return matched is null ? null : TryGetInt64CurrentRowValue(matched, targetPart.Binding.FkColumn);
     }
 
     private static bool DocumentReferenceIdentityPartsMatch(
