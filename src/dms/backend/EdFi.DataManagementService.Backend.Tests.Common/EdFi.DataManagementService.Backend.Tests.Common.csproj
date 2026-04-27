@@ -9,6 +9,7 @@
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Mssql.Tests.Integration" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Tests.Unit" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="FluentAssertions" />
