@@ -12,12 +12,14 @@ Feature: Metadata endpoints
                       "version": "{*}",
                       "applicationName": "Ed-Fi Alliance DMS Configuration Service",
                       "informationalVersion": "{*}",
+                      "build": "{*}",
                       "urls": {
                           "openApiMetadata": "{*}"
                       }
                   }
                   """
               And the response contains metadata URLs
+              And the response body field "build" is non-empty and matches pattern "^\d+\.\d+\.\d+\.\d+$"
 
         Scenario: 02 Get OpenAPI specification
              When a GET request is made to "/metadata/specifications"

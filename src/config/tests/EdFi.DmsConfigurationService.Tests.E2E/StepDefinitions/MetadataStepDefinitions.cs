@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Tests.E2E.Management;
 using FluentAssertions;
 using Reqnroll;
@@ -234,6 +235,24 @@ public class MetadataStepDefinitions(PlaywrightContext playwrightContext, Scenar
             var response = await _playwrightContext.ApiRequestContext!.GetAsync(url);
             response.Status.Should().Be(200, $"Metadata URL '{urlField}' at '{url}' should be accessible");
         }
+    }
+
+    [Then(@"the response body field {string} is non-empty and matches pattern {string}")]
+    public async Task ThenTheResponseBodyFieldIsNonEmptyAndMatchesPattern(string fieldName, string pattern)
+    {
+        var apiResponse = GetLastApiResponse();
+        string responseJsonString = await apiResponse.TextAsync();
+        JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+        JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
+
+        responseJson[fieldName].Should().NotBeNull($"Response should contain '{fieldName}' field");
+
+        var fieldValue = responseJson[fieldName]!.ToString();
+        fieldValue.Should().NotBeNullOrEmpty($"Field '{fieldName}' should not be empty");
+        Regex
+            .IsMatch(fieldValue, pattern)
+            .Should()
+            .BeTrue($"Field '{fieldName}' value '{fieldValue}' should match pattern '{pattern}'");
     }
 
     private Microsoft.Playwright.IAPIResponse GetLastApiResponse()

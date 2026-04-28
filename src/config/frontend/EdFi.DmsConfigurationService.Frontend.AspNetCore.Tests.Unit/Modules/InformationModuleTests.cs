@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -55,8 +56,37 @@ public class InformationModuleTests
         jsonDoc.RootElement.TryGetProperty("version", out _).Should().BeTrue();
         jsonDoc.RootElement.TryGetProperty("applicationName", out _).Should().BeTrue();
         jsonDoc.RootElement.TryGetProperty("informationalVersion", out _).Should().BeTrue();
+        jsonDoc.RootElement.TryGetProperty("build", out var build).Should().BeTrue();
+        build.GetString().Should().NotBeNullOrEmpty();
         jsonDoc.RootElement.TryGetProperty("urls", out var urls).Should().BeTrue();
         urls.TryGetProperty("openApiMetadata", out _).Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_should_return_a_four_part_build_version()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/");
+        var content = await response.Content.ReadAsStringAsync();
+        var jsonDoc = JsonDocument.Parse(content);
+
+        // Assert
+        jsonDoc.RootElement.TryGetProperty("build", out var build).Should().BeTrue();
+        var buildValue = build.GetString();
+        buildValue.Should().NotBeNullOrEmpty();
+        Regex
+            .IsMatch(buildValue!, @"^\d+\.\d+\.\d+\.\d+$")
+            .Should()
+            .BeTrue(
+                because: $"build value '{buildValue}' should match the four-part numeric version pattern"
+            );
     }
 
     [Test]
