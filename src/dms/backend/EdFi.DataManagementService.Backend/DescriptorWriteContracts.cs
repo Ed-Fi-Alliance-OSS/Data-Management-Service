@@ -110,7 +110,7 @@ public interface IDescriptorWriteHandler
         DocumentUuid documentUuid,
         TraceId traceId,
         string? ifMatchEtag = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null,
+        ReadableProfileProjectionContext? ifMatchReadableProjectionContext = null,
         CancellationToken cancellationToken = default
     );
 }

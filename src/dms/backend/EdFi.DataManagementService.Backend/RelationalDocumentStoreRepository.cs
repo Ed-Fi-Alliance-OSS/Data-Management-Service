@@ -264,7 +264,7 @@ public sealed class RelationalDocumentStoreRepository(
                 relationalDeleteRequest.DocumentUuid,
                 relationalDeleteRequest.TraceId,
                 ExtractIfMatchEtag(relationalDeleteRequest.Headers),
-                relationalDeleteRequest.BackendProfileWriteContext
+                relationalDeleteRequest.IfMatchReadableProjectionContext
             );
         }
 
@@ -360,7 +360,7 @@ public sealed class RelationalDocumentStoreRepository(
                                     resource,
                                     resolved.DocumentId,
                                     ifMatchEtag,
-                                    relationalDeleteRequest.BackendProfileWriteContext,
+                                    relationalDeleteRequest.IfMatchReadableProjectionContext,
                                     cancellationToken
                                 )
                                 .ConfigureAwait(false);
@@ -486,7 +486,7 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         long documentId,
         string ifMatchEtag,
-        BackendProfileWriteContext? profileWriteContext,
+        ReadableProfileProjectionContext? ifMatchReadableProjectionContext,
         CancellationToken cancellationToken
     )
     {
@@ -533,13 +533,12 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         // Apply profile projection if the delete request carried a readable-profile projection context.
-        var projectionContext = profileWriteContext?.IfMatchReadableProjectionContext;
-        if (projectionContext is not null)
+        if (ifMatchReadableProjectionContext is not null)
         {
             committedDocument = _readableProfileProjector.Project(
                 committedDocument,
-                projectionContext.ContentTypeDefinition,
-                projectionContext.IdentityPropertyNames
+                ifMatchReadableProjectionContext.ContentTypeDefinition,
+                ifMatchReadableProjectionContext.IdentityPropertyNames
             );
             RelationalApiMetadataFormatter.RefreshEtag(committedDocument);
         }
@@ -557,29 +556,7 @@ public sealed class RelationalDocumentStoreRepository(
         long documentId
     )
     {
-        var command = dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
-                SELECT 1
-                FROM dms."Document"
-                WHERE "DocumentId" = @documentId
-                FOR UPDATE;
-                """,
-                [new RelationalParameter("@documentId", documentId)]
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
-                SELECT 1
-                FROM [dms].[Document] WITH (UPDLOCK, ROWLOCK)
-                WHERE [DocumentId] = @documentId;
-                """,
-                [new RelationalParameter("@documentId", documentId)]
-            ),
-            _ => throw new NotSupportedException(
-                $"Relational DELETE does not support SQL dialect '{dialect}'."
-            ),
-        };
+        var command = DocumentRowLock.BuildCommand(dialect, documentId);
 
         return await commandExecutor
             .ExecuteReaderAsync(

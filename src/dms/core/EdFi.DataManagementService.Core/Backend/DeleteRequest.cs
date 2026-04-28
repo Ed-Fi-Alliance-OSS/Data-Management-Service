@@ -27,6 +27,7 @@ internal record DeleteRequest(
     TraceId TraceId,
     bool DeleteInEdOrgHierarchy,
     Dictionary<string, string> Headers,
+    ReadableProfileProjectionContext? IfMatchReadableProjectionContext = null,
     MappingSet? MappingSet = null,
     BackendProfileWriteContext? BackendProfileWriteContext = null
 ) : IRelationalDeleteRequest;

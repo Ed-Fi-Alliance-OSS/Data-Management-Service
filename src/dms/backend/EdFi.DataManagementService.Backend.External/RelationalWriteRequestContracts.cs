@@ -41,4 +41,11 @@ public interface IRelationalUpdateRequest : IUpdateRequest, IRelationalWriteRequ
 /// Backend-local relational delete request, carrying the resolved mapping set for dialect-aware
 /// delete execution.
 /// </summary>
-public interface IRelationalDeleteRequest : IDeleteRequest, IRelationalWriteRequest { }
+public interface IRelationalDeleteRequest : IDeleteRequest, IRelationalWriteRequest
+{
+    /// <summary>
+    /// Optional readable-profile projection inputs for <c>If-Match</c> validation on DELETE.
+    /// Null when no readable profile applies or projection must be suppressed.
+    /// </summary>
+    ReadableProfileProjectionContext? IfMatchReadableProjectionContext { get; }
+}

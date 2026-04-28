@@ -310,6 +310,7 @@ public class Given_Descriptor_PUT_if_match_header_matches_and_content_is_changed
 
         _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
         _sessionFactory.EnqueueDescriptorRow(persistedRow);
+        _sessionFactory.EnqueueDescriptorRow(DescriptorIfMatchHelper.ChangedPersistedRow());
 
         _commandExecutor = A.Fake<IRelationalCommandExecutor>();
 
@@ -332,22 +333,24 @@ public class Given_Descriptor_PUT_if_match_header_matches_and_content_is_changed
     }
 
     [Test]
-    public void It_returns_etag_computed_from_request_body()
+    public void It_returns_etag_computed_from_persisted_state()
     {
         ((UpdateResult.UpdateSuccess)_result).ETag.Should().Be(_expectedEtag);
     }
 
     [Test]
-    public void It_does_not_issue_a_post_commit_read()
+    public void It_does_not_issue_a_follow_up_read_on_the_shared_executor()
     {
         A.CallTo(_commandExecutor).MustNotHaveHappened();
     }
 
     [Test]
-    public void It_issues_the_locked_select_and_the_update_command()
+    public void It_issues_the_locked_select_update_and_in_session_readback()
     {
-        _sessionFactory.SessionCommands.Should().HaveCount(2);
+        _sessionFactory.SessionCommands.Should().HaveCount(3);
         _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        _sessionFactory.SessionCommands[1].CommandText.Should().Contain("UPDATE");
+        _sessionFactory.SessionCommands[2].CommandText.Should().Contain("SELECT");
     }
 }
 
@@ -685,6 +688,7 @@ public class Given_Descriptor_POST_as_update_if_match_header_matches_and_content
 
         _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
         _sessionFactory.EnqueueDescriptorRow(persistedRow);
+        _sessionFactory.EnqueueDescriptorRow(DescriptorIfMatchHelper.ChangedPersistedRow());
 
         _commandExecutor = A.Fake<IRelationalCommandExecutor>();
 
@@ -707,22 +711,24 @@ public class Given_Descriptor_POST_as_update_if_match_header_matches_and_content
     }
 
     [Test]
-    public void It_returns_etag_computed_from_request_body()
+    public void It_returns_etag_computed_from_persisted_state()
     {
         ((UpsertResult.UpdateSuccess)_result).ETag.Should().Be(_expectedEtag);
     }
 
     [Test]
-    public void It_does_not_issue_a_post_commit_read()
+    public void It_does_not_issue_a_follow_up_read_on_the_shared_executor()
     {
         A.CallTo(_commandExecutor).MustNotHaveHappened();
     }
 
     [Test]
-    public void It_issues_the_locked_select_and_the_update_command()
+    public void It_issues_the_locked_select_update_and_in_session_readback()
     {
-        _sessionFactory.SessionCommands.Should().HaveCount(2);
+        _sessionFactory.SessionCommands.Should().HaveCount(3);
         _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        _sessionFactory.SessionCommands[1].CommandText.Should().Contain("UPDATE");
+        _sessionFactory.SessionCommands[2].CommandText.Should().Contain("SELECT");
     }
 }
 
@@ -1447,7 +1453,7 @@ internal static class DescriptorIfMatchHelper
             documentUuid,
             new TraceId("descriptor-delete-trace"),
             ifMatchEtag,
-            backendProfileWriteContext: null,
+            ifMatchReadableProjectionContext: null,
             cancellationToken
         );
 
@@ -1462,6 +1468,18 @@ internal static class DescriptorIfMatchHelper
             ["CodeValue"] = "Charter",
             ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
             ["ShortDescription"] = "Charter",
+            ["Description"] = "Charter",
+            ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
+            ["EffectiveEndDate"] = null,
+        };
+
+    public static IReadOnlyDictionary<string, object?> ChangedPersistedRow() =>
+        new Dictionary<string, object?>
+        {
+            ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+            ["CodeValue"] = "Charter",
+            ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
+            ["ShortDescription"] = "Charter School",
             ["Description"] = "Charter",
             ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
             ["EffectiveEndDate"] = null,

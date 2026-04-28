@@ -146,10 +146,11 @@ internal class ProfileResolutionMiddleware(
 
     private static string? GetProfileHeader(RequestInfo requestInfo)
     {
-        // GET uses Accept header, POST/PUT use Content-Type header
+        // GET/DELETE use Accept header, POST/PUT use Content-Type header.
         string? headerName = requestInfo.Method switch
         {
             RequestMethod.GET => "Accept",
+            RequestMethod.DELETE => "Accept",
             RequestMethod.POST => "Content-Type",
             RequestMethod.PUT => "Content-Type",
             _ => null,
@@ -169,6 +170,7 @@ internal class ProfileResolutionMiddleware(
         return method switch
         {
             RequestMethod.GET => 406,
+            RequestMethod.DELETE => 406,
             RequestMethod.POST => 415,
             RequestMethod.PUT => 415,
             _ => throw new InvalidOperationException($"Unexpected method for profile resolution: {method}"),

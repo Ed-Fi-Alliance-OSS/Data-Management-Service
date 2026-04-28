@@ -257,7 +257,7 @@ internal sealed class DescriptorWriteHandler(
 
             return new UpdateResult.UpdateSuccess(
                 documentUuid,
-                RelationalApiMetadataFormatter.FormatEtag(body)
+                ComputeEtagFromPersistedState(persisted, request.BackendProfileWriteContext)
             );
         }
 
@@ -282,15 +282,21 @@ internal sealed class DescriptorWriteHandler(
             await ExecuteWriteCommandAsync(command, _commandExecutor, cancellationToken)
                 .ConfigureAwait(false);
 
-            // ETag is computed from the just-persisted body values — identical to DB readback
-            // absent a concurrent write. ReadPersistedDescriptorAsync is intentionally NOT called
-            // here: opening a fresh _commandExecutor connection after the write creates a race
-            // window where a concurrent writer could commit between our write and the follow-up
-            // SELECT, causing us to return that writer's ETag. FormatEtag(body) is deterministic
-            // and free of that race.
+            var persistedAfterWrite = await ReadPersistedDescriptorAsync(
+                    request.MappingSet.Key.Dialect,
+                    documentId,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
             return new UpdateResult.UpdateSuccess(
                 documentUuid,
-                RelationalApiMetadataFormatter.FormatEtag(body)
+                persistedAfterWrite is not null
+                    ? ComputeEtagFromPersistedState(persistedAfterWrite, request.BackendProfileWriteContext)
+                    : ComputeEtagFromDescriptorBody(
+                        body,
+                        request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
+                    )
             );
         }
         catch (DbException ex)
@@ -314,7 +320,7 @@ internal sealed class DescriptorWriteHandler(
         DocumentUuid documentUuid,
         TraceId traceId,
         string? ifMatchEtag = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null,
+        ReadableProfileProjectionContext? ifMatchReadableProjectionContext = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -340,7 +346,7 @@ internal sealed class DescriptorWriteHandler(
                     traceId,
                     resourceKeyId,
                     ifMatchEtag,
-                    backendProfileWriteContext,
+                    ifMatchReadableProjectionContext,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -370,7 +376,7 @@ internal sealed class DescriptorWriteHandler(
         TraceId traceId,
         short resourceKeyId,
         string ifMatchEtag,
-        BackendProfileWriteContext? backendProfileWriteContext,
+        ReadableProfileProjectionContext? ifMatchReadableProjectionContext,
         CancellationToken cancellationToken
     )
     {
@@ -397,7 +403,7 @@ internal sealed class DescriptorWriteHandler(
 
         if (
             !IsWildcardIfMatch(ifMatchEtag)
-            && IsDescriptorEtagMismatch(ifMatchEtag, persisted, backendProfileWriteContext)
+            && IsDescriptorEtagMismatch(ifMatchEtag, persisted, ifMatchReadableProjectionContext)
         )
         {
             await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -555,12 +561,22 @@ internal sealed class DescriptorWriteHandler(
 
         await ExecuteWriteCommandAsync(command, _commandExecutor, cancellationToken).ConfigureAwait(false);
 
-        // ETag is computed from the just-persisted body values — identical to DB readback absent a
-        // concurrent write. ReadPersistedDescriptorByUuidAsync is intentionally NOT called here:
-        // opening a fresh _commandExecutor connection after the INSERT creates a race window where a
-        // concurrent writer could commit between our write and the follow-up SELECT, causing us to
-        // return that writer's ETag. FormatEtag(body) is deterministic and free of that race.
-        return new UpsertResult.InsertSuccess(documentUuid, RelationalApiMetadataFormatter.FormatEtag(body));
+        var persisted = await ReadPersistedDescriptorByUuidAsync(
+                request.MappingSet.Key.Dialect,
+                documentUuid,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return new UpsertResult.InsertSuccess(
+            documentUuid,
+            persisted is not null
+                ? ComputeEtagFromPersistedState(persisted, request.BackendProfileWriteContext)
+                : ComputeEtagFromDescriptorBody(
+                    body,
+                    request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
+                )
+        );
     }
 
     private async Task<UpsertResult> UpdateDescriptorForUpsertAsync(
@@ -609,7 +625,10 @@ internal sealed class DescriptorWriteHandler(
 
         var etag = persisted is not null
             ? ComputeEtagFromPersistedState(persisted, request.BackendProfileWriteContext)
-            : RelationalApiMetadataFormatter.FormatEtag(body);
+            : ComputeEtagFromDescriptorBody(
+                body,
+                request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
+            );
 
         return new UpsertResult.UpdateSuccess(existingDocumentUuid, etag);
     }
@@ -843,6 +862,63 @@ internal sealed class DescriptorWriteHandler(
     private string ComputeEtagFromPersistedState(
         PersistedDescriptorState persisted,
         BackendProfileWriteContext? backendProfileWriteContext
+    ) =>
+        ComputeEtagFromPersistedState(
+            persisted,
+            backendProfileWriteContext?.IfMatchReadableProjectionContext
+        );
+
+    private string ComputeEtagFromDescriptorBody(
+        ExtractedDescriptorBody body,
+        ReadableProfileProjectionContext? projectionContext
+    )
+    {
+        var document = new JsonObject { ["namespace"] = body.Namespace, ["codeValue"] = body.CodeValue };
+
+        if (body.ShortDescription is not null)
+        {
+            document["shortDescription"] = body.ShortDescription;
+        }
+
+        if (body.Description is not null)
+        {
+            document["description"] = body.Description;
+        }
+
+        if (body.EffectiveBeginDate is not null)
+        {
+            document["effectiveBeginDate"] = body.EffectiveBeginDate.Value.ToString(
+                "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture
+            );
+        }
+
+        if (body.EffectiveEndDate is not null)
+        {
+            document["effectiveEndDate"] = body.EffectiveEndDate.Value.ToString(
+                "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture
+            );
+        }
+
+        if (projectionContext is not null)
+        {
+            document = (JsonObject)
+                _readableProfileProjector.Project(
+                    document,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                );
+            RelationalApiMetadataFormatter.RefreshEtag(document);
+            return RelationalApiMetadataFormatter.FormatEtag(document);
+        }
+
+        return RelationalApiMetadataFormatter.FormatEtag(body);
+    }
+
+    private string ComputeEtagFromPersistedState(
+        PersistedDescriptorState persisted,
+        ReadableProfileProjectionContext? projectionContext
     )
     {
         var document = new JsonObject
@@ -877,7 +953,6 @@ internal sealed class DescriptorWriteHandler(
             );
         }
 
-        var projectionContext = backendProfileWriteContext?.IfMatchReadableProjectionContext;
         if (projectionContext is not null)
         {
             document = (JsonObject)
@@ -908,10 +983,10 @@ internal sealed class DescriptorWriteHandler(
     private bool IsDescriptorEtagMismatch(
         string ifMatchEtag,
         PersistedDescriptorState persisted,
-        BackendProfileWriteContext? backendProfileWriteContext
+        ReadableProfileProjectionContext? ifMatchReadableProjectionContext
     )
     {
-        var currentEtag = ComputeEtagFromPersistedState(persisted, backendProfileWriteContext);
+        var currentEtag = ComputeEtagFromPersistedState(persisted, ifMatchReadableProjectionContext);
         return !string.Equals(currentEtag, ifMatchEtag, StringComparison.Ordinal);
     }
 
@@ -930,6 +1005,25 @@ internal sealed class DescriptorWriteHandler(
         {
             SqlDialect.Pgsql => BuildPostgresqlReadCommand(documentId),
             SqlDialect.Mssql => BuildMssqlReadCommand(documentId),
+            _ => throw new NotSupportedException(
+                $"Descriptor read does not support SQL dialect '{dialect}'."
+            ),
+        };
+
+        return await ReadDescriptorStateFromExecutorAsync(command, _commandExecutor, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<PersistedDescriptorState?> ReadPersistedDescriptorByUuidAsync(
+        SqlDialect dialect,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken
+    )
+    {
+        var command = dialect switch
+        {
+            SqlDialect.Pgsql => BuildPostgresqlReadByUuidCommand(documentUuid),
+            SqlDialect.Mssql => BuildMssqlReadByUuidCommand(documentUuid),
             _ => throw new NotSupportedException(
                 $"Descriptor read does not support SQL dialect '{dialect}'."
             ),
@@ -1020,7 +1114,11 @@ internal sealed class DescriptorWriteHandler(
 
         if (
             !IsWildcardIfMatch(request.IfMatchEtag!)
-            && IsDescriptorEtagMismatch(request.IfMatchEtag!, persisted, request.BackendProfileWriteContext)
+            && IsDescriptorEtagMismatch(
+                request.IfMatchEtag!,
+                persisted,
+                request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
+            )
         )
         {
             await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -1048,7 +1146,7 @@ internal sealed class DescriptorWriteHandler(
             await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return new UpdateResult.UpdateSuccess(
                 documentUuid,
-                RelationalApiMetadataFormatter.FormatEtag(body)
+                ComputeEtagFromPersistedState(persisted, request.BackendProfileWriteContext)
             );
         }
 
@@ -1072,11 +1170,24 @@ internal sealed class DescriptorWriteHandler(
         {
             await ExecuteWriteCommandAsync(writeCommand, sessionExecutor, cancellationToken)
                 .ConfigureAwait(false);
+
+            var persistedAfterWrite = await ReadDescriptorStateFromExecutorAsync(
+                    BuildReadCommand(request.MappingSet.Key.Dialect, documentId),
+                    sessionExecutor,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
             await session.CommitAsync(cancellationToken).ConfigureAwait(false);
 
             return new UpdateResult.UpdateSuccess(
                 documentUuid,
-                RelationalApiMetadataFormatter.FormatEtag(body)
+                persistedAfterWrite is not null
+                    ? ComputeEtagFromPersistedState(persistedAfterWrite, request.BackendProfileWriteContext)
+                    : ComputeEtagFromDescriptorBody(
+                        body,
+                        request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
+                    )
             );
         }
         catch (DbException ex)
@@ -1138,7 +1249,11 @@ internal sealed class DescriptorWriteHandler(
 
         if (
             !IsWildcardIfMatch(request.IfMatchEtag!)
-            && IsDescriptorEtagMismatch(request.IfMatchEtag!, persisted, request.BackendProfileWriteContext)
+            && IsDescriptorEtagMismatch(
+                request.IfMatchEtag!,
+                persisted,
+                request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
+            )
         )
         {
             await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -1182,19 +1297,36 @@ internal sealed class DescriptorWriteHandler(
 
         await ExecuteWriteCommandAsync(writeCommand, sessionExecutor, cancellationToken)
             .ConfigureAwait(false);
+
+        var persistedAfterWrite = await ReadDescriptorStateFromExecutorAsync(
+                BuildReadCommand(request.MappingSet.Key.Dialect, documentId),
+                sessionExecutor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
         await session.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-        // ETag is computed from the just-persisted body values — identical to DB readback absent a
-        // concurrent write.  ReadPersistedDescriptorAsync is intentionally NOT called here: opening
-        // a fresh _commandExecutor connection after CommitAsync creates a race window where a
-        // concurrent writer could commit between our CommitAsync and the follow-up SELECT, causing
-        // us to return that writer's ETag to our client.  FormatEtag(body) is deterministic and
-        // free of that race.
         return new UpsertResult.UpdateSuccess(
             existingDocUuid,
-            RelationalApiMetadataFormatter.FormatEtag(body)
+            persistedAfterWrite is not null
+                ? ComputeEtagFromPersistedState(persistedAfterWrite, request.BackendProfileWriteContext)
+                : ComputeEtagFromDescriptorBody(
+                    body,
+                    request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
+                )
         );
     }
+
+    private static RelationalCommand BuildReadCommand(SqlDialect dialect, long documentId) =>
+        dialect switch
+        {
+            SqlDialect.Pgsql => BuildPostgresqlReadCommand(documentId),
+            SqlDialect.Mssql => BuildMssqlReadCommand(documentId),
+            _ => throw new NotSupportedException(
+                $"Descriptor read does not support SQL dialect '{dialect}'."
+            ),
+        };
 
     private static RelationalCommand BuildPostgresqlReadCommand(long documentId)
     {
@@ -1216,6 +1348,30 @@ internal sealed class DescriptorWriteHandler(
             """;
 
         return new RelationalCommand(Sql, [new RelationalParameter("@documentId", documentId)]);
+    }
+
+    private static RelationalCommand BuildPostgresqlReadByUuidCommand(DocumentUuid documentUuid)
+    {
+        const string Sql = """
+            SELECT descriptor."Namespace", descriptor."CodeValue", descriptor."Uri", descriptor."ShortDescription", descriptor."Description", descriptor."EffectiveBeginDate", descriptor."EffectiveEndDate"
+            FROM dms."Document" document
+            JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = document."DocumentId"
+            WHERE document."DocumentUuid" = @documentUuid;
+            """;
+
+        return new RelationalCommand(Sql, [new RelationalParameter("@documentUuid", documentUuid.Value)]);
+    }
+
+    private static RelationalCommand BuildMssqlReadByUuidCommand(DocumentUuid documentUuid)
+    {
+        const string Sql = """
+            SELECT descriptor.[Namespace], descriptor.[CodeValue], descriptor.[Uri], descriptor.[ShortDescription], descriptor.[Description], descriptor.[EffectiveBeginDate], descriptor.[EffectiveEndDate]
+            FROM [dms].[Document] document
+            JOIN [dms].[Descriptor] descriptor ON descriptor.[DocumentId] = document.[DocumentId]
+            WHERE document.[DocumentUuid] = @documentUuid;
+            """;
+
+        return new RelationalCommand(Sql, [new RelationalParameter("@documentUuid", documentUuid.Value)]);
     }
 
     // ── Locked read command builders (FOR UPDATE / UPDLOCK ROWLOCK) ───────

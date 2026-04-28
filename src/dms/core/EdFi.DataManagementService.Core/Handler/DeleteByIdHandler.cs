@@ -3,10 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,7 +64,7 @@ internal class DeleteByIdHandler(
                         ),
                         Headers: requestInfo.FrontendRequest.Headers,
                         MappingSet: requestInfo.MappingSet,
-                        BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
+                        IfMatchReadableProjectionContext: CreateIfMatchReadableProjectionContext(requestInfo)
                     )
                 ),
             requestInfo
@@ -123,5 +125,23 @@ internal class DeleteByIdHandler(
                 Headers: []
             ),
         };
+    }
+
+    private static ReadableProfileProjectionContext? CreateIfMatchReadableProjectionContext(
+        RequestInfo requestInfo
+    )
+    {
+        var profileContext = requestInfo.ProfileContext;
+        if (profileContext?.ResourceProfile.ReadContentType is null)
+        {
+            return null;
+        }
+
+        return new ReadableProfileProjectionContext(
+            profileContext.ResourceProfile.ReadContentType,
+            IReadableProfileProjector.ExtractIdentityPropertyNames(
+                requestInfo.ResourceSchema.IdentityJsonPaths
+            )
+        );
     }
 }

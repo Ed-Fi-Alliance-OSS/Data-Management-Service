@@ -1959,7 +1959,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     documentUuid,
                     A<TraceId>._,
                     ifMatchEtag,
-                    A<BackendProfileWriteContext?>._,
+                    A<ReadableProfileProjectionContext?>._,
                     A<CancellationToken>._
                 )
             )
@@ -1976,7 +1976,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     documentUuid,
                     A<TraceId>._,
                     ifMatchEtag,
-                    A<BackendProfileWriteContext?>._,
+                    A<ReadableProfileProjectionContext?>._,
                     A<CancellationToken>._
                 )
             )

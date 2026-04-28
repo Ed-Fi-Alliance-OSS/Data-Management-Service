@@ -47,7 +47,7 @@ internal sealed class DefaultDescriptorWriteHandler : IDescriptorWriteHandler
         DocumentUuid documentUuid,
         TraceId traceId,
         string? ifMatchEtag = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null,
+        ReadableProfileProjectionContext? ifMatchReadableProjectionContext = null,
         CancellationToken cancellationToken = default
     )
     {
