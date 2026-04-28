@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
@@ -104,19 +105,21 @@ internal static class JsonScopeAttachmentResolver
             return "$";
         }
 
-        var canonical = "$";
+        var canonical = new StringBuilder("$");
 
         foreach (var segment in segments)
         {
-            canonical += segment switch
-            {
-                JsonPathSegment.Property property => $".{property.Name}",
-                JsonPathSegment.AnyArrayElement => "[*]",
-                _ => throw new InvalidOperationException("Unsupported restricted JsonPath segment."),
-            };
+            canonical.Append(
+                segment switch
+                {
+                    JsonPathSegment.Property property => $".{property.Name}",
+                    JsonPathSegment.AnyArrayElement => "[*]",
+                    _ => throw new InvalidOperationException("Unsupported restricted JsonPath segment."),
+                }
+            );
         }
 
-        return canonical;
+        return canonical.ToString();
     }
 
     public static IReadOnlyList<JsonPathSegment> GetRestrictedSegments(JsonPathExpression path)

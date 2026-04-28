@@ -17,7 +17,6 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 {
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
-    private readonly ReferenceIdentityProjectionPlanCompiler _referenceIdentityProjectionPlanCompiler = new();
     private readonly DescriptorProjectionPlanCompiler _descriptorProjectionPlanCompiler = new(dialect);
 
     /// <summary>
@@ -96,7 +95,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             );
         }
 
-        var referenceIdentityProjectionPlans = _referenceIdentityProjectionPlanCompiler.Compile(
+        var referenceIdentityProjectionPlans = ReferenceIdentityProjectionPlanCompiler.Compile(
             resourceModel,
             hydrationPlanMetadata.ColumnOrdinalsByTable
         );
@@ -286,7 +285,6 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             );
 
             ReadPlanProjectionContractValidator.ValidateReferenceIdentityBindingPathOrThrow(
-                tableModel.Table,
                 identityColumn,
                 binding,
                 identityBinding,
@@ -330,7 +328,6 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         );
 
         ReadPlanProjectionContractValidator.ValidateDescriptorEdgeSourcePathOrThrow(
-            tableModel.Table,
             fkColumn,
             edgeSource,
             reason => new InvalidOperationException(

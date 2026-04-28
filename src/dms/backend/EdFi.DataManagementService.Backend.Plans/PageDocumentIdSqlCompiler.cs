@@ -43,7 +43,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         if (spec.Predicates.Any(predicate => predicate is null))
         {
-            throw new ArgumentException("Predicates must not contain null entries.", nameof(spec.Predicates));
+            throw new ArgumentException(
+                $"{nameof(spec.Predicates)} must not contain null entries.",
+                nameof(spec)
+            );
         }
 
         PlanSqlWriterExtensions.ValidateBareParameterName(
@@ -112,7 +115,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .ThenBy(predicate => predicate.ParameterName, StringComparer.Ordinal)
             .ToArray();
 
-        for (var startIndex = 0; startIndex < rewrittenPredicates.Length; startIndex++)
+        var startIndex = 0;
+        while (startIndex < rewrittenPredicates.Length)
         {
             var endExclusiveIndex = startIndex + 1;
 
@@ -136,7 +140,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 );
             }
 
-            startIndex = endExclusiveIndex - 1;
+            startIndex = endExclusiveIndex;
         }
 
         return rewrittenPredicates;
@@ -208,31 +212,25 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         string limitParameterName
     )
     {
-        foreach (var predicate in predicates)
+        foreach (var parameterName in predicates.Select(p => p.ParameterName))
         {
-            if (
-                string.Equals(
-                    predicate.ParameterName,
-                    offsetParameterName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
+            if (string.Equals(parameterName, offsetParameterName, StringComparison.OrdinalIgnoreCase))
             {
                 throw CreateFilterPagingCollisionException(
-                    predicate.ParameterName,
+                    parameterName,
                     offsetParameterName,
-                    nameof(PageDocumentIdQuerySpec.OffsetParameterName)
+                    nameof(PageDocumentIdQuerySpec.OffsetParameterName),
+                    nameof(predicates)
                 );
             }
 
-            if (
-                string.Equals(predicate.ParameterName, limitParameterName, StringComparison.OrdinalIgnoreCase)
-            )
+            if (string.Equals(parameterName, limitParameterName, StringComparison.OrdinalIgnoreCase))
             {
                 throw CreateFilterPagingCollisionException(
-                    predicate.ParameterName,
+                    parameterName,
                     limitParameterName,
-                    nameof(PageDocumentIdQuerySpec.LimitParameterName)
+                    nameof(PageDocumentIdQuerySpec.LimitParameterName),
+                    nameof(predicates)
                 );
             }
         }
@@ -248,7 +246,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         if (string.Equals(offsetParameterName, limitParameterName, StringComparison.OrdinalIgnoreCase))
         {
-            throw CreatePagingParameterCollisionException(offsetParameterName, limitParameterName);
+            throw CreatePagingParameterCollisionException(
+                offsetParameterName,
+                limitParameterName,
+                nameof(offsetParameterName)
+            );
         }
     }
 
@@ -273,7 +275,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             return;
         }
 
-        throw CreateDuplicateFilterParameterNamesException(duplicateGroups);
+        throw CreateDuplicateFilterParameterNamesException(duplicateGroups, nameof(predicates));
     }
 
     /// <summary>
@@ -381,7 +383,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// <summary>
     /// Emits the optional <c>dms.Document</c> join required for <c>?id=</c> filtering.
     /// </summary>
-    private void AppendDocumentJoin(SqlWriter writer, bool requiresDocumentUuidJoin)
+    private static void AppendDocumentJoin(SqlWriter writer, bool requiresDocumentUuidJoin)
     {
         if (!requiresDocumentUuidJoin)
         {
@@ -523,11 +525,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         return string.Join(
             ", ",
-            [
-                $"presenceColumn='{presenceColumn}'",
-                $"canonicalColumn='{predicate.CanonicalColumn.Value}'",
-                $"operator='{operatorToken}'",
-            ]
+            $"presenceColumn='{presenceColumn}'",
+            $"canonicalColumn='{predicate.CanonicalColumn.Value}'",
+            $"operator='{operatorToken}'"
         );
     }
 
@@ -607,13 +607,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static ArgumentException CreateFilterPagingCollisionException(
         string filterParameterName,
         string pagingParameterName,
-        string pagingParameterPropertyName
+        string pagingParameterPropertyName,
+        string paramName
     )
     {
         return new ArgumentException(
             $"Filter parameter name '{filterParameterName}' collides with paging parameter name '{pagingParameterName}' (case-insensitive). "
                 + $"Rename the filter parameter or change {pagingParameterPropertyName}.",
-            nameof(PageDocumentIdQuerySpec.Predicates)
+            paramName
         );
     }
 
@@ -622,7 +623,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static ArgumentException CreatePagingParameterCollisionException(
         string offsetParameterName,
-        string limitParameterName
+        string limitParameterName,
+        string paramName
     )
     {
         return new ArgumentException(
@@ -630,7 +632,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 + $"{nameof(PageDocumentIdQuerySpec.OffsetParameterName)}='{offsetParameterName}', "
                 + $"{nameof(PageDocumentIdQuerySpec.LimitParameterName)}='{limitParameterName}'. "
                 + $"Rename either {nameof(PageDocumentIdQuerySpec.OffsetParameterName)} or {nameof(PageDocumentIdQuerySpec.LimitParameterName)}.",
-            nameof(PageDocumentIdQuerySpec.OffsetParameterName)
+            paramName
         );
     }
 
@@ -638,7 +640,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// Creates a deterministic exception describing duplicate filter parameter names.
     /// </summary>
     private static ArgumentException CreateDuplicateFilterParameterNamesException(
-        IReadOnlyList<string[]> duplicateGroups
+        IReadOnlyList<string[]> duplicateGroups,
+        string paramName
     )
     {
         var formattedGroups = duplicateGroups
@@ -649,7 +652,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             "Duplicate filter parameter names are not allowed (case-insensitive). "
                 + $"Colliding names: [{string.Join(", ", formattedGroups)}]. "
                 + "Rename filter parameters so each name is unique.",
-            nameof(PageDocumentIdQuerySpec.Predicates)
+            paramName
         );
     }
 

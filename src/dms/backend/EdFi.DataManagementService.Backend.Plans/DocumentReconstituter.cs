@@ -818,15 +818,7 @@ public static class DocumentReconstituter
 
     private static bool JsonObjectHasMeaningfulContent(JsonObject jsonObject)
     {
-        foreach (var property in jsonObject)
-        {
-            if (HasMeaningfulContent(property.Value))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return jsonObject.Any(property => HasMeaningfulContent(property.Value));
     }
 
     /// <summary>

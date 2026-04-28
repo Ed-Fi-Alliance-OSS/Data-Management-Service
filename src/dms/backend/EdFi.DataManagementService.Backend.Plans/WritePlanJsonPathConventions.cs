@@ -34,7 +34,7 @@ public static class WritePlanJsonPathConventions
 
         var relativeSegments = sourceJsonPath.Segments.Skip(jsonScope.Segments.Count).ToArray();
 
-        if (relativeSegments.Any(segment => segment is JsonPathSegment.AnyArrayElement))
+        if (Array.Exists(relativeSegments, segment => segment is JsonPathSegment.AnyArrayElement))
         {
             throw new InvalidOperationException(
                 $"Cannot derive scope-relative path for source '{sourceJsonPath.Canonical}' under "

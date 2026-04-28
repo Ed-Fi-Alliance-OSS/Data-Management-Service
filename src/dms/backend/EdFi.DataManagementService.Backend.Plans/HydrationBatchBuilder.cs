@@ -266,11 +266,11 @@ public static class HydrationBatchBuilder
         IReadOnlyList<QuerySqlParameter> parameters
     )
     {
-        foreach (var parameter in parameters)
+        foreach (var parameterName in parameters.Select(p => p.ParameterName))
         {
-            if (!ContainsParameterName(requiredParameterNames, parameter.ParameterName))
+            if (!ContainsParameterName(requiredParameterNames, parameterName))
             {
-                requiredParameterNames.Add(parameter.ParameterName);
+                requiredParameterNames.Add(parameterName);
             }
         }
     }
@@ -280,15 +280,9 @@ public static class HydrationBatchBuilder
         string candidateParameterName
     )
     {
-        foreach (var parameterName in parameterNames)
-        {
-            if (string.Equals(parameterName, candidateParameterName, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return parameterNames.Any(parameterName =>
+            string.Equals(parameterName, candidateParameterName, StringComparison.OrdinalIgnoreCase)
+        );
     }
 
     private static void ValidateRequiredParameterValues(

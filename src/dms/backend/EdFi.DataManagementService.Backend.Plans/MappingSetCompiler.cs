@@ -47,14 +47,14 @@ public sealed class MappingSetCompiler
                 );
             }
 
-            if (readPlanCompiler.TryCompile(resourceModel, out var readPlan))
+            if (
+                readPlanCompiler.TryCompile(resourceModel, out var readPlan)
+                && !readPlansByResource.TryAdd(resourceModel.Resource, readPlan)
+            )
             {
-                if (!readPlansByResource.TryAdd(resourceModel.Resource, readPlan))
-                {
-                    throw new InvalidOperationException(
-                        $"Cannot compile mapping set: duplicate read plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}'."
-                    );
-                }
+                throw new InvalidOperationException(
+                    $"Cannot compile mapping set: duplicate read plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}'."
+                );
             }
 
             if (

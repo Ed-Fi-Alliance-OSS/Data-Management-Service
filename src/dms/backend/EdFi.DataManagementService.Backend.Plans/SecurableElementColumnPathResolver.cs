@@ -35,17 +35,17 @@ internal static class SecurableElementColumnPathResolver
         var unresolvedPaths = new List<string>();
         var skippedArrayNestedPaths = new List<string>();
 
-        foreach (var edOrg in securableElements.EducationOrganization)
+        foreach (var jsonPath in securableElements.EducationOrganization.Select(e => e.JsonPath))
         {
             // Array-nested paths (containing [*]) require child-table traversal
             // which is not yet supported; skip them from fail-fast validation.
-            if (IsArrayNestedPath(edOrg.JsonPath))
+            if (IsArrayNestedPath(jsonPath))
             {
-                skippedArrayNestedPaths.Add(edOrg.JsonPath);
+                skippedArrayNestedPaths.Add(jsonPath);
                 continue;
             }
 
-            var path = ResolveEdOrgOrNamespacePath(subjectResource, edOrg.JsonPath);
+            var path = ResolveEdOrgOrNamespacePath(subjectResource, jsonPath);
             if (path is not null)
             {
                 results.Add(
@@ -54,7 +54,7 @@ internal static class SecurableElementColumnPathResolver
             }
             else
             {
-                unresolvedPaths.Add(edOrg.JsonPath);
+                unresolvedPaths.Add(jsonPath);
             }
         }
 
@@ -155,19 +155,14 @@ internal static class SecurableElementColumnPathResolver
                 continue;
             }
 
-            foreach (var identityBinding in binding.IdentityBindings)
+            var identityBinding = binding.IdentityBindings.FirstOrDefault(ib =>
+                string.Equals(ib.ReferenceJsonPath.Canonical, securableElementPath, StringComparison.Ordinal)
+            );
+
+            if (identityBinding is not null)
             {
-                if (
-                    string.Equals(
-                        identityBinding.ReferenceJsonPath.Canonical,
-                        securableElementPath,
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    var column = ResolveToCanonicalColumn(rootTable, identityBinding.Column);
-                    return new ColumnPathStep(rootTable.Table, column, null, null);
-                }
+                var column = ResolveToCanonicalColumn(rootTable, identityBinding.Column);
+                return new ColumnPathStep(rootTable.Table, column, null, null);
             }
         }
 

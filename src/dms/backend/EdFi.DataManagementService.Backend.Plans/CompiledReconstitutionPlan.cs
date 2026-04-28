@@ -566,10 +566,8 @@ internal static class CompiledReconstitutionPlanBuilder
     {
         Dictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalsByTable = [];
 
-        foreach (var tablePlan in readPlan.TablePlansInDependencyOrder)
+        foreach (var tableModel in readPlan.TablePlansInDependencyOrder.Select(t => t.TableModel))
         {
-            var tableModel = tablePlan.TableModel;
-
             if (
                 !columnOrdinalsByTable.TryAdd(
                     tableModel.Table,

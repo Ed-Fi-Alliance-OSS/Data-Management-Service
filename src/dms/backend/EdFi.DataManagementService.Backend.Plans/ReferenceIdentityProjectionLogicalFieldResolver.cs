@@ -104,8 +104,10 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
                 containsUnifiedAlias |= resolvedBindingColumn.UsesUnifiedAlias;
             }
 
-            if (representativeBindingColumn is null || storageColumn is null)
+            if (representativeBindingColumn is null)
             {
+                // storageColumn is set in the same loop iteration as representativeBindingColumn,
+                // so a null representativeBindingColumn implies no member columns were processed.
                 throw createException(
                     $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{tableModel.Table}' grouped logical field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' does not contain any member columns"
                 );
@@ -120,7 +122,7 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
             }
 
             var representativeBindingColumnValue = representativeBindingColumn.Value;
-            var storageColumnValue = storageColumn.Value;
+            var storageColumnValue = storageColumn!.Value;
 
             logicalFields.Add(
                 new ResolvedReferenceIdentityProjectionLogicalField(
