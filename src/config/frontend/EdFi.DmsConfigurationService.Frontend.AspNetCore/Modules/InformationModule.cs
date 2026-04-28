@@ -15,7 +15,7 @@ public class InformationModule : IEndpointModule
         endpoints.MapGet("", GetInformation);
     }
 
-    private IResult GetInformation(HttpContext httpContext)
+    private static IResult GetInformation(HttpContext httpContext)
     {
         var baseUrl =
             $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}";

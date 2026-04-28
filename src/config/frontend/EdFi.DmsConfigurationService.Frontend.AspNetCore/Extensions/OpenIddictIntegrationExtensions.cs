@@ -30,8 +30,13 @@ public static class OpenIddictIntegrationExtensions
             .AddOpenIddict()
             .AddValidation(options =>
             {
-                // Configure validation to use local authorization server
-                options.SetIssuer(configuration["Authentication:Authority"] ?? "https://localhost:5126");
+                // Configure validation to use the configured authorization server
+                options.SetIssuer(
+                    configuration["Authentication:Authority"]
+                        ?? throw new InvalidOperationException(
+                            "Configuration value 'Authentication:Authority' is required."
+                        )
+                );
 
                 // Register the System.Net.Http integration
                 options.UseSystemNetHttp();

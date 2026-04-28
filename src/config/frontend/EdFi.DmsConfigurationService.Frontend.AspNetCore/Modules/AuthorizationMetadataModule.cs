@@ -20,7 +20,7 @@ public class AuthorizationMetadataModule : IEndpointModule
         endpoints.MapLimitedAccess("/authorizationMetadata", GetAuthorizationMetadata);
     }
 
-    private async Task<IResult> GetAuthorizationMetadata(
+    private static async Task<IResult> GetAuthorizationMetadata(
         [FromQuery] string? claimSetName,
         IClaimsHierarchyRepository repository,
         IAuthorizationMetadataResponseFactory responseFactory,

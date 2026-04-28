@@ -93,6 +93,7 @@ public class ProfileModule : IEndpointModule
         ILogger<ProfileModule> logger
     )
     {
+        logger.LogDebug("Entering Profile InsertProfile");
         await validator.GuardAsync(command);
         var result = await repository.InsertProfile(command);
         var request = httpContext.Request;
@@ -149,6 +150,7 @@ public class ProfileModule : IEndpointModule
         ILogger<ProfileModule> logger
     )
     {
+        logger.LogDebug("Entering Profile Update for id: {Id}", id);
         await validator.GuardAsync(command);
         if (command.Id != id)
         {
@@ -183,6 +185,7 @@ public class ProfileModule : IEndpointModule
         ILogger<ProfileModule> logger
     )
     {
+        logger.LogDebug("Entering Profile Delete for id: {Id}", id);
         var result = await repository.DeleteProfile(id);
         return result switch
         {

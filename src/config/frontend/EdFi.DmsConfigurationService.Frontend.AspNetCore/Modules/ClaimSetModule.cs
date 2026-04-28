@@ -87,6 +87,7 @@ public class ClaimSetModule : IEndpointModule
         ILogger<ClaimSetModule> logger
     )
     {
+        logger.LogDebug("Entering ClaimSet GetById for id: {Id}", id);
         ClaimSetGetResult result = await repository.GetClaimSet(id);
 
         return result switch
@@ -177,6 +178,7 @@ public class ClaimSetModule : IEndpointModule
         ILogger<ClaimSetModule> logger
     )
     {
+        logger.LogDebug("Entering ClaimSet Delete for id: {Id}", id);
         ClaimSetDeleteResult result = await repository.DeleteClaimSet(id);
 
         return result switch
@@ -207,6 +209,7 @@ public class ClaimSetModule : IEndpointModule
         ILogger<ClaimSetModule> logger
     )
     {
+        logger.LogDebug("Entering ClaimSet Export for id: {Id}", id);
         ClaimSetExportResult result = await repository.Export(id);
 
         return result switch

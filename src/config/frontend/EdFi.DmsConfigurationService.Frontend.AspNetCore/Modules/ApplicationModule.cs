@@ -88,11 +88,11 @@ public class ApplicationModule : IEndpointModule
         switch (clientCreateResult)
         {
             case ClientCreateResult.FailureUnknown failure:
-                logger.LogError("Failure creating client {failure}", failure);
+                logger.LogError("Failure creating client {Failure}", failure);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError(
-                    "Failure creating client: {failureMessage}",
+                    "Failure creating client: {FailureMessage}",
                     SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                 );
                 return FailureResults.BadGateway(
@@ -147,7 +147,7 @@ public class ApplicationModule : IEndpointModule
                             ),
                         ]);
                     case ApplicationInsertResult.FailureUnknown failure:
-                        logger.LogError("Failure creating client {failure}", failure);
+                        logger.LogError("Failure creating client {Failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
                         return FailureResults.Unknown(httpContext.TraceIdentifier);
                 }
@@ -180,6 +180,7 @@ public class ApplicationModule : IEndpointModule
         ILogger<ApplicationModule> logger
     )
     {
+        logger.LogDebug("Entering Application GetById for id: {Id}", id);
         ApplicationGetResult getResult = await applicationRepository.GetApplication(id);
         return getResult switch
         {
@@ -216,7 +217,7 @@ public class ApplicationModule : IEndpointModule
                 var client = success.Clients.FirstOrDefault();
                 if (client != null)
                 {
-                    logger.LogInformation("Updating client {clientId}", client.ClientId);
+                    logger.LogInformation("Updating client {ClientId}", client.ClientId);
                     var clientUpdateResult = await clientRepository.UpdateClientAsync(
                         client.ClientUuid.ToString(),
                         command.ApplicationName,
@@ -276,8 +277,7 @@ public class ApplicationModule : IEndpointModule
 
                             return applicationUpdateResult switch
                             {
-                                ApplicationUpdateResult.Success updateApplicationSuccess =>
-                                    Results.NoContent(),
+                                ApplicationUpdateResult.Success => Results.NoContent(),
                                 ApplicationUpdateResult.FailureNotExists => FailureResults.NotFound(
                                     "Application not found",
                                     httpContext.TraceIdentifier
@@ -287,10 +287,8 @@ public class ApplicationModule : IEndpointModule
 
                         case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
                             logger.LogError(
-                                "Failure updating client: {failureMessage}",
-                                SanitizeForLog(
-                                    failureIdentityProvider.IdentityProviderError.FailureMessage
-                                )
+                                "Failure updating client: {FailureMessage}",
+                                SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                             );
                             return FailureResults.BadGateway(
                                 "Identity provider error during client update",
@@ -301,7 +299,7 @@ public class ApplicationModule : IEndpointModule
                             return FailureResults.Unknown(httpContext.TraceIdentifier);
                         case ClientUpdateResult.FailureUnknown unknownFailure:
                             logger.LogError(
-                                "Error updating client {clientId} {clientUuid}: {message}",
+                                "Error updating client {ClientId} {ClientUuid}: {Message}",
                                 client.ClientId,
                                 client.ClientUuid,
                                 unknownFailure.FailureMessage
@@ -315,7 +313,7 @@ public class ApplicationModule : IEndpointModule
                 }
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:
-                logger.LogError("Error fetching ApiClients: {failure}", failure);
+                logger.LogError("Error fetching ApiClients: {Failure}", failure);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         return FailureResults.Unknown(httpContext.TraceIdentifier);
@@ -329,7 +327,7 @@ public class ApplicationModule : IEndpointModule
         ILogger<ApplicationModule> logger
     )
     {
-        logger.LogInformation("Deleting Application {id}", id);
+        logger.LogInformation("Deleting Application {Id}", id);
 
         var apiClientsResult = await repository.GetApplicationApiClients(id);
         switch (apiClientsResult)
@@ -339,14 +337,14 @@ public class ApplicationModule : IEndpointModule
                 {
                     try
                     {
-                        logger.LogInformation("Deleting client {clientId}", client.ClientId);
+                        logger.LogInformation("Deleting client {ClientId}", client.ClientId);
                         var clientDeleteResult = await clientRepository.DeleteClientAsync(
                             client.ClientUuid.ToString()
                         );
                         if (clientDeleteResult is ClientDeleteResult.FailureUnknown failureUnknown)
                         {
                             logger.LogError(
-                                "Error deleting client {clientId} {clientUuid}: {failureMessage}",
+                                "Error deleting client {ClientId} {ClientUuid}: {FailureMessage}",
                                 client.ClientId,
                                 client.ClientUuid,
                                 failureUnknown.FailureMessage
@@ -356,7 +354,8 @@ public class ApplicationModule : IEndpointModule
                     catch (Exception ex)
                     {
                         logger.LogError(
-                            "Error deleting client {clientId} {clientUuid}: {message}",
+                            ex,
+                            "Error deleting client {ClientId} {ClientUuid}: {Message}",
                             client.ClientId,
                             client.ClientUuid,
                             ex.Message
@@ -367,7 +366,7 @@ public class ApplicationModule : IEndpointModule
 
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:
-                logger.LogError("Error fetching ApiClients: {failure}", failure);
+                logger.LogError("Error fetching ApiClients: {Failure}", failure);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
@@ -375,7 +374,7 @@ public class ApplicationModule : IEndpointModule
 
         if (deleteResult is ApplicationDeleteResult.FailureUnknown unknown)
         {
-            logger.LogError("Error deleting Application {id}: {message}", id, unknown.FailureMessage);
+            logger.LogError("Error deleting Application {Id}: {Message}", id, unknown.FailureMessage);
             return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         return deleteResult switch
@@ -406,7 +405,7 @@ public class ApplicationModule : IEndpointModule
                 {
                     try
                     {
-                        logger.LogInformation("Resetting client {clientId}", client.ClientId);
+                        logger.LogInformation("Resetting client {ClientId}", client.ClientId);
                         var clientResetResult = await clientRepository.ResetCredentialsAsync(
                             client.ClientUuid.ToString()
                         );
@@ -428,7 +427,7 @@ public class ApplicationModule : IEndpointModule
                                 );
                             case ClientResetResult.FailureIdentityProvider failureIdentityProvider:
                                 logger.LogError(
-                                    "Identity provider error during credential reset: {message}",
+                                    "Identity provider error during credential reset: {Message}",
                                     SanitizeForLog(
                                         failureIdentityProvider.IdentityProviderError.FailureMessage
                                     )
@@ -439,7 +438,7 @@ public class ApplicationModule : IEndpointModule
                                 );
                             case ClientResetResult.FailureUnknown failure:
                                 logger.LogError(
-                                    "Error resetting client credentials {clientId} {clientUuid}: {message}",
+                                    "Error resetting client credentials {ClientId} {ClientUuid}: {Message}",
                                     client.ClientId,
                                     client.ClientUuid,
                                     failure.FailureMessage
@@ -450,7 +449,8 @@ public class ApplicationModule : IEndpointModule
                     catch (Exception ex)
                     {
                         logger.LogError(
-                            "Error resetting client credentials {clientId} {clientUuid}: {message}",
+                            ex,
+                            "Error resetting client credentials {ClientId} {ClientUuid}: {Message}",
                             client.ClientId,
                             client.ClientUuid,
                             ex.Message
@@ -464,7 +464,7 @@ public class ApplicationModule : IEndpointModule
                 }
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:
-                logger.LogError("Error fetching ApiClients: {failure}", failure);
+                logger.LogError("Error fetching ApiClients: {Failure}", failure);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         return FailureResults.Unknown(httpContext.TraceIdentifier);

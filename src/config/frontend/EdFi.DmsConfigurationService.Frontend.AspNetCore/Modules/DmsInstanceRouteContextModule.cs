@@ -57,7 +57,7 @@ public class DmsInstanceRouteContextModule : IEndpointModule
                         ),
                     }
                 ),
-            DmsInstanceRouteContextInsertResult.FailureUnknown failure => FailureResults.Unknown(
+            DmsInstanceRouteContextInsertResult.FailureUnknown => FailureResults.Unknown(
                 httpContext.TraceIdentifier
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -87,6 +87,7 @@ public class DmsInstanceRouteContextModule : IEndpointModule
         ILogger<DmsInstanceRouteContextModule> logger
     )
     {
+        logger.LogDebug("Entering DmsInstanceRouteContext GetById for id: {Id}", id);
         var getResult = await instanceRouteContextRepository.GetInstanceRouteContext(id);
         return getResult switch
         {
@@ -110,6 +111,7 @@ public class DmsInstanceRouteContextModule : IEndpointModule
         ILogger<DmsInstanceRouteContextModule> logger
     )
     {
+        logger.LogDebug("Entering DmsInstanceRouteContext Update for id: {Id}", id);
         await validator.GuardAsync(command);
 
         if (command.Id != id)
@@ -152,7 +154,7 @@ public class DmsInstanceRouteContextModule : IEndpointModule
         ILogger<DmsInstanceRouteContextModule> logger
     )
     {
-        logger.LogInformation("Deleting DmsInstanceRouteContext {id}", id);
+        logger.LogInformation("Deleting DmsInstanceRouteContext {Id}", id);
 
         var deleteResult = await instanceRouteContextRepository.DeleteInstanceRouteContext(id);
 
