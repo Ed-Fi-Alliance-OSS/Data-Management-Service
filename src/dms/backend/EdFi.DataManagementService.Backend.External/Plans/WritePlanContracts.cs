@@ -221,10 +221,15 @@ public sealed record TableWritePlan
                 != CollectionKeyPreallocationPlan.BindingIndex
             )
             {
+                // Synthetic dotted paramName preserves diagnostic specificity for callers
+                // matching on ParamName; the dotted form is not a real .NET parameter, so
+                // the analyzer rule is suppressed here intentionally.
+#pragma warning disable S3928
                 throw new ArgumentException(
                     $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(CollectionMergePlan.StableRowIdentityBindingIndex)} must match {nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.BindingIndex)}.",
-                    nameof(CollectionKeyPreallocationPlan)
+                    $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.BindingIndex)}"
                 );
+#pragma warning restore S3928
             }
 
             var stableRowIdentityBinding = this.ColumnBindings[
@@ -233,10 +238,12 @@ public sealed record TableWritePlan
 
             if (!stableRowIdentityBinding.Column.ColumnName.Equals(CollectionKeyPreallocationPlan.ColumnName))
             {
+#pragma warning disable S3928
                 throw new ArgumentException(
                     $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(CollectionMergePlan.StableRowIdentityBindingIndex)} resolves to column '{stableRowIdentityBinding.Column.ColumnName.Value}', which must match {nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.ColumnName)} '{CollectionKeyPreallocationPlan.ColumnName.Value}'.",
-                    nameof(CollectionKeyPreallocationPlan)
+                    $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.ColumnName)}"
                 );
+#pragma warning restore S3928
             }
 
             return;

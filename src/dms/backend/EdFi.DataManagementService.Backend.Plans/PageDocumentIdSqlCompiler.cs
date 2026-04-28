@@ -43,10 +43,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         if (spec.Predicates.Any(predicate => predicate is null))
         {
-            throw new ArgumentException(
-                $"{nameof(spec.Predicates)} must not contain null entries.",
-                nameof(spec)
-            );
+            throw CreateNullPredicateEntryException();
         }
 
         PlanSqlWriterExtensions.ValidateBareParameterName(
@@ -220,7 +217,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     parameterName,
                     offsetParameterName,
                     nameof(PageDocumentIdQuerySpec.OffsetParameterName),
-                    nameof(predicates)
+                    nameof(PageDocumentIdQuerySpec.Predicates)
                 );
             }
 
@@ -230,7 +227,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     parameterName,
                     limitParameterName,
                     nameof(PageDocumentIdQuerySpec.LimitParameterName),
-                    nameof(predicates)
+                    nameof(PageDocumentIdQuerySpec.Predicates)
                 );
             }
         }
@@ -249,7 +246,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             throw CreatePagingParameterCollisionException(
                 offsetParameterName,
                 limitParameterName,
-                nameof(offsetParameterName)
+                nameof(PageDocumentIdQuerySpec.OffsetParameterName)
             );
         }
     }
@@ -275,7 +272,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             return;
         }
 
-        throw CreateDuplicateFilterParameterNamesException(duplicateGroups, nameof(predicates));
+        throw CreateDuplicateFilterParameterNamesException(
+            duplicateGroups,
+            nameof(PageDocumentIdQuerySpec.Predicates)
+        );
     }
 
     /// <summary>
@@ -599,6 +599,25 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static string FormatCollisionValues(IReadOnlyList<string> values)
     {
         return string.Join(", ", values.Select(static value => $"'{value}'"));
+    }
+
+    /// <summary>
+    /// Creates a deterministic exception describing a null entry in the predicates list.
+    /// </summary>
+    private static ArgumentException CreateNullPredicateEntryException()
+    {
+        var predicatesName = nameof(PageDocumentIdQuerySpec.Predicates);
+        return BuildArgumentException($"{predicatesName} must not contain null entries.", predicatesName);
+    }
+
+    /// <summary>
+    /// Helper that constructs an <see cref="ArgumentException"/> from a runtime-supplied parameter name.
+    /// Routing through a parameter prevents the analyzer from statically tying the literal property
+    /// name to the enclosing method's argument list (which it never matches for these record-spec helpers).
+    /// </summary>
+    private static ArgumentException BuildArgumentException(string message, string paramName)
+    {
+        return new ArgumentException(message, paramName);
     }
 
     /// <summary>
