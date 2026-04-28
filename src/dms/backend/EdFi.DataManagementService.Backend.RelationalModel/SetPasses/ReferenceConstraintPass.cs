@@ -152,30 +152,28 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             var bindingTable = ResolveReferenceBindingTable(binding, resourceModel, resource);
             var tableAccumulator = mutation.GetTableAccumulator(bindingTable, resource);
 
-            if (identityColumns.LocalColumns.Count > 0)
+            if (
+                identityColumns.LocalColumns.Count > 0
+                && !ContainsAllOrNoneConstraint(
+                    tableAccumulator.Constraints,
+                    tableAccumulator.Definition.Table,
+                    binding.FkColumn,
+                    identityColumns.LocalColumns
+                )
+            )
             {
-                if (
-                    !ContainsAllOrNoneConstraint(
-                        tableAccumulator.Constraints,
-                        tableAccumulator.Definition.Table,
+                var allOrNoneName = ConstraintNaming.BuildAllOrNoneName(
+                    tableAccumulator.Definition.Table,
+                    referenceBaseName
+                );
+                tableAccumulator.AddConstraint(
+                    new TableConstraint.AllOrNoneNullability(
+                        allOrNoneName,
                         binding.FkColumn,
                         identityColumns.LocalColumns
                     )
-                )
-                {
-                    var allOrNoneName = ConstraintNaming.BuildAllOrNoneName(
-                        tableAccumulator.Definition.Table,
-                        referenceBaseName
-                    );
-                    tableAccumulator.AddConstraint(
-                        new TableConstraint.AllOrNoneNullability(
-                            allOrNoneName,
-                            binding.FkColumn,
-                            identityColumns.LocalColumns
-                        )
-                    );
-                    mutation.MarkTableMutated(bindingTable);
-                }
+                );
+                mutation.MarkTableMutated(bindingTable);
             }
 
             var mappedIdentityColumns = MapReferenceIdentityColumnsToStorage(
@@ -251,11 +249,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 targetColumns.AddRange(mappedIdentityColumns.TargetColumns);
             }
 
-            var onUpdate =
-                context.SetContext.Dialect == SqlDialect.Mssql ? ReferentialAction.NoAction
-                : targetInfo.IsAbstract ? ReferentialAction.Cascade
-                : targetInfo.TransitivelyAllowIdentityUpdates ? ReferentialAction.Cascade
-                : ReferentialAction.NoAction;
+            var onUpdate = ResolveOnUpdate(context.SetContext.Dialect, targetInfo);
 
             if (
                 !ContainsForeignKeyConstraint(
@@ -610,6 +604,19 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         }
 
         return new ReferenceIdentityColumnSet(localColumns.ToArray(), targetColumns.ToArray());
+    }
+
+    private static ReferentialAction ResolveOnUpdate(SqlDialect dialect, TargetIdentityInfo targetInfo)
+    {
+        if (dialect == SqlDialect.Mssql)
+        {
+            return ReferentialAction.NoAction;
+        }
+        if (targetInfo.IsAbstract || targetInfo.TransitivelyAllowIdentityUpdates)
+        {
+            return ReferentialAction.Cascade;
+        }
+        return ReferentialAction.NoAction;
     }
 
     /// <summary>

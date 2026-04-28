@@ -106,7 +106,7 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
     private static AuthEdOrgHierarchy? CompileHierarchy(RelationalModelSetBuilderContext context)
     {
         // Step 1: Find the abstract EducationOrganization union view.
-        var edOrgUnionView = context.AbstractUnionViewsInNameOrder.FirstOrDefault(v =>
+        var edOrgUnionView = context.AbstractUnionViewsInNameOrder.Find(v =>
             v.AbstractResourceKey.Resource.ResourceName == EducationOrganizationResourceName
         );
 
@@ -124,7 +124,7 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
 
         // Step 3: Determine the abstract identity column (for the union view projection).
         var abstractIdentityTable =
-            context.AbstractIdentityTablesInNameOrder.FirstOrDefault(t =>
+            context.AbstractIdentityTablesInNameOrder.Find(t =>
                 t.AbstractResourceKey.Resource == abstractEdOrgResource
             )
             ?? throw new InvalidOperationException(

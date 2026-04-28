@@ -79,12 +79,9 @@ public static class RelationalNameConventions
 
         StringBuilder builder = new(projectEndpointName.Length);
 
-        foreach (var character in projectEndpointName)
+        foreach (var character in projectEndpointName.Where(IsAsciiLetterOrDigit))
         {
-            if (IsAsciiLetterOrDigit(character))
-            {
-                builder.Append(char.ToLowerInvariant(character));
-            }
+            builder.Append(char.ToLowerInvariant(character));
         }
 
         if (builder.Length == 0 || !IsAsciiLowercaseLetter(builder[0]))

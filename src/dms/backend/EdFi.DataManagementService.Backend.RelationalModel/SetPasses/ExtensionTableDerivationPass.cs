@@ -623,7 +623,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         {
             childTable = CreateChildTableBuilder(
                 tableBuilder,
-                propertySegments,
                 arraySegments,
                 ctx.BaseRootBaseName,
                 ctx.ExtensionRootBaseName,
@@ -768,7 +767,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     /// </summary>
     private static ExtensionTableBuilder CreateChildTableBuilder(
         ExtensionTableBuilder parent,
-        List<JsonPathSegment> propertySegments,
         List<JsonPathSegment> arraySegments,
         string baseRootBaseName,
         string extensionRootBaseName,
@@ -1014,18 +1012,11 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     /// <summary>
     /// Finds a matching project key in a <c>_ext</c> object using case-insensitive comparison.
     /// </summary>
-    private static string? FindMatchingProjectKey(JsonObject projectKeysObject, string match)
-    {
-        foreach (var entry in projectKeysObject)
-        {
-            if (ExtensionProjectKeyComparer.Equals(entry.Key, match))
-            {
-                return entry.Key;
-            }
-        }
-
-        return null;
-    }
+    private static string? FindMatchingProjectKey(JsonObject projectKeysObject, string match) =>
+        projectKeysObject
+            .Where(entry => ExtensionProjectKeyComparer.Equals(entry.Key, match))
+            .Select(entry => entry.Key)
+            .FirstOrDefault();
 
     /// <summary>
     /// Builds a set of canonical reference object JSONPaths from the document reference mappings.
@@ -1678,14 +1669,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         )
         {
             _accumulator.AddColumn(column, originalName, origin);
-        }
-
-        /// <summary>
-        /// Adds a constraint to the table being built.
-        /// </summary>
-        public void AddConstraint(TableConstraint constraint)
-        {
-            _accumulator.AddConstraint(constraint);
         }
 
         /// <summary>

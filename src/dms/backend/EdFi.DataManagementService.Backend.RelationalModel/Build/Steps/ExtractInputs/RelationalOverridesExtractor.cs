@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
@@ -236,16 +237,16 @@ internal static class RelationalOverridesExtractor
                 );
             }
 
-            if (IsInsideReferenceObjectPath(resolvedPath, referenceMappings, out var referencePath))
+            if (
+                IsInsideReferenceObjectPath(resolvedPath, referenceMappings, out var referencePath)
+                && !referenceIdentityPaths.Contains(resolvedPath.Canonical)
+            )
             {
-                if (!referenceIdentityPaths.Contains(resolvedPath.Canonical))
-                {
-                    throw new InvalidOperationException(
-                        $"relational.nameOverrides entry '{overrideKey}' (canonical '{resolvedPath.Canonical}') "
-                            + $"on resource '{projectName}:{resourceName}' targets a non-identity path inside "
-                            + $"reference object '{referencePath}'. Only reference identity paths may be overridden."
-                    );
-                }
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry '{overrideKey}' (canonical '{resolvedPath.Canonical}') "
+                        + $"on resource '{projectName}:{resourceName}' targets a non-identity path inside "
+                        + $"reference object '{referencePath}'. Only reference identity paths may be overridden."
+                );
             }
 
             var overrideKind =
@@ -389,18 +390,13 @@ internal static class RelationalOverridesExtractor
     /// <summary>
     /// Finds an extension project key that matches the supplied identifier using the canonical key comparer.
     /// </summary>
-    private static string? FindMatchingProjectKey(JsonObject projectKeysObject, string match)
-    {
-        foreach (var entry in projectKeysObject)
-        {
-            if (RelationalModelSetSchemaHelpers.ExtensionProjectKeyComparer.Equals(entry.Key, match))
-            {
-                return entry.Key;
-            }
-        }
-
-        return null;
-    }
+    private static string? FindMatchingProjectKey(JsonObject projectKeysObject, string match) =>
+        projectKeysObject
+            .Where(entry =>
+                RelationalModelSetSchemaHelpers.ExtensionProjectKeyComparer.Equals(entry.Key, match)
+            )
+            .Select(entry => entry.Key)
+            .FirstOrDefault();
 
     /// <summary>
     /// Determines whether a JSONPath is nested within a document reference object path.
@@ -411,20 +407,21 @@ internal static class RelationalOverridesExtractor
         out string referencePath
     )
     {
-        foreach (var mapping in referenceMappings)
+        var match = referenceMappings
+            .Where(mapping =>
+                path.Segments.Count > mapping.ReferenceObjectPath.Segments.Count
+                && RelationalModelSetSchemaHelpers.IsPrefixOf(
+                    mapping.ReferenceObjectPath.Segments,
+                    path.Segments
+                )
+            )
+            .Select(mapping => mapping.ReferenceObjectPath.Canonical)
+            .FirstOrDefault();
+
+        if (match is not null)
         {
-            var referenceObjectPath = mapping.ReferenceObjectPath;
-
-            if (path.Segments.Count <= referenceObjectPath.Segments.Count)
-            {
-                continue;
-            }
-
-            if (RelationalModelSetSchemaHelpers.IsPrefixOf(referenceObjectPath.Segments, path.Segments))
-            {
-                referencePath = referenceObjectPath.Canonical;
-                return true;
-            }
+            referencePath = match;
+            return true;
         }
 
         referencePath = string.Empty;

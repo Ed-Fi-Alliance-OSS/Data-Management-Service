@@ -98,12 +98,12 @@ public sealed class RelationalModelSetBuilderContext
             entry => entry.Resource
         );
 
-        var projectSchemaBundle = new ProjectSchemaNormalizer().Normalize(effectiveSchemaSet);
+        var projectSchemaBundle = ProjectSchemaNormalizer.Normalize(effectiveSchemaSet);
 
         _projectsInEndpointOrder = projectSchemaBundle.ProjectSchemas;
         _projectSchemasInEndpointOrder = projectSchemaBundle.ProjectSchemaInfos.ToList();
         _projectSchemasInEndpointOrderView = _projectSchemasInEndpointOrder.AsReadOnly();
-        var descriptorPathMaps = new DescriptorPathMapBuilder().Build(_projectsInEndpointOrder);
+        var descriptorPathMaps = DescriptorPathMapBuilder.Build(_projectsInEndpointOrder);
         _descriptorPathsByResource = descriptorPathMaps.BaseDescriptorPathsByResource;
         _extensionDescriptorPathsByResource = descriptorPathMaps.ExtensionDescriptorPathsByResource;
         _concreteResourceSchemasInNameOrder = BuildConcreteResourceSchemasInNameOrder(

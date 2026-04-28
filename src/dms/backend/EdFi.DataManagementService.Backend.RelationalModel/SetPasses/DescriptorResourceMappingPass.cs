@@ -34,15 +34,15 @@ public sealed class DescriptorResourceMappingPass : IRelationalModelSetPass
             var qname = resourceKey.Resource;
 
             // Defensive check: If StorageKind is already SharedDescriptorTable, verify naming convention
-            if (concreteResource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+            if (
+                concreteResource.StorageKind == ResourceStorageKind.SharedDescriptorTable
+                && !qname.ResourceName.EndsWith("Descriptor", StringComparison.Ordinal)
+            )
             {
-                if (!qname.ResourceName.EndsWith("Descriptor", StringComparison.Ordinal))
-                {
-                    throw new InvalidOperationException(
-                        $"Resource '{qname.ProjectName}.{qname.ResourceName}' has StorageKind.SharedDescriptorTable but does not follow the 'Descriptor' naming convention. "
-                            + "This indicates an inconsistency in the ApiSchema.json file where isDescriptor=true but the resource name does not end with 'Descriptor'."
-                    );
-                }
+                throw new InvalidOperationException(
+                    $"Resource '{qname.ProjectName}.{qname.ResourceName}' has StorageKind.SharedDescriptorTable but does not follow the 'Descriptor' naming convention. "
+                        + "This indicates an inconsistency in the ApiSchema.json file where isDescriptor=true but the resource name does not end with 'Descriptor'."
+                );
             }
 
             if (!schemaLookup.TryGetValue((qname.ProjectName, qname.ResourceName), out var resourceContext))

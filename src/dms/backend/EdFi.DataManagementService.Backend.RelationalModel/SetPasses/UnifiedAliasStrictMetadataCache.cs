@@ -63,21 +63,23 @@ internal static class UnifiedAliasStrictMetadataCache
                 continue;
             }
 
-            foreach (var table in concreteResource.RelationalModel.TablesInDependencyOrder)
+            foreach (
+                var table in concreteResource.RelationalModel.TablesInDependencyOrder.Where(t =>
+                    seenTables.Add(t.Table)
+                )
+            )
             {
-                if (seenTables.Add(table.Table))
-                {
-                    yield return table;
-                }
+                yield return table;
             }
         }
 
-        foreach (var abstractTable in context.AbstractIdentityTablesInNameOrder)
+        foreach (
+            var abstractTable in context.AbstractIdentityTablesInNameOrder.Where(a =>
+                seenTables.Add(a.TableModel.Table)
+            )
+        )
         {
-            if (seenTables.Add(abstractTable.TableModel.Table))
-            {
-                yield return abstractTable.TableModel;
-            }
+            yield return abstractTable.TableModel;
         }
     }
 }

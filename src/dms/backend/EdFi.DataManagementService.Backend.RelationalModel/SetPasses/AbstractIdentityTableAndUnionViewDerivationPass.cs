@@ -640,21 +640,21 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             ),
         };
 
-        foreach (var derivation in identityDerivations)
+        foreach (var identityColumn in identityDerivations.Select(d => d.IdentityColumn))
         {
-            if (derivation.IdentityColumn.ScalarType is not { } scalarType)
+            if (identityColumn.ScalarType is not { } scalarType)
             {
                 throw new InvalidOperationException(
-                    $"Identity column '{derivation.IdentityColumn.ColumnName.Value}' is missing a scalar type."
+                    $"Identity column '{identityColumn.ColumnName.Value}' is missing a scalar type."
                 );
             }
 
             outputColumns.Add(
                 new AbstractUnionViewOutputColumn(
-                    derivation.IdentityColumn.ColumnName,
+                    identityColumn.ColumnName,
                     scalarType,
-                    derivation.IdentityColumn.SourceJsonPath,
-                    derivation.IdentityColumn.TargetResource
+                    identityColumn.SourceJsonPath,
+                    identityColumn.TargetResource
                 )
             );
         }
@@ -760,17 +760,12 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             return member.IdentityJsonPaths[0];
         }
 
-        foreach (var identityPath in member.IdentityJsonPaths)
+        for (var i = 0; i < member.IdentityJsonPaths.Count; i++)
         {
-            if (
-                string.Equals(
-                    identityPath.Canonical,
-                    abstractIdentityPath.Canonical,
-                    StringComparison.Ordinal
-                )
-            )
+            var path = member.IdentityJsonPaths[i];
+            if (string.Equals(path.Canonical, abstractIdentityPath.Canonical, StringComparison.Ordinal))
             {
-                return identityPath;
+                return path;
             }
         }
 

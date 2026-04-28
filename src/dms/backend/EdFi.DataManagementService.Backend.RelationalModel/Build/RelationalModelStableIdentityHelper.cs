@@ -207,7 +207,7 @@ internal static class RelationalModelStableIdentityHelper
 
     private static void AddColumn(List<DbColumnModel> columns, DbColumnName columnName, ColumnKind columnKind)
     {
-        if (columns.Any(column => column.ColumnName.Equals(columnName)))
+        if (columns.Exists(column => column.ColumnName.Equals(columnName)))
         {
             return;
         }

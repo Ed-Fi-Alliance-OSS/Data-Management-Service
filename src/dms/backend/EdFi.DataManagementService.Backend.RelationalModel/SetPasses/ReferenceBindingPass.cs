@@ -117,7 +117,6 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
             StringComparer.Ordinal
         );
         var descriptorEdgeSources = new List<DescriptorEdgeSource>(resourceModel.DescriptorEdgeSources);
-        var resourceLabel = FormatResource(resource);
 
         foreach (var mapping in builderContext.DocumentReferenceMappings)
         {

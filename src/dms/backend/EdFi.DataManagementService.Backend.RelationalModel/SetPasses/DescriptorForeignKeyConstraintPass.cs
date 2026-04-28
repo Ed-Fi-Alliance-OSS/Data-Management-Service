@@ -144,10 +144,7 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
         var nonDescriptorConstraints = table
             .Constraints.Where(constraint => !IsDescriptorForeignKeyConstraint(constraint))
             .ToArray();
-        var updatedConstraints = nonDescriptorConstraints
-            .Concat(generatedDescriptorConstraints)
-            .Cast<TableConstraint>()
-            .ToArray();
+        var updatedConstraints = nonDescriptorConstraints.Concat(generatedDescriptorConstraints).ToArray();
 
         return updatedConstraints.SequenceEqual(table.Constraints)
             ? table

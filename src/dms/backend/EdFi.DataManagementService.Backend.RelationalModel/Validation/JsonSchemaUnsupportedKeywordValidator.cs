@@ -35,14 +35,12 @@ internal static class JsonSchemaUnsupportedKeywordValidator
     /// <param name="path">The schema traversal path used for error reporting.</param>
     internal static void Validate(JsonObject schema, string path)
     {
-        foreach (var keyword in _unsupportedKeywords)
+        var unsupported = _unsupportedKeywords.FirstOrDefault(schema.ContainsKey);
+        if (unsupported is not null)
         {
-            if (schema.ContainsKey(keyword))
-            {
-                throw new InvalidOperationException(
-                    $"Unsupported schema keyword '{keyword}' at {path}.{keyword}."
-                );
-            }
+            throw new InvalidOperationException(
+                $"Unsupported schema keyword '{unsupported}' at {path}.{unsupported}."
+            );
         }
 
         if (schema.TryGetPropertyValue("type", out var typeNode) && typeNode is JsonArray)

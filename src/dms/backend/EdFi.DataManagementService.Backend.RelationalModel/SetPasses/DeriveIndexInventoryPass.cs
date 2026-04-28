@@ -87,19 +87,19 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
             .OrderByDescending(fk => fk.Columns.Count)
             .ThenBy(fk => fk.Name, StringComparer.Ordinal);
 
-        foreach (var fk in orderedFks)
+        foreach (var columns in orderedFks.Select(fk => fk.Columns))
         {
-            if (IsLeftmostPrefixCovered(fk.Columns, tableIndexes))
+            if (IsLeftmostPrefixCovered(columns, tableIndexes))
             {
                 continue;
             }
 
-            var indexName = ConstraintNaming.BuildForeignKeySupportIndexName(table.Table, fk.Columns);
+            var indexName = ConstraintNaming.BuildForeignKeySupportIndexName(table.Table, columns);
             tableIndexes.Add(
                 new DbIndexInfo(
                     new DbIndexName(indexName),
                     table.Table,
-                    fk.Columns,
+                    columns,
                     IsUnique: false,
                     DbIndexKind.ForeignKeySupport
                 )
@@ -118,9 +118,9 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         IReadOnlyList<DbIndexInfo> existingIndexes
     )
     {
-        foreach (var existing in existingIndexes)
+        foreach (var keyColumns in existingIndexes.Select(e => e.KeyColumns))
         {
-            if (existing.KeyColumns.Count < fkColumns.Count)
+            if (keyColumns.Count < fkColumns.Count)
             {
                 continue;
             }
@@ -129,7 +129,7 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
 
             for (var i = 0; i < fkColumns.Count; i++)
             {
-                if (!fkColumns[i].Equals(existing.KeyColumns[i]))
+                if (!fkColumns[i].Equals(keyColumns[i]))
                 {
                     isPrefix = false;
                     break;

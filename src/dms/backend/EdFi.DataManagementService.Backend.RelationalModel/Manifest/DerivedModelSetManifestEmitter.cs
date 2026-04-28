@@ -332,7 +332,7 @@ public static class DerivedModelSetManifestEmitter
                     TriggerKindParameters.IdentityPropagationFallback => "IdentityPropagationFallback",
                     TriggerKindParameters.AuthHierarchyMaintenance => "AuthHierarchyMaintenance",
                     _ => throw new ArgumentOutOfRangeException(
-                        nameof(trigger),
+                        nameof(triggers),
                         "Unsupported trigger kind parameters type."
                     ),
                 }

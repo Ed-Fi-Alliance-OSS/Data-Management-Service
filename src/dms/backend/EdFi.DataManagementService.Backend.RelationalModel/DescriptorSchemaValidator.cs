@@ -171,7 +171,7 @@ internal static class DescriptorSchemaValidator
             return;
         }
 
-        var format = fieldNode?["format"]?.GetValue<string>();
+        var format = fieldNode!["format"]?.GetValue<string>();
         if (format != "date")
         {
             errors.Add($"Field '{fieldName}' must have format 'date', but found format '{format ?? "none"}'");
