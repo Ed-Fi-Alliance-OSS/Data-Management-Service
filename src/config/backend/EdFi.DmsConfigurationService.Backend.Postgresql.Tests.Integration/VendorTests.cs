@@ -211,7 +211,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
         {
             private long _vendorId1;
             private long _vendorId2;
-            private long _vendorIdNotExist = 9999;
+            private readonly long _vendorIdNotExist = 9999;
             private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<ApplicationRepository>.Instance,

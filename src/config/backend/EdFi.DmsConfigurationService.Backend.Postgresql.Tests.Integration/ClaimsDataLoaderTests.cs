@@ -753,7 +753,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
                       ]
                     }
                     """;
-                File.WriteAllText(Path.Combine(tempPath, "Claims.json"), baseClaimsContent);
+                await File.WriteAllTextAsync(Path.Combine(tempPath, "Claims.json"), baseClaimsContent);
 
                 var filesystemClaimsOptions = Options.Create(
                     new ClaimsOptions { ClaimsSource = ClaimsSource.Filesystem, ClaimsDirectory = tempPath }

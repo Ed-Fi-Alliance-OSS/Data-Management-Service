@@ -317,11 +317,11 @@ public class ClaimSetTests : DatabaseTest
             var claims = ((ClaimsHierarchyGetResult.Success)hierarchyResult).Claims;
 
             // Verify that "Test-Insert-ClaimSet" no longer exists
-            bool containsOldClaimSet = claims.Any(c => ContainsClaimSet(c, "Test-Insert-ClaimSet"));
+            bool containsOldClaimSet = claims.Exists(c => ContainsClaimSet(c, "Test-Insert-ClaimSet"));
             containsOldClaimSet.Should().BeFalse();
 
             // Verify that "Test-Update-ClaimSet" exists in all appropriate places
-            bool containsNewClaimSet = claims.Any(c => ContainsClaimSet(c, "Test-Update-ClaimSet"));
+            bool containsNewClaimSet = claims.Exists(c => ContainsClaimSet(c, "Test-Update-ClaimSet"));
             containsNewClaimSet.Should().BeTrue();
         }
 
@@ -341,12 +341,12 @@ public class ClaimSetTests : DatabaseTest
 
         private bool ContainsClaimSet(Claim claim, string claimSetName)
         {
-            if (claim.ClaimSets.Any(cs => cs.Name == claimSetName))
+            if (claim.ClaimSets.Exists(cs => cs.Name == claimSetName))
             {
                 return true;
             }
 
-            if (claim.Claims.Any(c => ContainsClaimSet(c, claimSetName)))
+            if (claim.Claims.Exists(c => ContainsClaimSet(c, claimSetName)))
             {
                 return true;
             }

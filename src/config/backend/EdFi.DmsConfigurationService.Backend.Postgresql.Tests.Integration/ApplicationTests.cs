@@ -6,7 +6,6 @@
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
-using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
@@ -345,9 +344,7 @@ public class ApplicationTests : DatabaseTest
             );
             getResult.Should().BeOfType<ApplicationQueryResult.Success>();
 
-            int count = ((ApplicationQueryResult.Success)getResult).ApplicationResponses.ToList().Count();
-
-            count.Should().Be(1);
+            ((ApplicationQueryResult.Success)getResult).ApplicationResponses.Should().HaveCount(1);
             ((ApplicationQueryResult.Success)getResult)
                 .ApplicationResponses.Count(v => v.Id == _application2Id)
                 .Should()
