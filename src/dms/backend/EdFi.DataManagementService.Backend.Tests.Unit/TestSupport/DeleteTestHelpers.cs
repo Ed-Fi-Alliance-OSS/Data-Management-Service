@@ -15,6 +15,14 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 /// </summary>
 internal sealed class ConfigurableRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
 {
+    /// <summary>
+    /// When <c>true</c>, <see cref="IsForeignKeyViolation"/> returns <c>true</c> regardless of
+    /// <see cref="ClassificationToReturn"/>. Set this to test the branch where the FK guard fires
+    /// but the classifier cannot extract a constraint name (e.g., returns
+    /// <see cref="RelationalWriteExceptionClassification.UnrecognizedWriteFailure"/>).
+    /// </summary>
+    public bool IsForeignKeyViolationToReturn { get; set; }
+
     public RelationalWriteExceptionClassification? ClassificationToReturn { get; set; }
 
     public int TryClassifyCallCount { get; private set; }
@@ -30,7 +38,8 @@ internal sealed class ConfigurableRelationalWriteExceptionClassifier : IRelation
     }
 
     public bool IsForeignKeyViolation(DbException exception) =>
-        ClassificationToReturn is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation;
+        IsForeignKeyViolationToReturn
+        || ClassificationToReturn is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation;
 
     public bool IsUniqueConstraintViolation(DbException exception) =>
         ClassificationToReturn is RelationalWriteExceptionClassification.UniqueConstraintViolation;

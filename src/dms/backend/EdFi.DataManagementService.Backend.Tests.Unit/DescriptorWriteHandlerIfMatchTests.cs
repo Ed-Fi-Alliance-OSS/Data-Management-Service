@@ -12,12 +12,14 @@ using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -1124,6 +1126,288 @@ public class Given_Descriptor_PUT_if_match_db_error_in_locked_session
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Descriptor DELETE – FK violation resolver branching (log and resolver contract)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// When the FK classifier extracts a constraint name and the resolver maps it to an owning
+/// resource, HandleDeleteAsync must return a populated DeleteFailureReference, call the resolver
+/// exactly once with the correct model, and emit a Debug log that contains both the constraint
+/// name and the resolved resource name.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_Descriptor_DELETE_fk_violation_constraint_name_resolves_to_owning_resource
+{
+    private DeleteResult _result = default!;
+    private IRelationalDeleteConstraintResolver _resolver = default!;
+    private RecordingLogger<DescriptorWriteHandler> _logger = default!;
+    private DescriptorIfMatchWriteSessionFactory _sessionFactory = default!;
+    private MappingSet _mappingSet = default!;
+    private const string ConstraintName = "FK_School_EdOrgCategoryDescriptor";
+    private static readonly QualifiedResourceName ReferencingResource = new("Ed-Fi", "School");
+
+    [SetUp]
+    public async Task Arrange_and_act()
+    {
+        var matchingEtag = DescriptorIfMatchHelper.ComputeEtagFromPersistedRow(
+            DescriptorIfMatchHelper.StandardPersistedRow()
+        );
+
+        _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
+        _sessionFactory.EnqueueThrowingExecuteAfterRow(
+            DescriptorIfMatchHelper.StandardPersistedRow(),
+            new FakeFkViolationDbException()
+        );
+
+        _resolver = A.Fake<IRelationalDeleteConstraintResolver>();
+        _logger = new RecordingLogger<DescriptorWriteHandler>();
+
+        var exceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsForeignKeyViolationToReturn = true,
+            ClassificationToReturn = new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                ConstraintName
+            ),
+        };
+
+        var sut = DescriptorIfMatchHelper.CreateSut(
+            new DescriptorIfMatchTargetLookupStub(),
+            A.Fake<IRelationalCommandExecutor>(),
+            _sessionFactory,
+            exceptionClassifier,
+            deleteConstraintResolver: _resolver,
+            logger: _logger
+        );
+
+        // Create the MappingSet before configuring the resolver mock so the same instance is
+        // passed to HandleDeleteAsync — FakeItEasy uses reference equality for model-set args.
+        _mappingSet = DescriptorIfMatchHelper.CreateMappingSetForTest();
+
+        A.CallTo(() => _resolver.TryResolveReferencingResource(_mappingSet.Model, ConstraintName))
+            .Returns(ReferencingResource);
+
+        _result = await DescriptorIfMatchHelper.ExecuteDeleteAsync(
+            sut,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+            ifMatchEtag: matchingEtag,
+            mappingSet: _mappingSet
+        );
+    }
+
+    [Test]
+    public void It_returns_delete_failure_reference_with_the_resolved_resource_name()
+    {
+        _result
+            .Should()
+            .BeEquivalentTo(new DeleteResult.DeleteFailureReference([ReferencingResource.ResourceName]));
+    }
+
+    [Test]
+    public void It_calls_the_resolver_exactly_once_with_the_correct_model()
+    {
+        // Pinning the exact MappingSet.Model reference catches a regression where the handler
+        // stops forwarding mappingSet.Model to the resolver (e.g., passes null or a stale set).
+        A.CallTo(() => _resolver.TryResolveReferencingResource(_mappingSet.Model, ConstraintName))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public void It_emits_a_debug_log_containing_the_constraint_name_and_resource_name()
+    {
+        // Pins both the log level and payload so a future log-level demotion or message change
+        // is caught. An unrelated "Deleting descriptor document..." Debug log is always emitted
+        // first, so a bare Level==Debug check would pass even without the FK log line.
+        _logger
+            .Records.Should()
+            .ContainSingle(r =>
+                r.Level == LogLevel.Debug
+                && r.Message.Contains(ConstraintName, StringComparison.Ordinal)
+                && r.Message.Contains(ReferencingResource.ResourceName, StringComparison.Ordinal)
+            );
+    }
+}
+
+/// <summary>
+/// When <see cref="IRelationalWriteExceptionClassifier.IsForeignKeyViolation"/> returns
+/// <c>true</c> but <see cref="IRelationalWriteExceptionClassifier.TryClassify"/> cannot produce
+/// a <see cref="RelationalWriteExceptionClassification.ForeignKeyConstraintViolation"/>
+/// (e.g., the driver omits the constraint name), HandleDeleteAsync must return an empty
+/// DeleteFailureReference, must NOT call the constraint resolver, and must emit a single
+/// Information log (not a Warning).
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_Descriptor_DELETE_fk_violation_constraint_name_cannot_be_extracted
+{
+    private DeleteResult _result = default!;
+    private IRelationalDeleteConstraintResolver _resolver = default!;
+    private RecordingLogger<DescriptorWriteHandler> _logger = default!;
+    private DescriptorIfMatchWriteSessionFactory _sessionFactory = default!;
+
+    [SetUp]
+    public async Task Arrange_and_act()
+    {
+        var matchingEtag = DescriptorIfMatchHelper.ComputeEtagFromPersistedRow(
+            DescriptorIfMatchHelper.StandardPersistedRow()
+        );
+
+        _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
+        _sessionFactory.EnqueueThrowingExecuteAfterRow(
+            DescriptorIfMatchHelper.StandardPersistedRow(),
+            new FakeFkViolationDbException()
+        );
+
+        _resolver = A.Fake<IRelationalDeleteConstraintResolver>();
+        _logger = new RecordingLogger<DescriptorWriteHandler>();
+
+        // IsForeignKeyViolationToReturn=true makes the FK catch fire; UnrecognizedWriteFailure
+        // means TryClassify does not produce a ForeignKeyConstraintViolation, so the code falls
+        // through to the LogInformation branch in MapForeignKeyViolation.
+        var exceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsForeignKeyViolationToReturn = true,
+            ClassificationToReturn = RelationalWriteExceptionClassification.UnrecognizedWriteFailure.Instance,
+        };
+
+        var sut = DescriptorIfMatchHelper.CreateSut(
+            new DescriptorIfMatchTargetLookupStub(),
+            A.Fake<IRelationalCommandExecutor>(),
+            _sessionFactory,
+            exceptionClassifier,
+            deleteConstraintResolver: _resolver,
+            logger: _logger
+        );
+
+        _result = await DescriptorIfMatchHelper.ExecuteDeleteAsync(
+            sut,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+            ifMatchEtag: matchingEtag
+        );
+    }
+
+    [Test]
+    public void It_returns_empty_delete_failure_reference()
+    {
+        _result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
+    }
+
+    [Test]
+    public void It_does_not_call_the_resolver()
+    {
+        A.CallTo(() => _resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public void It_emits_an_information_log()
+    {
+        _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Information);
+    }
+
+    [Test]
+    public void It_does_not_emit_a_warning_log()
+    {
+        // Decisions #4 splits Information (missing constraint name) from Warning (unresolved
+        // constraint name). Assert Warning is absent to pin the branch split.
+        _logger.Records.Should().NotContain(r => r.Level == LogLevel.Warning);
+    }
+}
+
+/// <summary>
+/// When the FK classifier extracts a constraint name but the compiled relational model has no
+/// matching FK (DDL/model drift), HandleDeleteAsync must return an empty DeleteFailureReference,
+/// call the resolver exactly once, and emit a Warning log (not an Information log).
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_Descriptor_DELETE_fk_violation_constraint_name_not_in_compiled_model
+{
+    private DeleteResult _result = default!;
+    private IRelationalDeleteConstraintResolver _resolver = default!;
+    private RecordingLogger<DescriptorWriteHandler> _logger = default!;
+    private DescriptorIfMatchWriteSessionFactory _sessionFactory = default!;
+    private MappingSet _mappingSet = default!;
+    private const string ConstraintName = "FK_Unknown_To_Model";
+
+    [SetUp]
+    public async Task Arrange_and_act()
+    {
+        var matchingEtag = DescriptorIfMatchHelper.ComputeEtagFromPersistedRow(
+            DescriptorIfMatchHelper.StandardPersistedRow()
+        );
+
+        _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
+        _sessionFactory.EnqueueThrowingExecuteAfterRow(
+            DescriptorIfMatchHelper.StandardPersistedRow(),
+            new FakeFkViolationDbException()
+        );
+
+        _resolver = A.Fake<IRelationalDeleteConstraintResolver>();
+        _logger = new RecordingLogger<DescriptorWriteHandler>();
+
+        var exceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsForeignKeyViolationToReturn = true,
+            ClassificationToReturn = new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                ConstraintName
+            ),
+        };
+
+        var sut = DescriptorIfMatchHelper.CreateSut(
+            new DescriptorIfMatchTargetLookupStub(),
+            A.Fake<IRelationalCommandExecutor>(),
+            _sessionFactory,
+            exceptionClassifier,
+            deleteConstraintResolver: _resolver,
+            logger: _logger
+        );
+
+        // Create the MappingSet before configuring the resolver mock so the same instance is
+        // passed to HandleDeleteAsync — FakeItEasy uses reference equality for model-set args.
+        _mappingSet = DescriptorIfMatchHelper.CreateMappingSetForTest();
+
+        // Resolver returns null → constraint not in compiled model (drift scenario).
+        A.CallTo(() => _resolver.TryResolveReferencingResource(_mappingSet.Model, ConstraintName))
+            .Returns((QualifiedResourceName?)null);
+
+        _result = await DescriptorIfMatchHelper.ExecuteDeleteAsync(
+            sut,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+            ifMatchEtag: matchingEtag,
+            mappingSet: _mappingSet
+        );
+    }
+
+    [Test]
+    public void It_returns_empty_delete_failure_reference()
+    {
+        _result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
+    }
+
+    [Test]
+    public void It_calls_the_resolver_exactly_once()
+    {
+        A.CallTo(() => _resolver.TryResolveReferencingResource(_mappingSet.Model, ConstraintName))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public void It_emits_a_warning_log()
+    {
+        _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Warning);
+    }
+
+    [Test]
+    public void It_does_not_emit_an_information_log()
+    {
+        // Decisions #4 splits Warning (unresolved constraint name) from Information (missing
+        // constraint name). Assert Information is absent to pin the branch split.
+        _logger.Records.Should().NotContain(r => r.Level == LogLevel.Information);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // File-scoped shared test support
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1135,16 +1419,18 @@ internal static class DescriptorIfMatchHelper
         IRelationalWriteTargetLookupService targetLookup,
         IRelationalCommandExecutor commandExecutor,
         IRelationalWriteSessionFactory? writeSessionFactory = null,
-        IRelationalWriteExceptionClassifier? exceptionClassifier = null
+        IRelationalWriteExceptionClassifier? exceptionClassifier = null,
+        IRelationalDeleteConstraintResolver? deleteConstraintResolver = null,
+        ILogger<DescriptorWriteHandler>? logger = null
     ) =>
         new(
             targetLookup,
             commandExecutor,
             exceptionClassifier ?? A.Fake<IRelationalWriteExceptionClassifier>(),
-            A.Fake<IRelationalDeleteConstraintResolver>(),
+            deleteConstraintResolver ?? A.Fake<IRelationalDeleteConstraintResolver>(),
             writeSessionFactory ?? A.Fake<IRelationalWriteSessionFactory>(),
             A.Fake<IReadableProfileProjector>(),
-            NullLogger<DescriptorWriteHandler>.Instance
+            logger ?? NullLogger<DescriptorWriteHandler>.Instance
         );
 
     public static Task<DeleteResult> ExecuteDeleteAsync(
@@ -1152,10 +1438,11 @@ internal static class DescriptorIfMatchHelper
         DocumentUuid documentUuid,
         string? ifMatchEtag,
         SqlDialect dialect = SqlDialect.Pgsql,
+        MappingSet? mappingSet = null,
         CancellationToken cancellationToken = default
     ) =>
         sut.HandleDeleteAsync(
-            CreateMappingSet(dialect),
+            mappingSet ?? CreateMappingSet(dialect),
             DescriptorResource,
             documentUuid,
             new TraceId("descriptor-delete-trace"),
@@ -1309,6 +1596,13 @@ internal static class DescriptorIfMatchHelper
             }
             """
         )!;
+
+    /// <summary>
+    /// Exposes the same <see cref="MappingSet"/> produced by <see cref="ExecuteDeleteAsync"/>
+    /// so tests can pin the exact <c>Model</c> reference when verifying resolver calls.
+    /// </summary>
+    public static MappingSet CreateMappingSetForTest(SqlDialect dialect = SqlDialect.Pgsql) =>
+        CreateMappingSet(dialect);
 
     private static MappingSet CreateMappingSet(SqlDialect dialect)
     {

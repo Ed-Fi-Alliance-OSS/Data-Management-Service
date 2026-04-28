@@ -11,7 +11,7 @@ Feature: Delete reference validation
                   | educationOrganizationCategories                                                                                   | gradeLevels                                                                      | schoolId  | nameOfInstitution            |
                   | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"} ] | 255901107 | Grand Bend Elementary School |
 
-        @API-084
+        @API-084 @relational-backend
         Scenario: 01 Ensure clients cannot delete a year that is used by another item
             Given the system has these "schoolYearTypes" references
                   | schoolYear | currentSchoolYear | schoolYearDescription |
@@ -34,7 +34,7 @@ Feature: Delete reference validation
                   }
                   """
 
-        @API-085
+        @API-085 @relational-backend
         Scenario: 02 Ensure clients cannot delete a descriptor that is used by another item
             Given a POST request is made to "ed-fi/educationOrganizationCategoryDescriptors/" with
                   """
@@ -59,7 +59,7 @@ Feature: Delete reference validation
                   }
                   """
 
-        @API-086
+        @API-086 @relational-backend
         Scenario: 03 Ensure clients cannot delete a dependent element for an item
             Given the system has these "students" references
                   | studentUniqueId | birthDate    | firstName | lastSurname |
@@ -82,7 +82,7 @@ Feature: Delete reference validation
                   }
                   """
 
-        @API-087
+        @API-087 @relational-backend
         Scenario: 04 Ensure clients cannot delete an element that is reference to an Education Organization that is used by another items
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyCategoryDescriptor                        | localEducationAgencyId | categories                                                                                                                  | nameOfInstitution |
