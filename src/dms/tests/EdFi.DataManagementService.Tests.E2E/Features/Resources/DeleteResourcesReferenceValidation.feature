@@ -81,7 +81,7 @@ Feature: Resources "Delete" Reference Conflict validations
               And the response body is
                   """
                     {
-                        "detail": "The requested action cannot be performed because this item is referenced by existing StudentEducationOrganizationAssociation item(s).",
+                        "detail": "The requested action cannot be performed because this item is referenced by existing StudentSchoolAssociation item(s).",
                         "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                         "title": "Dependent Item Exists",
                         "status": 409,
@@ -93,9 +93,9 @@ Feature: Resources "Delete" Reference Conflict validations
 
         @API-179 @relational-backend
         Scenario: 04 Verify response when deleting a referenced descriptor
-            Given the system has these "educationOrganizationCategoryDescriptors"
-                  | namespace                  | codeValue | shortDescription |
-                  | uri://ed-fi.org/Descriptor | school    | school           |
+            Given the system has these "educationOrganizationCategoryDescriptors" references
+                  | namespace                                              | codeValue | shortDescription |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | school    | school           |
 
               And the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |

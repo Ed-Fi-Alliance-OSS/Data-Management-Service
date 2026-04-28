@@ -541,6 +541,7 @@ public class Given_MssqlReferenceResolver
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddTestReadableProfileProjector();
         services.AddMssqlReferenceResolver();
 
         return services.BuildServiceProvider(
