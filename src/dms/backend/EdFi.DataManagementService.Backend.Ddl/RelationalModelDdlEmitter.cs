@@ -593,7 +593,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             AuthHierarchyTriggerEvent.Insert => "INSERT",
             AuthHierarchyTriggerEvent.Update => "UPDATE",
             AuthHierarchyTriggerEvent.Delete => "DELETE",
-            _ => throw new ArgumentOutOfRangeException(nameof(auth.TriggerEvent)),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(auth),
+                auth.TriggerEvent,
+                "Unsupported auth hierarchy trigger event."
+            ),
         };
 
         // Trigger function
@@ -646,7 +650,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             AuthHierarchyTriggerEvent.Insert => "INSERT",
             AuthHierarchyTriggerEvent.Update => "UPDATE",
             AuthHierarchyTriggerEvent.Delete => "DELETE",
-            _ => throw new ArgumentOutOfRangeException(nameof(auth.TriggerEvent)),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(auth),
+                auth.TriggerEvent,
+                "Unsupported auth hierarchy trigger event."
+            ),
         };
 
         writer.Append("CREATE OR ALTER TRIGGER ");
@@ -728,7 +736,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     $"Auth hierarchy trigger '{trigger.Name.Value}' should not reach EmitTriggerBody."
                 );
             default:
-                throw new ArgumentOutOfRangeException(nameof(trigger.Parameters));
+                throw new ArgumentOutOfRangeException(
+                    nameof(trigger),
+                    trigger.Parameters,
+                    "Unsupported trigger kind parameters type."
+                );
         }
     }
 
@@ -2226,11 +2238,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         };
 
         if (
-            !requiredResourceNames.All(requiredResourceName =>
-                concreteResources.Any(r =>
-                    DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
-                    && r.ResourceKey.Resource.ResourceName == requiredResourceName
-                )
+            !Array.TrueForAll(
+                requiredResourceNames,
+                requiredResourceName =>
+                    concreteResources.Any(r =>
+                        DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
+                        && r.ResourceKey.Resource.ResourceName == requiredResourceName
+                    )
             )
         )
         {
@@ -2358,10 +2372,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             DdlPattern.CreateOrReplace => "CREATE OR REPLACE VIEW",
             DdlPattern.CreateOrAlter => "CREATE OR ALTER VIEW",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(_dialect.ViewCreationPattern),
-                _dialect.ViewCreationPattern,
-                "Unsupported view creation pattern."
+            _ => throw new InvalidOperationException(
+                $"Unsupported view creation pattern: {_dialect.ViewCreationPattern}."
             ),
         };
 
@@ -2442,9 +2454,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             }
         }
 
-        foreach (var abstractIdentityTable in abstractIdentityTables)
+        foreach (var tableModel in abstractIdentityTables.Select(a => a.TableModel))
         {
-            tableModelsByTableName[abstractIdentityTable.TableModel.Table] = abstractIdentityTable.TableModel;
+            tableModelsByTableName[tableModel.Table] = tableModel;
         }
 
         return tableModelsByTableName;

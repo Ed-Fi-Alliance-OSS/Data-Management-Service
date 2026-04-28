@@ -391,8 +391,7 @@ public sealed class PgsqlDialect : SqlDialectBase
         string? defaultExpression
     )
     {
-        // PostgreSQL does not support named default constraints;
-        // delegate to the standard column definition.
+        // PostgreSQL has no named default constraints, so delegate to the standard column definition.
         return RenderColumnDefinition(columnName, sqlType, isNullable, defaultExpression);
     }
 
