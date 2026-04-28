@@ -222,7 +222,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     /// <summary>
     /// Converts transformation model back to JsonNode format
     /// </summary>
-    private JsonNode ConvertFromTransformationModel(List<TransformationClaim> claims)
+    private static JsonNode ConvertFromTransformationModel(List<TransformationClaim> claims)
     {
         string json = JsonSerializer.Serialize(claims, _outputJsonOptions);
         return JsonNode.Parse(json) ?? JsonNode.Parse("[]")!;
@@ -568,7 +568,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
 
     #region Transformation Model Classes (Ported from CmsHierarchy.Model)
 
-    private class TransformationClaim
+    private sealed class TransformationClaim
     {
         public string? Name { get; set; }
         public TransformationDefaultAuthorization? DefaultAuthorization { get; set; }
@@ -576,59 +576,56 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         public List<TransformationClaim>? Claims { get; set; }
     }
 
-    private class TransformationDefaultAuthorization
+    private sealed class TransformationDefaultAuthorization
     {
         public List<TransformationAction>? Actions { get; set; }
     }
 
-    private class TransformationAction
+    private sealed class TransformationAction
     {
         public string? Name { get; set; }
         public List<TransformationAuthorizationStrategy>? AuthorizationStrategies { get; set; }
     }
 
-    private class TransformationClaimSet
+    private sealed class TransformationClaimSet
     {
         public string? Name { get; set; }
         public List<TransformationClaimSetAction>? Actions { get; set; }
     }
 
-    private class TransformationClaimSetAction
+    private sealed class TransformationClaimSetAction
     {
         public string? Name { get; set; }
         public List<TransformationAuthorizationStrategy>? AuthorizationStrategyOverrides { get; set; }
     }
 
-    private class TransformationAuthorizationStrategy
+    private sealed class TransformationAuthorizationStrategy
     {
         public string? Name { get; set; }
     }
 
-    // Fragment file structure classes (reused from CmsHierarchy.Model)
-    private class ResourceClaim
+    // Fragment file structure records (reused from CmsHierarchy.Model).
+    // Positional records — the primary constructor is what System.Text.Json calls during
+    // deserialization, satisfying analyzers that don't track reflection-based property writes.
+    private sealed record ResourceClaim(string? Name = null, bool IsParent = false)
     {
-        public string? Name { get; set; }
-        public bool IsParent { get; set; }
-
         [JsonPropertyName("_defaultAuthorizationStrategiesForCrud")]
-        public List<ClaimSetResourceClaimActionAuthStrategies?> DefaultAuthorizationStrategiesForCRUD { get; set; } =
+        public List<ClaimSetResourceClaimActionAuthStrategies?> DefaultAuthorizationStrategiesForCRUD { get; init; } =
         [];
-        public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCRUD { get; set; } =
+        public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCRUD { get; init; } =
         [];
-        public List<ResourceClaim> Children { get; set; } = [];
-        public List<TransformationClaimSet> ClaimSets { get; set; } = [];
+        public List<ResourceClaim> Children { get; init; } = [];
+        public List<TransformationClaimSet> ClaimSets { get; init; } = [];
     }
 
-    private class ClaimSetResourceClaimActionAuthStrategies
-    {
-        public string? ActionName { get; set; }
-        public IEnumerable<TransformationAuthorizationStrategy>? AuthorizationStrategies { get; set; }
-    }
+    private sealed record ClaimSetResourceClaimActionAuthStrategies(
+        string? ActionName = null,
+        IEnumerable<TransformationAuthorizationStrategy>? AuthorizationStrategies = null
+    );
 
-    private class ClaimSetResourceClaims
+    private sealed record ClaimSetResourceClaims(string? Name = null)
     {
-        public string? Name { get; set; }
-        public List<ResourceClaim> ResourceClaims { get; set; } = [];
+        public List<ResourceClaim> ResourceClaims { get; init; } = [];
     }
 
     #endregion

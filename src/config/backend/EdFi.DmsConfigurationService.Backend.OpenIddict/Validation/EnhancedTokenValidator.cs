@@ -48,17 +48,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
 
     public class EnhancedTokenValidator : IEnhancedTokenValidator
     {
-        private readonly IServiceProvider _serviceProvider;
         private readonly ITokenManager _tokenManager;
         private readonly ILogger<EnhancedTokenValidator> _logger;
 
-        public EnhancedTokenValidator(
-            IServiceProvider serviceProvider,
-            ITokenManager tokenManager,
-            ILogger<EnhancedTokenValidator> logger
-        )
+        public EnhancedTokenValidator(ITokenManager tokenManager, ILogger<EnhancedTokenValidator> logger)
         {
-            _serviceProvider = serviceProvider;
             _tokenManager = tokenManager;
             _logger = logger;
         }
@@ -107,7 +101,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
 
                 // Use basic validation approach since OpenIddict transaction types don't exist in this version
                 // Fall back to manual principal creation
-                return await CreatePrincipalFromTokenAsync(token, cancellationToken);
+                return await CreatePrincipalFromTokenAsync(token);
             }
             catch (Exception ex)
             {
@@ -116,10 +110,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
             }
         }
 
-        private Task<ClaimsPrincipal?> CreatePrincipalFromTokenAsync(
-            string token,
-            CancellationToken cancellationToken
-        )
+        private Task<ClaimsPrincipal?> CreatePrincipalFromTokenAsync(string token)
         {
             try
             {
