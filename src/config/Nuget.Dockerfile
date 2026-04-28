@@ -12,11 +12,13 @@ RUN apk --no-cache add postgresql16-client
 FROM runtimebase AS setup
 
 ARG VERSION=0.0.0
+ARG ASSEMBLY_VERSION=0.0.0.0
 ENV ASPNETCORE_HTTP_PORTS=8080
 
 WORKDIR /app
 
 RUN echo "Tag Version:" $VERSION
+RUN echo "Assembly Version:" $ASSEMBLY_VERSION
 
 RUN wget -O /app/EdFi.DmsConfigurationService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DmsConfigurationService/versions/${VERSION}/content" && \
     unzip /app/EdFi.DmsConfigurationService.zip -d /app/ && \

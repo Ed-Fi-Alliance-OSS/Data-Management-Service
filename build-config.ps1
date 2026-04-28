@@ -47,11 +47,18 @@ param(
     [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
     $Command = "Build",
 
-    # Assembly and package version number for the DMS Configuration Service. The
-    # current package number is configured in the build automation tool and
+    # Full semantic version for the DMS Configuration Service (e.g. "0.7.1-alpha.0.83").
+    # When non-empty, forwarded to MSBuild as /p:Version and /p:InformationalVersion.
+    # The current package number is configured in the build automation tool and
     # passed to this script.
     [string]
     $DmsCSVersion = "0.1",
+
+    # Normalized four-part assembly version (Major.Minor.Patch.Height, e.g. "0.7.1.83").
+    # When non-empty, forwarded to MSBuild as /p:AssemblyVersion and /p:FileVersion.
+    # Derived from $DmsCSVersion by the CI pipeline for prerelease builds.
+    [string]
+    $DmsCSAssemblyVersion = "",
 
     # .NET project build configuration, defaults to "Debug". Options are: Debug, Release.
     [string]
@@ -137,8 +144,20 @@ function SetDMSAssemblyInfo {
 
 function Compile {
     Invoke-Execute {
+        $versionArgs = @()
+        if (-not [string]::IsNullOrEmpty($DmsCSVersion))
+        {
+            $versionArgs += "/p:Version=$DmsCSVersion"
+            $versionArgs += "/p:InformationalVersion=$DmsCSVersion"
+            $versionArgs += "/p:VersionPrefix=$DmsCSVersion"
+        }
+        if (-not [string]::IsNullOrEmpty($DmsCSAssemblyVersion))
+        {
+            $versionArgs += "/p:AssemblyVersion=$DmsCSAssemblyVersion"
+            $versionArgs += "/p:FileVersion=$DmsCSAssemblyVersion"
+        }
 
-        dotnet build $defaultSolution -c $Configuration --nologo --no-restore
+        dotnet build $defaultSolution -c $Configuration --nologo --no-restore @versionArgs
     }
 }
 
@@ -146,7 +165,20 @@ function PublishApi {
     Invoke-Execute {
         $project = "$applicationRoot/$projectName/"
         $outputPath = "$project/publish"
-        dotnet publish $project -c $Configuration -o $outputPath --nologo
+        $versionArgs = @()
+        if (-not [string]::IsNullOrEmpty($DmsCSVersion))
+        {
+            $versionArgs += "/p:Version=$DmsCSVersion"
+            $versionArgs += "/p:InformationalVersion=$DmsCSVersion"
+            $versionArgs += "/p:VersionPrefix=$DmsCSVersion"
+        }
+        if (-not [string]::IsNullOrEmpty($DmsCSAssemblyVersion))
+        {
+            $versionArgs += "/p:AssemblyVersion=$DmsCSAssemblyVersion"
+            $versionArgs += "/p:FileVersion=$DmsCSAssemblyVersion"
+        }
+
+        dotnet publish $project -c $Configuration -o $outputPath --nologo @versionArgs
     }
 }
 
@@ -364,8 +396,20 @@ $dockerTagBase = "local"
 $dockerTagDMS = "$($dockerTagBase)/dms-configuration-service"
 
 function DockerBuild {
+    $versionArgs = @()
+    if (-not [string]::IsNullOrEmpty($DmsCSVersion))
+    {
+        $versionArgs += "--build-arg"
+        $versionArgs += "VERSION=$DmsCSVersion"
+    }
+    if (-not [string]::IsNullOrEmpty($DmsCSAssemblyVersion))
+    {
+        $versionArgs += "--build-arg"
+        $versionArgs += "ASSEMBLY_VERSION=$DmsCSAssemblyVersion"
+    }
+
     Push-Location src/config/
-    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../
+    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../ @versionArgs
     Pop-Location
 }
 

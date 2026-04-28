@@ -30,8 +30,12 @@ function Get-VersionNumber {
     $dmsSemver = "$projectPrefix-v$($version)"
     "dms-semver=$dmsSemver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
+    $assemblyVersion = Convert-ToAssemblyVersion $version
+    "$projectPrefix-assembly-version=$assemblyVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
     Write-Output "dms-v is set to: $version"
     Write-Output "dms-semver is set to: $dmsSemver"
+    Write-Output "$projectPrefix-assembly-version is set to: $assemblyVersion"
 }
 
 <#
@@ -133,4 +137,56 @@ function InstallCredentialHandler {
     Write-Host "The artifacts-credprovider was successfully installed" -ForegroundColor Green
 }
 
-Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote, InstallCredentialHandler
+<#
+.SYNOPSIS
+Converts a MinVer-style semantic version string to a four-part assembly version.
+
+.DESCRIPTION
+Takes a MinVer-style semver (e.g. '0.7.1-alpha.0.83') and returns a four-part
+numeric version suitable for use as an assembly/file version (e.g. '0.7.1.83').
+
+Rules:
+  - Split on '-'; the first part supplies Major.Minor.Patch.
+  - If a pre-release tail is present, the last numeric segment of that tail
+    becomes the fourth part (build height). If no numeric segment exists, 0 is used.
+  - If there is no pre-release tail, the fourth part is 0.
+
+.PARAMETER Version
+The MinVer-style semver string to convert.
+
+.EXAMPLE
+Convert-ToAssemblyVersion '0.7.1-alpha.0.83'
+# Returns: 0.7.1.83
+
+.EXAMPLE
+Convert-ToAssemblyVersion '1.2.3'
+# Returns: 1.2.3.0
+#>
+function Convert-ToAssemblyVersion {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Version
+    )
+
+    $parts = $Version -split '-', 2
+    $mmp = $parts[0]
+
+    if ($parts.Length -gt 1) {
+        $prerelease = $parts[1]
+        $numericSegments = $prerelease -split '\.' | Where-Object { $_ -match '^\d+$' }
+        if ($numericSegments) {
+            $height = @($numericSegments)[-1]
+        }
+        else {
+            $height = 0
+        }
+    }
+    else {
+        $height = 0
+    }
+
+    return "$mmp.$height"
+}
+
+Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote, InstallCredentialHandler, Convert-ToAssemblyVersion
