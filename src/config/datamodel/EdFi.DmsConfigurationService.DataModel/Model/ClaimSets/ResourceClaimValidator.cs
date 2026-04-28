@@ -41,7 +41,7 @@ public class ResourceClaimValidator
         );
     }
 
-    private void ValidateResourceClaimExists<T>(
+    private static void ValidateResourceClaimExists<T>(
         ValidationContext<T> context,
         ResourceClaim resourceClaim,
         IDictionary<string, string?> parentClaimByResourceClaim,
@@ -57,7 +57,7 @@ public class ResourceClaimValidator
         }
     }
 
-    private void ValidateNoDuplicateResourceClaims<T>(
+    private static void ValidateNoDuplicateResourceClaims<T>(
         ResourceClaim resourceClaim,
         ValidationContext<T> context,
         string propertyName
@@ -86,20 +86,16 @@ public class ResourceClaimValidator
 
         string? resourceKey = resourceClaim.Name;
 
-        if (!string.IsNullOrWhiteSpace(resourceKey))
+        if (
+            !string.IsNullOrWhiteSpace(resourceKey)
+            && !seenResources.Add(resourceKey)
+            && duplicateResources.Add(resourceKey)
+        )
         {
-            // Has this resource claim already been seen (i.e. it's a duplicate)?
-            if (!seenResources.Add(resourceKey))
-            {
-                // Track it as a duplicate, and only report the validation failure first time
-                if (duplicateResources.Add(resourceKey))
-                {
-                    context.AddFailure(
-                        propertyName,
-                        "Only unique resource claims can be added. The following is a duplicate resource: '{ResourceClaimName}'."
-                    );
-                }
-            }
+            context.AddFailure(
+                propertyName,
+                "Only unique resource claims can be added. The following is a duplicate resource: '{ResourceClaimName}'."
+            );
         }
     }
 
@@ -220,16 +216,17 @@ public class ResourceClaimValidator
                     continue;
                 }
 
-                foreach (var defaultAs in defaultASWithAction.AuthorizationStrategies)
-                {
-                    if (
-                        defaultAs.AuthorizationStrategyName != null
-                        && !dbAuthStrategies.Contains(defaultAs.AuthorizationStrategyName)
+                foreach (
+                    var authStrategyName in defaultASWithAction.AuthorizationStrategies.Select(defaultAs =>
+                        defaultAs.AuthorizationStrategyName
                     )
+                )
+                {
+                    if (authStrategyName != null && !dbAuthStrategies.Contains(authStrategyName))
                     {
                         context.MessageFormatter.AppendArgument(
                             "AuthorizationStrategyName",
-                            defaultAs.AuthorizationStrategyName
+                            authStrategyName
                         );
                         context.AddFailure(
                             propertyName,

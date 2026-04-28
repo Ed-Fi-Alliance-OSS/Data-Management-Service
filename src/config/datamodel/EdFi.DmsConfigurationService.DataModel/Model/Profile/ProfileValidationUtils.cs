@@ -77,7 +77,10 @@ public static class ProfileValidationUtils
 
             using var stringReader = new StringReader(xml);
             using var xmlReader = XmlReader.Create(stringReader, settings);
-            while (xmlReader.Read()) { } // Read through the entire document to trigger validation
+            while (xmlReader.Read())
+            {
+                // Read through the entire document to trigger validation
+            }
 
             return new ProfileXmlValidationResult(isValid, errors);
         }
@@ -128,7 +131,7 @@ public static class ProfileValidationUtils
             {
                 if (
                     node.Attributes?["name"] == null
-                    || string.IsNullOrWhiteSpace(node?.Attributes?["name"]?.Value ?? string.Empty)
+                    || string.IsNullOrWhiteSpace(node.Attributes?["name"]?.Value ?? string.Empty)
                 )
                 {
                     return false;
