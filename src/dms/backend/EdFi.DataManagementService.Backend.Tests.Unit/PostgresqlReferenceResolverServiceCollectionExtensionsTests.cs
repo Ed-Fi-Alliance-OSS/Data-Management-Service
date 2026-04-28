@@ -6,6 +6,7 @@
 using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
@@ -30,6 +31,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddTestReadableProfileProjector();
         services.AddPostgresqlReferenceResolver();
 
         using var serviceProvider = BuildServiceProvider(services);
@@ -61,8 +63,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteExceptionClassifier>();
         var writeConstraintResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteConstraintResolver>();
-        var deleteConstraintResolver =
-            scope.ServiceProvider.GetRequiredService<IRelationalDeleteConstraintResolver>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
@@ -82,7 +82,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<PostgresqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
-        deleteConstraintResolver.Should().BeOfType<RelationalDeleteConstraintResolver>();
     }
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)

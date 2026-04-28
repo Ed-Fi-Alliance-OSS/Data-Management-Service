@@ -56,6 +56,11 @@ public record UpsertResult
     ) : UpsertResult();
 
     /// <summary>
+    /// A failure because the client-supplied If-Match value does not match the current ETag of the document
+    /// </summary>
+    public record UpsertFailureETagMisMatch() : UpsertResult();
+
+    /// <summary>
     /// A transient failure due to a retryable transaction write conflict, for example a serialization issue
     /// </summary>
     public record UpsertFailureWriteConflict() : UpsertResult();

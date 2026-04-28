@@ -61,7 +61,8 @@ internal class DeleteByIdHandler(
                             )
                         ),
                         Headers: requestInfo.FrontendRequest.Headers,
-                        MappingSet: requestInfo.MappingSet
+                        MappingSet: requestInfo.MappingSet,
+                        BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                 ),
             requestInfo

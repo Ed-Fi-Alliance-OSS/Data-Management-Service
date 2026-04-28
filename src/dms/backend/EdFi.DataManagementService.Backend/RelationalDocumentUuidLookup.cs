@@ -38,6 +38,34 @@ internal static class RelationalDocumentUuidLookupSupport
         );
     }
 
+    public static Task<ResolvedDocumentByUuid?> TryResolveByDocumentUuidAndResourceAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+
+        return ExecuteLookupAsync(
+            commandExecutor,
+            mappingSet.Key.Dialect switch
+            {
+                SqlDialect.Pgsql => BuildPostgresqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
+                SqlDialect.Mssql => BuildMssqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
+                _ => throw new NotSupportedException(
+                    $"Relational document UUID lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
+                ),
+            },
+            $"resource '{RelationalWriteSupport.FormatResource(resource)}' and document uuid '{documentUuid.Value}'",
+            cancellationToken
+        );
+    }
+
     /// <summary>
     /// Delete-path entry point for resolving a document by (resource, DocumentUuid). The regular
     /// non-descriptor DELETE needs only the internal <c>DocumentId</c> to scope the actual DELETE
@@ -65,34 +93,6 @@ internal static class RelationalDocumentUuidLookupSupport
             .ConfigureAwait(false);
 
         return resolved is null ? null : new ResolvedDeleteTarget(resolved.DocumentId);
-    }
-
-    public static Task<ResolvedDocumentByUuid?> TryResolveByDocumentUuidAndResourceAsync(
-        IRelationalCommandExecutor commandExecutor,
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
-
-        return ExecuteLookupAsync(
-            commandExecutor,
-            mappingSet.Key.Dialect switch
-            {
-                SqlDialect.Pgsql => BuildPostgresqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
-                SqlDialect.Mssql => BuildMssqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
-                _ => throw new NotSupportedException(
-                    $"Relational document UUID lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
-                ),
-            },
-            $"resource '{RelationalWriteSupport.FormatResource(resource)}' and document uuid '{documentUuid.Value}'",
-            cancellationToken
-        );
     }
 
     private static Task<ResolvedDocumentByUuid?> ExecuteLookupAsync(

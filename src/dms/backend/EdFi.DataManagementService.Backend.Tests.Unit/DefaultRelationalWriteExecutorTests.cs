@@ -2836,6 +2836,456 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
     }
 
+    [Test]
+    public async Task It_skips_if_match_pre_check_when_etag_is_absent_for_put_requests()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>();
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(1, "no pre-check read should occur when If-Match header is absent");
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_proceeds_when_if_match_etag_matches_committed_etag_for_put_requests()
+    {
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Put);
+        var matchingEtag = ExpectedEtag(baseRequest);
+        var request = baseRequest with { IfMatchEtag = matchingEtag };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>();
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(1, "pre-check read is reused on the guarded-no-op path; no second database round-trip");
+        _writeSessionFactory
+            .Session.Commands.Should()
+            .ContainSingle("a row-level lock must be acquired before the If-Match ETag read");
+        _writeSessionFactory
+            .Session.Commands[0]
+            .CommandText.Should()
+            .Contain("FOR UPDATE", "PostgreSQL row lock must be requested in the pre-check SELECT");
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_issues_document_row_lock_before_etag_read_on_changed_write_path()
+    {
+        // Arrange: PUT with matching If-Match on a changed-write (not no-op) path.
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Put);
+        var matchingEtag = ExpectedEtag(baseRequest);
+        var request = baseRequest with { IfMatchEtag = matchingEtag };
+        _currentStateLoader.ResultToReturn = CreateCurrentState(request, 44L);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>();
+        _writeSessionFactory
+            .Session.Commands.Should()
+            .ContainSingle(
+                "a row-level lock must be acquired on the changed-write path before the ETag read"
+            );
+        _writeSessionFactory
+            .Session.Commands[0]
+            .CommandText.Should()
+            .Contain("FOR UPDATE", "PostgreSQL dialect must use FOR UPDATE to lock the document row");
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(2, "pre-check read (ETag comparison) + post-write read (response ETag) must each occur once");
+        _noProfilePersister.TryPersistCallCount.Should().Be(1, "the changed write must be persisted");
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_update_failure_etag_mismatch_when_if_match_does_not_match_put_etag()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put) with
+        {
+            IfMatchEtag = "\"stale-client-etag\"",
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+            );
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(1, "the pre-check issues exactly one read before returning the mismatch result");
+        _writeSessionFactory
+            .Session.Commands.Should()
+            .ContainSingle("row lock must be acquired even before the mismatch is detected");
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "merge must not run after an ETag mismatch");
+        _noProfilePersister.TryPersistCallCount.Should().Be(0, "persist must not run after an ETag mismatch");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_update_failure_etag_mismatch_when_the_locked_if_match_row_disappears()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put) with
+        {
+            IfMatchEtag = ExpectedEtag(CreateRequest(RelationalWriteOperationKind.Put)),
+        };
+        _writeSessionFactory.Session.ScalarResultToReturn = null;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+            );
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(0, "the executor must stop after the lock probe reports that the row is gone");
+        _currentStateLoader
+            .LoadCallCount.Should()
+            .Be(0, "no committed-state read should occur after the row disappears");
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "merge must not run after the row disappears during the If-Match pre-check");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "persist must not run after the row disappears");
+        _writeSessionFactory
+            .Session.Commands.Should()
+            .ContainSingle("the executor must issue the row-lock command before observing the missing row");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_upsert_failure_etag_mismatch_when_if_match_does_not_match_post_as_update_etag()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                44L
+            )
+        ) with
+        {
+            IfMatchEtag = "\"stale-client-etag\"",
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(1, "the pre-check issues exactly one read before returning the mismatch result");
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "merge must not run after an ETag mismatch");
+        _noProfilePersister.TryPersistCallCount.Should().Be(0, "persist must not run after an ETag mismatch");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_bypasses_etag_check_and_proceeds_when_if_match_wildcard_is_sent()
+    {
+        // RFC 7232 §3.1: If-Match: * matches any existing representation.
+        // The executor must bypass the ETag comparison (and row lock) and continue
+        // with the write as if no If-Match header was supplied.
+        var request = CreateRequest(RelationalWriteOperationKind.Put) with
+        {
+            IfMatchEtag = "*",
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>("wildcard If-Match must not block the write");
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(1, "only the guarded no-op readback should occur; wildcard skips the pre-check read");
+        _writeSessionFactory
+            .Session.Commands.Should()
+            .BeEmpty("no row lock is issued when the wildcard bypasses CheckIfMatchEtagAsync");
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_skips_if_match_pre_check_for_create_new_post_requests_even_when_etag_is_supplied()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post) with
+        {
+            IfMatchEtag = "\"any-etag-value\"",
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(1, "only the final ETag readback should occur; no pre-check for create-new");
+        _writeSessionFactory
+            .Session.Commands.Should()
+            .BeEmpty("no row lock should be issued for the CreateNew POST path");
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_bypasses_pre_check_row_lock_and_proceeds_via_guarded_no_op_when_if_match_wildcard_is_sent_for_post_as_update_requests()
+    {
+        // RFC 7232 §3.1: wildcard bypasses the ETag comparison (and row lock). The guarded
+        // no-op freshness check still runs normally on the post-as-update path and produces
+        // UpdateSuccess via the committed readback — exactly one ReadAsync call with no
+        // prior row-lock command.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                44L
+            )
+        ) with
+        {
+            IfMatchEtag = "*",
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>(
+                "wildcard If-Match must not block the post-as-update no-op"
+            );
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(1, "only the guarded no-op readback should occur; wildcard skips the pre-check read");
+        _writeSessionFactory
+            .Session.Commands.Should()
+            .BeEmpty("no row lock is issued when the wildcard bypasses CheckIfMatchEtagAsync");
+        _writeFreshnessChecker
+            .IsCurrentCallCount.Should()
+            .Be(
+                1,
+                "the guarded no-op freshness check must still run even when wildcard bypasses the pre-check"
+            );
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_does_not_invoke_reference_resolver_when_if_match_mismatches()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put) with
+        {
+            IfMatchEtag = "\"stale-client-etag\"",
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+            );
+        _referenceResolverAdapterFactory
+            .CreateSessionAdapterCallCount.Should()
+            .Be(0, "reference resolver must not be invoked when If-Match pre-check returns a mismatch");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_upsert_failure_etag_mismatch_when_post_target_flips_to_existing_and_if_match_is_stale()
+    {
+        // POST request starts as CreateNew (early pre-check is skipped); the in-session resolver
+        // discovers the document already exists and flips the target to ExistingDocument.
+        // The post-flip If-Match recheck must then catch the stale ETag and return a mismatch.
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(RelationalWriteOperationKind.Post) with
+        {
+            IfMatchEtag = "\"stale-client-etag\"",
+        };
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(1, "post-flip If-Match check reads committed representation exactly once");
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "merge must not run after a post-flip ETag mismatch");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "persist must not run after a post-flip ETag mismatch");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_caches_committed_doc_and_proceeds_when_post_target_flips_to_existing_and_if_match_matches()
+    {
+        // POST starts as CreateNew; in-session resolver flips target to ExistingDocument.
+        // If-Match matches → write proceeds (no-op here due to default synthesizer) using
+        // the cached committed representation without an extra DB round-trip.
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post);
+        var request = baseRequest with { IfMatchEtag = ExpectedEtag(baseRequest) };
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>(
+                "post-flip with matching If-Match succeeds as a no-op update"
+            );
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(
+                1,
+                "the post-flip check reads committed representation once; the no-op path reuses cachedCommittedDoc"
+            );
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_etag_mismatch_when_lock_query_finds_no_row_for_put_requests()
+    {
+        // Race: the target was resolved as ExistingDocument before the write session opened,
+        // but by the time the row-lock SELECT runs inside the session the document is gone
+        // (concurrent DELETE or rolled-back insert). ExecuteScalarAsync returns null.
+        // The executor must short-circuit and return the ETag mismatch result without
+        // attempting committed-representation rehydration (which would throw because no
+        // row exists to read back).
+        var request = CreateRequest(RelationalWriteOperationKind.Put) with
+        {
+            IfMatchEtag = "\"client-etag-for-gone-doc\"",
+        };
+        _writeSessionFactory.Session.ScalarResultToReturn = null;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+            );
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(0, "committed readback must be skipped when the lock query finds no row");
+        _writeSessionFactory
+            .Session.Commands.Should()
+            .ContainSingle("the row-lock SELECT must still be issued even though the row is absent");
+        _writeSessionFactory
+            .Session.Commands[0]
+            .CommandText.Should()
+            .Contain("FOR UPDATE", "PostgreSQL dialect must use FOR UPDATE in the lock SELECT");
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "merge must not run when the row-lock finds no row");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "persist must not run when the row-lock finds no row");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_upsert_etag_mismatch_when_lock_query_finds_no_row_for_post_as_update_requests()
+    {
+        // Same race as the PUT variant but triggered on a POST-as-update path where the
+        // target is already resolved as ExistingDocument before the executor is called.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                44L
+            )
+        ) with
+        {
+            IfMatchEtag = "\"client-etag-for-gone-doc\"",
+        };
+        _writeSessionFactory.Session.ScalarResultToReturn = null;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _committedRepresentationReader
+            .ReadCallCount.Should()
+            .Be(0, "committed readback must be skipped when the lock query finds no row");
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "merge must not run when the row-lock finds no row");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "persist must not run when the row-lock finds no row");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
     private static RelationalWriteExecutorRequest CreateRequest(
         RelationalWriteOperationKind operationKind,
         bool allowIdentityUpdates = false,
@@ -3935,9 +4385,11 @@ public class Given_Default_Relational_Write_Executor
             return classification is not null;
         }
 
-        public bool IsForeignKeyViolation(DbException exception) => false;
+        public bool IsForeignKeyViolation(DbException exception) =>
+            ClassificationToReturn is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation;
 
-        public bool IsUniqueConstraintViolation(DbException exception) => false;
+        public bool IsUniqueConstraintViolation(DbException exception) =>
+            ClassificationToReturn is RelationalWriteExceptionClassification.UniqueConstraintViolation;
 
         public bool IsTransientFailure(DbException exception) => false;
     }
@@ -4482,6 +4934,776 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private sealed class StubDbException(string message) : DbException(message);
+
+    /// <summary>
+    /// Dedicated fixture for the combined "If-Match present and matches + request is a no-op" path.
+    /// Verifies that the committed representation is read exactly once — the pre-check caches it
+    /// and the guarded no-op reuses the cache, eliminating the second DB round-trip (P3-01).
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_If_Match_present_and_request_is_a_no_op
+    {
+        private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
+        private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+        private RecordingRelationalWriteFlattener _writeFlattener = null!;
+        private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
+        private RecordingRelationalCommittedRepresentationReader _committedRepresentationReader = null!;
+        private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
+        private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
+        private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
+        private RecordingRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer = null!;
+        private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+        private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+        private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
+        private RecordingRelationalReadMaterializer _readMaterializer = null!;
+        private DefaultRelationalWriteExecutor _sut = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
+            _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+            _writeFlattener = new RecordingRelationalWriteFlattener();
+            _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
+            _committedRepresentationReader = new RecordingRelationalCommittedRepresentationReader();
+            _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
+            _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
+            _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
+            _profileMergeSynthesizer = new RecordingRelationalWriteProfileMergeSynthesizer();
+            _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+            _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
+            _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
+            _readMaterializer = new RecordingRelationalReadMaterializer();
+            _sut = new DefaultRelationalWriteExecutor(
+                _writeSessionFactory,
+                _referenceResolverAdapterFactory,
+                _writeFlattener,
+                _currentStateLoader,
+                _committedRepresentationReader,
+                _targetLookupResolver,
+                _writeFreshnessChecker,
+                _noProfileMergeSynthesizer,
+                _profileMergeSynthesizer,
+                _noProfilePersister,
+                _writeExceptionClassifier,
+                _writeConstraintResolver,
+                _readMaterializer
+            );
+        }
+
+        [Test]
+        public async Task It_reads_committed_representation_exactly_once()
+        {
+            // Arrange: existing-document PUT with If-Match value matching the committed ETag.
+            // The default merge synthesizer returns PreviousValues == CurrentValues → guarded no-op.
+            var baseRequest = CreateRequest(RelationalWriteOperationKind.Put);
+            var matchingEtag = ExpectedEtag(baseRequest);
+            var request = baseRequest with { IfMatchEtag = matchingEtag };
+
+            // Act
+            var result = await _sut.ExecuteAsync(request);
+
+            // Assert: result is a successful no-op update
+            result
+                .Should()
+                .BeOfType<RelationalWriteExecutorResult.Update>()
+                .Which.Result.Should()
+                .BeOfType<UpdateResult.UpdateSuccess>();
+
+            // Assert: ReadAsync is invoked exactly once — from CheckIfMatchEtagAsync.
+            // The guarded no-op code reuses the cached representation without issuing a
+            // second DB round-trip (equivalent to MustHaveHappenedOnceExactly() in FakeItEasy).
+            _committedRepresentationReader
+                .ReadCallCount.Should()
+                .Be(
+                    1,
+                    "the pre-check caches the committed doc; the guarded no-op must not trigger a second read"
+                );
+
+            // Assert: no write was persisted (this is a no-op path)
+            _noProfilePersister.TryPersistCallCount.Should().Be(0);
+
+            // Assert: session committed (not rolled back) for the successful no-op
+            _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+            _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a PUT with a stale If-Match ETag — where the staleness arose because a
+    /// referenced entity's identity changed and ON UPDATE CASCADE bumped identity-column values
+    /// in the stored document — is rejected with the ETag mismatch result (HTTP 412).
+    /// The check is representation-sensitive: any change to the canonical document body,
+    /// including dependency-identity propagation, changes the ETag hash and invalidates the
+    /// client's cached precondition value.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_PUT_if_match_stale_after_dependency_identity_change
+    {
+        private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
+        private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+        private RecordingRelationalWriteFlattener _writeFlattener = null!;
+        private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
+        private RecordingRelationalCommittedRepresentationReader _committedRepresentationReader = null!;
+        private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
+        private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
+        private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
+        private RecordingRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer = null!;
+        private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+        private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+        private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
+        private RecordingRelationalReadMaterializer _readMaterializer = null!;
+        private DefaultRelationalWriteExecutor _sut = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
+            _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+            _writeFlattener = new RecordingRelationalWriteFlattener();
+            _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
+            _committedRepresentationReader = new RecordingRelationalCommittedRepresentationReader();
+            _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
+            _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
+            _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
+            _profileMergeSynthesizer = new RecordingRelationalWriteProfileMergeSynthesizer();
+            _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+            _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
+            _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
+            _readMaterializer = new RecordingRelationalReadMaterializer();
+            _sut = new DefaultRelationalWriteExecutor(
+                _writeSessionFactory,
+                _referenceResolverAdapterFactory,
+                _writeFlattener,
+                _currentStateLoader,
+                _committedRepresentationReader,
+                _targetLookupResolver,
+                _writeFreshnessChecker,
+                _noProfileMergeSynthesizer,
+                _profileMergeSynthesizer,
+                _noProfilePersister,
+                _writeExceptionClassifier,
+                _writeConstraintResolver,
+                _readMaterializer
+            );
+        }
+
+        [Test]
+        public async Task It_returns_update_failure_etag_mismatch()
+        {
+            // Client cached the ETag for a document when its parent schoolId was 255901.
+            // A subsequent identity change on the parent entity caused ON UPDATE CASCADE to
+            // propagate schoolId=255902 into the stored document row, altering the canonical
+            // representation and therefore the ETag hash.
+            var preCascadeBody = JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!;
+            var staleEtag = RelationalApiMetadataFormatter.FormatEtag(preCascadeBody);
+
+            // Post-cascade: the committed document now carries the updated schoolId.
+            var postCascadeBody = JsonNode.Parse("""{"name":"Lincoln High","schoolId":255902}""")!;
+            var persistedTarget = new RelationalWritePersistResult(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+            );
+            _committedRepresentationReader.ResultToReturn = CreateCommittedExternalResponse(
+                persistedTarget,
+                postCascadeBody
+            );
+
+            var request = CreateRequest(RelationalWriteOperationKind.Put) with { IfMatchEtag = staleEtag };
+
+            var result = await _sut.ExecuteAsync(request);
+
+            result
+                .Should()
+                .BeEquivalentTo(
+                    new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+                );
+            _committedRepresentationReader
+                .ReadCallCount.Should()
+                .Be(
+                    1,
+                    "the pre-check reads the committed representation exactly once before returning the mismatch"
+                );
+            _noProfilePersister
+                .TryPersistCallCount.Should()
+                .Be(0, "no write must be issued when the dependency-identity-changed ETag mismatches");
+            _noProfileMergeSynthesizer
+                .SynthesizeCallCount.Should()
+                .Be(0, "merge must not run after the ETag mismatch");
+            _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+            _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a PUT whose If-Match header matches the committed ETag but whose no-op
+    /// decision becomes stale (freshness lost) produces a StaleNoOpCompare outcome rather than
+    /// GuardedNoOp. The If-Match presence must not mask the stale-no-op signal: the client's
+    /// write conflict must propagate correctly so the retry loop can re-attempt with fresh data.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_PUT_if_match_no_op_becomes_stale
+    {
+        private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
+        private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+        private RecordingRelationalWriteFlattener _writeFlattener = null!;
+        private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
+        private RecordingRelationalCommittedRepresentationReader _committedRepresentationReader = null!;
+        private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
+        private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
+        private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
+        private RecordingRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer = null!;
+        private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+        private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+        private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
+        private RecordingRelationalReadMaterializer _readMaterializer = null!;
+        private DefaultRelationalWriteExecutor _sut = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
+            _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+            _writeFlattener = new RecordingRelationalWriteFlattener();
+            _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
+            _committedRepresentationReader = new RecordingRelationalCommittedRepresentationReader();
+            _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
+            _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
+            _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
+            _profileMergeSynthesizer = new RecordingRelationalWriteProfileMergeSynthesizer();
+            _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+            _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
+            _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
+            _readMaterializer = new RecordingRelationalReadMaterializer();
+            _sut = new DefaultRelationalWriteExecutor(
+                _writeSessionFactory,
+                _referenceResolverAdapterFactory,
+                _writeFlattener,
+                _currentStateLoader,
+                _committedRepresentationReader,
+                _targetLookupResolver,
+                _writeFreshnessChecker,
+                _noProfileMergeSynthesizer,
+                _profileMergeSynthesizer,
+                _noProfilePersister,
+                _writeExceptionClassifier,
+                _writeConstraintResolver,
+                _readMaterializer
+            );
+        }
+
+        [Test]
+        public async Task It_returns_stale_no_op_compare_outcome_not_guarded_no_op()
+        {
+            // Arrange: PUT with a matching If-Match so CheckIfMatchEtagAsync passes.
+            // The default merge synthesizer returns identical rows (no-op candidate).
+            // The freshness checker reports the no-op decision is stale — the content
+            // version observed in the write session no longer matches the committed row.
+            var baseRequest = CreateRequest(RelationalWriteOperationKind.Put);
+            var matchingEtag = ExpectedEtag(baseRequest);
+            var request = baseRequest with { IfMatchEtag = matchingEtag };
+            _writeFreshnessChecker.IsCurrentResult = false;
+
+            var result = await _sut.ExecuteAsync(request);
+
+            result
+                .Should()
+                .BeEquivalentTo(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateFailureWriteConflict(),
+                        RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                    )
+                );
+            result
+                .AttemptOutcome.Should()
+                .Be(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
+            _noProfilePersister
+                .TryPersistCallCount.Should()
+                .Be(0, "no write must be issued on a stale no-op path");
+            _writeFreshnessChecker
+                .IsCurrentCallCount.Should()
+                .Be(1, "the freshness checker must run exactly once on the guarded no-op path");
+            _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+            _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        }
+    }
+
+    /// <summary>
+    /// Verifies the invariant that If-Match: * bypasses CheckIfMatchEtagAsync (no row-lock SELECT,
+    /// no committed-doc caching) yet the guarded no-op path still issues a fresh ReadAsync inside
+    /// the write-session transaction.  Without an explicit test this safety-critical invariant
+    /// could be silently broken by a future refactor of either CheckIfMatchEtagAsync or the
+    /// guarded no-op branch.
+    ///
+    /// RFC 7232 §3.1: wildcard matches any existing representation, so no ETag comparison is
+    /// performed and no row-level lock is acquired from CheckIfMatchEtagAsync.  cachedCommittedDoc
+    /// stays null.  The guarded no-op path therefore falls through to a fresh IRelationalCommittedRepresentationReader.ReadAsync
+    /// inside IsCurrentAsync's FOR UPDATE locked transaction — exactly one ReadAsync call total.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_PUT_if_match_wildcard_guarded_no_op
+    {
+        private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
+        private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+        private RecordingRelationalWriteFlattener _writeFlattener = null!;
+        private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
+        private RecordingRelationalCommittedRepresentationReader _committedRepresentationReader = null!;
+        private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
+        private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
+        private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
+        private RecordingRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer = null!;
+        private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+        private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+        private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
+        private RecordingRelationalReadMaterializer _readMaterializer = null!;
+        private DefaultRelationalWriteExecutor _sut = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
+            _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+            _writeFlattener = new RecordingRelationalWriteFlattener();
+            _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
+            _committedRepresentationReader = new RecordingRelationalCommittedRepresentationReader();
+            _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
+            _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
+            _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
+            _profileMergeSynthesizer = new RecordingRelationalWriteProfileMergeSynthesizer();
+            _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+            _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
+            _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
+            _readMaterializer = new RecordingRelationalReadMaterializer();
+            _sut = new DefaultRelationalWriteExecutor(
+                _writeSessionFactory,
+                _referenceResolverAdapterFactory,
+                _writeFlattener,
+                _currentStateLoader,
+                _committedRepresentationReader,
+                _targetLookupResolver,
+                _writeFreshnessChecker,
+                _noProfileMergeSynthesizer,
+                _profileMergeSynthesizer,
+                _noProfilePersister,
+                _writeExceptionClassifier,
+                _writeConstraintResolver,
+                _readMaterializer
+            );
+        }
+
+        [Test]
+        public async Task It_returns_guarded_no_op_success()
+        {
+            // Arrange: existing-document PUT with If-Match: * (RFC 7232 wildcard).
+            // CheckIfMatchEtagAsync returns (null, null): no row lock, no cached committed doc.
+            // The default merge synthesizer returns CurrentValues == MergedValues → guarded no-op.
+            // IsCurrentResult defaults to true → freshness check passes.
+            var request = CreateRequest(
+                RelationalWriteOperationKind.Put,
+                targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    44L
+                )
+            ) with
+            {
+                IfMatchEtag = "*",
+            };
+
+            // Act
+            var result = await _sut.ExecuteAsync(request);
+
+            // Assert: guarded no-op succeeds — identical merge rows trigger the no-op path.
+            result
+                .Should()
+                .BeOfType<RelationalWriteExecutorResult.Update>()
+                .Which.Result.Should()
+                .BeOfType<UpdateResult.UpdateSuccess>(
+                    "wildcard bypasses the ETag comparison; guarded no-op still resolves to UpdateSuccess"
+                );
+            result
+                .AttemptOutcome.Should()
+                .Be(
+                    RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance,
+                    "identical merge rows with freshness=true must resolve as GuardedNoOp, not AppliedWrite"
+                );
+
+            // Assert: exactly one ReadAsync call — the fresh guarded-no-op readback inside the
+            // write-session transaction.  Wildcard does NOT cache a committed doc in
+            // CheckIfMatchEtagAsync, so cachedCommittedDoc is null and the no-op path issues
+            // its own read rather than reusing the cache.
+            _committedRepresentationReader
+                .ReadCallCount.Should()
+                .Be(1, "fresh read inside the locked transaction; wildcard does not short-circuit and cache");
+
+            // Assert: no DML was issued (this is a no-op path).
+            _noProfilePersister
+                .TryPersistCallCount.Should()
+                .Be(0, "guarded no-op must not reach the persister");
+
+            // Assert: no row-level lock was acquired (wildcard bypasses CheckIfMatchEtagAsync).
+            _writeSessionFactory
+                .Session.Commands.Should()
+                .BeEmpty("no row-lock SELECT is issued when wildcard bypasses CheckIfMatchEtagAsync");
+
+            // Assert: session was committed (no-op is a successful, albeit low-cost, write).
+            _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+            _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// Regression guard for peer-review-02 finding 1: a client that receives an ETag from a
+    /// readable-profile GET must be able to use that ETag in a subsequent PUT If-Match header
+    /// without receiving 412. The committed-representation reader applies profile projection
+    /// and refreshes the ETag; CheckIfMatchEtagAsync compares the incoming If-Match value
+    /// against the projected (filtered) ETag, not the full-resource ETag.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_profiled_write_put_if_match_equals_projected_etag
+    {
+        private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
+        private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+        private RecordingRelationalWriteFlattener _writeFlattener = null!;
+        private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
+        private RecordingRelationalCommittedRepresentationReader _committedRepresentationReader = null!;
+        private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
+        private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
+        private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
+        private RecordingRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer = null!;
+        private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+        private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+        private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
+        private RecordingRelationalReadMaterializer _readMaterializer = null!;
+        private DefaultRelationalWriteExecutor _sut = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
+            _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+            _writeFlattener = new RecordingRelationalWriteFlattener();
+            _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
+            _committedRepresentationReader = new RecordingRelationalCommittedRepresentationReader();
+            _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
+            _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
+            _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
+            _profileMergeSynthesizer = new RecordingRelationalWriteProfileMergeSynthesizer();
+            _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+            _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
+            _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
+            _readMaterializer = new RecordingRelationalReadMaterializer();
+            _sut = new DefaultRelationalWriteExecutor(
+                _writeSessionFactory,
+                _referenceResolverAdapterFactory,
+                _writeFlattener,
+                _currentStateLoader,
+                _committedRepresentationReader,
+                _targetLookupResolver,
+                _writeFreshnessChecker,
+                _noProfileMergeSynthesizer,
+                _profileMergeSynthesizer,
+                _noProfilePersister,
+                _writeExceptionClassifier,
+                _writeConstraintResolver,
+                _readMaterializer
+            );
+        }
+
+        [Test]
+        public async Task It_returns_update_success_when_if_match_equals_projected_not_full_etag()
+        {
+            // Full-resource body includes "webSite"; the readable profile excludes it,
+            // so the projected ETag differs from the full-resource ETag.
+            var fullBody = JsonNode.Parse("""{"name":"Lincoln High","webSite":"https://example.com"}""")!;
+            var fullEtag = RelationalApiMetadataFormatter.FormatEtag(fullBody);
+            var projectedBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+            var projectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedBody);
+
+            projectedEtag.Should().NotBe(fullEtag, "read-profile excludes 'webSite' so ETags must differ");
+
+            // Simulate what RelationalCommittedRepresentationReader returns after profile
+            // projection: a filtered document with the refreshed projected ETag.
+            var persistedTarget = new RelationalWritePersistResult(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+            );
+            _committedRepresentationReader.ResultToReturn = CreateCommittedExternalResponse(
+                persistedTarget,
+                projectedBody
+            );
+
+            // Client supplies If-Match equal to the projected ETag (e.g. obtained from a
+            // profile-constrained GET). The executor must accept the match and proceed.
+            var request = CreateRequest(
+                RelationalWriteOperationKind.Put,
+                targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    44L
+                )
+            ) with
+            {
+                IfMatchEtag = projectedEtag,
+            };
+
+            var result = await _sut.ExecuteAsync(request);
+
+            result
+                .Should()
+                .BeOfType<RelationalWriteExecutorResult.Update>(
+                    "profile-projected ETag must be accepted without triggering a 412 mismatch"
+                );
+            ((RelationalWriteExecutorResult.Update)result)
+                .Result.Should()
+                .BeOfType<UpdateResult.UpdateSuccess>(
+                    "If-Match matching the projected ETag must allow the write to succeed"
+                );
+            _committedRepresentationReader
+                .ReadCallCount.Should()
+                .Be(1, "committed representation read must occur exactly once for the ETag pre-check");
+            _noProfilePersister
+                .TryPersistCallCount.Should()
+                .Be(0, "guarded no-op path: no write DML issued for identical merge rows");
+            _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+            _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// A client that supplies the full-resource ETag as If-Match must receive 412 when an
+    /// active readable profile changes the committed representation, causing the projected
+    /// ETag to differ from the full-resource ETag. The pre-check compares only against the
+    /// projected ETag returned by the committed-representation reader.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_profiled_write_put_full_etag_rejected_when_reader_returns_projected_etag
+    {
+        private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
+        private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+        private RecordingRelationalWriteFlattener _writeFlattener = null!;
+        private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
+        private RecordingRelationalCommittedRepresentationReader _committedRepresentationReader = null!;
+        private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
+        private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
+        private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
+        private RecordingRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer = null!;
+        private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+        private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+        private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
+        private RecordingRelationalReadMaterializer _readMaterializer = null!;
+        private DefaultRelationalWriteExecutor _sut = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
+            _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+            _writeFlattener = new RecordingRelationalWriteFlattener();
+            _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
+            _committedRepresentationReader = new RecordingRelationalCommittedRepresentationReader();
+            _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
+            _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
+            _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
+            _profileMergeSynthesizer = new RecordingRelationalWriteProfileMergeSynthesizer();
+            _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+            _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
+            _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
+            _readMaterializer = new RecordingRelationalReadMaterializer();
+            _sut = new DefaultRelationalWriteExecutor(
+                _writeSessionFactory,
+                _referenceResolverAdapterFactory,
+                _writeFlattener,
+                _currentStateLoader,
+                _committedRepresentationReader,
+                _targetLookupResolver,
+                _writeFreshnessChecker,
+                _noProfileMergeSynthesizer,
+                _profileMergeSynthesizer,
+                _noProfilePersister,
+                _writeExceptionClassifier,
+                _writeConstraintResolver,
+                _readMaterializer
+            );
+        }
+
+        [Test]
+        public async Task It_returns_etag_mismatch_when_if_match_equals_full_etag_not_projected_etag()
+        {
+            // Full-resource body; full ETag covers all fields including "webSite".
+            var fullBody = JsonNode.Parse("""{"name":"Lincoln High","webSite":"https://example.com"}""")!;
+            var fullEtag = RelationalApiMetadataFormatter.FormatEtag(fullBody);
+            // Projected body has "webSite" excluded; projected ETag differs from fullEtag.
+            var projectedBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+            var projectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedBody);
+
+            projectedEtag.Should().NotBe(fullEtag, "projected ETag must differ from full ETag");
+
+            // Committed reader returns the profile-projected document with projectedEtag.
+            var persistedTarget = new RelationalWritePersistResult(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+            );
+            _committedRepresentationReader.ResultToReturn = CreateCommittedExternalResponse(
+                persistedTarget,
+                projectedBody
+            );
+
+            // Client supplies the full-resource ETag (e.g. from a non-profile GET) — this
+            // does NOT match the projected ETag returned by the reader → 412 mismatch.
+            var request = CreateRequest(
+                RelationalWriteOperationKind.Put,
+                targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    44L
+                )
+            ) with
+            {
+                IfMatchEtag = fullEtag,
+            };
+
+            var result = await _sut.ExecuteAsync(request);
+
+            result
+                .Should()
+                .BeEquivalentTo(
+                    new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch()),
+                    "full-resource ETag must be rejected (412) when the reader returns a different projected ETag"
+                );
+            _committedRepresentationReader
+                .ReadCallCount.Should()
+                .Be(1, "committed representation read must occur once for the failed ETag pre-check");
+            _noProfilePersister
+                .TryPersistCallCount.Should()
+                .Be(0, "no write must be issued after ETag mismatch");
+            _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+            _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// On guarded no-op success, the result ETag must be the projected ETag (from the
+    /// committed-representation reader), not the full-resource body ETag.  This ensures
+    /// the client's subsequent If-Match header is consistent with the ETag it will receive
+    /// on the next profile-constrained GET.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_profiled_write_put_guarded_no_op_returns_projected_etag
+    {
+        private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
+        private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+        private RecordingRelationalWriteFlattener _writeFlattener = null!;
+        private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
+        private RecordingRelationalCommittedRepresentationReader _committedRepresentationReader = null!;
+        private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
+        private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
+        private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
+        private RecordingRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer = null!;
+        private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+        private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+        private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
+        private RecordingRelationalReadMaterializer _readMaterializer = null!;
+        private DefaultRelationalWriteExecutor _sut = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
+            _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+            _writeFlattener = new RecordingRelationalWriteFlattener();
+            _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
+            _committedRepresentationReader = new RecordingRelationalCommittedRepresentationReader();
+            _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
+            _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
+            _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
+            _profileMergeSynthesizer = new RecordingRelationalWriteProfileMergeSynthesizer();
+            _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+            _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
+            _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
+            _readMaterializer = new RecordingRelationalReadMaterializer();
+            _sut = new DefaultRelationalWriteExecutor(
+                _writeSessionFactory,
+                _referenceResolverAdapterFactory,
+                _writeFlattener,
+                _currentStateLoader,
+                _committedRepresentationReader,
+                _targetLookupResolver,
+                _writeFreshnessChecker,
+                _noProfileMergeSynthesizer,
+                _profileMergeSynthesizer,
+                _noProfilePersister,
+                _writeExceptionClassifier,
+                _writeConstraintResolver,
+                _readMaterializer
+            );
+        }
+
+        [Test]
+        public async Task It_returns_projected_etag_in_guarded_no_op_success_result()
+        {
+            // Profile-projected body excludes "webSite"; projected ETag differs from full ETag.
+            var projectedBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+            var projectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedBody);
+            var fullBody = JsonNode.Parse("""{"name":"Lincoln High","webSite":"https://example.com"}""")!;
+            var fullEtag = RelationalApiMetadataFormatter.FormatEtag(fullBody);
+
+            projectedEtag.Should().NotBe(fullEtag, "test setup: projected ETag must differ from full ETag");
+
+            // Committed reader returns the profile-projected document. The guarded no-op
+            // success result must carry this projected ETag, not the full-resource body ETag.
+            var persistedTarget = new RelationalWritePersistResult(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+            );
+            _committedRepresentationReader.ResultToReturn = CreateCommittedExternalResponse(
+                persistedTarget,
+                projectedBody
+            );
+
+            // If-Match matches the projected ETag so CheckIfMatchEtagAsync passes and
+            // caches the projected committed doc. The guarded no-op reuses the cached doc.
+            var request = CreateRequest(
+                RelationalWriteOperationKind.Put,
+                targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    44L
+                )
+            ) with
+            {
+                IfMatchEtag = projectedEtag,
+            };
+
+            var result = await _sut.ExecuteAsync(request);
+
+            var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+            updateResult.Result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+            var successResult = (UpdateResult.UpdateSuccess)updateResult.Result;
+            successResult
+                .ETag.Should()
+                .Be(
+                    projectedEtag,
+                    "guarded no-op success must return the projected ETag so the client can use it in subsequent If-Match headers"
+                );
+            successResult.ETag.Should().NotBe(fullEtag, "full-resource ETag must not leak into the result");
+            _committedRepresentationReader
+                .ReadCallCount.Should()
+                .Be(
+                    1,
+                    "pre-check reads the committed doc once and caches it; guarded no-op reuses the cache"
+                );
+            _noProfilePersister.TryPersistCallCount.Should().Be(0, "guarded no-op issues no write DML");
+            _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        }
+    }
 }
 
 /// <summary>

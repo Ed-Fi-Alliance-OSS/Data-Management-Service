@@ -4,10 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.Core.Profile;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -21,6 +22,8 @@ internal sealed class DescriptorWriteHandler(
     IRelationalCommandExecutor commandExecutor,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
+    IRelationalWriteSessionFactory writeSessionFactory,
+    IReadableProfileProjector readableProfileProjector,
     ILogger<DescriptorWriteHandler> logger
 ) : IDescriptorWriteHandler
 {
@@ -32,6 +35,10 @@ internal sealed class DescriptorWriteHandler(
         writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
     private readonly IRelationalDeleteConstraintResolver _deleteConstraintResolver =
         deleteConstraintResolver ?? throw new ArgumentNullException(nameof(deleteConstraintResolver));
+    private readonly IRelationalWriteSessionFactory _writeSessionFactory =
+        writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
+    private readonly IReadableProfileProjector _readableProfileProjector =
+        readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
     private readonly ILogger<DescriptorWriteHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -80,51 +87,62 @@ internal sealed class DescriptorWriteHandler(
 
         try
         {
-            return targetContext switch
+            if (targetContext is RelationalWriteTargetContext.CreateNew(var newDocumentUuid))
             {
-                RelationalWriteTargetContext.CreateNew(var documentUuid) => await InsertDescriptorAsync(
+                return await InsertDescriptorAsync(
                         request,
                         body,
-                        documentUuid,
+                        newDocumentUuid,
                         resourceKeyId,
                         cancellationToken
                     )
-                    .ConfigureAwait(false),
+                    .ConfigureAwait(false);
+            }
 
-                RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) =>
-                    await UpdateDescriptorForUpsertAsync(
-                            request,
-                            body,
-                            documentId,
-                            documentUuid,
-                            resourceKeyId,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false),
-
-                _ => throw new InvalidOperationException(
+            if (
+                targetContext
+                is not RelationalWriteTargetContext.ExistingDocument
+                (var existingDocId, var existingDocUuid, _)
+            )
+            {
+                throw new InvalidOperationException(
                     $"Unexpected target context type '{targetContext.GetType().Name}' for descriptor POST."
-                ),
-            };
+                );
+            }
+
+            if (request.IfMatchEtag is not null && !IsWildcardIfMatch(request.IfMatchEtag))
+            {
+                // Use a locked read+write session to prevent TOCTOU race: the SELECT acquires a
+                // row lock (FOR UPDATE / UPDLOCK ROWLOCK) held for the lifetime of the transaction,
+                // so no concurrent writer can modify the row between the pre-check and the UPDATE.
+                return await ExecutePostAsUpdateWithLockedSessionAsync(
+                        request,
+                        body,
+                        existingDocId,
+                        existingDocUuid,
+                        resourceKeyId,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            return await UpdateDescriptorForUpsertAsync(
+                    request,
+                    body,
+                    existingDocId,
+                    existingDocUuid,
+                    resourceKeyId,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
-        catch (DbException ex) when (_writeExceptionClassifier.IsUniqueConstraintViolation(ex))
+        catch (DbException ex) when (IsUniqueConstraintViolation(ex))
         {
             _logger.LogDebug(
                 ex,
                 "Unique constraint violation on descriptor POST for {Resource} - {TraceId}",
                 RelationalWriteSupport.FormatResource(request.Resource),
                 request.TraceId.Value
-            );
-
-            return new UpsertResult.UpsertFailureWriteConflict();
-        }
-        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
-        {
-            _logger.LogDebug(
-                ex,
-                "Transient conflict on descriptor POST for {Resource} - {TraceId}",
-                RelationalWriteSupport.FormatResource(request.Resource),
-                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
             );
 
             return new UpsertResult.UpsertFailureWriteConflict();
@@ -166,7 +184,9 @@ internal sealed class DescriptorWriteHandler(
 
         if (targetLookupResult is RelationalWriteTargetLookupResult.NotFound)
         {
-            return new UpdateResult.UpdateFailureNotExists();
+            return request.IfMatchEtag is not null
+                ? new UpdateResult.UpdateFailureETagMisMatch()
+                : new UpdateResult.UpdateFailureNotExists();
         }
 
         var targetContext =
@@ -186,6 +206,23 @@ internal sealed class DescriptorWriteHandler(
             );
         }
 
+        // When IfMatchEtag is provided, use a locked read+write session to prevent TOCTOU race:
+        // the SELECT acquires a row lock (FOR UPDATE / UPDLOCK ROWLOCK) held for the lifetime of
+        // the transaction, so no concurrent writer can modify the row between the pre-check and
+        // the subsequent UPDATE.
+        if (request.IfMatchEtag is not null && !IsWildcardIfMatch(request.IfMatchEtag))
+        {
+            return await ExecutePutWithLockedSessionAsync(
+                    request,
+                    body,
+                    documentId,
+                    documentUuid,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        // Non-locked path: no IfMatchEtag guard; proceed without a transaction.
         var persisted = await ReadPersistedDescriptorAsync(
                 request.MappingSet.Key.Dialect,
                 documentId,
@@ -242,23 +279,19 @@ internal sealed class DescriptorWriteHandler(
                 ),
             };
 
-            await ExecuteWriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
+            await ExecuteWriteCommandAsync(command, _commandExecutor, cancellationToken)
+                .ConfigureAwait(false);
 
+            // ETag is computed from the just-persisted body values — identical to DB readback
+            // absent a concurrent write. ReadPersistedDescriptorAsync is intentionally NOT called
+            // here: opening a fresh _commandExecutor connection after the write creates a race
+            // window where a concurrent writer could commit between our write and the follow-up
+            // SELECT, causing us to return that writer's ETag. FormatEtag(body) is deterministic
+            // and free of that race.
             return new UpdateResult.UpdateSuccess(
                 documentUuid,
                 RelationalApiMetadataFormatter.FormatEtag(body)
             );
-        }
-        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
-        {
-            _logger.LogDebug(
-                ex,
-                "Transient conflict on descriptor PUT for {Resource} - {TraceId}",
-                RelationalWriteSupport.FormatResource(request.Resource),
-                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
-            );
-
-            return new UpdateResult.UpdateFailureWriteConflict();
         }
         catch (DbException ex)
         {
@@ -280,6 +313,8 @@ internal sealed class DescriptorWriteHandler(
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
         TraceId traceId,
+        string? ifMatchEtag = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -290,12 +325,26 @@ internal sealed class DescriptorWriteHandler(
             "Deleting descriptor document {DocumentUuid} for {Resource} - {TraceId}",
             documentUuid.Value,
             RelationalWriteSupport.FormatResource(resource),
-            LoggingSanitizer.SanitizeForLogging(traceId.Value)
+            traceId.Value
         );
 
         // Scope the DELETE by ResourceKeyId so a UUID belonging to a different descriptor
         // (or a non-descriptor document) cannot be deleted through this resource endpoint.
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+
+        if (ifMatchEtag is not null && !IsWildcardIfMatch(ifMatchEtag))
+        {
+            return await ExecuteDeleteWithIfMatchAsync(
+                    mappingSet,
+                    documentUuid,
+                    traceId,
+                    resourceKeyId,
+                    ifMatchEtag,
+                    backendProfileWriteContext,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
 
         var command = BuildDescriptorDeleteCommand(_commandExecutor.Dialect, documentUuid, resourceKeyId);
 
@@ -310,6 +359,123 @@ internal sealed class DescriptorWriteHandler(
                 documentUuid,
                 traceId,
                 DeleteTargetKind.Descriptor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<DeleteResult> ExecuteDeleteWithIfMatchAsync(
+        MappingSet mappingSet,
+        DocumentUuid documentUuid,
+        TraceId traceId,
+        short resourceKeyId,
+        string ifMatchEtag,
+        BackendProfileWriteContext? backendProfileWriteContext,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var session = await _writeSessionFactory
+            .CreateAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var sessionExecutor = new SessionRelationalCommandExecutor(session.Connection, session.Transaction);
+
+        var persisted = await ReadPersistedDescriptorForDeleteAsync(
+                _commandExecutor.Dialect,
+                sessionExecutor,
+                documentUuid,
+                resourceKeyId,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (persisted is null)
+        {
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new DeleteResult.DeleteFailureETagMisMatch();
+        }
+
+        if (
+            !IsWildcardIfMatch(ifMatchEtag)
+            && IsDescriptorEtagMismatch(ifMatchEtag, persisted, backendProfileWriteContext)
+        )
+        {
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new DeleteResult.DeleteFailureETagMisMatch();
+        }
+
+        var command = BuildDescriptorDeleteCommand(_commandExecutor.Dialect, documentUuid, resourceKeyId);
+        var outcome = await RelationalDeleteExecution
+            .TryExecuteAsync(
+                sessionExecutor,
+                command,
+                _writeExceptionClassifier,
+                _deleteConstraintResolver,
+                mappingSet.Model,
+                _logger,
+                documentUuid,
+                traceId,
+                DeleteTargetKind.Descriptor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (outcome is DeleteResult.DeleteSuccess)
+        {
+            await session.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return outcome;
+        }
+
+        await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        return outcome;
+    }
+
+    private static async Task<PersistedDescriptorState?> ReadPersistedDescriptorForDeleteAsync(
+        SqlDialect dialect,
+        IRelationalCommandExecutor executor,
+        DocumentUuid documentUuid,
+        short resourceKeyId,
+        CancellationToken cancellationToken
+    )
+    {
+        var command = dialect switch
+        {
+            SqlDialect.Pgsql => BuildPostgresqlLockedDeleteReadCommand(documentUuid, resourceKeyId),
+            SqlDialect.Mssql => BuildMssqlLockedDeleteReadCommand(documentUuid, resourceKeyId),
+            _ => throw new NotSupportedException(
+                $"Descriptor delete does not support SQL dialect '{dialect}'."
+            ),
+        };
+
+        return await executor
+            .ExecuteReaderAsync(
+                command,
+                static async (reader, ct) =>
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    var persisted = new PersistedDescriptorState(
+                        Namespace: reader.GetRequiredFieldValue<string>("Namespace"),
+                        CodeValue: reader.GetRequiredFieldValue<string>("CodeValue"),
+                        Uri: reader.GetRequiredFieldValue<string>("Uri"),
+                        ShortDescription: reader.GetNullableFieldValue<string>("ShortDescription"),
+                        Description: reader.GetNullableFieldValue<string>("Description"),
+                        EffectiveBeginDate: reader.GetNullableDateFieldValue("EffectiveBeginDate"),
+                        EffectiveEndDate: reader.GetNullableDateFieldValue("EffectiveEndDate")
+                    );
+
+                    if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException(
+                            "Descriptor delete locked read returned multiple rows."
+                        );
+                    }
+
+                    return persisted;
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -387,8 +553,13 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await ExecuteWriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
+        await ExecuteWriteCommandAsync(command, _commandExecutor, cancellationToken).ConfigureAwait(false);
 
+        // ETag is computed from the just-persisted body values — identical to DB readback absent a
+        // concurrent write. ReadPersistedDescriptorByUuidAsync is intentionally NOT called here:
+        // opening a fresh _commandExecutor connection after the INSERT creates a race window where a
+        // concurrent writer could commit between our write and the follow-up SELECT, causing us to
+        // return that writer's ETag. FormatEtag(body) is deterministic and free of that race.
         return new UpsertResult.InsertSuccess(documentUuid, RelationalApiMetadataFormatter.FormatEtag(body));
     }
 
@@ -427,20 +598,29 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await ExecuteWriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
+        await ExecuteWriteCommandAsync(command, _commandExecutor, cancellationToken).ConfigureAwait(false);
 
-        return new UpsertResult.UpdateSuccess(
-            existingDocumentUuid,
-            RelationalApiMetadataFormatter.FormatEtag(body)
-        );
+        var persisted = await ReadPersistedDescriptorAsync(
+                request.MappingSet.Key.Dialect,
+                documentId,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var etag = persisted is not null
+            ? ComputeEtagFromPersistedState(persisted, request.BackendProfileWriteContext)
+            : RelationalApiMetadataFormatter.FormatEtag(body);
+
+        return new UpsertResult.UpdateSuccess(existingDocumentUuid, etag);
     }
 
-    private async Task ExecuteWriteCommandAsync(
+    private static async Task ExecuteWriteCommandAsync(
         RelationalCommand command,
+        IRelationalCommandExecutor executor,
         CancellationToken cancellationToken
     )
     {
-        _ = await _commandExecutor
+        _ = await executor
             .ExecuteReaderAsync(
                 command,
                 static (_, ct) =>
@@ -660,6 +840,84 @@ internal sealed class DescriptorWriteHandler(
         );
     }
 
+    private string ComputeEtagFromPersistedState(
+        PersistedDescriptorState persisted,
+        BackendProfileWriteContext? backendProfileWriteContext
+    )
+    {
+        var document = new JsonObject
+        {
+            ["namespace"] = persisted.Namespace,
+            ["codeValue"] = persisted.CodeValue,
+        };
+
+        if (persisted.ShortDescription is not null)
+        {
+            document["shortDescription"] = persisted.ShortDescription;
+        }
+
+        if (persisted.Description is not null)
+        {
+            document["description"] = persisted.Description;
+        }
+
+        if (persisted.EffectiveBeginDate is DateOnly effectiveBegin)
+        {
+            document["effectiveBeginDate"] = effectiveBegin.ToString(
+                "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture
+            );
+        }
+
+        if (persisted.EffectiveEndDate is DateOnly effectiveEnd)
+        {
+            document["effectiveEndDate"] = effectiveEnd.ToString(
+                "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture
+            );
+        }
+
+        var projectionContext = backendProfileWriteContext?.IfMatchReadableProjectionContext;
+        if (projectionContext is not null)
+        {
+            document = (JsonObject)
+                _readableProfileProjector.Project(
+                    document,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                );
+            RelationalApiMetadataFormatter.RefreshEtag(document);
+            // FormatEtag reads canonical content; RefreshEtag attached _etag but we want the canonical ETag value
+            return RelationalApiMetadataFormatter.FormatEtag(document);
+        }
+
+        return RelationalApiMetadataFormatter.FormatEtag(
+            new ExtractedDescriptorBody(
+                persisted.Namespace,
+                persisted.CodeValue,
+                persisted.ShortDescription,
+                persisted.Description,
+                persisted.EffectiveBeginDate,
+                persisted.EffectiveEndDate,
+                string.Empty,
+                string.Empty
+            )
+        );
+    }
+
+    private bool IsDescriptorEtagMismatch(
+        string ifMatchEtag,
+        PersistedDescriptorState persisted,
+        BackendProfileWriteContext? backendProfileWriteContext
+    )
+    {
+        var currentEtag = ComputeEtagFromPersistedState(persisted, backendProfileWriteContext);
+        return !string.Equals(currentEtag, ifMatchEtag, StringComparison.Ordinal);
+    }
+
+    private static bool IsWildcardIfMatch(string ifMatchEtag) =>
+        string.Equals(ifMatchEtag, "*", StringComparison.Ordinal);
+
     // ── Persisted descriptor read ──────────────────────────────────────────
 
     private async Task<PersistedDescriptorState?> ReadPersistedDescriptorAsync(
@@ -677,7 +935,22 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        return await _commandExecutor
+        return await ReadDescriptorStateFromExecutorAsync(command, _commandExecutor, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Shared reader helper: executes <paramref name="command"/> on <paramref name="executor"/> and
+    /// materialises a single <see cref="PersistedDescriptorState"/> row, or <see langword="null"/>
+    /// when no row is found. Used by both non-locked and locked (session-scoped) read paths.
+    /// </summary>
+    private static async Task<PersistedDescriptorState?> ReadDescriptorStateFromExecutorAsync(
+        RelationalCommand command,
+        IRelationalCommandExecutor executor,
+        CancellationToken cancellationToken
+    )
+    {
+        return await executor
             .ExecuteReaderAsync(
                 command,
                 static async (reader, ct) =>
@@ -688,6 +961,8 @@ internal sealed class DescriptorWriteHandler(
                     }
 
                     return new PersistedDescriptorState(
+                        Namespace: reader.GetRequiredFieldValue<string>("Namespace"),
+                        CodeValue: reader.GetRequiredFieldValue<string>("CodeValue"),
                         Uri: reader.GetRequiredFieldValue<string>("Uri"),
                         ShortDescription: reader.GetNullableFieldValue<string>("ShortDescription"),
                         Description: reader.GetNullableFieldValue<string>("Description"),
@@ -700,10 +975,231 @@ internal sealed class DescriptorWriteHandler(
             .ConfigureAwait(false);
     }
 
+    // ── Locked session execution helpers (If-Match guard paths) ─────────────
+
+    /// <summary>
+    /// Executes the descriptor PUT write within a locked session transaction.
+    /// Acquires a row lock on the pre-check SELECT so no concurrent writer can modify the row
+    /// between the ETag comparison and the subsequent UPDATE.
+    /// </summary>
+    private async Task<UpdateResult> ExecutePutWithLockedSessionAsync(
+        DescriptorWriteRequest request,
+        ExtractedDescriptorBody body,
+        long documentId,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var session = await _writeSessionFactory
+            .CreateAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var sessionExecutor = new SessionRelationalCommandExecutor(session.Connection, session.Transaction);
+
+        var lockedReadCommand = request.MappingSet.Key.Dialect switch
+        {
+            SqlDialect.Pgsql => BuildPostgresqlLockedReadCommand(documentId),
+            SqlDialect.Mssql => BuildMssqlLockedReadCommand(documentId),
+            _ => throw new NotSupportedException(
+                $"Descriptor locked read does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
+            ),
+        };
+
+        var persisted = await ReadDescriptorStateFromExecutorAsync(
+                lockedReadCommand,
+                sessionExecutor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (persisted is null)
+        {
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new UpdateResult.UpdateFailureETagMisMatch();
+        }
+
+        if (
+            !IsWildcardIfMatch(request.IfMatchEtag!)
+            && IsDescriptorEtagMismatch(request.IfMatchEtag!, persisted, request.BackendProfileWriteContext)
+        )
+        {
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new UpdateResult.UpdateFailureETagMisMatch();
+        }
+
+        if (!string.Equals(body.Uri, persisted.Uri, StringComparison.Ordinal))
+        {
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new UpdateResult.UpdateFailureImmutableIdentity(
+                $"Identity of resource '{RelationalWriteSupport.FormatResource(request.Resource)}' "
+                    + "cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
+            );
+        }
+
+        if (IsDescriptorUnchanged(body, persisted))
+        {
+            _logger.LogDebug(
+                "Descriptor PUT with If-Match is a no-op for {Resource} (DocumentId={DocumentId}) - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                documentId,
+                request.TraceId.Value
+            );
+
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new UpdateResult.UpdateSuccess(
+                documentUuid,
+                RelationalApiMetadataFormatter.FormatEtag(body)
+            );
+        }
+
+        _logger.LogDebug(
+            "Updating descriptor {Resource} (DocumentId={DocumentId}) via PUT with If-Match - {TraceId}",
+            RelationalWriteSupport.FormatResource(request.Resource),
+            documentId,
+            request.TraceId.Value
+        );
+
+        var writeCommand = request.MappingSet.Key.Dialect switch
+        {
+            SqlDialect.Pgsql => BuildPostgresqlUpdateCommand(body, documentId),
+            SqlDialect.Mssql => BuildMssqlUpdateCommand(body, documentId),
+            _ => throw new NotSupportedException(
+                $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
+            ),
+        };
+
+        try
+        {
+            await ExecuteWriteCommandAsync(writeCommand, sessionExecutor, cancellationToken)
+                .ConfigureAwait(false);
+            await session.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            return new UpdateResult.UpdateSuccess(
+                documentUuid,
+                RelationalApiMetadataFormatter.FormatEtag(body)
+            );
+        }
+        catch (DbException ex)
+        {
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogError(
+                ex,
+                "Database error on descriptor PUT (locked session) for {Resource} - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                request.TraceId.Value
+            );
+            return new UpdateResult.UnknownFailure(
+                "An unexpected error occurred while processing the descriptor request."
+            );
+        }
+    }
+
+    /// <summary>
+    /// Executes the descriptor POST-as-update write within a locked session transaction.
+    /// Acquires a row lock on the pre-check SELECT so no concurrent writer can modify the row
+    /// between the ETag comparison and the subsequent UPDATE.
+    /// </summary>
+    private async Task<UpsertResult> ExecutePostAsUpdateWithLockedSessionAsync(
+        DescriptorWriteRequest request,
+        ExtractedDescriptorBody body,
+        long documentId,
+        DocumentUuid existingDocUuid,
+        short resourceKeyId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var session = await _writeSessionFactory
+            .CreateAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var sessionExecutor = new SessionRelationalCommandExecutor(session.Connection, session.Transaction);
+
+        var lockedReadCommand = request.MappingSet.Key.Dialect switch
+        {
+            SqlDialect.Pgsql => BuildPostgresqlLockedReadCommand(documentId),
+            SqlDialect.Mssql => BuildMssqlLockedReadCommand(documentId),
+            _ => throw new NotSupportedException(
+                $"Descriptor locked read does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
+            ),
+        };
+
+        var persisted = await ReadDescriptorStateFromExecutorAsync(
+                lockedReadCommand,
+                sessionExecutor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (persisted is null)
+        {
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new UpsertResult.UpsertFailureETagMisMatch();
+        }
+
+        if (
+            !IsWildcardIfMatch(request.IfMatchEtag!)
+            && IsDescriptorEtagMismatch(request.IfMatchEtag!, persisted, request.BackendProfileWriteContext)
+        )
+        {
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new UpsertResult.UpsertFailureETagMisMatch();
+        }
+
+        if (IsDescriptorUnchanged(body, persisted))
+        {
+            _logger.LogDebug(
+                "Descriptor POST-as-update with If-Match is a no-op for {Resource} (DocumentId={DocumentId}) - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                documentId,
+                request.TraceId.Value
+            );
+
+            await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new UpsertResult.UpdateSuccess(
+                existingDocUuid,
+                ComputeEtagFromPersistedState(persisted, request.BackendProfileWriteContext)
+            );
+        }
+
+        var writeCommand = request.MappingSet.Key.Dialect switch
+        {
+            SqlDialect.Pgsql => BuildPostgresqlUpsertUpdateCommand(
+                body,
+                documentId,
+                resourceKeyId,
+                request.ReferentialId!.Value
+            ),
+            SqlDialect.Mssql => BuildMssqlUpsertUpdateCommand(
+                body,
+                documentId,
+                resourceKeyId,
+                request.ReferentialId!.Value
+            ),
+            _ => throw new NotSupportedException(
+                $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
+            ),
+        };
+
+        await ExecuteWriteCommandAsync(writeCommand, sessionExecutor, cancellationToken)
+            .ConfigureAwait(false);
+        await session.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        // ETag is computed from the just-persisted body values — identical to DB readback absent a
+        // concurrent write.  ReadPersistedDescriptorAsync is intentionally NOT called here: opening
+        // a fresh _commandExecutor connection after CommitAsync creates a race window where a
+        // concurrent writer could commit between our CommitAsync and the follow-up SELECT, causing
+        // us to return that writer's ETag to our client.  FormatEtag(body) is deterministic and
+        // free of that race.
+        return new UpsertResult.UpdateSuccess(
+            existingDocUuid,
+            RelationalApiMetadataFormatter.FormatEtag(body)
+        );
+    }
+
     private static RelationalCommand BuildPostgresqlReadCommand(long documentId)
     {
         const string Sql = """
-            SELECT "Uri", "ShortDescription", "Description", "EffectiveBeginDate", "EffectiveEndDate"
+            SELECT "Namespace", "CodeValue", "Uri", "ShortDescription", "Description", "EffectiveBeginDate", "EffectiveEndDate"
             FROM dms."Descriptor"
             WHERE "DocumentId" = @documentId;
             """;
@@ -714,12 +1210,100 @@ internal sealed class DescriptorWriteHandler(
     private static RelationalCommand BuildMssqlReadCommand(long documentId)
     {
         const string Sql = """
-            SELECT [Uri], [ShortDescription], [Description], [EffectiveBeginDate], [EffectiveEndDate]
+            SELECT [Namespace], [CodeValue], [Uri], [ShortDescription], [Description], [EffectiveBeginDate], [EffectiveEndDate]
             FROM [dms].[Descriptor]
             WHERE [DocumentId] = @documentId;
             """;
 
         return new RelationalCommand(Sql, [new RelationalParameter("@documentId", documentId)]);
+    }
+
+    // ── Locked read command builders (FOR UPDATE / UPDLOCK ROWLOCK) ───────
+
+    private static RelationalCommand BuildPostgresqlLockedReadCommand(long documentId)
+    {
+        // FOR UPDATE acquires a row-level lock held for the lifetime of the enclosing transaction,
+        // preventing concurrent writers from modifying the row between the pre-check SELECT and the
+        // subsequent UPDATE (eliminating the TOCTOU race for If-Match guarded writes).
+        const string Sql = """
+            SELECT "Namespace", "CodeValue", "Uri", "ShortDescription", "Description", "EffectiveBeginDate", "EffectiveEndDate"
+            FROM dms."Descriptor"
+            WHERE "DocumentId" = @documentId
+            FOR UPDATE;
+            """;
+
+        return new RelationalCommand(Sql, [new RelationalParameter("@documentId", documentId)]);
+    }
+
+    private static RelationalCommand BuildPostgresqlLockedDeleteReadCommand(
+        DocumentUuid documentUuid,
+        short resourceKeyId
+    )
+    {
+        const string Sql = """
+            SELECT descriptor."Namespace",
+                   descriptor."CodeValue",
+                   descriptor."Uri",
+                   descriptor."ShortDescription",
+                   descriptor."Description",
+                   descriptor."EffectiveBeginDate",
+                   descriptor."EffectiveEndDate"
+            FROM dms."Document" d
+            JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = d."DocumentId"
+            WHERE d."DocumentUuid" = @documentUuid
+              AND d."ResourceKeyId" = @resourceKeyId
+            FOR UPDATE;
+            """;
+
+        return new RelationalCommand(
+            Sql,
+            [
+                new RelationalParameter("@documentUuid", documentUuid.Value),
+                new RelationalParameter("@resourceKeyId", resourceKeyId),
+            ]
+        );
+    }
+
+    private static RelationalCommand BuildMssqlLockedReadCommand(long documentId)
+    {
+        // UPDLOCK + ROWLOCK acquire an update row lock held for the lifetime of the enclosing
+        // transaction, preventing concurrent writers from modifying the row between the pre-check
+        // SELECT and the subsequent UPDATE (eliminating the TOCTOU race for If-Match guarded writes).
+        const string Sql = """
+            SELECT [Namespace], [CodeValue], [Uri], [ShortDescription], [Description], [EffectiveBeginDate], [EffectiveEndDate]
+            FROM [dms].[Descriptor] WITH (UPDLOCK, ROWLOCK)
+            WHERE [DocumentId] = @documentId;
+            """;
+
+        return new RelationalCommand(Sql, [new RelationalParameter("@documentId", documentId)]);
+    }
+
+    private static RelationalCommand BuildMssqlLockedDeleteReadCommand(
+        DocumentUuid documentUuid,
+        short resourceKeyId
+    )
+    {
+        const string Sql = """
+            SELECT descriptor.[Namespace],
+                   descriptor.[CodeValue],
+                   descriptor.[Uri],
+                   descriptor.[ShortDescription],
+                   descriptor.[Description],
+                   descriptor.[EffectiveBeginDate],
+                   descriptor.[EffectiveEndDate]
+            FROM [dms].[Document] d WITH (UPDLOCK, ROWLOCK)
+            JOIN [dms].[Descriptor] descriptor ON descriptor.[DocumentId] = d.[DocumentId]
+            WHERE d.[DocumentUuid] = @documentUuid
+              AND d.[ResourceKeyId] = @resourceKeyId;
+            """;
+
+        return new RelationalCommand(
+            Sql,
+            [
+                new RelationalParameter("@documentUuid", documentUuid.Value),
+                new RelationalParameter("@resourceKeyId", resourceKeyId),
+            ]
+        );
     }
 
     // ── No-op detection ─────────────────────────────────────────────────
@@ -736,6 +1320,8 @@ internal sealed class DescriptorWriteHandler(
     }
 
     private sealed record PersistedDescriptorState(
+        string Namespace,
+        string CodeValue,
         string Uri,
         string? ShortDescription,
         string? Description,
@@ -808,5 +1394,25 @@ internal sealed class DescriptorWriteHandler(
         var parameters = BuildCommonFieldParameters(body);
         parameters.Add(new RelationalParameter("@discriminator", body.Discriminator));
         return parameters;
+    }
+
+    // ── SQL error classification ────────────────────────────────────────
+
+    /// <summary>
+    /// Detects unique constraint violations across Postgres (23505) and SQL Server (2627/2601).
+    /// </summary>
+    private static bool IsUniqueConstraintViolation(DbException ex)
+    {
+        // Postgres: SqlState "23505" (unique_violation)
+        // SQL Server: Number 2627 (unique key) or 2601 (unique index)
+        return ex.SqlState == "23505"
+            || (
+                ex is { HResult: var hr }
+                && hr is unchecked((int)0x80131904)
+                && (
+                    ex.Message.Contains("2627", StringComparison.Ordinal)
+                    || ex.Message.Contains("2601", StringComparison.Ordinal)
+                )
+            );
     }
 }

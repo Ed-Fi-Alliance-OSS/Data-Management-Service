@@ -24,6 +24,7 @@ public interface IRelationalWriteSession : IAsyncDisposable
     /// that record or fail writes intercept here. Command executors produced by
     /// <see cref="CreateCommandExecutor"/> route through this method so a decorator observes
     /// every read and write issued in-session.
+    /// Test stubs may override this to inject a fake executor directly.
     /// </summary>
     DbCommand CreateCommand(RelationalCommand command);
 

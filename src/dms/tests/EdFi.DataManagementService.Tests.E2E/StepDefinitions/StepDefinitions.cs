@@ -572,6 +572,33 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
+        [When("a POST if-match {string} request is made to {string} with")]
+        public async Task WhenAPOSTIf_MatchRequestIsMadeToWith(string ifMatch, string url, string body)
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            body = body.Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            _logger.log.Information($"POST if-match url: {url}");
+            _logger.log.Information($"POST if-match body: {body}");
+
+            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new() { Data = body, Headers = GetHeadersWithIfMatch(ifMatch) }
+                )!
+            );
+            _featureContext["_waitOnNextQuery"] = true;
+
+            _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+        }
+
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {

@@ -46,6 +46,8 @@ internal sealed class DefaultDescriptorWriteHandler : IDescriptorWriteHandler
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
         TraceId traceId,
+        string? ifMatchEtag = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null,
         CancellationToken cancellationToken = default
     )
     {

@@ -608,6 +608,42 @@ public class UpdateByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_UpdateFailureETagMisMatch : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(new UpdateFailureETagMisMatch());
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await updateByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_412_with_optimistic_lock_failed_body()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(412);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!.GetValue<string>().Should().Be("The item has been modified by another user.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:optimistic-lock-failed");
+            body["title"]!.GetValue<string>().Should().Be("Optimistic Lock Failed");
+            body["status"]!.GetValue<int>().Should().Be(412);
+            body["errors"]![0]!.GetValue<string>().Should().Contain("If-Match");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

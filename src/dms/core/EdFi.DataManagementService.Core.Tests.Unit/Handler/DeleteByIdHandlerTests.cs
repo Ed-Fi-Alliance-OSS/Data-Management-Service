@@ -213,6 +213,48 @@ public class DeleteByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_DeleteFailureETagMisMatch : DeleteByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+            {
+                return Task.FromResult<DeleteResult>(new DeleteFailureETagMisMatch());
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            var (deleteByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            _requestInfo.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_412_with_optimistic_lock_failed_body()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(412);
+
+            var body = _requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!.GetValue<string>().Should().Be("The item has been modified by another user.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:optimistic-lock-failed");
+            body["title"]!.GetValue<string>().Should().Be("Optimistic Lock Failed");
+            body["status"]!.GetValue<int>().Should().Be(412);
+            body["errors"]![0]!.GetValue<string>().Should().Contain("If-Match");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

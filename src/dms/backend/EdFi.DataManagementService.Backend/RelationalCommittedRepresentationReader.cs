@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -22,13 +23,16 @@ internal interface IRelationalCommittedRepresentationReader
 
 internal sealed class RelationalCommittedRepresentationReader(
     ISessionDocumentHydrator sessionDocumentHydrator,
-    IRelationalReadMaterializer readMaterializer
+    IRelationalReadMaterializer readMaterializer,
+    IReadableProfileProjector readableProfileProjector
 ) : IRelationalCommittedRepresentationReader
 {
     private readonly ISessionDocumentHydrator _sessionDocumentHydrator =
         sessionDocumentHydrator ?? throw new ArgumentNullException(nameof(sessionDocumentHydrator));
     private readonly IRelationalReadMaterializer _readMaterializer =
         readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
+    private readonly IReadableProfileProjector _readableProfileProjector =
+        readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
 
     public async Task<JsonNode> ReadAsync(
         RelationalWriteExecutorRequest request,
@@ -82,7 +86,7 @@ internal sealed class RelationalCommittedRepresentationReader(
             );
         }
 
-        return _readMaterializer.Materialize(
+        var document = _readMaterializer.Materialize(
             new RelationalReadMaterializationRequest(
                 readPlan,
                 documentMetadata,
@@ -91,5 +95,18 @@ internal sealed class RelationalCommittedRepresentationReader(
                 RelationalGetRequestReadMode.ExternalResponse
             )
         );
+
+        var projectionContext = request.ProfileWriteContext?.IfMatchReadableProjectionContext;
+        if (projectionContext is not null)
+        {
+            document = _readableProfileProjector.Project(
+                document,
+                projectionContext.ContentTypeDefinition,
+                projectionContext.IdentityPropertyNames
+            );
+            RelationalApiMetadataFormatter.RefreshEtag(document);
+        }
+
+        return document;
     }
 }

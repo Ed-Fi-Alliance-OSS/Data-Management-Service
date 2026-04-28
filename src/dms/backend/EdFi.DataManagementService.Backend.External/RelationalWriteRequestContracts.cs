@@ -8,10 +8,10 @@ using EdFi.DataManagementService.Core.External.Backend;
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
-/// Backend-local contract for requests that carry a resolved relational mapping set.
+/// Backend-local contract for write requests that carry a resolved relational mapping set.
 /// This keeps MappingSet off the public Core.External repository request boundary.
 /// </summary>
-public interface IRelationalRequestWithMappingSet
+public interface IRelationalWriteRequest
 {
     /// <summary>
     /// The resolved runtime mapping set for the active request.
@@ -19,14 +19,7 @@ public interface IRelationalRequestWithMappingSet
     /// execution; null remains possible only for direct-call or pipeline-bypass scenarios.
     /// </summary>
     MappingSet? MappingSet { get; }
-}
 
-/// <summary>
-/// Backend-local contract for write requests that carry a resolved relational mapping set
-/// and optional profile write context.
-/// </summary>
-public interface IRelationalWriteRequest : IRelationalRequestWithMappingSet
-{
     /// <summary>
     /// Optional profile write context when a writable profile applies to the request.
     /// Null when no profile applies or the request is not a write operation.
@@ -45,6 +38,7 @@ public interface IRelationalUpsertRequest : IUpsertRequest, IRelationalWriteRequ
 public interface IRelationalUpdateRequest : IUpdateRequest, IRelationalWriteRequest;
 
 /// <summary>
-/// Backend-local relational delete request.
+/// Backend-local relational delete request, carrying the resolved mapping set for dialect-aware
+/// delete execution.
 /// </summary>
-public interface IRelationalDeleteRequest : IDeleteRequest, IRelationalRequestWithMappingSet;
+public interface IRelationalDeleteRequest : IDeleteRequest, IRelationalWriteRequest { }

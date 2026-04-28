@@ -15,6 +15,6 @@ namespace EdFi.DataManagementService.Backend
         /// <summary>
         /// IsolationLevel to use for all database transactions.
         /// </summary>
-        public IsolationLevel IsolationLevel { get; set; }
+        public IsolationLevel IsolationLevel { get; set; } = IsolationLevel.ReadCommitted;
     }
 }

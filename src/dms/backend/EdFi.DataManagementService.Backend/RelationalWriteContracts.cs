@@ -537,7 +537,8 @@ public sealed record RelationalWriteExecutorRequest
         TraceId traceId,
         ReferenceResolverRequest referenceResolutionRequest,
         RelationalWriteTargetContext targetContext,
-        BackendProfileWriteContext? profileWriteContext = null
+        BackendProfileWriteContext? profileWriteContext = null,
+        string? ifMatchEtag = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -605,6 +606,7 @@ public sealed record RelationalWriteExecutorRequest
         }
 
         ProfileWriteContext = profileWriteContext;
+        IfMatchEtag = ifMatchEtag;
     }
 
     /// <summary>
@@ -663,6 +665,13 @@ public sealed record RelationalWriteExecutorRequest
     /// whether to run the no-profile merge/persist path or fence for DMS-1124.
     /// </summary>
     public BackendProfileWriteContext? ProfileWriteContext { get; init; }
+
+    /// <summary>
+    /// The client-supplied <c>If-Match</c> header value, or <c>null</c> when the header was absent.
+    /// When present and non-null the executor compares this against the computed <c>_etag</c> of the
+    /// current persisted representation before proceeding with the write.
+    /// </summary>
+    public string? IfMatchEtag { get; init; }
 }
 
 /// <summary>

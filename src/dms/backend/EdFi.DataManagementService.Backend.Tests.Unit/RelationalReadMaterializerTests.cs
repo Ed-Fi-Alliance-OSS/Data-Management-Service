@@ -446,3 +446,516 @@ public class Given_RelationalReadMaterializer
         IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
     ) => new(null, documentMetadata, tableRowsInDependencyOrder, descriptorRowsInPlanOrder);
 }
+
+/// <summary>
+/// Scenario 2: Optional descriptor FK is null → the descriptor JSON property is absent from the output.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_RelationalReadMaterializer_With_Null_Optional_Descriptor_FK
+{
+    private JsonNode _result = null!;
+
+    private static readonly Guid _documentUuid = Guid.Parse("bbbbbbbb-2222-3333-4444-cccccccccccc");
+
+    [SetUp]
+    public void SetUp()
+    {
+        var sut = new RelationalReadMaterializer();
+        var readPlan = BuildDescriptorReadPlan();
+
+        // FK column value is null (optional descriptor not set on this document)
+        var tableRows = new List<HydratedTableRows>
+        {
+            new(readPlan.Model.Root, [new object?[] { 345L, null }]),
+        };
+
+        _result = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                new DocumentMetadataRow(
+                    DocumentId: 345L,
+                    DocumentUuid: _documentUuid,
+                    ContentVersion: 1L,
+                    IdentityVersion: 1L,
+                    ContentLastModifiedAt: DateTimeOffset.UtcNow,
+                    IdentityLastModifiedAt: DateTimeOffset.UtcNow
+                ),
+                tableRows,
+                [],
+                RelationalGetRequestReadMode.StoredDocument
+            )
+        );
+    }
+
+    [Test]
+    public void It_does_not_emit_the_descriptor_property_key()
+    {
+        ((JsonObject)_result).ContainsKey("entryGradeLevelDescriptor").Should().BeFalse();
+    }
+
+    [Test]
+    public void It_does_not_emit_json_null_at_the_descriptor_path()
+    {
+        _result["entryGradeLevelDescriptor"].Should().BeNull();
+    }
+
+    private static ResourceReadPlan BuildDescriptorReadPlan()
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor");
+        var descriptorValuePath = new JsonPathExpression(
+            "$.entryGradeLevelDescriptor",
+            [new JsonPathSegment.Property("entryGradeLevelDescriptor")]
+        );
+        var fkColumnName = new DbColumnName("EntryGradeLevelDescriptor_DescriptorId");
+
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    fkColumnName,
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    true,
+                    null,
+                    descriptorResource
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new ResourceReadPlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "School"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootTable,
+                TablesInDependencyOrder: [rootTable],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: false,
+                        DescriptorValuePath: descriptorValuePath,
+                        Table: rootTable.Table,
+                        FkColumn: fkColumnName,
+                        DescriptorResource: descriptorResource
+                    ),
+                ]
+            ),
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [
+                new TableReadPlan(
+                    rootTable,
+                    "select \"DocumentId\", \"EntryGradeLevelDescriptor_DescriptorId\" from edfi.\"School\""
+                ),
+            ],
+            [],
+            [
+                new DescriptorProjectionPlan(
+                    SelectByKeysetSql: "select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\"",
+                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                    SourcesInOrder:
+                    [
+                        new DescriptorProjectionSource(
+                            DescriptorValuePath: descriptorValuePath,
+                            Table: rootTable.Table,
+                            DescriptorResource: descriptorResource,
+                            DescriptorIdColumnOrdinal: 1
+                        ),
+                    ]
+                ),
+            ]
+        );
+    }
+}
+
+/// <summary>
+/// Scenario 3: Document with two descriptor FK columns of different types → both URIs appear at their declared paths.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_RelationalReadMaterializer_With_Multiple_Descriptors
+{
+    private JsonNode _result = null!;
+
+    private static readonly Guid _documentUuid = Guid.Parse("cccccccc-3333-4444-5555-dddddddddddd");
+    private const string EntryUri = "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade";
+    private const string ExitUri = "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade";
+
+    [SetUp]
+    public void SetUp()
+    {
+        var sut = new RelationalReadMaterializer();
+        var (readPlan, tableModel) = BuildReadPlanWithTwoDescriptors();
+
+        // Both FK columns populated
+        var tableRows = new List<HydratedTableRows> { new(tableModel, [new object?[] { 345L, 601L, 602L }]) };
+
+        // Two descriptor projection plans, one result set each
+        var descriptorRows = new List<HydratedDescriptorRows>
+        {
+            new([new DescriptorUriRow(601L, EntryUri)]),
+            new([new DescriptorUriRow(602L, ExitUri)]),
+        };
+
+        _result = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                new DocumentMetadataRow(
+                    DocumentId: 345L,
+                    DocumentUuid: _documentUuid,
+                    ContentVersion: 1L,
+                    IdentityVersion: 1L,
+                    ContentLastModifiedAt: DateTimeOffset.UtcNow,
+                    IdentityLastModifiedAt: DateTimeOffset.UtcNow
+                ),
+                tableRows,
+                descriptorRows,
+                RelationalGetRequestReadMode.StoredDocument
+            )
+        );
+    }
+
+    [Test]
+    public void It_emits_the_entry_grade_level_descriptor_uri_at_its_declared_path()
+    {
+        _result["entryGradeLevelDescriptor"]!.GetValue<string>().Should().Be(EntryUri);
+    }
+
+    [Test]
+    public void It_emits_the_exit_grade_level_descriptor_uri_at_its_declared_path()
+    {
+        _result["exitGradeLevelDescriptor"]!.GetValue<string>().Should().Be(ExitUri);
+    }
+
+    private static (ResourceReadPlan ReadPlan, DbTableModel TableModel) BuildReadPlanWithTwoDescriptors()
+    {
+        var gradeLevelResource = new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor");
+        var entryPath = new JsonPathExpression(
+            "$.entryGradeLevelDescriptor",
+            [new JsonPathSegment.Property("entryGradeLevelDescriptor")]
+        );
+        var exitPath = new JsonPathExpression(
+            "$.exitGradeLevelDescriptor",
+            [new JsonPathSegment.Property("exitGradeLevelDescriptor")]
+        );
+        var entryFkColumn = new DbColumnName("EntryGradeLevelDescriptor_DescriptorId");
+        var exitFkColumn = new DbColumnName("ExitWithdrawGradeLevelDescriptor_DescriptorId");
+
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_StudentSchoolAssociation",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    entryFkColumn,
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    gradeLevelResource
+                ),
+                new DbColumnModel(
+                    exitFkColumn,
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    true,
+                    null,
+                    gradeLevelResource
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var readPlan = new ResourceReadPlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootTable,
+                TablesInDependencyOrder: [rootTable],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: true,
+                        DescriptorValuePath: entryPath,
+                        Table: rootTable.Table,
+                        FkColumn: entryFkColumn,
+                        DescriptorResource: gradeLevelResource
+                    ),
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: false,
+                        DescriptorValuePath: exitPath,
+                        Table: rootTable.Table,
+                        FkColumn: exitFkColumn,
+                        DescriptorResource: gradeLevelResource
+                    ),
+                ]
+            ),
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [
+                new TableReadPlan(
+                    rootTable,
+                    "select \"DocumentId\", \"EntryGradeLevelDescriptor_DescriptorId\", \"ExitWithdrawGradeLevelDescriptor_DescriptorId\" from edfi.\"StudentSchoolAssociation\""
+                ),
+            ],
+            [],
+            [
+                new DescriptorProjectionPlan(
+                    SelectByKeysetSql: "select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\" where \"DescriptorId\" in (select \"EntryGradeLevelDescriptor_DescriptorId\" from edfi.\"StudentSchoolAssociation\")",
+                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                    SourcesInOrder:
+                    [
+                        new DescriptorProjectionSource(
+                            DescriptorValuePath: entryPath,
+                            Table: rootTable.Table,
+                            DescriptorResource: gradeLevelResource,
+                            DescriptorIdColumnOrdinal: 1
+                        ),
+                    ]
+                ),
+                new DescriptorProjectionPlan(
+                    SelectByKeysetSql: "select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\" where \"DescriptorId\" in (select \"ExitWithdrawGradeLevelDescriptor_DescriptorId\" from edfi.\"StudentSchoolAssociation\")",
+                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                    SourcesInOrder:
+                    [
+                        new DescriptorProjectionSource(
+                            DescriptorValuePath: exitPath,
+                            Table: rootTable.Table,
+                            DescriptorResource: gradeLevelResource,
+                            DescriptorIdColumnOrdinal: 2
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        return (readPlan, rootTable);
+    }
+}
+
+/// <summary>
+/// Scenario 4: Multiple documents in the same page → each document receives its own descriptor URI with no cross-document contamination.
+/// The materializer is called once per document; the shared descriptor lookup must map the correct URI to each document's FK.
+/// </summary>
+[TestFixture]
+[FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+[Parallelizable]
+public class Given_RelationalReadMaterializer_With_Multiple_Documents_And_Distinct_Descriptor_URIs
+{
+    private JsonNode _resultForDoc345 = null!;
+    private JsonNode _resultForDoc789 = null!;
+
+    private static readonly Guid _uuidDoc345 = Guid.Parse("dddddddd-4444-5555-6666-eeeeeeeeeeee");
+    private static readonly Guid _uuidDoc789 = Guid.Parse("eeeeeeee-5555-6666-7777-ffffffffffff");
+    private const string UriFor345 = "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade";
+    private const string UriFor789 = "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade";
+
+    [SetUp]
+    public void SetUp()
+    {
+        var sut = new RelationalReadMaterializer();
+        var readPlan = BuildSingleDescriptorPlan();
+
+        // Two document rows in the same page keyset
+        IReadOnlyList<HydratedTableRows> tableRows =
+        [
+            new(readPlan.Model.Root, [new object?[] { 345L, 601L }, new object?[] { 789L, 602L }]),
+        ];
+
+        // Combined descriptor lookup for the entire page: both descriptor IDs resolved
+        IReadOnlyList<HydratedDescriptorRows> descriptorRows =
+        [
+            new([new DescriptorUriRow(601L, UriFor345), new DescriptorUriRow(602L, UriFor789)]),
+        ];
+
+        var commonMetadataParts = (ContentVersion: 1L, IdentityVersion: 1L, Ts: DateTimeOffset.UtcNow);
+
+        var doc345Metadata = new DocumentMetadataRow(
+            DocumentId: 345L,
+            DocumentUuid: _uuidDoc345,
+            ContentVersion: commonMetadataParts.ContentVersion,
+            IdentityVersion: commonMetadataParts.IdentityVersion,
+            ContentLastModifiedAt: commonMetadataParts.Ts,
+            IdentityLastModifiedAt: commonMetadataParts.Ts
+        );
+        var doc789Metadata = new DocumentMetadataRow(
+            DocumentId: 789L,
+            DocumentUuid: _uuidDoc789,
+            ContentVersion: commonMetadataParts.ContentVersion,
+            IdentityVersion: commonMetadataParts.IdentityVersion,
+            ContentLastModifiedAt: commonMetadataParts.Ts,
+            IdentityLastModifiedAt: commonMetadataParts.Ts
+        );
+
+        var results = sut.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                new HydratedPage(null, [doc345Metadata, doc789Metadata], tableRows, descriptorRows),
+                RelationalGetRequestReadMode.StoredDocument
+            )
+        );
+
+        _resultForDoc345 = results.First(d => d.DocumentMetadata.DocumentId == 345L).Document;
+        _resultForDoc789 = results.First(d => d.DocumentMetadata.DocumentId == 789L).Document;
+    }
+
+    [Test]
+    public void It_resolves_the_correct_descriptor_uri_for_document_345()
+    {
+        _resultForDoc345["entryGradeLevelDescriptor"]!.GetValue<string>().Should().Be(UriFor345);
+    }
+
+    [Test]
+    public void It_resolves_the_correct_descriptor_uri_for_document_789()
+    {
+        _resultForDoc789["entryGradeLevelDescriptor"]!.GetValue<string>().Should().Be(UriFor789);
+    }
+
+    [Test]
+    public void It_does_not_contaminate_document_345_with_the_uri_for_document_789()
+    {
+        _resultForDoc345["entryGradeLevelDescriptor"]!.GetValue<string>().Should().NotBe(UriFor789);
+    }
+
+    [Test]
+    public void It_does_not_contaminate_document_789_with_the_uri_for_document_345()
+    {
+        _resultForDoc789["entryGradeLevelDescriptor"]!.GetValue<string>().Should().NotBe(UriFor345);
+    }
+
+    private static ResourceReadPlan BuildSingleDescriptorPlan()
+    {
+        var gradeLevelResource = new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor");
+        var descriptorValuePath = new JsonPathExpression(
+            "$.entryGradeLevelDescriptor",
+            [new JsonPathSegment.Property("entryGradeLevelDescriptor")]
+        );
+        var fkColumnName = new DbColumnName("EntryGradeLevelDescriptor_DescriptorId");
+
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    fkColumnName,
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    gradeLevelResource
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new ResourceReadPlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "School"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootTable,
+                TablesInDependencyOrder: [rootTable],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: true,
+                        DescriptorValuePath: descriptorValuePath,
+                        Table: rootTable.Table,
+                        FkColumn: fkColumnName,
+                        DescriptorResource: gradeLevelResource
+                    ),
+                ]
+            ),
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [
+                new TableReadPlan(
+                    rootTable,
+                    "select \"DocumentId\", \"EntryGradeLevelDescriptor_DescriptorId\" from edfi.\"School\""
+                ),
+            ],
+            [],
+            [
+                new DescriptorProjectionPlan(
+                    SelectByKeysetSql: "select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\"",
+                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                    SourcesInOrder:
+                    [
+                        new DescriptorProjectionSource(
+                            DescriptorValuePath: descriptorValuePath,
+                            Table: rootTable.Table,
+                            DescriptorResource: gradeLevelResource,
+                            DescriptorIdColumnOrdinal: 1
+                        ),
+                    ]
+                ),
+            ]
+        );
+    }
+}
