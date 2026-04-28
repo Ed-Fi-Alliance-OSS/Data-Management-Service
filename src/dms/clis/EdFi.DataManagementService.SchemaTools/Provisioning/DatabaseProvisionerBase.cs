@@ -142,9 +142,13 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
             }
 
             if (!foundTables.Contains("ResourceKey"))
+            {
                 missingTables.Add(Dialect.MissingTableResourceKey);
+            }
             if (!foundTables.Contains("SchemaComponent"))
+            {
                 missingTables.Add(Dialect.MissingTableSchemaComponent);
+            }
         }
 
         if (missingTables.Count > 0)
