@@ -47,7 +47,11 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [Given("valid credentials")]
     public async Task GivenValidCredentials()
     {
-        await GetClientAccessToken("DmsConfigurationService", "ValidClientSecret1234567890!Abcd", "edfi_admin_api/full_access");
+        await GetClientAccessToken(
+            "DmsConfigurationService",
+            "ValidClientSecret1234567890!Abcd",
+            "edfi_admin_api/full_access"
+        );
     }
 
     [Given("client {string} credentials with {string} scope")]
@@ -113,7 +117,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         {
             var dataUrl = $"{baseUrl}/{entityType}";
 
-            string body = ReplaceIds(row.Parse());
+            string body = await ReplaceIdsAsync(row.Parse());
 
             var response = await playwrightContext.ApiRequestContext?.PostAsync(
                 dataUrl,
@@ -320,13 +324,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             if (!string.IsNullOrEmpty(responseText))
             {
                 var jsonResponse = JsonDocument.Parse(responseText);
-                if (jsonResponse.RootElement.TryGetProperty("id", out var idProperty))
+                // Only set vendorId if no location header was found
+                if (
+                    jsonResponse.RootElement.TryGetProperty("id", out var idProperty)
+                    && !apiResponse.Headers.ContainsKey("location")
+                )
                 {
-                    // Only set vendorId if no location header was found
-                    if (!apiResponse.Headers.ContainsKey("location"))
-                    {
-                        _ids["vendorId"] = idProperty.GetInt32().ToString();
-                    }
+                    _ids["vendorId"] = idProperty.GetInt32().ToString();
                 }
                 if (jsonResponse.RootElement.TryGetProperty("key", out var keyProperty))
                 {
@@ -459,7 +463,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                 .BeTrue("the '{0}' property did not exist on the object", property);
 
             // Handle literal string checks
-            if (expectedValue.StartsWith("\"") && expectedValue.EndsWith("\""))
+            if (expectedValue.StartsWith('"') && expectedValue.EndsWith('"'))
             {
                 var expectedLiteral = expectedValue.Trim('\"');
                 obj[property]?.ToString().Should().Be(expectedLiteral);
@@ -606,7 +610,6 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                             }
                         }
 
-                        var index = arrayElementIndex;
                         arrayElementIndex++;
                         return idValue ?? match.ToString();
                     }

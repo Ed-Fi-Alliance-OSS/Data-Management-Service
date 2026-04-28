@@ -71,9 +71,9 @@ public static class SetupHooks
                 await deleteTestClaimSetsCmd.ExecuteNonQueryAsync();
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            var message = ex.Message;
+            // intentionally swallow — best-effort test cleanup
         }
     }
 
