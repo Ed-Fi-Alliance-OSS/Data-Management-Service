@@ -282,21 +282,12 @@ internal sealed class DescriptorWriteHandler(
             await ExecuteWriteCommandAsync(command, _commandExecutor, cancellationToken)
                 .ConfigureAwait(false);
 
-            var persistedAfterWrite = await ReadPersistedDescriptorAsync(
-                    request.MappingSet.Key.Dialect,
-                    documentId,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
             return new UpdateResult.UpdateSuccess(
                 documentUuid,
-                persistedAfterWrite is not null
-                    ? ComputeEtagFromPersistedState(persistedAfterWrite, request.BackendProfileWriteContext)
-                    : ComputeEtagFromDescriptorBody(
-                        body,
-                        request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
-                    )
+                ComputeEtagFromDescriptorBody(
+                    body,
+                    request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
+                )
             );
         }
         catch (DbException ex)
@@ -561,21 +552,12 @@ internal sealed class DescriptorWriteHandler(
 
         await ExecuteWriteCommandAsync(command, _commandExecutor, cancellationToken).ConfigureAwait(false);
 
-        var persisted = await ReadPersistedDescriptorByUuidAsync(
-                request.MappingSet.Key.Dialect,
-                documentUuid,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
         return new UpsertResult.InsertSuccess(
             documentUuid,
-            persisted is not null
-                ? ComputeEtagFromPersistedState(persisted, request.BackendProfileWriteContext)
-                : ComputeEtagFromDescriptorBody(
-                    body,
-                    request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
-                )
+            ComputeEtagFromDescriptorBody(
+                body,
+                request.BackendProfileWriteContext?.IfMatchReadableProjectionContext
+            )
         );
     }
 
@@ -1014,25 +996,6 @@ internal sealed class DescriptorWriteHandler(
             .ConfigureAwait(false);
     }
 
-    private async Task<PersistedDescriptorState?> ReadPersistedDescriptorByUuidAsync(
-        SqlDialect dialect,
-        DocumentUuid documentUuid,
-        CancellationToken cancellationToken
-    )
-    {
-        var command = dialect switch
-        {
-            SqlDialect.Pgsql => BuildPostgresqlReadByUuidCommand(documentUuid),
-            SqlDialect.Mssql => BuildMssqlReadByUuidCommand(documentUuid),
-            _ => throw new NotSupportedException(
-                $"Descriptor read does not support SQL dialect '{dialect}'."
-            ),
-        };
-
-        return await ReadDescriptorStateFromExecutorAsync(command, _commandExecutor, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
     /// <summary>
     /// Shared reader helper: executes <paramref name="command"/> on <paramref name="executor"/> and
     /// materialises a single <see cref="PersistedDescriptorState"/> row, or <see langword="null"/>
@@ -1348,30 +1311,6 @@ internal sealed class DescriptorWriteHandler(
             """;
 
         return new RelationalCommand(Sql, [new RelationalParameter("@documentId", documentId)]);
-    }
-
-    private static RelationalCommand BuildPostgresqlReadByUuidCommand(DocumentUuid documentUuid)
-    {
-        const string Sql = """
-            SELECT descriptor."Namespace", descriptor."CodeValue", descriptor."Uri", descriptor."ShortDescription", descriptor."Description", descriptor."EffectiveBeginDate", descriptor."EffectiveEndDate"
-            FROM dms."Document" document
-            JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = document."DocumentId"
-            WHERE document."DocumentUuid" = @documentUuid;
-            """;
-
-        return new RelationalCommand(Sql, [new RelationalParameter("@documentUuid", documentUuid.Value)]);
-    }
-
-    private static RelationalCommand BuildMssqlReadByUuidCommand(DocumentUuid documentUuid)
-    {
-        const string Sql = """
-            SELECT descriptor.[Namespace], descriptor.[CodeValue], descriptor.[Uri], descriptor.[ShortDescription], descriptor.[Description], descriptor.[EffectiveBeginDate], descriptor.[EffectiveEndDate]
-            FROM [dms].[Document] document
-            JOIN [dms].[Descriptor] descriptor ON descriptor.[DocumentId] = document.[DocumentId]
-            WHERE document.[DocumentUuid] = @documentUuid;
-            """;
-
-        return new RelationalCommand(Sql, [new RelationalParameter("@documentUuid", documentUuid.Value)]);
     }
 
     // ── Locked read command builders (FOR UPDATE / UPDLOCK ROWLOCK) ───────
