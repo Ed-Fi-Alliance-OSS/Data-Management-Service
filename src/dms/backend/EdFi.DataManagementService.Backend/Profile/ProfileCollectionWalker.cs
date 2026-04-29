@@ -198,6 +198,24 @@ internal sealed class ProfileCollectionWalker
                 ? visibleStoredRowBucket
                 : ImmutableArray<VisibleStoredCollectionRow>.Empty;
 
+            // Slice 5 CP4 fix: fold inlined non-collection descendant scope hidden paths
+            // onto each row so the matched-row classifier sees them. Done before
+            // canonicalization so descendant ancestor identities (un-canonicalized URIs /
+            // natural keys) compare against the same un-canonicalized row identities.
+            if (
+                _request.ProfileAppliedContext is { } profileAppliedContextForExpand
+                && !visibleStoredRowsForScope.IsDefaultOrEmpty
+            )
+            {
+                visibleStoredRowsForScope = ProfileCollectionRowHiddenPathExpander.Expand(
+                    visibleStoredRowsForScope,
+                    profileAppliedContextForExpand.StoredScopeStates,
+                    jsonScope,
+                    tablePlan,
+                    _request.WritePlan
+                );
+            }
+
             // Read current rows from the projection index, then adapt each projection to
             // the snapshot shape consumed by the planner. The projection is a strict
             // superset of the snapshot (Task 7b), so this is a per-row field projection.
