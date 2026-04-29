@@ -38,6 +38,15 @@ internal interface IProfileSeparateTableBindingClassifier
         RequestScopeState? requestScope,
         StoredScopeState? storedScope
     );
+
+    ProfileSeparateTableBindingClassification Classify(
+        ResourceWritePlan writePlan,
+        TableWritePlan separateTablePlan,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates
+    );
 }
 
 /// <summary>
@@ -79,6 +88,23 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
         ScopeInstanceAddress scopeAddress,
         RequestScopeState? requestScope,
         StoredScopeState? storedScope
+    ) =>
+        Classify(
+            writePlan,
+            separateTablePlan,
+            scopeAddress,
+            requestScope,
+            storedScope,
+            descendantStates: default
+        );
+
+    public ProfileSeparateTableBindingClassification Classify(
+        ResourceWritePlan writePlan,
+        TableWritePlan separateTablePlan,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates
     )
     {
         ArgumentNullException.ThrowIfNull(writePlan);
@@ -96,6 +122,7 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
             scopeAddress,
             requestScope,
             storedScope,
+            descendantStates,
             resolverOwnedBindingIndices
         );
         return new ProfileSeparateTableBindingClassification(bindingsByIndex, resolverOwnedBindingIndices);

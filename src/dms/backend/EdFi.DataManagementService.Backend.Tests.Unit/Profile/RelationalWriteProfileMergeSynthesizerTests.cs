@@ -7421,6 +7421,158 @@ public class Given_nested_matched_update_preserves_hidden_member_paths
     }
 }
 
+/// <summary>
+/// Slice 5 CP5 Task 6 regression pin: when a separate-table Update merges a row whose
+/// extension table inlines a non-collection descendant scope and the descendant's stored
+/// scope state names a hidden member path covering the descendant binding, the synthesizer
+/// must preserve the stored value at the descendant binding's column while still overlaying
+/// the request value at the direct-scope binding's column. Before BuildUpdateState was
+/// wired to collect descendant scope states and pass them to the instance-aware classifier
+/// and resolver, the descendant binding fell through to the direct scope's governance and
+/// the request body silently clobbered the hidden stored column.
+/// </summary>
+[TestFixture]
+public class Given_RootExtensionUpdate_hidden_descendant_scope_preserves_stored_value
+{
+    private const string DirectScope = "$._ext.sample";
+    private const string DescendantScope = "$._ext.sample.detail";
+    private const string DescendantBindingPath = "$._ext.sample.detail.someField";
+    private const string StoredDirectValue = "stored_direct";
+    private const string StoredDescendantValue = "stored_descendant";
+    private const string RequestDirectValue = "new_direct";
+    private const string RequestDescendantValue = "request_clobber_attempt";
+
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Plan: root + RootExtension at $._ext.sample. The extension table carries the
+        // direct-scope FavoriteColor binding plus a descendant-scope DetailField binding
+        // sourced from $._ext.sample.detail.someField. The descendant scope is inlined
+        // onto the direct extension table.
+        var plan = BuildRootPlusRootExtensionPlanWithInlinedDescendantScope(
+            descendantScopeRelativePath: DescendantScope,
+            descendantBindingRelativePath: DescendantBindingPath
+        );
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+
+        // Request body: the direct-scope value is overlaid normally; the descendant-scope
+        // value is supplied as well, but the descendant's stored hidden-member-path covers
+        // it so the merged row must preserve the stored value rather than the request value.
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["favoriteColor"] = RequestDirectValue,
+                    ["detail"] = new JsonObject { ["someField"] = RequestDescendantValue },
+                },
+            },
+        };
+
+        // Direct extension scope is VisiblePresent. Descendant scope is also VisiblePresent
+        // but its stored state names "someField" as a hidden member path — which translates
+        // (via descendant-state collection) into HiddenPreserved governance for the
+        // DetailField binding on this same physical extension table.
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope(DirectScope, creatable: true),
+            RequestVisiblePresentScope(DescendantScope)
+        );
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredVisiblePresentScope(DirectScope),
+            StoredVisiblePresentScope(DescendantScope, "someField")
+        );
+
+        // Flattener buffer: extension binding-index ordering matches BuildRootPlusRootExtensionPlan
+        // — [0] DocumentId (ParentKeyPart), [1] FavoriteColor (direct), [2] DetailField (descendant).
+        // The buffer carries both request values; the synthesizer's matched-row overlay must
+        // honor the descendant-scope hidden disposition and discard the descendant request value.
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, RequestDirectValue, RequestDescendantValue]
+        );
+
+        // Stored row carries non-null values at both the direct-scope and descendant-scope
+        // columns, ensuring the matched-row branch is selected and the descendant column has
+        // a real value to be preserved.
+        var currentState = BuildCurrentStateWithRootAndExtensionRow(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [345L, StoredDirectValue, StoredDescendantValue]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_routes_the_extension_table_through_the_Update_branch()
+    {
+        var extensionTable = _outcome.MergeResult!.TablesInDependencyOrder[1];
+        extensionTable.CurrentRows.Length.Should().Be(1);
+        extensionTable.MergedRows.Length.Should().Be(1);
+        var currentDirect = ((FlattenedWriteValue.Literal)extensionTable.CurrentRows[0].Values[1]).Value;
+        var mergedDirect = ((FlattenedWriteValue.Literal)extensionTable.MergedRows[0].Values[1]).Value;
+        // Update branch overlays request values; Preserve emits byte-identical rows. The
+        // direct-scope column must change to distinguish Update from Preserve.
+        mergedDirect.Should().NotBe(currentDirect);
+    }
+
+    [Test]
+    public void It_overlays_the_request_value_on_the_direct_scope_binding()
+    {
+        var extensionTable = _outcome.MergeResult!.TablesInDependencyOrder[1];
+        var mergedDirect = ((FlattenedWriteValue.Literal)extensionTable.MergedRows[0].Values[1]).Value;
+        mergedDirect
+            .Should()
+            .Be(
+                RequestDirectValue,
+                "the direct-scope binding is VisiblePresent with no hidden-member match — "
+                    + "the request value must overlay normally"
+            );
+    }
+
+    [Test]
+    public void It_preserves_the_stored_value_on_the_hidden_descendant_binding()
+    {
+        var extensionTable = _outcome.MergeResult!.TablesInDependencyOrder[1];
+        var mergedDescendant = ((FlattenedWriteValue.Literal)extensionTable.MergedRows[0].Values[2]).Value;
+        mergedDescendant
+            .Should()
+            .Be(
+                StoredDescendantValue,
+                "the descendant-scope binding's hidden-member-path comes from the descendant "
+                    + "stored scope state — BuildUpdateState must collect descendant states and "
+                    + "pass them to the classifier/resolver so the matched-row overlay preserves "
+                    + "the stored column rather than letting the request value clobber it"
+            );
+    }
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Three-level topology helpers used by Fixture 5 (Task 13). Adds a grandchildren
 // collection scope at $.parents[*].children[*].grandchildren[*]. The grandchildren
