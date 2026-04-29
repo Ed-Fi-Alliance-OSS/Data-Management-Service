@@ -1,0 +1,554 @@
+{
+  "dialect": "pgsql",
+  "effective_schema_hash": "4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735",
+  "relational_mapping_version": "v1",
+  "projects": [
+    {
+      "project_endpoint_name": "aligned",
+      "project_name": "Aligned",
+      "project_version": "1.0.0",
+      "is_extension": true,
+      "physical_schema": "aligned"
+    },
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "1.0.0",
+      "is_extension": false,
+      "physical_schema": "edfi"
+    }
+  ],
+  "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ParentResource",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    }
+  ],
+  "abstract_identity_tables": [],
+  "abstract_union_views": [],
+  "indexes": [
+    {
+      "name": "IX_ParentResourceExtensionParent_BaseCollectionItemI_cb97dc7774",
+      "table": {
+        "schema": "aligned",
+        "name": "ParentResourceExtensionParent"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "ParentResource_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_ParentResourceExtensionParent",
+      "table": {
+        "schema": "aligned",
+        "name": "ParentResourceExtensionParent"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "BaseCollectionItemId"
+      ]
+    },
+    {
+      "name": "PK_ParentResource",
+      "table": {
+        "schema": "edfi",
+        "name": "ParentResource"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ParentResource_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "ParentResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "ParentResourceId"
+      ]
+    },
+    {
+      "name": "PK_ParentResourceParent",
+      "table": {
+        "schema": "edfi",
+        "name": "ParentResourceParent"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_ParentResourceParent_CollectionItemId_ParentResou_aa2e84db9f",
+      "table": {
+        "schema": "edfi",
+        "name": "ParentResourceParent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId",
+        "ParentResource_DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ParentResourceParent_Ordinal_ParentResource_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "ParentResourceParent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "ParentResource_DocumentId",
+        "Ordinal"
+      ]
+    },
+    {
+      "name": "UX_ParentResourceParent_ParentCode_ParentResource_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "ParentResourceParent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "ParentResource_DocumentId",
+        "ParentCode"
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "name": "TR_ParentResourceExtensionParent_Stamp",
+      "table": {
+        "schema": "aligned",
+        "name": "ParentResourceExtensionParent"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "ParentResource_DocumentId"
+      ],
+      "identity_projection_columns": []
+    },
+    {
+      "name": "TR_ParentResource_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "ParentResource"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ParentResourceId"
+      ],
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "ParentResource",
+      "identity_elements": [
+        {
+          "column": "ParentResourceId",
+          "identity_json_path": "$.parentResourceId"
+        }
+      ]
+    },
+    {
+      "name": "TR_ParentResource_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "ParentResource"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ParentResourceId"
+      ]
+    },
+    {
+      "name": "TR_ParentResourceParent_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "ParentResourceParent"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "ParentResource_DocumentId"
+      ],
+      "identity_projection_columns": []
+    }
+  ],
+  "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "ParentResource"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "ParentResource",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ParentResourceId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.parentResourceId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ParentResource_NK",
+              "columns": [
+                "ParentResourceId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ParentResource_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "ParentResourceParent",
+          "scope": "$.parents[*]",
+          "key_columns": [
+            {
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
+            }
+          ],
+          "columns": [
+            {
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ParentResource_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ParentCode",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 30
+              },
+              "is_nullable": true,
+              "source_path": "$.parents[*].parentCode",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ParentName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.parents[*].parentName",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "ParentResource_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "ParentResource_DocumentId"
+            ],
+            "semantic_identity_bindings": [
+              {
+                "relative_path": "$.parentCode",
+                "column": "ParentCode"
+              }
+            ]
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ParentResourceParent_CollectionItemId_ParentResou_aa2e84db9f",
+              "columns": [
+                "CollectionItemId",
+                "ParentResource_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_ParentResourceParent_Ordinal_ParentResource_DocumentId",
+              "columns": [
+                "ParentResource_DocumentId",
+                "Ordinal"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_ParentResourceParent_ParentCode_ParentResource_DocumentId",
+              "columns": [
+                "ParentResource_DocumentId",
+                "ParentCode"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ParentResourceParent_ParentResource",
+              "columns": [
+                "ParentResource_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "ParentResource"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
+          "schema": "aligned",
+          "name": "ParentResourceExtensionParent",
+          "scope": "$.parents[*]._ext.aligned",
+          "key_columns": [
+            {
+              "name": "BaseCollectionItemId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "BaseCollectionItemId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ParentResource_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AlignedHiddenScalar",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.parents[*]._ext.aligned.alignedHiddenScalar",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AlignedVisibleScalar",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.parents[*]._ext.aligned.alignedVisibleScalar",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DetailDetailHiddenField",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.parents[*]._ext.aligned.detail.detailHiddenField",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DetailDetailVisibleField",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.parents[*]._ext.aligned.detail.detailVisibleField",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "CollectionExtensionScope",
+            "physical_row_identity_columns": [
+              "BaseCollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "ParentResource_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "BaseCollectionItemId"
+            ],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ParentResourceExtensionParent_ParentResourceParent",
+              "columns": [
+                "BaseCollectionItemId",
+                "ParentResource_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "ParentResourceParent"
+              },
+              "target_columns": [
+                "CollectionItemId",
+                "ParentResource_DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    }
+  ]
+}

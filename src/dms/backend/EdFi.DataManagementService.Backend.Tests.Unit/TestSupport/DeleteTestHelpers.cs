@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 
@@ -56,3 +57,30 @@ internal sealed class ConfigurableRelationalWriteExceptionClassifier : IRelation
         return IsTransientFailureToReturn;
     }
 }
+
+/// <summary>
+/// <see cref="ILogger{T}"/> double that captures each emitted log entry so tests can pin exact
+/// level/message/exception combinations on FK-classification and delete-path logging branches.
+/// </summary>
+internal sealed class RecordingLogger<T> : ILogger<T>
+{
+    public List<LogRecord> Records { get; } = [];
+
+    IDisposable? ILogger.BeginScope<TState>(TState state) => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter
+    )
+    {
+        ArgumentNullException.ThrowIfNull(formatter);
+        Records.Add(new LogRecord(logLevel, formatter(state, exception), exception));
+    }
+}
+
+internal sealed record LogRecord(LogLevel Level, string Message, Exception? Exception);

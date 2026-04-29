@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;

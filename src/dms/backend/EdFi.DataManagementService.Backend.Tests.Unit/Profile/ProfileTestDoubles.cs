@@ -88,6 +88,72 @@ internal static class ProfileTestDoubles
     internal static RequestScopeState RequestHiddenScope(string scopeCanonical, bool creatable = false) =>
         new(new ScopeInstanceAddress(scopeCanonical, []), ProfileVisibilityKind.Hidden, creatable);
 
+    /// <summary>
+    /// Builds a single-element semantic identity (one <see cref="SemanticIdentityPart"/>
+    /// at <c>$.identityField0</c> with the supplied string value) for use as an
+    /// ancestor-collection row identity in instance-aware scope address fixtures.
+    /// </summary>
+    internal static ImmutableArray<SemanticIdentityPart> SemanticIdentityForRow(string value) =>
+        [new SemanticIdentityPart("$.identityField0", JsonValue.Create(value), IsPresent: true)];
+
+    /// <summary>
+    /// Variant of <see cref="RequestVisiblePresentScope"/> that places the scope under a
+    /// single ancestor collection instance pinned by <paramref name="ancestorIdentity"/>.
+    /// Used by sibling-instance fixtures to assert per-instance scope-state filtering.
+    /// </summary>
+    internal static RequestScopeState RequestVisiblePresentScopeWithAncestors(
+        string scopeCanonical,
+        string ancestorJsonScope,
+        ImmutableArray<SemanticIdentityPart> ancestorIdentity,
+        bool creatable = true
+    ) =>
+        new(
+            new ScopeInstanceAddress(
+                scopeCanonical,
+                ImmutableArray.Create(new AncestorCollectionInstance(ancestorJsonScope, ancestorIdentity))
+            ),
+            ProfileVisibilityKind.VisiblePresent,
+            creatable
+        );
+
+    /// <summary>
+    /// Variant of <see cref="RequestVisibleAbsentScope"/> that places the scope under a
+    /// single ancestor collection instance pinned by <paramref name="ancestorIdentity"/>.
+    /// </summary>
+    internal static RequestScopeState RequestVisibleAbsentScopeWithAncestors(
+        string scopeCanonical,
+        string ancestorJsonScope,
+        ImmutableArray<SemanticIdentityPart> ancestorIdentity,
+        bool creatable = true
+    ) =>
+        new(
+            new ScopeInstanceAddress(
+                scopeCanonical,
+                ImmutableArray.Create(new AncestorCollectionInstance(ancestorJsonScope, ancestorIdentity))
+            ),
+            ProfileVisibilityKind.VisibleAbsent,
+            creatable
+        );
+
+    /// <summary>
+    /// Variant of <see cref="StoredVisiblePresentScope"/> that places the scope under a
+    /// single ancestor collection instance pinned by <paramref name="ancestorIdentity"/>.
+    /// </summary>
+    internal static StoredScopeState StoredVisiblePresentScopeWithAncestors(
+        string scopeCanonical,
+        string ancestorJsonScope,
+        ImmutableArray<SemanticIdentityPart> ancestorIdentity,
+        params string[] hiddenMemberPaths
+    ) =>
+        new(
+            new ScopeInstanceAddress(
+                scopeCanonical,
+                ImmutableArray.Create(new AncestorCollectionInstance(ancestorJsonScope, ancestorIdentity))
+            ),
+            ProfileVisibilityKind.VisiblePresent,
+            hiddenMemberPaths.ToImmutableArray()
+        );
+
     // ── ResourceWritePlan builders ─────────────────────────────────────────
 
     /// <summary>
@@ -549,9 +615,8 @@ internal static class ProfileTestDoubles
     }
 
     /// <summary>
-    /// Build a two-table plan whose RootExtension table is incorrectly tagged as a
-    /// non-<see cref="DbTableKind.RootExtension"/> kind (default: <see cref="DbTableKind.CollectionExtensionScope"/>).
-    /// Used to verify the separate-table classifier rejects collection-aligned kinds.
+    /// Build a two-table plan whose separate table is tagged as a configurable
+    /// non-<see cref="DbTableKind.RootExtension"/> kind.
     /// </summary>
     internal static ResourceWritePlan BuildRootPlusSeparateTablePlanWithNonRootExtensionKind(
         DbTableKind nonRootExtensionKind = DbTableKind.CollectionExtensionScope
@@ -702,6 +767,345 @@ internal static class ProfileTestDoubles
                 DescriptorEdgeSources: []
             ),
             [rootPlan, extensionPlan, unusedTablePlan]
+        );
+    }
+
+    /// <summary>
+    /// Build a two-table plan: [0] = root ($), [1] = RootExtension child table at
+    /// <c>$._ext.sample</c> carrying both a direct-scope scalar binding (under
+    /// <c>$._ext.sample.someDirect</c>) and a descendant inlined non-collection scope's
+    /// scalar binding under <paramref name="descendantBindingRelativePath"/>. The
+    /// descendant scope at <paramref name="descendantScopeRelativePath"/> is inlined onto
+    /// the same RootExtension table — so
+    /// <see cref="ProfileBindingClassificationCore.ResolveOwnerTablePlan"/> for the
+    /// descendant scope returns the same table as the direct scope. Used to exercise
+    /// CP5's descendant scope-state collector.
+    /// </summary>
+    internal static ResourceWritePlan BuildRootPlusRootExtensionPlanWithInlinedDescendantScope(
+        string descendantScopeRelativePath = "$._ext.sample.detail",
+        string descendantBindingRelativePath = "$._ext.sample.detail.someField"
+    ) =>
+        BuildRootPlusRootExtensionPlan(
+            extensionJsonScope: "$._ext.sample",
+            extensionSchema: "sample",
+            new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            ),
+            new RootExtensionBindingSpec(
+                "DetailField",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: descendantBindingRelativePath
+            )
+        );
+
+    /// <summary>
+    /// Build a three-table plan: [0] = root ($), [1] = RootExtension child table at
+    /// <c>$._ext.sample</c>, [2] = a separate child collection table whose JSON scope is
+    /// <paramref name="childScopeRelativePath"/>. The child scope therefore lives on its
+    /// own table (not inlined onto the RootExtension). Used to exercise CP5's
+    /// descendant scope-state collector when the descendant is owned by a different
+    /// table — which must be excluded from the collected set.
+    /// </summary>
+    internal static ResourceWritePlan BuildRootPlusRootExtensionWithSeparateChildTablePlan(
+        string childScopeRelativePath = "$._ext.sample.subCollection"
+    )
+    {
+        // Start from the standard root + RootExtension shape with a single direct-scope
+        // scalar so the descendant table has a non-empty sibling to compete against.
+        var twoTablePlan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var rootModel = twoTablePlan.TablePlansInDependencyOrder[0].TableModel;
+        var rootPlan = twoTablePlan.TablePlansInDependencyOrder[0];
+        var extensionPlan = twoTablePlan.TablePlansInDependencyOrder[1];
+
+        // Third table: a separate child whose JsonScope is the descendant scope. Tag it
+        // CollectionExtensionScope (a non-collection 1:1 extension kind that does not
+        // require a CollectionMergePlan) so the table is clearly distinct from the
+        // RootExtension table hosting the direct scope.
+        var childSchemaName = new DbSchemaName("sample");
+        var childParentKeyColumn = Column("DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false);
+        var childScalarColumn = Column("Caption", ColumnKind.Scalar, StringType());
+
+        var childTableModel = new DbTableModel(
+            Table: new DbTableName(childSchemaName, "HostExtensionSubCollection"),
+            JsonScope: Path(childScopeRelativePath),
+            Key: new TableKey(
+                "PK_HostExtensionSubCollection",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [childParentKeyColumn, childScalarColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.CollectionExtensionScope,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var childTablePlan = new TableWritePlan(
+            TableModel: childTableModel,
+            InsertSql: "INSERT INTO sample.\"HostExtensionSubCollection\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 2, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    childParentKeyColumn,
+                    new WriteValueSource.ParentKeyPart(0),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    childScalarColumn,
+                    new WriteValueSource.Scalar(Path($"{childScopeRelativePath}.caption"), StringType()),
+                    "Caption"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: _defaultResource,
+                PhysicalSchema: _defaultSchema,
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootModel,
+                TablesInDependencyOrder: [rootModel, extensionPlan.TableModel, childTableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, extensionPlan, childTablePlan]
+        );
+    }
+
+    /// <summary>
+    /// Build a three-table plan: [0] = root ($), [1] = parents collection at
+    /// <c>$.parents[*]</c>, [2] = a <see cref="DbTableKind.CollectionExtensionScope"/>
+    /// aligned to each parent row at <c>$.parents[*]._ext.aligned</c>. The aligned table
+    /// carries both the direct-scope scalar binding and a descendant inlined
+    /// non-collection scope's scalar binding under
+    /// <paramref name="descendantBindingRelativePath"/>. The descendant scope at
+    /// <paramref name="descendantScopeRelativePath"/> is inlined onto the aligned table.
+    /// Used to exercise CP5's descendant scope-state collector under sibling
+    /// collection-row instances.
+    /// </summary>
+    internal static ResourceWritePlan BuildCollectionWithAlignedExtensionAndInlinedDescendantPlan(
+        string descendantScopeRelativePath = "$.parents[*]._ext.aligned.detail",
+        string descendantBindingRelativePath = "$.parents[*]._ext.aligned.detail.someField"
+    )
+    {
+        const string ParentsScope = "$.parents[*]";
+        const string AlignedScope = "$.parents[*]._ext.aligned";
+
+        // Root table: trivial DocumentId-only shape — irrelevant to the collector test.
+        var rootDocId = Column("DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false);
+        var rootModel = new DbTableModel(
+            Table: new DbTableName(_defaultSchema, "AlignedTest"),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                "PK_AlignedTest",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [rootDocId],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+        var rootPlan = new TableWritePlan(
+            TableModel: rootModel,
+            InsertSql: "INSERT INTO edfi.\"AlignedTest\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 1, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(rootDocId, new WriteValueSource.DocumentId(), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        // Parents collection: collection-key item id, parent doc id, ordinal, identity scalar.
+        // Tagged as Collection — this kind requires a CollectionMergePlan, mirroring real
+        // write-plan shape produced by the compiler for top-level collections.
+        var parentsItemIdColumn = Column("ParentItemId", ColumnKind.CollectionKey, null, isNullable: false);
+        var parentsDocIdColumn = Column(
+            "ParentDocumentId",
+            ColumnKind.ParentKeyPart,
+            null,
+            isNullable: false
+        );
+        var parentsOrdinalColumn = Column("Ordinal", ColumnKind.Ordinal, null, isNullable: false);
+        var parentsIdentityColumn = Column(
+            "IdentityField0",
+            ColumnKind.Scalar,
+            StringType(),
+            sourceJsonPath: Path("$.identityField0")
+        );
+        var parentsTableModel = new DbTableModel(
+            Table: new DbTableName(_defaultSchema, "Parents"),
+            JsonScope: Path(ParentsScope),
+            Key: new TableKey(
+                "PK_Parents",
+                [new DbKeyColumn(new DbColumnName("ParentItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: [parentsItemIdColumn, parentsDocIdColumn, parentsOrdinalColumn, parentsIdentityColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("ParentItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentDocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        Path("$.identityField0"),
+                        parentsIdentityColumn.ColumnName
+                    ),
+                ]
+            ),
+        };
+        var parentsPlan = new TableWritePlan(
+            TableModel: parentsTableModel,
+            InsertSql: "INSERT INTO edfi.\"Parents\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 4, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    parentsItemIdColumn,
+                    new WriteValueSource.Precomputed(),
+                    "ParentItemId"
+                ),
+                new WriteColumnBinding(
+                    parentsDocIdColumn,
+                    new WriteValueSource.DocumentId(),
+                    "ParentDocumentId"
+                ),
+                new WriteColumnBinding(parentsOrdinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    parentsIdentityColumn,
+                    new WriteValueSource.Scalar(Path("$.identityField0"), StringType()),
+                    "IdentityField0"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(Path("$.identityField0"), 3),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.\"Parents\" SET X = @X WHERE \"ParentItemId\" = @ParentItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.\"Parents\" WHERE \"ParentItemId\" = @ParentItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("ParentItemId"),
+                0
+            )
+        );
+
+        // Aligned extension table: ParentKeyPart + direct-scope scalar + inlined-descendant
+        // scalar. JsonScope == $.parents[*]._ext.aligned. Tagged CollectionExtensionScope.
+        var alignedSchemaName = new DbSchemaName("sample");
+        var alignedParentKeyColumn = Column(
+            "ParentItemId",
+            ColumnKind.ParentKeyPart,
+            null,
+            isNullable: false
+        );
+        var alignedFavoriteColumn = Column(
+            "FavoriteColor",
+            ColumnKind.Scalar,
+            StringType(),
+            sourceJsonPath: Path($"{AlignedScope}.favoriteColor")
+        );
+        var alignedDetailColumn = Column(
+            "DetailField",
+            ColumnKind.Scalar,
+            StringType(),
+            sourceJsonPath: Path(descendantBindingRelativePath)
+        );
+
+        var alignedTableModel = new DbTableModel(
+            Table: new DbTableName(alignedSchemaName, "ParentsAlignedExtension"),
+            JsonScope: Path(AlignedScope),
+            Key: new TableKey(
+                "PK_ParentsAlignedExtension",
+                [new DbKeyColumn(new DbColumnName("ParentItemId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [alignedParentKeyColumn, alignedFavoriteColumn, alignedDetailColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.CollectionExtensionScope,
+                PhysicalRowIdentityColumns: [new DbColumnName("ParentItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("ParentItemId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentItemId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+        var alignedPlan = new TableWritePlan(
+            TableModel: alignedTableModel,
+            InsertSql: "INSERT INTO sample.\"ParentsAlignedExtension\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 3, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    alignedParentKeyColumn,
+                    new WriteValueSource.ParentKeyPart(0),
+                    "ParentItemId"
+                ),
+                new WriteColumnBinding(
+                    alignedFavoriteColumn,
+                    new WriteValueSource.Scalar(Path($"{AlignedScope}.favoriteColor"), StringType()),
+                    "FavoriteColor"
+                ),
+                new WriteColumnBinding(
+                    alignedDetailColumn,
+                    new WriteValueSource.Scalar(Path(descendantBindingRelativePath), StringType()),
+                    "DetailField"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: _defaultResource,
+                PhysicalSchema: _defaultSchema,
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootModel,
+                TablesInDependencyOrder: [rootModel, parentsTableModel, alignedTableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, parentsPlan, alignedPlan]
         );
     }
 
@@ -1087,9 +1491,7 @@ internal static class ProfileTestDoubles
 
     /// <summary>
     /// Build a two-table plan whose separate table has a key-unification plan but is
-    /// tagged with a non-<see cref="DbTableKind.RootExtension"/> kind (default:
-    /// <see cref="DbTableKind.CollectionExtensionScope"/>). Used to verify the
-    /// separate-table resolver rejects collection-aligned kinds.
+    /// tagged with a configurable non-<see cref="DbTableKind.RootExtension"/> kind.
     /// </summary>
     internal static ResourceWritePlan BuildRootPlusSeparateTableWithKeyUnificationNonRootExtensionKind(
         string memberRelativePath = "$._ext.sample.memberA",
