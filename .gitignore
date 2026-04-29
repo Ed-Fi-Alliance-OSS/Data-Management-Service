@@ -454,6 +454,8 @@ tmpclaude*
 
 # Fixture runner actual/ output directories
 **/Fixtures/**/actual/
+**/*IntegrationFixtures/**/actual/
 
 # Allow ApiSchema.json inside fixture inputs (overrides apiSchema*.json rule)
 !**/Fixtures/**/inputs/ApiSchema*.json
+!**/*IntegrationFixtures/**/inputs/*.ApiSchema.json
