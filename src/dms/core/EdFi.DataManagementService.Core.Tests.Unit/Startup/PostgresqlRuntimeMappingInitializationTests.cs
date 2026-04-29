@@ -23,7 +23,6 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -154,33 +153,25 @@ public class PostgresqlRuntimeMappingInitializationTests
         ApiSchemaDocumentNodes schemaNodes,
         IDmsInstanceProvider dmsInstanceProvider,
         IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader,
-        AppSettings? appSettings = null,
-        ILogger<PostgresqlBackendMappingInitializer>? backendMappingInitializerLogger = null
+        AppSettings? appSettings = null
     ) =>
         CreateStartupServiceProvider(
             CreateApiSchemaProvider(schemaNodes),
             dmsInstanceProvider,
             databaseMetadataReader,
-            appSettings,
-            backendMappingInitializerLogger
+            appSettings
         );
 
     private static ServiceProvider CreateStartupServiceProvider(
         IApiSchemaProvider apiSchemaProvider,
         IDmsInstanceProvider dmsInstanceProvider,
         IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader,
-        AppSettings? appSettings = null,
-        ILogger<PostgresqlBackendMappingInitializer>? backendMappingInitializerLogger = null
+        AppSettings? appSettings = null
     )
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(Options.Create(appSettings ?? CreateAppSettings()));
-
-        if (backendMappingInitializerLogger is not null)
-        {
-            services.AddSingleton(backendMappingInitializerLogger);
-        }
 
         services.AddSingleton(apiSchemaProvider);
         services.AddSingleton<ICompiledSchemaCache, CompiledSchemaCache>();
