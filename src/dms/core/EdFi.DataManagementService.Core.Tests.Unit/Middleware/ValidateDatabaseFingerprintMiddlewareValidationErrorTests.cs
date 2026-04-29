@@ -68,7 +68,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         IDmsInstanceSelection dmsInstanceSelection,
         CapturingLogger<ValidateDatabaseFingerprintMiddleware> middlewareLogger,
         IServiceProvider serviceProvider
-    ) CreateMiddleware(bool validateProvisionedMappingsOnStartup = false)
+    ) CreateMiddleware()
     {
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
         var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
@@ -85,12 +85,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
             );
 
         var appSettings = Options.Create(
-            new AppSettings
-            {
-                AllowIdentityUpdateOverrides = "",
-                UseRelationalBackend = true,
-                ValidateProvisionedMappingsOnStartup = validateProvisionedMappingsOnStartup,
-            }
+            new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
         );
 
         var serviceProvider = A.Fake<IServiceProvider>();
@@ -169,7 +164,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         public async Task Setup()
         {
             var (middleware, fingerprintReader, dmsInstanceSelection, middlewareLogger, serviceProvider) =
-                CreateMiddleware(validateProvisionedMappingsOnStartup: false);
+                CreateMiddleware();
 
             _fingerprintReader = fingerprintReader;
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);

@@ -71,7 +71,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-977` — Select Mapping Set by `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)` — `reference/design/backend-redesign/epics/06-runtime-mapping-selection/02-mapping-set-selection.md`
   - `DMS-978` — Configuration + Fail-Fast Behaviors for Schema/Pack Selection — `reference/design/backend-redesign/epics/06-runtime-mapping-selection/03-config-and-failure-modes.md`
   - `DMS-979` — Remove In-Process Schema Reload / Hot Reload — `reference/design/backend-redesign/epics/06-runtime-mapping-selection/04-remove-hot-reload.md`
-  - `DMS-1097` — Remove Temporary Startup Validation Bypass After Provisioning Is Ready — `reference/design/backend-redesign/epics/06-runtime-mapping-selection/05-remove-temporary-startup-validation-bypass.md`
+  - `DMS-1097` — Remove Temporary Startup Validation Bypass After Provisioning Is Ready (complete) — `reference/design/backend-redesign/epics/06-runtime-mapping-selection/05-remove-temporary-startup-validation-bypass.md`
 
 - `DMS-980` — Relational Write Path (POST/PUT) — `reference/design/backend-redesign/epics/07-relational-write-path/EPIC.md`
   - `DMS-981` — Core Emits Concrete JSON Locations for Document References — `reference/design/backend-redesign/epics/07-relational-write-path/00-core-extraction-location.md`
