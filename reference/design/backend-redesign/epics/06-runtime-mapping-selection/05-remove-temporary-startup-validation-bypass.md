@@ -51,10 +51,13 @@ Align with:
   other instances continue serving (multi-instance-safe failure model — see
   `ValidateStartupInstancesTask.cs:18-27`).
 - Automated coverage proves provisioning-ready environments pass with startup
-  validation enabled. Existing
-  `PostgresqlEffectiveSchemaHashMismatchTests`,
-  `MssqlEffectiveSchemaHashMismatchTests`, and
-  `ValidateStartupInstancesTaskTests` provide this coverage.
+  validation enabled (`PostgresqlEffectiveSchemaHashMismatchTests`,
+  `MssqlEffectiveSchemaHashMismatchTests`) and that environments missing
+  provisioning fail safely: per-instance startup handling is covered by
+  `ValidateStartupInstancesTaskTests` (e.g.
+  `Given_One_Bad_Instance_And_One_Good_Instance`), and the request-time 503
+  surface is covered by
+  `ValidateDatabaseFingerprintMiddlewareMissingTableTests.Given_Database_Is_Not_Provisioned`.
 
 ## Tasks
 

@@ -77,10 +77,13 @@ also append `-v`. Examples:
 
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
-When `USE_RELATIONAL_BACKEND=true`, run
+When `USE_RELATIONAL_BACKEND=true`, you **must** run
 `provision-relational-e2e-database.ps1` before `start-local-dms.ps1` so
-`dms.EffectiveSchema` exists before startup validation runs. Otherwise the
-affected instances will return 503 at request time.
+`dms.EffectiveSchema` exists before startup validation runs.
+
+If you skip provisioning, DMS will start successfully, but requests to the
+affected instances return HTTP 503 (Service Unavailable). To recover, run the
+provisioning script and restart DMS.
 
 If you want to use Keycloak as the identity provider, pass the `-IdentityProvider keycloak` parameter to the startup script. This will configure the environment to use Keycloak authentication, and you must ensure Keycloak is running and properly configured.
 
