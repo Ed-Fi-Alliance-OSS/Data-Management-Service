@@ -7,11 +7,18 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Information;
 
 public class ApiInformation
 {
-    public ApiInformation(string version, string applicationName, string informationalVersion, ApiUrls urls)
+    public ApiInformation(
+        string version,
+        string applicationName,
+        string informationalVersion,
+        string build,
+        ApiUrls urls
+    )
     {
         Version = version;
         ApplicationName = applicationName;
         InformationalVersion = informationalVersion;
+        Build = build;
         Urls = urls;
     }
 
@@ -20,6 +27,8 @@ public class ApiInformation
     public string ApplicationName { get; }
 
     public string InformationalVersion { get; }
+
+    public string Build { get; }
 
     public ApiUrls Urls { get; }
 }

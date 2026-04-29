@@ -28,8 +28,19 @@ COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ ./backend/EdFi.DmsConfi
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/ ./backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/ ./datamodel/EdFi.DmsConfigurationService.DataModel/
 
-RUN dotnet publish frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj \
-    -c Release --no-restore --self-contained false -o /app/Frontend
+ARG VERSION=""
+ARG ASSEMBLY_VERSION=""
+
+RUN version_args=""; \
+    if [ -n "$VERSION" ]; then \
+        version_args="$version_args /p:Version=$VERSION /p:InformationalVersion=$VERSION"; \
+    fi; \
+    if [ -n "$ASSEMBLY_VERSION" ]; then \
+        version_args="$version_args /p:AssemblyVersion=$ASSEMBLY_VERSION /p:FileVersion=$ASSEMBLY_VERSION"; \
+    fi; \
+    dotnet publish frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj \
+        -c Release --no-restore --self-contained false -o /app/Frontend \
+        $version_args
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05ad7ea16782b4bee55260de4acc6f99bec897fd11de7640c AS runtimebase
 

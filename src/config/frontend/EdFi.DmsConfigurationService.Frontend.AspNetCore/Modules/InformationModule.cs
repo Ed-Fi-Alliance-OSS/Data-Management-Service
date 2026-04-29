@@ -24,6 +24,7 @@ public class InformationModule : IEndpointModule
             ApiVersionDetails.Version,
             ApiVersionDetails.ApplicationName,
             ApiVersionDetails.InformationalVersion,
+            ApiVersionDetails.Build,
             urls
         );
         return Results.Ok(response);
