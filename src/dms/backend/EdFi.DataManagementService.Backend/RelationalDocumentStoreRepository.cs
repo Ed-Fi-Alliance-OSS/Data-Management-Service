@@ -848,10 +848,11 @@ public sealed class RelationalDocumentStoreRepository(
                 )
                 .ConfigureAwait(false);
 
-            if (
-                executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
-                && attemptIndex == 0
-            )
+            // A stale guarded no-op compare is only provisional on the first attempt.
+            // Re-run once against freshly resolved state so the caller either:
+            // - re-evaluates an unconditional write against current state, or
+            // - rechecks If-Match on the retried attempt.
+            if (ShouldRetryAfterStaleNoOpCompare(executorResult, attemptIndex))
             {
                 continue;
             }
@@ -1185,4 +1186,11 @@ public sealed class RelationalDocumentStoreRepository(
                 paramName
             );
     }
+
+    private static bool ShouldRetryAfterStaleNoOpCompare(
+        RelationalWriteExecutorResult executorResult,
+        int attemptIndex
+    ) =>
+        executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
+        && attemptIndex == 0;
 }

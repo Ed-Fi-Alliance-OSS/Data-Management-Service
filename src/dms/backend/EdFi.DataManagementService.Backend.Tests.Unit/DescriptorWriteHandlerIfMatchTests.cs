@@ -828,19 +828,19 @@ public class Given_Descriptor_DELETE_if_match_header_mismatches_persisted_etag
 public class Given_Descriptor_DELETE_if_match_header_is_wildcard
 {
     private DeleteResult _result = default!;
-    private DescriptorIfMatchCommandRecorder _commandExecutor = default!;
+    private DescriptorIfMatchWriteSessionFactory _sessionFactory = default!;
 
     [SetUp]
     public async Task Arrange_and_act()
     {
-        _commandExecutor = new DescriptorIfMatchCommandRecorder(SqlDialect.Pgsql);
-        _commandExecutor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["DocumentId"] = 345L }),
-        ]);
+        _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
+        _sessionFactory.EnqueueDescriptorRow(DescriptorIfMatchHelper.StandardPersistedRow());
+        _sessionFactory.EnqueueResultSet([new Dictionary<string, object?> { ["DocumentId"] = 345L }]);
 
         var sut = DescriptorIfMatchHelper.CreateSut(
             new DescriptorIfMatchTargetLookupStub(),
-            _commandExecutor
+            A.Fake<IRelationalCommandExecutor>(),
+            _sessionFactory
         );
 
         _result = await DescriptorIfMatchHelper.ExecuteDeleteAsync(
@@ -863,12 +863,50 @@ public class Given_Descriptor_DELETE_if_match_header_is_wildcard
     }
 
     [Test]
-    public void It_does_not_issue_a_locked_select()
+    public void It_uses_a_locked_select_before_delete()
     {
-        _commandExecutor.Commands.Should().HaveCount(1);
-        _commandExecutor.Commands[0].CommandText.Should().NotContain("FOR UPDATE");
-        _commandExecutor.Commands[0].CommandText.Should().NotContain("UPDLOCK");
-        _commandExecutor.Commands[0].CommandText.Should().NotContain("ROWLOCK");
+        _sessionFactory.SessionCommands.Should().HaveCount(2);
+        _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        _sessionFactory.SessionCommands[1].CommandText.Should().Contain("DELETE FROM");
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_Descriptor_DELETE_if_match_header_is_wildcard_and_target_is_missing
+{
+    private DeleteResult _result = default!;
+    private DescriptorIfMatchWriteSessionFactory _sessionFactory = default!;
+
+    [SetUp]
+    public async Task Arrange_and_act()
+    {
+        _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
+
+        var sut = DescriptorIfMatchHelper.CreateSut(
+            new DescriptorIfMatchTargetLookupStub(),
+            A.Fake<IRelationalCommandExecutor>(),
+            _sessionFactory
+        );
+
+        _result = await DescriptorIfMatchHelper.ExecuteDeleteAsync(
+            sut,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+            ifMatchEtag: "*"
+        );
+    }
+
+    [Test]
+    public void It_returns_delete_failure_etag_mismatch()
+    {
+        _result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+    }
+
+    [Test]
+    public void It_only_issues_the_locked_pre_check_select()
+    {
+        _sessionFactory.SessionCommands.Should().HaveCount(1);
+        _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
     }
 }
 
@@ -1017,6 +1055,191 @@ public class Given_Descriptor_DELETE_if_match_fk_violation_in_locked_session
         _sessionFactory.SessionCommands.Should().HaveCount(2);
         _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
         _sessionFactory.SessionCommands[1].CommandText.Should().Contain("DELETE");
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_Descriptor_POST_transient_database_failure
+{
+    private UpsertResult _result = default!;
+
+    [SetUp]
+    public async Task Arrange_and_act()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookup = new DescriptorIfMatchTargetLookupStub
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
+        };
+        var commandExecutor = new ThrowingRelationalCommandExecutor(
+            SqlDialect.Pgsql,
+            new FakeTransientDbException()
+        );
+        var exceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsTransientFailureToReturn = true,
+        };
+
+        var sut = DescriptorIfMatchHelper.CreateSut(
+            targetLookup,
+            commandExecutor,
+            exceptionClassifier: exceptionClassifier
+        );
+        var request = DescriptorIfMatchHelper.CreatePostRequest(documentUuid, ifMatchEtag: null);
+
+        _result = await sut.HandlePostAsync(request);
+    }
+
+    [Test]
+    public void It_returns_upsert_failure_write_conflict()
+    {
+        _result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_Descriptor_POST_unique_constraint_violation_classified_by_exception_classifier
+{
+    private UpsertResult _result = default!;
+
+    [SetUp]
+    public async Task Arrange_and_act()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookup = new DescriptorIfMatchTargetLookupStub
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
+        };
+        var commandExecutor = new ThrowingRelationalCommandExecutor(
+            SqlDialect.Mssql,
+            new FakeGenericDbException()
+        );
+        var exceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                "UX_Descriptor_NaturalKey"
+            ),
+        };
+
+        var sut = DescriptorIfMatchHelper.CreateSut(
+            targetLookup,
+            commandExecutor,
+            exceptionClassifier: exceptionClassifier
+        );
+        var request = DescriptorIfMatchHelper.CreatePostRequest(
+            documentUuid,
+            ifMatchEtag: null,
+            dialect: SqlDialect.Mssql
+        );
+
+        _result = await sut.HandlePostAsync(request);
+    }
+
+    [Test]
+    public void It_returns_upsert_failure_write_conflict()
+    {
+        _result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_Descriptor_PUT_transient_database_failure
+{
+    private UpdateResult _result = default!;
+
+    [SetUp]
+    public async Task Arrange_and_act()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookup = new DescriptorIfMatchTargetLookupStub
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var commandExecutor = new ThrowingRelationalCommandExecutor(
+            SqlDialect.Pgsql,
+            new FakeTransientDbException(),
+            [
+                [InMemoryRelationalResultSet.Create(DescriptorIfMatchHelper.StandardPersistedRow())],
+            ],
+            throwOnCall: 2
+        );
+        var exceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsTransientFailureToReturn = true,
+        };
+
+        var sut = DescriptorIfMatchHelper.CreateSut(
+            targetLookup,
+            commandExecutor,
+            exceptionClassifier: exceptionClassifier
+        );
+        var request = DescriptorIfMatchHelper.CreatePutRequestWithBody(
+            documentUuid,
+            ifMatchEtag: null,
+            DescriptorIfMatchHelper.CreateChangedRequestBody()
+        );
+
+        _result = await sut.HandlePutAsync(request);
+    }
+
+    [Test]
+    public void It_returns_update_failure_write_conflict()
+    {
+        _result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_Descriptor_PUT_if_match_transient_database_failure
+{
+    private UpdateResult _result = default!;
+
+    [SetUp]
+    public async Task Arrange_and_act()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookup = new DescriptorIfMatchTargetLookupStub
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var matchingEtag = DescriptorIfMatchHelper.ComputeEtagFromPersistedRow(
+            DescriptorIfMatchHelper.StandardPersistedRow()
+        );
+
+        var sessionFactory = new DescriptorIfMatchWriteSessionFactory();
+        sessionFactory.EnqueueThrowingExecuteAfterRow(
+            DescriptorIfMatchHelper.StandardPersistedRow(),
+            new FakeTransientDbException()
+        );
+
+        var exceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsTransientFailureToReturn = true,
+        };
+
+        var sut = DescriptorIfMatchHelper.CreateSut(
+            targetLookup,
+            A.Fake<IRelationalCommandExecutor>(),
+            sessionFactory,
+            exceptionClassifier
+        );
+        var request = DescriptorIfMatchHelper.CreatePutRequestWithBody(
+            documentUuid,
+            matchingEtag,
+            DescriptorIfMatchHelper.CreateChangedRequestBody()
+        );
+
+        _result = await sut.HandlePutAsync(request);
+    }
+
+    [Test]
+    public void It_returns_update_failure_write_conflict()
+    {
+        _result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
     }
 }
 
@@ -1737,6 +1960,42 @@ internal sealed class DescriptorIfMatchCommandRecorder(SqlDialect dialect) : IRe
     }
 }
 
+internal sealed class ThrowingRelationalCommandExecutor(
+    SqlDialect dialect,
+    DbException exceptionToThrow,
+    IReadOnlyList<IReadOnlyList<InMemoryRelationalResultSet>>? resultSetsByCall = null,
+    int throwOnCall = 1
+) : IRelationalCommandExecutor
+{
+    public SqlDialect Dialect { get; } = dialect;
+    private readonly Queue<IReadOnlyList<InMemoryRelationalResultSet>> _resultSets = new(
+        resultSetsByCall ?? []
+    );
+    private int _callCount;
+
+    public async Task<TResult> ExecuteReaderAsync<TResult>(
+        RelationalCommand command,
+        Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _callCount++;
+
+        if (_callCount == throwOnCall)
+        {
+            throw exceptionToThrow;
+        }
+
+        IReadOnlyList<InMemoryRelationalResultSet> queuedResultSets =
+            _resultSets.Count == 0 ? [] : _resultSets.Dequeue();
+
+        await using var reader = new InMemoryRelationalCommandReader(queuedResultSets);
+        return await readAsync(reader, cancellationToken);
+    }
+}
+
 internal sealed class DescriptorIfMatchTargetLookupStub : IRelationalWriteTargetLookupService
 {
     public RelationalWriteTargetLookupResult PostResult { get; set; } =
@@ -2093,3 +2352,5 @@ file sealed class FakeFkViolationDbException() : DbException("Fake FK constraint
 /// Fake DbException for generic database error scenarios (no special SqlState).
 /// </summary>
 file sealed class FakeGenericDbException() : DbException("Fake database error") { }
+
+file sealed class FakeTransientDbException() : DbException("Fake transient database error") { }

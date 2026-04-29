@@ -23,6 +23,8 @@ internal sealed class ConfigurableRelationalWriteExceptionClassifier : IRelation
     /// </summary>
     public bool IsForeignKeyViolationToReturn { get; set; }
 
+    public bool IsTransientFailureToReturn { get; set; }
+
     public RelationalWriteExceptionClassification? ClassificationToReturn { get; set; }
 
     public int TryClassifyCallCount { get; private set; }
@@ -44,5 +46,5 @@ internal sealed class ConfigurableRelationalWriteExceptionClassifier : IRelation
     public bool IsUniqueConstraintViolation(DbException exception) =>
         ClassificationToReturn is RelationalWriteExceptionClassification.UniqueConstraintViolation;
 
-    public bool IsTransientFailure(DbException exception) => false;
+    public bool IsTransientFailure(DbException exception) => IsTransientFailureToReturn;
 }

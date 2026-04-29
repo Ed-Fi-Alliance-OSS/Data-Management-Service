@@ -1403,6 +1403,69 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_retries_put_guarded_no_ops_once_without_if_match_and_keeps_the_retried_request_unconditional()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
+
+        var executorCallCount = 0;
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    executorCallCount++ switch
+                    {
+                        0 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict(),
+                            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                        ),
+                        1 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateSuccess(documentUuid, "\"45\""),
+                            RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                        ),
+                        _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
+                    }
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Fresh retry"));
+        A.CallTo(() => updateRequest.Headers).Returns(new Dictionary<string, string>());
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"45\""));
+        _capturedExecutorRequests.Should().HaveCount(2);
+        _capturedExecutorRequests[0].IfMatchEtag.Should().BeNull();
+        _capturedExecutorRequests[1].IfMatchEtag.Should().BeNull();
+        _capturedExecutorRequests
+            .Select(request => request.TargetContext)
+            .Should()
+            .BeEquivalentTo([
+                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
+                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 45L),
+            ]);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
+    }
+
+    [Test]
     public async Task It_does_not_retry_put_guarded_no_ops_when_the_executor_finishes_after_refreshing_session_loaded_freshness()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());

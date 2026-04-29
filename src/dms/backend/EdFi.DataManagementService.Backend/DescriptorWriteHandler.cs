@@ -136,29 +136,9 @@ internal sealed class DescriptorWriteHandler(
                 )
                 .ConfigureAwait(false);
         }
-        catch (DbException ex) when (IsUniqueConstraintViolation(ex))
-        {
-            _logger.LogDebug(
-                ex,
-                "Unique constraint violation on descriptor POST for {Resource} - {TraceId}",
-                RelationalWriteSupport.FormatResource(request.Resource),
-                request.TraceId.Value
-            );
-
-            return new UpsertResult.UpsertFailureWriteConflict();
-        }
         catch (DbException ex)
         {
-            _logger.LogError(
-                ex,
-                "Database error on descriptor POST for {Resource} - {TraceId}",
-                RelationalWriteSupport.FormatResource(request.Resource),
-                request.TraceId.Value
-            );
-
-            return new UpsertResult.UnknownFailure(
-                "An unexpected error occurred while processing the descriptor request."
-            );
+            return MapPostDbException(request, ex);
         }
     }
 
@@ -292,16 +272,7 @@ internal sealed class DescriptorWriteHandler(
         }
         catch (DbException ex)
         {
-            _logger.LogError(
-                ex,
-                "Database error on descriptor PUT for {Resource} - {TraceId}",
-                RelationalWriteSupport.FormatResource(request.Resource),
-                request.TraceId.Value
-            );
-
-            return new UpdateResult.UnknownFailure(
-                "An unexpected error occurred while processing the descriptor request."
-            );
+            return MapPutDbException(request, ex, lockedSession: false);
         }
     }
 
@@ -329,7 +300,7 @@ internal sealed class DescriptorWriteHandler(
         // (or a non-descriptor document) cannot be deleted through this resource endpoint.
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
 
-        if (ifMatchEtag is not null && !IsWildcardIfMatch(ifMatchEtag))
+        if (ifMatchEtag is not null)
         {
             return await ExecuteDeleteWithIfMatchAsync(
                     mappingSet,
@@ -1156,15 +1127,7 @@ internal sealed class DescriptorWriteHandler(
         catch (DbException ex)
         {
             await session.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogError(
-                ex,
-                "Database error on descriptor PUT (locked session) for {Resource} - {TraceId}",
-                RelationalWriteSupport.FormatResource(request.Resource),
-                request.TraceId.Value
-            );
-            return new UpdateResult.UnknownFailure(
-                "An unexpected error occurred while processing the descriptor request."
-            );
+            return MapPutDbException(request, ex, lockedSession: true);
         }
     }
 
@@ -1493,21 +1456,71 @@ internal sealed class DescriptorWriteHandler(
 
     // ── SQL error classification ────────────────────────────────────────
 
-    /// <summary>
-    /// Detects unique constraint violations across Postgres (23505) and SQL Server (2627/2601).
-    /// </summary>
-    private static bool IsUniqueConstraintViolation(DbException ex)
+    private UpsertResult MapPostDbException(DescriptorWriteRequest request, DbException ex)
     {
-        // Postgres: SqlState "23505" (unique_violation)
-        // SQL Server: Number 2627 (unique key) or 2601 (unique index)
-        return ex.SqlState == "23505"
-            || (
-                ex is { HResult: var hr }
-                && hr is unchecked((int)0x80131904)
-                && (
-                    ex.Message.Contains("2627", StringComparison.Ordinal)
-                    || ex.Message.Contains("2601", StringComparison.Ordinal)
-                )
+        if (_writeExceptionClassifier.IsUniqueConstraintViolation(ex))
+        {
+            _logger.LogDebug(
+                ex,
+                "Unique constraint violation on descriptor POST for {Resource} - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                request.TraceId.Value
             );
+
+            return new UpsertResult.UpsertFailureWriteConflict();
+        }
+
+        if (_writeExceptionClassifier.IsTransientFailure(ex))
+        {
+            _logger.LogWarning(
+                ex,
+                "Transient database error on descriptor POST for {Resource} - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                request.TraceId.Value
+            );
+
+            return new UpsertResult.UpsertFailureWriteConflict();
+        }
+
+        _logger.LogError(
+            ex,
+            "Database error on descriptor POST for {Resource} - {TraceId}",
+            RelationalWriteSupport.FormatResource(request.Resource),
+            request.TraceId.Value
+        );
+
+        return new UpsertResult.UnknownFailure(
+            "An unexpected error occurred while processing the descriptor request."
+        );
+    }
+
+    private UpdateResult MapPutDbException(DescriptorWriteRequest request, DbException ex, bool lockedSession)
+    {
+        if (_writeExceptionClassifier.IsTransientFailure(ex))
+        {
+            _logger.LogWarning(
+                ex,
+                lockedSession
+                    ? "Transient database error on descriptor PUT (locked session) for {Resource} - {TraceId}"
+                    : "Transient database error on descriptor PUT for {Resource} - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                request.TraceId.Value
+            );
+
+            return new UpdateResult.UpdateFailureWriteConflict();
+        }
+
+        _logger.LogError(
+            ex,
+            lockedSession
+                ? "Database error on descriptor PUT (locked session) for {Resource} - {TraceId}"
+                : "Database error on descriptor PUT for {Resource} - {TraceId}",
+            RelationalWriteSupport.FormatResource(request.Resource),
+            request.TraceId.Value
+        );
+
+        return new UpdateResult.UnknownFailure(
+            "An unexpected error occurred while processing the descriptor request."
+        );
     }
 }
