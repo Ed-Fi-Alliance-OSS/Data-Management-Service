@@ -31,7 +31,8 @@ across separate invocations.
   happy-path developer workflow. It is convenience packaging only - not the normative bootstrap contract
   and not required; developers may invoke the phase commands directly. The wrapper forwards the
   developer-facing infrastructure and seed-source flags used by supported common-path runs, including
-  `-IdentityProvider` and `-SeedDataPath`, without becoming the owner of those concerns.
+  `-IdentityProvider` and `-SeedDataPath`, without becoming the owner of those concerns. Phase-command
+  contract expansion never requires a wrapper change.
 - The story-aligned bootstrap flow stays consistent:
   - Config Service remains part of the canonical flow,
   - `-EnableConfig` is not treated as a meaningful developer-facing opt-out,
@@ -178,6 +179,9 @@ across separate invocations.
 
 The following examples show the two complementary invocation patterns. Neither is authoritative over the
 other; the wrapper is happy-path convenience, the phase commands are the normative contract.
+
+The remaining gaps in this story are implementation-readiness items only. The design contract for the
+entry-point and IDE workflow is complete in this document even where script changes are still pending.
 
 ```powershell
 # Wrapper — happy path (core schema, no seed)

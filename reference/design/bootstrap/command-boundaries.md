@@ -20,7 +20,9 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 >
 > Any wrapper over those commands is a convenience entry point for the happy path only. The wrapper
 > is not the source of lifecycle semantics, schema policy, claims logic, provisioning behavior, or
-> any other phase-specific concern. Wrapper behavior changes do not change the normative contract.
+> any other phase-specific concern. Phase-command contract expansion never requires a wrapper change.
+> A wrapper may later expose convenience aliases for common-path ergonomics, but the normative
+> bootstrap surface is already complete without them.
 
 ---
 
@@ -39,9 +41,9 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 | **Failure conditions** | Unrecognized extension name; `-Extensions` and `-ApiSchemaPath` both supplied; NuGet feed unreachable; staged workspace exists with different content; `dms-schema hash` exits non-zero; fewer or more than 1 core schema present after staging |
 | **Must NOT do** | Start or depend on Docker services; modify `.env` or Docker Compose variables; perform DDL work; contact the Config Service; accept claims-related parameters |
 
-**Mode-to-security contract (precise):** In standard mode (`-Extensions`, including the omitted-`-Extensions` core-only case), schema selection here automatically determines the matching security fragment set that `prepare-dms-claims.ps1` will stage. In expert mode (`-ApiSchemaPath`), no such automatic security derivation occurs; the caller must supply explicit security input via `-ClaimsDirectoryPath` whenever the staged schema set includes non-core schemas. This phase command only records which mode is in effect; the actual claims-staging requirement is enforced by `prepare-dms-claims.ps1`.
+**Mode-to-security contract (precise):** In every supported schema-selection mode, the effective staged schema set resolved here automatically determines the matching base security fragment set that `prepare-dms-claims.ps1` will stage. That includes standard mode (`-Extensions`, including the omitted-`-Extensions` core-only case) and expert mode (`-ApiSchemaPath`). This phase command records the schema-derived security inputs for the run; the actual claims staging and additive-fragment validation remain owned by `prepare-dms-claims.ps1`.
 
-**Boundary note:** Mode 3 (`-ApiSchemaPath`) emits an expert-mode warning and requires `-ClaimsDirectoryPath` when non-core schemas are present — but that requirement is enforced by `prepare-dms-claims.ps1` at claim-staging time, not here. This command validates schema inputs only.
+**Boundary note:** Mode 3 (`-ApiSchemaPath`) remains an expert schema-selection path because seed-source defaults and bootstrap-managed extension ergonomics stay narrower there, but it no longer changes the source of truth for security selection. This command validates schema inputs only.
 
 ---
 
@@ -52,15 +54,15 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 | Item | Detail |
 |---|---|
 | **Preconditions** | Staged-schema manifest produced by `prepare-dms-schema.ps1`. No Docker services required. |
-| **Inputs** | `-ClaimsDirectoryPath <path>` (optional; required when Mode 3 is in use with non-core schemas); `-AddExtensionSecurityMetadata` (legacy compat flag, deprecated when `-Extensions` or `-ClaimsDirectoryPath` is set) |
-| **Outputs** | Staged workspace `eng/docker-compose/.bootstrap/claims/` containing claimset fragments; derived `DMS_CONFIG_CLAIMS_SOURCE` and `DMS_CONFIG_CLAIMS_HOST_DIRECTORY` values for the Config Service |
+| **Inputs** | `-ClaimsDirectoryPath <path>` (optional additive input) |
+| **Outputs** | Staged workspace `eng/docker-compose/.bootstrap/claims/` containing claimset fragments; persisted claims-startup contract artifact under `.bootstrap` describing the effective Config Service claims inputs for this run |
 | **Side effects** | Writes staged claims workspace; validates JSON well-formedness, no duplicate filenames, and no unknown claim set names |
-| **Failure conditions** | Duplicate filenames; malformed JSON in any fragment; unknown claim set name; staged workspace exists with different content; Mode 3 with non-core schemas and no `-ClaimsDirectoryPath` |
+| **Failure conditions** | Duplicate filenames; malformed JSON in any fragment; unknown claim set name; staged workspace exists with different content |
 | **Must NOT do** | Contact Docker, the database, or the Config Service; perform schema resolution or hash computation; accept schema-selection parameters |
 
-**Mode-to-security contract (precise):** Standard `-Extensions` mode (including the omitted-`-Extensions` core-only case) is the only mode in which this command derives the staged claims set automatically from the schema selection recorded by `prepare-dms-schema.ps1`. Expert `-ApiSchemaPath` mode is not auto-derived: when the staged schema set includes any non-core schema, this command requires explicit `-ClaimsDirectoryPath` input and fails fast if it is missing. Core-only `-ApiSchemaPath` runs may rely on embedded claims only. This is the single point of truth for "automatic vs explicit" in claims staging; nothing later in the pipeline retro-fits expert-mode security defaults.
+**Mode-to-security contract (precise):** This command always stages the schema-derived base claims set recorded by `prepare-dms-schema.ps1`. If the staged schema set is core only, the resulting startup contract may stay in Embedded mode. If the staged schema set includes one or more non-core schemas, this command stages the matching schema-derived fragments automatically and the resulting startup contract is Hybrid mode. When `-ClaimsDirectoryPath` is supplied, its validated fragments are added on top of that schema-derived base set rather than replacing it.
 
-**Boundary note:** Claim-fragment validation here is structural only: JSON shape, duplicate filenames, and claim-set-name references. This phase does not inspect attachment overlap, reject duplicate `(resource claim, claim set name)` pairs, or perform semantic composition reasoning; CMS startup remains the authoritative composition gate. Built-in seed-support advertisement is owned by Story 02 / `load-dms-seed-data.ps1`; this phase only stages and validates the claims inputs that later seed delivery depends on.
+**Boundary note:** Claim-fragment validation here is structural only: JSON shape, duplicate filenames, and claim-set-name references. This phase does not inspect attachment overlap, reject duplicate `(resource claim, claim set name)` pairs, or perform semantic composition reasoning; CMS startup remains the authoritative composition gate. Built-in seed-support advertisement is owned by Story 02 / `load-dms-seed-data.ps1`; this phase only stages and validates the claims inputs that later seed delivery depends on. The persisted claims-startup contract is bootstrap input state only: it records the effective Config Service claims inputs for this run and is not a cross-invocation resume mechanism, mutable workflow checkpoint, or second control plane.
 
 ---
 
@@ -70,14 +72,14 @@ the normative bootstrap contract; any thin wrapper is convenience packaging over
 
 | Item | Detail |
 |---|---|
-| **Preconditions** | Staged claims workspace (`eng/docker-compose/.bootstrap/claims/`) present when CMS is included (normal flow). |
+| **Preconditions** | Staged claims workspace (`eng/docker-compose/.bootstrap/claims/`) and persisted claims-startup contract artifact present when CMS is included (normal flow). |
 | **Inputs** | `-InfraOnly` (exclude DMS container from Docker startup); `-DmsBaseUrl <url>` (health endpoint of IDE-hosted DMS; valid only with `-InfraOnly`); `-Rebuild` / `-r`; `-IdentityProvider`; `-EnableConfig` (legacy compat, not a meaningful opt-out in the normative flow); teardown flags `-d`/`-v` |
 | **Outputs** | Running Docker services; claims-ready Config Service; healthy DMS container (non-`-InfraOnly` path) |
-| **Side effects** | Docker Compose up/down; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); after `/health` is green, probes `/authorizationMetadata?claimSetName=<name>` for `EdFiSandbox` and each staged additional claim set name when hybrid claims are staged; polls `$DmsBaseUrl/health` with timeout when `-DmsBaseUrl` is provided |
+| **Side effects** | Docker Compose up/down; reads the persisted claims-startup contract artifact and applies it to Config Service startup; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); after `/health` is green, probes `/authorizationMetadata?claimSetName=<name>` for `EdFiSandbox` and each staged additional claim set name when hybrid claims are staged; polls `$DmsBaseUrl/health` with timeout when `-DmsBaseUrl` is provided |
 | **Failure conditions** | Docker compose start failure; health-wait timeout for any service; Config Service `/authorizationMetadata` readiness probe fails for `EdFiSandbox` or any staged additional claim set name; `-DmsBaseUrl` health-wait timeout |
 | **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; configure DMS instances; create CMS clients; load seed data; accept schema or claims parameters |
 
-**Boundary note:** `-InfraOnly` and `-DmsBaseUrl` are Docker-layer controls - they decide whether and which DMS health endpoint to poll. Config Service readiness in this phase is the claims-ready gate for later phases: `/health` must be green, and bootstrap must be able to query `/authorizationMetadata?claimSetName=...` successfully for `EdFiSandbox` plus each staged additional claim set name when hybrid claims are staged. These controls do not express schema selection, post-health sequencing, or any concern owned by another phase. Once health is confirmed, any later step is owned by wrapper orchestration or by the developer invoking the next phase command explicitly.
+**Boundary note:** `-InfraOnly` and `-DmsBaseUrl` are Docker-layer controls - they decide whether and which DMS health endpoint to poll. Config Service readiness in this phase is the claims-ready gate for later phases: `/health` must be green, and bootstrap must be able to query `/authorizationMetadata?claimSetName=...` successfully for `EdFiSandbox` plus each staged additional claim set name when hybrid claims are staged. This phase consumes the persisted claims-startup contract produced earlier; it does not re-derive claims policy from schema or fragment contents. These controls do not express schema selection, post-health sequencing, or any concern owned by another phase. Once health is confirmed, any later step is owned by wrapper orchestration or by the developer invoking the next phase command explicitly.
 
 ---
 
@@ -177,7 +179,7 @@ The following concerns are each owned by exactly one phase:
 |---|---|---|
 | Schema file resolution and staging | `prepare-dms-schema.ps1` | Re-resolve or re-stage schema |
 | `EffectiveSchemaHash` computation | `prepare-dms-schema.ps1` | Compute an alternate hash |
-| Claims fragment staging and validation | `prepare-dms-claims.ps1` | Accept or validate claims parameters |
+| Claims fragment staging, validation, and persisted claims-startup contract | `prepare-dms-claims.ps1` | Accept or validate claims parameters; write or reinterpret claims-startup policy |
 | Docker service startup and health waiting | `start-local-dms.ps1` | Start or stop Docker services |
 | DMS instance and client record creation | `configure-local-dms-instance.ps1` | Create or modify DMS instance records |
 | Downstream instance target selection | `provision-dms-schema.ps1`, `load-dms-seed-data.ps1` (each phase resolves its own selectors) | Resolve target instances on behalf of another phase |
@@ -197,7 +199,7 @@ Each phase accepts only the parameters relevant to its concern.
 | Phase command | Owned parameters |
 |---|---|
 | `prepare-dms-schema.ps1` | `-Extensions`, `-ApiSchemaPath` |
-| `prepare-dms-claims.ps1` | `-ClaimsDirectoryPath`, `-AddExtensionSecurityMetadata` (legacy compat) |
+| `prepare-dms-claims.ps1` | `-ClaimsDirectoryPath` |
 | `start-local-dms.ps1` | `-InfraOnly`, `-DmsBaseUrl`, `-Rebuild`/`-r`, `-IdentityProvider`, `-EnableConfig` (legacy compat), `-d`/`-v` |
 | `configure-local-dms-instance.ps1` | `-NoDmsInstance`, `-SchoolYearRange`, `-AddSmokeTestCredentials` |
 | `provision-dms-schema.ps1` | `-InstanceId <guid[]>`, `-SchoolYear <int[]>` |

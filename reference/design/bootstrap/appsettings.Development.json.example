@@ -11,6 +11,7 @@
   "AppSettings": {
     "UseApiSchemaPath": true,
     "ApiSchemaPath": "<repo-root>/eng/docker-compose/.bootstrap/ApiSchema",
+    "UseRelationalBackend": true,
     "DeployDatabaseOnStartup": false,
     "AuthenticationService": "http://localhost:8081/connect/token"
   },

@@ -81,11 +81,11 @@ records ownership and dependencies.
 | Validate: no duplicate filenames in staged workspace | Section 4, Story 00 |
 | Validate: no malformed JSON in staged fragments | Section 4, Story 00 |
 | Validate: no unknown claim set names (must exist in embedded `Claims.json`) | Section 4, Story 00 |
-| Derive `DMS_CONFIG_CLAIMS_SOURCE` (Embedded or Hybrid) from staged results | Section 4, Story 00 |
-| Set `DMS_CONFIG_CLAIMS_HOST_DIRECTORY` bind-mount variable for CMS | Section 4, Story 00 |
+| Determine the effective Config Service claims startup mode from staged results and record it in the persisted claims-startup contract artifact | Section 4, Story 00 |
+| Record the host claims workspace startup input for CMS in the persisted claims-startup contract artifact | Section 4, Story 00 |
 | Stage and validate the claims inputs that later built-in seed delivery depends on | Section 4, Story 00 |
-| Treat legacy `-AddExtensionSecurityMetadata` as redundant when `-Extensions` or `-ClaimsDirectoryPath` is set; emit warning | Section 4, Story 00 |
-| Enforce `-ClaimsDirectoryPath` requirement when expert mode (`-ApiSchemaPath`) is in use with non-core schemas; fail fast if missing | Section 4, [`command-boundaries.md` Section 3.2](command-boundaries.md#32-prepare-dms-claimsps1--claims-and-security-staging), Story 00 |
+| Stage the schema-derived base claims set recorded by `prepare-dms-schema.ps1` in every supported schema-selection mode | Section 4, [`command-boundaries.md` Section 3.2](command-boundaries.md#32-prepare-dms-claimsps1--claims-and-security-staging), Story 00 |
+| Accept `-ClaimsDirectoryPath` only as additive input layered on top of the schema-derived base set | Section 4, [`command-boundaries.md` Section 3.2](command-boundaries.md#32-prepare-dms-claimsps1--claims-and-security-staging), Story 00 |
 
 This phase has no dependency on Docker state at execution time. Its only schema input is the staged
 workspace produced by `prepare-dms-schema.ps1`.
@@ -181,8 +181,10 @@ IDE.
 | `.gitignore` entry excluding `eng/docker-compose/.bootstrap/` from source control | Story 03 |
 
 The developer stages schema (`prepare-dms-schema.ps1`), stages claims (`prepare-dms-claims.ps1`),
-starts infrastructure (`start-local-dms.ps1 -InfraOnly`), provisions the database, then launches DMS
-in the IDE pointing at the staged schema workspace and the Docker-managed PostgreSQL and Config Service.
+starts infrastructure (`start-local-dms.ps1 -InfraOnly`), configures instances and IDE-facing CMS
+clients (`configure-local-dms-instance.ps1`), provisions the database (`provision-dms-schema.ps1`),
+then launches DMS in the IDE pointing at the staged schema workspace and the Docker-managed PostgreSQL
+and Config Service.
 
 ---
 
@@ -230,4 +232,3 @@ this table as a design-ownership map, not as a delivery-status report; delivery 
 | IDE debugging workflow | Composition of `start-local-dms.ps1 -InfraOnly` (infra-only shape), `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1` (staged workspaces the IDE process reads), `configure-local-dms-instance.ps1` (instance plus `CMSReadOnlyAccess` for the IDE process), `provision-dms-schema.ps1` (databases plus printed next-step guidance), and `appsettings.Development.json.example` (Section 2.7). No additional script or control plane is introduced. |
 | Backend redesign awareness | `provision-dms-schema.ps1` via SchemaTools plus `EffectiveSchemaHash` |
 | ODS initdev audit | Informational reference only; no phase required |
-
