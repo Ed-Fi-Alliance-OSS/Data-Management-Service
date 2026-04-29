@@ -101,6 +101,78 @@ internal static class ProfileKeyUnificationCore
     }
 
     /// <summary>
+    /// Resolves key-unification for one structurally-addressed separate-scope instance. The
+    /// caller supplies the request and stored scope states already resolved for
+    /// <paramref name="scopeAddress"/>, avoiding JsonScope-only lookup across sibling
+    /// collection-aligned instances.
+    /// </summary>
+    internal static void ResolveKeyUnification(
+        TableWritePlan tableWritePlan,
+        IReadOnlyDictionary<DbColumnName, object?> currentRowByColumnName,
+        JsonNode writableRequestBody,
+        RelationalWriteCurrentState? currentState,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        FlattenedWriteValue[] mergedRowValuesMutable,
+        ImmutableHashSet<int> resolverOwnedBindingIndices
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tableWritePlan);
+        ArgumentNullException.ThrowIfNull(currentRowByColumnName);
+        ArgumentNullException.ThrowIfNull(writableRequestBody);
+        ArgumentNullException.ThrowIfNull(resolvedReferenceLookups);
+        ArgumentNullException.ThrowIfNull(scopeAddress);
+        ArgumentNullException.ThrowIfNull(mergedRowValuesMutable);
+        ArgumentNullException.ThrowIfNull(resolverOwnedBindingIndices);
+
+        ValidateDirectScopeAddress(scopeAddress, requestScope?.Address, nameof(requestScope));
+        ValidateDirectScopeAddress(scopeAddress, storedScope?.Address, nameof(storedScope));
+
+        if (tableWritePlan.KeyUnificationPlans.Length == 0)
+        {
+            return;
+        }
+
+        var valueAssigned = new bool[mergedRowValuesMutable.Length];
+        for (var i = 0; i < mergedRowValuesMutable.Length; i++)
+        {
+            valueAssigned[i] = mergedRowValuesMutable[i] is not null;
+        }
+
+        var candidateScopes = ProfileBindingClassificationCore.BuildCandidateScopeSet(
+            requestScope,
+            storedScope
+        );
+
+        _ = currentState;
+
+        foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
+        {
+            ResolveOneCore(
+                tableWritePlan,
+                keyUnificationPlan,
+                currentRowByColumnName,
+                writableRequestBody,
+                resolvedReferenceLookups,
+                member =>
+                    ClassifyMemberVisibility(
+                        tableWritePlan,
+                        member,
+                        candidateScopes,
+                        requestScope,
+                        storedScope
+                    ),
+                ReadOnlySpan<int>.Empty,
+                mergedRowValuesMutable,
+                valueAssigned,
+                resolverOwnedBindingIndices
+            );
+        }
+    }
+
+    /// <summary>
     /// Resolves a single <see cref="KeyUnificationWritePlan"/> using explicit hidden-member
     /// paths sourced from a matched top-level collection row. Parallels the scope-state-derived
     /// path in <see cref="ResolveKeyUnification"/> but routes member visibility through
@@ -265,6 +337,48 @@ internal static class ProfileKeyUnificationCore
         ProfileAppliedWriteRequest profileRequest,
         ProfileAppliedWriteContext? profileAppliedContext,
         ImmutableArray<string> candidateScopes
+    ) =>
+        ClassifyMemberVisibilityCore(
+            tableWritePlan,
+            member,
+            candidateScopes,
+            containingScope =>
+                profileAppliedContext is not null
+                    ? ProfileMemberGovernanceRules.LookupStoredScope(profileAppliedContext, containingScope)
+                    : null,
+            containingScope =>
+                ProfileMemberGovernanceRules.LookupRequestScope(profileRequest, containingScope)
+        );
+
+    private static MemberVisibility ClassifyMemberVisibility(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan member,
+        ImmutableArray<string> candidateScopes,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope
+    ) =>
+        ClassifyMemberVisibilityCore(
+            tableWritePlan,
+            member,
+            candidateScopes,
+            containingScope =>
+                storedScope is not null
+                && string.Equals(storedScope.Address.JsonScope, containingScope, StringComparison.Ordinal)
+                    ? storedScope
+                    : null,
+            containingScope =>
+                requestScope is not null
+                && string.Equals(requestScope.Address.JsonScope, containingScope, StringComparison.Ordinal)
+                    ? requestScope
+                    : null
+        );
+
+    private static MemberVisibility ClassifyMemberVisibilityCore(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan member,
+        ImmutableArray<string> candidateScopes,
+        Func<string, StoredScopeState?> lookupStoredScope,
+        Func<string, RequestScopeState?> lookupRequestScope
     )
     {
         // Member relative paths are scope-relative per the write-plan contract; candidate
@@ -283,9 +397,7 @@ internal static class ProfileKeyUnificationCore
             return MemberVisibility.VisiblePresent;
         }
 
-        var storedScope = profileAppliedContext is not null
-            ? ProfileMemberGovernanceRules.LookupStoredScope(profileAppliedContext, containingScope)
-            : null;
+        var storedScope = lookupStoredScope(containingScope);
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
         var strippedMemberPath = StripScopePrefix(memberPath, containingScope);
         var governingPath = member switch
@@ -315,7 +427,7 @@ internal static class ProfileKeyUnificationCore
             }
         }
 
-        var requestScope = ProfileMemberGovernanceRules.LookupRequestScope(profileRequest, containingScope);
+        var requestScope = lookupRequestScope(containingScope);
         if (requestScope is not null && requestScope.Visibility == ProfileVisibilityKind.VisibleAbsent)
         {
             return MemberVisibility.VisibleAbsent;
@@ -511,6 +623,25 @@ internal static class ProfileKeyUnificationCore
             bool boolValue => boolValue ? "true" : "false",
             _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? value.ToString() ?? "<unknown>",
         };
+
+    private static void ValidateDirectScopeAddress(
+        ScopeInstanceAddress scopeAddress,
+        ScopeInstanceAddress? stateAddress,
+        string parameterName
+    )
+    {
+        if (
+            stateAddress is not null
+            && !ScopeInstanceAddressComparer.ScopeInstanceAddressEquals(scopeAddress, stateAddress)
+        )
+        {
+            throw new ArgumentException(
+                $"The supplied {parameterName} address does not match the separate scope instance "
+                    + $"address '{scopeAddress.JsonScope}'.",
+                parameterName
+            );
+        }
+    }
 
     private enum MemberVisibility
     {

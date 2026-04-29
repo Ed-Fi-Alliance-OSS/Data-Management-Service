@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -415,22 +417,123 @@ public class Given_SeparateTableClassifier_with_scope_relative_binding_path_reso
 }
 
 [TestFixture]
-public class Given_SeparateTableClassifier_rejects_non_RootExtension_table_kind
+public class Given_SeparateTableClassifier_instance_aware_overload_for_sibling_scope_instances
+{
+    private const string ParentScope = "$.parents[*]";
+    private const string AlignedScope = "$.parents[*]._ext.aligned";
+
+    private ProfileSeparateTableBindingClassification _hiddenInstance = null!;
+    private ProfileSeparateTableBindingClassification _visibleInstance = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = ProfileTestDoubles.BuildRootPlusRootExtensionPlan(
+            extensionJsonScope: AlignedScope,
+            extensionBindings: new ProfileTestDoubles.RootExtensionBindingSpec(
+                "FavoriteColor",
+                ProfileTestDoubles.RootExtensionBindingKind.Scalar,
+                RelativePath: $"{AlignedScope}.favoriteColor"
+            )
+        );
+        var separateTable = plan.TablePlansInDependencyOrder[1];
+
+        var addressA = ScopeAddressForParent("A");
+        var addressB = ScopeAddressForParent("B");
+        var requestA = new RequestScopeState(addressA, ProfileVisibilityKind.VisiblePresent, true);
+        var requestB = new RequestScopeState(addressB, ProfileVisibilityKind.VisiblePresent, true);
+        var storedA = new StoredScopeState(addressA, ProfileVisibilityKind.VisiblePresent, ["favoriteColor"]);
+        var storedB = new StoredScopeState(addressB, ProfileVisibilityKind.VisiblePresent, []);
+
+        var classifier = new ProfileSeparateTableBindingClassifier();
+        _hiddenInstance = classifier.Classify(plan, separateTable, addressA, requestA, storedA);
+        _visibleInstance = classifier.Classify(plan, separateTable, addressB, requestB, storedB);
+    }
+
+    [Test]
+    public void It_uses_the_hidden_paths_for_the_matching_instance() =>
+        _hiddenInstance.BindingsByIndex[1].Should().Be(RootBindingDisposition.HiddenPreserved);
+
+    [Test]
+    public void It_does_not_reuse_hidden_paths_from_a_sibling_instance() =>
+        _visibleInstance.BindingsByIndex[1].Should().Be(RootBindingDisposition.VisibleWritable);
+
+    private static ScopeInstanceAddress ScopeAddressForParent(string parentId) =>
+        new(
+            AlignedScope,
+            [
+                new AncestorCollectionInstance(
+                    ParentScope,
+                    [new SemanticIdentityPart("$.parentId", JsonValue.Create(parentId), IsPresent: true)]
+                ),
+            ]
+        );
+}
+
+[TestFixture]
+public class Given_SeparateTableClassifier_instance_aware_overload_for_CollectionExtensionScope_table_kind
+{
+    private ProfileSeparateTableBindingClassification _result = null!;
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = ProfileTestDoubles.BuildRootPlusSeparateTablePlanWithNonRootExtensionKind(
+            nonRootExtensionKind: DbTableKind.CollectionExtensionScope
+        );
+        var separateTable = plan.TablePlansInDependencyOrder[1];
+        var scopeAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var requestScope = new RequestScopeState(
+            scopeAddress,
+            ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+
+        try
+        {
+            _result = new ProfileSeparateTableBindingClassifier().Classify(
+                plan,
+                separateTable,
+                scopeAddress,
+                requestScope,
+                storedScope: null
+            );
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_does_not_throw() => _thrown.Should().BeNull();
+
+    [Test]
+    public void It_classifies_the_ParentKeyPart_binding_as_StorageManaged() =>
+        _result.BindingsByIndex[0].Should().Be(RootBindingDisposition.StorageManaged);
+
+    [Test]
+    public void It_classifies_the_scalar_binding_as_VisibleWritable() =>
+        _result.BindingsByIndex[1].Should().Be(RootBindingDisposition.VisibleWritable);
+}
+
+[TestFixture]
+public class Given_SeparateTableClassifier_legacy_overload_for_CollectionExtensionScope_table_kind
 {
     private Action _act = null!;
 
     [SetUp]
     public void Setup()
     {
-        // Separate table tagged as CollectionExtensionScope instead of RootExtension —
-        // the slice 5 scope family the separate-table classifier must reject.
         var plan = ProfileTestDoubles.BuildRootPlusSeparateTablePlanWithNonRootExtensionKind(
             nonRootExtensionKind: DbTableKind.CollectionExtensionScope
         );
         var request = ProfileTestDoubles.CreateRequest(
-            scopeStates: ProfileTestDoubles.RequestVisiblePresentScope("$")
+            scopeStates: ProfileTestDoubles.RequestVisiblePresentScope("$._ext.sample")
         );
         var separateTable = plan.TablePlansInDependencyOrder[1];
+
         _act = () =>
             new ProfileSeparateTableBindingClassifier().Classify(
                 plan,
@@ -441,8 +544,42 @@ public class Given_SeparateTableClassifier_rejects_non_RootExtension_table_kind
     }
 
     [Test]
-    public void It_throws_ArgumentException_with_slice_5_guidance()
+    public void It_throws_ArgumentException_to_preserve_instance_aware_scope_lookup() =>
+        _act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*legacy*RootExtension*CollectionExtensionScope*");
+}
+
+[TestFixture]
+public class Given_SeparateTableClassifier_rejects_unsupported_table_kind
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
     {
-        _act.Should().Throw<ArgumentException>().WithMessage("*RootExtension*slice 5*");
+        var plan = ProfileTestDoubles.BuildRootPlusSeparateTablePlanWithNonRootExtensionKind(
+            nonRootExtensionKind: DbTableKind.Root
+        );
+        var separateTable = plan.TablePlansInDependencyOrder[1];
+        var scopeAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var requestScope = new RequestScopeState(
+            scopeAddress,
+            ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+
+        _act = () =>
+            new ProfileSeparateTableBindingClassifier().Classify(
+                plan,
+                separateTable,
+                scopeAddress,
+                requestScope,
+                storedScope: null
+            );
     }
+
+    [Test]
+    public void It_throws_ArgumentException_with_supported_kinds() =>
+        _act.Should().Throw<ArgumentException>().WithMessage("*RootExtension*CollectionExtensionScope*Root*");
 }

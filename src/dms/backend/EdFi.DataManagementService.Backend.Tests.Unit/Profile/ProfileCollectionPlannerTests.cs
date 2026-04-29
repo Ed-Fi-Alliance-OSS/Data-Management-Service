@@ -27,12 +27,6 @@ internal static class Slice4Builders
         string value
     ) => [new SemanticIdentityPart(relativePath, JsonValue.Create(value), IsPresent: true)];
 
-    public static ImmutableArray<SemanticIdentityPart> BuildSemanticIdentityNull(string relativePath) =>
-        [new SemanticIdentityPart(relativePath, null, IsPresent: true)];
-
-    public static ImmutableArray<SemanticIdentityPart> BuildSemanticIdentityMissing(string relativePath) =>
-        [new SemanticIdentityPart(relativePath, null, IsPresent: false)];
-
     /// <summary>
     /// Builds a single-part semantic identity whose value is an already-canonicalized Int64.
     /// Used for reference-backed and descriptor-backed identity tests where canonicalization
@@ -126,8 +120,7 @@ internal static class Slice4Builders
                 new FlattenedWriteValue.Literal(null),
                 tableWritePlan.ColumnBindings.Length
             ),
-            semanticIdentityValues: semanticIdentityValues,
-            semanticIdentityInOrder: identity
+            semanticIdentityValues: semanticIdentityValues
         );
     }
 
@@ -275,7 +268,7 @@ public class Given_Planner_with_visible_stored_row_lacking_current_row_counterpa
     public void Setup()
     {
         var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
@@ -286,7 +279,7 @@ public class Given_Planner_with_visible_stored_row_lacking_current_row_counterpa
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -307,108 +300,6 @@ public class Given_Planner_with_visible_stored_row_lacking_current_row_counterpa
         _thrown!.Message.Should().Contain("reverse stored coverage");
 }
 
-[TestFixture]
-public class Given_Planner_with_visible_stored_null_identity_and_current_missing_identity
-{
-    private Exception? _thrown;
-
-    [SetUp]
-    public void Setup()
-    {
-        var storedIdentity = Slice4Builders.BuildSemanticIdentityNull("addressId");
-        var currentIdentity = Slice4Builders.BuildSemanticIdentityMissing("addressId");
-        var currentRow = Slice4Builders.BuildCurrentCollectionRowSnapshot(currentIdentity, storedOrdinal: 1);
-
-        var input = new ProfileTopLevelCollectionScopeInput(
-            JsonScope: "$.addresses[*]",
-            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
-            RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
-            VisibleRequestItems: ImmutableArray<VisibleRequestCollectionItem>.Empty,
-            VisibleStoredRows:
-            [
-                Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", storedIdentity),
-            ],
-            CurrentRows: [currentRow]
-        );
-
-        try
-        {
-            ProfileTopLevelCollectionPlanner.Plan(input);
-        }
-        catch (Exception ex)
-        {
-            _thrown = ex;
-        }
-    }
-
-    [Test]
-    public void It_treats_missing_and_explicit_null_as_distinct_for_stored_coverage() =>
-        _thrown
-            .Should()
-            .BeOfType<InvalidOperationException>()
-            .Which.Message.Should()
-            .Contain("reverse stored coverage");
-}
-
-[TestFixture]
-public class Given_Planner_with_equivalent_identity_values_and_different_relative_path_syntax
-{
-    private ProfileTopLevelCollectionPlanResult _result = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var visibleIdentity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
-        var currentIdentity = Slice4Builders.BuildSemanticIdentity("$.addressId", "A1");
-        var currentRow = Slice4Builders.BuildCurrentCollectionRowSnapshot(
-            currentIdentity,
-            storedOrdinal: 1,
-            stableRowIdentity: 10L
-        );
-        var candidate = Slice4Builders.BuildCollectionWriteCandidate(
-            "$.addresses[*]",
-            visibleIdentity,
-            requestOrder: 0
-        );
-        var requestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
-            "$.addresses[*]",
-            visibleIdentity,
-            creatable: true,
-            requestJsonPath: "$.addresses[0]"
-        );
-        var storedRow = Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", visibleIdentity);
-
-        var input = new ProfileTopLevelCollectionScopeInput(
-            JsonScope: "$.addresses[*]",
-            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
-            RequestCandidates: [candidate],
-            VisibleRequestItems: [requestItem],
-            VisibleStoredRows: [storedRow],
-            CurrentRows: [currentRow]
-        );
-
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
-    }
-
-    [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
-
-    [Test]
-    public void It_matches_the_current_row_by_ordered_presence_and_value()
-    {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        var entry = success
-            .Plan.Sequence.Should()
-            .ContainSingle()
-            .Which.Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
-            .Subject;
-
-        entry.StoredRow.StableRowIdentity.Should().Be(10L);
-    }
-}
-
 // ────────────────────────────────────────────────────────────────────────────────
 // Invariant 2 — Request-side coverage
 // ────────────────────────────────────────────────────────────────────────────────
@@ -422,7 +313,7 @@ public class Given_Planner_with_visible_request_item_lacking_request_candidate_c
     public void Setup()
     {
         var identity = Slice4Builders.BuildSemanticIdentity("addressId", "A1");
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
@@ -441,7 +332,7 @@ public class Given_Planner_with_visible_request_item_lacking_request_candidate_c
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -489,7 +380,7 @@ public class Given_Planner_with_duplicate_visible_request_items
             requestJsonPath: "$.addresses[1]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate],
@@ -500,7 +391,7 @@ public class Given_Planner_with_duplicate_visible_request_items
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -534,7 +425,7 @@ public class Given_Planner_with_duplicate_visible_stored_rows
         var stored2 = Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", identity);
         var current = Slice4Builders.BuildCurrentCollectionRowSnapshot(identity, storedOrdinal: 1);
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
@@ -545,7 +436,7 @@ public class Given_Planner_with_duplicate_visible_stored_rows
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -586,7 +477,7 @@ public class Given_Planner_with_duplicate_current_row_identities
             stableRowIdentity: 2L
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
@@ -597,7 +488,7 @@ public class Given_Planner_with_duplicate_current_row_identities
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -634,7 +525,7 @@ public class Given_Planner_with_candidate_in_wrong_jsonscope
             requestOrder: 0
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [wrongScopeCandidate],
@@ -645,7 +536,7 @@ public class Given_Planner_with_candidate_in_wrong_jsonscope
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -686,7 +577,7 @@ public class Given_Planner_with_address_under_wrong_parent_scope
             RequestJsonPath: "$.addresses[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
@@ -697,7 +588,7 @@ public class Given_Planner_with_address_under_wrong_parent_scope
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -745,7 +636,7 @@ public class Given_Planner_with_stored_rows_out_of_ordinal_order
         var stored1 = Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", id2); // ordinal 2
         var stored2 = Slice4Builders.BuildVisibleStoredCollectionRow("$.addresses[*]", id1); // ordinal 1
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
@@ -756,7 +647,7 @@ public class Given_Planner_with_stored_rows_out_of_ordinal_order
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -807,7 +698,7 @@ public class Given_Planner_with_matched_candidates_out_of_request_order
             requestJsonPath: "$.addresses[1]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate1, candidate2],
@@ -818,7 +709,7 @@ public class Given_Planner_with_matched_candidates_out_of_request_order
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -864,7 +755,7 @@ public class Given_Planner_with_duplicate_request_candidates
 
         // VisibleRequestItems and CurrentRows/VisibleStoredRows are empty so only the
         // duplicate-candidate invariant fires.
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate1, candidate2],
@@ -875,7 +766,7 @@ public class Given_Planner_with_duplicate_request_candidates
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -890,65 +781,6 @@ public class Given_Planner_with_duplicate_request_candidates
     [Test]
     public void It_names_the_invariant_category() =>
         _thrown!.Message.Should().Contain("duplicate visible request candidate");
-}
-
-[TestFixture]
-public class Given_Planner_with_request_candidates_that_differ_by_missing_vs_explicit_null
-{
-    private ProfileTopLevelCollectionPlanResult _result = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var missingIdentity = Slice4Builders.BuildSemanticIdentityMissing("addressId");
-        var nullIdentity = Slice4Builders.BuildSemanticIdentityNull("addressId");
-
-        var missingCandidate = Slice4Builders.BuildCollectionWriteCandidate(
-            "$.addresses[*]",
-            missingIdentity,
-            requestOrder: 0
-        );
-        var nullCandidate = Slice4Builders.BuildCollectionWriteCandidate(
-            "$.addresses[*]",
-            nullIdentity,
-            requestOrder: 1
-        );
-
-        var missingRequestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
-            "$.addresses[*]",
-            missingIdentity,
-            creatable: true,
-            requestJsonPath: "$.addresses[0]"
-        );
-        var nullRequestItem = Slice4Builders.BuildVisibleRequestCollectionItem(
-            "$.addresses[*]",
-            nullIdentity,
-            creatable: true,
-            requestJsonPath: "$.addresses[1]"
-        );
-
-        var input = new ProfileTopLevelCollectionScopeInput(
-            JsonScope: "$.addresses[*]",
-            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
-            RequestCandidates: [missingCandidate, nullCandidate],
-            VisibleRequestItems: [missingRequestItem, nullRequestItem],
-            VisibleStoredRows: ImmutableArray<VisibleStoredCollectionRow>.Empty,
-            CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
-        );
-
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
-    }
-
-    [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
-
-    [Test]
-    public void It_keeps_both_request_items()
-    {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence.Should().HaveCount(2);
-    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -973,7 +805,7 @@ public class Given_Planner_with_candidate_lacking_matching_visible_request_item
             requestOrder: 0
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate],
@@ -984,7 +816,7 @@ public class Given_Planner_with_candidate_lacking_matching_visible_request_item
 
         try
         {
-            ProfileTopLevelCollectionPlanner.Plan(input);
+            ProfileCollectionPlanner.Plan(input);
         }
         catch (Exception ex)
         {
@@ -1007,12 +839,12 @@ public class Given_Planner_with_candidate_lacking_matching_visible_request_item
 [TestFixture]
 public class Given_Planner_with_valid_empty_input
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
     {
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: ImmutableArray<CollectionWriteCandidate>.Empty,
@@ -1021,17 +853,16 @@ public class Given_Planner_with_valid_empty_input
             CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_an_empty_sequence()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().BeEmpty();
     }
 }
@@ -1043,7 +874,7 @@ public class Given_Planner_with_valid_empty_input
 [TestFixture]
 public class Given_Planner_with_one_matched_visible_row_produces_MatchedUpdate
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -1067,7 +898,7 @@ public class Given_Planner_with_one_matched_visible_row_produces_MatchedUpdate
             requestJsonPath: "$.addresses[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate],
@@ -1076,32 +907,31 @@ public class Given_Planner_with_one_matched_visible_row_produces_MatchedUpdate
             CurrentRows: [current]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_one_entry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(1);
     }
 
     [Test]
     public void It_returns_a_MatchedUpdateEntry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>();
     }
 
     [Test]
     public void It_returns_MatchedUpdateEntry_with_correct_StableRowIdentity()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        var entry = (ProfileCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
         entry.StoredRow.StableRowIdentity.Should().Be(42L);
     }
 }
@@ -1113,7 +943,7 @@ public class Given_Planner_with_one_matched_visible_row_produces_MatchedUpdate
 [TestFixture]
 public class Given_Planner_with_unmatched_creatable_visible_request_produces_VisibleInsert
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -1131,7 +961,7 @@ public class Given_Planner_with_unmatched_creatable_visible_request_produces_Vis
             requestJsonPath: "$.addresses[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate],
@@ -1140,25 +970,24 @@ public class Given_Planner_with_unmatched_creatable_visible_request_produces_Vis
             CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_one_entry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(1);
     }
 
     [Test]
     public void It_returns_a_VisibleInsertEntry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
     }
 }
 
@@ -1169,7 +998,7 @@ public class Given_Planner_with_unmatched_creatable_visible_request_produces_Vis
 [TestFixture]
 public class Given_Planner_with_unmatched_non_creatable_visible_request_returns_CreatabilityRejection
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     private ImmutableArray<SemanticIdentityPart> _identity;
 
@@ -1189,7 +1018,7 @@ public class Given_Planner_with_unmatched_non_creatable_visible_request_returns_
             requestJsonPath: "$.addresses[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate],
@@ -1198,17 +1027,17 @@ public class Given_Planner_with_unmatched_non_creatable_visible_request_returns_
             CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
     public void It_returns_CreatabilityRejection() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.CreatabilityRejection>();
+        _result.Should().BeOfType<ProfileCollectionPlanResult.CreatabilityRejection>();
 
     [Test]
     public void It_returns_rejection_with_matching_identity()
     {
-        var rejection = (ProfileTopLevelCollectionPlanResult.CreatabilityRejection)_result;
+        var rejection = (ProfileCollectionPlanResult.CreatabilityRejection)_result;
         rejection.OffendingAddress.SemanticIdentityInOrder.Should().BeEquivalentTo(_identity);
     }
 }
@@ -1220,7 +1049,7 @@ public class Given_Planner_with_unmatched_non_creatable_visible_request_returns_
 [TestFixture]
 public class Given_Planner_with_matched_update_and_non_creatable_insert_returns_CreatabilityRejection
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     private ImmutableArray<SemanticIdentityPart> _new1Identity;
 
@@ -1261,7 +1090,7 @@ public class Given_Planner_with_matched_update_and_non_creatable_insert_returns_
             requestJsonPath: "$.addresses[1]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateV1, candidateNew1],
@@ -1270,17 +1099,17 @@ public class Given_Planner_with_matched_update_and_non_creatable_insert_returns_
             CurrentRows: [current]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
     public void It_returns_CreatabilityRejection() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.CreatabilityRejection>();
+        _result.Should().BeOfType<ProfileCollectionPlanResult.CreatabilityRejection>();
 
     [Test]
     public void It_returns_rejection_pointing_at_NEW1_not_V1()
     {
-        var rejection = (ProfileTopLevelCollectionPlanResult.CreatabilityRejection)_result;
+        var rejection = (ProfileCollectionPlanResult.CreatabilityRejection)_result;
         rejection.OffendingAddress.SemanticIdentityInOrder.Should().BeEquivalentTo(_new1Identity);
     }
 }
@@ -1292,7 +1121,7 @@ public class Given_Planner_with_matched_update_and_non_creatable_insert_returns_
 [TestFixture]
 public class Given_Planner_with_two_matched_rows_in_request_order_reordered_from_stored
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -1342,7 +1171,7 @@ public class Given_Planner_with_two_matched_rows_in_request_order_reordered_from
             requestJsonPath: "$.addresses[1]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: "$.addresses[*]",
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateV2, candidateV1],
@@ -1351,33 +1180,32 @@ public class Given_Planner_with_two_matched_rows_in_request_order_reordered_from
             CurrentRows: [current1, current2]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_two_entries()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(2);
     }
 
     [Test]
     public void It_returns_V2_first_in_request_order()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        var entry = (ProfileCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
         entry.StoredRow.StableRowIdentity.Should().Be(22L);
     }
 
     [Test]
     public void It_returns_V1_second_in_request_order()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[1];
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        var entry = (ProfileCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[1];
         entry.StoredRow.StableRowIdentity.Should().Be(11L);
     }
 }
@@ -1392,7 +1220,7 @@ public class Given_Planner_with_two_matched_rows_in_request_order_reordered_from
 [TestFixture]
 public class Given_Planner_example_1_reorder_delete_insert
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -1461,7 +1289,7 @@ public class Given_Planner_example_1_reorder_delete_insert
             requestJsonPath: "$.addresses[2]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateV3, candidateV2, candidateNew1],
@@ -1470,28 +1298,27 @@ public class Given_Planner_example_1_reorder_delete_insert
             CurrentRows: [currentV1, currentH, currentV2, currentV3, currentHprime]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_five_entries()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(5);
     }
 
     [Test]
     public void It_places_MatchedUpdate_V3_at_index_0()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[0]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(4L);
     }
@@ -1499,11 +1326,11 @@ public class Given_Planner_example_1_reorder_delete_insert
     [Test]
     public void It_places_HiddenPreserve_H_at_index_1()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[1]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(2L);
     }
@@ -1511,11 +1338,11 @@ public class Given_Planner_example_1_reorder_delete_insert
     [Test]
     public void It_places_MatchedUpdate_V2_at_index_2()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[2]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(3L);
     }
@@ -1523,11 +1350,11 @@ public class Given_Planner_example_1_reorder_delete_insert
     [Test]
     public void It_places_VisibleInsert_NEW1_at_index_3()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[3]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
         entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW1");
     }
@@ -1535,11 +1362,11 @@ public class Given_Planner_example_1_reorder_delete_insert
     [Test]
     public void It_places_HiddenPreserve_Hprime_at_index_4()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[4]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(5L);
     }
@@ -1555,7 +1382,7 @@ public class Given_Planner_example_1_reorder_delete_insert
 [TestFixture]
 public class Given_Planner_example_2_delete_all_visibles_one_insert
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -1593,7 +1420,7 @@ public class Given_Planner_example_2_delete_all_visibles_one_insert
             requestJsonPath: "$.addresses[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateNew1],
@@ -1602,35 +1429,34 @@ public class Given_Planner_example_2_delete_all_visibles_one_insert
             CurrentRows: [currentV1, currentH, currentV2]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_two_entries()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(2);
     }
 
     [Test]
     public void It_places_VisibleInsert_NEW1_at_index_0()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
     }
 
     [Test]
     public void It_places_HiddenPreserve_H_at_index_1()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[1]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(2L);
     }
@@ -1645,7 +1471,7 @@ public class Given_Planner_example_2_delete_all_visibles_one_insert
 [TestFixture]
 public class Given_Planner_example_3_empty_current_inserts_only
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -1670,7 +1496,7 @@ public class Given_Planner_example_3_empty_current_inserts_only
             requestJsonPath: "$.addresses[1]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateNew1, candidateNew2],
@@ -1679,28 +1505,27 @@ public class Given_Planner_example_3_empty_current_inserts_only
             CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_two_entries()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(2);
     }
 
     [Test]
     public void It_places_VisibleInsert_NEW1_at_index_0()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[0]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
         entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW1");
     }
@@ -1708,11 +1533,11 @@ public class Given_Planner_example_3_empty_current_inserts_only
     [Test]
     public void It_places_VisibleInsert_NEW2_at_index_1()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[1]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
         entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW2");
     }
@@ -1728,7 +1553,7 @@ public class Given_Planner_example_3_empty_current_inserts_only
 [TestFixture]
 public class Given_Planner_example_4_single_hidden_one_insert
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -1752,7 +1577,7 @@ public class Given_Planner_example_4_single_hidden_one_insert
             requestJsonPath: "$.addresses[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateNew1],
@@ -1761,28 +1586,27 @@ public class Given_Planner_example_4_single_hidden_one_insert
             CurrentRows: [currentH]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_two_entries()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(2);
     }
 
     [Test]
     public void It_places_HiddenPreserve_H_at_index_0()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[0]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(1L);
     }
@@ -1790,22 +1614,22 @@ public class Given_Planner_example_4_single_hidden_one_insert
     [Test]
     public void It_places_VisibleInsert_NEW1_at_index_1()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[1].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[1].Should().BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
     }
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Task 2.3 — Fixture 5: Example 5 — matched middle, trailing hidden, insert
 // current: [H@1, V1@2, H'@3]; request: [V1', NEW1]
-// expected: [HiddenPreserve(H), MatchedUpdate(V1), VisibleInsert(NEW1), HiddenPreserve(H')]
-// NEW1 lands after the last previously visible row, before the trailing hidden gap.
+// expected: [HiddenPreserve(H), MatchedUpdate(V1), HiddenPreserve(H'), VisibleInsert(NEW1)]
+// NEW1 lands AFTER trailing H', not between V1_updated and H'.
 // ────────────────────────────────────────────────────────────────────────────────
 
 [TestFixture]
 public class Given_Planner_example_5_matched_middle_trailing_hidden_insert
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -1850,7 +1674,7 @@ public class Given_Planner_example_5_matched_middle_trailing_hidden_insert
             requestJsonPath: "$.addresses[1]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateV1, candidateNew1],
@@ -1859,28 +1683,27 @@ public class Given_Planner_example_5_matched_middle_trailing_hidden_insert
             CurrentRows: [currentH, currentV1, currentHprime]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_four_entries()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(4);
     }
 
     [Test]
     public void It_places_HiddenPreserve_H_at_index_0()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[0]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(1L);
     }
@@ -1888,32 +1711,32 @@ public class Given_Planner_example_5_matched_middle_trailing_hidden_insert
     [Test]
     public void It_places_MatchedUpdate_V1_at_index_1()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[1]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(2L);
     }
 
     [Test]
-    public void It_places_VisibleInsert_NEW1_at_index_2()
+    public void It_places_HiddenPreserve_Hprime_at_index_2()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[2].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        var entry = success
+            .Plan.Sequence[2]
+            .Should()
+            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
+            .Subject;
+        entry.StoredRow.StableRowIdentity.Should().Be(3L);
     }
 
     [Test]
-    public void It_places_HiddenPreserve_Hprime_at_index_3()
+    public void It_places_VisibleInsert_NEW1_at_index_3()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        var entry = success
-            .Plan.Sequence[3]
-            .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
-            .Subject;
-        entry.StoredRow.StableRowIdentity.Should().Be(3L);
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[3].Should().BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
     }
 }
 
@@ -1926,7 +1749,7 @@ public class Given_Planner_example_5_matched_middle_trailing_hidden_insert
 [TestFixture]
 public class Given_Planner_matched_only_no_reorder
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -1965,7 +1788,7 @@ public class Given_Planner_matched_only_no_reorder
             requestJsonPath: "$.addresses[1]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateV1, candidateV2],
@@ -1974,28 +1797,27 @@ public class Given_Planner_matched_only_no_reorder
             CurrentRows: [currentV1, currentV2]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_two_entries()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(2);
     }
 
     [Test]
     public void It_places_MatchedUpdate_V1_at_index_0()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[0]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(1L);
     }
@@ -2003,11 +1825,11 @@ public class Given_Planner_matched_only_no_reorder
     [Test]
     public void It_places_MatchedUpdate_V2_at_index_1()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[1]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(2L);
     }
@@ -2030,7 +1852,7 @@ public class Given_Planner_matched_only_no_reorder
 [TestFixture]
 public class Given_Planner_kitchen_sink_reorder_delete_inserts_hidden_interleave
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -2106,7 +1928,7 @@ public class Given_Planner_kitchen_sink_reorder_delete_inserts_hidden_interleave
             requestJsonPath: "$.addresses[3]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateV3, candidateNewA, candidateV1, candidateNewB],
@@ -2115,28 +1937,27 @@ public class Given_Planner_kitchen_sink_reorder_delete_inserts_hidden_interleave
             CurrentRows: [currentV1, currentH1, currentV2, currentV3, currentH2]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_six_entries()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(6);
     }
 
     [Test]
     public void It_places_MatchedUpdate_V3_at_index_0()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[0]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(4L);
     }
@@ -2144,11 +1965,11 @@ public class Given_Planner_kitchen_sink_reorder_delete_inserts_hidden_interleave
     [Test]
     public void It_places_HiddenPreserve_H1_at_index_1()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[1]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(2L);
     }
@@ -2156,11 +1977,11 @@ public class Given_Planner_kitchen_sink_reorder_delete_inserts_hidden_interleave
     [Test]
     public void It_places_VisibleInsert_NEW_A_at_index_2()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[2]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
         entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW_A");
     }
@@ -2168,37 +1989,37 @@ public class Given_Planner_kitchen_sink_reorder_delete_inserts_hidden_interleave
     [Test]
     public void It_places_MatchedUpdate_V1_at_index_3()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[3]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(1L);
     }
 
     [Test]
-    public void It_places_VisibleInsert_NEW_B_at_index_4()
+    public void It_places_HiddenPreserve_H2_at_index_4()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[4]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
-        entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW_B");
+        entry.StoredRow.StableRowIdentity.Should().Be(5L);
     }
 
     [Test]
-    public void It_places_HiddenPreserve_H2_at_index_5()
+    public void It_places_VisibleInsert_NEW_B_at_index_5()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[5]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
-        entry.StoredRow.StableRowIdentity.Should().Be(5L);
+        entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW_B");
     }
 }
 
@@ -2212,7 +2033,7 @@ public class Given_Planner_kitchen_sink_reorder_delete_inserts_hidden_interleave
 [TestFixture]
 public class Given_Planner_multi_insert_preserves_request_order_among_inserts
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -2260,7 +2081,7 @@ public class Given_Planner_multi_insert_preserves_request_order_among_inserts
             requestJsonPath: "$.addresses[3]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidateV1, candidateNew1, candidateNew2, candidateNew3],
@@ -2269,28 +2090,27 @@ public class Given_Planner_multi_insert_preserves_request_order_among_inserts
             CurrentRows: [currentV1]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_four_entries()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(4);
     }
 
     [Test]
     public void It_places_MatchedUpdate_V1_at_index_0()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[0]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(1L);
     }
@@ -2298,11 +2118,11 @@ public class Given_Planner_multi_insert_preserves_request_order_among_inserts
     [Test]
     public void It_places_VisibleInsert_NEW1_at_index_1()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[1]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
         entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW1");
     }
@@ -2310,11 +2130,11 @@ public class Given_Planner_multi_insert_preserves_request_order_among_inserts
     [Test]
     public void It_places_VisibleInsert_NEW2_at_index_2()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[2]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
         entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW2");
     }
@@ -2322,11 +2142,11 @@ public class Given_Planner_multi_insert_preserves_request_order_among_inserts
     [Test]
     public void It_places_VisibleInsert_NEW3_at_index_3()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[3]
             .Should()
-            .BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
         entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW3");
     }
@@ -2342,7 +2162,7 @@ public class Given_Planner_multi_insert_preserves_request_order_among_inserts
 [TestFixture]
 public class Given_top_level_collection_with_reference_backed_semantic_identity_matched_update
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -2369,7 +2189,7 @@ public class Given_top_level_collection_with_reference_backed_semantic_identity_
             requestJsonPath: "$.studentSchoolAssociations[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate],
@@ -2378,32 +2198,31 @@ public class Given_top_level_collection_with_reference_backed_semantic_identity_
             CurrentRows: [current]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_one_entry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(1);
     }
 
     [Test]
     public void It_returns_a_MatchedUpdateEntry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>();
     }
 
     [Test]
     public void It_returns_MatchedUpdateEntry_with_correct_StableRowIdentity()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        var entry = (ProfileCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
         entry.StoredRow.StableRowIdentity.Should().Be(99L);
     }
 }
@@ -2418,7 +2237,7 @@ public class Given_top_level_collection_with_reference_backed_semantic_identity_
 [TestFixture]
 public class Given_top_level_collection_with_reference_backed_semantic_identity_delete_by_absence
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -2461,7 +2280,7 @@ public class Given_top_level_collection_with_reference_backed_semantic_identity_
             requestJsonPath: "$.studentSchoolAssociations[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate1],
@@ -2470,33 +2289,32 @@ public class Given_top_level_collection_with_reference_backed_semantic_identity_
             CurrentRows: [current1, current2]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_one_entry_not_two()
     {
         // The absent id2 slot is omitted from the output; persister deletes it by absence.
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(1);
     }
 
     [Test]
     public void It_returns_MatchedUpdateEntry_for_id1()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>();
     }
 
     [Test]
     public void It_returns_MatchedUpdateEntry_with_stableRowIdentity_10()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        var entry = (ProfileCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
         entry.StoredRow.StableRowIdentity.Should().Be(10L);
     }
 }
@@ -2510,7 +2328,7 @@ public class Given_top_level_collection_with_reference_backed_semantic_identity_
 [TestFixture]
 public class Given_top_level_collection_with_reference_backed_semantic_identity_insert_when_creatable
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -2532,7 +2350,7 @@ public class Given_top_level_collection_with_reference_backed_semantic_identity_
             requestJsonPath: "$.studentSchoolAssociations[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate],
@@ -2541,25 +2359,24 @@ public class Given_top_level_collection_with_reference_backed_semantic_identity_
             CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_one_entry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(1);
     }
 
     [Test]
     public void It_returns_a_VisibleInsertEntry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
     }
 }
 
@@ -2573,7 +2390,7 @@ public class Given_top_level_collection_with_reference_backed_semantic_identity_
 [TestFixture]
 public class Given_top_level_collection_with_descriptor_backed_semantic_identity_matched_update
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -2596,7 +2413,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             requestJsonPath: "$.gradeLevels[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate],
@@ -2605,32 +2422,31 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             CurrentRows: [current]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_one_entry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(1);
     }
 
     [Test]
     public void It_returns_a_MatchedUpdateEntry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>();
     }
 
     [Test]
     public void It_returns_MatchedUpdateEntry_with_correct_StableRowIdentity()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        var entry = (ProfileCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
         entry.StoredRow.StableRowIdentity.Should().Be(77L);
     }
 }
@@ -2645,7 +2461,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
 [TestFixture]
 public class Given_top_level_collection_with_descriptor_backed_semantic_identity_delete_by_absence
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -2677,7 +2493,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             requestJsonPath: "$.gradeLevels[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate50],
@@ -2686,33 +2502,32 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             CurrentRows: [current42, current50]
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_one_entry_not_two()
     {
         // id42 slot omitted by delete-by-absence; id50 matched.
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(1);
     }
 
     [Test]
     public void It_returns_MatchedUpdateEntry_for_id50()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.MatchedUpdateEntry>();
     }
 
     [Test]
     public void It_returns_MatchedUpdateEntry_with_stableRowIdentity_50()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        var entry = (ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        var entry = (ProfileCollectionPlanEntry.MatchedUpdateEntry)success.Plan.Sequence[0];
         entry.StoredRow.StableRowIdentity.Should().Be(50L);
     }
 }
@@ -2726,7 +2541,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
 [TestFixture]
 public class Given_top_level_collection_with_descriptor_backed_semantic_identity_insert_when_creatable
 {
-    private ProfileTopLevelCollectionPlanResult _result = null!;
+    private ProfileCollectionPlanResult _result = null!;
 
     [SetUp]
     public void Setup()
@@ -2743,7 +2558,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             requestJsonPath: "$.gradeLevels[0]"
         );
 
-        var input = new ProfileTopLevelCollectionScopeInput(
+        var input = new ProfileCollectionScopeInput(
             JsonScope: scope,
             ParentScopeAddress: Slice4Builders.RootScopeAddress(),
             RequestCandidates: [candidate],
@@ -2752,24 +2567,23 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             CurrentRows: ImmutableArray<CurrentCollectionRowSnapshot>.Empty
         );
 
-        _result = ProfileTopLevelCollectionPlanner.Plan(input);
+        _result = ProfileCollectionPlanner.Plan(input);
     }
 
     [Test]
-    public void It_returns_Success() =>
-        _result.Should().BeOfType<ProfileTopLevelCollectionPlanResult.Success>();
+    public void It_returns_Success() => _result.Should().BeOfType<ProfileCollectionPlanResult.Success>();
 
     [Test]
     public void It_returns_sequence_with_one_entry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
+        var success = (ProfileCollectionPlanResult.Success)_result;
         success.Plan.Sequence.Should().HaveCount(1);
     }
 
     [Test]
     public void It_returns_a_VisibleInsertEntry()
     {
-        var success = (ProfileTopLevelCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[0].Should().BeOfType<ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry>();
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
     }
 }

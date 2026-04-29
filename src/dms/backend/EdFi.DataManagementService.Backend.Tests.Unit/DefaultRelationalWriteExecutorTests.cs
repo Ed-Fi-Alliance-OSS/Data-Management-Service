@@ -1727,13 +1727,12 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_fences_profiled_create_new_for_collection_aligned_SeparateTableNonCollection()
+    public async Task It_passes_profiled_create_new_for_collection_aligned_SeparateTableNonCollection()
     {
-        // Slice 3 keeps the fence for collection-aligned separate-table scopes
-        // (DbTableKind.CollectionExtensionScope, e.g. $.addresses[*]._ext.sample).
+        // Slice 5 CP3 retires the executor fence for collection-aligned separate-table
+        // scopes (DbTableKind.CollectionExtensionScope, e.g. $.addresses[*]._ext.sample).
         // Required family still classifies as SeparateTableNonCollection, but the
-        // executor checks the request's exercised scopes against their owner table's
-        // kind — fencing only when an exercised scope's owner is CollectionExtensionScope.
+        // aligned scope now flows through to the profile merge synthesizer.
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         // Slim helper-based plans keep the topology shape minimal; slice classification
         // only reads table kinds + JSON scopes, not row content.
@@ -1784,36 +1783,37 @@ public class Given_Default_Relational_Write_Executor
             WritePlan = resourceWritePlan,
             ProfileWriteContext = profileContext,
         };
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(rootPlan, [FlattenedWriteValue.UnresolvedRootDocumentId.Instance])
+        );
 
         var result = await _sut.ExecuteAsync(request);
 
         _writeFlattener
             .FlattenCallCount.Should()
-            .Be(0, "flattener must not be called — collection-aligned scopes stay fenced");
+            .Be(1, "collection-aligned separate-table scopes now pass the executor fence");
         _profileMergeSynthesizer
             .SynthesizeCallCount.Should()
-            .Be(0, "profile merge must not run for collection-aligned SeparateTableNonCollection");
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+            .Be(1, "profile merge handles collection-aligned SeparateTableNonCollection scopes");
+        _profileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _profileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(resourceWritePlan);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
-        upsertResult
-            .Result.Should()
-            .BeOfType<UpsertResult.UnknownFailure>()
-            .Which.FailureMessage.Should()
-            .Contain("SeparateTableNonCollection");
+        upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
     }
 
     // Per-family fence tests for TopLevelCollection and NestedAndExtensionCollections
     // are covered at the classifier level by ProfileSliceFenceClassifierTests
     // (e.g. Given_ProfileSliceFenceClassifier_with_top_level_collection_in_request,
-    // Given_ProfileSliceFenceClassifier_with_nested_collection_in_request). At the
-    // executor level the fence is a single switch expression whose default branch
-    // (`_ => false`) covers all families other than RootTableOnly /
-    // SeparateTableNonCollection — so the CollectionExtensionScope fence test above
-    // and the classifier tests together give full coverage without requiring the
-    // full contract-validator plumbing for VisibleRequestCollectionItem round-trips.
+    // Given_ProfileSliceFenceClassifier_with_nested_collection_in_request). After
+    // Slice 5 CP4 the executor fence is a single switch expression where every
+    // currently-classified family passes (=> true); only an unhandled family throws.
+    // The CollectionExtensionScope pass-through test above and the classifier tests
+    // together give full coverage without requiring the full contract-validator plumbing
+    // for VisibleRequestCollectionItem round-trips.
 
     [Test]
     public async Task Given_Executor_fence_passes_for_mixed_plan_when_request_only_exercises_root_attached_scope()
@@ -1914,12 +1914,11 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task Given_Executor_fence_fences_when_request_exercises_collection_aligned_scope_in_mixed_plan()
+    public async Task Given_Executor_passes_when_request_exercises_collection_aligned_scope_in_mixed_plan()
     {
         // Same mixed plan shape (Root + RootExtension + CollectionExtensionScope), but
-        // this time the request exercises the collection-aligned scope. Fence must FAIL
-        // even though a supported root-attached scope is also in the plan — the exercised
-        // collection-aligned scope is what the fence now targets.
+        // this time the request exercises the collection-aligned scope. Slice 5 CP3
+        // allows that scope to flow through with the supported root-attached scope.
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = CreateRootPlan();
         var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
@@ -1983,25 +1982,31 @@ public class Given_Default_Relational_Write_Executor
             WritePlan = resourceWritePlan,
             ProfileWriteContext = profileContext,
         };
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(255901),
+                    new FlattenedWriteValue.Literal("Lincoln High"),
+                ]
+            )
+        );
 
         var result = await _sut.ExecuteAsync(request);
 
         _writeFlattener
             .FlattenCallCount.Should()
-            .Be(0, "fence must fire before flattening when a collection-aligned scope is exercised");
+            .Be(1, "collection-aligned scopes are no longer fenced before flattening");
         _profileMergeSynthesizer
             .SynthesizeCallCount.Should()
-            .Be(0, "profile merge must not run when the exercised scope is collection-aligned");
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+            .Be(1, "profile merge must run when the exercised scope is collection-aligned");
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
-        upsertResult
-            .Result.Should()
-            .BeOfType<UpsertResult.UnknownFailure>()
-            .Which.FailureMessage.Should()
-            .Contain("SeparateTableNonCollection");
+        upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
     }
 
     [Test]
@@ -2012,9 +2017,8 @@ public class Given_Default_Relational_Write_Executor
         // a Hidden request scope state for $.addresses[*]._ext.sample. Per
         // ProfileSliceFenceClassifier.ClassifyForCreateNew, hidden request-side scopes are
         // preserve-only and do NOT escalate the slice family — required family is still
-        // SeparateTableNonCollection (driven by the visible root-attached scope). The fence
-        // must PASS: hidden collection-aligned request scopes must not count as exercised,
-        // matching the classifier's visibility rule.
+        // SeparateTableNonCollection (driven by the visible root-attached scope), so the
+        // executor continues into flattening and profile merge.
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = CreateRootPlan();
         var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
@@ -2096,7 +2100,7 @@ public class Given_Default_Relational_Write_Executor
 
         _writeFlattener
             .FlattenCallCount.Should()
-            .Be(1, "hidden collection-aligned request scopes must not trigger the fence");
+            .Be(1, "hidden collection-aligned request scopes do not escalate the required slice family");
         _profileMergeSynthesizer
             .SynthesizeCallCount.Should()
             .Be(1, "profile merge must run when the collection-aligned scope is only hidden on request");
@@ -4093,89 +4097,10 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task Given_Executor_for_TopLevelCollection_family_with_collection_descendant_inlined_scope_still_fences()
+    public async Task Given_Executor_for_TopLevelCollection_family_with_collection_extension_scope_passes()
     {
-        // Slice 4 supports the table-backed collection row stream, not inlined descendant
-        // scope metadata stored inside that row. Those descendants remain a later-slice shape.
-        var writableBody = JsonNode.Parse("""{"schoolId":255901,"addresses":[{"city":"Austin"}]}""")!;
-        var rootPlan = FenceTestPlans.RootTablePlan();
-        var collectionPlan = FenceTestPlans.CreateCollectionTablePlan(
-            "$.addresses[*]",
-            "Addresses",
-            DbTableKind.Collection
-        );
-        var resourceModel = new RelationalResourceModel(
-            Resource: new QualifiedResourceName("Ed-Fi", "School"),
-            PhysicalSchema: new DbSchemaName("edfi"),
-            StorageKind: ResourceStorageKind.RelationalTables,
-            Root: rootPlan.TableModel,
-            TablesInDependencyOrder: [rootPlan.TableModel, collectionPlan.TableModel],
-            DocumentReferenceBindings: [],
-            DescriptorEdgeSources: []
-        );
-        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan, collectionPlan]);
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
-            resourceWritePlan,
-            [("$.addresses[*].mileInfo", ScopeKind.NonCollection)]
-        );
-        var addressInstance = new AncestorCollectionInstance(
-            JsonScope: "$.addresses[*]",
-            SemanticIdentityInOrder: []
-        );
-        var profileContext = new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: writableBody,
-                RootResourceCreatable: true,
-                RequestScopeStates:
-                [
-                    new RequestScopeState(
-                        Address: new ScopeInstanceAddress("$", []),
-                        Visibility: ProfileVisibilityKind.VisiblePresent,
-                        Creatable: true
-                    ),
-                    new RequestScopeState(
-                        Address: new ScopeInstanceAddress("$.addresses[*].mileInfo", [addressInstance]),
-                        Visibility: ProfileVisibilityKind.VisiblePresent,
-                        Creatable: true
-                    ),
-                ],
-                VisibleRequestCollectionItems: []
-            ),
-            ProfileName: "test-write-profile",
-            CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
-        );
-
-        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
-        var request = baseRequest with
-        {
-            WritePlan = resourceWritePlan,
-            ProfileWriteContext = profileContext,
-        };
-
-        var result = await _sut.ExecuteAsync(request);
-
-        _writeFlattener
-            .FlattenCallCount.Should()
-            .Be(0, "collection-descendant inlined scopes remain fenced before flattening");
-        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-
-        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
-        upsertResult
-            .Result.Should()
-            .BeOfType<UpsertResult.UnknownFailure>()
-            .Which.FailureMessage.Should()
-            .Contain("TopLevelCollection");
-    }
-
-    [Test]
-    public async Task Given_Executor_for_TopLevelCollection_family_with_collection_extension_scope_still_fences()
-    {
-        // Slice 4 preserves Slice 3's guard: when a request maxed at TopLevelCollection also
-        // exercises a CollectionExtensionScope, the fence must still reject.
+        // Slice 5 CP3 retires the previous guard: when a request maxed at TopLevelCollection
+        // also exercises a CollectionExtensionScope, the aligned scope now flows through.
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = FenceTestPlans.RootTablePlan();
         var collectionPlan = FenceTestPlans.CreateCollectionTablePlan(
@@ -4256,121 +4181,24 @@ public class Given_Default_Relational_Write_Executor
             WritePlan = resourceWritePlan,
             ProfileWriteContext = profileContext,
         };
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(rootPlan, [FlattenedWriteValue.UnresolvedRootDocumentId.Instance])
+        );
 
         var result = await _sut.ExecuteAsync(request);
 
         _writeFlattener
             .FlattenCallCount.Should()
-            .Be(0, "fence must fire before flattening when TopLevelCollection + CollectionExtensionScope");
+            .Be(1, "TopLevelCollection + CollectionExtensionScope now reaches flattening");
         _profileMergeSynthesizer
             .SynthesizeCallCount.Should()
-            .Be(0, "profile merge must not run when Slice 3 guard triggers inside Slice 4 family");
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+            .Be(1, "profile merge must run after the collection-aligned guard is retired");
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
-        upsertResult
-            .Result.Should()
-            .BeOfType<UpsertResult.UnknownFailure>()
-            .Which.FailureMessage.Should()
-            .Contain("TopLevelCollection");
-    }
-
-    [Test]
-    public async Task Given_Executor_for_NestedAndExtensionCollections_still_fences()
-    {
-        // Regression: NestedAndExtensionCollections must remain fenced after Slice 4.
-        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
-        var rootPlan = FenceTestPlans.RootTablePlan();
-        var parentCollectionPlan = FenceTestPlans.CreateCollectionTablePlan(
-            "$.addresses[*]",
-            "Addresses",
-            DbTableKind.Collection
-        );
-        var nestedCollectionPlan = FenceTestPlans.CreateCollectionTablePlan(
-            "$.addresses[*].periods[*]",
-            "AddressPeriods",
-            DbTableKind.Collection
-        );
-        var resourceModel = new RelationalResourceModel(
-            Resource: new QualifiedResourceName("Ed-Fi", "School"),
-            PhysicalSchema: new DbSchemaName("edfi"),
-            StorageKind: ResourceStorageKind.RelationalTables,
-            Root: rootPlan.TableModel,
-            TablesInDependencyOrder:
-            [
-                rootPlan.TableModel,
-                parentCollectionPlan.TableModel,
-                nestedCollectionPlan.TableModel,
-            ],
-            DocumentReferenceBindings: [],
-            DescriptorEdgeSources: []
-        );
-        var resourceWritePlan = new ResourceWritePlan(
-            resourceModel,
-            [rootPlan, parentCollectionPlan, nestedCollectionPlan]
-        );
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
-        var parentAddressInstance = new AncestorCollectionInstance(
-            JsonScope: "$.addresses[*]",
-            SemanticIdentityInOrder: []
-        );
-        var nestedRowAddress = new CollectionRowAddress(
-            "$.addresses[*].periods[*]",
-            new ScopeInstanceAddress("$.addresses[*]", [parentAddressInstance]),
-            []
-        );
-        var profileContext = new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: writableBody,
-                RootResourceCreatable: true,
-                RequestScopeStates:
-                [
-                    new RequestScopeState(
-                        Address: new ScopeInstanceAddress("$", []),
-                        Visibility: ProfileVisibilityKind.VisiblePresent,
-                        Creatable: true
-                    ),
-                ],
-                VisibleRequestCollectionItems:
-                [
-                    new VisibleRequestCollectionItem(
-                        nestedRowAddress,
-                        Creatable: true,
-                        "$.addresses[0].periods[0]"
-                    ),
-                ]
-            ),
-            ProfileName: "test-write-profile",
-            CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
-        );
-
-        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
-        var request = baseRequest with
-        {
-            WritePlan = resourceWritePlan,
-            ProfileWriteContext = profileContext,
-        };
-
-        var result = await _sut.ExecuteAsync(request);
-
-        _writeFlattener
-            .FlattenCallCount.Should()
-            .Be(0, "fence must fire before flattening for NestedAndExtensionCollections");
-        _profileMergeSynthesizer
-            .SynthesizeCallCount.Should()
-            .Be(0, "profile merge must not run for nested/extension collections");
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-
-        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
-        upsertResult
-            .Result.Should()
-            .BeOfType<UpsertResult.UnknownFailure>()
-            .Which.FailureMessage.Should()
-            .Contain("NestedAndExtensionCollections");
+        upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
     }
 
     [Test]
@@ -4378,7 +4206,9 @@ public class Given_Default_Relational_Write_Executor
     {
         // Slice 4 must NOT gate on SemanticIdentitySource — a collection table whose identity
         // comes from a reference-derived fallback (ReferenceFallback) is still a plain
-        // DbTableKind.Collection table and must pass the TopLevelCollectionFenceGate.
+        // DbTableKind.Collection table and must pass the executor fence (Slice 5 CP4 retired
+        // the per-shape TopLevelCollectionFenceGate; the family-level pass is now
+        // RequiredSliceFamily.TopLevelCollection => true).
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = CreateRootPlan();
         var collectionPlan = FenceTestPlans.CreateCollectionTablePlanWithReferenceBackedIdentity(
@@ -4635,7 +4465,8 @@ file static class FenceTestPlans
     /// <see cref="CollectionSemanticIdentitySource.ReferenceFallback"/> recorded on the
     /// <see cref="DbTableIdentityMetadata"/>. Used to prove that the executor fence does
     /// NOT gate on semantic-identity source — a reference-backed collection must still
-    /// pass <c>TopLevelCollectionFenceGate</c>.
+    /// reach the synthesizer through the <c>RequiredSliceFamily.TopLevelCollection</c>
+    /// pass-through (the per-shape <c>TopLevelCollectionFenceGate</c> retired in Slice 5 CP4).
     /// </summary>
     public static TableWritePlan CreateCollectionTablePlanWithReferenceBackedIdentity(
         string jsonScope,

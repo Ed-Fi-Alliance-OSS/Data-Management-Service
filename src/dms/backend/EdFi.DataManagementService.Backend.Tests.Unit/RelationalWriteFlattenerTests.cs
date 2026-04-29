@@ -365,6 +365,53 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_emits_collection_aligned_extension_scope_row_for_empty_extension_site_when_profile_empty_buffer_flag_is_set()
+    {
+        // Profile Slice 5: a profile-shaped collection item may carry a VisiblePresent
+        // aligned scope with no bound scalar data after writable shaping. The flattener
+        // must still attach the aligned scope buffer so separate-scope synthesis can apply
+        // the Insert/Update overlay from scope metadata rather than inferring absence from
+        // buffer presence.
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "_ext": {
+                        "sample": {}
+                      }
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
+            emitEmptyRootExtensionBuffers: true
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+        var addressCandidate = result.RootRow.CollectionCandidates.Single();
+        var addressCollectionItemId = addressCandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+
+        var alignedScope = addressCandidate.AttachedAlignedScopeData.Should().ContainSingle().Subject;
+        var alignedScopeCollectionItemId = alignedScope
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        alignedScopeCollectionItemId.Token.Should().Be(addressCollectionItemId.Token);
+        alignedScope.Values[1].Should().Be(new FlattenedWriteValue.Literal(null));
+        alignedScope.CollectionCandidates.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_does_not_emit_collection_aligned_extension_scope_rows_for_deeply_nested_all_array_extension_sites()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(

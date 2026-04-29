@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 // ── Shared fixture builders for overlay tests ─────────────────────────────────
 
 /// <summary>
-/// Fixture builders for <see cref="ProfileTopLevelCollectionMatchedRowOverlay"/> tests.
+/// Fixture builders for <see cref="ProfileCollectionMatchedRowOverlay"/> tests.
 /// Uses the existing <see cref="AdapterFactoryTestFixtures.BuildCollectionTableWritePlan"/> plan
 /// (schema edfi, table SchoolAddress, scope $.addresses[*]) as the primary collection plan and
 /// provides helpers for building stored rows, request candidates, and profile requests.
@@ -150,7 +150,7 @@ internal static class OverlayTestFixtures
     }
 
     /// <summary>
-    /// Calls <see cref="ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission"/>
+    /// Calls <see cref="ProfileCollectionMatchedRowOverlay.BuildMatchedRowEmission"/>
     /// with the standard wiring: empty key-unification plans, no hidden paths, ordinal 1.
     /// Callers override only what their specific fixture needs.
     /// </summary>
@@ -165,7 +165,7 @@ internal static class OverlayTestFixtures
         IReadOnlyList<FlattenedWriteValue>? parentKeyValues = null,
         JsonNode? requestItemNode = null
     ) =>
-        ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+        ProfileCollectionMatchedRowOverlay.BuildMatchedRowEmission(
             resourcePlan,
             collectionPlan,
             request,
@@ -324,7 +324,7 @@ public class Given_overlay_matched_row_with_hidden_fk_preserves_stored_fk
         var requestCandidate = BuildCustomRequestCandidate(collectionPlan, [null, null, 1, 77L, 2002]);
 
         // Hide the reference root so both FK and derived bindings are HiddenPreserved
-        _result = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+        _result = ProfileCollectionMatchedRowOverlay.BuildMatchedRowEmission(
             resourcePlan,
             collectionPlan,
             request,
@@ -531,7 +531,7 @@ public class Given_overlay_matched_row_preserves_canonical_key_unification_stora
         );
 
         // Hide the periodName member so canonical must come from stored row
-        _result = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+        _result = ProfileCollectionMatchedRowOverlay.BuildMatchedRowEmission(
             resourcePlan,
             collectionPlan,
             request,
@@ -731,7 +731,7 @@ public class Given_overlay_matched_row_preserves_synthetic_presence_for_hidden_m
             [null, null, 1, null, null, "REQUEST"]
         );
 
-        _result = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+        _result = ProfileCollectionMatchedRowOverlay.BuildMatchedRowEmission(
             resourcePlan,
             collectionPlan,
             request,
@@ -1134,7 +1134,7 @@ public class Given_overlay_matched_row_with_reference_derived_ku_member_and_desc
         // Hide a descendant of the reference root ("schoolReference"): the classifier
         // must treat the ReferenceDerivedMember whose governing path is "schoolReference"
         // as HiddenGoverned (ReferenceRooted match), so canonical comes from stored row.
-        _result = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+        _result = ProfileCollectionMatchedRowOverlay.BuildMatchedRowEmission(
             resourcePlan,
             collectionPlan,
             request,
@@ -1378,7 +1378,7 @@ public class Given_overlay_matched_row_with_alias_only_member_column_preserves_s
 
         var requestCandidate = BuildCustomRequestCandidate(collectionPlan, [null, null, 1, null]);
 
-        _result = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
+        _result = ProfileCollectionMatchedRowOverlay.BuildMatchedRowEmission(
             resourcePlan,
             collectionPlan,
             request,

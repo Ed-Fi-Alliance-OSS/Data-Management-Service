@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Core.Profile;
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Domain outcome for a single root-attached separate-table non-collection scope,
+/// Domain outcome for a single separate-table non-collection scope,
 /// as produced by <see cref="IProfileSeparateTableMergeDecider"/>. The decider
 /// returns only this enum; typed-failure wrapping
 /// (e.g. converting <see cref="RejectCreateDenied"/> into a creatability rejection)
@@ -55,8 +55,8 @@ internal enum ProfileSeparateTableMergeOutcome
 }
 
 /// <summary>
-/// Pure-function decider for a single root-attached separate-table non-collection
-/// scope. Returns the domain outcome (see <see cref="ProfileSeparateTableMergeOutcome"/>);
+/// Pure-function decider for a single separate-table non-collection scope. Returns the
+/// domain outcome (see <see cref="ProfileSeparateTableMergeOutcome"/>);
 /// does not perform any IO or typed-failure wrapping.
 /// </summary>
 internal interface IProfileSeparateTableMergeDecider

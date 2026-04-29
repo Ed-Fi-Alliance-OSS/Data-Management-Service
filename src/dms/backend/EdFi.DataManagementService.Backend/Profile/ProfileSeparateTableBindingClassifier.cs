@@ -11,11 +11,11 @@ using EdFi.DataManagementService.Core.Profile;
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Classification result for a single root-attached separate-table non-collection
-/// scope (<see cref="DbTableKind.RootExtension"/>). Shares the per-binding
-/// disposition vocabulary with <see cref="ProfileRootTableBindingClassification"/>;
-/// reports which bindings the key-unification resolver owns so the synthesizer
-/// skips those during overlay.
+/// Classification result for a single separate-table non-collection scope
+/// (<see cref="DbTableKind.RootExtension"/> or <see cref="DbTableKind.CollectionExtensionScope"/>).
+/// Shares the per-binding disposition vocabulary with
+/// <see cref="ProfileRootTableBindingClassification"/>; reports which bindings the
+/// key-unification resolver owns so the synthesizer skips those during overlay.
 /// </summary>
 internal sealed record ProfileSeparateTableBindingClassification(
     ImmutableArray<RootBindingDisposition> BindingsByIndex,
@@ -30,14 +30,20 @@ internal interface IProfileSeparateTableBindingClassifier
         ProfileAppliedWriteRequest profileRequest,
         ProfileAppliedWriteContext? profileAppliedContext
     );
+
+    ProfileSeparateTableBindingClassification Classify(
+        ResourceWritePlan writePlan,
+        TableWritePlan separateTablePlan,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope
+    );
 }
 
 /// <summary>
 /// Separate-table wrapper over <see cref="ProfileBindingClassificationCore"/> for
-/// root-attached non-collection extension scopes (<see cref="DbTableKind.RootExtension"/>).
-/// Rejects non-<see cref="DbTableKind.RootExtension"/> tables; collection-aligned
-/// separate-table scopes (<see cref="DbTableKind.CollectionExtensionScope"/>) are
-/// fenced out of slice 3 and addressed in slice 5.
+/// non-collection extension scopes (<see cref="DbTableKind.RootExtension"/> or
+/// <see cref="DbTableKind.CollectionExtensionScope"/>).
 /// </summary>
 internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTableBindingClassifier
 {
@@ -52,17 +58,7 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
         ArgumentNullException.ThrowIfNull(separateTablePlan);
         ArgumentNullException.ThrowIfNull(profileRequest);
 
-        var tableKind = separateTablePlan.TableModel.IdentityMetadata.TableKind;
-        if (tableKind is not DbTableKind.RootExtension)
-        {
-            throw new ArgumentException(
-                $"{nameof(ProfileSeparateTableBindingClassifier)} supports only "
-                    + $"{nameof(DbTableKind.RootExtension)} tables in slice 3; "
-                    + $"got {tableKind} for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'. "
-                    + "Collection-aligned separate-table scopes belong to slice 5.",
-                nameof(separateTablePlan)
-            );
-        }
+        GuardLegacyTableKind(separateTablePlan);
 
         var resolverOwnedBindingIndices = ProfileBindingClassificationCore.CollectResolverOwnedIndices(
             separateTablePlan
@@ -75,5 +71,63 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
             resolverOwnedBindingIndices
         );
         return new ProfileSeparateTableBindingClassification(bindingsByIndex, resolverOwnedBindingIndices);
+    }
+
+    public ProfileSeparateTableBindingClassification Classify(
+        ResourceWritePlan writePlan,
+        TableWritePlan separateTablePlan,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writePlan);
+        ArgumentNullException.ThrowIfNull(separateTablePlan);
+        ArgumentNullException.ThrowIfNull(scopeAddress);
+
+        GuardInstanceAwareTableKind(separateTablePlan);
+
+        var resolverOwnedBindingIndices = ProfileBindingClassificationCore.CollectResolverOwnedIndices(
+            separateTablePlan
+        );
+        var bindingsByIndex = ProfileBindingClassificationCore.ClassifyBindings(
+            writePlan,
+            separateTablePlan,
+            scopeAddress,
+            requestScope,
+            storedScope,
+            resolverOwnedBindingIndices
+        );
+        return new ProfileSeparateTableBindingClassification(bindingsByIndex, resolverOwnedBindingIndices);
+    }
+
+    private static void GuardLegacyTableKind(TableWritePlan separateTablePlan)
+    {
+        var tableKind = separateTablePlan.TableModel.IdentityMetadata.TableKind;
+        if (tableKind is not DbTableKind.RootExtension)
+        {
+            throw new ArgumentException(
+                $"{nameof(ProfileSeparateTableBindingClassifier)} legacy JsonScope-keyed overload supports only "
+                    + $"{nameof(DbTableKind.RootExtension)} tables; got {tableKind} "
+                    + $"for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'. "
+                    + $"Use the instance-aware overload for {nameof(DbTableKind.CollectionExtensionScope)} tables.",
+                nameof(separateTablePlan)
+            );
+        }
+    }
+
+    private static void GuardInstanceAwareTableKind(TableWritePlan separateTablePlan)
+    {
+        var tableKind = separateTablePlan.TableModel.IdentityMetadata.TableKind;
+        if (tableKind is not (DbTableKind.RootExtension or DbTableKind.CollectionExtensionScope))
+        {
+            throw new ArgumentException(
+                $"{nameof(ProfileSeparateTableBindingClassifier)} supports "
+                    + $"{nameof(DbTableKind.RootExtension)} and "
+                    + $"{nameof(DbTableKind.CollectionExtensionScope)} tables; got {tableKind} "
+                    + $"for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'.",
+                nameof(separateTablePlan)
+            );
+        }
     }
 }

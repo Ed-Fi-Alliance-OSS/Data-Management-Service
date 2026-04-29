@@ -1,0 +1,68 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "RootExt",
+    "projectEndpointName": "root_ext",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": true,
+    "abstractResources": {},
+    "resourceSchemas": {
+      "parentResources": {
+        "resourceName": "ParentResource",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {},
+        "arrayUniquenessConstraints": [
+          {
+            "paths": ["$._ext.root_ext.root_ext_children[*].rootExtChildCode"],
+            "nestedConstraints": []
+          }
+        ],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": [],
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "root_ext": {
+                  "type": "object",
+                  "properties": {
+                    "rootExtVisibleScalar": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "rootExtHiddenScalar": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "root_ext_children": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rootExtChildCode": {
+                            "type": "string",
+                            "maxLength": 30
+                          },
+                          "rootExtChildValue": {
+                            "type": "string",
+                            "maxLength": 100
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

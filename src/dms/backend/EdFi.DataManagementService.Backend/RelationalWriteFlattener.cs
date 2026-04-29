@@ -9,7 +9,6 @@ using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -314,7 +313,9 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         foreach (var childPlan in childPlans)
         {
-            Dictionary<string, int[]> firstOrdinalPathBySemanticIdentity = new(StringComparer.Ordinal);
+            Dictionary<object?[], int[]> firstOrdinalPathBySemanticIdentity = new(
+                SemanticIdentityValueArrayComparer.Instance
+            );
 
             foreach (
                 var collectionScopeInstance in EnumerateCollectionScopeInstances(parentScopeNode, childPlan)
@@ -334,16 +335,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     childPlan.TableWritePlan,
                     values
                 );
-                var semanticIdentityInOrder = MaterializeSemanticIdentityInOrder(
-                    childPlan.TableWritePlan,
-                    values,
-                    collectionScopeInstance.ScopeNode
-                );
-                var semanticIdentityKey = BuildSemanticIdentityKey(semanticIdentityInOrder);
 
                 if (
                     firstOrdinalPathBySemanticIdentity.TryGetValue(
-                        semanticIdentityKey,
+                        semanticIdentityValues,
                         out var firstOrdinalPath
                     )
                 )
@@ -357,7 +352,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     );
                 }
 
-                firstOrdinalPathBySemanticIdentity.Add(semanticIdentityKey, ordinalPath);
+                firstOrdinalPathBySemanticIdentity.Add(semanticIdentityValues, ordinalPath);
 
                 var childParentKeyParts = GetPhysicalRowIdentityValues(childPlan.TableWritePlan, values);
                 var nestedCollectionCandidates = MaterializeCollectionCandidates(
@@ -387,8 +382,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                         values,
                         semanticIdentityValues,
                         attachedAlignedScopeData,
-                        collectionCandidates: nestedCollectionCandidates,
-                        semanticIdentityInOrder: semanticIdentityInOrder
+                        collectionCandidates: nestedCollectionCandidates
                     )
                 );
             }
@@ -455,7 +449,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups
             );
 
-            if (!HasBoundScopeData(scopeObject) && childCollectionCandidates.Count == 0)
+            if (
+                !flatteningInput.EmitEmptyRootExtensionBuffers
+                && !HasBoundScopeData(scopeObject)
+                && childCollectionCandidates.Count == 0
+            )
             {
                 continue;
             }
@@ -976,46 +974,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return semanticIdentityValues;
-    }
-
-    private static ImmutableArray<SemanticIdentityPart> MaterializeSemanticIdentityInOrder(
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<FlattenedWriteValue> values,
-        JsonNode scopeNode
-    )
-    {
-        var collectionMergePlan =
-            tableWritePlan.CollectionMergePlan
-            ?? throw new InvalidOperationException(
-                $"Collection table '{FormatTable(tableWritePlan)}' does not have a compiled collection merge plan."
-            );
-
-        var builder = ImmutableArray.CreateBuilder<SemanticIdentityPart>(
-            collectionMergePlan.SemanticIdentityBindings.Length
-        );
-
-        foreach (var semanticIdentityBinding in collectionMergePlan.SemanticIdentityBindings)
-        {
-            if (values[semanticIdentityBinding.BindingIndex] is not FlattenedWriteValue.Literal literalValue)
-            {
-                throw new InvalidOperationException(
-                    $"Collection semantic-identity binding '{semanticIdentityBinding.RelativePath.Canonical}' "
-                        + $"on table '{FormatTable(tableWritePlan)}' did not materialize as a literal value."
-                );
-            }
-
-            var isPresent = TryGetRelativeLeafNode(scopeNode, semanticIdentityBinding.RelativePath, out _);
-
-            builder.Add(
-                new SemanticIdentityPart(
-                    semanticIdentityBinding.RelativePath.Canonical,
-                    literalValue.Value is null ? null : JsonValue.Create(literalValue.Value),
-                    isPresent
-                )
-            );
-        }
-
-        return builder.MoveToImmutable();
     }
 
     private static IReadOnlyList<FlattenedWriteValue> GetPhysicalRowIdentityValues(
@@ -1873,9 +1831,46 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
     private sealed record CollectionScopeInstance(int RequestOrder, JsonObject ScopeNode);
 
-    private static string BuildSemanticIdentityKey(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join("|", identity.Select(part => FormatSemanticIdentityPartForKey(part)));
+    private sealed class SemanticIdentityValueArrayComparer : IEqualityComparer<object?[]>
+    {
+        public static SemanticIdentityValueArrayComparer Instance { get; } = new();
 
-    private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
-        $"{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
+        public bool Equals(object?[]? x, object?[]? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null || x.Length != y.Length)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < x.Length; index++)
+            {
+                if (!Equals(x[index], y[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public int GetHashCode(object?[] values)
+        {
+            ArgumentNullException.ThrowIfNull(values);
+
+            HashCode hashCode = new();
+            hashCode.Add(values.Length);
+
+            for (var index = 0; index < values.Length; index++)
+            {
+                hashCode.Add(values[index]);
+            }
+
+            return hashCode.ToHashCode();
+        }
+    }
 }

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Data;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
@@ -70,8 +71,8 @@ file sealed class ProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 }
 
 /// <summary>
-/// Concrete <see cref="IStoredStateProjectionInvoker"/> that returns a root-only
-/// <see cref="ProfileAppliedWriteContext"/>, sufficient for Slice 1 integration tests.
+/// Concrete <see cref="IStoredStateProjectionInvoker"/> that mirrors the request's visible
+/// non-collection scope states into stored state for routing-focused integration tests.
 /// </summary>
 file sealed class RootOnlyStoredStateProjectionInvoker : IStoredStateProjectionInvoker
 {
@@ -81,18 +82,19 @@ file sealed class RootOnlyStoredStateProjectionInvoker : IStoredStateProjectionI
         IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
     )
     {
-        var rootAddress = new ScopeInstanceAddress("$", []);
+        var storedScopeStates = request
+            .RequestScopeStates.Where(scopeState => scopeState.Visibility is not ProfileVisibilityKind.Hidden)
+            .Select(scopeState => new StoredScopeState(
+                Address: scopeState.Address,
+                Visibility: ProfileVisibilityKind.VisiblePresent,
+                HiddenMemberPaths: []
+            ))
+            .ToImmutableArray();
+
         return new ProfileAppliedWriteContext(
             Request: request,
             VisibleStoredBody: storedDocument,
-            StoredScopeStates:
-            [
-                new StoredScopeState(
-                    Address: rootAddress,
-                    Visibility: ProfileVisibilityKind.VisiblePresent,
-                    HiddenMemberPaths: []
-                ),
-            ],
+            StoredScopeStates: storedScopeStates,
             VisibleStoredCollectionRows: []
         );
     }
@@ -124,13 +126,9 @@ file static class ProfileRoutingTestSupport
         JsonNode requestBody
     )
     {
-        // The scopes below are intentional. Routing fixtures that use this helper expect the
-        // slice-fence family name to appear in the failure message. Slice 3 narrowed the fence
-        // so it only fires on scopes actually exercised by the current profiled request whose
-        // owner table is a CollectionExtensionScope. The fixture's extension collection scope
-        // $._ext.sample.addresses[*]._ext.sample is exactly that shape, so including it here
-        // keeps the fence firing under the new narrow behavior. Root-attached $._ext.sample
-        // stays for realism (a typical profile spans root + extension scopes).
+        // Routing fixtures that use this helper exercise the supported root + root-extension
+        // separate-table path. Collection-aligned extension scopes are covered by the Slice 5
+        // CP3/CP4 aligned-scope fixtures, not by this root-extension routing helper.
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
         var rootScopeState = new RequestScopeState(
             Address: new ScopeInstanceAddress("$", []),
@@ -142,21 +140,12 @@ file static class ProfileRoutingTestSupport
             Visibility: ProfileVisibilityKind.VisiblePresent,
             Creatable: true
         );
-        // Collection-aligned (CollectionExtensionScope) scope — its owner table is a
-        // CollectionExtensionScope DbTableKind, which the slice-3 narrow fence targets.
-        // Immediate parent resolves to $._ext.sample (NonCollection), so the ancestor chain
-        // is empty and the contract validator needs no additional identity parts.
-        var collectionAlignedScopeState = new RequestScopeState(
-            Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-            Visibility: ProfileVisibilityKind.VisibleAbsent,
-            Creatable: true
-        );
 
         return new BackendProfileWriteContext(
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: requestBody,
                 RootResourceCreatable: true,
-                RequestScopeStates: [rootScopeState, extensionScopeState, collectionAlignedScopeState],
+                RequestScopeStates: [rootScopeState, extensionScopeState],
                 VisibleRequestCollectionItems: []
             ),
             ProfileName: "test-profile",
@@ -185,61 +174,6 @@ file static class ProfileRoutingTestSupport
                 VisibleRequestCollectionItems: []
             ),
             ProfileName: "test-non-creatable-profile",
-            CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
-        );
-    }
-
-    public static BackendProfileWriteContext CreateCreatableProfileWriteContextWithInlinedCollectionDescendant(
-        ResourceWritePlan writePlan,
-        JsonNode requestBody
-    )
-    {
-        // The School fixture has "$.addresses[*]" as a top-level collection. We synthesize an
-        // inlined common-type scope beneath that collection (the profile middleware's
-        // ContentTypeScopeDiscovery would emit the same shape from a writable content type that
-        // declares, say, a `mileInfo` object under `addresses`).
-        (string JsonScope, ScopeKind Kind)[] additionalScopes =
-        [
-            ("$.addresses[*].mileInfo", ScopeKind.NonCollection),
-        ];
-
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, additionalScopes);
-
-        // Build a matching ancestor chain so the inlined scope address passes the
-        // ProfileWriteContractValidator. The "$.addresses[*]" collection's semantic identity is
-        // a single "city" part — see the fixture's relational-model manifest for SchoolAddress.
-        var addressesAncestor = new AncestorCollectionInstance(
-            JsonScope: "$.addresses[*]",
-            SemanticIdentityInOrder:
-            [
-                new SemanticIdentityPart(
-                    RelativePath: "city",
-                    Value: JsonValue.Create("Austin"),
-                    IsPresent: true
-                ),
-            ]
-        );
-
-        var rootScopeState = new RequestScopeState(
-            Address: new ScopeInstanceAddress("$", []),
-            Visibility: ProfileVisibilityKind.VisiblePresent,
-            Creatable: true
-        );
-        var inlinedScopeState = new RequestScopeState(
-            Address: new ScopeInstanceAddress("$.addresses[*].mileInfo", [addressesAncestor]),
-            Visibility: ProfileVisibilityKind.VisiblePresent,
-            Creatable: true
-        );
-
-        return new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: requestBody,
-                RootResourceCreatable: true,
-                RequestScopeStates: [rootScopeState, inlinedScopeState],
-                VisibleRequestCollectionItems: []
-            ),
-            ProfileName: "test-profile-with-inlined-descendant",
             CompiledScopeCatalog: scopeCatalog,
             StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
         );
@@ -382,13 +316,13 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
 
 /// <summary>
 /// Verifies that a profiled POST that resolves to post-as-update (existing document)
-/// reaches the slice fence and returns a family name like "SeparateTableNonCollection",
-/// instead of the old broad "DMS-1124 pending" message.
+/// with a root-extension separate-table scope reaches profile merge instead of the
+/// old broad "DMS-1124 pending" fence.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
+public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
@@ -396,38 +330,9 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
     private const string RequestBodyJson = """
         {
           "schoolId": 255901,
-          "addresses": [
-            {
-              "city": "Austin",
-              "periods": [
-                {
-                  "periodName": "Morning"
-                }
-              ]
-            }
-          ],
           "_ext": {
             "sample": {
-              "campusCode": "North",
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1"
-                    }
-                  }
-                }
-              ],
-              "interventions": [
-                {
-                  "interventionCode": "Attendance",
-                  "visits": [
-                    {
-                      "visitCode": "Visit-A"
-                    }
-                  ]
-                }
-              ]
+              "campusCode": "North"
             }
           }
         }
@@ -487,23 +392,19 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
     }
 
     [Test]
-    public void It_returns_unknown_failure_with_family_name_in_slice_fence()
+    public void It_returns_update_success()
     {
-        _profiledPostAsUpdateResult.Should().BeOfType<UpsertResult.UnknownFailure>();
         _profiledPostAsUpdateResult
-            .As<UpsertResult.UnknownFailure>()
-            .FailureMessage.Should()
-            .Contain("SeparateTableNonCollection");
+            .Should()
+            .BeOfType<UpsertResult.UpdateSuccess>()
+            .Which.ExistingDocumentUuid.Should()
+            .Be(ExistingDocumentUuid);
     }
 
     [Test]
     public void It_does_not_return_the_old_dms_1124_pending_message()
     {
-        _profiledPostAsUpdateResult.Should().BeOfType<UpsertResult.UnknownFailure>();
-        _profiledPostAsUpdateResult
-            .As<UpsertResult.UnknownFailure>()
-            .FailureMessage.Should()
-            .NotContain("pending DMS-1124");
+        _profiledPostAsUpdateResult.Should().NotBeOfType<UpsertResult.UnknownFailure>();
     }
 
     private static DocumentInfo CreateSchoolDocumentInfo()
@@ -600,14 +501,13 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
 }
 
 /// <summary>
-/// Verifies that a profiled PUT targeting an existing document reaches the slice fence
-/// and returns a family name like "SeparateTableNonCollection", instead of the old broad
-/// "DMS-1124 pending" message.
+/// Verifies that a profiled PUT targeting an existing document with a root-extension
+/// separate-table scope reaches profile merge instead of the old broad "DMS-1124 pending" fence.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-public class Given_A_Profiled_Put_Reaching_Slice_Fence
+public class Given_A_Profiled_Put_With_Root_Extension_Scope
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
@@ -615,38 +515,9 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
     private const string RequestBodyJson = """
         {
           "schoolId": 255901,
-          "addresses": [
-            {
-              "city": "Austin",
-              "periods": [
-                {
-                  "periodName": "Morning"
-                }
-              ]
-            }
-          ],
           "_ext": {
             "sample": {
-              "campusCode": "North",
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1"
-                    }
-                  }
-                }
-              ],
-              "interventions": [
-                {
-                  "interventionCode": "Attendance",
-                  "visits": [
-                    {
-                      "visitCode": "Visit-A"
-                    }
-                  ]
-                }
-              ]
+              "campusCode": "North"
             }
           }
         }
@@ -703,23 +574,19 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
     }
 
     [Test]
-    public void It_returns_unknown_failure_with_family_name_in_slice_fence()
+    public void It_returns_update_success()
     {
-        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
         _profiledPutResult
-            .As<UpdateResult.UnknownFailure>()
-            .FailureMessage.Should()
-            .Contain("SeparateTableNonCollection");
+            .Should()
+            .BeOfType<UpdateResult.UpdateSuccess>()
+            .Which.ExistingDocumentUuid.Should()
+            .Be(ExistingDocumentUuid);
     }
 
     [Test]
     public void It_does_not_return_the_old_dms_1124_pending_message()
     {
-        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
-        _profiledPutResult
-            .As<UpdateResult.UnknownFailure>()
-            .FailureMessage.Should()
-            .NotContain("pending DMS-1124");
+        _profiledPutResult.Should().NotBeOfType<UpdateResult.UnknownFailure>();
     }
 
     private static DocumentInfo CreateSchoolDocumentInfo()
@@ -802,193 +669,6 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("profile-put-profiled"),
-            DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
-            BackendProfileWriteContext: profileWriteContext
-        );
-
-        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpdateDocumentById(updateRequest);
-    }
-}
-
-/// <summary>
-/// Verifies that a profiled PUT whose compiled scope catalog contains an inlined scope
-/// beneath a top-level collection ancestor routes to the <c>TopLevelCollection</c> fence,
-/// not the default <c>RootTableOnly</c> fence. Regression guard for the review finding
-/// that the slice-fence classifier was ignoring middleware-augmented inlined scopes.
-/// </summary>
-[TestFixture]
-[Category("DatabaseIntegration")]
-[Category("PostgresqlIntegration")]
-public class Given_A_Profiled_Put_With_Inlined_Collection_Descendant_Scope
-{
-    private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
-
-    private const string RequestBodyJson = """
-        {
-          "schoolId": 255901,
-          "addresses": [
-            {
-              "city": "Austin"
-            }
-          ]
-        }
-        """;
-
-    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
-    private static readonly ResourceInfo SchoolResourceInfo = new(
-        ProjectName: new ProjectName("Ed-Fi"),
-        ResourceName: new ResourceName("School"),
-        IsDescriptor: false,
-        ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
-    );
-    private static readonly DocumentUuid ExistingDocumentUuid = new(
-        Guid.Parse("dddddddd-5555-5555-5555-555555555555")
-    );
-
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
-    private UpdateResult _profiledPutResult = null!;
-
-    [OneTimeSetUp]
-    public async Task OneTimeSetUp()
-    {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = _fixture.MappingSet;
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = ProfileRoutingTestSupport.CreateServiceProvider();
-
-        var createResult = await ExecuteNonProfiledUpsertAsync();
-        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-
-        _profiledPutResult = await ExecuteProfiledPutAsync();
-    }
-
-    [OneTimeTearDown]
-    public async Task OneTimeTearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
-    }
-
-    [Test]
-    public void It_returns_unknown_failure_with_TopLevelCollection_family_in_slice_fence()
-    {
-        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
-        _profiledPutResult
-            .As<UpdateResult.UnknownFailure>()
-            .FailureMessage.Should()
-            .Contain("TopLevelCollection");
-    }
-
-    [Test]
-    public void It_does_not_fall_back_to_RootTableOnly()
-    {
-        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
-        _profiledPutResult
-            .As<UpdateResult.UnknownFailure>()
-            .FailureMessage.Should()
-            .NotContain("RootTableOnly");
-    }
-
-    private static DocumentInfo CreateSchoolDocumentInfo()
-    {
-        var schoolIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
-        ]);
-
-        return new DocumentInfo(
-            DocumentIdentity: schoolIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
-            DocumentReferences: [],
-            DocumentReferenceArrays: [],
-            DescriptorReferences: [],
-            SuperclassIdentity: null
-        );
-    }
-
-    private async Task<UpsertResult> ExecuteNonProfiledUpsertAsync()
-    {
-        using var scope = _serviceProvider.CreateScope();
-
-        scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
-                    Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "ProfileRoutingPutInlinedDescendant",
-                    ConnectionString: _database.ConnectionString,
-                    RouteContext: []
-                )
-            );
-
-        var upsertRequest = new UpsertRequest(
-            ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(),
-            MappingSet: _mappingSet,
-            EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
-            Headers: [],
-            TraceId: new TraceId("profile-put-inlined-descendant-seed"),
-            DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
-        );
-
-        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(upsertRequest);
-    }
-
-    private async Task<UpdateResult> ExecuteProfiledPutAsync()
-    {
-        using var scope = _serviceProvider.CreateScope();
-
-        scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
-                    Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "ProfileRoutingPutInlinedDescendant",
-                    ConnectionString: _database.ConnectionString,
-                    RouteContext: []
-                )
-            );
-
-        var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
-        var requestBody = JsonNode.Parse(RequestBodyJson)!;
-        var profileWriteContext =
-            ProfileRoutingTestSupport.CreateCreatableProfileWriteContextWithInlinedCollectionDescendant(
-                writePlan,
-                requestBody.DeepClone()
-            );
-
-        var updateRequest = new UpdateRequest(
-            ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(),
-            MappingSet: _mappingSet,
-            EdfiDoc: requestBody,
-            Headers: [],
-            TraceId: new TraceId("profile-put-inlined-descendant-profiled"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
