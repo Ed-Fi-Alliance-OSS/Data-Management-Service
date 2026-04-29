@@ -549,9 +549,8 @@ internal static class ProfileTestDoubles
     }
 
     /// <summary>
-    /// Build a two-table plan whose RootExtension table is incorrectly tagged as a
-    /// non-<see cref="DbTableKind.RootExtension"/> kind (default: <see cref="DbTableKind.CollectionExtensionScope"/>).
-    /// Used to verify the separate-table classifier rejects collection-aligned kinds.
+    /// Build a two-table plan whose separate table is tagged as a configurable
+    /// non-<see cref="DbTableKind.RootExtension"/> kind.
     /// </summary>
     internal static ResourceWritePlan BuildRootPlusSeparateTablePlanWithNonRootExtensionKind(
         DbTableKind nonRootExtensionKind = DbTableKind.CollectionExtensionScope
@@ -1087,9 +1086,7 @@ internal static class ProfileTestDoubles
 
     /// <summary>
     /// Build a two-table plan whose separate table has a key-unification plan but is
-    /// tagged with a non-<see cref="DbTableKind.RootExtension"/> kind (default:
-    /// <see cref="DbTableKind.CollectionExtensionScope"/>). Used to verify the
-    /// separate-table resolver rejects collection-aligned kinds.
+    /// tagged with a configurable non-<see cref="DbTableKind.RootExtension"/> kind.
     /// </summary>
     internal static ResourceWritePlan BuildRootPlusSeparateTableWithKeyUnificationNonRootExtensionKind(
         string memberRelativePath = "$._ext.sample.memberA",

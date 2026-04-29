@@ -1,0 +1,61 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": false,
+    "abstractResources": {},
+    "resourceSchemas": {
+      "parentResources": {
+        "resourceName": "ParentResource",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {
+          "ParentResourceId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.parentResourceId"
+          }
+        },
+        "arrayUniquenessConstraints": [
+          {
+            "paths": ["$.parents[*].parentCode"],
+            "nestedConstraints": []
+          }
+        ],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": ["$.parentResourceId"],
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "parentResourceId": {
+              "type": "integer"
+            },
+            "parents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "parentCode": {
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "parentName": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          },
+          "required": ["parentResourceId"]
+        }
+      }
+    }
+  }
+}

@@ -15,11 +15,11 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// <summary>
 /// Request contract for the profile merge synthesizer. Slice 4 narrows the earlier Slice 3
 /// rejection of root-level <see cref="CollectionWriteCandidate"/>s: root-attached base
-/// collection candidates (<see cref="DbTableKind.Collection"/>) are now accepted when they
-/// carry neither nested <c>CollectionCandidates</c> nor <c>AttachedAlignedScopeData</c>.
-/// Nested candidates, attached-aligned scope data, collection candidates under
-/// <see cref="RootExtensionWriteRowBuffer"/>, and non-Collection root table kinds remain
-/// fenced — they land in Slice 5 or are structurally invalid.
+/// collection candidates (<see cref="DbTableKind.Collection"/>) are accepted. Slice 5
+/// further opens the gate to nested <c>CollectionCandidates</c> under those root-attached
+/// base collection candidates, attached-aligned scope data, and collection candidates under
+/// <see cref="RootExtensionWriteRowBuffer"/>. Non-Collection root table kinds remain
+/// structurally invalid.
 /// </summary>
 internal sealed record RelationalWriteProfileMergeRequest
 {
@@ -55,57 +55,32 @@ internal sealed record RelationalWriteProfileMergeRequest
                 nameof(flattenedWriteSet)
             );
         }
-        foreach (var candidate in FlattenedWriteSet.RootRow.CollectionCandidates)
+        var invalidRootCollectionCandidate = FlattenedWriteSet.RootRow.CollectionCandidates.FirstOrDefault(
+            candidate =>
+                candidate.TableWritePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.Collection
+        );
+        if (invalidRootCollectionCandidate is not null)
         {
-            if (!candidate.CollectionCandidates.IsDefaultOrEmpty)
-            {
-                throw new ArgumentException(
-                    "Slice 4 profile merge does not yet support nested CollectionCandidates under a "
-                        + "top-level collection candidate; they will land in Slice 5.",
-                    nameof(flattenedWriteSet)
-                );
-            }
-            if (!candidate.AttachedAlignedScopeData.IsDefaultOrEmpty)
-            {
-                throw new ArgumentException(
-                    "Slice 4 profile merge does not yet support AttachedAlignedScopeData on a "
-                        + "top-level collection candidate; they will land in Slice 5.",
-                    nameof(flattenedWriteSet)
-                );
-            }
-            if (candidate.TableWritePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.Collection)
-            {
-                throw new ArgumentException(
-                    "Slice 4 profile merge top-level collection candidates must carry "
-                        + "DbTableKind.Collection (root-attached base collection). Other root-candidate table kinds are fenced and must be addressed in a later slice.",
-                    nameof(flattenedWriteSet)
-                );
-            }
-            // Root-attached base collection candidate → passes the gate.
+            throw new ArgumentException(
+                "Slice 4 profile merge top-level collection candidates must carry "
+                    + "DbTableKind.Collection (root-attached base collection). Other root-candidate table kinds are fenced and must be addressed in a later slice.",
+                nameof(flattenedWriteSet)
+            );
         }
-        foreach (var extensionRow in FlattenedWriteSet.RootRow.RootExtensionRows)
+        var invalidRootExtensionTablePlan = FlattenedWriteSet
+            .RootRow.RootExtensionRows.Select(extensionRow => extensionRow.TableWritePlan)
+            .FirstOrDefault(tablePlan =>
+                tablePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.RootExtension
+            );
+        if (invalidRootExtensionTablePlan is not null)
         {
-            if (
-                extensionRow.TableWritePlan.TableModel.IdentityMetadata.TableKind
-                is not DbTableKind.RootExtension
-            )
-            {
-                throw new ArgumentException(
-                    "Slice 3 profile merge requires every root-extension row to use a "
-                        + $"{nameof(DbTableKind.RootExtension)} table plan; got "
-                        + $"'{extensionRow.TableWritePlan.TableModel.IdentityMetadata.TableKind}' "
-                        + $"for table '{ProfileBindingClassificationCore.FormatTable(extensionRow.TableWritePlan)}'.",
-                    nameof(flattenedWriteSet)
-                );
-            }
-            if (!extensionRow.CollectionCandidates.IsDefaultOrEmpty)
-            {
-                throw new ArgumentException(
-                    "Slice 3 profile merge fences collection candidates nested under root-extension "
-                        + "rows; they must be addressed in a later slice.",
-                    nameof(flattenedWriteSet)
-                );
-            }
+            throw new ArgumentException(
+                "Slice 3 profile merge requires every root-extension row to use a "
+                    + $"{nameof(DbTableKind.RootExtension)} table plan; got "
+                    + $"'{invalidRootExtensionTablePlan.TableModel.IdentityMetadata.TableKind}' "
+                    + $"for table '{ProfileBindingClassificationCore.FormatTable(invalidRootExtensionTablePlan)}'.",
+                nameof(flattenedWriteSet)
+            );
         }
         if ((CurrentState is null) != (ProfileAppliedContext is null))
         {
@@ -170,7 +145,17 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var tableStates = new List<RelationalWriteMergedTableState>();
+        // Per-table accumulators keyed by DbTableName. Pre-seed one builder per
+        // TableWritePlan so the walker, root-table merge, and per-separate-table merge can
+        // each append into the table's builder. Finalization iterates
+        // TablePlansInDependencyOrder and emits one TableState per touched table; this is
+        // the spec's Section 3 "Table-state aggregation" requirement and the structural
+        // prerequisite for Task 9b's nested recursion.
+        var tableStateBuilders = new Dictionary<DbTableName, ProfileTableStateBuilder>();
+        foreach (var plan in request.WritePlan.TablePlansInDependencyOrder)
+        {
+            tableStateBuilders[plan.TableModel.Table] = new ProfileTableStateBuilder(plan);
+        }
 
         // Build the resolved-reference lookups once and share them with both the root-table
         // synthesis and each separate-table synthesis so we avoid redundant construction.
@@ -179,13 +164,23 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             request.ResolvedReferences
         );
 
-        // 1. Root-table merge.
+        // 1. Root-table merge — append merged + current rows into the root builder.
+        var rootTable = request.WritePlan.TablePlansInDependencyOrder[0];
+        var rootBuilder = tableStateBuilders[rootTable.TableModel.Table];
         var rootTableState = SynthesizeRootTable(request, resolvedReferenceLookups);
-        tableStates.Add(rootTableState);
+        foreach (var currentRow in rootTableState.CurrentRows)
+        {
+            rootBuilder.AddCurrentRow(currentRow);
+        }
+        foreach (var mergedRow in rootTableState.MergedRows)
+        {
+            rootBuilder.AddMergedRow(mergedRow);
+        }
 
-        // Root physical row identity values: the merged root row's values, used as the
-        // parent-key-part source for any top-level collection candidates.
-        IReadOnlyList<FlattenedWriteValue> rootPhysicalRowIdentityValues =
+        // Parent physical row identity values for top-level collections: the merged root
+        // row's values, used as the parent-key-part source for any top-level collection
+        // candidates.
+        IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues =
             rootTableState.MergedRows.Length > 0
                 ? rootTableState.MergedRows[0].Values
                 : request.FlattenedWriteSet.RootRow.Values;
@@ -194,12 +189,44 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         //     "delete-all-visible" scenarios (Blocker #2 fix: spec Section 7.7) are driven
         //     from the union of request-side, stored-side, and DB-side sources rather than
         //     only when request-side candidates are present.
-        var collectionOutcome = SynthesizeTopLevelCollectionScopes(
-            request,
-            rootPhysicalRowIdentityValues,
-            resolvedReferenceLookups,
-            tableStates
+        // Build root context for the walker. Slice 5 walker shells out to the existing
+        // top-level body via shim until CP2 moves the body in.
+        var rootContext = new ProfileCollectionWalkerContext(
+            ContainingScopeAddress: new ScopeInstanceAddress("$", []),
+            ParentPhysicalIdentityValues: [.. parentPhysicalRowIdentityValues],
+            RequestSubstructure: request.FlattenedWriteSet.RootRow,
+            ParentRequestNode: request.WritableRequestBody
         );
+
+        var walker = new ProfileCollectionWalker(
+            request,
+            resolvedReferenceLookups,
+            tableStateBuilders,
+            (
+                tablePlan,
+                scopeAddress,
+                separateScopeParentPhysicalIdentityValues,
+                buffer,
+                scopedRequestNode,
+                requestScope,
+                storedScope,
+                currentRowProjection
+            ) =>
+                SynthesizeSeparateScopeInstance(
+                    request,
+                    tablePlan,
+                    scopeAddress,
+                    separateScopeParentPhysicalIdentityValues,
+                    buffer,
+                    scopedRequestNode,
+                    requestScope,
+                    storedScope,
+                    currentRowProjection,
+                    resolvedReferenceLookups
+                )
+        );
+
+        var collectionOutcome = walker.WalkChildren(rootContext, WalkMode.Normal);
         if (collectionOutcome is not null)
         {
             return collectionOutcome.Value;
@@ -229,7 +256,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 continue;
             }
 
-            var separateTableResult = SynthesizeSeparateTable(request, tablePlan, resolvedReferenceLookups);
+            var separateTableResult = SynthesizeSeparateTable(
+                request,
+                tablePlan,
+                [.. parentPhysicalRowIdentityValues],
+                resolvedReferenceLookups
+            );
 
             if (separateTableResult.Rejection is not null)
             {
@@ -238,7 +270,39 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             if (separateTableResult.TableState is not null)
             {
-                tableStates.Add(separateTableResult.TableState);
+                var separateBuilder = tableStateBuilders[tablePlan.TableModel.Table];
+                foreach (var currentRow in separateTableResult.TableState.CurrentRows)
+                {
+                    separateBuilder.AddCurrentRow(currentRow);
+                }
+                foreach (var mergedRow in separateTableResult.TableState.MergedRows)
+                {
+                    separateBuilder.AddMergedRow(mergedRow);
+                }
+            }
+
+            var rootExtensionCollectionOutcome = WalkRootExtensionCollectionChildren(
+                request,
+                tablePlan,
+                separateTableResult,
+                walker
+            );
+            if (rootExtensionCollectionOutcome is not null)
+            {
+                return rootExtensionCollectionOutcome.Value;
+            }
+        }
+
+        // 3. Finalize: iterate TablePlansInDependencyOrder and emit one TableState per
+        //    touched table. Untouched tables (HasContent == false) are dropped so the output
+        //    matches the existing top-level behavior of skipping no-op scopes.
+        var tableStates = new List<RelationalWriteMergedTableState>();
+        foreach (var plan in request.WritePlan.TablePlansInDependencyOrder)
+        {
+            var builder = tableStateBuilders[plan.TableModel.Table];
+            if (builder.HasContent)
+            {
+                tableStates.Add(builder.Build());
             }
         }
 
@@ -330,23 +394,126 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         return new RelationalWriteMergedTableState(rootTable, currentRows, [mergedRow]);
     }
 
-    private SeparateTableSynthesisResult SynthesizeSeparateTable(
+    private SeparateScopeSynthesisResult SynthesizeSeparateTable(
         RelationalWriteProfileMergeRequest request,
         TableWritePlan tablePlan,
+        ImmutableArray<FlattenedWriteValue> parentPhysicalIdentityValues,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
     )
     {
         var scope = tablePlan.TableModel.JsonScope.Canonical;
-        var requestScope = ProfileMemberGovernanceRules.LookupRequestScope(request.ProfileRequest, scope);
+        var scopeAddress = new ScopeInstanceAddress(scope, []);
+        var requestScope = ProfileMemberGovernanceRules.LookupRequestScope(
+            request.ProfileRequest,
+            scopeAddress
+        );
         var storedScope = request.ProfileAppliedContext is null
             ? null
-            : ProfileMemberGovernanceRules.LookupStoredScope(request.ProfileAppliedContext, scope);
-
+            : ProfileMemberGovernanceRules.LookupStoredScope(request.ProfileAppliedContext, scopeAddress);
         var hydratedRows = TryFindHydratedRowsForTable(request.CurrentState, tablePlan);
-        var storedRowExists = hydratedRows is { Count: > 0 };
-        var bufferExists = request.FlattenedWriteSet.RootRow.RootExtensionRows.Any(row =>
-            ReferenceEquals(row.TableWritePlan, tablePlan)
+        var currentRowProjection = BuildCurrentSeparateScopeRowProjection(
+            tablePlan,
+            hydratedRows,
+            parentPhysicalIdentityValues
         );
+        var extensionRow = TryLocateRootExtensionRow(request, tablePlan);
+        var scopedRequestNode = TryResolveScopedRequestNode(request.WritableRequestBody, tablePlan);
+
+        return SynthesizeSeparateScopeInstance(
+            request,
+            tablePlan,
+            scopeAddress,
+            parentPhysicalIdentityValues,
+            extensionRow is null ? null : SeparateScopeBuffer.From(extensionRow),
+            scopedRequestNode,
+            requestScope,
+            storedScope,
+            currentRowProjection,
+            resolvedReferenceLookups
+        );
+    }
+
+    private static ProfileMergeOutcome? WalkRootExtensionCollectionChildren(
+        RelationalWriteProfileMergeRequest request,
+        TableWritePlan tablePlan,
+        SeparateScopeSynthesisResult separateTableResult,
+        ProfileCollectionWalker walker
+    )
+    {
+        if (
+            separateTableResult.Outcome
+            is not (
+                ProfileSeparateTableMergeOutcome.Insert
+                or ProfileSeparateTableMergeOutcome.Update
+                or ProfileSeparateTableMergeOutcome.Preserve
+            )
+        )
+        {
+            return null;
+        }
+
+        var tableState =
+            separateTableResult.TableState
+            ?? throw new InvalidOperationException(
+                $"Root-extension separate-scope outcome '{separateTableResult.Outcome}' for table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' returned no table state."
+            );
+
+        var recursionSourceRow =
+            tableState.MergedRows.Length == 1
+                ? tableState.MergedRows[0]
+                : throw new InvalidOperationException(
+                    $"Root-extension separate-scope outcome '{separateTableResult.Outcome}' for table "
+                        + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' returned "
+                        + $"{tableState.MergedRows.Length} merged rows; expected exactly one for recursion "
+                        + "into child scopes."
+                );
+
+        var recursionMode =
+            separateTableResult.Outcome is ProfileSeparateTableMergeOutcome.Preserve
+                ? WalkMode.Preserve
+                : WalkMode.Normal;
+        var extensionRow =
+            recursionMode == WalkMode.Normal ? TryLocateRootExtensionRow(request, tablePlan) : null;
+        var scopedRequestNode =
+            recursionMode == WalkMode.Normal
+                ? TryResolveScopedRequestNode(request.WritableRequestBody, tablePlan)
+                : null;
+
+        var rootExtensionContext = new ProfileCollectionWalkerContext(
+            ContainingScopeAddress: new ScopeInstanceAddress(tablePlan.TableModel.JsonScope.Canonical, []),
+            ParentPhysicalIdentityValues: ExtractPhysicalRowIdentityValues(
+                tablePlan,
+                recursionSourceRow.Values
+            ),
+            RequestSubstructure: recursionMode == WalkMode.Normal ? extensionRow : null,
+            ParentRequestNode: recursionMode == WalkMode.Normal ? scopedRequestNode : null
+        );
+
+        return walker.WalkChildren(rootExtensionContext, recursionMode);
+    }
+
+    internal SeparateScopeSynthesisResult SynthesizeSeparateScopeInstance(
+        RelationalWriteProfileMergeRequest request,
+        TableWritePlan tablePlan,
+        ScopeInstanceAddress scopeAddress,
+        ImmutableArray<FlattenedWriteValue> parentPhysicalIdentityValues,
+        SeparateScopeBuffer? buffer,
+        JsonNode? scopedRequestNode,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        CurrentSeparateScopeRowProjection? currentRowProjection,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(tablePlan);
+        ArgumentNullException.ThrowIfNull(scopeAddress);
+        ArgumentNullException.ThrowIfNull(resolvedReferenceLookups);
+
+        var scope = scopeAddress.JsonScope;
+        var storedRowExists = currentRowProjection is not null;
+        var bufferExists = buffer is not null;
 
         // Contract validation: Core must emit a RequestScopeState entry for every compiled
         // non-collection scope (per C3 `01a-c3-request-visibility-and-writable-shaping.md`).
@@ -381,6 +548,16 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             );
         }
 
+        if (
+            requestScope is { Visibility: ProfileVisibilityKind.Hidden }
+            && HiddenRequestBufferCarriesProfileData(tablePlan, buffer)
+        )
+        {
+            return SeparateScopeSynthesisResult.Reject(
+                new ProfileCreatabilityRejection(scope, $"Profile forbids writing hidden scope '{scope}'.")
+            );
+        }
+
         // Express the Slice 3 decision matrix's "actionable" conditions directly so genuine
         // no-ops never reach the decider. Skip covers only the matrix cells that have no
         // decider-side outcome:
@@ -403,26 +580,41 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         if (!preserveActionable && !visiblePresentActionable && !matchedVisibleStoredActionable)
         {
-            return SeparateTableSynthesisResult.Skipped;
+            return SeparateScopeSynthesisResult.Skipped;
         }
 
         var outcome = _separateTableDecider.Decide(scope, requestScope, storedScope, storedRowExists);
 
         return outcome switch
         {
-            ProfileSeparateTableMergeOutcome.Insert => SeparateTableSynthesisResult.Table(
-                BuildInsertState(request, tablePlan)
+            ProfileSeparateTableMergeOutcome.Insert => SeparateScopeSynthesisResult.Table(
+                outcome,
+                BuildInsertState(tablePlan, parentPhysicalIdentityValues, buffer)
             ),
-            ProfileSeparateTableMergeOutcome.Update => SeparateTableSynthesisResult.Table(
-                BuildUpdateState(request, tablePlan, hydratedRows!, resolvedReferenceLookups)
+            ProfileSeparateTableMergeOutcome.Update => SeparateScopeSynthesisResult.Table(
+                outcome,
+                BuildUpdateState(
+                    request,
+                    tablePlan,
+                    scopeAddress,
+                    parentPhysicalIdentityValues,
+                    buffer,
+                    scopedRequestNode,
+                    requestScope,
+                    storedScope,
+                    currentRowProjection,
+                    resolvedReferenceLookups
+                )
             ),
-            ProfileSeparateTableMergeOutcome.Delete => SeparateTableSynthesisResult.Table(
-                BuildDeleteState(tablePlan, hydratedRows!)
+            ProfileSeparateTableMergeOutcome.Delete => SeparateScopeSynthesisResult.Table(
+                outcome,
+                BuildDeleteState(tablePlan, currentRowProjection)
             ),
-            ProfileSeparateTableMergeOutcome.Preserve => SeparateTableSynthesisResult.Table(
-                BuildPreserveState(tablePlan, hydratedRows!)
+            ProfileSeparateTableMergeOutcome.Preserve => SeparateScopeSynthesisResult.Table(
+                outcome,
+                BuildPreserveState(tablePlan, currentRowProjection)
             ),
-            ProfileSeparateTableMergeOutcome.RejectCreateDenied => SeparateTableSynthesisResult.Reject(
+            ProfileSeparateTableMergeOutcome.RejectCreateDenied => SeparateScopeSynthesisResult.Reject(
                 new ProfileCreatabilityRejection(
                     scope,
                     $"Profile forbids creation of new visible scope '{scope}'."
@@ -444,12 +636,18 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// view, so the buffer values are exactly what should be inserted.
     /// </summary>
     private static RelationalWriteMergedTableState BuildInsertState(
-        RelationalWriteProfileMergeRequest request,
-        TableWritePlan tablePlan
+        TableWritePlan tablePlan,
+        ImmutableArray<FlattenedWriteValue> parentPhysicalIdentityValues,
+        SeparateScopeBuffer? buffer
     )
     {
-        var extensionRow = LocateRootExtensionRow(request, tablePlan);
-        var mergedValues = extensionRow.Values.ToArray();
+        var separateScopeBuffer = RequireSeparateScopeBuffer(tablePlan, buffer, "Insert");
+        var mergedValues = RewriteSeparateScopeParentKeyParts(
+                tablePlan,
+                separateScopeBuffer.Values,
+                parentPhysicalIdentityValues
+            )
+            .ToArray();
         var comparableValues = RelationalWriteMergeSupport.ProjectComparableValues(tablePlan, mergedValues);
         var mergedRow = new RelationalWriteMergedTableRow(mergedValues, comparableValues);
         return new RelationalWriteMergedTableState(tablePlan, currentRows: [], mergedRows: [mergedRow]);
@@ -458,35 +656,50 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     private RelationalWriteMergedTableState BuildUpdateState(
         RelationalWriteProfileMergeRequest request,
         TableWritePlan tablePlan,
-        IReadOnlyList<object?[]> hydratedRows,
+        ScopeInstanceAddress scopeAddress,
+        ImmutableArray<FlattenedWriteValue> parentPhysicalIdentityValues,
+        SeparateScopeBuffer? buffer,
+        JsonNode? scopedRequestNode,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        CurrentSeparateScopeRowProjection? currentRowProjection,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
     )
     {
-        if (hydratedRows.Count != 1)
+        if (currentRowProjection is null)
         {
             throw new InvalidOperationException(
-                $"Separate table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' has "
-                    + $"{hydratedRows.Count} current rows for profiled Update; expected exactly one."
+                $"Separate table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' has no "
+                    + "current row projection for profiled Update; expected exactly one."
             );
         }
 
-        var projectedCurrentRow = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydratedRows)[0];
-        var currentRowByColumnName = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(
-            tablePlan.TableModel,
-            hydratedRows[0]
-        );
+        var separateScopeBuffer = RequireSeparateScopeBuffer(tablePlan, buffer, "Update");
+
+        if (scopedRequestNode is null)
+        {
+            throw new InvalidOperationException(
+                $"Separate-table Update path for scope '{tablePlan.TableModel.JsonScope.Canonical}' on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' requires a scoped request node. "
+                    + "The decider selected Update but the request body does not contain the scope — upstream "
+                    + "contract violation between the projected request and the decider."
+            );
+        }
+
+        var projectedCurrentRow = currentRowProjection.ProjectedRow;
+        var currentRowByColumnName = currentRowProjection.ColumnNameProjection;
 
         var classification = _separateTableClassifier.Classify(
             request.WritePlan,
             tablePlan,
-            request.ProfileRequest,
-            request.ProfileAppliedContext
+            scopeAddress,
+            requestScope,
+            storedScope
         );
 
-        var extensionRow = LocateRootExtensionRow(request, tablePlan);
         var mergedValues = OverlayByDisposition(
             tablePlan,
-            extensionRow.Values,
+            separateScopeBuffer.Values,
             projectedCurrentRow,
             classification.BindingsByIndex,
             classification.ResolverOwnedBindingIndices
@@ -496,8 +709,6 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // scope-relative (e.g. "$.memberA" under scope "$._ext.sample"), so the
         // resolver must evaluate them against the table-scoped sub-node of the
         // request body, not the root body.
-        var scopedRequestNode = ResolveScopedRequestNode(request.WritableRequestBody, tablePlan);
-
         var resolverContext = new ProfileSeparateTableKeyUnificationContext(
             WritableRequestBody: scopedRequestNode,
             CurrentState: request.CurrentState,
@@ -510,28 +721,85 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         _separateTableResolver.Resolve(
             tablePlan,
             resolverContext,
+            scopeAddress,
+            requestScope,
+            storedScope,
             mergedValues,
             classification.ResolverOwnedBindingIndices
         );
 
-        var comparableValues = RelationalWriteMergeSupport.ProjectComparableValues(tablePlan, mergedValues);
-        var mergedRow = new RelationalWriteMergedTableRow(mergedValues, comparableValues);
+        var valuesWithParentKey = RewriteSeparateScopeParentKeyParts(
+            tablePlan,
+            mergedValues,
+            parentPhysicalIdentityValues
+        );
+        var comparableValues = RelationalWriteMergeSupport.ProjectComparableValues(
+            tablePlan,
+            valuesWithParentKey
+        );
+        var mergedRow = new RelationalWriteMergedTableRow(valuesWithParentKey, comparableValues);
         return new RelationalWriteMergedTableState(tablePlan, [projectedCurrentRow], [mergedRow]);
     }
 
-    private static RelationalWriteMergedTableState BuildDeleteState(
+    private static bool HiddenRequestBufferCarriesProfileData(
         TableWritePlan tablePlan,
-        IReadOnlyList<object?[]> hydratedRows
+        SeparateScopeBuffer? buffer
     )
     {
-        if (hydratedRows.Count != 1)
+        if (buffer is null)
+        {
+            return false;
+        }
+
+        for (var bindingIndex = 0; bindingIndex < tablePlan.ColumnBindings.Length; bindingIndex++)
+        {
+            if (!IsProfileDataSource(tablePlan.ColumnBindings[bindingIndex].Source))
+            {
+                continue;
+            }
+
+            if (buffer.Value.Values[bindingIndex] is FlattenedWriteValue.Literal { Value: not null })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsProfileDataSource(WriteValueSource source) =>
+        source
+            is WriteValueSource.Scalar
+                or WriteValueSource.DescriptorReference
+                or WriteValueSource.DocumentReference
+                or WriteValueSource.ReferenceDerived;
+
+    private static ImmutableArray<FlattenedWriteValue> RewriteSeparateScopeParentKeyParts(
+        TableWritePlan tablePlan,
+        IReadOnlyList<FlattenedWriteValue> values,
+        ImmutableArray<FlattenedWriteValue> parentPhysicalIdentityValues
+    ) =>
+        tablePlan.TableModel.IdentityMetadata.TableKind is DbTableKind.CollectionExtensionScope
+            ? RelationalWriteRowHelpers.RewriteParentKeyPartValues(
+                tablePlan,
+                values,
+                parentPhysicalIdentityValues
+            )
+            : values.ToImmutableArray();
+
+    private static RelationalWriteMergedTableState BuildDeleteState(
+        TableWritePlan tablePlan,
+        CurrentSeparateScopeRowProjection? currentRowProjection
+    )
+    {
+        if (currentRowProjection is null)
         {
             throw new InvalidOperationException(
-                $"Separate table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' has "
-                    + $"{hydratedRows.Count} current rows for profiled Delete; expected exactly one."
+                $"Separate table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' has no "
+                    + "current row projection for profiled Delete; expected exactly one."
             );
         }
-        var projectedCurrentRow = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydratedRows)[0];
+        var projectedCurrentRow = currentRowProjection.ProjectedRow;
         return new RelationalWriteMergedTableState(tablePlan, [projectedCurrentRow], mergedRows: []);
     }
 
@@ -543,17 +811,17 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// </summary>
     private static RelationalWriteMergedTableState BuildPreserveState(
         TableWritePlan tablePlan,
-        IReadOnlyList<object?[]> hydratedRows
+        CurrentSeparateScopeRowProjection? currentRowProjection
     )
     {
-        if (hydratedRows.Count != 1)
+        if (currentRowProjection is null)
         {
             throw new InvalidOperationException(
-                $"Separate table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' has "
-                    + $"{hydratedRows.Count} current rows for profiled Preserve; expected exactly one."
+                $"Separate table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' has no "
+                    + "current row projection for profiled Preserve; expected exactly one."
             );
         }
-        var projectedCurrentRow = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydratedRows)[0];
+        var projectedCurrentRow = currentRowProjection.ProjectedRow;
         // Reuse the SAME row instance for both sides so the persister sees identical values
         // and treats the row as unchanged, preserving the stored hidden data.
         return new RelationalWriteMergedTableState(tablePlan, [projectedCurrentRow], [projectedCurrentRow]);
@@ -614,459 +882,81 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         return mergedValues;
     }
 
-    private static RootExtensionWriteRowBuffer LocateRootExtensionRow(
+    private static SeparateScopeBuffer RequireSeparateScopeBuffer(
+        TableWritePlan tablePlan,
+        SeparateScopeBuffer? buffer,
+        string outcomeName
+    )
+    {
+        if (buffer is null)
+        {
+            throw new InvalidOperationException(
+                $"Flattened write set does not carry a separate-scope row buffer for table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' in scope "
+                    + $"'{tablePlan.TableModel.JsonScope.Canonical}'. The decider selected {outcomeName} "
+                    + "but the flattener produced no matching buffer — upstream contract violation."
+            );
+        }
+
+        if (!ReferenceEquals(buffer.Value.TableWritePlan, tablePlan))
+        {
+            throw new InvalidOperationException(
+                $"Separate-scope buffer table plan mismatch for scope "
+                    + $"'{tablePlan.TableModel.JsonScope.Canonical}'. Expected table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}'."
+            );
+        }
+
+        return buffer.Value;
+    }
+
+    private static RootExtensionWriteRowBuffer? TryLocateRootExtensionRow(
         RelationalWriteProfileMergeRequest request,
         TableWritePlan tablePlan
     )
     {
-        var match = request.FlattenedWriteSet.RootRow.RootExtensionRows.FirstOrDefault(row =>
+        return request.FlattenedWriteSet.RootRow.RootExtensionRows.FirstOrDefault(row =>
             ReferenceEquals(row.TableWritePlan, tablePlan)
         );
-        return match
-            ?? throw new InvalidOperationException(
-                $"Flattened write set does not carry a root-extension row for table "
-                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' in scope "
-                    + $"'{tablePlan.TableModel.JsonScope.Canonical}'. The decider selected Insert/Update "
-                    + "but the flattener produced no matching buffer — upstream contract violation."
-            );
     }
 
     /// <summary>
     /// Navigate the root writable request body down to the separate-table plan's JSON
-    /// scope so key-unification member paths — which are scope-relative in production —
-    /// evaluate against the right node. The decider only routes Update when the request
-    /// view classifies the scope as VisiblePresent, so the scope is always expected to
-    /// exist in the body; a missing scope is treated as an upstream contract violation.
+    /// scope when that scope is present. The extracted helper accepts a nullable scoped
+    /// request node because Delete/Preserve/Skip paths do not require request-body scope
+    /// content; the Update path fails closed if the node is absent.
     /// </summary>
-    private static JsonNode ResolveScopedRequestNode(JsonNode rootBody, TableWritePlan tablePlan)
+    private static JsonNode? TryResolveScopedRequestNode(JsonNode rootBody, TableWritePlan tablePlan)
     {
-        if (
-            !RelationalWriteFlattener.TryGetRelativeLeafNode(
-                rootBody,
-                tablePlan.TableModel.JsonScope,
-                out var scopeNode
-            ) || scopeNode is null
+        return RelationalWriteFlattener.TryGetRelativeLeafNode(
+            rootBody,
+            tablePlan.TableModel.JsonScope,
+            out var scopeNode
         )
-        {
-            throw new InvalidOperationException(
-                $"Separate-table Update path could not navigate the request body to scope "
-                    + $"'{tablePlan.TableModel.JsonScope.Canonical}' on table "
-                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}'. "
-                    + "The decider selected Update but the request body does not contain the "
-                    + "scope — upstream contract violation between the projected request and "
-                    + "the decider."
-            );
-        }
-        return scopeNode;
+            ? scopeNode
+            : null;
     }
 
-    /// <summary>
-    /// Synthesizes merged collection rows for all top-level collection candidates attached
-    /// to the root row. Called once per synthesizer pass after the separate-table loop
-    /// (spec Section 4.2 / 4.3). Returns a non-null <see cref="ProfileMergeOutcome.Reject"/>
-    /// on a creatability-denied item; appends collection table states to
-    /// <paramref name="tableStates"/> on success and returns <c>null</c>.
-    /// </summary>
-    private static ProfileMergeOutcome? SynthesizeTopLevelCollectionScopes(
-        RelationalWriteProfileMergeRequest request,
-        IReadOnlyList<FlattenedWriteValue> rootPhysicalRowIdentityValues,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        List<RelationalWriteMergedTableState> tableStates
+    private static ImmutableArray<FlattenedWriteValue> ExtractPhysicalRowIdentityValues(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<FlattenedWriteValue> values
     )
     {
-        var topLevelCollectionCandidates = request.FlattenedWriteSet.RootRow.CollectionCandidates;
-        var profileRequest = request.ProfileRequest;
-        var profileAppliedContext = request.ProfileAppliedContext;
-        var currentState = request.CurrentState;
-        var writableRequestBody = request.WritableRequestBody;
-        var resourceWritePlan = request.WritePlan;
-
-        // Group candidates by table (JsonScope) so we process each scope once.
-        var candidatesByScope = topLevelCollectionCandidates
-            .GroupBy(c => c.TableWritePlan.TableModel.JsonScope.Canonical)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        // Build a scope topology index so we can identify root-attached
-        // (TopLevelBaseCollection) tables without relying solely on request-side
-        // candidates. This drives Blocker #2 fix: stored-only delete-all-visible scopes
-        // are visited even when CollectionCandidates is empty for that scope.
-        var scopeTopology = ScopeTopologyIndex.BuildFromWritePlan(resourceWritePlan);
-
-        // Iterate in TablePlansInDependencyOrder so first-rejection-wins is deterministic across runs.
-        foreach (var tablePlan in resourceWritePlan.TablePlansInDependencyOrder)
+        var physicalRowIdentityColumns = tableWritePlan
+            .TableModel
+            .IdentityMetadata
+            .PhysicalRowIdentityColumns;
+        var physicalRowIdentityValues = new FlattenedWriteValue[physicalRowIdentityColumns.Count];
+        for (var i = 0; i < physicalRowIdentityColumns.Count; i++)
         {
-            var jsonScope = tablePlan.TableModel.JsonScope.Canonical;
-
-            // Only process root-attached base collection tables (Blocker #2: iterate from
-            // topology, not solely from request-side candidates).
-            if (scopeTopology.GetTopology(jsonScope) is not ScopeTopologyKind.TopLevelBaseCollection)
-            {
-                continue;
-            }
-
-            candidatesByScope.TryGetValue(jsonScope, out var candidates);
-            var requestCandidatesForScope = candidates is null
-                ? ImmutableArray<CollectionWriteCandidate>.Empty
-                : candidates.ToImmutableArray();
-
-            var visibleRequestItemsForScope = profileRequest
-                .VisibleRequestCollectionItems.Where(i => i.Address.JsonScope == jsonScope)
-                .ToImmutableArray();
-
-            var visibleStoredRowsForScope = profileAppliedContext is null
-                ? ImmutableArray<VisibleStoredCollectionRow>.Empty
-                : profileAppliedContext
-                    .VisibleStoredCollectionRows.Where(r => r.Address.JsonScope == jsonScope)
-                    .ToImmutableArray();
-
-            var currentRowsForScope = currentState is null
-                ? ImmutableArray<CurrentCollectionRowSnapshot>.Empty
-                : ProjectCurrentRowsForScope(currentState, tablePlan, rootPhysicalRowIdentityValues);
-
-            // No-op scope: all four sources empty → nothing to do for this collection table.
-            if (
-                requestCandidatesForScope.Length == 0
-                && visibleRequestItemsForScope.Length == 0
-                && visibleStoredRowsForScope.Length == 0
-                && currentRowsForScope.Length == 0
-            )
-            {
-                continue;
-            }
-
-            // Defense-in-depth shape fence: nested candidates or attached aligned scope
-            // data must not reach the emission site (constructor gate already rejects, but
-            // this catches any path that might slip through).
-            foreach (var candidate in requestCandidatesForScope)
-            {
-                if (!candidate.CollectionCandidates.IsDefaultOrEmpty)
-                {
-                    throw new InvalidOperationException(
-                        $"Top-level collection candidate for scope '{jsonScope}' carries nested "
-                            + "CollectionCandidates. Defense-in-depth emission fence triggered."
-                    );
-                }
-                if (!candidate.AttachedAlignedScopeData.IsDefaultOrEmpty)
-                {
-                    throw new InvalidOperationException(
-                        $"Top-level collection candidate for scope '{jsonScope}' carries "
-                            + "AttachedAlignedScopeData. Defense-in-depth emission fence triggered."
-                    );
-                }
-            }
-
-            // 1. Build scope-local planner input from the unified source set.
-            //    Reference- and descriptor-backed semantic identity parts arrive from Core
-            //    as document natural-key values / descriptor URI strings, but the planner
-            //    matches against backend-side Int64 ids. Canonicalize the Core-emitted
-            //    streams before handing them to the planner.
-            var parentScopeAddress = new ScopeInstanceAddress(
-                "$",
-                ImmutableArray<AncestorCollectionInstance>.Empty
-            );
-
-            var documentIdentityParts = ResolveDocumentReferenceIdentityParts(resourceWritePlan, tablePlan);
-            var descriptorIdentityIndices = ResolveDescriptorIdentityIndices(tablePlan);
-
-            var canonicalizedVisibleRequestItems = visibleRequestItemsForScope;
-            if (documentIdentityParts.Count > 0)
-            {
-                canonicalizedVisibleRequestItems = CanonicalizeDocumentReferenceRequestItems(
-                    canonicalizedVisibleRequestItems,
-                    documentIdentityParts,
-                    resolvedReferenceLookups
-                );
-            }
-            if (descriptorIdentityIndices.Count > 0)
-            {
-                canonicalizedVisibleRequestItems = CanonicalizeDescriptorRequestItems(
-                    canonicalizedVisibleRequestItems,
-                    tablePlan,
-                    descriptorIdentityIndices,
-                    resolvedReferenceLookups
-                );
-            }
-
-            var canonicalizedVisibleStoredRows = visibleStoredRowsForScope;
-            if (documentIdentityParts.Count > 0)
-            {
-                canonicalizedVisibleStoredRows = CanonicalizeDocumentReferenceStoredRows(
-                    canonicalizedVisibleStoredRows,
-                    documentIdentityParts,
-                    tablePlan,
-                    resolvedReferenceLookups,
-                    currentRowsForScope
-                );
-            }
-            if (descriptorIdentityIndices.Count > 0)
-            {
-                canonicalizedVisibleStoredRows = CanonicalizeDescriptorStoredRows(
-                    canonicalizedVisibleStoredRows,
-                    tablePlan,
-                    descriptorIdentityIndices,
-                    resolvedReferenceLookups,
-                    currentRowsForScope
-                );
-            }
-
-            var currentRowsForPlanner = AlignCurrentRowsWithVisibleStoredIdentityPresence(
-                currentRowsForScope,
-                canonicalizedVisibleStoredRows
-            );
-
-            var input = new ProfileTopLevelCollectionScopeInput(
-                JsonScope: jsonScope,
-                ParentScopeAddress: parentScopeAddress,
-                RequestCandidates: requestCandidatesForScope,
-                VisibleRequestItems: canonicalizedVisibleRequestItems,
-                VisibleStoredRows: canonicalizedVisibleStoredRows,
-                CurrentRows: currentRowsForPlanner
-            );
-
-            // 2. Call the planner. Invariant violations throw and propagate as fail-closed.
-            var planResult = ProfileTopLevelCollectionPlanner.Plan(input);
-
-            // 3. Handle result.
-            if (planResult is ProfileTopLevelCollectionPlanResult.CreatabilityRejection rejection)
-            {
-                return ProfileMergeOutcome.Reject(
-                    new ProfileCreatabilityRejection(jsonScope, rejection.Reason)
-                );
-            }
-
-            if (planResult is not ProfileTopLevelCollectionPlanResult.Success success)
-            {
-                throw new InvalidOperationException(
-                    $"Unhandled ProfileTopLevelCollectionPlanResult type '{planResult?.GetType().Name}' for scope '{jsonScope}'."
-                );
-            }
-
-            // 4. Translate plan entries to merged rows in sequence order.
-            var mergedRows = new List<RelationalWriteMergedTableRow>(success.Plan.Sequence.Length);
-
-            // Blocker #1 fix: CurrentRows must contain ALL rows currently in the DB for
-            // this scope — including omitted-visible rows that the planner excluded from
-            // Sequence. The persister's delete-by-absence logic relies on the set-difference
-            // (StableRowIdentity in CurrentRows but not in MergedRows → delete). Building
-            // currentCollectionRows only from plan Sequence entries means omitted-visible
-            // rows are invisible to the persister and are never deleted.
-            var currentCollectionRows = currentRowsForPlanner
-                .Select(snap => snap.ProjectedCurrentRow)
-                .ToList();
-
-            // Build a lookup from candidate identity key → VisibleRequestCollectionItem so we
-            // can find the concrete request item node for matched-update entries without a
-            // separate linear scan each time. Use the canonicalized items so descriptor
-            // identity parts (URI → Int64) match the candidate's already-resolved Int64 values.
-            var candidateKeyToRequestItem = BuildCandidateKeyToRequestItemLookup(
-                canonicalizedVisibleRequestItems
-            );
-
-            for (var i = 0; i < success.Plan.Sequence.Length; i++)
-            {
-                var finalOrdinal = i + 1;
-                var entry = success.Plan.Sequence[i];
-
-                switch (entry)
-                {
-                    case ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry matchedEntry:
-                        // Resolve the concrete request item node from the writable request body.
-                        var candidateKey = BuildCandidateIdentityKey(
-                            matchedEntry.RequestCandidate.SemanticIdentityInOrder
-                        );
-                        if (!candidateKeyToRequestItem.TryGetValue(candidateKey, out var requestItem))
-                        {
-                            throw new InvalidOperationException(
-                                $"MatchedUpdateEntry for scope '{jsonScope}' could not locate a "
-                                    + "VisibleRequestCollectionItem for the candidate's semantic identity."
-                            );
-                        }
-
-                        var concreteRequestItemNode = ResolveCollectionItemNode(
-                            writableRequestBody,
-                            requestItem.RequestJsonPath
-                        );
-
-                        if (concreteRequestItemNode is null)
-                        {
-                            throw new InvalidOperationException(
-                                $"Top-level collection merge for scope '{jsonScope}' could not navigate "
-                                    + $"the request body to item path '{requestItem.RequestJsonPath}'. "
-                                    + "The visible request item must correspond to an existing array element."
-                            );
-                        }
-
-                        var mergedRow = ProfileTopLevelCollectionMatchedRowOverlay.BuildMatchedRowEmission(
-                            resourceWritePlan,
-                            tablePlan,
-                            profileRequest,
-                            matchedEntry.StoredRow,
-                            matchedEntry.RequestCandidate,
-                            matchedEntry.HiddenMemberPaths,
-                            finalOrdinal,
-                            rootPhysicalRowIdentityValues,
-                            concreteRequestItemNode,
-                            resolvedReferenceLookups
-                        );
-                        mergedRows.Add(mergedRow);
-                        break;
-
-                    case ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry hiddenEntry:
-                        // Clone stored row values and overwrite ordinal column.
-                        var cloned = hiddenEntry.StoredRow.ProjectedCurrentRow.Values.ToArray();
-                        cloned[tablePlan.CollectionMergePlan!.OrdinalBindingIndex] =
-                            new FlattenedWriteValue.Literal(finalOrdinal);
-                        var hiddenMergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(
-                            tablePlan,
-                            cloned
-                        );
-                        mergedRows.Add(hiddenMergedRow);
-                        break;
-
-                    case ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry insertEntry:
-                        // Rewrite parent key parts, stamp ordinal, build merged row.
-                        var withParentKey = RelationalWriteRowHelpers.RewriteParentKeyPartValues(
-                            tablePlan,
-                            insertEntry.RequestCandidate.Values,
-                            rootPhysicalRowIdentityValues
-                        );
-                        var stamped = withParentKey.ToArray();
-                        stamped[tablePlan.CollectionMergePlan!.OrdinalBindingIndex] =
-                            new FlattenedWriteValue.Literal(finalOrdinal);
-                        var insertMergedRow = RelationalWriteRowHelpers.CreateMergedTableRow(
-                            tablePlan,
-                            stamped
-                        );
-                        mergedRows.Add(insertMergedRow);
-                        break;
-
-                    default:
-                        throw new InvalidOperationException(
-                            $"Unhandled plan entry type '{entry?.GetType().Name}' for scope '{jsonScope}'."
-                        );
-                }
-            }
-
-            tableStates.Add(
-                new RelationalWriteMergedTableState(tablePlan, currentCollectionRows, mergedRows)
-            );
+            var columnName = physicalRowIdentityColumns[i];
+            physicalRowIdentityValues[i] = values[
+                RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
+            ];
         }
 
-        return null; // All scopes processed without rejection.
+        return [.. physicalRowIdentityValues];
     }
-
-    /// <summary>
-    /// Builds a lookup from candidate identity key (same format as the planner uses) to the
-    /// matching <see cref="VisibleRequestCollectionItem"/>. Used to resolve the concrete
-    /// request item node for matched-update entries.
-    /// </summary>
-    private static Dictionary<string, VisibleRequestCollectionItem> BuildCandidateKeyToRequestItemLookup(
-        ImmutableArray<VisibleRequestCollectionItem> visibleRequestItems
-    )
-    {
-        var result = new Dictionary<string, VisibleRequestCollectionItem>(StringComparer.Ordinal);
-        foreach (var item in visibleRequestItems)
-        {
-            // Build the same key the planner uses for VisibleRequestItems (via AddressKey).
-            var addressKey = BuildAddressIdentityKey(item.Address.SemanticIdentityInOrder);
-            result.TryAdd(addressKey, item);
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Builds an order-based key from the candidate's semantic identity parts, preserving
-    /// missing-vs-explicit-null semantics. Mirrors the planner's <c>BuildCandidateIdentityKey</c>.
-    /// </summary>
-    private static string BuildCandidateIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
-        BuildAddressIdentityKey(identityParts);
-
-    /// <summary>
-    /// Builds an order-based key from a <see cref="CollectionRowAddress"/>'s semantic identity
-    /// parts, preserving missing-vs-explicit-null semantics. Mirrors the planner's
-    /// <c>BuildSemanticIdentityKey</c>. Relative path text is omitted because Core visible-row
-    /// addresses use bare scope-relative paths while backend candidates/current rows use
-    /// merge-plan paths that may retain the <c>$.</c> prefix.
-    /// </summary>
-    private static string BuildAddressIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
-        string.Join("|", identityParts.Select(FormatSemanticIdentityPartForKey));
-
-    private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
-        $"{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
-
-    /// <summary>
-    /// Current DB projections only carry stored column values, so a null semantic identity value
-    /// cannot distinguish explicit JSON null from a missing member. Core's visible-stored stream
-    /// still has that presence bit, so copy it onto the matching visible current snapshots before
-    /// the presence-aware planner key is built.
-    /// </summary>
-    private static ImmutableArray<CurrentCollectionRowSnapshot> AlignCurrentRowsWithVisibleStoredIdentityPresence(
-        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
-        ImmutableArray<VisibleStoredCollectionRow> visibleStoredRows
-    )
-    {
-        if (currentRows.IsDefaultOrEmpty || visibleStoredRows.IsDefaultOrEmpty)
-        {
-            return currentRows;
-        }
-
-        var currentIndexesByValueKey = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-        for (var i = 0; i < currentRows.Length; i++)
-        {
-            var valueKey = BuildSemanticIdentityValueKey(currentRows[i].SemanticIdentityInOrder);
-            if (!currentIndexesByValueKey.TryGetValue(valueKey, out var indexes))
-            {
-                indexes = [];
-                currentIndexesByValueKey.Add(valueKey, indexes);
-            }
-
-            indexes.Add(i);
-        }
-
-        ImmutableArray<CurrentCollectionRowSnapshot>.Builder? builder = null;
-        var assigned = new bool[currentRows.Length];
-
-        for (var storedIndex = 0; storedIndex < visibleStoredRows.Length; storedIndex++)
-        {
-            var storedIdentity = visibleStoredRows[storedIndex].Address.SemanticIdentityInOrder;
-            var valueKey = BuildSemanticIdentityValueKey(storedIdentity);
-
-            if (!currentIndexesByValueKey.TryGetValue(valueKey, out var currentIndexes))
-            {
-                continue;
-            }
-
-            int? currentIndex = currentIndexes.Count == 1 ? currentIndexes[0] : null;
-            if (
-                currentIndex is null
-                && currentRows.Length == visibleStoredRows.Length
-                && storedIndex < currentRows.Length
-                && string.Equals(
-                    BuildSemanticIdentityValueKey(currentRows[storedIndex].SemanticIdentityInOrder),
-                    valueKey,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                currentIndex = storedIndex;
-            }
-
-            if (currentIndex is not int index || assigned[index])
-            {
-                continue;
-            }
-
-            builder ??= currentRows.ToBuilder();
-            builder[index] = builder[index] with { SemanticIdentityInOrder = storedIdentity };
-            assigned[index] = true;
-        }
-
-        return builder is null ? currentRows : builder.MoveToImmutable();
-    }
-
-    private static string BuildSemanticIdentityValueKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
-        string.Join("|", identityParts.Select(part => part.Value?.ToJsonString() ?? "null"));
 
     // -- Document-reference canonicalization helpers ------------------------
 
@@ -1074,7 +964,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Returns the semantic-identity positions backed by a document-reference FK column, paired with the
     /// reference binding metadata needed to resolve Core-emitted natural-key parts to the stored document id.
     /// </summary>
-    private static IReadOnlyList<DocumentReferenceIdentityPart> ResolveDocumentReferenceIdentityParts(
+    internal static IReadOnlyList<DocumentReferenceIdentityPart> ResolveDocumentReferenceIdentityParts(
         ResourceWritePlan resourceWritePlan,
         TableWritePlan tablePlan
     )
@@ -1193,7 +1083,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Replaces request-side document-reference natural-key identity parts with the resolved referenced
     /// document id from the request-cycle reference cache.
     /// </summary>
-    private static ImmutableArray<VisibleRequestCollectionItem> CanonicalizeDocumentReferenceRequestItems(
+    internal static ImmutableArray<VisibleRequestCollectionItem> CanonicalizeDocumentReferenceRequestItems(
         ImmutableArray<VisibleRequestCollectionItem> requestItems,
         IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
@@ -1277,7 +1167,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Replaces stored-side document-reference natural-key identity parts with the stored referenced
     /// document id by matching against the current row projection.
     /// </summary>
-    private static ImmutableArray<VisibleStoredCollectionRow> CanonicalizeDocumentReferenceStoredRows(
+    internal static ImmutableArray<VisibleStoredCollectionRow> CanonicalizeDocumentReferenceStoredRows(
         ImmutableArray<VisibleStoredCollectionRow> storedRows,
         IReadOnlyList<DocumentReferenceIdentityPart> documentIdentityParts,
         TableWritePlan tablePlan,
@@ -1718,7 +1608,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         }
     }
 
-    private sealed record DocumentReferenceIdentityPart(
+    internal sealed record DocumentReferenceIdentityPart(
         int IdentityIndex,
         int BindingIndex,
         DocumentReferenceBinding Binding,
@@ -1728,12 +1618,602 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     // ── Descriptor-URI canonicalization helpers ────────────────────────────
 
     /// <summary>
+    /// Rewrites each ancestor's <see cref="AncestorCollectionInstance.SemanticIdentityInOrder"/>
+    /// in <paramref name="address"/> so descriptor-URI parts are replaced by their resolved
+    /// Int64 ids and document-reference natural-key parts are replaced by their resolved
+    /// document ids. This makes ancestor-keyed index lookups (built at walker construction
+    /// from raw Core-emitted addresses) symmetric with recursion-side lookup keys (which the
+    /// walker constructs from already-canonicalized current row identities).
+    /// </summary>
+    /// <remarks>
+    /// <para>For each ancestor, this helper looks up the ancestor's scope's
+    /// <see cref="TableWritePlan"/> via <paramref name="tablePlanByJsonScope"/>, then applies
+    /// the same descriptor-URI / document-reference canonicalization logic that the per-row
+    /// helpers (<see cref="CanonicalizeRequestDocumentReferenceIdentityParts"/>,
+    /// <see cref="CanonicalizeIdentityParts"/>) use for the row's own identity.</para>
+    ///
+    /// <para>For descriptor parts, the URI cache (<see cref="FlatteningResolvedReferenceLookupSet.TryGetDescriptorIdByUri"/>)
+    /// is the primary resolution path. URIs absent from the cache fall back to scanning all
+    /// current rows for the ancestor's table (passed in <paramref name="currentRowsByJsonScope"/>)
+    /// for a row whose semantic identity matches all non-descriptor parts; if that match is
+    /// unique, its descriptor id at the same index position is used. Same-shape fallback as
+    /// the per-row helpers, narrowed to scope-wide current rows because ancestor canonicalization
+    /// happens at index-build time without per-(scope, parent-instance) partitioning.</para>
+    ///
+    /// <para>For document-reference parts, Slice 5 CP2 (Task 12.5) extends ancestor
+    /// canonicalization to resolve document-reference natural-key parts deterministically.
+    /// The per-row request/stored helpers use <c>(bindingIndex, ordinalPath)</c> via
+    /// <see cref="FlatteningResolvedReferenceLookupSet.GetDocumentId"/> for request-side
+    /// resolution, but an ancestor's ordinal path is not directly observable from the
+    /// address. Instead, ancestor canonicalization scans the ancestor's scope-wide current
+    /// rows for a unique row whose natural-key columns match the stored natural-key parts
+    /// and reads the resolved backend document id directly from the matched row's FK column.
+    /// This mirrors the per-row Strategy-2 scalar-match fallback in
+    /// <see cref="TryResolveDocumentIdFromCurrentRows"/>, narrowed to scope-wide current
+    /// rows because index-build time has no per-(scope, parent-instance) partitioning.
+    /// When the natural-key parts cannot be uniquely resolved against the current rows,
+    /// the helper fails closed (rather than leaving the URI/natural-key in place silently)
+    /// to avoid the same lookup-miss-via-form-mismatch shape the descriptor pass closes.</para>
+    ///
+    /// <para>If <paramref name="address"/> has no ancestor instances, returns the original
+    /// reference unchanged. If no ancestor changes, returns the original reference.</para>
+    /// </remarks>
+    internal static ScopeInstanceAddress CanonicalizeAddressAncestors(
+        ScopeInstanceAddress address,
+        IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
+        IReadOnlyDictionary<string, ImmutableArray<CurrentCollectionRowSnapshot>> currentRowsByJsonScope,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ResourceWritePlan resourceWritePlan
+    )
+    {
+        return CanonicalizeAddressAncestorsCore(
+            address,
+            tablePlanByJsonScope,
+            currentRowsByJsonScope,
+            resolvedReferenceLookups,
+            resourceWritePlan,
+            requestOrdinalPath: default,
+            hasRequestOrdinalPath: false
+        );
+    }
+
+    /// <summary>
+    /// Request-side variant of <see cref="CanonicalizeAddressAncestors"/>. Accepts the child
+    /// item's <c>RequestJsonPath</c> so document-reference ancestor identities can be resolved
+    /// via the request-cycle reference cache (<see cref="FlatteningResolvedReferenceLookupSet.GetDocumentId"/>)
+    /// when no current row exists yet for an inserted parent — the fresh-insert case where
+    /// the stored-side current-row scan returns null.
+    ///
+    /// <para>The ancestor's ordinal path within the request is derived as the prefix of the
+    /// child's parsed ordinal path matching the wildcard count of the ancestor's
+    /// <see cref="AncestorCollectionInstance.JsonScope"/>. For child path
+    /// <c>$.parents[0].children[1]</c> and ancestor scope <c>$.parents[*]</c>, the ancestor
+    /// ordinal path is <c>[0]</c>. The reference cache is keyed by
+    /// <c>(BindingIndex, ordinalPath)</c>, so this matches how the per-row request-side
+    /// helper (<see cref="CanonicalizeRequestDocumentReferenceIdentityParts"/>) resolves
+    /// document references for the row's own identity.</para>
+    ///
+    /// <para>If the request-cycle cache yields no resolved document id for the ancestor's
+    /// natural-key (e.g., the request body did not exercise that reference path), the helper
+    /// falls back to the same current-row-based scan used by the stored-side variant. This
+    /// preserves the matched-update path's behavior while extending coverage to the
+    /// fresh-insert path.</para>
+    /// </summary>
+    internal static ScopeInstanceAddress CanonicalizeAddressAncestorsForRequestItem(
+        ScopeInstanceAddress address,
+        string requestJsonPath,
+        IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
+        IReadOnlyDictionary<string, ImmutableArray<CurrentCollectionRowSnapshot>> currentRowsByJsonScope,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ResourceWritePlan resourceWritePlan
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestJsonPath);
+
+        if (address.AncestorCollectionInstances.IsDefaultOrEmpty)
+        {
+            return address;
+        }
+
+        var parsed = RelationalJsonPathSupport.ParseConcretePath(new JsonPath(requestJsonPath));
+
+        return CanonicalizeAddressAncestorsCore(
+            address,
+            tablePlanByJsonScope,
+            currentRowsByJsonScope,
+            resolvedReferenceLookups,
+            resourceWritePlan,
+            requestOrdinalPath: parsed.OrdinalPath,
+            hasRequestOrdinalPath: true
+        );
+    }
+
+    private static ScopeInstanceAddress CanonicalizeAddressAncestorsCore(
+        ScopeInstanceAddress address,
+        IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
+        IReadOnlyDictionary<string, ImmutableArray<CurrentCollectionRowSnapshot>> currentRowsByJsonScope,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ResourceWritePlan resourceWritePlan,
+        ReadOnlySpan<int> requestOrdinalPath,
+        bool hasRequestOrdinalPath
+    )
+    {
+        if (address.AncestorCollectionInstances.IsDefaultOrEmpty)
+        {
+            return address;
+        }
+
+        ImmutableArray<AncestorCollectionInstance>.Builder? builder = null;
+
+        for (var i = 0; i < address.AncestorCollectionInstances.Length; i++)
+        {
+            var ancestor = address.AncestorCollectionInstances[i];
+
+            if (!tablePlanByJsonScope.TryGetValue(ancestor.JsonScope, out var ancestorTablePlan))
+            {
+                continue;
+            }
+
+            var descriptorIndices = ResolveDescriptorIdentityIndices(ancestorTablePlan);
+            var documentReferenceParts = ResolveDocumentReferenceIdentityParts(
+                resourceWritePlan,
+                ancestorTablePlan
+            );
+
+            if (descriptorIndices.Count == 0 && documentReferenceParts.Count == 0)
+            {
+                continue;
+            }
+
+            currentRowsByJsonScope.TryGetValue(ancestor.JsonScope, out var ancestorCurrentRows);
+            var ancestorRows = ancestorCurrentRows.IsDefault
+                ? ImmutableArray<CurrentCollectionRowSnapshot>.Empty
+                : ancestorCurrentRows;
+
+            var identity = ancestor.SemanticIdentityInOrder;
+
+            if (descriptorIndices.Count > 0)
+            {
+                identity = CanonicalizeAncestorDescriptorParts(
+                    identity,
+                    ancestorTablePlan,
+                    descriptorIndices,
+                    resolvedReferenceLookups,
+                    ancestorRows
+                );
+            }
+
+            if (documentReferenceParts.Count > 0)
+            {
+                // Slice 5 CP2 (Task 13.9): for the request-side path, derive the ancestor's
+                // ordinal path within the request as the prefix of the child's parsed ordinal
+                // path matching the wildcard count of the ancestor's JsonScope. This lets the
+                // resolver use the request-cycle reference cache for inserted parents (no
+                // current row exists yet). The stored-side path passes hasRequestOrdinalPath
+                // = false so the cache lookup is skipped and only the current-row scan is
+                // used (stored ancestors always have a current row).
+                ReadOnlySpan<int> ancestorRequestOrdinalPath = default;
+                bool ancestorHasRequestOrdinalPath = false;
+
+                if (hasRequestOrdinalPath)
+                {
+                    var ancestorWildcardCount = CountWildcardSegments(ancestor.JsonScope);
+                    if (ancestorWildcardCount >= 0 && ancestorWildcardCount <= requestOrdinalPath.Length)
+                    {
+                        ancestorRequestOrdinalPath = requestOrdinalPath[..ancestorWildcardCount];
+                        ancestorHasRequestOrdinalPath = true;
+                    }
+                }
+
+                identity = CanonicalizeAncestorDocumentReferenceParts(
+                    identity,
+                    ancestorTablePlan,
+                    documentReferenceParts,
+                    ancestor.JsonScope,
+                    resolvedReferenceLookups,
+                    ancestorRows,
+                    ancestorRequestOrdinalPath,
+                    ancestorHasRequestOrdinalPath
+                );
+            }
+
+            // Either pass returns the input array unchanged when no part was rewritten.
+            // ImmutableArray<T> is a value-type wrapper; equality is structural via the
+            // underlying array reference, so identity comparison is the correct "no-change"
+            // signal here.
+            if (
+                ScopeInstanceAddressComparer.SemanticIdentityEquals(
+                    identity,
+                    ancestor.SemanticIdentityInOrder
+                )
+            )
+            {
+                continue;
+            }
+
+            builder ??= address.AncestorCollectionInstances.ToBuilder();
+            builder[i] = new AncestorCollectionInstance(ancestor.JsonScope, identity);
+        }
+
+        return builder is null
+            ? address
+            : new ScopeInstanceAddress(address.JsonScope, builder.MoveToImmutable());
+    }
+
+    /// <summary>
+    /// Counts wildcard <c>[*]</c> segments in a canonical JsonScope (e.g., the canonical
+    /// scope <c>$.parents[*].children[*]</c> has 2 wildcards). Used to derive the prefix of
+    /// a child item's request ordinal path that corresponds to the ancestor's scope.
+    /// </summary>
+    private static int CountWildcardSegments(string jsonScope)
+    {
+        if (string.IsNullOrEmpty(jsonScope))
+        {
+            return 0;
+        }
+
+        var count = 0;
+        var index = 0;
+        while ((index = jsonScope.IndexOf("[*]", index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += 3;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Canonicalizes descriptor-URI parts of an ancestor's
+    /// <see cref="AncestorCollectionInstance.SemanticIdentityInOrder"/>. URI cache hits are
+    /// preferred; URI cache misses fall back to scanning <paramref name="currentRows"/> for a
+    /// scalar-match row whose descriptor id is then copied at the same index position. If
+    /// neither resolves the URI, the part is left unchanged so callers can detect the failure
+    /// via subsequent index-lookup miss (the bug that the calling site fixed for the
+    /// per-row identity case carries through to ancestor canonicalization unchanged when the
+    /// URI is genuinely missing from both the cache and current rows).
+    /// </summary>
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeAncestorDescriptorParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        TableWritePlan ancestorTablePlan,
+        IReadOnlyList<int> descriptorIndices,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        var bindings = ancestorTablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var idx in descriptorIndices)
+        {
+            if (idx >= identity.Length || idx >= bindings.Count)
+            {
+                continue;
+            }
+
+            var part = identity[idx];
+
+            if (!part.IsPresent || part.Value is null)
+            {
+                continue;
+            }
+
+            // Already canonicalized (Int64). The ancestor came from a path that already
+            // applied canonicalization (e.g., walker-recursion-built address). Skip.
+            if (part.Value is JsonValue jvAlready && jvAlready.TryGetValue<long>(out _))
+            {
+                continue;
+            }
+
+            var uri = part.Value.ToString();
+
+            if (string.IsNullOrEmpty(uri))
+            {
+                continue;
+            }
+
+            var binding = bindings[idx];
+            var column = ancestorTablePlan.TableModel.Columns.FirstOrDefault(c =>
+                c.ColumnName.Equals(binding.ColumnName)
+            );
+
+            if (column?.TargetResource is null)
+            {
+                continue;
+            }
+
+            long descriptorId;
+            if (
+                resolvedReferenceLookups.TryGetDescriptorIdByUri(
+                    column.TargetResource.Value,
+                    uri,
+                    out descriptorId
+                )
+            )
+            {
+                builder ??= identity.ToBuilder();
+                builder[idx] = new SemanticIdentityPart(
+                    part.RelativePath,
+                    JsonValue.Create(descriptorId),
+                    IsPresent: true
+                );
+                continue;
+            }
+
+            // Cache miss: scan current rows for a scalar-match. This covers delete-by-absence
+            // ancestor scenarios where the URI was never resolved as part of the current request.
+            var fallbackId = TryResolveAncestorDescriptorIdFromCurrentRows(
+                identity,
+                descriptorIndices,
+                idx,
+                currentRows
+            );
+
+            if (fallbackId is null)
+            {
+                // Neither cache nor current rows yielded a canonical id. Leave unchanged so
+                // callers detect the failure via index-lookup miss rather than producing an
+                // incorrectly-keyed bucket.
+                continue;
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[idx] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(fallbackId.Value),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Canonicalizes document-reference natural-key parts of an ancestor's
+    /// <see cref="AncestorCollectionInstance.SemanticIdentityInOrder"/>. Each
+    /// <see cref="DocumentReferenceIdentityPart"/> identifies an FK-backed identity slot
+    /// and the reference natural-key bindings on the ancestor's table. Resolution scans
+    /// <paramref name="currentRows"/> for a unique row whose natural-key columns match the
+    /// stored identity parts (Shape A — scope-wide adaptation of the per-row Strategy-2
+    /// scalar match in <see cref="TryResolveByReferenceScalarMatch"/>); the matched row's
+    /// FK column yields the backend document id.
+    /// <para>
+    /// Slice 5 CP2 (Task 12.7): natural-key matching is descriptor-aware. When the natural
+    /// key contains a <see cref="ColumnKind.DescriptorFk"/> part (e.g.,
+    /// <c>programReference.programTypeDescriptor</c>), the stored ancestor identity carries
+    /// the URI string while the current row carries the canonical Int64 descriptor id;
+    /// matching uses the request-cycle URI cache
+    /// (<paramref name="resolvedReferenceLookups"/>) to canonicalize the stored URI before
+    /// comparing it to the current row's column value. This mirrors what
+    /// <see cref="TryResolveByReferenceFullMatch"/> already does for the per-row path via
+    /// <see cref="DocumentReferenceIdentityPartsMatch"/>.
+    /// </para>
+    /// <para>
+    /// When deterministic resolution fails — no current rows, no scalar parts, ambiguous
+    /// or no match — the helper fails closed (Shape B) with a descriptive
+    /// <see cref="InvalidOperationException"/>. Silent partial canonicalization is
+    /// explicitly avoided: a stale natural-key form would mask the same lookup-miss shape
+    /// in nested recursion that the descriptor pass closes for descriptor URIs.
+    /// </para>
+    /// </summary>
+    private static ImmutableArray<SemanticIdentityPart> CanonicalizeAncestorDocumentReferenceParts(
+        ImmutableArray<SemanticIdentityPart> identity,
+        TableWritePlan ancestorTablePlan,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentReferenceParts,
+        string ancestorJsonScope,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        ReadOnlySpan<int> ancestorRequestOrdinalPath,
+        bool hasRequestOrdinalPath
+    )
+    {
+        ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        foreach (var documentIdentityPart in documentReferenceParts)
+        {
+            if (documentIdentityPart.IdentityIndex >= identity.Length)
+            {
+                continue;
+            }
+
+            var part = identity[documentIdentityPart.IdentityIndex];
+
+            if (!part.IsPresent || part.Value is null)
+            {
+                continue;
+            }
+
+            // Always run resolver-based canonicalization. A previous TryGetValue<long>
+            // short-circuit was unsafe: Ed-Fi document-reference natural keys are frequently
+            // numeric long values (e.g., schoolId, educationOrganizationId, programId), which
+            // parse as long but still require natural-key -> backend DocumentId
+            // canonicalization. Skipping based on long-parseability left the index keyed by
+            // the natural-key form while the walker's recursion lookup is built from the
+            // canonicalized DocumentId form, producing the same lookup-miss class fixed for
+            // descriptor URIs in Slice 5 CP2 Task 11.5.
+            //
+            // Idempotency at recursion time is not a concern: the walker's recursion does not
+            // re-canonicalize ancestor parts — it only looks up the indexes that this method
+            // populates at construction. If a future code path needs to re-canonicalize
+            // already-canonicalized values, that should be tracked with an explicit
+            // canonical-vs-raw flag rather than type-parseability.
+            long? resolvedDocumentId = null;
+
+            // Slice 5 CP2 (Task 13.9): on the request-side path, try the request-cycle
+            // reference cache first. This succeeds for inserted parents (no current row
+            // exists yet) where the stored-side current-row scan would return null. The
+            // ordinal path is the prefix of the child item's parsed ordinal path that
+            // corresponds to the ancestor's JsonScope wildcards.
+            if (hasRequestOrdinalPath)
+            {
+                resolvedDocumentId = resolvedReferenceLookups.GetDocumentId(
+                    documentIdentityPart.BindingIndex,
+                    ancestorRequestOrdinalPath
+                );
+            }
+
+            // Stored-side path or request-side cache miss: fall back to the current-row scan.
+            // Matched-update parents always have a current row, so this preserves the prior
+            // behavior; for the request-side path, the cache hit takes precedence so inserted
+            // parents resolve via the cache instead of failing closed against an empty
+            // current-rows table.
+            resolvedDocumentId ??= TryResolveAncestorDocumentReferenceIdFromCurrentRows(
+                identity,
+                documentReferenceParts,
+                documentIdentityPart,
+                ancestorTablePlan,
+                resolvedReferenceLookups,
+                currentRows
+            );
+
+            if (resolvedDocumentId is null)
+            {
+                throw new InvalidOperationException(
+                    "Cannot canonicalize document-reference ancestor identity for scope "
+                        + $"'{LogSanitizer.SanitizeForLog(ancestorJsonScope)}': natural-key parts "
+                        + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))} could not be "
+                        + "uniquely resolved against the parent table's current rows for FK column "
+                        + $"'{LogSanitizer.SanitizeForLog(documentIdentityPart.Binding.FkColumn.Value)}' "
+                        + $"on table '{LogSanitizer.SanitizeForLog(ProfileBindingClassificationCore.FormatTable(ancestorTablePlan))}'. "
+                        + "Slice 5 CP2 (Task 12.5) fails closed here to avoid the same "
+                        + "lookup-miss-via-form-mismatch shape that ancestor descriptor "
+                        + "canonicalization closes for descriptor URIs. This typically indicates "
+                        + "either current-row coverage is incomplete for the ancestor's scope or "
+                        + $"the natural-key parts (count: {currentRows.Length} current rows for "
+                        + "the ancestor scope) are ambiguous across multiple parents."
+                );
+            }
+
+            builder ??= identity.ToBuilder();
+            builder[documentIdentityPart.IdentityIndex] = new SemanticIdentityPart(
+                part.RelativePath,
+                JsonValue.Create(resolvedDocumentId.Value),
+                IsPresent: true
+            );
+        }
+
+        return builder is null ? identity : builder.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Scans <paramref name="currentRows"/> for a unique row whose natural-key columns match
+    /// the reference natural-key parts in <paramref name="identity"/>, then returns the
+    /// matched row's FK column value at <paramref name="targetPart"/>. Mirrors
+    /// <see cref="TryResolveDocumentIdFromCurrentRows"/>'s full-match then scalar-fallback
+    /// strategies, adapted to scope-wide ancestor canonicalization where positional fallback
+    /// is not available.
+    /// <para>
+    /// Slice 5 CP2 (Task 12.7): natural-key matching is descriptor-aware — when the natural
+    /// key contains a <see cref="ColumnKind.DescriptorFk"/> part, the stored URI is
+    /// canonicalized via <paramref name="resolvedReferenceLookups"/> before comparing
+    /// against the current row's Int64 descriptor id. The shared comparison helper
+    /// <see cref="DocumentReferenceIdentityPartsMatch"/> performs this canonicalization for
+    /// both this ancestor path and the per-row <see cref="TryResolveByReferenceFullMatch"/>
+    /// path. Without descriptor-aware comparison, a composite natural key with a descriptor
+    /// part (e.g., <c>programId + programTypeDescriptor</c>) would never match: stored
+    /// identity carries the URI string and the current row carries the descriptor Int64.
+    /// </para>
+    /// </summary>
+    private static long? TryResolveAncestorDocumentReferenceIdFromCurrentRows(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<DocumentReferenceIdentityPart> documentReferenceParts,
+        DocumentReferenceIdentityPart targetPart,
+        TableWritePlan tablePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        if (currentRows.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        // Restrict to natural-key parts that share the same reference (BindingIndex) as the
+        // target part — these are the columns that uniquely identify the same parent row's
+        // reference. This mirrors the per-row helper's same-reference partitioning.
+        var sameReferenceParts = documentReferenceParts
+            .Where(part =>
+                part.BindingIndex == targetPart.BindingIndex && part.IdentityIndex < identity.Length
+            )
+            .ToArray();
+
+        if (sameReferenceParts.Length == 0)
+        {
+            return null;
+        }
+
+        var fullMatchId = TryResolveByReferenceFullMatch(
+            identity,
+            sameReferenceParts,
+            targetPart,
+            tablePlan,
+            resolvedReferenceLookups,
+            currentRows
+        );
+
+        if (fullMatchId is not null)
+        {
+            return fullMatchId;
+        }
+
+        return TryResolveByReferenceScalarMatch(
+            identity,
+            sameReferenceParts,
+            targetPart,
+            tablePlan,
+            currentRows
+        );
+    }
+
+    /// <summary>
+    /// Formats <paramref name="identity"/> for fail-closed exception messages. The output is
+    /// passed through <see cref="LogSanitizer.SanitizeForLog"/> at the call site to prevent
+    /// log forging via schema-sourced control characters.
+    /// </summary>
+    private static string FormatIdentity(ImmutableArray<SemanticIdentityPart> identity) =>
+        string.Join(",", identity.Select(p => $"{p.RelativePath}={p.Value?.ToJsonString() ?? "null"}"));
+
+    /// <summary>
+    /// Scans <paramref name="currentRows"/> for a unique row whose semantic identity matches
+    /// <paramref name="identity"/> on all scalar (non-descriptor) parts, then returns that
+    /// row's descriptor id at <paramref name="descriptorIdx"/>. Mirrors
+    /// <see cref="TryResolveByScalarMatch"/> but adapted to scope-wide current rows for
+    /// ancestor canonicalization at index-build time (no per-parent partitioning available).
+    /// </summary>
+    private static long? TryResolveAncestorDescriptorIdFromCurrentRows(
+        ImmutableArray<SemanticIdentityPart> identity,
+        IReadOnlyList<int> descriptorIndices,
+        int descriptorIdx,
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+    )
+    {
+        if (currentRows.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var scalarIndices = Enumerable
+            .Range(0, identity.Length)
+            .Where(i => !descriptorIndices.Contains(i))
+            .ToList();
+
+        if (scalarIndices.Count == 0)
+        {
+            // Descriptor-only ancestor identity with URI cache miss: ambiguous. The only
+            // disambiguator at index-build time would be the ancestor's parent identity,
+            // which is not directly observable from the index-construction surface.
+            return null;
+        }
+
+        return TryResolveByScalarMatch(identity, scalarIndices, descriptorIdx, currentRows);
+    }
+
+    /// <summary>
     /// Returns the zero-based positions within the table's
     /// <see cref="DbTableIdentityMetadata.SemanticIdentityBindings"/> that require
     /// URI-to-Int64 canonicalization (i.e. those backed by a <see cref="ColumnKind.DescriptorFk"/>
     /// column). Returns an empty list when no descriptor-backed parts exist.
     /// </summary>
-    private static IReadOnlyList<int> ResolveDescriptorIdentityIndices(TableWritePlan tablePlan)
+    internal static IReadOnlyList<int> ResolveDescriptorIdentityIndices(TableWritePlan tablePlan)
     {
         var bindings = tablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
 
@@ -1771,7 +2251,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Items whose descriptor lookup returns null are left unchanged (the planner's
     /// invariant check will surface the mismatch as a fail-closed error).
     /// </summary>
-    private static ImmutableArray<VisibleRequestCollectionItem> CanonicalizeDescriptorRequestItems(
+    internal static ImmutableArray<VisibleRequestCollectionItem> CanonicalizeDescriptorRequestItems(
         ImmutableArray<VisibleRequestCollectionItem> requestItems,
         TableWritePlan tablePlan,
         IReadOnlyList<int> descriptorIdentityIndices,
@@ -1821,7 +2301,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <see cref="CurrentCollectionRowSnapshot"/> — see <see cref="CanonicalizeStoredIdentityParts"/>
     /// for the fallback strategy and its failure conditions.
     /// </summary>
-    private static ImmutableArray<VisibleStoredCollectionRow> CanonicalizeDescriptorStoredRows(
+    internal static ImmutableArray<VisibleStoredCollectionRow> CanonicalizeDescriptorStoredRows(
         ImmutableArray<VisibleStoredCollectionRow> storedRows,
         TableWritePlan tablePlan,
         IReadOnlyList<int> descriptorIdentityIndices,
@@ -1955,7 +2435,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     ///   <c>currentRows.Length == storedRows.Length</c> (no hidden rows in scope), use
     ///   <c>currentRows[storedRowIndex]</c> directly. Both arrays are ordered by
     ///   stored-ordinal (planner invariants <c>ValidateStoredOrdinalOrder</c> +
-    ///   <c>ProjectCurrentRowsForScope OrderBy</c>), and count equality is equivalent to "no
+    ///   walker projection-index ordering), and count equality is equivalent to "no
     ///   hidden rows interleaved", so positional correspondence holds for both
     ///   descriptor-only and mixed scalar+descriptor identity.</item>
     ///   <item>If counts differ (hidden rows are interleaved — structurally possible but not
@@ -2142,7 +2622,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         //      order for this collection.
         // Both hold under the current Core/projection contract; together they imply that
         // VisibleStoredRows[storedRowIndex] corresponds to currentRows[storedRowIndex] when
-        // currentRows is sorted by StoredOrdinal (see ProjectCurrentRowsForScope). This
+        // currentRows is sorted by StoredOrdinal (see the walker's projection index). This
         // method does NOT independently verify the correspondence — a structural check
         // would require resolving each current row's Int64 descriptor id back to its URI
         // (a DB roundtrip against the descriptor projection), which is out of scope for
@@ -2282,290 +2762,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     }
 
     /// <summary>
-    /// Projects the current DB rows for a single top-level collection table into
-    /// <see cref="CurrentCollectionRowSnapshot"/> instances. Filters to rows whose
-    /// parent physical identity columns match <paramref name="rootPhysicalRowIdentityValues"/>,
-    /// then extracts <see cref="CurrentCollectionRowSnapshot.StableRowIdentity"/>,
-    /// <see cref="CurrentCollectionRowSnapshot.SemanticIdentityInOrder"/>, and
-    /// <see cref="CurrentCollectionRowSnapshot.StoredOrdinal"/> from the table plan's
-    /// binding indexes. Rows are returned sorted by ascending <c>StoredOrdinal</c>.
-    /// </summary>
-    private static ImmutableArray<CurrentCollectionRowSnapshot> ProjectCurrentRowsForScope(
-        RelationalWriteCurrentState currentState,
-        TableWritePlan tablePlan,
-        IReadOnlyList<FlattenedWriteValue> rootPhysicalRowIdentityValues
-    )
-    {
-        var hydratedRows = TryFindHydratedRowsForTable(currentState, tablePlan);
-        if (hydratedRows is null || hydratedRows.Count == 0)
-        {
-            return ImmutableArray<CurrentCollectionRowSnapshot>.Empty;
-        }
-
-        var mergePlan =
-            tablePlan.CollectionMergePlan
-            ?? throw new InvalidOperationException(
-                $"Collection table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' does not have a compiled collection merge plan."
-            );
-
-        // Build a lookup of parent-scope-locator column names → binding indexes so we can
-        // match each DB row against rootPhysicalRowIdentityValues.
-        var immediateParentColumns = tablePlan.TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
-        var parentBindingIndexes = immediateParentColumns
-            .Select(col => RelationalWriteMergeSupport.FindBindingIndex(tablePlan, col))
-            .ToArray();
-
-        // Build expected parent identity values from rootPhysicalRowIdentityValues using the
-        // parent binding indexes.  rootPhysicalRowIdentityValues is indexed by PhysicalRowIdentity
-        // column order on the ROOT table; for top-level collection tables the parent key part
-        // index maps directly to the root table's physical identity columns.
-        var projectedAll = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydratedRows);
-
-        var snapshots = new List<CurrentCollectionRowSnapshot>(projectedAll.Length);
-        for (var rowIndex = 0; rowIndex < projectedAll.Length; rowIndex++)
-        {
-            var projectedRow = projectedAll[rowIndex];
-            var hydratedRow = hydratedRows[rowIndex];
-            // Filter: every parent-scope-locator column must match rootPhysicalRowIdentityValues.
-            var parentMatches = true;
-            for (var pi = 0; pi < parentBindingIndexes.Length; pi++)
-            {
-                var parentBindingIdx = parentBindingIndexes[pi];
-
-                // rootPhysicalRowIdentityValues uses the ParentKeyPart.Index to find the right
-                // value. The binding's source carries the ParentKeyPart.Index.
-                if (
-                    tablePlan.ColumnBindings[parentBindingIdx].Source
-                    is WriteValueSource.ParentKeyPart parentKeyPart
-                )
-                {
-                    var expectedValue = rootPhysicalRowIdentityValues[parentKeyPart.Index];
-                    var actualValue = projectedRow.Values[parentBindingIdx];
-
-                    if (!FlattenedWriteValueEquals(expectedValue, actualValue))
-                    {
-                        parentMatches = false;
-                        break;
-                    }
-                }
-                // If not a ParentKeyPart source, we still compare by literal equality.
-                else if (
-                    pi < rootPhysicalRowIdentityValues.Count
-                    && !FlattenedWriteValueEquals(
-                        rootPhysicalRowIdentityValues[pi],
-                        projectedRow.Values[parentBindingIdx]
-                    )
-                )
-                {
-                    parentMatches = false;
-                    break;
-                }
-            }
-
-            if (!parentMatches)
-            {
-                continue;
-            }
-
-            // Extract stable row identity. PhysicalRowIdentity columns are NOT NULL in the DB
-            // and are projected as a FlattenedWriteValue.Literal carrying a numeric CLR value
-            // (typically long, sometimes int from narrower projection paths). Fail closed if the
-            // projection produces anything else — silently defaulting would collide identities
-            // (multiple rows hashed to 0) and mask upstream binding mis-mapping.
-            long stableRowIdentity = ExtractRequiredInt64(
-                projectedRow.Values[mergePlan.StableRowIdentityBindingIndex],
-                tablePlan,
-                mergePlan.StableRowIdentityBindingIndex,
-                "stable row identity"
-            );
-
-            // Extract ordinal. The ordinal column is NOT NULL in the DB and is projected as a
-            // FlattenedWriteValue.Literal carrying an int (sometimes a wider numeric type from
-            // certain backends). Fail closed if the projection produces anything else —
-            // silently defaulting would tie ordering and mask upstream binding mis-mapping.
-            int storedOrdinal = ExtractRequiredInt32(
-                projectedRow.Values[mergePlan.OrdinalBindingIndex],
-                tablePlan,
-                mergePlan.OrdinalBindingIndex,
-                "stored ordinal"
-            );
-
-            // Extract semantic identity parts.
-            var identityParts = mergePlan
-                .SemanticIdentityBindings.Select(binding =>
-                {
-                    var bindingVal = projectedRow.Values[binding.BindingIndex];
-                    var rawValue = bindingVal is FlattenedWriteValue.Literal valLit ? valLit.Value : null;
-                    JsonNode? jsonNode = rawValue is null ? null : JsonValue.Create(rawValue);
-                    return new SemanticIdentityPart(
-                        binding.RelativePath.Canonical,
-                        jsonNode,
-                        IsPresent: rawValue is not null
-                    );
-                })
-                .ToImmutableArray();
-
-            // Build a column-name-keyed view of the hydrated row covering every column on
-            // the table model — including UnifiedAlias columns that the binding-indexed
-            // projection (above) skips because they are not in ColumnBindings. Hidden
-            // key-unification preservation in the matched-row overlay reads MemberPathColumn
-            // and PresenceColumn by physical column name; those are required-UnifiedAlias
-            // per KeyUnificationWritePlanCompiler and would not be present in a binding-only
-            // view.
-            var currentRowByColumnName = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(
-                tablePlan.TableModel,
-                hydratedRow
-            );
-
-            snapshots.Add(
-                new CurrentCollectionRowSnapshot(
-                    stableRowIdentity,
-                    identityParts,
-                    storedOrdinal,
-                    projectedRow,
-                    currentRowByColumnName
-                )
-            );
-        }
-
-        return [.. snapshots.OrderBy(s => s.StoredOrdinal)];
-    }
-
-    /// <summary>
-    /// Compares two <see cref="FlattenedWriteValue"/> instances by their underlying literal
-    /// values for parent-scope filtering.
-    /// </summary>
-    private static bool FlattenedWriteValueEquals(FlattenedWriteValue a, FlattenedWriteValue b)
-    {
-        if (a is FlattenedWriteValue.Literal litA && b is FlattenedWriteValue.Literal litB)
-        {
-            if (litA.Value is null && litB.Value is null)
-            {
-                return true;
-            }
-
-            if (litA.Value is null || litB.Value is null)
-            {
-                return false;
-            }
-
-            // Convert both to string for comparison to handle numeric type mismatches
-            // (e.g., long vs int from different projection paths).
-            return string.Equals(
-                Convert.ToString(litA.Value),
-                Convert.ToString(litB.Value),
-                StringComparison.Ordinal
-            );
-        }
-
-        // Non-literal values don't participate in parent-key filtering.
-        return ReferenceEquals(a, b);
-    }
-
-    /// <summary>
-    /// Describes a projected current-state binding for diagnostic messages. Distinguishes
-    /// non-literal binding shapes from null literals and from typed literal values.
-    /// </summary>
-    private static string DescribeProjectedKind(FlattenedWriteValue value)
-    {
-        if (value is not FlattenedWriteValue.Literal literal)
-        {
-            return value.GetType().Name;
-        }
-        return literal.Value is null ? "null literal" : literal.Value.GetType().Name;
-    }
-
-    /// <summary>
-    /// Extracts a required Int64 value from a projected current-state binding. Throws when
-    /// the binding is not a <see cref="FlattenedWriteValue.Literal"/>, when its value is
-    /// <c>null</c>, or when the value cannot be coerced to <see cref="long"/>. Used for
-    /// columns that are NOT NULL in the DB (stable row identity, ordinal-keyed columns) so
-    /// projection drift surfaces deterministically rather than silently producing 0.
-    /// </summary>
-    private static long ExtractRequiredInt64(
-        FlattenedWriteValue value,
-        TableWritePlan tablePlan,
-        int bindingIndex,
-        string columnRole
-    )
-    {
-        if (value is not FlattenedWriteValue.Literal literal || literal.Value is null)
-        {
-            throw new InvalidOperationException(
-                $"Required {columnRole} column at binding index {bindingIndex} on table "
-                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
-                    + $"{DescribeProjectedKind(value)}; "
-                    + "expected a non-null numeric literal. Current-state projection drift."
-            );
-        }
-        if (literal.Value is long l)
-        {
-            return l;
-        }
-        try
-        {
-            return Convert.ToInt64(literal.Value);
-        }
-        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
-        {
-            throw new InvalidOperationException(
-                $"Required {columnRole} column at binding index {bindingIndex} on table "
-                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
-                    + $"'{literal.Value.GetType().Name}' that cannot be coerced to Int64. "
-                    + "Current-state projection drift.",
-                ex
-            );
-        }
-    }
-
-    /// <summary>
-    /// Extracts a required Int32 value from a projected current-state binding. Same intent as
-    /// <see cref="ExtractRequiredInt64"/>: fail closed on projection drift rather than default
-    /// to 0 and silently break sort order or duplicate-detection.
-    /// </summary>
-    private static int ExtractRequiredInt32(
-        FlattenedWriteValue value,
-        TableWritePlan tablePlan,
-        int bindingIndex,
-        string columnRole
-    )
-    {
-        if (value is not FlattenedWriteValue.Literal literal || literal.Value is null)
-        {
-            throw new InvalidOperationException(
-                $"Required {columnRole} column at binding index {bindingIndex} on table "
-                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
-                    + $"{DescribeProjectedKind(value)}; "
-                    + "expected a non-null numeric literal. Current-state projection drift."
-            );
-        }
-        if (literal.Value is int i)
-        {
-            return i;
-        }
-        try
-        {
-            return Convert.ToInt32(literal.Value);
-        }
-        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
-        {
-            throw new InvalidOperationException(
-                $"Required {columnRole} column at binding index {bindingIndex} on table "
-                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' projected as "
-                    + $"'{literal.Value.GetType().Name}' that cannot be coerced to Int32. "
-                    + "Current-state projection drift.",
-                ex
-            );
-        }
-    }
-
-    /// <summary>
     /// Resolves a concrete JSON array item node from <paramref name="requestBody"/> using a
     /// path like <c>$.classPeriods[0]</c>. Used as a fallback when the built-in
     /// <see cref="RelationalWriteFlattener.TryGetRelativeLeafNode"/> cannot navigate
     /// array-indexed paths directly.
     /// </summary>
-    private static JsonNode? ResolveCollectionItemNode(JsonNode requestBody, string requestJsonPath)
+    internal static JsonNode? ResolveCollectionItemNode(JsonNode requestBody, string requestJsonPath)
     {
         // Simple path walker: splits on '[' and ']' to handle array-indexed paths.
         // E.g. "$.classPeriods[0]" → navigate to "classPeriods" array, then element 0.
@@ -2669,17 +2871,35 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             )
             ?.Rows;
 
-    private readonly record struct SeparateTableSynthesisResult(
-        RelationalWriteMergedTableState? TableState,
-        ProfileCreatabilityRejection? Rejection
+    private static CurrentSeparateScopeRowProjection? BuildCurrentSeparateScopeRowProjection(
+        TableWritePlan tablePlan,
+        IReadOnlyList<object?[]>? hydratedRows,
+        ImmutableArray<FlattenedWriteValue> parentPhysicalIdentityValues
     )
     {
-        public static SeparateTableSynthesisResult Skipped => new(null, null);
+        if (hydratedRows is null || hydratedRows.Count == 0)
+        {
+            return null;
+        }
 
-        public static SeparateTableSynthesisResult Table(RelationalWriteMergedTableState state) =>
-            new(state, null);
+        if (hydratedRows.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Separate table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' has "
+                    + $"{hydratedRows.Count} current rows for profiled separate-scope merge; expected zero or one."
+            );
+        }
 
-        public static SeparateTableSynthesisResult Reject(ProfileCreatabilityRejection rejection) =>
-            new(null, rejection);
+        var projectedCurrentRow = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydratedRows)[0];
+        var currentRowByColumnName = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(
+            tablePlan.TableModel,
+            hydratedRows[0]
+        );
+
+        return new CurrentSeparateScopeRowProjection(
+            projectedCurrentRow,
+            currentRowByColumnName,
+            parentPhysicalIdentityValues
+        );
     }
 }

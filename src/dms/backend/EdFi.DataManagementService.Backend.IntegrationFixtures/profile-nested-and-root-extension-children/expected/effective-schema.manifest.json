@@ -1,0 +1,31 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "v1",
+  "effective_schema_hash": "d5ef03614de79ee4fb420fa29855da446a652984587c3ffe656267cd6bcc8a59",
+  "resource_key_count": 1,
+  "resource_key_seed_hash": "aa4516a2188a393b97f346bd6483e8a82e57ab430f5377d00b6409e307a812dc",
+  "schema_components": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "1.0.0",
+      "is_extension_project": false,
+      "project_hash": "ddd1fdb4861d288abf3047c76916f424541acfb26921070221e9c9f73cb1517b"
+    },
+    {
+      "project_endpoint_name": "root_ext",
+      "project_name": "RootExt",
+      "project_version": "1.0.0",
+      "is_extension_project": true,
+      "project_hash": "67cc177fdb6afcc89369ec19e50564877554a40eecb395fd9fd47c0553311ddb"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "ParentResource",
+      "resource_version": "1.0.0"
+    }
+  ]
+}

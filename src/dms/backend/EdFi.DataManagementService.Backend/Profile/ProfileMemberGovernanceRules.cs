@@ -87,10 +87,26 @@ internal static class ProfileMemberGovernanceRules
         string scopeCanonical
     ) => profileRequest.RequestScopeStates.FirstOrDefault(state => state.Address.JsonScope == scopeCanonical);
 
+    internal static RequestScopeState? LookupRequestScope(
+        ProfileAppliedWriteRequest profileRequest,
+        ScopeInstanceAddress scopeAddress
+    ) =>
+        profileRequest.RequestScopeStates.FirstOrDefault(state =>
+            ScopeInstanceAddressComparer.ScopeInstanceAddressEquals(state.Address, scopeAddress)
+        );
+
     internal static StoredScopeState? LookupStoredScope(
         ProfileAppliedWriteContext context,
         string scopeCanonical
     ) => context.StoredScopeStates.FirstOrDefault(state => state.Address.JsonScope == scopeCanonical);
+
+    internal static StoredScopeState? LookupStoredScope(
+        ProfileAppliedWriteContext context,
+        ScopeInstanceAddress scopeAddress
+    ) =>
+        context.StoredScopeStates.FirstOrDefault(state =>
+            ScopeInstanceAddressComparer.ScopeInstanceAddressEquals(state.Address, scopeAddress)
+        );
 
     private static bool IsMatch(string governingPath, string hiddenPath, HiddenPathMatchKind matchKind)
     {

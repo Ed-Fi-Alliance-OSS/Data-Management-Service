@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -161,13 +160,14 @@ public sealed record FlatteningInput
 
     /// <summary>
     /// When true, the flattener emits a <see cref="RootExtensionWriteRowBuffer"/> for every
-    /// root-extension scope whose node is present as a JSON object in the selected body, even
-    /// when the object carries no bound scalar data and no collection candidates. The
-    /// profile-aware executor sets this so a profile-shaped body like <c>_ext: { sample: {} }</c>
-    /// (e.g. an explicitly empty visible scope) still produces a buffer for the Slice 3 merge
-    /// synthesizer to overlay, rather than being silently dropped under the default
-    /// "no bound data" heuristic. Non-profile callers leave it off to preserve the historical
-    /// drop-empty behavior.
+    /// root-extension scope and a <see cref="CandidateAttachedAlignedScopeData"/> for every
+    /// collection-aligned extension scope whose node is present as a JSON object in the
+    /// selected body, even when the object carries no bound scalar data and no collection
+    /// candidates. The profile-aware executor sets this so a profile-shaped body like
+    /// <c>_ext: { sample: {} }</c> (e.g. an explicitly empty visible scope) still produces a
+    /// buffer for the profile merge synthesizer to overlay, rather than being silently
+    /// dropped under the default "no bound data" heuristic. Non-profile callers leave it off
+    /// to preserve the historical drop-empty behavior.
     /// </summary>
     public bool EmitEmptyRootExtensionBuffers { get; init; }
 }
@@ -331,8 +331,7 @@ public sealed record CollectionWriteCandidate
         IEnumerable<FlattenedWriteValue> values,
         IEnumerable<object?> semanticIdentityValues,
         IEnumerable<CandidateAttachedAlignedScopeData>? attachedAlignedScopeData = null,
-        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null,
-        IEnumerable<SemanticIdentityPart>? semanticIdentityInOrder = null
+        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
     )
     {
         TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
@@ -395,22 +394,6 @@ public sealed record CollectionWriteCandidate
                 nameof(semanticIdentityValues)
             );
         }
-
-        SemanticIdentityInOrder = semanticIdentityInOrder is null
-            ? BuildDefaultSemanticIdentityInOrder(mergePlan, SemanticIdentityValues)
-            : FlattenedWriteContractSupport.ToImmutableArray(
-                semanticIdentityInOrder,
-                nameof(semanticIdentityInOrder)
-            );
-
-        if (SemanticIdentityInOrder.Length != mergePlan.SemanticIdentityBindings.Length)
-        {
-            throw new ArgumentException(
-                $"{nameof(semanticIdentityInOrder)} must contain one entry per compiled semantic identity binding. "
-                    + $"Expected {mergePlan.SemanticIdentityBindings.Length}, actual {SemanticIdentityInOrder.Length}.",
-                nameof(semanticIdentityInOrder)
-            );
-        }
     }
 
     /// <summary>
@@ -439,12 +422,6 @@ public sealed record CollectionWriteCandidate
     public ImmutableArray<object?> SemanticIdentityValues { get; init; }
 
     /// <summary>
-    /// The compiled semantic-identity parts in deterministic binding order, preserving
-    /// missing-vs-explicit-null semantics for profile collection matching.
-    /// </summary>
-    public ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder { get; init; }
-
-    /// <summary>
     /// Collection-aligned one-to-one scopes that remain attached to the owning collection candidate.
     /// </summary>
     public ImmutableArray<CandidateAttachedAlignedScopeData> AttachedAlignedScopeData { get; init; }
@@ -453,30 +430,6 @@ public sealed record CollectionWriteCandidate
     /// Nested collection candidates that hang directly from this collection scope.
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
-
-    private static ImmutableArray<SemanticIdentityPart> BuildDefaultSemanticIdentityInOrder(
-        CollectionMergePlan mergePlan,
-        ImmutableArray<object?> semanticIdentityValues
-    )
-    {
-        var builder = ImmutableArray.CreateBuilder<SemanticIdentityPart>(
-            mergePlan.SemanticIdentityBindings.Length
-        );
-
-        for (var i = 0; i < mergePlan.SemanticIdentityBindings.Length; i++)
-        {
-            var value = semanticIdentityValues[i];
-            builder.Add(
-                new SemanticIdentityPart(
-                    mergePlan.SemanticIdentityBindings[i].RelativePath.Canonical,
-                    value is null ? null : JsonValue.Create(value),
-                    IsPresent: value is not null
-                )
-            );
-        }
-
-        return builder.MoveToImmutable();
-    }
 }
 
 /// <summary>

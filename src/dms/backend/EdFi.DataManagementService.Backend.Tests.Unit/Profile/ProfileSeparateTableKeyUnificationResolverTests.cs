@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Tests.Unit.Profile.ProfileTestDoubles;
@@ -351,23 +352,70 @@ public class Given_SeparateTableResolver_with_visible_hidden_disagreement_fails_
 }
 
 [TestFixture]
-public class Given_SeparateTableResolver_rejects_non_RootExtension_table_kind
+public class Given_SeparateTableResolver_instance_aware_overload_for_CollectionExtensionScope_table_kind
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildRootPlusSeparateTablePlanWithNonRootExtensionKind(
+            nonRootExtensionKind: DbTableKind.CollectionExtensionScope
+        );
+        var separatePlan = plan.TablePlansInDependencyOrder[1];
+        var scopeAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var requestScope = new RequestScopeState(
+            scopeAddress,
+            ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+        var context = BuildSeparateTableResolverContext(
+            plan,
+            profileRequest: CreateRequest(scopeStates: requestScope)
+        );
+        var row = new FlattenedWriteValue[separatePlan.ColumnBindings.Length];
+        for (var i = 0; i < row.Length; i++)
+        {
+            row[i] = new FlattenedWriteValue.Literal(null);
+        }
+
+        try
+        {
+            new ProfileSeparateTableKeyUnificationResolver().Resolve(
+                separatePlan,
+                context,
+                scopeAddress,
+                requestScope,
+                storedScope: null,
+                row,
+                ImmutableHashSet<int>.Empty
+            );
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_does_not_throw() => _thrown.Should().BeNull();
+}
+
+[TestFixture]
+public class Given_SeparateTableResolver_legacy_overload_for_CollectionExtensionScope_table_kind
 {
     private Action _act = null!;
 
     [SetUp]
     public void Setup()
     {
-        // Separate table tagged as CollectionExtensionScope — the slice 5 scope family
-        // the separate-table resolver must reject.
-        var plan = BuildRootPlusSeparateTableWithKeyUnificationNonRootExtensionKind(
+        var plan = BuildRootPlusSeparateTablePlanWithNonRootExtensionKind(
             nonRootExtensionKind: DbTableKind.CollectionExtensionScope
         );
         var separatePlan = plan.TablePlansInDependencyOrder[1];
-
         var context = BuildSeparateTableResolverContext(
             plan,
-            profileRequest: CreateRequest(scopeStates: RequestVisiblePresentScope("$"))
+            profileRequest: CreateRequest(scopeStates: RequestVisiblePresentScope("$._ext.sample"))
         );
         var row = new FlattenedWriteValue[separatePlan.ColumnBindings.Length];
         for (var i = 0; i < row.Length; i++)
@@ -380,13 +428,60 @@ public class Given_SeparateTableResolver_rejects_non_RootExtension_table_kind
                 separatePlan,
                 context,
                 row,
+                ImmutableHashSet<int>.Empty
+            );
+    }
+
+    [Test]
+    public void It_throws_ArgumentException_to_preserve_instance_aware_scope_lookup() =>
+        _act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*legacy*RootExtension*CollectionExtensionScope*");
+}
+
+[TestFixture]
+public class Given_SeparateTableResolver_rejects_unsupported_table_kind
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildRootPlusSeparateTableWithKeyUnificationNonRootExtensionKind(
+            nonRootExtensionKind: DbTableKind.Root
+        );
+        var separatePlan = plan.TablePlansInDependencyOrder[1];
+        var scopeAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var requestScope = new RequestScopeState(
+            scopeAddress,
+            ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+        var context = BuildSeparateTableResolverContext(
+            plan,
+            profileRequest: CreateRequest(scopeStates: requestScope)
+        );
+        var row = new FlattenedWriteValue[separatePlan.ColumnBindings.Length];
+        for (var i = 0; i < row.Length; i++)
+        {
+            row[i] = new FlattenedWriteValue.Literal(null);
+        }
+
+        _act = () =>
+            new ProfileSeparateTableKeyUnificationResolver().Resolve(
+                separatePlan,
+                context,
+                scopeAddress,
+                requestScope,
+                storedScope: null,
+                row,
                 ImmutableHashSet.Create(1)
             );
     }
 
     [Test]
-    public void It_throws_ArgumentException_with_slice_5_guidance() =>
-        _act.Should().Throw<ArgumentException>().WithMessage("*RootExtension*slice 5*");
+    public void It_throws_ArgumentException_with_supported_kinds() =>
+        _act.Should().Throw<ArgumentException>().WithMessage("*RootExtension*CollectionExtensionScope*Root*");
 }
 
 [TestFixture]
@@ -538,6 +633,96 @@ public class Given_SeparateTableResolver_with_scope_relative_member_path_evaluat
     [Test]
     public void It_writes_synthetic_presence_true_for_visible_present_member() =>
         ((FlattenedWriteValue.Literal)_row[_presenceIndex]).Value.Should().Be(true);
+
+    private static FlattenedWriteValue[] NewInitialRow(TableWritePlan tablePlan)
+    {
+        var row = new FlattenedWriteValue[tablePlan.ColumnBindings.Length];
+        for (var i = 0; i < row.Length; i++)
+        {
+            row[i] = new FlattenedWriteValue.Literal(null);
+        }
+        return row;
+    }
+}
+
+[TestFixture]
+public class Given_SeparateTableResolver_instance_aware_overload_for_sibling_scope_instances
+{
+    private const string ParentScope = "$.parents[*]";
+    private const string AlignedScope = "$.parents[*]._ext.aligned";
+
+    private FlattenedWriteValue[] _row = null!;
+    private int _canonicalIndex;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, canonicalIdx, _) = BuildRootPlusRootExtensionPlanWithKeyUnification(
+            [
+                new KeyUnificationMemberSpec(
+                    RelativePath: "$.memberA",
+                    SourceKind: KeyUnificationMemberSourceKind.Scalar,
+                    PresenceSynthetic: false
+                ),
+            ],
+            extensionJsonScope: AlignedScope
+        );
+        _canonicalIndex = canonicalIdx;
+
+        var addressA = ScopeAddressForParent("A");
+        var addressB = ScopeAddressForParent("B");
+        var requestA = new RequestScopeState(addressA, ProfileVisibilityKind.VisiblePresent, true);
+        var requestB = new RequestScopeState(addressB, ProfileVisibilityKind.VisiblePresent, true);
+        var storedA = new StoredScopeState(addressA, ProfileVisibilityKind.VisiblePresent, ["memberA"]);
+        var storedB = new StoredScopeState(addressB, ProfileVisibilityKind.VisiblePresent, []);
+
+        var scopedBody = new JsonObject { ["memberA"] = 42 };
+        var profileRequest = CreateRequest(
+            writableBody: new JsonObject(),
+            rootResourceCreatable: true,
+            requestA,
+            requestB
+        );
+        var appliedContext = CreateContext(profileRequest, visibleStoredBody: null, storedA, storedB);
+        var currentRow = new Dictionary<DbColumnName, object?> { [MemberPathColumnFor("$.memberA")] = 99 };
+
+        var context = BuildSeparateTableResolverContext(
+            plan,
+            writableBody: scopedBody,
+            currentRowByColumnName: currentRow,
+            profileRequest: profileRequest,
+            profileAppliedContext: appliedContext
+        );
+
+        var separateTable = plan.TablePlansInDependencyOrder[1];
+        _row = NewInitialRow(separateTable);
+        var resolverOwned = ImmutableHashSet.Create(canonicalIdx);
+
+        new ProfileSeparateTableKeyUnificationResolver().Resolve(
+            separateTable,
+            context,
+            addressB,
+            requestB,
+            storedB,
+            _row,
+            resolverOwned
+        );
+    }
+
+    [Test]
+    public void It_resolves_from_the_matching_instances_visible_request_member() =>
+        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(42);
+
+    private static ScopeInstanceAddress ScopeAddressForParent(string parentId) =>
+        new(
+            AlignedScope,
+            [
+                new AncestorCollectionInstance(
+                    ParentScope,
+                    [new SemanticIdentityPart("$.parentId", JsonValue.Create(parentId), IsPresent: true)]
+                ),
+            ]
+        );
 
     private static FlattenedWriteValue[] NewInitialRow(TableWritePlan tablePlan)
     {
