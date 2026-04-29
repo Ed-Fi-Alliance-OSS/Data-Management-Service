@@ -38,14 +38,12 @@ owned exclusively by `prepare-dms-claims.ps1` (see `command-boundaries.md` Secti
 Docker services and hand their staged outputs — the staged schema workspace and the staged claims workspace
 — to the downstream infrastructure and provisioning phases.
 
-**Mode-to-security summary (normative):** Standard `-Extensions` mode — including the omitted-`-Extensions`
-core-only case — provides automatic schema-and-security selection: the chosen extension set drives both the
-staged ApiSchema files and the matching staged claimset fragments via the single extension mapping defined
-below. Expert `-ApiSchemaPath` mode does not auto-derive security: when the staged schema set includes any
-non-core schema, the caller must supply explicit `-ClaimsDirectoryPath` input, and bootstrap fails fast if
-it is missing. Core-only `-ApiSchemaPath` runs may rely on embedded claims only. This story does not promise
-automatic claimset loading from schema alone in expert mode, and no later phase retro-fits expert-mode
-security defaults.
+**Mode-to-security summary (normative):** DMS-916 defines one security-selection contract across all
+supported schema-selection modes. The effective staged schema set is the single source of truth for both
+the staged ApiSchema files and the matching base staged claimset fragments, whether the schema came from
+omitted `-Extensions` (core only), named `-Extensions`, or `-ApiSchemaPath`. `-ClaimsDirectoryPath`
+remains available in every mode, but only as an additive source of extra fragments layered on top of the
+schema-derived base set. No later phase re-derives or replaces that base security selection.
 
 ## Acceptance Criteria
 
@@ -64,21 +62,20 @@ security defaults.
   the same directory into Docker-hosted DMS, and points IDE-hosted DMS at the same host path.
 - `-ApiSchemaPath` and `-Extensions` are mutually exclusive.
 - `-ApiSchemaPath` normalizes developer-supplied `ApiSchema*.json` files through the same staged workspace,
-  requires the staged result to be exactly one core schema plus zero or more extensions, and disables
-  automatic extension-derived claimset and seed selection. When non-core security or seed inputs are needed
-  in this mode, the bootstrap path uses explicit companion inputs rather than implicit extension defaults.
-- In `-ApiSchemaPath` mode, bootstrap fails fast when the staged schema set includes one or more extension
-  schemas but no explicit `-ClaimsDirectoryPath` is provided. Core-only custom-schema runs may rely on
-  embedded claims only.
+  requires the staged result to be exactly one core schema plus zero or more extensions, and drives the same
+  automatic base security selection from that staged schema set. Expert mode still disables bootstrap-managed
+  built-in seed selection; when non-core seed inputs are needed in this mode, the bootstrap path uses
+  explicit companion seed inputs rather than implicit built-in defaults.
 - `-ClaimsDirectoryPath` works in both supported scenarios:
-  - as the primary security input for `-ApiSchemaPath`,
+  - additively with `-ApiSchemaPath`,
   - additively with `-Extensions` in standard mode.
 - `-ClaimsDirectoryPath` is additive-only: fragments may attach permissions only to claim set names already
   declared in the embedded `Claims.json`. Bootstrap fails fast when a staged fragment references an unknown
   claim set name.
-- Expert `-ApiSchemaPath` mode validates explicit non-core security input presence and staged-fragment
-  structure, but it does not guarantee full authorization coverage for arbitrary custom non-core resources.
-  Runtime authorization failures for incomplete expert-supplied fragments remain possible.
+- Expert `-ApiSchemaPath` mode validates staged schema normalization and additive-fragment structure, but it
+  does not guarantee full authorization coverage for arbitrary custom non-core resources beyond the
+  schema-derived base set. Runtime authorization failures for incomplete expert-supplied additive fragments
+  remain possible.
 - Same-checkout reruns reuse the existing staged claims workspace only when the intended fragment set is
   identical. If the intended security inputs differ, bootstrap fails fast with teardown guidance rather than
   rewriting a directory that may still be bind-mounted into CMS or attempting in-place replacement of
@@ -103,14 +100,9 @@ security defaults.
   `DMS_CONFIG_CLAIMS_HOST_DIRECTORY` bind-mount variable in `local-config.yml`.
 - Story 00 does not own built-in seed-support advertisement. It stages and validates claims inputs; Story 02
   decides when built-in seed support is available and enforces the `SeedLoader` requirements for that path.
-- When `-AddExtensionSecurityMetadata` is used without `-Extensions` or `-ClaimsDirectoryPath`, bootstrap
-  preserves the legacy behavior of loading the static repo-bundled additional claimset set. The narrowed
-  DMS-916 cleanup removes standard-bootstrap dependence on
-  `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` only for the new schema/security-selection
-  paths; it does not silently redefine the standalone legacy flag contract in this story.
-- When `-AddExtensionSecurityMetadata` is used together with `-Extensions` or `-ClaimsDirectoryPath`,
-  bootstrap treats the legacy flag as redundant, ignores it with a warning, and continues with the staged
-  claims-workspace path selected by the new inputs.
+- The normative DMS-916 bootstrap surface does not preserve standalone `-AddExtensionSecurityMetadata` as a
+  security-selection path. ApiSchema-driven staging is the only security-selection mechanism within this
+  story's contract.
 - Bootstrap computes the expected `EffectiveSchemaHash` for the selected schema set using the existing DMS
   hashing algorithm over the staged schema files.
 - The resolved schema set drives the DDL target/version/`EffectiveSchemaHash` validation path and the exact
@@ -150,19 +142,16 @@ security defaults.
    final composition outcomes.
 5. Restrict the v1 extension mapping and operator-facing validation messages to extensions backed by current
    schema and security artifacts; keep deferred extensions out of the advertised support surface.
-6. Remove standard bootstrap dependence on `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` when
-   `-Extensions` or `-ClaimsDirectoryPath` drives claims selection, and carry that cleanup through the local
-   developer bootstrap surface while preserving the legacy behavior of standalone
-   `-AddExtensionSecurityMetadata` runs that do not use the new schema/security-selection inputs.
-   Mixed-mode invocations that also pass `-Extensions` or `-ClaimsDirectoryPath` must ignore the legacy flag
-   with a warning rather than reintroducing the old claims-loading path.
+6. Remove bootstrap-surface dependence on `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` and
+   remove standalone `-AddExtensionSecurityMetadata` from the DMS-916 normative contract. The schema-derived
+   staged claims workspace is the only bootstrap-managed security-selection path in this story.
 7. Treat changed claims inputs in an existing staged workspace as incompatible rerun state; reuse identical
    staged content as-is, but fail fast with teardown guidance instead of rewriting bind-mounted claims files
    or attempting in-place CMS claims replacement.
 8. Keep Story 00 limited to schema and claims staging. Built-in seed-support advertisement and `SeedLoader`
    enforcement stay in Story 02.
-9. Document the expert-mode boundary explicitly: `-ApiSchemaPath` plus `-ClaimsDirectoryPath` validates
-   staged fragment presence and structure, but bootstrap does not certify complete authorization coverage for
+9. Document the expert-mode boundary explicitly: `-ApiSchemaPath` still validates staged schema normalization
+   and additive-fragment structure, but bootstrap does not certify complete authorization coverage for
    arbitrary custom non-core resources ahead of runtime.
 
 ## Out of Scope
@@ -177,4 +166,3 @@ security defaults.
 
 - [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3, 4, 8, 9.3, and 11
 - [`../command-boundaries.md`](../command-boundaries.md), Section 3.1 (`prepare-dms-schema.ps1`) and Section 3.2 (`prepare-dms-claims.ps1`)
-
