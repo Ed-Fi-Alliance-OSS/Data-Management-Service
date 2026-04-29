@@ -70,14 +70,4 @@ public class AppSettings
     /// mapping selection. When false (default), the existing backend path is used.
     /// </summary>
     public bool UseRelationalBackend { get; set; }
-
-    /// <summary>
-    /// TODO(DMS-1097): Remove this property. It is no longer consulted at runtime.
-    /// Instance validation is now handled unconditionally by
-    /// <c>ValidateStartupInstancesTask</c> when <see cref="UseRelationalBackend"/>
-    /// is enabled. This property is retained only for configuration-binding
-    /// compatibility until DMS-1097 removes it along with the temporary bypass
-    /// documentation and tests.
-    /// </summary>
-    public bool ValidateProvisionedMappingsOnStartup { get; set; } = false;
 }

@@ -77,11 +77,10 @@ also append `-v`. Examples:
 
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
-By default, Docker startup also leaves `ValidateProvisionedMappingsOnStartup`
-disabled so unprovisioned local and E2E environments can still reach `Ready`
-and serve OpenAPI metadata. To opt back into strict startup validation, set
-`DMS_VALIDATE_PROVISIONED_MAPPINGS_ON_STARTUP=true` in the selected `.env`
-file before running `start-local-dms.ps1` or `start-published-dms.ps1`.
+When `USE_RELATIONAL_BACKEND=true`, run
+`provision-relational-e2e-database.ps1` before `start-local-dms.ps1` so
+`dms.EffectiveSchema` exists before startup validation runs. Otherwise the
+affected instances will return 503 at request time.
 
 If you want to use Keycloak as the identity provider, pass the `-IdentityProvider keycloak` parameter to the startup script. This will configure the environment to use Keycloak authentication, and you must ensure Keycloak is running and properly configured.
 

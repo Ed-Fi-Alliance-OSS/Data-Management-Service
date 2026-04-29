@@ -124,8 +124,7 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         public async Task Setup()
         {
             var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
-                enableFingerprintValidation: true,
-                validateProvisionedMappingsOnStartup: false
+                enableFingerprintValidation: true
             );
             _fingerprintReader = fingerprintReader;
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);

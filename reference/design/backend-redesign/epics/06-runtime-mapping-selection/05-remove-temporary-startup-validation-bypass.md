@@ -5,6 +5,17 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1097
 
 # Story: Remove Temporary Startup Validation Bypass After Provisioning Is Ready
 
+> **Status: Complete.** The runtime bypass was already a no-op when this
+> story was picked up — instance validation had been moved to
+> `ValidateStartupInstancesTask` (gated only by `UseRelationalBackend`). The
+> work shipped under this story removed the dead
+> `AppSettings.ValidateProvisionedMappingsOnStartup` property, its
+> configuration bindings (`appsettings.json`, both Docker Compose files), the
+> operator README paragraph, and the dead test paths that referenced it.
+> AC #1 and AC #3 below have been rewritten to reflect the shipped multi-
+> instance-safe model documented in
+> `ValidateStartupInstancesTask.cs:18-27`.
+
 ## Description
 
 `DMS-1047` introduced startup-time PostgreSQL runtime mapping validation against
@@ -27,17 +38,23 @@ Align with:
 
 ## Acceptance Criteria
 
-- The provisioning path used by local Docker startup, the OpenAPI-spec workflow,
-  the DMS E2E suite, and the Instance Management E2E suite creates
-  `dms.EffectiveSchema` and related fingerprint metadata before DMS startup
-  validation executes.
+- When `USE_RELATIONAL_BACKEND=true`, operators must run
+  `provision-relational-e2e-database.ps1` before `start-local-dms.ps1` so
+  `dms.EffectiveSchema` and related fingerprint metadata exist before DMS
+  startup validation executes. Provisioning remains a separate lifecycle task
+  and is intentionally not coupled into the local startup script.
 - The temporary startup bypass flag
-  `AppSettings.ValidateProvisionedMappingsOnStartup` is removed entirely, or its
-  default is restored to strict startup validation.
-- Startup-time validation fails fast with actionable diagnostics when
-  provisioning metadata is missing, malformed, or mismatched.
+  `AppSettings.ValidateProvisionedMappingsOnStartup` is removed entirely.
+- Startup validation executes unconditionally. Missing, malformed, or
+  mismatched provisioning metadata is logged with actionable remediation.
+  Per-instance failures are cached and surface as 503 at request time while
+  other instances continue serving (multi-instance-safe failure model — see
+  `ValidateStartupInstancesTask.cs:18-27`).
 - Automated coverage proves provisioning-ready environments pass with startup
-  validation enabled and no temporary bypass.
+  validation enabled. Existing
+  `PostgresqlEffectiveSchemaHashMismatchTests`,
+  `MssqlEffectiveSchemaHashMismatchTests`, and
+  `ValidateStartupInstancesTaskTests` provide this coverage.
 
 ## Tasks
 
