@@ -72,10 +72,14 @@ schema-derived base set. No later phase re-derives or replaces that base securit
 - `-ClaimsDirectoryPath` is additive-only: fragments may attach permissions only to claim set names already
   declared in the embedded `Claims.json`. Bootstrap fails fast when a staged fragment references an unknown
   claim set name.
-- Expert `-ApiSchemaPath` mode validates staged schema normalization and additive-fragment structure, but it
-  does not guarantee full authorization coverage for arbitrary custom non-core resources beyond the
-  schema-derived base set. Runtime authorization failures for incomplete expert-supplied additive fragments
-  remain possible.
+- Expert `-ApiSchemaPath` mode still satisfies the DMS-916 requirement
+  that claimset loading is automatic from the selected schema because
+  bootstrap derives and stages the schema-derived base claims inputs in
+  that mode too. It validates staged schema normalization and
+  additive-fragment structure, but it does not guarantee full
+  authorization coverage for arbitrary custom non-core resources beyond
+  the schema-derived base set. Runtime authorization failures for
+  incomplete expert-supplied additive fragments remain possible.
 - Same-checkout reruns reuse the existing staged claims workspace only when the intended fragment set is
   identical. If the intended security inputs differ, bootstrap fails fast with teardown guidance rather than
   rewriting a directory that may still be bind-mounted into CMS or attempting in-place replacement of
