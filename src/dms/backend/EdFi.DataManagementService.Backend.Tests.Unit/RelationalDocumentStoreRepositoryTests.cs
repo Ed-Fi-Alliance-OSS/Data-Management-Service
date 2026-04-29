@@ -3,19 +3,15 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Tests.Common;
-using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -50,11 +46,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private IRelationalReadTargetLookupService _readTargetLookupService = null!;
     private IRelationalReadMaterializer _readMaterializer = null!;
     private IReadableProfileProjector _readableProfileProjector = null!;
-    private IRelationalCommandExecutor _commandExecutor = null!;
-    private ConfigurableRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+    private IRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
     private IRelationalDeleteConstraintResolver _deleteConstraintResolver = null!;
-    private RecordingLogger<RelationalDocumentStoreRepository> _logger = null!;
-    private RecordingWriteSessionFactory _writeSessionFactory = null!;
+    private IRelationalWriteSessionFactory _writeSessionFactory = null!;
     private RelationalWriteExecutorRequest _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorRequest> _capturedExecutorRequests = null!;
 
@@ -68,11 +62,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _readTargetLookupService = A.Fake<IRelationalReadTargetLookupService>();
         _readMaterializer = A.Fake<IRelationalReadMaterializer>();
         _readableProfileProjector = A.Fake<IReadableProfileProjector>();
-        _commandExecutor = A.Fake<IRelationalCommandExecutor>();
-        _writeExceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier();
+        _writeExceptionClassifier = A.Fake<IRelationalWriteExceptionClassifier>();
         _deleteConstraintResolver = A.Fake<IRelationalDeleteConstraintResolver>();
-        _logger = new RecordingLogger<RelationalDocumentStoreRepository>();
-        _writeSessionFactory = new RecordingWriteSessionFactory(_commandExecutor);
+        _writeSessionFactory = A.Fake<IRelationalWriteSessionFactory>();
         _capturedExecutorRequests = [];
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -91,7 +83,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             );
 
         _sut = new RelationalDocumentStoreRepository(
-            _logger,
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
             new DefaultDescriptorWriteHandler(),
@@ -466,7 +458,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_a_precise_not_implemented_failure_for_query_requests()
+    public void It_throws_for_non_relational_delete_requests()
+    {
+        var deleteRequest = A.Fake<IDeleteRequest>();
+        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_schoolResourceInfo);
+
+        Assert.ThrowsAsync<ArgumentException>(() => _sut.DeleteDocumentById(deleteRequest));
+    }
+
+    [Test]
+    public async Task It_executes_supported_queries_through_page_keyset_hydration_and_preserves_page_order()
     {
         var firstDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-eeeeeeeeeeee"));
         var secondDocumentUuid = new DocumentUuid(Guid.Parse("eeeeeeee-1111-2222-3333-ffffffffffff"));
@@ -1299,6 +1300,32 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_etag_mismatch_when_put_if_match_targets_nonexistent_resource()
+    {
+        // RFC 7232 §3.1: If-Match + 404 resource → 412 Precondition Failed, not 404 Not Found.
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        _targetLookupService.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+        A.CallTo(() => updateRequest.Headers)
+            .Returns(new Dictionary<string, string> { ["If-Match"] = "\"any-etag\"" });
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        _capturedExecutorRequests.Should().BeEmpty();
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_retries_stale_put_guarded_no_op_attempts_once_against_fresh_target_state()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -1373,6 +1400,69 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustHaveHappenedTwiceExactly();
+    }
+
+    [Test]
+    public async Task It_retries_put_guarded_no_ops_once_without_if_match_and_keeps_the_retried_request_unconditional()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
+
+        var executorCallCount = 0;
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    executorCallCount++ switch
+                    {
+                        0 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict(),
+                            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                        ),
+                        1 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateSuccess(documentUuid, "\"45\""),
+                            RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                        ),
+                        _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
+                    }
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Fresh retry"));
+        A.CallTo(() => updateRequest.Headers).Returns(new Dictionary<string, string>());
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"45\""));
+        _capturedExecutorRequests.Should().HaveCount(2);
+        _capturedExecutorRequests[0].IfMatchEtag.Should().BeNull();
+        _capturedExecutorRequests[1].IfMatchEtag.Should().BeNull();
+        _capturedExecutorRequests
+            .Select(request => request.TargetContext)
+            .Should()
+            .BeEquivalentTo([
+                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
+                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 45L),
+            ]);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
     }
 
     [Test]
@@ -1554,6 +1644,71 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 targetRequest.Equals(new RelationalWriteTargetRequest.Put(documentUuid))
             );
         _targetLookupService.ResolveForPutCallCount.Should().Be(2);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedTwiceExactly();
+    }
+
+    // Story AC item 4: stale no-op retry with If-Match guarded recheck.
+    // Race: between the first StaleNoOpCompare result and the executor retry, a concurrent writer
+    // bumps ContentVersion so the If-Match ETag no longer matches the committed representation.
+    // The repository must propagate the mismatch result without issuing a third attempt.
+    // Deterministic integration coverage of this race is not achievable via standard test I/O.
+    // See Given_Stale_NoOp_With_IfMatch (Ignored) in PostgresqlIfMatchIntegrationTests.cs.
+    [Test]
+    public async Task It_propagates_etag_mismatch_result_after_stale_no_op_retry_without_additional_attempts()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var documentInfo = CreateDocumentInfo();
+        var executorCallCount = 0;
+        _targetLookupService.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+        _targetLookupService.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    executorCallCount++ switch
+                    {
+                        0 => new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureWriteConflict(),
+                            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                        ),
+                        1 => new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureETagMisMatch()
+                        ),
+                        _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
+                    }
+                )
+            );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+        A.CallTo(() => upsertRequest.Headers)
+            .Returns(new Dictionary<string, string> { ["If-Match"] = "\"stale-client-etag\"" });
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        _capturedExecutorRequests.Should().HaveCount(2, "one initial attempt plus exactly one retry");
+        _capturedExecutorRequests[0].IfMatchEtag.Should().Be("\"stale-client-etag\"");
+        _capturedExecutorRequests[1].IfMatchEtag.Should().Be("\"stale-client-etag\"");
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -1757,7 +1912,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readTargetLookupService,
             _readMaterializer,
             _readableProfileProjector,
-            new NoOpRelationalWriteExceptionClassifier(),
+            _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory
         );
@@ -1800,7 +1955,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readTargetLookupService,
             _readMaterializer,
             _readableProfileProjector,
-            new NoOpRelationalWriteExceptionClassifier(),
+            _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory
         );
@@ -1832,597 +1987,63 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_descriptor_delete_requests_to_the_descriptor_write_handler()
     {
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            descriptorHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory
+        );
+
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var ifMatchEtag = "\"descriptor-delete-etag\"";
+
         A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => deleteRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
-        A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => deleteRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("test-trace"));
+        A.CallTo(() => deleteRequest.Headers)
+            .Returns(new Dictionary<string, string> { ["If-Match"] = ifMatchEtag });
+
+        A.CallTo(() =>
+                descriptorHandler.HandleDeleteAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    documentUuid,
+                    A<TraceId>._,
+                    ifMatchEtag,
+                    A<ReadableProfileProjectionContext?>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new DeleteResult.DeleteFailureETagMisMatch());
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(new DeleteResult.UnknownFailure("Descriptor DELETE write is not implemented."));
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
         _capturedExecutorRequests.Should().BeEmpty();
-        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_forwards_resource_document_uuid_and_trace_id_to_the_descriptor_delete_handler()
-    {
-        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
-        var expectedDocumentUuid = new DocumentUuid(Guid.NewGuid());
-        var expectedTraceId = new TraceId("descriptor-delete-forwarding");
-        var expectedMappingSet = CreateDescriptorOnlyMappingSet(_descriptorResourceInfo);
-        var expectedResource = new QualifiedResourceName(
-            _descriptorResourceInfo.ProjectName.Value,
-            _descriptorResourceInfo.ResourceName.Value
-        );
-        MappingSet? capturedMappingSet = null;
-        QualifiedResourceName capturedResource = default;
-        DocumentUuid capturedUuid = default;
-        TraceId capturedTraceId = default!;
-
         A.CallTo(() =>
                 descriptorHandler.HandleDeleteAsync(
                     A<MappingSet>._,
                     A<QualifiedResourceName>._,
-                    A<DocumentUuid>._,
+                    documentUuid,
                     A<TraceId>._,
-                    A<CancellationToken>._
-                )
-            )
-            .Invokes(call =>
-            {
-                capturedMappingSet = call.GetArgument<MappingSet>(0);
-                capturedResource = call.GetArgument<QualifiedResourceName>(1);
-                capturedUuid = call.GetArgument<DocumentUuid>(2);
-                capturedTraceId = call.GetArgument<TraceId>(3)!;
-            })
-            .Returns(Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess()));
-
-        _sut = new RelationalDocumentStoreRepository(
-            NullLogger<RelationalDocumentStoreRepository>.Instance,
-            _writeExecutor,
-            _targetLookupService,
-            descriptorHandler,
-            _referenceResolver,
-            _documentHydrator,
-            _readTargetLookupService,
-            _readMaterializer,
-            _readableProfileProjector,
-            _writeExceptionClassifier,
-            _deleteConstraintResolver,
-            _writeSessionFactory
-        );
-
-        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
-        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
-        A.CallTo(() => deleteRequest.MappingSet).Returns(expectedMappingSet);
-        A.CallTo(() => deleteRequest.DocumentUuid).Returns(expectedDocumentUuid);
-        A.CallTo(() => deleteRequest.TraceId).Returns(expectedTraceId);
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        capturedMappingSet.Should().BeSameAs(expectedMappingSet);
-        capturedResource.Should().Be(expectedResource);
-        capturedUuid.Should().Be(expectedDocumentUuid);
-        capturedTraceId.Value.Should().Be(expectedTraceId.Value);
-        A.CallTo(() =>
-                descriptorHandler.HandleDeleteAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<DocumentUuid>._,
-                    A<TraceId>._,
+                    ifMatchEtag,
+                    A<ReadableProfileProjectionContext?>._,
                     A<CancellationToken>._
                 )
             )
             .MustHaveHappenedOnceExactly();
-        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_throws_when_a_descriptor_delete_request_has_no_mapping_set()
-    {
-        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
-        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
-        A.CallTo(() => deleteRequest.MappingSet).Returns(null);
-        A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
-        A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("descriptor-delete-no-mapping"));
-
-        Func<Task> act = async () => _ = await _sut.DeleteDocumentById(deleteRequest);
-
-        await act.Should().ThrowAsync<ArgumentNullException>();
-    }
-
-    [Test]
-    public async Task It_throws_when_the_delete_request_does_not_implement_IRelationalDeleteRequest()
-    {
-        var deleteRequest = A.Fake<IDeleteRequest>();
-        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_schoolResourceInfo);
-
-        Func<Task> act = async () => _ = await _sut.DeleteDocumentById(deleteRequest);
-
-        await act.Should().ThrowAsync<ArgumentException>();
-    }
-
-    [Test]
-    public async Task It_throws_when_a_non_descriptor_delete_request_has_no_mapping_set()
-    {
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet: null);
-
-        Func<Task> act = async () => _ = await _sut.DeleteDocumentById(deleteRequest);
-
-        await act.Should().ThrowAsync<ArgumentNullException>();
-    }
-
-    [Test]
-    public async Task It_does_not_route_non_descriptor_delete_requests_through_the_descriptor_write_handler()
-    {
-        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
-        _sut = new RelationalDocumentStoreRepository(
-            NullLogger<RelationalDocumentStoreRepository>.Instance,
-            _writeExecutor,
-            _targetLookupService,
-            descriptorHandler,
-            _referenceResolver,
-            _documentHydrator,
-            _readTargetLookupService,
-            _readMaterializer,
-            _readableProfileProjector,
-            _writeExceptionClassifier,
-            _deleteConstraintResolver,
-            _writeSessionFactory
-        );
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteOutcome(deleted: true);
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        A.CallTo(() =>
-                descriptorHandler.HandleDeleteAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<DocumentUuid>._,
-                    A<TraceId>._,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_delete_failure_not_exists_when_the_document_uuid_is_not_resolvable(
-        SqlDialect dialect
-    )
-    {
-        // Default fake returns null from the UUID lookup, which the repository treats
-        // as "not found" without executing the second roundtrip.
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_delete_success_when_both_roundtrips_complete_successfully(SqlDialect dialect)
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteOutcome(deleted: true);
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_delete_failure_not_exists_when_the_delete_returns_no_rows(SqlDialect dialect)
-    {
-        // Simulates a concurrent-delete race: the document was present at roundtrip 1
-        // but gone by roundtrip 2. RETURNING/OUTPUT yields no rows.
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteOutcome(deleted: false);
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_delete_failure_reference_with_the_resolved_resource_name_when_the_resolver_finds_the_owning_resource(
-        SqlDialect dialect
-    )
-    {
-        const string constraintName = "FK_Calendar_SchoolRef";
-        var referencingResource = new QualifiedResourceName("Ed-Fi", "Calendar");
-        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo, dialect);
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteThrows(new StubDbException("constraint violation"));
-        _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
-        _writeExceptionClassifier.ClassificationToReturn =
-            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(constraintName);
-        A.CallTo(() =>
-                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
-            )
-            .Returns(referencingResource);
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet);
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result
-            .Should()
-            .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
-        _writeExceptionClassifier.IsForeignKeyViolationCallCount.Should().Be(1);
-        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
-        // Match on the exact MappingSet.Model reference — a narrowing of the any-matcher that
-        // catches a regression where the repository stops forwarding mappingSet.Model to the
-        // resolver (e.g., accidentally wires a stale or null model set). The fake would
-        // otherwise accept any DerivedRelationalModelSet and hide the wire-through bug.
-        A.CallTo(() =>
-                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
-            )
-            .MustHaveHappenedOnceExactly();
-        // Match on the log payload so the assertion fails if the FK-resolution Debug log is
-        // removed or demoted — an unrelated "Entering..." Debug log is always emitted by
-        // DeleteDocumentById, so a bare `r.Level == Debug` check would pass even without the new
-        // line.
-        _logger
-            .Records.Should()
-            .ContainSingle(r =>
-                r.Level == LogLevel.Debug
-                && r.Message.Contains(constraintName, StringComparison.Ordinal)
-                && r.Message.Contains(referencingResource.ResourceName, StringComparison.Ordinal)
-            );
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_an_empty_reference_failure_and_logs_information_when_the_classifier_cannot_extract_a_constraint_name(
-        SqlDialect dialect
-    )
-    {
-        // IsForeignKeyViolation is true but TryClassify reports UnrecognizedWriteFailure —
-        // pgsql 23503 with a null ConstraintName, or mssql 547 with a localized / unparseable
-        // message. Resolver must NOT be called; log level is Information.
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteThrows(new StubDbException("constraint violation"));
-        _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
-        _writeExceptionClassifier.ClassificationToReturn = RelationalWriteExceptionClassification
-            .UnrecognizedWriteFailure
-            .Instance;
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
-        A.CallTo(() =>
-                _deleteConstraintResolver.TryResolveReferencingResource(
-                    A<DerivedRelationalModelSet>._,
-                    A<string>._
-                )
-            )
-            .MustNotHaveHappened();
-        _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Information);
-        // Decisions #4 splits Information (missing constraint name) from Warning (unresolved
-        // constraint name). A bare Contain(Information) would pass even if a refactor accidentally
-        // fired both branches for the same failure — assert Warning is absent to pin the split.
-        _logger.Records.Should().NotContain(r => r.Level == LogLevel.Warning);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_an_empty_reference_failure_and_logs_warning_when_the_resolver_cannot_map_the_constraint_name(
-        SqlDialect dialect
-    )
-    {
-        // Classifier hands off a real constraint name, but the resolver cannot find it in the
-        // compiled model — drift between deployed DDL and runtime model. Log level is Warning.
-        const string constraintName = "FK_Unknown_To_Model";
-        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo, dialect);
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteThrows(new StubDbException("constraint violation"));
-        _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
-        _writeExceptionClassifier.ClassificationToReturn =
-            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(constraintName);
-        A.CallTo(() =>
-                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
-            )
-            .Returns((QualifiedResourceName?)null);
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet);
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
-        A.CallTo(() =>
-                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
-            )
-            .MustHaveHappenedOnceExactly();
-        _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Warning);
-        // Decisions #4 splits Warning (unresolved constraint name) from Information (missing
-        // constraint name). A bare Contain(Warning) would pass even if a refactor accidentally
-        // fired both branches for the same failure — assert Information is absent to pin the split.
-        _logger.Records.Should().NotContain(r => r.Level == LogLevel.Information);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_delete_failure_write_conflict_when_the_classifier_reports_a_transient_failure(
-        SqlDialect dialect
-    )
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteThrows(new StubDbException("deadlock"));
-        _writeExceptionClassifier.IsTransientFailureToReturn = true;
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
-        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_unknown_failure_on_generic_database_error(SqlDialect dialect)
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteThrows(new StubDbException("boom"));
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new DeleteResult.UnknownFailure(
-                    "An unexpected error occurred while processing the delete request."
-                )
-            );
-    }
-
-    [Test]
-    public async Task It_commits_the_write_session_when_the_delete_succeeds()
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteOutcome(deleted: true);
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
-        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_delete_failure_write_conflict_when_commit_throws_a_transient_failure()
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteOutcome(deleted: true);
-        _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException("deadlock on commit");
-        _writeExceptionClassifier.IsTransientFailureToReturn = true;
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
-        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
-        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_unknown_failure_when_commit_throws_a_non_transient_database_error()
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteOutcome(deleted: true);
-        _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException("boom on commit");
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.UnknownFailure>();
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
-        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_rolls_back_the_write_session_when_the_document_uuid_is_not_resolvable()
-    {
-        // Default fake command executor returns null for the UUID lookup.
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_rolls_back_the_write_session_when_the_delete_yields_no_rows()
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteOutcome(deleted: false);
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_rolls_back_the_write_session_when_a_foreign_key_violation_is_classified()
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteThrows(new StubDbException("constraint violation"));
-        _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureReference>();
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_rolls_back_the_write_session_when_a_transient_failure_is_classified()
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteThrows(new StubDbException("deadlock"));
-        _writeExceptionClassifier.IsTransientFailureToReturn = true;
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_rolls_back_the_write_session_on_generic_database_failure()
-    {
-        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
-        ConfigureDeleteThrows(new StubDbException("boom"));
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.UnknownFailure>();
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_delete_failure_write_conflict_when_the_lookup_reports_a_transient_failure(
-        SqlDialect dialect
-    )
-    {
-        ConfigureLookupThrows(new StubDbException("deadlock on lookup"));
-        _writeExceptionClassifier.IsTransientFailureToReturn = true;
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
-        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_unknown_failure_when_the_lookup_throws_a_generic_database_exception(
-        SqlDialect dialect
-    )
-    {
-        ConfigureLookupThrows(new StubDbException("lookup boom"));
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new DeleteResult.UnknownFailure(
-                    "An unexpected error occurred while processing the delete request."
-                )
-            );
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_delete_failure_write_conflict_when_session_creation_reports_a_transient_failure()
-    {
-        _writeSessionFactory.CreateAsyncExceptionToThrow = new StubDbException("deadlock at session create");
-        _writeExceptionClassifier.IsTransientFailureToReturn = true;
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
-        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
-        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
-        _writeSessionFactory.Session.DisposeCallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_returns_unknown_failure_when_session_creation_throws_a_generic_database_exception()
-    {
-        _writeSessionFactory.CreateAsyncExceptionToThrow = new StubDbException("session create boom");
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new DeleteResult.UnknownFailure(
-                    "An unexpected error occurred while processing the delete request."
-                )
-            );
-        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
-        _writeSessionFactory.Session.DisposeCallCount.Should().Be(0);
     }
 
     [Test]
@@ -2579,6 +2200,161 @@ public class Given_RelationalDocumentStoreRepositoryTests
         act.Should().ThrowAsync<ArgumentNullException>().Result.Which.ParamName.Should().Be("mappingSet");
     }
 
+    // N3 – Case-insensitive If-Match header extraction (HTTP/2 RFC 7540 §8.1.2 mandates lowercase).
+    [Test]
+    public async Task It_extracts_if_match_etag_when_header_name_is_lowercase()
+    {
+        const string expectedEtag = "\"http2-lowercase-etag\"";
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+        // HTTP/2 sends header names in lowercase; verify the repository still extracts the value.
+        A.CallTo(() => upsertRequest.Headers)
+            .Returns(new Dictionary<string, string> { ["if-match"] = expectedEtag });
+
+        _ = await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.IfMatchEtag.Should().Be(expectedEtag);
+    }
+
+    // N4 – Blank If-Match header values are treated as absent (RFC 7232 §3.1).
+    [Test]
+    public async Task It_extracts_null_etag_for_empty_header_value()
+    {
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+        // Empty-string value must be normalised to null so If-Match enforcement is skipped.
+        A.CallTo(() => upsertRequest.Headers).Returns(new Dictionary<string, string> { ["If-Match"] = "" });
+
+        _ = await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.IfMatchEtag.Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_extracts_null_etag_for_whitespace_header_value()
+    {
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+        // Whitespace-only value must be normalised to null so If-Match enforcement is skipped.
+        A.CallTo(() => upsertRequest.Headers)
+            .Returns(new Dictionary<string, string> { ["If-Match"] = "   " });
+
+        _ = await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.IfMatchEtag.Should().BeNull();
+    }
+
+    // N5 – BackendProfileWriteContext.IfMatchReadableProjectionContext pass-through to executor.
+    [Test]
+    public async Task It_threads_backend_profile_write_context_if_match_readable_projection_context_to_executor()
+    {
+        // When ProfileWritePipelineMiddleware sets a non-null IfMatchReadableProjectionContext
+        // on the BackendProfileWriteContext (indicating the profile has a readable content type),
+        // the repository must thread it through to the executor request unchanged so the
+        // committed-representation reader can apply profile-aware ETag projection.
+        var requestBody = CreateRequestBody();
+        var readableProjectionContext = new ReadableProfileProjectionContext(
+            new ContentTypeDefinition(MemberSelection.IncludeOnly, [new PropertyRule("name")], [], [], []),
+            new HashSet<string> { "schoolId" }
+        );
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: requestBody,
+                RootResourceCreatable: true,
+                RequestScopeStates: [],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-profile",
+            CompiledScopeCatalog: [],
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>(),
+            IfMatchReadableProjectionContext: readableProjectionContext
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(new DocumentUuid(Guid.NewGuid()), "\"test-etag\"")
+                    )
+                )
+            );
+
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => updateRequest.BackendProfileWriteContext).Returns(profileContext);
+
+        await _sut.UpdateDocumentById(updateRequest);
+
+        _capturedExecutorRequest.ProfileWriteContext.Should().NotBeNull();
+        _capturedExecutorRequest
+            .ProfileWriteContext!.IfMatchReadableProjectionContext.Should()
+            .NotBeNull(
+                "BackendProfileWriteContext.IfMatchReadableProjectionContext must reach the executor when set by ProfileWritePipelineMiddleware"
+            );
+        _capturedExecutorRequest
+            .ProfileWriteContext.IfMatchReadableProjectionContext.Should()
+            .BeSameAs(
+                readableProjectionContext,
+                "the projection context must be passed through without modification"
+            );
+    }
+
+    [Test]
+    public async Task It_passes_null_profile_context_to_executor_for_non_profile_update_requests()
+    {
+        // When BackendProfileWriteContext is null (a non-profile or write-only-profile write),
+        // IfMatchReadableProjectionContext must not be present in the executor request, so the
+        // committed-representation reader uses the unfiltered full-resource ETag for comparison.
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(new DocumentUuid(Guid.NewGuid()), "\"test-etag\"")
+                    )
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+        A.CallTo(() => updateRequest.BackendProfileWriteContext).Returns(null);
+
+        await _sut.UpdateDocumentById(updateRequest);
+
+        _capturedExecutorRequest
+            .ProfileWriteContext.Should()
+            .BeNull(
+                "non-profile writes must carry no IfMatchReadableProjectionContext in the executor request"
+            );
+    }
+
     private sealed class RecordingRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
     {
         public Queue<RelationalWriteTargetLookupResult> PostResults { get; } = [];
@@ -2638,126 +2414,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CallCount++;
 
             return Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-        }
-    }
-
-    private static IRelationalDeleteRequest CreateNonDescriptorDeleteRequest(MappingSet? mappingSet)
-    {
-        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
-        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
-        A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("delete-trace"));
-        A.CallTo(() => deleteRequest.MappingSet).Returns(mappingSet);
-        return deleteRequest;
-    }
-
-    private void ConfigureResolvedDocument(long documentId, DocumentUuid documentUuid)
-    {
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>>()
-            .Returns(
-                Task.FromResult<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>(
-                    new RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid(
-                        DocumentId: documentId,
-                        DocumentUuid: documentUuid,
-                        ResourceKeyId: 1,
-                        ContentVersion: 42L
-                    )
-                )
-            );
-    }
-
-    private void ConfigureDeleteOutcome(bool deleted)
-    {
-        A.CallTo(_commandExecutor).WithReturnType<Task<bool>>().Returns(Task.FromResult(deleted));
-    }
-
-    private void ConfigureDeleteThrows(DbException exception)
-    {
-        A.CallTo(_commandExecutor).WithReturnType<Task<bool>>().Throws(exception);
-    }
-
-    private void ConfigureLookupThrows(DbException exception)
-    {
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>>()
-            .Throws(exception);
-    }
-
-    private sealed class StubDbException(string message) : DbException(message);
-
-    private sealed class RecordingWriteSessionFactory(IRelationalCommandExecutor commandExecutor)
-        : IRelationalWriteSessionFactory
-    {
-        public RecordingWriteSession Session { get; } = new(commandExecutor);
-
-        public int CreateAsyncCallCount { get; private set; }
-
-        public Exception? CreateAsyncExceptionToThrow { get; set; }
-
-        public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
-        {
-            CreateAsyncCallCount++;
-            if (CreateAsyncExceptionToThrow is not null)
-            {
-                throw CreateAsyncExceptionToThrow;
-            }
-            return Task.FromResult<IRelationalWriteSession>(Session);
-        }
-    }
-
-    private sealed class RecordingWriteSession(IRelationalCommandExecutor commandExecutor)
-        : IRelationalWriteSession
-    {
-        private readonly IRelationalCommandExecutor _commandExecutor = commandExecutor;
-
-        public IRelationalCommandExecutor CreateCommandExecutor() => _commandExecutor;
-
-        public DbConnection Connection =>
-            throw new InvalidOperationException(
-                "RecordingWriteSession exposes the executor via CreateCommandExecutor; Connection is not used in tests."
-            );
-
-        public DbTransaction Transaction =>
-            throw new InvalidOperationException(
-                "RecordingWriteSession exposes the executor via CreateCommandExecutor; Transaction is not used in tests."
-            );
-
-        public int CommitCallCount { get; private set; }
-
-        public int RollbackCallCount { get; private set; }
-
-        public int DisposeCallCount { get; private set; }
-
-        public Exception? CommitExceptionToThrow { get; set; }
-
-        public DbCommand CreateCommand(RelationalCommand command) =>
-            throw new InvalidOperationException(
-                "RecordingWriteSession does not expose DbCommand; callers should use CreateCommandExecutor."
-            );
-
-        public Task CommitAsync(CancellationToken cancellationToken = default)
-        {
-            CommitCallCount++;
-
-            if (CommitExceptionToThrow is not null)
-            {
-                throw CommitExceptionToThrow;
-            }
-
-            return Task.CompletedTask;
-        }
-
-        public Task RollbackAsync(CancellationToken cancellationToken = default)
-        {
-            RollbackCallCount++;
-            return Task.CompletedTask;
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            DisposeCallCount++;
-            return ValueTask.CompletedTask;
         }
     }
 
@@ -2920,10 +2576,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
     }
 
-    private static MappingSet CreateSupportedMappingSet(
-        ResourceInfo resourceInfo,
-        SqlDialect dialect = SqlDialect.Pgsql
-    )
+    private static MappingSet CreateSupportedMappingSet(ResourceInfo resourceInfo)
     {
         var resourceKey = CreateResourceKeyEntry(resourceInfo);
         var rootPlan = CreateRootPlan();
@@ -2936,7 +2589,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var readPlan = CreateReadPlan(resourceModel, rootPlan.TableModel);
 
         return new MappingSet(
-            Key: new MappingSetKey("schema-hash", dialect, "v1"),
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
             Model: CreateDerivedModelSet(resourceModel, resourceKey),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
             {

@@ -21,7 +21,9 @@ public sealed record DescriptorWriteRequest
         JsonNode requestBody,
         DocumentUuid documentUuid,
         ReferentialId? referentialId,
-        TraceId traceId
+        TraceId traceId,
+        string? ifMatchEtag = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -30,6 +32,8 @@ public sealed record DescriptorWriteRequest
         DocumentUuid = documentUuid;
         ReferentialId = referentialId;
         TraceId = traceId;
+        IfMatchEtag = ifMatchEtag;
+        BackendProfileWriteContext = backendProfileWriteContext;
     }
 
     /// <summary>
@@ -61,6 +65,15 @@ public sealed record DescriptorWriteRequest
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// The client-supplied <c>If-Match</c> header value, or <c>null</c> when the header was absent.
+    /// When present and non-null the handler compares this against the computed <c>_etag</c> of the
+    /// current persisted descriptor representation before proceeding with the write.
+    /// </summary>
+    public string? IfMatchEtag { get; init; }
+
+    public BackendProfileWriteContext? BackendProfileWriteContext { get; init; }
 }
 
 /// <summary>
@@ -96,6 +109,8 @@ public interface IDescriptorWriteHandler
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
         TraceId traceId,
+        string? ifMatchEtag = null,
+        ReadableProfileProjectionContext? ifMatchReadableProjectionContext = null,
         CancellationToken cancellationToken = default
     );
 }

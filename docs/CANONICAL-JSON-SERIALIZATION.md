@@ -128,6 +128,54 @@ Schema normalization successful.
 Effective schema hash: a1b2c3d4e5f6...
 ```
 
+## Resource ETag Format and Quoting Convention
+
+Resource `_etag` values served by DMS are **unquoted** Base64-encoded SHA-256 hashes, for
+example:
+
+```
+ETag: R2aCXlHmGFXaM2OJ+SBjzA==
+```
+
+### Computation
+
+1. Deep-clone the document body.
+2. Remove `id`, `_etag`, and `_lastModifiedDate` fields.
+3. Canonicalize the remaining object (ordinal property sort, minified UTF-8).
+4. Compute `SHA-256` over the canonical bytes.
+5. Base64-encode the raw bytes (Standard encoding, no padding strip).
+
+Implementation: `EdFi.DataManagementService.Backend.RelationalApiMetadataFormatter.FormatEtag`.
+
+### Quoting deviation from RFC 7232
+
+RFC 7232 §2.3 specifies that an ETag value MUST be enclosed in double-quote characters
+(`"\"<opaque>\""`). DMS ETags are intentionally **unquoted** to preserve behavioral parity
+with the legacy ODS implementation, which clients depend on.
+
+This deviation is tracked for future RFC-conformance work. A client sending an `If-Match`
+header must supply the raw unquoted Base64 string exactly as received in the `_etag` field
+or `ETag` response header — no surrounding quotes should be added.
+
+> **Future work**: Adopt RFC 7232-conformant quoting and update the `If-Match` comparison
+> to strip surrounding double-quotes before ordinal comparison.
+> See the Ed-Fi Jira backlog for a future RFC-conformance ticket.
+
+### If-Match wildcard (`*`)
+
+RFC 7232 §3.1 defines the `*` wildcard to mean "any existing representation". DMS honours
+this semantics: when a client sends `If-Match: *` on a PUT or POST-as-update request, the
+ETag comparison is bypassed entirely and the write proceeds as if no `If-Match` header was
+present. The row-level lock normally acquired during the ETag pre-check is also skipped in
+this case.
+
+First-time POST inserts are unaffected: the wildcard guard inside `CheckIfMatchEtagAsync` is
+only reached when an existing document has been found, so a `CreateNew` target continues to
+insert normally regardless of the `If-Match` value.
+
+Implementation: `DefaultRelationalWriteExecutor.CheckIfMatchEtagAsync` (early return for
+`request.IfMatchEtag == "*"`).
+
 ## Verification
 
 To verify canonicalization is working correctly:

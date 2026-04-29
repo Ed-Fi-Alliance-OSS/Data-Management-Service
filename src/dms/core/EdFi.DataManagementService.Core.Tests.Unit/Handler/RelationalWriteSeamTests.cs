@@ -726,7 +726,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 A.Fake<IRelationalReadTargetLookupService>(),
                 A.Fake<IRelationalReadMaterializer>(),
                 A.Fake<IReadableProfileProjector>(),
-                new NoOpRelationalWriteExceptionClassifier(),
+                A.Fake<IRelationalWriteExceptionClassifier>(),
                 A.Fake<IRelationalDeleteConstraintResolver>(),
                 A.Fake<IRelationalWriteSessionFactory>()
             );

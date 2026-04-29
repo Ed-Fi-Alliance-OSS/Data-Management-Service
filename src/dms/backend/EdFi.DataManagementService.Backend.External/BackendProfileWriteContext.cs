@@ -40,9 +40,15 @@ public interface IStoredStateProjectionInvoker
 /// <param name="StoredStateProjectionInvoker">
 /// Callback to invoke C6 stored-state projection when the stored document is available.
 /// </param>
+/// <param name="IfMatchReadableProjectionContext">
+/// The readable-profile projection context used to compute the profile-projected ETag for
+/// <c>If-Match</c> comparisons on write paths. Non-null only when the profile governing this
+/// request also declares a readable content type; null for write-only or non-profile writes.
+/// </param>
 public sealed record BackendProfileWriteContext(
     ProfileAppliedWriteRequest Request,
     string ProfileName,
     IReadOnlyList<CompiledScopeDescriptor> CompiledScopeCatalog,
-    IStoredStateProjectionInvoker StoredStateProjectionInvoker
+    IStoredStateProjectionInvoker StoredStateProjectionInvoker,
+    ReadableProfileProjectionContext? IfMatchReadableProjectionContext = null
 );

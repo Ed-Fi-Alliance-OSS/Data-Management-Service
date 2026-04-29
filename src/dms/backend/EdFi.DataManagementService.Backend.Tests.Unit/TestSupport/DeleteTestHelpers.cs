@@ -10,22 +10,22 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 
 /// <summary>
 /// Configurable <see cref="IRelationalWriteExceptionClassifier"/> double used by delete-path
-/// fixtures (descriptor delete, relational document store delete). Exposes preset return values
-/// plus per-method call counts so individual tests can assert both classification output AND
-/// that the classifier was invoked the expected number of times. Every delete-path test fixture
-/// should consume this one type to keep FK-classification behavior synchronised across fixtures.
+/// fixtures. Exposes a preset classification plus a call count so individual tests can assert
+/// both classification output and that the classifier was invoked the expected number of times.
 /// </summary>
 internal sealed class ConfigurableRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
 {
+    /// <summary>
+    /// When <c>true</c>, <see cref="IsForeignKeyViolation"/> returns <c>true</c> regardless of
+    /// <see cref="ClassificationToReturn"/>. Set this to test the branch where the FK guard fires
+    /// but the classifier cannot extract a constraint name (e.g., returns
+    /// <see cref="RelationalWriteExceptionClassification.UnrecognizedWriteFailure"/>).
+    /// </summary>
     public bool IsForeignKeyViolationToReturn { get; set; }
 
     public bool IsTransientFailureToReturn { get; set; }
 
     public RelationalWriteExceptionClassification? ClassificationToReturn { get; set; }
-
-    public int IsForeignKeyViolationCallCount { get; private set; }
-
-    public int IsTransientFailureCallCount { get; private set; }
 
     public int TryClassifyCallCount { get; private set; }
 
@@ -39,20 +39,12 @@ internal sealed class ConfigurableRelationalWriteExceptionClassifier : IRelation
         return classification is not null;
     }
 
-    public bool IsForeignKeyViolation(DbException exception)
-    {
-        IsForeignKeyViolationCallCount++;
-        return IsForeignKeyViolationToReturn;
-    }
+    public bool IsForeignKeyViolation(DbException exception) =>
+        IsForeignKeyViolationToReturn
+        || ClassificationToReturn is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation;
 
-    // Neither delete-path fixture consumes unique-violation classification today (descriptor
-    // POST runs through DescriptorWriteHandler; the relational document store delete does not
-    // produce unique violations). Kept as a fixed-false stub until a real path exercises it.
-    public bool IsUniqueConstraintViolation(DbException exception) => false;
+    public bool IsUniqueConstraintViolation(DbException exception) =>
+        ClassificationToReturn is RelationalWriteExceptionClassification.UniqueConstraintViolation;
 
-    public bool IsTransientFailure(DbException exception)
-    {
-        IsTransientFailureCallCount++;
-        return IsTransientFailureToReturn;
-    }
+    public bool IsTransientFailure(DbException exception) => IsTransientFailureToReturn;
 }

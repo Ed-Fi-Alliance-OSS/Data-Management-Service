@@ -199,11 +199,23 @@ internal class ProfileWritePipelineMiddleware(
             method
         );
 
+        ReadableProfileProjectionContext? ifMatchProjectionContext = null;
+        if (profileContext.ResourceProfile.ReadContentType is not null)
+        {
+            ifMatchProjectionContext = new ReadableProfileProjectionContext(
+                profileContext.ResourceProfile.ReadContentType,
+                IReadableProfileProjector.ExtractIdentityPropertyNames(
+                    requestInfo.ResourceSchema.IdentityJsonPaths
+                )
+            );
+        }
+
         requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
             Request: result.Request,
             ProfileName: profileContext.ProfileName,
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: invoker
+            StoredStateProjectionInvoker: invoker,
+            IfMatchReadableProjectionContext: ifMatchProjectionContext
         );
 
         await next();

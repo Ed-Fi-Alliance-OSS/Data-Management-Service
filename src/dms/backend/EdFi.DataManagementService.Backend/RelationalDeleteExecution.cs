@@ -167,7 +167,7 @@ internal static class RelationalDeleteExecution
             }
 
             // Constraint name surfaced by the driver but the compiled relational model has no
-            // matching FK — drift between the deployed DDL and the runtime model. Emit a Warning so
+            // matching FK - drift between the deployed DDL and the runtime model. Emit a Warning so
             // operators notice, and return an empty names array so the response layer can render a
             // generic conflict message.
             logger.LogWarning(

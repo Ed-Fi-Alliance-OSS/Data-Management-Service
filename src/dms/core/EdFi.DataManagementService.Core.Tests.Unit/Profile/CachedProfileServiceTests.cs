@@ -159,7 +159,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("student", "StudentProfile", ProfileUsageType.Readable);
+            var parsedHeader = new ParsedProfileHeader(
+                "student",
+                "StudentProfile",
+                ProfileUsageType.Readable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,
@@ -196,7 +200,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("student", "StudentProfile", ProfileUsageType.Writable);
+            var parsedHeader = new ParsedProfileHeader(
+                "student",
+                "StudentProfile",
+                ProfileUsageType.Writable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,
@@ -233,7 +241,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("student", "StudentProfile", ProfileUsageType.Writable);
+            var parsedHeader = new ParsedProfileHeader(
+                "student",
+                "StudentProfile",
+                ProfileUsageType.Writable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,
@@ -331,6 +343,45 @@ public class CachedProfileServiceTests
 
             result.IsSuccess.Should().BeTrue();
             result.ProfileContext!.ContentType.Should().Be(ProfileContentType.Write);
+        }
+
+        [Test]
+        public async Task It_returns_profile_context_for_valid_readable_delete_request()
+        {
+            var fakeCmsProvider = A.Fake<IProfileCmsProvider>();
+            A.CallTo(() => fakeCmsProvider.GetApplicationProfileInfoAsync(A<long>._, A<string?>._))
+                .Returns(new ApplicationProfileInfo(1, [100]));
+            A.CallTo(() => fakeCmsProvider.GetProfilesAsync(A<string?>._))
+                .Returns(
+                    Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
+                    ])
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
+
+            var service = CreateService(fakeCmsProvider);
+            var parsedHeader = new ParsedProfileHeader(
+                "Student",
+                "StudentProfile",
+                ProfileUsageType.Readable
+            );
+
+            var result = await service.ResolveProfileAsync(
+                parsedHeader: parsedHeader,
+                method: RequestMethod.DELETE,
+                resourceName: "Student",
+                applicationId: 1,
+                tenantId: null
+            );
+
+            result.IsSuccess.Should().BeTrue();
+            result.ProfileContext.Should().NotBeNull();
+            result.ProfileContext!.ContentType.Should().Be(ProfileContentType.Read);
         }
 
         [Test]
@@ -745,7 +796,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("Student", "StudentProfile", ProfileUsageType.Readable);
+            var parsedHeader = new ParsedProfileHeader(
+                "Student",
+                "StudentProfile",
+                ProfileUsageType.Readable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,
@@ -886,9 +941,18 @@ public class CachedProfileServiceTests
             result.IsSuccess.Should().BeFalse();
             result.Error!.StatusCode.Should().Be(403);
             result.Error.Errors.Should().ContainSingle();
-            result.Error.Errors[0].Should().Contain("application/vnd.ed-fi.school.schoolprofile.readable+json");
-            result.Error.Errors[0].Should().NotContain("application/vnd.ed-fi.school.studentprofile.readable+json");
-            result.Error.Errors[0].Should().NotContain("application/vnd.ed-fi.school.writeonlyprofile.readable+json");
+            result
+                .Error.Errors[0]
+                .Should()
+                .Contain("application/vnd.ed-fi.school.schoolprofile.readable+json");
+            result
+                .Error.Errors[0]
+                .Should()
+                .NotContain("application/vnd.ed-fi.school.studentprofile.readable+json");
+            result
+                .Error.Errors[0]
+                .Should()
+                .NotContain("application/vnd.ed-fi.school.writeonlyprofile.readable+json");
         }
 
         [Test]
@@ -905,7 +969,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("Student", "MissingProfile", ProfileUsageType.Readable);
+            var parsedHeader = new ParsedProfileHeader(
+                "Student",
+                "MissingProfile",
+                ProfileUsageType.Readable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,

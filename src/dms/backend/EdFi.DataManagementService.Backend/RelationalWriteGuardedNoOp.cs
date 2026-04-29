@@ -38,50 +38,17 @@ internal static class RelationalWriteGuardedNoOp
     }
 }
 
-internal interface IRelationalWriteFreshnessChecker
+/// <summary>
+/// Shared builder for the <c>dms.Document</c> row-lock command used by both the
+/// <c>If-Match</c> changed-write pre-check and the guarded no-op freshness checker.
+/// Centralising the SQL prevents the two callers from drifting across dialects.
+/// </summary>
+internal static class DocumentRowLock
 {
-    Task<bool> IsCurrentAsync(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken = default
-    );
-}
+    internal const string DocumentIdParameterName = "@documentId";
 
-internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnessChecker
-{
-    private const string DocumentIdParameterName = "@documentId";
-
-    public async Task<bool> IsCurrentAsync(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(targetContext);
-        ArgumentNullException.ThrowIfNull(writeSession);
-
-        await using var command = writeSession.CreateCommand(
-            BuildCommand(request.MappingSet.Key.Dialect, targetContext.DocumentId)
-        );
-
-        var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-
-        if (scalarResult is null or DBNull)
-        {
-            return false;
-        }
-
-        var currentContentVersion = Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
-
-        return currentContentVersion == targetContext.ObservedContentVersion;
-    }
-
-    private static RelationalCommand BuildCommand(SqlDialect dialect, long documentId)
-    {
-        return dialect switch
+    internal static RelationalCommand BuildCommand(SqlDialect dialect, long documentId) =>
+        dialect switch
         {
             SqlDialect.Pgsql => new RelationalCommand(
                 """
@@ -104,5 +71,44 @@ internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnes
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
         };
+}
+
+internal interface IRelationalWriteFreshnessChecker
+{
+    Task<bool> IsCurrentAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken = default
+    );
+}
+
+internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnessChecker
+{
+    public async Task<bool> IsCurrentAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(targetContext);
+        ArgumentNullException.ThrowIfNull(writeSession);
+
+        await using var command = writeSession.CreateCommand(
+            DocumentRowLock.BuildCommand(request.MappingSet.Key.Dialect, targetContext.DocumentId)
+        );
+
+        var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        if (scalarResult is null or DBNull)
+        {
+            return false;
+        }
+
+        var currentContentVersion = Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
+
+        return currentContentVersion == targetContext.ObservedContentVersion;
     }
 }

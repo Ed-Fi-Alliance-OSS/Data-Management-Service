@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -32,6 +33,9 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        // ExecuteWriteCommandAsync calls ExecuteReaderAsync internally; queue an empty result set
+        // so the INSERT write command consumes one slot without triggering further reads.
+        commandExecutor.ResultSets.Enqueue([]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -52,6 +56,7 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
+        // One INSERT write command only; ETag is computed from the request body, not a DB re-read.
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor
             .Commands[0]
@@ -69,6 +74,9 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        // ExecuteWriteCommandAsync calls ExecuteReaderAsync internally; queue an empty result set
+        // so the INSERT write command consumes one slot without triggering further reads.
+        commandExecutor.ResultSets.Enqueue([]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = new DescriptorWriteRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -86,6 +94,8 @@ public class Given_Descriptor_Write_Response_Etags
             .BeEquivalentTo(
                 new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedCanonicalHashEtag(request))
             );
+        // One INSERT write command only; ETag is computed from the request body, not a DB re-read.
+        commandExecutor.Commands.Should().ContainSingle();
     }
 
     [Test]
@@ -97,6 +107,24 @@ public class Given_Descriptor_Write_Response_Etags
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        // ExecuteWriteCommandAsync calls ExecuteReaderAsync internally; queue an empty result set
+        // so the UPDATE write command consumes one slot without affecting the re-read.
+        commandExecutor.ResultSets.Enqueue([]);
+        // Post-write re-read SELECT to obtain the committed ETag.
+        commandExecutor.ResultSets.Enqueue([
+            InMemoryRelationalResultSet.Create(
+                new Dictionary<string, object?>
+                {
+                    ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+                    ["CodeValue"] = "Charter",
+                    ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
+                    ["ShortDescription"] = "Charter",
+                    ["Description"] = "Charter",
+                    ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
+                    ["EffectiveEndDate"] = null,
+                }
+            ),
+        ]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -112,8 +140,8 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
+        // UPDATE write command followed by a post-write re-read SELECT for the committed ETag.
+        commandExecutor.Commands.Should().HaveCount(2);
     }
 
     [Test]
@@ -129,6 +157,8 @@ public class Given_Descriptor_Write_Response_Etags
             InMemoryRelationalResultSet.Create(
                 new Dictionary<string, object?>
                 {
+                    ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+                    ["CodeValue"] = "Charter",
                     ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
                     ["ShortDescription"] = "Charter",
                     ["Description"] = "Charter",
@@ -163,10 +193,13 @@ public class Given_Descriptor_Write_Response_Etags
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        // First result set: initial read to detect if the document changed (no-op check).
         commandExecutor.ResultSets.Enqueue([
             InMemoryRelationalResultSet.Create(
                 new Dictionary<string, object?>
                 {
+                    ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+                    ["CodeValue"] = "Charter",
                     ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
                     ["ShortDescription"] = "Charter",
                     ["Description"] = "Previous Description",
@@ -175,6 +208,9 @@ public class Given_Descriptor_Write_Response_Etags
                 }
             ),
         ]);
+        // ExecuteWriteCommandAsync also calls ExecuteReaderAsync (no-op reader); queue an empty
+        // result set so the UPDATE command consumes a slot without affecting the re-read.
+        commandExecutor.ResultSets.Enqueue([]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -193,6 +229,8 @@ public class Given_Descriptor_Write_Response_Etags
             .Which.ETag.Should()
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
+        // Initial no-op-check SELECT + UPDATE write command only; ETag is computed from the
+        // request body, not a DB re-read.
         commandExecutor.Commands.Should().HaveCount(2);
         commandExecutor.Commands[1].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
     }
@@ -210,8 +248,10 @@ public class Given_Descriptor_Write_Response_Etags
         return new DescriptorWriteHandler(
             targetLookupService,
             commandExecutor,
-            new NoOpRelationalWriteExceptionClassifier(),
+            A.Fake<IRelationalWriteExceptionClassifier>(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
+            A.Fake<IRelationalWriteSessionFactory>(),
+            A.Fake<IReadableProfileProjector>(),
             NullLogger<DescriptorWriteHandler>.Instance
         );
     }

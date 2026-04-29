@@ -129,9 +129,6 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteConstraintResolver, RelationalWriteConstraintResolver>()
         );
-        // Singleton so the per-model-set ConditionalWeakTable cache is reused across requests.
-        // The cache holds weak references to the DerivedRelationalModelSet, so it still tracks
-        // mapping-set swaps without leaking.
         services.TryAdd(
             ServiceDescriptor.Singleton<
                 IRelationalDeleteConstraintResolver,

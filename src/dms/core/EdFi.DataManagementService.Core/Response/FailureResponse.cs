@@ -134,7 +134,7 @@ public static class FailureResponse
         // The relational delete path can surface an FK violation without a resolvable
         // referencing resource name (constraint name missing from the driver, or not mapped to
         // the compiled model). In that case the backend passes an empty array and the response
-        // layer emits a generic fallback — same type/title/status, just no "{names}" segment.
+        // layer emits a generic fallback - same type/title/status, just no "{names}" segment.
         var detail =
             dependentItemNames.Length == 0
                 ? "The requested action cannot be performed because this item is referenced by existing item(s)."

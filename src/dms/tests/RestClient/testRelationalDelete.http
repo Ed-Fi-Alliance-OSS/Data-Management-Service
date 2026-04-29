@@ -91,7 +91,7 @@ Authorization: bearer {{configToken}}
 @clientId={{createApplication.response.body.key}}
 @clientSecret={{createApplication.response.body.secret}}
 
-### 1.5 Reload claim sets so the NoFurtherAuthRequired set is visible to DMS
+### 1.5 Reload claim sets so the NoFurtherAuthorizationRequired set is visible to DMS
 POST http://localhost:{{dmsPort}}/management/reload-claimsets
 
 ### 1.6 Exchange the client credentials for a DMS bearer token
