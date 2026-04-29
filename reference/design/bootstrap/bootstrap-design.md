@@ -677,10 +677,13 @@ The bootstrap logic is:
     does not already exist there.
 
     **Expert-mode completeness boundary:** In `-ApiSchemaPath` mode, bootstrap still validates only staged
-    fragment presence and structure for additive claims inputs. It does not attempt to prove that arbitrary
-    expert-supplied additive fragments fully authorize every staged non-core resource ahead of runtime. If
-    the custom schema and additive custom claims are incomplete, the resulting authorization failures remain
-    DMS or BulkLoadClient runtime errors rather than a bootstrap-owned certification gap.
+    fragment presence and structure for additive claims inputs. For DMS-916, the acceptance criterion
+    "automatic claimset loading based on selected schema" is satisfied when bootstrap automatically derives
+    and stages the matching base claims inputs from the effective staged schema set in every supported mode,
+    including `-ApiSchemaPath`. Bootstrap does not attempt to prove that arbitrary expert-supplied additive
+    fragments fully authorize every staged non-core resource ahead of runtime. If the custom schema and
+    additive custom claims are incomplete, the resulting authorization failures remain DMS or
+    BulkLoadClient runtime errors rather than a bootstrap-owned certification gap.
 
 4. **Bootstrap performs structural claims-workspace validation before container startup.** The bootstrap
    surface validates only the staged conditions it directly owns:
