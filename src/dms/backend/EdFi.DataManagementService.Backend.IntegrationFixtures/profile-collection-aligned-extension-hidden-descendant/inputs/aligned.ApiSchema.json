@@ -1,0 +1,68 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Aligned",
+    "projectEndpointName": "aligned",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": true,
+    "abstractResources": {},
+    "resourceSchemas": {
+      "parentResources": {
+        "resourceName": "ParentResource",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {},
+        "arrayUniquenessConstraints": [],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": [],
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "parents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "_ext": {
+                    "type": "object",
+                    "properties": {
+                      "aligned": {
+                        "type": "object",
+                        "properties": {
+                          "alignedVisibleScalar": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "alignedHiddenScalar": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "detail": {
+                            "type": "object",
+                            "properties": {
+                              "detailVisibleField": {
+                                "type": "string",
+                                "maxLength": 100
+                              },
+                              "detailHiddenField": {
+                                "type": "string",
+                                "maxLength": 100
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

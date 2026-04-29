@@ -1,0 +1,31 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "v1",
+  "effective_schema_hash": "4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735",
+  "resource_key_count": 1,
+  "resource_key_seed_hash": "aa4516a2188a393b97f346bd6483e8a82e57ab430f5377d00b6409e307a812dc",
+  "schema_components": [
+    {
+      "project_endpoint_name": "aligned",
+      "project_name": "Aligned",
+      "project_version": "1.0.0",
+      "is_extension_project": true,
+      "project_hash": "43ac3ba1df5de2cd8a43e8a4b1fba3b4e9eb226b9b3f3406475b5a2a3a18dfec"
+    },
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "1.0.0",
+      "is_extension_project": false,
+      "project_hash": "b0dab32ec779167fd81686fd16df47a62f1db2f335c1c2689d1842e35adf9139"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "ParentResource",
+      "resource_version": "1.0.0"
+    }
+  ]
+}
