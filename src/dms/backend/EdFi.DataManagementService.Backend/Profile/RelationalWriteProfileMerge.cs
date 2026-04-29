@@ -689,12 +689,27 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         var projectedCurrentRow = currentRowProjection.ProjectedRow;
         var currentRowByColumnName = currentRowProjection.ColumnNameProjection;
 
+        // Slice 5 CP5: collect non-collection descendant inlined scope states once and feed
+        // the same envelope to both the classifier and the resolver. A descendant scope whose
+        // owner table is this same physical table contributes its own stored hidden-member
+        // paths and visibility to bindings on this table, ensuring the matched-row overlay
+        // and key-unification resolution honor descendant-scope governance instead of falling
+        // through to the direct scope.
+        var descendantStates = ProfileSeparateScopeDescendantStates.Collect(
+            request.WritePlan,
+            tablePlan,
+            scopeAddress,
+            request.ProfileRequest,
+            request.ProfileAppliedContext
+        );
+
         var classification = _separateTableClassifier.Classify(
             request.WritePlan,
             tablePlan,
             scopeAddress,
             requestScope,
-            storedScope
+            storedScope,
+            descendantStates
         );
 
         var mergedValues = OverlayByDisposition(
@@ -724,6 +739,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             scopeAddress,
             requestScope,
             storedScope,
+            descendantStates,
             mergedValues,
             classification.ResolverOwnedBindingIndices
         );

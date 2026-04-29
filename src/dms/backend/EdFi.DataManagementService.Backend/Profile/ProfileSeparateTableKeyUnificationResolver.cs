@@ -71,6 +71,17 @@ internal interface IProfileSeparateTableKeyUnificationResolver
         FlattenedWriteValue[] mergedRowValuesMutable,
         ImmutableHashSet<int> resolverOwnedBindingIndices
     );
+
+    void Resolve(
+        TableWritePlan separateTablePlan,
+        ProfileSeparateTableKeyUnificationContext context,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates,
+        FlattenedWriteValue[] mergedRowValuesMutable,
+        ImmutableHashSet<int> resolverOwnedBindingIndices
+    );
 }
 
 internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSeparateTableKeyUnificationResolver
@@ -124,6 +135,27 @@ internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSepar
         StoredScopeState? storedScope,
         FlattenedWriteValue[] mergedRowValuesMutable,
         ImmutableHashSet<int> resolverOwnedBindingIndices
+    ) =>
+        Resolve(
+            separateTablePlan,
+            context,
+            scopeAddress,
+            requestScope,
+            storedScope,
+            descendantStates: default,
+            mergedRowValuesMutable,
+            resolverOwnedBindingIndices
+        );
+
+    public void Resolve(
+        TableWritePlan separateTablePlan,
+        ProfileSeparateTableKeyUnificationContext context,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates,
+        FlattenedWriteValue[] mergedRowValuesMutable,
+        ImmutableHashSet<int> resolverOwnedBindingIndices
     )
     {
         ArgumentNullException.ThrowIfNull(separateTablePlan);
@@ -157,6 +189,7 @@ internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSepar
             scopeAddress,
             requestScope,
             storedScope,
+            descendantStates,
             mergedRowValuesMutable,
             resolverOwnedBindingIndices
         );

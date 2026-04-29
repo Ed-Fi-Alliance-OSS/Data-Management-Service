@@ -117,6 +117,41 @@ internal static class ProfileKeyUnificationCore
         StoredScopeState? storedScope,
         FlattenedWriteValue[] mergedRowValuesMutable,
         ImmutableHashSet<int> resolverOwnedBindingIndices
+    ) =>
+        ResolveKeyUnification(
+            tableWritePlan,
+            currentRowByColumnName,
+            writableRequestBody,
+            currentState,
+            resolvedReferenceLookups,
+            scopeAddress,
+            requestScope,
+            storedScope,
+            descendantStates: default,
+            mergedRowValuesMutable,
+            resolverOwnedBindingIndices
+        );
+
+    /// <summary>
+    /// Descendant-aware overload. In addition to the direct request/stored scope states for
+    /// <paramref name="scopeAddress"/>, accepts <paramref name="descendantStates"/> — inlined
+    /// non-collection descendant scopes whose owner table equals this scope's table and whose
+    /// ancestor-collection instance chain matches. Their hidden-member paths and visibility
+    /// govern bindings on this table under the descendant's own scope, preventing fall-through
+    /// to the parent scope's governance.
+    /// </summary>
+    internal static void ResolveKeyUnification(
+        TableWritePlan tableWritePlan,
+        IReadOnlyDictionary<DbColumnName, object?> currentRowByColumnName,
+        JsonNode writableRequestBody,
+        RelationalWriteCurrentState? currentState,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates,
+        FlattenedWriteValue[] mergedRowValuesMutable,
+        ImmutableHashSet<int> resolverOwnedBindingIndices
     )
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
@@ -143,7 +178,8 @@ internal static class ProfileKeyUnificationCore
 
         var candidateScopes = ProfileBindingClassificationCore.BuildCandidateScopeSet(
             requestScope,
-            storedScope
+            storedScope,
+            descendantStates
         );
 
         _ = currentState;
@@ -162,7 +198,8 @@ internal static class ProfileKeyUnificationCore
                         member,
                         candidateScopes,
                         requestScope,
-                        storedScope
+                        storedScope,
+                        descendantStates
                     ),
                 ReadOnlySpan<int>.Empty,
                 mergedRowValuesMutable,
@@ -354,23 +391,56 @@ internal static class ProfileKeyUnificationCore
         TableWritePlan tableWritePlan,
         KeyUnificationMemberWritePlan member,
         ImmutableArray<string> candidateScopes,
-        RequestScopeState? requestScope,
-        StoredScopeState? storedScope
+        RequestScopeState? directRequestScope,
+        StoredScopeState? directStoredScope,
+        ProfileSeparateScopeDescendantStates descendantStates
     ) =>
         ClassifyMemberVisibilityCore(
             tableWritePlan,
             member,
             candidateScopes,
             containingScope =>
-                storedScope is not null
-                && string.Equals(storedScope.Address.JsonScope, containingScope, StringComparison.Ordinal)
-                    ? storedScope
-                    : null,
+            {
+                if (
+                    directStoredScope is not null
+                    && string.Equals(
+                        directStoredScope.Address.JsonScope,
+                        containingScope,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return directStoredScope;
+                }
+                if (!descendantStates.StoredScopes.IsDefaultOrEmpty)
+                {
+                    return descendantStates.StoredScopes.FirstOrDefault(s =>
+                        string.Equals(s.Address.JsonScope, containingScope, StringComparison.Ordinal)
+                    );
+                }
+                return null;
+            },
             containingScope =>
-                requestScope is not null
-                && string.Equals(requestScope.Address.JsonScope, containingScope, StringComparison.Ordinal)
-                    ? requestScope
-                    : null
+            {
+                if (
+                    directRequestScope is not null
+                    && string.Equals(
+                        directRequestScope.Address.JsonScope,
+                        containingScope,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return directRequestScope;
+                }
+                if (!descendantStates.RequestScopes.IsDefaultOrEmpty)
+                {
+                    return descendantStates.RequestScopes.FirstOrDefault(s =>
+                        string.Equals(s.Address.JsonScope, containingScope, StringComparison.Ordinal)
+                    );
+                }
+                return null;
+            }
         );
 
     private static MemberVisibility ClassifyMemberVisibilityCore(

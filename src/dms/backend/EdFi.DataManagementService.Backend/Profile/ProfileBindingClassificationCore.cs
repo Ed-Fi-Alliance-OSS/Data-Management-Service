@@ -64,6 +64,32 @@ internal static class ProfileBindingClassificationCore
         RequestScopeState? requestScope,
         StoredScopeState? storedScope,
         ImmutableHashSet<int> resolverOwnedBindingIndices
+    ) =>
+        ClassifyBindings(
+            writePlan,
+            tableWritePlan,
+            scopeAddress,
+            requestScope,
+            storedScope,
+            descendantStates: default,
+            resolverOwnedBindingIndices
+        );
+
+    /// <summary>
+    /// Classifies bindings for one structurally-addressed separate-scope instance, plus
+    /// the inlined non-collection descendant scope states whose owner table equals the
+    /// direct scope's table and whose ancestor-instance chain matches. Descendant request
+    /// and stored scopes participate in candidate-scope resolution and stored-scope
+    /// metadata-drift validation alongside the direct scope.
+    /// </summary>
+    internal static ImmutableArray<RootBindingDisposition> ClassifyBindings(
+        ResourceWritePlan writePlan,
+        TableWritePlan tableWritePlan,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates,
+        ImmutableHashSet<int> resolverOwnedBindingIndices
     )
     {
         ArgumentNullException.ThrowIfNull(writePlan);
@@ -71,13 +97,13 @@ internal static class ProfileBindingClassificationCore
         ArgumentNullException.ThrowIfNull(scopeAddress);
         ArgumentNullException.ThrowIfNull(resolverOwnedBindingIndices);
 
-        var candidateScopes = BuildCandidateScopeSet(requestScope, storedScope);
+        var candidateScopes = BuildCandidateScopeSet(requestScope, storedScope, descendantStates);
 
         return ClassifyBindingsCore(
             writePlan,
             tableWritePlan,
             resolverOwnedBindingIndices,
-            ScopeStateLookup.FromDirect(scopeAddress, requestScope, storedScope),
+            ScopeStateLookup.FromDirect(scopeAddress, requestScope, storedScope, descendantStates),
             candidateScopes,
             hiddenMemberPathsOverride: null
         );
@@ -375,7 +401,8 @@ internal static class ProfileBindingClassificationCore
 
     internal static ImmutableArray<string> BuildCandidateScopeSet(
         RequestScopeState? requestScope,
-        StoredScopeState? storedScope
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates = default
     )
     {
         var set = new HashSet<string>(StringComparer.Ordinal);
@@ -386,6 +413,20 @@ internal static class ProfileBindingClassificationCore
         if (storedScope is not null)
         {
             set.Add(storedScope.Address.JsonScope);
+        }
+        if (!descendantStates.RequestScopes.IsDefaultOrEmpty)
+        {
+            foreach (var s in descendantStates.RequestScopes)
+            {
+                set.Add(s.Address.JsonScope);
+            }
+        }
+        if (!descendantStates.StoredScopes.IsDefaultOrEmpty)
+        {
+            foreach (var s in descendantStates.StoredScopes)
+            {
+                set.Add(s.Address.JsonScope);
+            }
         }
         return [.. set.OrderByDescending(s => s.Length).ThenBy(s => s, StringComparer.Ordinal)];
     }
@@ -843,6 +884,8 @@ internal static class ProfileBindingClassificationCore
         ProfileAppliedWriteContext? ProfileAppliedContext,
         RequestScopeState? DirectRequestScope,
         StoredScopeState? DirectStoredScope,
+        ImmutableDictionary<string, RequestScopeState>? DescendantRequestScopesByJsonScope,
+        ImmutableDictionary<string, StoredScopeState>? DescendantStoredScopesByJsonScope,
         bool UsesDirectScope
     )
     {
@@ -852,33 +895,64 @@ internal static class ProfileBindingClassificationCore
         )
         {
             ArgumentNullException.ThrowIfNull(profileRequest);
-            return new(profileRequest, profileAppliedContext, null, null, UsesDirectScope: false);
+            return new(profileRequest, profileAppliedContext, null, null, null, null, UsesDirectScope: false);
         }
 
         public static ScopeStateLookup FromDirect(
             ScopeInstanceAddress scopeAddress,
             RequestScopeState? requestScope,
-            StoredScopeState? storedScope
+            StoredScopeState? storedScope,
+            ProfileSeparateScopeDescendantStates descendantStates = default
         )
         {
             ArgumentNullException.ThrowIfNull(scopeAddress);
             ValidateDirectScopeAddress(scopeAddress, requestScope?.Address, nameof(requestScope));
             ValidateDirectScopeAddress(scopeAddress, storedScope?.Address, nameof(storedScope));
-            return new(null, null, requestScope, storedScope, UsesDirectScope: true);
+
+            ImmutableDictionary<string, RequestScopeState>? requestMap = null;
+            if (!descendantStates.RequestScopes.IsDefaultOrEmpty)
+            {
+                var b = ImmutableDictionary.CreateBuilder<string, RequestScopeState>(StringComparer.Ordinal);
+                foreach (var s in descendantStates.RequestScopes)
+                {
+                    b[s.Address.JsonScope] = s;
+                }
+                requestMap = b.ToImmutable();
+            }
+
+            ImmutableDictionary<string, StoredScopeState>? storedMap = null;
+            if (!descendantStates.StoredScopes.IsDefaultOrEmpty)
+            {
+                var b = ImmutableDictionary.CreateBuilder<string, StoredScopeState>(StringComparer.Ordinal);
+                foreach (var s in descendantStates.StoredScopes)
+                {
+                    b[s.Address.JsonScope] = s;
+                }
+                storedMap = b.ToImmutable();
+            }
+
+            return new(null, null, requestScope, storedScope, requestMap, storedMap, UsesDirectScope: true);
         }
 
         public RequestScopeState? LookupRequestScope(string containingScope)
         {
             if (UsesDirectScope)
             {
-                return
+                if (
                     DirectRequestScope is not null
                     && string.Equals(
                         DirectRequestScope.Address.JsonScope,
                         containingScope,
                         StringComparison.Ordinal
                     )
-                    ? DirectRequestScope
+                )
+                {
+                    return DirectRequestScope;
+                }
+                return
+                    DescendantRequestScopesByJsonScope is not null
+                    && DescendantRequestScopesByJsonScope.TryGetValue(containingScope, out var s)
+                    ? s
                     : null;
             }
 
@@ -889,14 +963,21 @@ internal static class ProfileBindingClassificationCore
         {
             if (UsesDirectScope)
             {
-                return
+                if (
                     DirectStoredScope is not null
                     && string.Equals(
                         DirectStoredScope.Address.JsonScope,
                         containingScope,
                         StringComparison.Ordinal
                     )
-                    ? DirectStoredScope
+                )
+                {
+                    return DirectStoredScope;
+                }
+                return
+                    DescendantStoredScopesByJsonScope is not null
+                    && DescendantStoredScopesByJsonScope.TryGetValue(containingScope, out var s)
+                    ? s
                     : null;
             }
 
@@ -912,7 +993,19 @@ internal static class ProfileBindingClassificationCore
                 return ProfileAppliedContext?.StoredScopeStates ?? [];
             }
 
-            return DirectStoredScope is null ? [] : [DirectStoredScope];
+            var b = ImmutableArray.CreateBuilder<StoredScopeState>();
+            if (DirectStoredScope is not null)
+            {
+                b.Add(DirectStoredScope);
+            }
+            if (DescendantStoredScopesByJsonScope is not null)
+            {
+                foreach (var kv in DescendantStoredScopesByJsonScope)
+                {
+                    b.Add(kv.Value);
+                }
+            }
+            return b.ToImmutable();
         }
 
         private static void ValidateDirectScopeAddress(
