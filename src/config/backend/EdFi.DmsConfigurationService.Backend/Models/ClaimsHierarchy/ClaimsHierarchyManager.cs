@@ -54,7 +54,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         foreach (var resourceClaim in importResourceClaims)
         {
             // Find or create the claim in the hierarchy
-            var claim = claims.FirstOrDefault(c => c.Name == resourceClaim.Name);
+            var claim = claims.Find(c => c.Name == resourceClaim.Name);
 
             // If the claim is not found, throw an exception
             // NOTE: The command for the import should already have been validated at this point, so this is purely a defensive check
@@ -67,7 +67,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
 
             // Find or create the ClaimSet for the metadata in the claims hierarchy
             // NOTE: It is expected that all claim set information will have been removed by a call to RemoveClaimSetFromHierarchy
-            var claimSet = claim.ClaimSets.FirstOrDefault(cs => cs.Name == claimSetName);
+            var claimSet = claim.ClaimSets.Find(cs => cs.Name == claimSetName);
 
             if (claimSet != null)
             {
@@ -84,18 +84,18 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
             if (resourceClaim.Actions != null)
             {
                 // Add actions with overrides (if present) from the ResourceClaim
-                foreach (var action in resourceClaim.Actions.Where(a => a.Enabled))
+                foreach (var actionName in resourceClaim.Actions.Where(a => a.Enabled).Select(a => a.Name))
                 {
                     // Create the action for the claim set
                     var newAction = new ClaimSetAction
                     {
-                        Name = action.Name ?? "",
+                        Name = actionName ?? "",
                         AuthorizationStrategyOverrides = [],
                     };
 
                     // Look for overrides on import command
                     var overrideForCrud = resourceClaim.AuthorizationStrategyOverridesForCRUD.SingleOrDefault(
-                        x => x?.ActionName == action.Name
+                        x => x?.ActionName == actionName
                     );
 
                     // If overrides for the action are present, apply them

@@ -355,7 +355,7 @@ public class KeycloakClientRepository(
 
         void CheckAndUpdateEducationOrganizationIds(List<ClientProtocolMapper> protocolMappers)
         {
-            var edOrgClaim = protocolMappers.FirstOrDefault(x =>
+            var edOrgClaim = protocolMappers.Find(x =>
                 x.Config["claim.name"].Equals("educationOrganizationIds")
             );
             if (edOrgClaim != null)

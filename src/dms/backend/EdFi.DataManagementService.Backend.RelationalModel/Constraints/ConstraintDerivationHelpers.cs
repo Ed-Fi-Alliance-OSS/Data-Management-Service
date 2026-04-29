@@ -104,11 +104,11 @@ internal static class ConstraintDerivationHelpers
 
         foreach (var binding in bindings)
         {
-            foreach (var identityBinding in binding.IdentityBindings)
+            foreach (var canonical in binding.IdentityBindings.Select(b => b.ReferenceJsonPath.Canonical))
             {
-                if (!lookup.TryAdd(identityBinding.ReferenceJsonPath.Canonical, binding))
+                if (!lookup.TryAdd(canonical, binding))
                 {
-                    var existing = lookup[identityBinding.ReferenceJsonPath.Canonical];
+                    var existing = lookup[canonical];
 
                     if (existing.ReferenceObjectPath.Canonical == binding.ReferenceObjectPath.Canonical)
                     {
@@ -116,7 +116,7 @@ internal static class ConstraintDerivationHelpers
                     }
 
                     throw new InvalidOperationException(
-                        $"Identity path '{identityBinding.ReferenceJsonPath.Canonical}' on resource "
+                        $"Identity path '{canonical}' on resource "
                             + $"'{FormatResource(resource)}' was bound to multiple references."
                     );
                 }

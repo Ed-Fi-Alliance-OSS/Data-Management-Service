@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Buffers;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 
@@ -80,15 +81,15 @@ public static class EffectiveSchemaManifestEmitter
             );
         }
 
-        foreach (var component in effectiveSchema.SchemaComponentsInEndpointOrder)
+        var componentWithEmptyHash = effectiveSchema.SchemaComponentsInEndpointOrder.FirstOrDefault(c =>
+            string.IsNullOrEmpty(c.ProjectHash)
+        );
+        if (componentWithEmptyHash is not null)
         {
-            if (string.IsNullOrEmpty(component.ProjectHash))
-            {
-                throw new ArgumentException(
-                    $"ProjectHash must not be empty for schema component '{component.ProjectEndpointName}'.",
-                    nameof(effectiveSchema)
-                );
-            }
+            throw new ArgumentException(
+                $"ProjectHash must not be empty for schema component '{componentWithEmptyHash.ProjectEndpointName}'.",
+                nameof(effectiveSchema)
+            );
         }
 
         if (effectiveSchema.ResourceKeyCount != effectiveSchema.ResourceKeysInIdOrder.Count)

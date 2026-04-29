@@ -52,11 +52,13 @@ public sealed record MappingSet(
     /// <summary>
     /// Compiled relational GET-many query capability or omission metadata keyed by qualified resource name.
     /// </summary>
+#pragma warning disable IDE0055
     public IReadOnlyDictionary<
         QualifiedResourceName,
         RelationalQueryCapability
     > QueryCapabilitiesByResource { get; init; } =
         new Dictionary<QualifiedResourceName, RelationalQueryCapability>();
+#pragma warning restore IDE0055
 
     /// <summary>
     /// Creates a mapping set from an AOT mapping-pack payload.

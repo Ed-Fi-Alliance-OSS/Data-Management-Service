@@ -20,10 +20,6 @@
         <PackageReference Include="FluentValidation.AspNetCore" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
-            <PrivateAssets>all</PrivateAssets>
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-        </PackageReference>
         <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
         <PackageReference Include="Microsoft.IdentityModel.Protocols" />
         <PackageReference Include="Serilog" />

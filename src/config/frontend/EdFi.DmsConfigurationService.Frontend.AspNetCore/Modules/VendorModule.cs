@@ -94,6 +94,7 @@ public class VendorModule : IEndpointModule
         ILogger<VendorModule> logger
     )
     {
+        logger.LogDebug("Entering Vendor GetById for id: {Id}", id);
         VendorGetResult getResult = await repository.GetVendor(id);
         return getResult switch
         {
@@ -115,7 +116,6 @@ public class VendorModule : IEndpointModule
         VendorUpdateCommand.Validator validator,
         HttpContext httpContext,
         IVendorRepository repository,
-        IApplicationRepository applicationRepository,
         IIdentityProviderRepository clientRepository,
         ILogger<ApplicationModule> logger
     )
@@ -146,7 +146,7 @@ public class VendorModule : IEndpointModule
                         continue;
                     case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
                         logger.LogError(
-                            "Failure updating client: {failureMessage}",
+                            "Failure updating client: {FailureMessage}",
                             failureIdentityProvider.IdentityProviderError.FailureMessage
                         );
                         return FailureResults.BadGateway(
@@ -158,7 +158,7 @@ public class VendorModule : IEndpointModule
                         return FailureResults.Unknown(httpContext.TraceIdentifier);
                     case ClientUpdateResult.FailureUnknown unknownFailure:
                         logger.LogError(
-                            "Error updating apiClient {clientUuid}: {message}",
+                            "Error updating apiClient {ClientUuid}: {Message}",
                             clientUuid,
                             unknownFailure.FailureMessage
                         );
@@ -169,7 +169,7 @@ public class VendorModule : IEndpointModule
 
         return vendorUpdateResult switch
         {
-            VendorUpdateResult.Success success => Results.NoContent(),
+            VendorUpdateResult.Success => Results.NoContent(),
             VendorUpdateResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound(
                     $"Vendor {id} not found. It may have been recently deleted.",
@@ -188,6 +188,7 @@ public class VendorModule : IEndpointModule
         ILogger<VendorModule> logger
     )
     {
+        logger.LogDebug("Entering Vendor Delete for id: {Id}", id);
         VendorDeleteResult deleteResult = await repository.DeleteVendor(id);
         return deleteResult switch
         {

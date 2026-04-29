@@ -89,7 +89,7 @@ public class ApiClientModule : IEndpointModule
             }
             else if (existingIdsResult is DmsInstanceIdsExistResult.FailureUnknown failure)
             {
-                logger.LogError("Error validating DmsInstanceIds: {message}", failure.FailureMessage);
+                logger.LogError("Error validating DmsInstanceIds: {Message}", failure.FailureMessage);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             }
         }
@@ -127,11 +127,11 @@ public class ApiClientModule : IEndpointModule
         switch (clientCreateResult)
         {
             case ClientCreateResult.FailureUnknown failure:
-                logger.LogError("Failure creating client {failure}", failure);
+                logger.LogError("Failure creating client {Failure}", failure);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError(
-                    "Failure creating client: {failureMessage}",
+                    "Failure creating client: {FailureMessage}",
                     SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                 );
                 return FailureResults.BadGateway(
@@ -176,7 +176,7 @@ public class ApiClientModule : IEndpointModule
                             new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
                         ]);
                     case ApiClientInsertResult.FailureUnknown failure:
-                        logger.LogError("Failure creating client {failure}", failure);
+                        logger.LogError("Failure creating client {Failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
                         return FailureResults.Unknown(httpContext.TraceIdentifier);
                 }
@@ -230,7 +230,7 @@ public class ApiClientModule : IEndpointModule
         return LoggingUtility.SanitizeForLog(input);
     }
 
-    private async Task<IResult> UpdateApiClient(
+    private static async Task<IResult> UpdateApiClient(
         long id,
         ApiClientUpdateCommand command,
         ApiClientUpdateCommand.Validator validator,
@@ -299,24 +299,19 @@ public class ApiClientModule : IEndpointModule
             else if (existingIdsResult is DmsInstanceIdsExistResult.FailureUnknown failure)
             {
                 logger.LogError(
-                    "Error validating DmsInstanceIds: {message}",
+                    "Error validating DmsInstanceIds: {Message}",
                     SanitizeForLog(failure.FailureMessage)
                 );
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             }
         }
 
-        // Get vendor details for rollback if needed
-        string namespacePrefixes;
-        switch (await vendorRepository.GetVendor(application.VendorId))
+        // Validate vendor exists
+        if (await vendorRepository.GetVendor(application.VendorId) is not VendorGetResult.Success)
         {
-            case VendorGetResult.Success success:
-                namespacePrefixes = success.VendorResponse.NamespacePrefixes;
-                break;
-            default:
-                throw new ValidationException([
-                    new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-                ]);
+            throw new ValidationException([
+                new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
+            ]);
         }
 
         // Get original application for rollback if needed
@@ -341,11 +336,11 @@ public class ApiClientModule : IEndpointModule
         switch (clientUpdateResult)
         {
             case ClientUpdateResult.FailureUnknown failure:
-                logger.LogError("Failure updating client: {failure}", SanitizeForLog(failure.FailureMessage));
+                logger.LogError("Failure updating client: {Failure}", SanitizeForLog(failure.FailureMessage));
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError(
-                    "Failure updating client: {failureMessage}",
+                    "Failure updating client: {FailureMessage}",
                     SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                 );
                 return FailureResults.BadGateway(
@@ -354,7 +349,7 @@ public class ApiClientModule : IEndpointModule
                 );
             case ClientUpdateResult.FailureNotFound notFound:
                 logger.LogError(
-                    "Client not found in identity provider: {failure}",
+                    "Client not found in identity provider: {Failure}",
                     SanitizeForLog(notFound.FailureMessage)
                 );
                 return FailureResults.NotFound(
@@ -374,7 +369,7 @@ public class ApiClientModule : IEndpointModule
                         if (originalApplication != null)
                         {
                             logger.LogWarning(
-                                "Database update failed for ApiClient {id}, attempting to rollback identity provider changes",
+                                "Database update failed for ApiClient {Id}, attempting to rollback identity provider changes",
                                 id
                             );
                             await identityProviderRepository.UpdateClientAsync(
@@ -393,7 +388,7 @@ public class ApiClientModule : IEndpointModule
                         if (originalApplication != null)
                         {
                             logger.LogWarning(
-                                "Database update failed for ApiClient {id}, attempting to rollback identity provider changes",
+                                "Database update failed for ApiClient {Id}, attempting to rollback identity provider changes",
                                 id
                             );
                             await identityProviderRepository.UpdateClientAsync(
@@ -415,7 +410,7 @@ public class ApiClientModule : IEndpointModule
                         if (originalApplication != null)
                         {
                             logger.LogWarning(
-                                "Database update failed for ApiClient {id}, attempting to rollback identity provider changes",
+                                "Database update failed for ApiClient {Id}, attempting to rollback identity provider changes",
                                 id
                             );
                             await identityProviderRepository.UpdateClientAsync(
@@ -434,7 +429,7 @@ public class ApiClientModule : IEndpointModule
                         if (originalApplication != null)
                         {
                             logger.LogWarning(
-                                "Database update failed for ApiClient {id}, attempting to rollback identity provider changes",
+                                "Database update failed for ApiClient {Id}, attempting to rollback identity provider changes",
                                 id
                             );
                             await identityProviderRepository.UpdateClientAsync(
@@ -446,7 +441,7 @@ public class ApiClientModule : IEndpointModule
                             );
                         }
                         logger.LogError(
-                            "Failure updating client: {failure}",
+                            "Failure updating client: {Failure}",
                             SanitizeForLog(failure.FailureMessage)
                         );
                         return FailureResults.Unknown(httpContext.TraceIdentifier);
@@ -459,7 +454,7 @@ public class ApiClientModule : IEndpointModule
         return FailureResults.Unknown(httpContext.TraceIdentifier);
     }
 
-    private async Task<IResult> DeleteApiClient(
+    private static async Task<IResult> DeleteApiClient(
         long id,
         HttpContext httpContext,
         IApiClientRepository apiClientRepository,
@@ -501,7 +496,7 @@ public class ApiClientModule : IEndpointModule
         // Delete from identity provider FIRST
         try
         {
-            logger.LogInformation("Deleting client {clientId}", SanitizeForLog(apiClient.ClientId));
+            logger.LogInformation("Deleting client {ClientId}", SanitizeForLog(apiClient.ClientId));
             var clientDeleteResult = await identityProviderRepository.DeleteClientAsync(
                 apiClient.ClientUuid.ToString()
             );
@@ -510,7 +505,7 @@ public class ApiClientModule : IEndpointModule
             {
                 case ClientDeleteResult.FailureUnknown failureUnknown:
                     logger.LogError(
-                        "Error deleting client {clientId} {clientUuid}: {failureMessage}",
+                        "Error deleting client {ClientId} {ClientUuid}: {FailureMessage}",
                         SanitizeForLog(apiClient.ClientId),
                         SanitizeForLog(apiClient.ClientUuid.ToString()),
                         SanitizeForLog(failureUnknown.FailureMessage)
@@ -518,7 +513,7 @@ public class ApiClientModule : IEndpointModule
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
                 case ClientDeleteResult.FailureIdentityProvider failureIdentityProvider:
                     logger.LogError(
-                        "Error deleting client from identity provider: {failureMessage}",
+                        "Error deleting client from identity provider: {FailureMessage}",
                         SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                     );
                     return FailureResults.BadGateway(
@@ -530,7 +525,8 @@ public class ApiClientModule : IEndpointModule
         catch (Exception ex)
         {
             logger.LogError(
-                "Error deleting client {clientId} {clientUuid}: {message}",
+                ex,
+                "Error deleting client {ClientId} {ClientUuid}: {Message}",
                 SanitizeForLog(apiClient.ClientId),
                 SanitizeForLog(apiClient.ClientUuid.ToString()),
                 SanitizeForLog(ex.Message)
@@ -551,7 +547,7 @@ public class ApiClientModule : IEndpointModule
                 if (application != null && namespacePrefixes != null)
                 {
                     logger.LogError(
-                        "Database delete failed for ApiClient {id} after identity provider deletion succeeded. Attempting to recreate client in identity provider.",
+                        "Database delete failed for ApiClient {Id} after identity provider deletion succeeded. Attempting to recreate client in identity provider.",
                         id
                     );
                     try
@@ -567,14 +563,15 @@ public class ApiClientModule : IEndpointModule
                             [.. apiClient.DmsInstanceIds]
                         );
                         logger.LogWarning(
-                            "Successfully recreated client {clientId} in identity provider after database delete failure. CLIENT SECRET HAS BEEN CHANGED - manual intervention required.",
+                            "Successfully recreated client {ClientId} in identity provider after database delete failure. CLIENT SECRET HAS BEEN CHANGED - manual intervention required.",
                             SanitizeForLog(apiClient.ClientId)
                         );
                     }
                     catch (Exception rollbackEx)
                     {
                         logger.LogCritical(
-                            "CRITICAL: Failed to rollback identity provider after database delete failure for ApiClient {id}. Client {clientId} exists in identity provider but not in database. Manual cleanup required. Error: {error}",
+                            rollbackEx,
+                            "CRITICAL: Failed to rollback identity provider after database delete failure for ApiClient {Id}. Client {ClientId} exists in identity provider but not in database. Manual cleanup required. Error: {Error}",
                             id,
                             SanitizeForLog(apiClient.ClientId),
                             SanitizeForLog(rollbackEx.Message)
@@ -584,7 +581,7 @@ public class ApiClientModule : IEndpointModule
                 else
                 {
                     logger.LogCritical(
-                        "CRITICAL: Database delete failed for ApiClient {id} after identity provider deletion succeeded. Cannot rollback - missing application or vendor data. Client {clientId} deleted from identity provider but still in database. Manual cleanup required.",
+                        "CRITICAL: Database delete failed for ApiClient {Id} after identity provider deletion succeeded. Cannot rollback - missing application or vendor data. Client {ClientId} deleted from identity provider but still in database. Manual cleanup required.",
                         id,
                         SanitizeForLog(apiClient.ClientId)
                     );
@@ -595,7 +592,7 @@ public class ApiClientModule : IEndpointModule
                     : FailureResults.Unknown(httpContext.TraceIdentifier);
             default:
                 logger.LogCritical(
-                    "CRITICAL: Unexpected delete result for ApiClient {id} after identity provider deletion. Client {clientId} may be in inconsistent state.",
+                    "CRITICAL: Unexpected delete result for ApiClient {Id} after identity provider deletion. Client {ClientId} may be in inconsistent state.",
                     id,
                     SanitizeForLog(apiClient.ClientId)
                 );
@@ -625,7 +622,7 @@ public class ApiClientModule : IEndpointModule
         try
         {
             logger.LogInformation(
-                "Resetting credentials for client {clientId}",
+                "Resetting credentials for client {ClientId}",
                 SanitizeForLog(apiClient.ClientId)
             );
             var clientResetResult = await identityProviderRepository.ResetCredentialsAsync(
@@ -652,16 +649,15 @@ public class ApiClientModule : IEndpointModule
                         logger,
                         httpContext.TraceIdentifier
                     ),
-                ClientResetResult.FailureUnknown failure => FailureResults.Unknown(
-                    httpContext.TraceIdentifier
-                ),
+                ClientResetResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),
                 _ => FailureResults.Unknown(httpContext.TraceIdentifier),
             };
         }
         catch (Exception ex)
         {
             logger.LogError(
-                "Error resetting client credentials {clientId} {clientUuid}: {message}",
+                ex,
+                "Error resetting client credentials {ClientId} {ClientUuid}: {Message}",
                 SanitizeForLog(apiClient.ClientId),
                 SanitizeForLog(apiClient.ClientUuid.ToString()),
                 SanitizeForLog(ex.Message)
@@ -677,13 +673,10 @@ public class ApiClientModule : IEndpointModule
     )
     {
         logger.LogError(
-            "Identity provider error during credential reset: {failureMessage}",
+            "Identity provider error during credential reset: {FailureMessage}",
             SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
         );
 
-        return FailureResults.BadGateway(
-            "Identity provider error during credential reset",
-            traceIdentifier
-        );
+        return FailureResults.BadGateway("Identity provider error during credential reset", traceIdentifier);
     }
 }

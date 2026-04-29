@@ -214,12 +214,9 @@ internal static class ConstraintNaming
             return $"{prefix}_{table.Name}";
         }
 
-        foreach (var token in tokens)
+        if (tokens.Any(string.IsNullOrWhiteSpace))
         {
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                throw new ArgumentException("Constraint tokens must be non-empty.", nameof(tokens));
-            }
+            throw new ArgumentException("Constraint tokens must be non-empty.", nameof(tokens));
         }
 
         return $"{prefix}_{table.Name}_{string.Join("_", tokens)}";

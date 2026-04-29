@@ -94,14 +94,11 @@ public class ClaimsValidator(ILogger<ClaimsValidator> _logger) : IClaimsValidato
     /// <summary>
     /// JSON Schema validation of a Claims document
     /// </summary>
-    public List<ClaimsValidationFailure> Validate(JsonNode claimsDocument)
+    public List<ClaimsValidationFailure> Validate(JsonNode claimsContent)
     {
         try
         {
-            EvaluationResults results = _jsonSchemaForClaims.Value.Evaluate(
-                claimsDocument,
-                _validatorOptions
-            );
+            EvaluationResults results = _jsonSchemaForClaims.Value.Evaluate(claimsContent, _validatorOptions);
             return ValidationErrorsFrom(results);
         }
         catch (ArgumentException ex)

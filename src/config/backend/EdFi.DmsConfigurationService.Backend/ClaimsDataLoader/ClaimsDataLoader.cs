@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 
-internal class DatabaseOperationException(string message) : Exception(message);
+public class DatabaseOperationException(string message) : Exception(message);
 
 /// <summary>
 /// Service responsible for loading and updating claims data in the database from JSON sources.

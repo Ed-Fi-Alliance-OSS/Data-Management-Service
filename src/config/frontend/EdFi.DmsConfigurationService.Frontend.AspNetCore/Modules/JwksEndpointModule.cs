@@ -3,10 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -18,7 +15,7 @@ public class JwksEndpointModule : IEndpointModule
         endpoints.MapGet("/.well-known/jwks.json", GetJwksConfiguration);
     }
 
-    private async Task<IResult> GetJwksConfiguration(HttpContext httpContext, ITokenManager tokenManager)
+    private async Task<IResult> GetJwksConfiguration(ITokenManager tokenManager)
     {
         // Fetch public keys from the token manager (database-backed)
         var publicKeys = await tokenManager.GetPublicKeysAsync();
@@ -42,13 +39,5 @@ public class JwksEndpointModule : IEndpointModule
                 .ToArray(),
         };
         return Results.Ok(jwks);
-    }
-
-    // Create a key ID from the RSA parameters
-    private static string CreateKeyId(RSAParameters parameters)
-    {
-        using var sha256 = SHA256.Create();
-        var hash = sha256.ComputeHash(parameters.Modulus ?? Array.Empty<byte>());
-        return Base64UrlEncoder.Encode(hash.Take(8).ToArray());
     }
 }

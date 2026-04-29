@@ -25,7 +25,7 @@ public class ScopePolicyHandler : AuthorizationHandler<ScopePolicy>
         {
             var userScopes = scopeClaim.Value.Split(' ');
 
-            if (requirement.AllowedScopes.Any(scope => userScopes.Contains(scope)))
+            if (requirement.AllowedScopes.Exists(scope => userScopes.Contains(scope)))
             {
                 context.Succeed(requirement);
             }

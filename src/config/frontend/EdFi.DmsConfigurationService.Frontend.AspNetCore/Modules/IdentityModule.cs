@@ -172,7 +172,7 @@ public class IdentityModule : IEndpointModule
                 catch (Exception ex)
                 {
                     // Log the exception for debugging purposes
-                    logger.LogWarning("Failed to parse Basic Auth credentials: {Exception}", ex);
+                    logger.LogWarning(ex, "Failed to parse Basic Auth credentials");
                 }
             }
         }

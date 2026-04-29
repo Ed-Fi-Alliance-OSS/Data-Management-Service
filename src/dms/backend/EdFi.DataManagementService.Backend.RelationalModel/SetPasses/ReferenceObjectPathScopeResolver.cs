@@ -28,8 +28,14 @@ internal static class ReferenceObjectPathScopeResolver
         string? tableName = null
     )
     {
-        ArgumentNullException.ThrowIfNull(referenceObjectPath.Canonical, nameof(referenceObjectPath));
-        ArgumentNullException.ThrowIfNull(referenceObjectPath.Segments, nameof(referenceObjectPath));
+        if (referenceObjectPath.Canonical is null)
+        {
+            throw new ArgumentNullException(nameof(referenceObjectPath));
+        }
+        if (referenceObjectPath.Segments is null)
+        {
+            throw new ArgumentNullException(nameof(referenceObjectPath));
+        }
         ArgumentNullException.ThrowIfNull(scopeCandidates);
         ArgumentNullException.ThrowIfNull(scopeSelector);
 
@@ -72,8 +78,14 @@ internal static class ReferenceObjectPathScopeResolver
         Func<Exception> extensionScopeRequiredExceptionFactory
     )
     {
-        ArgumentNullException.ThrowIfNull(referenceObjectPath.Canonical, nameof(referenceObjectPath));
-        ArgumentNullException.ThrowIfNull(referenceObjectPath.Segments, nameof(referenceObjectPath));
+        if (referenceObjectPath.Canonical is null)
+        {
+            throw new ArgumentNullException(nameof(referenceObjectPath));
+        }
+        if (referenceObjectPath.Segments is null)
+        {
+            throw new ArgumentNullException(nameof(referenceObjectPath));
+        }
         ArgumentNullException.ThrowIfNull(scopeCandidates);
         ArgumentNullException.ThrowIfNull(scopeSelector);
         ArgumentNullException.ThrowIfNull(noMatchExceptionFactory);

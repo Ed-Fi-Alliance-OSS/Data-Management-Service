@@ -527,6 +527,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     /// <summary>
     /// Applies dialect shortening to column storage metadata and reports whether it changed.
     /// </summary>
+#pragma warning disable IDE0055
     private static ColumnStorage ApplyToColumnStorage(
         ColumnStorage storage,
         ISqlDialectRules dialectRules,
@@ -566,10 +567,12 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 );
         }
     }
+#pragma warning restore IDE0055
 
     /// <summary>
     /// Applies dialect shortening to a table constraint and reports whether it changed.
     /// </summary>
+#pragma warning disable IDE0055
     private static TableConstraint ApplyToConstraint(
         TableConstraint constraint,
         ISqlDialectRules dialectRules,
@@ -680,6 +683,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 );
         }
     }
+#pragma warning restore IDE0055
 
     /// <summary>
     /// Applies dialect shortening to a column name collection and reports whether any element changed.
@@ -1168,6 +1172,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     /// <summary>
     /// Applies dialect shortening to an abstract union-view projection expression and reports whether it changed.
     /// </summary>
+#pragma warning disable IDE0055
     private static AbstractUnionViewProjectionExpression ApplyToUnionViewProjection(
         AbstractUnionViewProjectionExpression expression,
         ISqlDialectRules dialectRules,
@@ -1200,6 +1205,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 );
         }
     }
+#pragma warning restore IDE0055
 
     /// <summary>
     /// Applies dialect shortening to an index and reports whether it changed.
@@ -1286,6 +1292,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     /// <summary>
     /// Applies dialect shortening to trigger-kind-specific parameters and reports whether they changed.
     /// </summary>
+#pragma warning disable IDE0055
     private static TriggerKindParameters ApplyToTriggerParameters(
         TriggerKindParameters parameters,
         ISqlDialectRules dialectRules,
@@ -1357,6 +1364,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 );
         }
     }
+#pragma warning restore IDE0055
 
     /// <summary>
     /// Shortens column names in trigger column mappings using dialect rules.

@@ -12,9 +12,9 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// Compiles table-local reference identity projection metadata from
 /// <see cref="RelationalResourceModel.DocumentReferenceBindings" />.
 /// </summary>
-internal sealed class ReferenceIdentityProjectionPlanCompiler
+internal static class ReferenceIdentityProjectionPlanCompiler
 {
-    public IReadOnlyList<ReferenceIdentityProjectionTablePlan> Compile(
+    public static IReadOnlyList<ReferenceIdentityProjectionTablePlan> Compile(
         RelationalResourceModel resourceModel,
         IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalsByTable
     )

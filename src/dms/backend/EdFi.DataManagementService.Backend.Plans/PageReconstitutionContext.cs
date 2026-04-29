@@ -239,15 +239,15 @@ internal sealed class PageReconstitutionContext
                 var rootDocumentId = ResolveRootDocumentIdOrThrow(tablePlan, row);
                 var rowNode = new RowNode(tablePlan, row, physicalRowIdentity, rootDocumentId);
 
-                if (tablePlan.ImmediateParentTable is null)
+                if (
+                    tablePlan.ImmediateParentTable is null
+                    && !rootRowsByDocumentId.TryAdd(rootDocumentId, rowNode)
+                )
                 {
-                    if (!rootRowsByDocumentId.TryAdd(rootDocumentId, rowNode))
-                    {
-                        throw new InvalidOperationException(
-                            $"Cannot build page reconstitution context for '{GetResourceDisplayName(compiledPlan)}': "
-                                + $"duplicate root row for DocumentId {rootDocumentId} in table '{tablePlan.Table}'."
-                        );
-                    }
+                    throw new InvalidOperationException(
+                        $"Cannot build page reconstitution context for '{GetResourceDisplayName(compiledPlan)}': "
+                            + $"duplicate root row for DocumentId {rootDocumentId} in table '{tablePlan.Table}'."
+                    );
                 }
 
                 if (!rowNodesByPhysicalIdentity.TryAdd(physicalRowIdentity, rowNode))

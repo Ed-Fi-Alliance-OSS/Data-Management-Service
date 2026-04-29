@@ -657,7 +657,7 @@ internal static class RelationalModelSetSchemaHelpers
 
         var relativeSegments = path.Segments.Skip(jsonScope.Segments.Count).ToArray();
 
-        if (relativeSegments.Any(segment => segment is JsonPathSegment.AnyArrayElement))
+        if (Array.Exists(relativeSegments, segment => segment is JsonPathSegment.AnyArrayElement))
         {
             throw new InvalidOperationException(
                 $"Cannot derive scope-relative semantic identity path for '{path.Canonical}' under "

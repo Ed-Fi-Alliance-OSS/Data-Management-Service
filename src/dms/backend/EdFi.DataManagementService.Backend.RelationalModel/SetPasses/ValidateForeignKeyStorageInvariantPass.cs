@@ -109,12 +109,12 @@ public sealed class ValidateForeignKeyStorageInvariantPass : IRelationalModelSet
             tablesByName.Add(table.Table, table);
         }
 
-        foreach (var abstractTable in context.AbstractIdentityTablesInNameOrder)
+        foreach (var tableModel in context.AbstractIdentityTablesInNameOrder.Select(a => a.TableModel))
         {
-            if (!tablesByName.TryAdd(abstractTable.TableModel.Table, abstractTable.TableModel))
+            if (!tablesByName.TryAdd(tableModel.Table, tableModel))
             {
                 throw new InvalidOperationException(
-                    $"Duplicate table name '{abstractTable.TableModel.Table.Schema.Value}.{abstractTable.TableModel.Table.Name}' "
+                    $"Duplicate table name '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}' "
                         + "encountered during foreign key storage validation. "
                         + "This indicates a naming collision in the derived model set."
                 );

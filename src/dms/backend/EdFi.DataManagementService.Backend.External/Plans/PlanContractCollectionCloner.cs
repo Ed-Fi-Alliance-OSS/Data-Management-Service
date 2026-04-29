@@ -25,7 +25,10 @@ internal static class PlanContractCollectionCloner
     /// <returns>An immutable array containing the values in enumeration order.</returns>
     public static ImmutableArray<T> ToImmutableArray<T>(IEnumerable<T> values, string parameterName)
     {
-        ArgumentNullException.ThrowIfNull(values, parameterName);
+        if (values is null)
+        {
+            throw new ArgumentNullException(parameterName);
+        }
 
         return [.. values];
     }

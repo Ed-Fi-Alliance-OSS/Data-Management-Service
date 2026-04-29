@@ -5,9 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using Microsoft.Extensions.Logging;

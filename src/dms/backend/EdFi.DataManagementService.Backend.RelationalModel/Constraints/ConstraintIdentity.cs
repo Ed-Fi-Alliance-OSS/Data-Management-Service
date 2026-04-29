@@ -248,12 +248,12 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
             }
         }
 
-        if (Kind == ConstraintIdentityKind.AllOrNone)
+        if (
+            Kind == ConstraintIdentityKind.AllOrNone
+            && !DependentColumns.SequenceEqual(other.DependentColumns)
+        )
         {
-            if (!DependentColumns.SequenceEqual(other.DependentColumns))
-            {
-                return false;
-            }
+            return false;
         }
 
         return true;

@@ -339,8 +339,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         var rootTable = resourceModel.Root;
 
         // Resolve each identity element column to its canonical stored column.
-        // Under key unification, binding columns may be unified aliases (computed);
-        // UPDATE() guards and IS DISTINCT FROM comparisons must reference stored columns.
+        // Under key unification, binding columns may be unified aliases that are computed,
+        // and UPDATE() guards and IS DISTINCT FROM comparisons must reference stored columns.
         HashSet<string> seen = new(StringComparer.Ordinal);
         List<DbColumnName> storedColumns = new(identityElements.Count);
 
@@ -380,11 +380,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     )
     {
         // Build reverse reference index: for each target resource, collect all referrer entries.
-        var reverseIndex = BuildReverseReferenceIndex(
-            context,
-            resourceContextsByResource,
-            concreteResourcesByName
-        );
+        var reverseIndex = BuildReverseReferenceIndex(context, concreteResourcesByName);
 
         // For each target resource in the reverse index, emit a single trigger with all referrers.
         foreach (var (targetResource, referrerEntries) in reverseIndex)
@@ -421,8 +417,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 triggerTableModel = concreteModel.RelationalModel.Root;
 
                 // Identity projection columns from the root table, resolved to stored columns.
-                // Under key unification, some identity columns may be unified aliases (computed);
-                // SQL Server rejects UPDATE() on computed columns (Msg 2114).
+                // Under key unification, some identity columns may be unified aliases that are computed,
+                // and SQL Server rejects UPDATE() on computed columns (Msg 2114).
                 identityProjectionColumns = ResolveColumnsToStored(
                     triggerTableModel
                         .Columns.Where(c => c.SourceJsonPath is not null)
@@ -485,7 +481,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     /// </summary>
     private static Dictionary<QualifiedResourceName, List<ReverseReferenceEntry>> BuildReverseReferenceIndex(
         RelationalModelSetBuilderContext context,
-        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteResourcesByName
     )
     {
@@ -664,10 +659,10 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         HashSet<string> seenColumns = new(StringComparer.Ordinal);
         List<IdentityElementMapping> mappings = new(builderContext.IdentityJsonPaths.Count);
 
-        foreach (var identityPath in builderContext.IdentityJsonPaths)
+        foreach (var canonical in builderContext.IdentityJsonPaths.Select(p => p.Canonical))
         {
             var identityPartColumns = ResolveReferenceIdentityPartColumns(
-                identityPath.Canonical,
+                canonical,
                 referenceBindingsByIdentityPath,
                 rootTable.Table,
                 resource
@@ -675,31 +670,23 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
             if (identityPartColumns is not null)
             {
-                foreach (var col in identityPartColumns)
+                foreach (var col in identityPartColumns.Where(c => seenColumns.Add(c.Value)))
                 {
-                    if (seenColumns.Add(col.Value))
-                    {
-                        mappings.Add(
-                            new IdentityElementMapping(
-                                col,
-                                identityPath.Canonical,
-                                LookupColumnScalarType(
-                                    columnScalarTypes,
-                                    col,
-                                    identityPath.Canonical,
-                                    resource
-                                )
-                            )
-                        );
-                    }
+                    mappings.Add(
+                        new IdentityElementMapping(
+                            col,
+                            canonical,
+                            LookupColumnScalarType(columnScalarTypes, col, canonical, resource)
+                        )
+                    );
                 }
                 continue;
             }
 
-            if (!rootColumnsByPath.TryGetValue(identityPath.Canonical, out var columnName))
+            if (!rootColumnsByPath.TryGetValue(canonical, out var columnName))
             {
                 throw new InvalidOperationException(
-                    $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
+                    $"Identity path '{canonical}' on resource '{FormatResource(resource)}' "
                         + "did not map to a root table column during identity element mapping."
                 );
             }
@@ -709,13 +696,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 mappings.Add(
                     new IdentityElementMapping(
                         columnName,
-                        identityPath.Canonical,
-                        LookupColumnScalarType(
-                            columnScalarTypes,
-                            columnName,
-                            identityPath.Canonical,
-                            resource
-                        )
+                        canonical,
+                        LookupColumnScalarType(columnScalarTypes, columnName, canonical, resource)
                     )
                 );
             }
@@ -788,9 +770,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 // When superclassIdentityJsonPath is set, the first concrete identity path
                 // maps to the superclass identity path.
                 if (builderContext.IdentityJsonPaths.Count == 0)
+                {
                     throw new InvalidOperationException(
                         $"Resource '{FormatResource(resource)}' has superclassIdentityJsonPath set but no identity JSON paths."
                     );
+                }
 
                 concretePath = builderContext.IdentityJsonPaths[0].Canonical;
             }

@@ -580,6 +580,7 @@ public sealed record DbColumnModel(
     /// <summary>
     /// Initializes a new instance with stored-column default behavior.
     /// </summary>
+#pragma warning disable IDE0055
     public DbColumnModel(
         DbColumnName ColumnName,
         ColumnKind Kind,
@@ -597,6 +598,7 @@ public sealed record DbColumnModel(
             TargetResource,
             new ColumnStorage.Stored()
         ) { }
+#pragma warning restore IDE0055
 }
 
 /// <summary>

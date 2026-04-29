@@ -41,12 +41,12 @@ internal sealed class TableColumnAccumulator
 
         // Key columns are expected to overlap with DbTableModel.Columns because table column
         // inventories are seeded from the key definition before any derived columns are added.
-        foreach (var keyColumn in table.Key.Columns)
+        foreach (var value in table.Key.Columns.Select(k => k.ColumnName.Value))
         {
-            if (!columnNames.Contains(keyColumn.ColumnName.Value))
+            if (!columnNames.Contains(value))
             {
                 throw new InvalidOperationException(
-                    $"Table column inventory invariant failed for '{Definition.Table}': key column '{keyColumn.ColumnName.Value}' is missing from DbTableModel.Columns."
+                    $"Table column inventory invariant failed for '{Definition.Table}': key column '{value}' is missing from DbTableModel.Columns."
                 );
             }
         }

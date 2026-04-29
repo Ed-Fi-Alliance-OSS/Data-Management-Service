@@ -5,9 +5,7 @@
 
 using System.Net;
 using System.Security.Cryptography;
-using Keycloak.Net.Models.Clients;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 

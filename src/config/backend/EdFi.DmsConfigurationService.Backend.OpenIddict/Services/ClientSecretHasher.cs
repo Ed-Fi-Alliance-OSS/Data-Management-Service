@@ -86,7 +86,7 @@ public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<Ide
             byte[] decoded = Convert.FromBase64String(hashedSecret);
             using var reader = new BinaryReader(new MemoryStream(decoded));
 
-            byte version = reader.ReadByte();
+            _ = reader.ReadByte(); // version byte — read past, value not used
             int saltLength = reader.ReadInt32();
             byte[] salt = reader.ReadBytes(saltLength);
             byte[] expectedSubkey = reader.ReadBytes(32);

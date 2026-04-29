@@ -35,8 +35,9 @@ internal static class RelationalModelCanonicalization
             .ThenBy(table => table.Table.Name, StringComparer.Ordinal)
             .ToArray();
 
-        var rootTable = canonicalTables.FirstOrDefault(table =>
-            string.Equals(table.JsonScope.Canonical, "$", StringComparison.Ordinal)
+        var rootTable = Array.Find(
+            canonicalTables,
+            table => string.Equals(table.JsonScope.Canonical, "$", StringComparison.Ordinal)
         );
 
         if (rootTable is null)

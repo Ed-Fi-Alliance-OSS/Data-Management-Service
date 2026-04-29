@@ -454,8 +454,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     /// </summary>
     private static TableBoundColumn[]? ResolveEndpointCandidates(
         IReadOnlyDictionary<string, List<TableBoundColumn>> bindingsByPath,
-        JsonPathExpression endpointPath,
-        QualifiedResourceName resource
+        JsonPathExpression endpointPath
     )
     {
         if (!bindingsByPath.TryGetValue(endpointPath.Canonical, out var rawCandidates))
@@ -623,7 +622,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         QualifiedResourceName resource
     )
     {
-        var physicalBindings = ResolveEndpointCandidates(bindingsByPath, endpointPath, resource);
+        var physicalBindings = ResolveEndpointCandidates(bindingsByPath, endpointPath);
 
         if (physicalBindings is null)
         {
@@ -1148,7 +1147,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 canonicalColumnName,
                 firstMember.Kind,
                 firstMember.ScalarType,
-                memberColumns.All(column => column.IsNullable),
+                Array.TrueForAll(memberColumns, column => column.IsNullable),
                 SourceJsonPath: null,
                 firstMember.TargetResource
             );
@@ -1446,7 +1445,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
         var relativeSegments = sourcePath.Segments.Skip(prefixSegments.Count).ToArray();
 
-        if (relativeSegments.Any(segment => segment is JsonPathSegment.AnyArrayElement))
+        if (Array.Exists(relativeSegments, segment => segment is JsonPathSegment.AnyArrayElement))
         {
             throw new InvalidOperationException(
                 $"Key-unification member path '{sourcePath.Canonical}' on resource "

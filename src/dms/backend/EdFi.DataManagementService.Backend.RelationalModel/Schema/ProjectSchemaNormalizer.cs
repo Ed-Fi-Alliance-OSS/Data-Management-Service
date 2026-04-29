@@ -22,13 +22,13 @@ internal sealed record ProjectSchemaNormalizationResult(
 /// Normalizes projects from an <see cref="EffectiveSchemaSet"/> into canonical endpoint/schema ordering and
 /// validates physical schema uniqueness.
 /// </summary>
-internal sealed class ProjectSchemaNormalizer
+internal static class ProjectSchemaNormalizer
 {
     /// <summary>
     /// Normalizes project schemas and returns per-project contexts and schema infos.
     /// </summary>
     /// <param name="effectiveSchemaSet">The effective schema set to normalize.</param>
-    public ProjectSchemaNormalizationResult Normalize(EffectiveSchemaSet effectiveSchemaSet)
+    public static ProjectSchemaNormalizationResult Normalize(EffectiveSchemaSet effectiveSchemaSet)
     {
         ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
 

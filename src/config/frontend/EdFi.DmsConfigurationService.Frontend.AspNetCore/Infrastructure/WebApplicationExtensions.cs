@@ -25,15 +25,15 @@ public static class WebApplicationExtensions
         foreach (var moduleClass in moduleClasses)
         {
             // Exclude OpenID modules when not using self-contained identity provider
-            if (!string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
-            {
-                if (
+            if (
+                !string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase)
+                && (
                     moduleClass.Name == typeof(JwksEndpointModule).Name
                     || moduleClass.Name == typeof(OpenIdConfigurationModule).Name
                 )
-                {
-                    continue;
-                }
+            )
+            {
+                continue;
             }
 
             // Exclude TenantModule when multi-tenancy is disabled

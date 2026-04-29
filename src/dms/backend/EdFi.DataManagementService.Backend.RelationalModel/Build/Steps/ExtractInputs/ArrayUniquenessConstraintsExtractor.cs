@@ -268,30 +268,25 @@ internal static class ArrayUniquenessConstraintsExtractor
                 alignedBasePath: null
             );
 
-            if (!matched)
+            if (
+                !matched
+                && TryStripExtensionRootPrefix(scopePath, out var alignedScope)
+                && TryStripExtensionRootPrefix(scopePaths, out var alignedPaths)
+            )
             {
-                if (
-                    TryStripExtensionRootPrefix(scopePath, out var alignedScope)
-                    && TryStripExtensionRootPrefix(scopePaths, out var alignedPaths)
-                )
-                {
-                    var alignedBasePath = TryStripExtensionRootPrefix(
-                        constraint.BasePath,
-                        out var alignedBase
-                    )
-                        ? alignedBase.Canonical
-                        : null;
+                var alignedBasePath = TryStripExtensionRootPrefix(constraint.BasePath, out var alignedBase)
+                    ? alignedBase.Canonical
+                    : null;
 
-                    _ = ValidateArrayUniquenessReferenceIdentityCoverage(
-                        alignedPaths,
-                        referenceGroups,
-                        resourceKey,
-                        scope,
-                        basePath,
-                        alignedScope.Canonical,
-                        alignedBasePath
-                    );
-                }
+                _ = ValidateArrayUniquenessReferenceIdentityCoverage(
+                    alignedPaths,
+                    referenceGroups,
+                    resourceKey,
+                    scope,
+                    basePath,
+                    alignedScope.Canonical,
+                    alignedBasePath
+                );
             }
         }
 
@@ -340,10 +335,19 @@ internal static class ArrayUniquenessConstraintsExtractor
             }
 
             var basePathMessage = basePath is null ? string.Empty : $" basePath '{basePath}'";
-            var alignedMessage =
-                alignedScope is null ? string.Empty
-                : alignedBasePath is null ? $" alignedScope '{alignedScope}'"
-                : $" alignedScope '{alignedScope}' basePath '{alignedBasePath}'";
+            string alignedMessage;
+            if (alignedScope is null)
+            {
+                alignedMessage = string.Empty;
+            }
+            else if (alignedBasePath is null)
+            {
+                alignedMessage = $" alignedScope '{alignedScope}'";
+            }
+            else
+            {
+                alignedMessage = $" alignedScope '{alignedScope}' basePath '{alignedBasePath}'";
+            }
 
             throw new InvalidOperationException(
                 $"arrayUniquenessConstraints scope '{scope}' on resource '{resourceKey}'"

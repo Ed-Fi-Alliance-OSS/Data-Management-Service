@@ -44,15 +44,7 @@
         <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
         <PackageReference Include="Microsoft.IdentityModel.Tokens" />
         <PackageReference Include="Confluent.Kafka" />
-        <PackageReference Include="SonarAnalyzer.CSharp">
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-            <PrivateAssets>all</PrivateAssets>
-        </PackageReference>
         <PackageReference Include="Microsoft.CodeAnalysis" />
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-            <PrivateAssets>all</PrivateAssets>
-        </PackageReference>
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />

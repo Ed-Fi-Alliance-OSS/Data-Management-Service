@@ -53,14 +53,14 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
     )
     {
         var changed = false;
-        var updatedTables = resourceModel
-            .TablesInDependencyOrder.Select(table =>
-            {
-                var updatedTable = ApplyToTable(table, dialectRules, out var tableChanged);
-                changed |= tableChanged;
-                return updatedTable;
-            })
-            .ToArray();
+        var sourceTables = resourceModel.TablesInDependencyOrder;
+        var updatedTables = new DbTableModel[sourceTables.Count];
+
+        for (var index = 0; index < sourceTables.Count; index++)
+        {
+            updatedTables[index] = ApplyToTable(sourceTables[index], dialectRules, out var tableChanged);
+            changed |= tableChanged;
+        }
 
         if (!changed)
         {
@@ -146,6 +146,7 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
     /// <summary>
     /// Applies dialect length handling to a table constraint name and indicates whether it changed.
     /// </summary>
+#pragma warning disable IDE0055
     private static TableConstraint ApplyToConstraint(
         DbTableName table,
         TableConstraint constraint,
@@ -226,4 +227,5 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
                 );
         }
     }
+#pragma warning restore IDE0055
 }

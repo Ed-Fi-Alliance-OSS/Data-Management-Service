@@ -97,7 +97,7 @@ public class AuthorizationMetadataResponseFactory(IClaimSetRepository _claimSetR
                         );
 
                         // Look for claim set specific metadata defined on the current claim
-                        var matchingClaimSet = currentClaim.ClaimSets.FirstOrDefault(cs =>
+                        var matchingClaimSet = currentClaim.ClaimSets.Find(cs =>
                             cs.Name.Equals(claimSetName, StringComparison.OrdinalIgnoreCase)
                         );
 

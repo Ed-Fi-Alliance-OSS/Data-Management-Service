@@ -3,9 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DmsConfigurationService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;
@@ -17,7 +15,6 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
 {
     private const string InitialReloadIdKey = "InitialReloadId";
     private const string CurrentReloadIdKey = "CurrentReloadId";
-    private const string AuthoritativeCompositionKey = "AuthoritativeComposition";
     private const string UploadedClaimsKey = "UploadedClaims";
 
     private static JsonNode? _authoritativeComposition;

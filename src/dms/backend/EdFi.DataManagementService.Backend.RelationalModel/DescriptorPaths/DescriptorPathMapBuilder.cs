@@ -32,7 +32,7 @@ internal sealed record DescriptorPathMapResult(
 /// <c>_ext</c> properties are skipped during base schema traversal.
 /// </para>
 /// </summary>
-internal sealed class DescriptorPathMapBuilder
+internal static class DescriptorPathMapBuilder
 {
     /// <summary>
     /// Builds descriptor path maps for all resources across the supplied projects, separating descriptor
@@ -40,7 +40,7 @@ internal sealed class DescriptorPathMapBuilder
     /// </summary>
     /// <param name="projectsInEndpointOrder">Project schemas in canonical endpoint order.</param>
     /// <returns>The descriptor path maps grouped by resource.</returns>
-    public DescriptorPathMapResult Build(IReadOnlyList<ProjectSchemaContext> projectsInEndpointOrder)
+    public static DescriptorPathMapResult Build(IReadOnlyList<ProjectSchemaContext> projectsInEndpointOrder)
     {
         if (projectsInEndpointOrder.Count == 0)
         {

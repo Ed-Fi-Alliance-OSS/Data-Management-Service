@@ -20,10 +20,10 @@ public static class EndpointBuilderExtensions
     {
         return endpoints
             .MapGet(pattern, handler)
-            .RequireAuthorization([
+            .RequireAuthorization(
                 SecurityConstants.ServicePolicy,
-                AuthorizationScopePolicies.ReadOnlyOrAdminScopePolicy,
-            ]);
+                AuthorizationScopePolicies.ReadOnlyOrAdminScopePolicy
+            );
     }
 
     public static RouteHandlerBuilder MapSecuredPost(
@@ -34,10 +34,10 @@ public static class EndpointBuilderExtensions
     {
         return endpoints
             .MapPost(pattern, handler)
-            .RequireAuthorization([
+            .RequireAuthorization(
                 SecurityConstants.ServicePolicy,
-                AuthorizationScopePolicies.AdminScopePolicy,
-            ]);
+                AuthorizationScopePolicies.AdminScopePolicy
+            );
     }
 
     public static RouteHandlerBuilder MapSecuredPut(
@@ -48,10 +48,10 @@ public static class EndpointBuilderExtensions
     {
         return endpoints
             .MapPut(pattern, handler)
-            .RequireAuthorization([
+            .RequireAuthorization(
                 SecurityConstants.ServicePolicy,
-                AuthorizationScopePolicies.AdminScopePolicy,
-            ]);
+                AuthorizationScopePolicies.AdminScopePolicy
+            );
     }
 
     public static RouteHandlerBuilder MapSecuredDelete(
@@ -62,10 +62,10 @@ public static class EndpointBuilderExtensions
     {
         return endpoints
             .MapDelete(pattern, handler)
-            .RequireAuthorization([
+            .RequireAuthorization(
                 SecurityConstants.ServicePolicy,
-                AuthorizationScopePolicies.AdminScopePolicy,
-            ]);
+                AuthorizationScopePolicies.AdminScopePolicy
+            );
     }
 
     public static RouteHandlerBuilder MapLimitedAccess(
@@ -76,10 +76,10 @@ public static class EndpointBuilderExtensions
     {
         return endpoints
             .MapGet(pattern, handler)
-            .RequireAuthorization([
+            .RequireAuthorization(
                 SecurityConstants.ServicePolicy,
-                AuthorizationScopePolicies.AdminOrAuthMetadataReadOnlyAccessScopePolicyOrReadOnly,
-            ]);
+                AuthorizationScopePolicies.AdminOrAuthMetadataReadOnlyAccessScopePolicyOrReadOnly
+            );
     }
 
     public static RouteHandlerBuilder MapPublic(

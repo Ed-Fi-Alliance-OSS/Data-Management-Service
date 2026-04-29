@@ -5,7 +5,6 @@
 
 // ReSharper disable ClassNeverInstantiated.Global
 
-using System.Data;
 using System.Data.Common;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 

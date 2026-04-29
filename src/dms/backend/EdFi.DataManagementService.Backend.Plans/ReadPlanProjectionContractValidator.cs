@@ -465,7 +465,7 @@ internal static class ReadPlanProjectionContractValidator
             createException
         );
         ValidateStoredColumnOrThrow(columnModel, contextDescription, createException);
-        ValidateDocumentReferenceBindingPathOrThrow(table, columnModel, binding, createException);
+        ValidateDocumentReferenceBindingPathOrThrow(columnModel, binding, createException);
         ValidateProjectionTargetResourceOrThrow(
             table,
             columnModel,
@@ -477,14 +477,12 @@ internal static class ReadPlanProjectionContractValidator
     }
 
     internal static void ValidateDocumentReferenceBindingPathOrThrow(
-        DbTableName table,
         DbColumnModel columnModel,
         DocumentReferenceBinding binding,
         Func<string, Exception> createException
     )
     {
         ValidateProjectionBindingPathOrThrow(
-            table,
             columnModel,
             binding.ReferenceObjectPath,
             $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column",
@@ -494,7 +492,6 @@ internal static class ReadPlanProjectionContractValidator
     }
 
     internal static void ValidateReferenceIdentityBindingPathOrThrow(
-        DbTableName table,
         DbColumnModel columnModel,
         DocumentReferenceBinding binding,
         ReferenceIdentityBinding identityBinding,
@@ -502,7 +499,6 @@ internal static class ReadPlanProjectionContractValidator
     )
     {
         ValidateProjectionBindingPathOrThrow(
-            table,
             columnModel,
             identityBinding.ReferenceJsonPath,
             $"reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column",
@@ -512,14 +508,12 @@ internal static class ReadPlanProjectionContractValidator
     }
 
     internal static void ValidateDescriptorEdgeSourcePathOrThrow(
-        DbTableName table,
         DbColumnModel columnModel,
         DescriptorEdgeSource edgeSource,
         Func<string, Exception> createException
     )
     {
         ValidateProjectionBindingPathOrThrow(
-            table,
             columnModel,
             edgeSource.DescriptorValuePath,
             $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column",
@@ -633,12 +627,7 @@ internal static class ReadPlanProjectionContractValidator
         Func<string, Exception> createException
     )
     {
-        ValidateDescriptorEdgeSourcePathOrThrow(
-            source.Table,
-            descriptorColumnModel,
-            modelSource,
-            createException
-        );
+        ValidateDescriptorEdgeSourcePathOrThrow(descriptorColumnModel, modelSource, createException);
         ValidateProjectionTargetResourceOrThrow(
             source.Table,
             descriptorColumnModel,
@@ -698,7 +687,6 @@ internal static class ReadPlanProjectionContractValidator
     }
 
     private static void ValidateProjectionBindingPathOrThrow(
-        DbTableName table,
         DbColumnModel columnModel,
         JsonPathExpression expectedPath,
         string dependencyDescription,
@@ -796,15 +784,17 @@ internal static class ReadPlanProjectionContractValidator
     {
         HashSet<string> seenReferenceJsonPaths = new(StringComparer.Ordinal);
 
-        foreach (var fieldOrdinal in binding.IdentityFieldOrdinalsInOrder)
+        foreach (
+            var canonical in binding.IdentityFieldOrdinalsInOrder.Select(f => f.ReferenceJsonPath.Canonical)
+        )
         {
-            if (seenReferenceJsonPaths.Add(fieldOrdinal.ReferenceJsonPath.Canonical))
+            if (seenReferenceJsonPaths.Add(canonical))
             {
                 continue;
             }
 
             throw createException(
-                $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{table}' contains duplicate logical field '{fieldOrdinal.ReferenceJsonPath.Canonical}'"
+                $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{table}' contains duplicate logical field '{canonical}'"
             );
         }
     }

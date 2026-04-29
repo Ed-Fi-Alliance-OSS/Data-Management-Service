@@ -238,8 +238,6 @@ public class DmsInstanceRouteContextTests : DatabaseTest
     [TestFixture]
     public class QueryByInstanceTests : DmsInstanceRouteContextTests
     {
-        private long _id1;
-        private long _id2;
         private long _instanceId;
 
         [SetUp]
@@ -286,8 +284,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             };
             var result1 = await _repository.InsertDmsInstanceRouteContext(cmd1);
             var result2 = await _repository.InsertDmsInstanceRouteContext(cmd2);
-            _id1 = ((DmsInstanceRouteContextInsertResult.Success)result1).Id;
-            _id2 = ((DmsInstanceRouteContextInsertResult.Success)result2).Id;
+            result1.Should().BeOfType<DmsInstanceRouteContextInsertResult.Success>();
+            result2.Should().BeOfType<DmsInstanceRouteContextInsertResult.Success>();
         }
 
         [Test]
@@ -299,8 +297,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 (InstanceRouteContextQueryByInstanceResult.Success)queryResult
             ).DmsInstanceRouteContextResponses.ToList();
             contexts.Should().HaveCount(2);
-            contexts.Any(c => c.ContextKey == "Key1" && c.ContextValue == "Value1").Should().BeTrue();
-            contexts.Any(c => c.ContextKey == "Key2" && c.ContextValue == "Value2").Should().BeTrue();
+            contexts.Exists(c => c.ContextKey == "Key1" && c.ContextValue == "Value1").Should().BeTrue();
+            contexts.Exists(c => c.ContextKey == "Key2" && c.ContextValue == "Value2").Should().BeTrue();
         }
     }
 }

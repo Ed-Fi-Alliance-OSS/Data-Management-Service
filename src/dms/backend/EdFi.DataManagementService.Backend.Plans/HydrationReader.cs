@@ -123,7 +123,8 @@ public static class HydrationReader
 
             for (var i = 0; i < columnCount; i++)
             {
-                row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                var isNull = await reader.IsDBNullAsync(i, ct);
+                row[i] = isNull ? null : reader.GetValue(i);
             }
 
             rows.Add(row);

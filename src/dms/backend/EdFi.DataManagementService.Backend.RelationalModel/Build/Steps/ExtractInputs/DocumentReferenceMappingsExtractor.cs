@@ -102,14 +102,7 @@ internal static class DocumentReferenceMappingsExtractor
 
         if (!isReference)
         {
-            ProcessDocumentPathsMappingPathEntry(
-                mappingKey,
-                mappingObject,
-                projectName,
-                resourceName,
-                identityJsonPaths,
-                state
-            );
+            RecordCanonicalIdentityPath(mappingObject, state);
             return;
         }
 
@@ -121,14 +114,7 @@ internal static class DocumentReferenceMappingsExtractor
 
         if (isDescriptor)
         {
-            ProcessDocumentPathsMappingDescriptorEntry(
-                mappingKey,
-                mappingObject,
-                projectName,
-                resourceName,
-                identityJsonPaths,
-                state
-            );
+            RecordCanonicalIdentityPath(mappingObject, state);
             return;
         }
 
@@ -140,6 +126,19 @@ internal static class DocumentReferenceMappingsExtractor
             identityJsonPaths,
             state
         );
+    }
+
+    /// <summary>
+    /// Records the canonical form of the <c>path</c> property of a non-reference <c>documentPathsMapping</c>
+    /// entry into the extraction state's mapped identity paths.
+    /// </summary>
+    private static void RecordCanonicalIdentityPath(
+        JsonObject mappingObject,
+        DocumentReferenceMappingExtractionState state
+    )
+    {
+        var path = RequireString(mappingObject, "path");
+        state.MappedIdentityPaths.Add(JsonPathExpressionCompiler.Compile(path).Canonical);
     }
 
     /// <summary>
@@ -158,42 +157,6 @@ internal static class DocumentReferenceMappingsExtractor
                 "Expected documentPathsMapping entries to be objects, invalid ApiSchema."
             ),
         };
-    }
-
-    /// <summary>
-    /// Processes a non-reference <c>documentPathsMapping</c> entry with a single <c>path</c> property.
-    /// </summary>
-    private static void ProcessDocumentPathsMappingPathEntry(
-        string mappingKey,
-        JsonObject mappingObject,
-        string projectName,
-        string resourceName,
-        IReadOnlySet<string> identityJsonPaths,
-        DocumentReferenceMappingExtractionState state
-    )
-    {
-        var path = RequireString(mappingObject, "path");
-        var pathExpression = JsonPathExpressionCompiler.Compile(path);
-
-        state.MappedIdentityPaths.Add(pathExpression.Canonical);
-    }
-
-    /// <summary>
-    /// Processes a descriptor <c>documentPathsMapping</c> entry with a single <c>path</c> property.
-    /// </summary>
-    private static void ProcessDocumentPathsMappingDescriptorEntry(
-        string mappingKey,
-        JsonObject mappingObject,
-        string projectName,
-        string resourceName,
-        IReadOnlySet<string> identityJsonPaths,
-        DocumentReferenceMappingExtractionState state
-    )
-    {
-        var path = RequireString(mappingObject, "path");
-        var pathExpression = JsonPathExpressionCompiler.Compile(path);
-
-        state.MappedIdentityPaths.Add(pathExpression.Canonical);
     }
 
     /// <summary>
@@ -232,7 +195,7 @@ internal static class DocumentReferenceMappingsExtractor
         var referencePaths = referenceJsonPaths
             .Select(binding => binding.ReferenceJsonPath.Canonical)
             .ToArray();
-        var referenceIsPartOfIdentity = referencePaths.Any(identityJsonPaths.Contains);
+        var referenceIsPartOfIdentity = Array.Exists(referencePaths, identityJsonPaths.Contains);
         ValidateReferenceIdentityCompleteness(
             mappingKey,
             projectName,

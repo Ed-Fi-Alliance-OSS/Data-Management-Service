@@ -757,14 +757,11 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                 );
             }
 
-            foreach (var keyColumn in table.Key.Columns)
+            foreach (var columnName in table.Key.Columns.Select(k => k.ColumnName))
             {
                 _columnOrigins.TryAdd(
-                    keyColumn.ColumnName.Value,
-                    new ColumnCollisionInfo(
-                        keyColumn.ColumnName.Value,
-                        BuildOrigin(keyColumn.ColumnName, null)
-                    )
+                    columnName.Value,
+                    new ColumnCollisionInfo(columnName.Value, BuildOrigin(columnName, null))
                 );
             }
         }

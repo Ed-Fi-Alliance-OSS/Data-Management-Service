@@ -5,7 +5,6 @@
 
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans;
@@ -112,37 +111,39 @@ public static partial class PlanSqlWriterExtensions
 
         return writer.AppendWhereClause(
             predicates.Count,
-            (predicateWriter, index) =>
-            {
-                var predicate = predicates[index];
-
-                if (predicate is null)
-                {
-                    throw new ArgumentException(
-                        $"Predicate at index {index} cannot be null or whitespace.",
-                        nameof(predicates)
-                    );
-                }
-
-                if (predicate.IndexOfAny('\r', '\n') >= 0)
-                {
-                    throw new ArgumentException(
-                        $"Predicate at index {index} cannot contain carriage return or newline characters.",
-                        nameof(predicates)
-                    );
-                }
-
-                if (string.IsNullOrWhiteSpace(predicate))
-                {
-                    throw new ArgumentException(
-                        $"Predicate at index {index} cannot be null or whitespace.",
-                        nameof(predicates)
-                    );
-                }
-
-                predicateWriter.Append(predicate.Trim());
-            }
+            (predicateWriter, index) => predicateWriter.Append(ValidateAndTrimPredicate(predicates, index))
         );
+    }
+
+    private static string ValidateAndTrimPredicate(IReadOnlyList<string> predicates, int index)
+    {
+        var predicate = predicates[index];
+
+        if (predicate is null)
+        {
+            throw new ArgumentException(
+                $"Predicate at index {index} cannot be null or whitespace.",
+                nameof(predicates)
+            );
+        }
+
+        if (predicate.IndexOfAny('\r', '\n') >= 0)
+        {
+            throw new ArgumentException(
+                $"Predicate at index {index} cannot contain carriage return or newline characters.",
+                nameof(predicates)
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(predicate))
+        {
+            throw new ArgumentException(
+                $"Predicate at index {index} cannot be null or whitespace.",
+                nameof(predicates)
+            );
+        }
+
+        return predicate.Trim();
     }
 
     /// <summary>

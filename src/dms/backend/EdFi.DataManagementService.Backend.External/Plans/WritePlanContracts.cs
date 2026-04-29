@@ -113,13 +113,152 @@ public sealed record TableWritePlan
             KeyUnificationPlans,
             nameof(KeyUnificationPlans)
         );
-        ValidateCollectionContract(
-            this.TableModel,
-            this.ColumnBindings,
-            this.UpdateSql,
-            this.DeleteByParentSql,
-            this.CollectionMergePlan,
-            this.CollectionKeyPreallocationPlan
+        var bindingCount = this.ColumnBindings.Length;
+        var tableKind = TableModel.IdentityMetadata.TableKind;
+        var tableKindParameterName =
+            $"{nameof(TableModel)}.{nameof(DbTableModel.IdentityMetadata)}.{nameof(DbTableIdentityMetadata.TableKind)}";
+
+        if (IsCollectionMergeTableKind(tableKind) && CollectionMergePlan is null)
+        {
+            var detail = DeleteByParentSql is null
+                ? $"Neither {nameof(TableWritePlan.CollectionMergePlan)} nor {nameof(TableWritePlan.DeleteByParentSql)} was provided."
+                : $"{nameof(TableWritePlan.DeleteByParentSql)} cannot replace {nameof(TableWritePlan.CollectionMergePlan)} for persisted collection tables.";
+
+            throw new ArgumentException(
+                $"{tableKindParameterName} '{tableKind}' requires {nameof(TableWritePlan.CollectionMergePlan)}. {detail}",
+                nameof(CollectionMergePlan)
+            );
+        }
+
+        if (CollectionMergePlan is not null)
+        {
+            if (UpdateSql is not null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.UpdateSql)} to be null.",
+                    nameof(UpdateSql)
+                );
+            }
+
+            if (DeleteByParentSql is not null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.DeleteByParentSql)} to be null.",
+                    nameof(DeleteByParentSql)
+                );
+            }
+
+            if (!IsCollectionMergeTableKind(tableKind))
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {tableKindParameterName} to be {nameof(DbTableKind.Collection)} or {nameof(DbTableKind.ExtensionCollection)}. Actual value: {tableKind}.",
+                    tableKindParameterName
+                );
+            }
+
+            for (
+                var semanticIdentityBindingIndex = 0;
+                semanticIdentityBindingIndex < CollectionMergePlan.SemanticIdentityBindings.Length;
+                semanticIdentityBindingIndex++
+            )
+            {
+                var semanticIdentityBinding = CollectionMergePlan.SemanticIdentityBindings[
+                    semanticIdentityBindingIndex
+                ];
+
+                ValidateBindingIndex(
+                    semanticIdentityBinding.BindingIndex,
+                    bindingCount,
+                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(CollectionMergePlan.SemanticIdentityBindings)}[{semanticIdentityBindingIndex}].{nameof(semanticIdentityBinding.BindingIndex)}",
+                    "Collection merge semantic-identity binding"
+                );
+            }
+
+            ValidateBindingIndex(
+                CollectionMergePlan.StableRowIdentityBindingIndex,
+                bindingCount,
+                $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(CollectionMergePlan.StableRowIdentityBindingIndex)}",
+                "Collection merge stable-row-identity binding"
+            );
+            ValidateBindingIndex(
+                CollectionMergePlan.OrdinalBindingIndex,
+                bindingCount,
+                $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(CollectionMergePlan.OrdinalBindingIndex)}",
+                "Collection merge ordinal binding"
+            );
+
+            for (
+                var compareBindingIndex = 0;
+                compareBindingIndex < CollectionMergePlan.CompareBindingIndexesInOrder.Length;
+                compareBindingIndex++
+            )
+            {
+                ValidateBindingIndex(
+                    CollectionMergePlan.CompareBindingIndexesInOrder[compareBindingIndex],
+                    bindingCount,
+                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(CollectionMergePlan.CompareBindingIndexesInOrder)}[{compareBindingIndex}]",
+                    "Collection merge compare binding"
+                );
+            }
+
+            if (CollectionKeyPreallocationPlan is null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.CollectionKeyPreallocationPlan)} to be provided.",
+                    nameof(CollectionKeyPreallocationPlan)
+                );
+            }
+
+            ValidateBindingIndex(
+                CollectionKeyPreallocationPlan.BindingIndex,
+                bindingCount,
+                $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.BindingIndex)}",
+                "Collection-key preallocation binding"
+            );
+
+            if (
+                CollectionMergePlan.StableRowIdentityBindingIndex
+                != CollectionKeyPreallocationPlan.BindingIndex
+            )
+            {
+                // Synthetic dotted paramName preserves diagnostic specificity for callers
+                // matching on ParamName; the dotted form is not a real .NET parameter, so
+                // the analyzer rule is suppressed here intentionally.
+#pragma warning disable S3928
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(CollectionMergePlan.StableRowIdentityBindingIndex)} must match {nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.BindingIndex)}.",
+                    $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.BindingIndex)}"
+                );
+#pragma warning restore S3928
+            }
+
+            var stableRowIdentityBinding = this.ColumnBindings[
+                CollectionMergePlan.StableRowIdentityBindingIndex
+            ];
+
+            if (!stableRowIdentityBinding.Column.ColumnName.Equals(CollectionKeyPreallocationPlan.ColumnName))
+            {
+#pragma warning disable S3928
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(CollectionMergePlan.StableRowIdentityBindingIndex)} resolves to column '{stableRowIdentityBinding.Column.ColumnName.Value}', which must match {nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.ColumnName)} '{CollectionKeyPreallocationPlan.ColumnName.Value}'.",
+                    $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.ColumnName)}"
+                );
+#pragma warning restore S3928
+            }
+
+            return;
+        }
+
+        if (CollectionKeyPreallocationPlan is null)
+        {
+            return;
+        }
+
+        ValidateBindingIndex(
+            CollectionKeyPreallocationPlan.BindingIndex,
+            bindingCount,
+            $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(CollectionKeyPreallocationPlan.BindingIndex)}",
+            "Collection-key preallocation binding"
         );
     }
 
@@ -182,155 +321,6 @@ public sealed record TableWritePlan
     /// <see cref="WriteValueSource.Precomputed" /> bindings deterministically.
     /// </summary>
     public ImmutableArray<KeyUnificationWritePlan> KeyUnificationPlans { get; init; }
-
-    private static void ValidateCollectionContract(
-        DbTableModel tableModel,
-        ImmutableArray<WriteColumnBinding> columnBindings,
-        string? updateSql,
-        string? deleteByParentSql,
-        CollectionMergePlan? collectionMergePlan,
-        CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan
-    )
-    {
-        var bindingCount = columnBindings.Length;
-        var tableKind = tableModel.IdentityMetadata.TableKind;
-        var tableKindParameterName =
-            $"{nameof(TableModel)}.{nameof(DbTableModel.IdentityMetadata)}.{nameof(DbTableIdentityMetadata.TableKind)}";
-
-        if (IsCollectionMergeTableKind(tableKind) && collectionMergePlan is null)
-        {
-            var detail = deleteByParentSql is null
-                ? $"Neither {nameof(TableWritePlan.CollectionMergePlan)} nor {nameof(TableWritePlan.DeleteByParentSql)} was provided."
-                : $"{nameof(TableWritePlan.DeleteByParentSql)} cannot replace {nameof(TableWritePlan.CollectionMergePlan)} for persisted collection tables.";
-
-            throw new ArgumentException(
-                $"{tableKindParameterName} '{tableKind}' requires {nameof(TableWritePlan.CollectionMergePlan)}. {detail}",
-                nameof(TableWritePlan.CollectionMergePlan)
-            );
-        }
-
-        if (collectionMergePlan is not null)
-        {
-            if (updateSql is not null)
-            {
-                throw new ArgumentException(
-                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.UpdateSql)} to be null.",
-                    nameof(UpdateSql)
-                );
-            }
-
-            if (deleteByParentSql is not null)
-            {
-                throw new ArgumentException(
-                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.DeleteByParentSql)} to be null.",
-                    nameof(DeleteByParentSql)
-                );
-            }
-
-            if (!IsCollectionMergeTableKind(tableKind))
-            {
-                throw new ArgumentException(
-                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {tableKindParameterName} to be {nameof(DbTableKind.Collection)} or {nameof(DbTableKind.ExtensionCollection)}. Actual value: {tableKind}.",
-                    tableKindParameterName
-                );
-            }
-
-            for (
-                var semanticIdentityBindingIndex = 0;
-                semanticIdentityBindingIndex < collectionMergePlan.SemanticIdentityBindings.Length;
-                semanticIdentityBindingIndex++
-            )
-            {
-                var semanticIdentityBinding = collectionMergePlan.SemanticIdentityBindings[
-                    semanticIdentityBindingIndex
-                ];
-
-                ValidateBindingIndex(
-                    semanticIdentityBinding.BindingIndex,
-                    bindingCount,
-                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.SemanticIdentityBindings)}[{semanticIdentityBindingIndex}].{nameof(semanticIdentityBinding.BindingIndex)}",
-                    "Collection merge semantic-identity binding"
-                );
-            }
-
-            ValidateBindingIndex(
-                collectionMergePlan.StableRowIdentityBindingIndex,
-                bindingCount,
-                $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.StableRowIdentityBindingIndex)}",
-                "Collection merge stable-row-identity binding"
-            );
-            ValidateBindingIndex(
-                collectionMergePlan.OrdinalBindingIndex,
-                bindingCount,
-                $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.OrdinalBindingIndex)}",
-                "Collection merge ordinal binding"
-            );
-
-            for (
-                var compareBindingIndex = 0;
-                compareBindingIndex < collectionMergePlan.CompareBindingIndexesInOrder.Length;
-                compareBindingIndex++
-            )
-            {
-                ValidateBindingIndex(
-                    collectionMergePlan.CompareBindingIndexesInOrder[compareBindingIndex],
-                    bindingCount,
-                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.CompareBindingIndexesInOrder)}[{compareBindingIndex}]",
-                    "Collection merge compare binding"
-                );
-            }
-
-            if (collectionKeyPreallocationPlan is null)
-            {
-                throw new ArgumentException(
-                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.CollectionKeyPreallocationPlan)} to be provided.",
-                    nameof(CollectionKeyPreallocationPlan)
-                );
-            }
-
-            ValidateBindingIndex(
-                collectionKeyPreallocationPlan.BindingIndex,
-                bindingCount,
-                $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.BindingIndex)}",
-                "Collection-key preallocation binding"
-            );
-
-            if (
-                collectionMergePlan.StableRowIdentityBindingIndex
-                != collectionKeyPreallocationPlan.BindingIndex
-            )
-            {
-                throw new ArgumentException(
-                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.StableRowIdentityBindingIndex)} must match {nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.BindingIndex)}.",
-                    $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.BindingIndex)}"
-                );
-            }
-
-            var stableRowIdentityBinding = columnBindings[collectionMergePlan.StableRowIdentityBindingIndex];
-
-            if (!stableRowIdentityBinding.Column.ColumnName.Equals(collectionKeyPreallocationPlan.ColumnName))
-            {
-                throw new ArgumentException(
-                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.StableRowIdentityBindingIndex)} resolves to column '{stableRowIdentityBinding.Column.ColumnName.Value}', which must match {nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.ColumnName)} '{collectionKeyPreallocationPlan.ColumnName.Value}'.",
-                    $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.ColumnName)}"
-                );
-            }
-
-            return;
-        }
-
-        if (collectionKeyPreallocationPlan is null)
-        {
-            return;
-        }
-
-        ValidateBindingIndex(
-            collectionKeyPreallocationPlan.BindingIndex,
-            bindingCount,
-            $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.BindingIndex)}",
-            "Collection-key preallocation binding"
-        );
-    }
 
     private static bool IsCollectionMergeTableKind(DbTableKind tableKind)
     {

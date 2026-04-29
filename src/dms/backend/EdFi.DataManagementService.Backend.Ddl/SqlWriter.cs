@@ -188,8 +188,9 @@ public sealed class SqlWriter
         var builder = new StringBuilder(raw.Length);
         var lineStart = 0;
         var lastNonWhitespaceInLine = -1;
+        var i = 0;
 
-        for (var i = 0; i < raw.Length; i++)
+        while (i < raw.Length)
         {
             var c = raw[i];
 
@@ -229,6 +230,8 @@ public sealed class SqlWriter
                 // Track position of last non-whitespace character on current line
                 lastNonWhitespaceInLine = i;
             }
+
+            i++;
         }
 
         // Handle final line (if no trailing newline)

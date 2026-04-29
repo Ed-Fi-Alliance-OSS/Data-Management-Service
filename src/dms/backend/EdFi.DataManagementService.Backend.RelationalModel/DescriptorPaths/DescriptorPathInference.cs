@@ -238,16 +238,18 @@ internal static class DescriptorPathInference
 
         Dictionary<string, DescriptorPathInfo> descriptorPathsByJsonPath = new(StringComparer.Ordinal);
 
-        foreach (var mapping in OrderDocumentPathsMappingEntries(documentPathsMapping))
+        foreach (
+            var mappingValue in OrderDocumentPathsMappingEntries(documentPathsMapping).Select(m => m.Value)
+        )
         {
-            if (mapping.Value is null)
+            if (mappingValue is null)
             {
                 throw new InvalidOperationException(
                     "Expected documentPathsMapping entries to be non-null, invalid ApiSchema."
                 );
             }
 
-            if (mapping.Value is not JsonObject mappingObject)
+            if (mappingValue is not JsonObject mappingObject)
             {
                 throw new InvalidOperationException(
                     "Expected documentPathsMapping entries to be objects, invalid ApiSchema."
@@ -422,16 +424,18 @@ internal static class DescriptorPathInference
 
         List<ReferenceJsonPathInfo> referenceJsonPaths = new();
 
-        foreach (var mapping in OrderDocumentPathsMappingEntries(documentPathsMapping))
+        foreach (
+            var mappingValue in OrderDocumentPathsMappingEntries(documentPathsMapping).Select(m => m.Value)
+        )
         {
-            if (mapping.Value is null)
+            if (mappingValue is null)
             {
                 throw new InvalidOperationException(
                     "Expected documentPathsMapping entries to be non-null, invalid ApiSchema."
                 );
             }
 
-            if (mapping.Value is not JsonObject mappingObject)
+            if (mappingValue is not JsonObject mappingObject)
             {
                 throw new InvalidOperationException(
                     "Expected documentPathsMapping entries to be objects, invalid ApiSchema."
