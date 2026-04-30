@@ -767,6 +767,17 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             return false;
         }
 
+        // CollectionCandidates are only emitted by the flattener for arrays that have
+        // request items (RelationalWriteFlattener.MaterializeCollectionCandidates), so a
+        // non-empty list is itself proof of hidden-scope request data even when every
+        // direct scalar/descriptor/reference binding is null. Without this check, a hidden
+        // aligned/root-extension scope carrying only child-collection data would bypass
+        // the rejection and be silently dropped at the walker's IsSkipped branch.
+        if (!buffer.Value.CollectionCandidates.IsDefaultOrEmpty)
+        {
+            return true;
+        }
+
         for (var bindingIndex = 0; bindingIndex < tablePlan.ColumnBindings.Length; bindingIndex++)
         {
             if (!IsProfileDataSource(tablePlan.ColumnBindings[bindingIndex].Source))
@@ -1678,6 +1689,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         ScopeInstanceAddress address,
         IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
         IReadOnlyDictionary<string, ImmutableArray<CurrentCollectionRowSnapshot>> currentRowsByJsonScope,
+        IReadOnlyDictionary<
+            (string JsonScope, ScopeInstanceAddress ParentAddress),
+            ImmutableArray<CurrentCollectionRowSnapshot>
+        > currentRowsByJsonScopeAndParent,
+        IReadOnlyDictionary<string, ImmutableArray<VisibleStoredCollectionRow>> storedRowsByJsonScope,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ResourceWritePlan resourceWritePlan
     )
@@ -1686,6 +1702,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             address,
             tablePlanByJsonScope,
             currentRowsByJsonScope,
+            currentRowsByJsonScopeAndParent,
+            storedRowsByJsonScope,
             resolvedReferenceLookups,
             resourceWritePlan,
             requestOrdinalPath: default,
@@ -1720,6 +1738,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         string requestJsonPath,
         IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
         IReadOnlyDictionary<string, ImmutableArray<CurrentCollectionRowSnapshot>> currentRowsByJsonScope,
+        IReadOnlyDictionary<
+            (string JsonScope, ScopeInstanceAddress ParentAddress),
+            ImmutableArray<CurrentCollectionRowSnapshot>
+        > currentRowsByJsonScopeAndParent,
+        IReadOnlyDictionary<string, ImmutableArray<VisibleStoredCollectionRow>> storedRowsByJsonScope,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ResourceWritePlan resourceWritePlan
     )
@@ -1737,6 +1760,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             address,
             tablePlanByJsonScope,
             currentRowsByJsonScope,
+            currentRowsByJsonScopeAndParent,
+            storedRowsByJsonScope,
             resolvedReferenceLookups,
             resourceWritePlan,
             requestOrdinalPath: parsed.OrdinalPath,
@@ -1748,6 +1773,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         ScopeInstanceAddress address,
         IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
         IReadOnlyDictionary<string, ImmutableArray<CurrentCollectionRowSnapshot>> currentRowsByJsonScope,
+        IReadOnlyDictionary<
+            (string JsonScope, ScopeInstanceAddress ParentAddress),
+            ImmutableArray<CurrentCollectionRowSnapshot>
+        > currentRowsByJsonScopeAndParent,
+        IReadOnlyDictionary<string, ImmutableArray<VisibleStoredCollectionRow>> storedRowsByJsonScope,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ResourceWritePlan resourceWritePlan,
         ReadOnlySpan<int> requestOrdinalPath,
@@ -1786,6 +1816,29 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 ? ImmutableArray<CurrentCollectionRowSnapshot>.Empty
                 : ancestorCurrentRows;
 
+            storedRowsByJsonScope.TryGetValue(ancestor.JsonScope, out var ancestorStoredRows);
+            var ancestorVisibleStoredRows = ancestorStoredRows.IsDefault
+                ? ImmutableArray<VisibleStoredCollectionRow>.Empty
+                : ancestorStoredRows;
+
+            // Slice 5 fix: build the target parent address pair so per-partition positional
+            // fallback can intersect ancestor stored rows (raw URI form) with the right
+            // partition's current rows (canonical Int64 form). Raw form is built from the
+            // input chain; canonical form uses the in-progress builder so far, mirroring how
+            // BuildContainingScopeAddress walks ancestors during the walker's recursion.
+            var rawParentAddress = BuildAncestorTargetParentAddress(
+                address.AncestorCollectionInstances,
+                builder,
+                i,
+                useCanonicalChain: false
+            );
+            var canonicalParentAddress = BuildAncestorTargetParentAddress(
+                address.AncestorCollectionInstances,
+                builder,
+                i,
+                useCanonicalChain: true
+            );
+
             var identity = ancestor.SemanticIdentityInOrder;
 
             if (descriptorIndices.Count > 0)
@@ -1795,7 +1848,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                     ancestorTablePlan,
                     descriptorIndices,
                     resolvedReferenceLookups,
-                    ancestorRows
+                    ancestorRows,
+                    ancestorVisibleStoredRows,
+                    rawParentAddress,
+                    canonicalParentAddress,
+                    currentRowsByJsonScopeAndParent
                 );
             }
 
@@ -1893,7 +1950,14 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         TableWritePlan ancestorTablePlan,
         IReadOnlyList<int> descriptorIndices,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        ImmutableArray<VisibleStoredCollectionRow> ancestorVisibleStoredRows,
+        ScopeInstanceAddress rawTargetParentAddress,
+        ScopeInstanceAddress canonicalTargetParentAddress,
+        IReadOnlyDictionary<
+            (string JsonScope, ScopeInstanceAddress ParentAddress),
+            ImmutableArray<CurrentCollectionRowSnapshot>
+        > currentRowsByJsonScopeAndParent
     )
     {
         var bindings = ancestorTablePlan.TableModel.IdentityMetadata.SemanticIdentityBindings;
@@ -1961,15 +2025,36 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 identity,
                 descriptorIndices,
                 idx,
-                currentRows
+                currentRows,
+                ancestorVisibleStoredRows,
+                rawTargetParentAddress,
+                canonicalTargetParentAddress,
+                ancestorTablePlan.TableModel.JsonScope.Canonical,
+                currentRowsByJsonScopeAndParent
             );
 
             if (fallbackId is null)
             {
-                // Neither cache nor current rows yielded a canonical id. Leave unchanged so
-                // callers detect the failure via index-lookup miss rather than producing an
-                // incorrectly-keyed bucket.
-                continue;
+                // Slice 5 design constraint (05-nested-and-extension-collection-merge.md:56):
+                // the Slice 4 fail-closed throw shape carries over unchanged. Leaving the URI
+                // form in place silently mis-buckets the row in the walker's address-keyed
+                // visible-stored index because recursion looks up by canonical Int64 — the
+                // bucket and the lookup carry different forms and the planner mistakes
+                // unmatched current rows for hidden preserves. The throw fires only when all
+                // three Slice 4 conditions hold: cache miss, scalar-match absent or
+                // ambiguous, and count-equal positional pairing cannot resolve (counts
+                // diverge or the URI is absent from the visible-stored ancestor list).
+                throw new InvalidOperationException(
+                    "Cannot canonicalize descriptor-URI ancestor identity for scope "
+                        + $"'{LogSanitizer.SanitizeForLog(ancestorTablePlan.TableModel.JsonScope.Canonical)}': "
+                        + $"stored URI '{LogSanitizer.SanitizeForLog(uri)}' for column "
+                        + $"'{LogSanitizer.SanitizeForLog(binding.ColumnName.Value)}' on table "
+                        + $"'{LogSanitizer.SanitizeForLog(ProfileBindingClassificationCore.FormatTable(ancestorTablePlan))}' "
+                        + "is absent from the request-cycle resolver cache, scalar-match yielded "
+                        + "no unique row, and count-equal positional pairing cannot resolve. "
+                        + $"Ancestor visible-stored rows count: {ancestorVisibleStoredRows.Length}, "
+                        + $"current rows count: {currentRows.Length}."
+                );
             }
 
             builder ??= identity.ToBuilder();
@@ -2189,20 +2274,63 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         string.Join(",", identity.Select(p => $"{p.RelativePath}={p.Value?.ToJsonString() ?? "null"}"));
 
     /// <summary>
-    /// Scans <paramref name="currentRows"/> for a unique row whose semantic identity matches
-    /// <paramref name="identity"/> on all scalar (non-descriptor) parts, then returns that
-    /// row's descriptor id at <paramref name="descriptorIdx"/>. Mirrors
-    /// <see cref="TryResolveByScalarMatch"/> but adapted to scope-wide current rows for
-    /// ancestor canonicalization at index-build time (no per-parent partitioning available).
+    /// Resolves the canonical Int64 descriptor id for an ancestor's URI-form identity within
+    /// the target parent partition. Mirrors the Slice 4 per-row chain (cache → scalar →
+    /// positional → fail-closed throw at the caller) adapted to ancestor canonicalization
+    /// using the per-(scope, parent address) partition map so both strategies operate on
+    /// the same single-partition slice required by Slice 5 design line 47.
+    /// <list type="number">
+    ///   <item>Strategy 1 — scalar match scoped to the target partition's current rows.
+    ///   Looks up <c>(ancestorJsonScope, canonicalTargetParentAddress)</c> in
+    ///   <paramref name="currentRowsByJsonScopeAndParent"/> and applies
+    ///   <see cref="TryResolveByScalarMatch"/> within that partition only. Scope-wide scalar
+    ///   matching would falsely treat siblings in different parent partitions as ambiguous
+    ///   (e.g., two parents each with a <c>code = "A"</c> row).</item>
+    ///   <item>Strategy 2 — count-equal positional within the same partition. Filters
+    ///   <paramref name="ancestorVisibleStoredRows"/> by
+    ///   <paramref name="rawTargetParentAddress"/> (raw URI form mirrors how upstream emits
+    ///   stored rows' <c>Address.ParentAddress</c>) and pairs the result 1:1 with the
+    ///   partition's current rows when counts are equal — both sides are sorted by stored
+    ///   ordinal within the partition (planner invariant <c>ValidateStoredOrdinalOrder</c>
+    ///   on stored, per-parent bucket sorting on current). Locates
+    ///   <paramref name="identity"/> in the partition's stored rows by raw-value match and
+    ///   copies the descriptor id from the same-position current row.</item>
+    /// </list>
+    /// <para>
+    /// Returns <c>null</c> when no strategy resolves (or when the partition map has no
+    /// entry for the target — e.g., extension-collection parents whose containing-scope
+    /// address could not be derived); the caller then throws fail-closed, preserving the
+    /// design constraint at <c>05-nested-and-extension-collection-merge.md:56</c>
+    /// ("Slice 4 runtime fail-closed throw shape carries over unchanged") together with
+    /// the per-parent partitioning rule at <c>05-nested-and-extension-collection-merge.md:47</c>.
+    /// </para>
     /// </summary>
-    private static long? TryResolveAncestorDescriptorIdFromCurrentRows(
+    internal static long? TryResolveAncestorDescriptorIdFromCurrentRows(
         ImmutableArray<SemanticIdentityPart> identity,
         IReadOnlyList<int> descriptorIndices,
         int descriptorIdx,
-        ImmutableArray<CurrentCollectionRowSnapshot> currentRows
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        ImmutableArray<VisibleStoredCollectionRow> ancestorVisibleStoredRows,
+        ScopeInstanceAddress rawTargetParentAddress,
+        ScopeInstanceAddress canonicalTargetParentAddress,
+        string ancestorJsonScope,
+        IReadOnlyDictionary<
+            (string JsonScope, ScopeInstanceAddress ParentAddress),
+            ImmutableArray<CurrentCollectionRowSnapshot>
+        > currentRowsByJsonScopeAndParent
     )
     {
         if (currentRows.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        if (
+            !currentRowsByJsonScopeAndParent.TryGetValue(
+                (ancestorJsonScope, canonicalTargetParentAddress),
+                out var partitionCurrent
+            ) || partitionCurrent.IsDefaultOrEmpty
+        )
         {
             return null;
         }
@@ -2212,15 +2340,156 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             .Where(i => !descriptorIndices.Contains(i))
             .ToList();
 
-        if (scalarIndices.Count == 0)
+        // Strategy 1: scalar match scoped to the target parent partition. Slice 5 design line
+        // 47 requires nested/extension-child matching to use stable parent address plus
+        // ancestor context, not scope-wide state — siblings in different partitions can
+        // share scalar values (e.g., `code = "A"` under two different parents) and a
+        // scope-wide scan would treat them as ambiguous.
+        if (scalarIndices.Count > 0)
         {
-            // Descriptor-only ancestor identity with URI cache miss: ambiguous. The only
-            // disambiguator at index-build time would be the ancestor's parent identity,
-            // which is not directly observable from the index-construction surface.
+            var scalarMatchId = TryResolveByScalarMatch(
+                identity,
+                scalarIndices,
+                descriptorIdx,
+                partitionCurrent
+            );
+            if (scalarMatchId is not null)
+            {
+                return scalarMatchId;
+            }
+        }
+
+        var partitionStored = ancestorVisibleStoredRows.IsDefaultOrEmpty
+            ? ImmutableArray<VisibleStoredCollectionRow>.Empty
+            :
+            [
+                .. ancestorVisibleStoredRows.Where(r =>
+                    ScopeInstanceAddressComparer.ScopeInstanceAddressEquals(
+                        r.Address.ParentAddress,
+                        rawTargetParentAddress
+                    )
+                ),
+            ];
+
+        if (partitionStored.IsDefaultOrEmpty || partitionCurrent.Length != partitionStored.Length)
+        {
             return null;
         }
 
-        return TryResolveByScalarMatch(identity, scalarIndices, descriptorIdx, currentRows);
+        for (var i = 0; i < partitionStored.Length; i++)
+        {
+            if (!SemanticIdentityRawValuesMatch(partitionStored[i].Address.SemanticIdentityInOrder, identity))
+            {
+                continue;
+            }
+
+            if (descriptorIdx >= partitionCurrent[i].SemanticIdentityInOrder.Length)
+            {
+                return null;
+            }
+
+            var positionalPart = partitionCurrent[i].SemanticIdentityInOrder[descriptorIdx];
+            if (
+                positionalPart.IsPresent
+                && positionalPart.Value is JsonValue jv
+                && jv.TryGetValue<long>(out var positionalId)
+            )
+            {
+                return positionalId;
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Builds the parent address for ancestor at index <paramref name="ancestorIndex"/> in
+    /// <paramref name="chain"/>. The address mirrors what
+    /// <c>BuildContainingScopeAddress</c> produces during walker recursion: the parent
+    /// JsonScope is derived from <paramref name="chain"/>[ancestorIndex]'s OWN scope (so an
+    /// extension-child ancestor under a root-extension yields <c>$._ext.&lt;name&gt;</c>, an
+    /// extension-child ancestor under an aligned scope yields the aligned scope, etc.) and
+    /// the parent's <see cref="ScopeInstanceAddress.AncestorCollectionInstances"/> is
+    /// <paramref name="chain"/>[0..ancestorIndex] — every preceding collection ancestor
+    /// inclusive of the immediate parent's self-entry. Aligned scopes are transparent in
+    /// the chain (they don't add their own <see cref="AncestorCollectionInstance"/>
+    /// entries) so this slice matches both stored rows' raw <c>Address.ParentAddress</c>
+    /// and the partition map's canonical keys.
+    /// <para>
+    /// <paramref name="useCanonicalChain"/> controls whether already-processed ancestors
+    /// come from <paramref name="canonicalBuilder"/> (canonical Int64 form for descriptors)
+    /// or from <paramref name="chain"/> directly (raw URI form). The raw form aligns with
+    /// <c>VisibleStoredCollectionRow.Address.ParentAddress</c> for filtering ancestor
+    /// stored rows; the canonical form aligns with the parent addresses keyed by current
+    /// rows' canonical semantic identities.
+    /// </para>
+    /// </summary>
+    internal static ScopeInstanceAddress BuildAncestorTargetParentAddress(
+        ImmutableArray<AncestorCollectionInstance> chain,
+        ImmutableArray<AncestorCollectionInstance>.Builder? canonicalBuilder,
+        int ancestorIndex,
+        bool useCanonicalChain
+    )
+    {
+        AncestorCollectionInstance Pick(int k) =>
+            useCanonicalChain && canonicalBuilder is not null ? canonicalBuilder[k] : chain[k];
+
+        var parentJsonScope = ProfileCollectionWalker.ComputeParentJsonScope(chain[ancestorIndex].JsonScope);
+
+        if (ancestorIndex == 0)
+        {
+            return new ScopeInstanceAddress(
+                parentJsonScope,
+                ImmutableArray<AncestorCollectionInstance>.Empty
+            );
+        }
+
+        var parentAncestors = ImmutableArray.CreateBuilder<AncestorCollectionInstance>(ancestorIndex);
+        for (var k = 0; k < ancestorIndex; k++)
+        {
+            parentAncestors.Add(Pick(k));
+        }
+        return new ScopeInstanceAddress(parentJsonScope, parentAncestors.MoveToImmutable());
+    }
+
+    /// <summary>
+    /// Structural equality on <see cref="SemanticIdentityPart"/> sequences using the
+    /// serialized JSON form of <see cref="SemanticIdentityPart.Value"/>. Required because
+    /// <see cref="JsonNode"/> uses reference equality, so record-default <c>Equals</c> on
+    /// <c>SemanticIdentityPart</c> rejects two stored URIs that came from different
+    /// <c>JsonValue</c> instances even when their content is identical.
+    /// </summary>
+    private static bool SemanticIdentityRawValuesMatch(
+        ImmutableArray<SemanticIdentityPart> left,
+        ImmutableArray<SemanticIdentityPart> right
+    )
+    {
+        if (left.Length != right.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < left.Length; i++)
+        {
+            if (left[i].IsPresent != right[i].IsPresent)
+            {
+                return false;
+            }
+            if (!string.Equals(left[i].RelativePath, right[i].RelativePath, StringComparison.Ordinal))
+            {
+                return false;
+            }
+            var leftJson = left[i].Value?.ToJsonString();
+            var rightJson = right[i].Value?.ToJsonString();
+            if (!string.Equals(leftJson, rightJson, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

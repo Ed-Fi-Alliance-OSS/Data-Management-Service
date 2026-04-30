@@ -100,17 +100,26 @@ internal sealed class ProfileCollectionWalker
             _request,
             _currentCollectionRowsByTableAndParentIdentity
         );
+        var currentRowsByJsonScopeAndParent = BuildCurrentRowsByJsonScopeAndParent(
+            _request,
+            _currentCollectionRowsByTableAndParentIdentity
+        );
+        var storedRowsByJsonScope = BuildStoredRowsByJsonScope(_request);
 
         _visibleStoredRowsByChildScopeAndParent = BuildVisibleStoredRowsIndex(
             _request,
             tablePlanByJsonScope,
             currentRowsByJsonScope,
+            currentRowsByJsonScopeAndParent,
+            storedRowsByJsonScope,
             _resolvedReferenceLookups
         );
         _visibleRequestItemsByChildScopeAndParent = BuildVisibleRequestItemsIndex(
             _request,
             tablePlanByJsonScope,
             currentRowsByJsonScope,
+            currentRowsByJsonScopeAndParent,
+            storedRowsByJsonScope,
             _resolvedReferenceLookups
         );
     }
@@ -941,18 +950,45 @@ internal sealed class ProfileCollectionWalker
         return null;
     }
 
-    private static JsonNode? TryResolveAlignedScopeRequestNode(
+    private JsonNode? TryResolveAlignedScopeRequestNode(
         ProfileCollectionWalkerContext parentContext,
         TableWritePlan alignedScopeTablePlan
     )
     {
+        var parentScope = parentContext.ContainingScopeAddress.JsonScope;
+        var alignedScope = alignedScopeTablePlan.TableModel.JsonScope.Canonical;
+
+        // Mirrored shape: the aligned scope lives at "$._ext.<extName>.<parentRemainder>._ext.<extName>"
+        // and is materialized by the flattener via TryNavigateConcreteNode against the request
+        // body root using the parent collection candidate's ordinal path. Dispatch mirrors that
+        // navigation here so the key-unification resolver receives the mirrored object instead
+        // of trying to evaluate a relative path against the base parent's request node.
+        if (IsDirectMirroredCollectionExtensionScopeChild(parentScope, alignedScope))
+        {
+            if (parentContext.RequestSubstructure is not CollectionWriteCandidate parentCandidate)
+            {
+                return null;
+            }
+
+            var alignedScopeSegments = RelationalJsonPathSupport.GetRestrictedSegments(
+                alignedScopeTablePlan.TableModel.JsonScope
+            );
+
+            return RelationalWriteFlattener.TryNavigateConcreteNode(
+                _request.WritableRequestBody,
+                alignedScopeSegments,
+                parentCandidate.OrdinalPath.AsSpan(),
+                out var mirroredNode
+            )
+                ? mirroredNode
+                : null;
+        }
+
         if (parentContext.ParentRequestNode is null)
         {
             return null;
         }
 
-        var parentScope = parentContext.ContainingScopeAddress.JsonScope;
-        var alignedScope = alignedScopeTablePlan.TableModel.JsonScope.Canonical;
         if (!alignedScope.StartsWith(parentScope, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
@@ -1080,6 +1116,7 @@ internal sealed class ProfileCollectionWalker
             if (
                 tableKind is DbTableKind.CollectionExtensionScope
                     ? IsDirectCollectionExtensionScopeChild(parentScope, childScope)
+                        || IsDirectMirroredCollectionExtensionScopeChild(parentScope, childScope)
                     : IsDirectTopologicalChild(parentScope, childScope)
             )
             {
@@ -1156,6 +1193,71 @@ internal sealed class ProfileCollectionWalker
         return extensionName.Length > 0
             && !extensionName.Contains('.', StringComparison.Ordinal)
             && !extensionName.Contains('[', StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="childScope"/> is a mirrored collection-aligned
+    /// extension scope of the form
+    /// <c>$._ext.&lt;extensionName&gt;.&lt;parentRemainder&gt;._ext.&lt;extensionName&gt;</c>
+    /// where <c>parentRemainder</c> equals <paramref name="parentScope"/> minus its leading
+    /// <c>$</c>. Mirrors the flattener's mirrored-extension detection in
+    /// <c>RelationalWriteFlattener.BuildAttachedAlignedScopePlansByParentScope</c>, which
+    /// maps such scopes back to the base parent collection. Without this, the walker would
+    /// silently skip mirrored aligned scopes during dispatch because the canonical child
+    /// path does not start with the parent scope.
+    /// </summary>
+    internal static bool IsDirectMirroredCollectionExtensionScopeChild(string parentScope, string childScope)
+    {
+        if (
+            !parentScope.StartsWith("$.", StringComparison.Ordinal)
+            || !parentScope.Contains("[*]", StringComparison.Ordinal)
+        )
+        {
+            return false;
+        }
+
+        const string mirroredExtensionPrefix = "$._ext.";
+        if (!childScope.StartsWith(mirroredExtensionPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var afterPrefix = childScope.AsSpan(mirroredExtensionPrefix.Length);
+        var firstDot = afterPrefix.IndexOf('.');
+        var firstBracket = afterPrefix.IndexOf('[');
+        if (firstDot < 0 || (firstBracket >= 0 && firstBracket < firstDot))
+        {
+            return false;
+        }
+
+        var firstExtensionName = afterPrefix[..firstDot];
+        if (firstExtensionName.IsEmpty)
+        {
+            return false;
+        }
+
+        var trailingExtensionSuffixLength = "._ext.".Length + firstExtensionName.Length;
+        if (
+            childScope.Length
+            < mirroredExtensionPrefix.Length + firstExtensionName.Length + trailingExtensionSuffixLength
+        )
+        {
+            return false;
+        }
+
+        var trailingStart = childScope.Length - trailingExtensionSuffixLength;
+        if (
+            !childScope.AsSpan(trailingStart, "._ext.".Length).SequenceEqual("._ext.")
+            || !childScope.AsSpan(trailingStart + "._ext.".Length).SequenceEqual(firstExtensionName)
+        )
+        {
+            return false;
+        }
+
+        var middleStart = mirroredExtensionPrefix.Length + firstExtensionName.Length;
+        var middle = childScope.AsSpan(middleStart, trailingStart - middleStart);
+        var parentRemainder = parentScope.AsSpan(1);
+        return middle.SequenceEqual(parentRemainder);
     }
 
     /// <summary>
@@ -1703,6 +1805,308 @@ internal sealed class ProfileCollectionWalker
         return result;
     }
 
+    /// <summary>
+    /// Per-(scope, parent containing-scope address) index of current rows. Slice 5 fix:
+    /// gives ancestor descriptor canonicalization a way to do count-equal positional
+    /// fallback within a single parent partition. The scope-wide index alone intermixes
+    /// partitions in dictionary-iteration order, so positional pairing across partitions
+    /// is unsafe; this index slices each scope by the same canonical parent address that
+    /// stored rows carry once their ancestor chain is canonicalized.
+    /// <para>
+    /// Built in <c>TablePlansInDependencyOrder</c> so each row's containing-scope address
+    /// is computed once parent rows have been registered, and reused for descendants.
+    /// Each row's containing-scope address is the parent's containing-scope address
+    /// extended by an <see cref="AncestorCollectionInstance"/> for the row itself — the
+    /// same shape <see cref="BuildContainingScopeAddress"/> produces during walk and that
+    /// stored rows' <c>Address.ParentAddress</c> carries upstream.
+    /// </para>
+    /// </summary>
+    private static IReadOnlyDictionary<
+        (string JsonScope, ScopeInstanceAddress ParentAddress),
+        ImmutableArray<CurrentCollectionRowSnapshot>
+    > BuildCurrentRowsByJsonScopeAndParent(
+        RelationalWriteProfileMergeRequest request,
+        IReadOnlyDictionary<
+            (DbTableName Table, ParentIdentityKey ParentKey),
+            IReadOnlyList<CurrentCollectionRowProjection>
+        > collectionRowsIndex
+    )
+    {
+        var result = new Dictionary<
+            (string, ScopeInstanceAddress),
+            ImmutableArray<CurrentCollectionRowSnapshot>
+        >(ChildScopeAndParentComparer.Instance);
+
+        if (request.CurrentState is null)
+        {
+            return result;
+        }
+
+        var tableModels = request.WritePlan.TablePlansInDependencyOrder.Select(tp => tp.TableModel).ToList();
+        var tableByJsonScope = tableModels.ToDictionary(
+            tm => tm.JsonScope.Canonical,
+            tm => tm.Table,
+            StringComparer.Ordinal
+        );
+        var tableKindByJsonScope = tableModels.ToDictionary(
+            tm => tm.JsonScope.Canonical,
+            tm => tm.IdentityMetadata.TableKind,
+            StringComparer.Ordinal
+        );
+
+        // (table, stableRowIdentity) -> the row's containing-scope address. Built incrementally
+        // as we walk dependency order, so each row's parent address is already registered
+        // when we process the row's children.
+        var addressByTableAndStableId =
+            new Dictionary<(DbTableName Table, long StableId), ScopeInstanceAddress>();
+
+        foreach (var tableModel in request.WritePlan.TablePlansInDependencyOrder.Select(tp => tp.TableModel))
+        {
+            var tableKind = tableModel.IdentityMetadata.TableKind;
+            if (tableKind is not (DbTableKind.Collection or DbTableKind.ExtensionCollection))
+            {
+                continue;
+            }
+
+            var thisJsonScope = tableModel.JsonScope.Canonical;
+            var parentJsonScope = ComputeParentJsonScope(thisJsonScope);
+
+            foreach (var ((bucketTable, parentKey), bucket) in collectionRowsIndex)
+            {
+                if (!bucketTable.Equals(tableModel.Table))
+                {
+                    continue;
+                }
+
+                var parentContainingAddress = ResolveParentContainingScopeAddress(
+                    parentJsonScope,
+                    parentKey,
+                    tableByJsonScope,
+                    tableKindByJsonScope,
+                    addressByTableAndStableId
+                );
+                if (parentContainingAddress is null)
+                {
+                    continue;
+                }
+
+                var snapshots = new List<CurrentCollectionRowSnapshot>(bucket.Count);
+                foreach (var projection in bucket)
+                {
+                    snapshots.Add(projection.ToSnapshot());
+
+                    var selfAncestor = new AncestorCollectionInstance(
+                        thisJsonScope,
+                        projection.SemanticIdentityInOrder
+                    );
+                    var thisContainingAddress = new ScopeInstanceAddress(
+                        thisJsonScope,
+                        parentContainingAddress.AncestorCollectionInstances.Add(selfAncestor)
+                    );
+                    addressByTableAndStableId[(tableModel.Table, projection.StableRowIdentity)] =
+                        thisContainingAddress;
+                }
+
+                var key = (thisJsonScope, parentContainingAddress);
+                if (result.TryGetValue(key, out var existing))
+                {
+                    result[key] = [.. existing, .. snapshots];
+                }
+                else
+                {
+                    result[key] = [.. snapshots];
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Resolves the parent's containing-scope address from a child bucket's
+    /// <see cref="ParentIdentityKey"/>.
+    /// <list type="bullet">
+    ///   <item><description>Document root or root-extension parent: 1:1 with the document, so
+    ///   the address is <c>(parentJsonScope, [])</c> regardless of the bucket's
+    ///   <c>ParentIdentityKey</c>. Extension-child collections like
+    ///   <c>$._ext.sample.children[*]</c> sit under root-extension parents; without this
+    ///   case they would silently lose their partition entry.</description></item>
+    ///   <item><description>Nested collection parent: the bucket key's first value is the
+    ///   parent's <c>StableRowIdentity</c>; that long looks up the parent row's
+    ///   previously-registered address.</description></item>
+    /// </list>
+    /// Returns <c>null</c> when the parent table or row cannot be located — the caller skips
+    /// those buckets and the partitioned positional fallback is unavailable for descendants
+    /// of those parents.
+    /// </summary>
+    private static ScopeInstanceAddress? ResolveParentContainingScopeAddress(
+        string parentJsonScope,
+        ParentIdentityKey parentKey,
+        IReadOnlyDictionary<string, DbTableName> tableByJsonScope,
+        IReadOnlyDictionary<string, DbTableKind> tableKindByJsonScope,
+        IReadOnlyDictionary<(DbTableName, long), ScopeInstanceAddress> addressByTableAndStableId
+    )
+    {
+        if (string.Equals(parentJsonScope, "$", StringComparison.Ordinal))
+        {
+            return new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty);
+        }
+
+        if (
+            tableKindByJsonScope.TryGetValue(parentJsonScope, out var parentKind)
+            && parentKind is DbTableKind.RootExtension
+        )
+        {
+            return new ScopeInstanceAddress(
+                parentJsonScope,
+                ImmutableArray<AncestorCollectionInstance>.Empty
+            );
+        }
+
+        // Aligned-extension-scope parent: 1:1 with the underlying base collection row, so
+        // the partition's containing-scope address borrows the parent collection's ancestor
+        // chain (which already includes the parent collection's self-entry) under the
+        // aligned-scope's JsonScope. Without this, extension-child collections nested under
+        // an aligned scope (e.g., $.parents[*]._ext.sample.things[*]) would lose their
+        // partition entry and ancestor descriptor canonicalization would fail closed for
+        // any descendant.
+        if (parentKind is DbTableKind.CollectionExtensionScope)
+        {
+            var parentCollectionScope = StripAlignedScopeToParentCollectionScope(parentJsonScope);
+            if (
+                parentCollectionScope is null
+                || !tableByJsonScope.TryGetValue(parentCollectionScope, out var parentCollectionTable)
+            )
+            {
+                return null;
+            }
+            if (parentKey.Values.IsDefaultOrEmpty)
+            {
+                return null;
+            }
+            if (parentKey.Values[0] is not FlattenedWriteValue.Literal { Value: long alignedStableId })
+            {
+                return null;
+            }
+            return addressByTableAndStableId.TryGetValue(
+                (parentCollectionTable, alignedStableId),
+                out var parentCollectionAddr
+            )
+                ? new ScopeInstanceAddress(parentJsonScope, parentCollectionAddr.AncestorCollectionInstances)
+                : null;
+        }
+
+        if (!tableByJsonScope.TryGetValue(parentJsonScope, out var parentTable))
+        {
+            return null;
+        }
+
+        if (parentKey.Values.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        if (parentKey.Values[0] is not FlattenedWriteValue.Literal { Value: long parentStableId })
+        {
+            return null;
+        }
+
+        return addressByTableAndStableId.TryGetValue((parentTable, parentStableId), out var addr)
+            ? addr
+            : null;
+    }
+
+    /// <summary>
+    /// Strips the trailing aligned-extension marker from a
+    /// <see cref="DbTableKind.CollectionExtensionScope"/> JsonScope to yield the underlying
+    /// parent collection's JsonScope. Handles both shapes:
+    /// <list type="bullet">
+    ///   <item><description>Standard: <c>"$.A[*]._ext.sample"</c> → <c>"$.A[*]"</c>.</description></item>
+    ///   <item><description>Mirrored (per <c>RelationalWriteFlattener</c>'s mirrored-extension
+    ///   detection): <c>"$._ext.sample.A[*]._ext.sample"</c> → <c>"$.A[*]"</c>.</description></item>
+    /// </list>
+    /// Returns <c>null</c> when the scope does not match the aligned-extension trailing
+    /// pattern.
+    /// </summary>
+    internal static string? StripAlignedScopeToParentCollectionScope(string alignedScope)
+    {
+        var lastExt = alignedScope.LastIndexOf("._ext.", StringComparison.Ordinal);
+        if (lastExt < 0)
+        {
+            return null;
+        }
+
+        var afterLastExt = alignedScope.AsSpan(lastExt + "._ext.".Length);
+        if (afterLastExt.IsEmpty || afterLastExt.IndexOf('.') >= 0 || afterLastExt.IndexOf('[') >= 0)
+        {
+            return null;
+        }
+
+        var trailingExtName = afterLastExt.ToString();
+        var withoutTrailing = alignedScope[..lastExt];
+
+        var mirroredPrefix = $"$._ext.{trailingExtName}.";
+        if (withoutTrailing.StartsWith(mirroredPrefix, StringComparison.Ordinal))
+        {
+            return "$." + withoutTrailing[mirroredPrefix.Length..];
+        }
+
+        return withoutTrailing;
+    }
+
+    /// <summary>
+    /// Strips the trailing array-element segment from a canonical JsonScope to yield the
+    /// immediate parent scope. <c>"$.A[*]"</c> → <c>"$"</c>;
+    /// <c>"$.A[*].B[*]"</c> → <c>"$.A[*]"</c>;
+    /// <c>"$._ext.sample.addresses[*]"</c> → <c>"$._ext.sample"</c>.
+    /// </summary>
+    internal static string ComputeParentJsonScope(string childJsonScope)
+    {
+        var lastBracket = childJsonScope.LastIndexOf("[*]", StringComparison.Ordinal);
+        if (lastBracket < 0)
+        {
+            return childJsonScope;
+        }
+
+        var lastDot = childJsonScope.LastIndexOf('.', lastBracket - 1);
+        return lastDot < 0 ? "$" : childJsonScope[..lastDot];
+    }
+
+    private static IReadOnlyDictionary<
+        string,
+        ImmutableArray<VisibleStoredCollectionRow>
+    > BuildStoredRowsByJsonScope(RelationalWriteProfileMergeRequest request)
+    {
+        var storedRows =
+            request.ProfileAppliedContext?.VisibleStoredCollectionRows
+            ?? ImmutableArray<VisibleStoredCollectionRow>.Empty;
+
+        if (storedRows.IsDefaultOrEmpty)
+        {
+            return new Dictionary<string, ImmutableArray<VisibleStoredCollectionRow>>(StringComparer.Ordinal);
+        }
+
+        var grouped = new Dictionary<string, List<VisibleStoredCollectionRow>>(StringComparer.Ordinal);
+        foreach (var row in storedRows)
+        {
+            if (!grouped.TryGetValue(row.Address.JsonScope, out var bucket))
+            {
+                bucket = [];
+                grouped[row.Address.JsonScope] = bucket;
+            }
+            bucket.Add(row);
+        }
+
+        var result = new Dictionary<string, ImmutableArray<VisibleStoredCollectionRow>>(
+            StringComparer.Ordinal
+        );
+        foreach (var (scope, bucket) in grouped)
+        {
+            result[scope] = [.. bucket];
+        }
+        return result;
+    }
+
     private static IReadOnlyDictionary<
         (string ChildJsonScope, ScopeInstanceAddress ParentAddress),
         ImmutableArray<VisibleStoredCollectionRow>
@@ -1710,6 +2114,11 @@ internal sealed class ProfileCollectionWalker
         RelationalWriteProfileMergeRequest request,
         IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
         IReadOnlyDictionary<string, ImmutableArray<CurrentCollectionRowSnapshot>> currentRowsByJsonScope,
+        IReadOnlyDictionary<
+            (string JsonScope, ScopeInstanceAddress ParentAddress),
+            ImmutableArray<CurrentCollectionRowSnapshot>
+        > currentRowsByJsonScopeAndParent,
+        IReadOnlyDictionary<string, ImmutableArray<VisibleStoredCollectionRow>> storedRowsByJsonScope,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
     )
     {
@@ -1733,6 +2142,8 @@ internal sealed class ProfileCollectionWalker
                 row.Address.ParentAddress,
                 tablePlanByJsonScope,
                 currentRowsByJsonScope,
+                currentRowsByJsonScopeAndParent,
+                storedRowsByJsonScope,
                 resolvedReferenceLookups,
                 request.WritePlan
             );
@@ -1769,6 +2180,11 @@ internal sealed class ProfileCollectionWalker
         RelationalWriteProfileMergeRequest request,
         IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
         IReadOnlyDictionary<string, ImmutableArray<CurrentCollectionRowSnapshot>> currentRowsByJsonScope,
+        IReadOnlyDictionary<
+            (string JsonScope, ScopeInstanceAddress ParentAddress),
+            ImmutableArray<CurrentCollectionRowSnapshot>
+        > currentRowsByJsonScopeAndParent,
+        IReadOnlyDictionary<string, ImmutableArray<VisibleStoredCollectionRow>> storedRowsByJsonScope,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
     )
     {
@@ -1792,6 +2208,8 @@ internal sealed class ProfileCollectionWalker
                     item.RequestJsonPath,
                     tablePlanByJsonScope,
                     currentRowsByJsonScope,
+                    currentRowsByJsonScopeAndParent,
+                    storedRowsByJsonScope,
                     resolvedReferenceLookups,
                     request.WritePlan
                 );
@@ -1929,7 +2347,7 @@ internal sealed class ProfileCollectionWalker
     /// <see cref="ScopeInstanceAddressComparer"/> for the address part so structural
     /// equality matches the semantics already used elsewhere in Slice 4 / 5.
     /// </summary>
-    private sealed class ChildScopeAndParentComparer
+    internal sealed class ChildScopeAndParentComparer
         : IEqualityComparer<(string ChildJsonScope, ScopeInstanceAddress ParentAddress)>
     {
         public static readonly ChildScopeAndParentComparer Instance = new();

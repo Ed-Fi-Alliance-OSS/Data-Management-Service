@@ -1096,7 +1096,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return true;
     }
 
-    private static bool TryNavigateConcreteNode(
+    internal static bool TryNavigateConcreteNode(
         JsonNode scopeNode,
         IReadOnlyList<JsonPathSegment> segments,
         ReadOnlySpan<int> ordinalPath,
