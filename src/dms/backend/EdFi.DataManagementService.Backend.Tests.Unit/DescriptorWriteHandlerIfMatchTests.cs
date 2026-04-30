@@ -153,8 +153,8 @@ public class Given_Descriptor_PUT_if_match_header_is_wildcard
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
 
-        // If-Match: * is not supported. No rows enqueued ⟹ locked read returns null
-        // ⟹ ETagMisMatch (document does not exist under the row lock).
+        // If-Match: * is not supported. Wildcard is rejected immediately, before any
+        // database work — no locked read is issued.
         _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
         var sut = DescriptorIfMatchHelper.CreateSut(
             targetLookup,
@@ -173,11 +173,10 @@ public class Given_Descriptor_PUT_if_match_header_is_wildcard
     }
 
     [Test]
-    public void It_issues_a_locked_select_for_existence_check()
+    public void It_does_not_issue_any_database_commands()
     {
-        // Wildcard is treated as a literal ETag — the locked path is still entered.
-        _sessionFactory.SessionCommands.Should().HaveCount(1);
-        _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        // Wildcard is explicitly rejected before entering the locked session path.
+        _sessionFactory.SessionCommands.Should().BeEmpty();
     }
 }
 
@@ -521,8 +520,8 @@ public class Given_Descriptor_POST_as_update_if_match_header_is_wildcard
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
 
-        // If-Match: * is not supported. No rows enqueued ⟹ locked read returns null
-        // ⟹ ETagMisMatch (document does not exist under the row lock).
+        // If-Match: * is not supported. Wildcard is rejected immediately, before any
+        // database work — no locked read is issued.
         _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
         var sut = DescriptorIfMatchHelper.CreateSut(
             targetLookup,
@@ -541,11 +540,10 @@ public class Given_Descriptor_POST_as_update_if_match_header_is_wildcard
     }
 
     [Test]
-    public void It_issues_a_locked_select_for_existence_check()
+    public void It_does_not_issue_any_database_commands()
     {
-        // Wildcard is treated as a literal ETag — the locked path is still entered.
-        _sessionFactory.SessionCommands.Should().HaveCount(1);
-        _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        // Wildcard is explicitly rejected before entering the locked session path.
+        _sessionFactory.SessionCommands.Should().BeEmpty();
     }
 }
 
@@ -873,15 +871,15 @@ public class Given_Descriptor_DELETE_if_match_header_is_wildcard_and_target_is_m
     }
 
     [Test]
-    public void It_only_issues_the_locked_pre_check_select()
+    public void It_does_not_issue_any_database_commands()
     {
-        _sessionFactory.SessionCommands.Should().HaveCount(1);
-        _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        // Wildcard is explicitly rejected before entering the locked session path.
+        _sessionFactory.SessionCommands.Should().BeEmpty();
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Wildcard with existing descriptor – ETag comparison rejects "*"
+// Wildcard with existing descriptor – explicit rejection returns ETagMisMatch
 // ─────────────────────────────────────────────────────────────────────────────
 
 [TestFixture]
@@ -900,10 +898,9 @@ public class Given_Descriptor_PUT_if_match_header_is_wildcard_and_descriptor_exi
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
 
-        // Descriptor exists (row enqueued) — the ETag comparison runs against the literal "*"
-        // and rejects it because no real ETag will ever equal "*".
+        // Wildcard is rejected immediately before any database work, so no rows need
+        // to be enqueued — the session factory is never used.
         _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
-        _sessionFactory.EnqueueDescriptorRow(DescriptorIfMatchHelper.StandardPersistedRow());
 
         var sut = DescriptorIfMatchHelper.CreateSut(
             targetLookup,
@@ -922,11 +919,10 @@ public class Given_Descriptor_PUT_if_match_header_is_wildcard_and_descriptor_exi
     }
 
     [Test]
-    public void It_issues_only_the_locked_pre_check_select()
+    public void It_does_not_issue_any_database_commands()
     {
-        // Only the row-lock SELECT is issued; no UPDATE follows the mismatch.
-        _sessionFactory.SessionCommands.Should().HaveCount(1);
-        _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        // Wildcard is explicitly rejected before entering the locked session path.
+        _sessionFactory.SessionCommands.Should().BeEmpty();
     }
 }
 
@@ -946,9 +942,9 @@ public class Given_Descriptor_POST_as_update_if_match_header_is_wildcard_and_des
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
 
-        // Descriptor exists — the ETag comparison runs against "*" and rejects it.
+        // Wildcard is rejected immediately before any database work, so no rows need
+        // to be enqueued — the session factory is never used.
         _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
-        _sessionFactory.EnqueueDescriptorRow(DescriptorIfMatchHelper.StandardPersistedRow());
 
         var sut = DescriptorIfMatchHelper.CreateSut(
             targetLookup,
@@ -967,10 +963,10 @@ public class Given_Descriptor_POST_as_update_if_match_header_is_wildcard_and_des
     }
 
     [Test]
-    public void It_issues_only_the_locked_pre_check_select()
+    public void It_does_not_issue_any_database_commands()
     {
-        _sessionFactory.SessionCommands.Should().HaveCount(1);
-        _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        // Wildcard is explicitly rejected before entering the locked session path.
+        _sessionFactory.SessionCommands.Should().BeEmpty();
     }
 }
 
@@ -984,8 +980,9 @@ public class Given_Descriptor_DELETE_if_match_header_is_wildcard_and_descriptor_
     [SetUp]
     public async Task Arrange_and_act()
     {
+        // Wildcard is rejected immediately before any database work, so no rows need
+        // to be enqueued — the session factory is never used.
         _sessionFactory = new DescriptorIfMatchWriteSessionFactory();
-        _sessionFactory.EnqueueDescriptorRow(DescriptorIfMatchHelper.StandardPersistedRow());
 
         var sut = DescriptorIfMatchHelper.CreateSut(
             new DescriptorIfMatchTargetLookupStub(),
@@ -1007,10 +1004,10 @@ public class Given_Descriptor_DELETE_if_match_header_is_wildcard_and_descriptor_
     }
 
     [Test]
-    public void It_issues_only_the_locked_pre_check_select()
+    public void It_does_not_issue_any_database_commands()
     {
-        _sessionFactory.SessionCommands.Should().HaveCount(1);
-        _sessionFactory.SessionCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        // Wildcard is explicitly rejected before entering the locked session path.
+        _sessionFactory.SessionCommands.Should().BeEmpty();
     }
 }
 

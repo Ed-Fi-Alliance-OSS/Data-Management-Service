@@ -103,13 +103,18 @@ internal sealed class DefaultRelationalWriteExecutor(
             // called, so the DocumentId is available here. Performing the check before
             // referenceResolver.ResolveAsync eliminates unnecessary reference-resolution
             // queries on every rejected stale-ETag request.
-            // If-Match: * is not supported; any non-null value (including "*") is treated as
-            // a literal ETag for precondition enforcement and will fail unless it matches.
+            // If-Match: * is not supported; reject immediately without any database work.
             if (
                 request.IfMatchEtag is not null
                 && targetContext is RelationalWriteTargetContext.ExistingDocument ifMatchTarget
             )
             {
+                if (string.Equals(request.IfMatchEtag, "*", StringComparison.Ordinal))
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildETagMismatchResult(request.OperationKind);
+                }
+
                 var (etagMismatch, ifMatchCommittedDoc) = await CheckIfMatchEtagAsync(
                         request,
                         ifMatchTarget,
@@ -191,14 +196,19 @@ internal sealed class DefaultRelationalWriteExecutor(
             // (target flipped CreateNew → ExistingDocument), enforce If-Match before any
             // write work proceeds. The early pre-check was skipped because the incoming
             // target context was CreateNew and no DocumentId was yet available.
-            // If-Match: * is not supported; any non-null value (including "*") is treated as
-            // a literal ETag for precondition enforcement and will fail unless it matches.
+            // If-Match: * is not supported; reject immediately without any database work.
             if (
                 request.IfMatchEtag is not null
                 && request.TargetContext is RelationalWriteTargetContext.CreateNew
                 && targetContext is RelationalWriteTargetContext.ExistingDocument postFlipTarget
             )
             {
+                if (string.Equals(request.IfMatchEtag, "*", StringComparison.Ordinal))
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildETagMismatchResult(request.OperationKind);
+                }
+
                 var (postFlipMismatch, postFlipCommittedDoc) = await CheckIfMatchEtagAsync(
                         request,
                         postFlipTarget,

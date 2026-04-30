@@ -3023,12 +3023,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_etag_mismatch_when_if_match_wildcard_is_sent()
     {
-        // Wildcard is not supported. The executor treats the literal star as a regular ETag value;
-        // no real ETag will ever equal it, so the precondition always fails.
-        var request = CreateRequest(RelationalWriteOperationKind.Put) with
-        {
-            IfMatchEtag = "*",
-        };
+        var request = CreateRequest(RelationalWriteOperationKind.Put) with { IfMatchEtag = "*" };
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -3036,14 +3031,14 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch()),
-                "If-Match: * is not supported; the literal \"*\" never matches a real ETag"
+                "If-Match: * is not supported; rejected immediately without database work"
             );
         _committedRepresentationReader
             .ReadCallCount.Should()
-            .Be(1, "CheckIfMatchEtagAsync reads the committed doc before rejecting the wildcard");
+            .Be(0, "wildcard is rejected before CheckIfMatchEtagAsync; no committed-rep read occurs");
         _writeSessionFactory
             .Session.Commands.Should()
-            .HaveCount(1, "CheckIfMatchEtagAsync issues one FOR UPDATE row-lock command");
+            .BeEmpty("wildcard is rejected before the row-lock command is issued");
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
     }
@@ -3076,8 +3071,6 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_etag_mismatch_when_if_match_wildcard_is_sent_for_post_as_update_requests()
     {
-        // Wildcard is not supported on the post-as-update path either.
-        // The literal star never matches a real ETag hash, so 412 is always returned.
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             targetContext: new RelationalWriteTargetContext.ExistingDocument(
@@ -3096,14 +3089,14 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch()),
-                "If-Match: * is not supported; the literal \"*\" never matches a real ETag"
+                "If-Match: * is not supported; rejected immediately without database work"
             );
         _committedRepresentationReader
             .ReadCallCount.Should()
-            .Be(1, "CheckIfMatchEtagAsync reads the committed doc before rejecting the wildcard");
+            .Be(0, "wildcard is rejected before CheckIfMatchEtagAsync; no committed-rep read occurs");
         _writeSessionFactory
             .Session.Commands.Should()
-            .HaveCount(1, "CheckIfMatchEtagAsync issues one FOR UPDATE row-lock command");
+            .BeEmpty("wildcard is rejected before the row-lock command is issued");
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
     }
@@ -5223,13 +5216,11 @@ public class Given_Default_Relational_Write_Executor
     }
 
     /// <summary>
-    /// Verifies that If-Match: * is not supported: the executor treats "*" as a literal ETag
-    /// value, acquires a row-level lock, reads the committed representation, and rejects the
-    /// request with UpdateFailureETagMisMatch because no real ETag will ever equal the
-    /// literal string "*".
+    /// Verifies that If-Match: * is explicitly rejected without any database work. The executor
+    /// returns UpdateFailureETagMisMatch immediately, before acquiring a row lock or reading the
+    /// committed representation. Clients must supply the actual ETag received from a prior GET.
     ///
-    /// This change was introduced to remove RFC 7232 wildcard support. Clients must supply
-    /// the actual ETag they received from a prior GET response.
+    /// This behavior was introduced to remove RFC 7232 wildcard support from DMS.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -5286,9 +5277,8 @@ public class Given_Default_Relational_Write_Executor
         [Test]
         public async Task It_returns_update_failure_etag_mismatch()
         {
-            // Arrange: existing-document PUT with If-Match: * — wildcard is no longer supported.
-            // CheckIfMatchEtagAsync compares "*" against the committed ETag (a base64 SHA256 hash),
-            // which never equals the literal string "*", so the precondition always fails.
+            // Arrange: existing-document PUT with If-Match: * — wildcard is not supported.
+            // The executor rejects "*" immediately without any database work.
             var request = CreateRequest(
                 RelationalWriteOperationKind.Put,
                 targetContext: new RelationalWriteTargetContext.ExistingDocument(
@@ -5304,19 +5294,18 @@ public class Given_Default_Relational_Write_Executor
             // Act
             var result = await _sut.ExecuteAsync(request);
 
-            // Assert: 412 Precondition Failed — wildcard is rejected.
+            // Assert: 412 Precondition Failed — wildcard is explicitly rejected.
             result
                 .Should()
                 .BeEquivalentTo(
                     new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch()),
-                    "If-Match: * is not supported; the literal \"*\" never matches a real ETag"
+                    "If-Match: * is not supported; rejected immediately without database work"
                 );
 
-            // Assert: exactly one ReadAsync call from CheckIfMatchEtagAsync (row lock acquired,
-            // committed doc read, then mismatch returned).
+            // Assert: no committed-rep read — wildcard check happens before CheckIfMatchEtagAsync.
             _committedRepresentationReader
                 .ReadCallCount.Should()
-                .Be(1, "CheckIfMatchEtagAsync reads the committed doc before comparing the ETag");
+                .Be(0, "wildcard is rejected before any database work");
 
             // Assert: no write was attempted after the mismatch.
             _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -5325,10 +5314,10 @@ public class Given_Default_Relational_Write_Executor
             _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
             _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
 
-            // Assert: a row-lock SELECT was issued by CheckIfMatchEtagAsync.
+            // Assert: no row-lock SELECT — wildcard is rejected before the lock is acquired.
             _writeSessionFactory
                 .Session.Commands.Should()
-                .HaveCount(1, "CheckIfMatchEtagAsync issues one FOR UPDATE row-lock command");
+                .BeEmpty("wildcard is rejected before the row-lock command is issued");
         }
     }
 

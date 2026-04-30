@@ -491,9 +491,8 @@ public class Given_Postgresql_Resource_If_Match_Enforcement
     [Test]
     public async Task It_returns_etag_mismatch_when_put_if_match_is_wildcard()
     {
-        // If-Match: * is not supported. The executor treats "*" as a literal ETag value;
-        // since no real ETag will ever equal the literal string "*", the precondition
-        // always fails with 412 Precondition Failed.
+        // If-Match: * is not supported. The wildcard is explicitly rejected before any
+        // database work is performed, so the precondition always fails with 412.
         var repository = IfMatchTestSupport.ResolveRepository(
             _serviceProvider,
             _database.ConnectionString,

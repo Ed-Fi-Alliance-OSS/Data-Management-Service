@@ -113,11 +113,15 @@ internal sealed class DescriptorWriteHandler(
 
             if (request.IfMatchEtag is not null)
             {
+                // If-Match: * is not supported; reject immediately without any database work.
+                if (string.Equals(request.IfMatchEtag, "*", StringComparison.Ordinal))
+                {
+                    return new UpsertResult.UpsertFailureETagMisMatch();
+                }
+
                 // Use a locked read+write session to prevent TOCTOU race: the SELECT acquires a
                 // row lock (FOR UPDATE / UPDLOCK ROWLOCK) held for the lifetime of the transaction,
                 // so no concurrent writer can modify the row between the pre-check and the UPDATE.
-                // If-Match: * is not supported; any non-null value (including "*") is treated as
-                // a literal ETag for precondition enforcement.
                 return await ExecutePostAsUpdateWithLockedSessionAsync(
                         request,
                         body,
@@ -189,13 +193,18 @@ internal sealed class DescriptorWriteHandler(
             );
         }
 
-        // When IfMatchEtag is provided, use a locked read+write session to prevent TOCTOU race:
-        // the SELECT acquires a row lock (FOR UPDATE / UPDLOCK ROWLOCK) held for the lifetime of
-        // the transaction, so no concurrent writer can modify the row between the pre-check and
-        // the subsequent UPDATE. If-Match: * is not supported; any non-null value (including "*")
-        // is treated as a literal ETag for precondition enforcement.
+        // If-Match: * is not supported; reject immediately without any database work.
+        // When a concrete IfMatchEtag is provided, use a locked read+write session to prevent
+        // TOCTOU race: the SELECT acquires a row lock (FOR UPDATE / UPDLOCK ROWLOCK) held for
+        // the lifetime of the transaction, so no concurrent writer can modify the row between
+        // the pre-check and the subsequent UPDATE.
         if (request.IfMatchEtag is not null)
         {
+            if (string.Equals(request.IfMatchEtag, "*", StringComparison.Ordinal))
+            {
+                return new UpdateResult.UpdateFailureETagMisMatch();
+            }
+
             try
             {
                 return await ExecutePutWithLockedSessionAsync(
@@ -313,6 +322,12 @@ internal sealed class DescriptorWriteHandler(
 
         if (ifMatchEtag is not null)
         {
+            // If-Match: * is not supported; reject immediately without any database work.
+            if (string.Equals(ifMatchEtag, "*", StringComparison.Ordinal))
+            {
+                return new DeleteResult.DeleteFailureETagMisMatch();
+            }
+
             try
             {
                 return await ExecuteDeleteWithIfMatchAsync(

@@ -337,6 +337,14 @@ public sealed class RelationalDocumentStoreRepository(
                 {
                     if (ifMatchEtag is not null)
                     {
+                        // If-Match: * is not supported; reject immediately without any database work.
+                        if (string.Equals(ifMatchEtag, "*", StringComparison.Ordinal))
+                        {
+                            outcome = new DeleteResult.DeleteFailureETagMisMatch();
+                            await writeSession.RollbackAsync().ConfigureAwait(false);
+                            return outcome;
+                        }
+
                         var locked = await TryLockDeleteTargetAsync(
                                 sessionCommandExecutor,
                                 mappingSet.Key.Dialect,
