@@ -840,6 +840,131 @@ public class PostgresqlReferentialIdentityTests
         referentialIds.Should().BeEmpty();
     }
 
+    [Test]
+    public async Task DateTime_key_trigger_emits_utc_canonical_form_regardless_of_session_timezone()
+    {
+        // Arrange — document shell
+        var documentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DateTimeKeyResource");
+
+        // Act — open single connection with Eastern timezone, then insert
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        await using var setTzCmd = connection.CreateCommand();
+        setTzCmd.Transaction = transaction;
+        setTzCmd.CommandText = "SET LOCAL TIME ZONE 'America/New_York'";
+        await setTzCmd.ExecuteNonQueryAsync();
+
+        await using var insertCmd = connection.CreateCommand();
+        insertCmd.Transaction = transaction;
+        insertCmd.CommandText = """
+            INSERT INTO "edfi"."DateTimeKeyResource" ("DocumentId", "EventTimestamp")
+            VALUES (@documentId, @eventTimestamp);
+            """;
+        insertCmd.Parameters.Add(new NpgsqlParameter("documentId", documentId));
+        insertCmd.Parameters.Add(
+            new NpgsqlParameter("eventTimestamp", NpgsqlTypes.NpgsqlDbType.TimestampTz)
+            {
+                Value = new DateTimeOffset(2025, 1, 1, 12, 0, 0, TimeSpan.Zero),
+            }
+        );
+        await insertCmd.ExecuteNonQueryAsync();
+
+        await transaction.CommitAsync();
+
+        // Assert — trigger must emit UTC form; Eastern session would yield '2025-01-01T07:00:00Z' without AT TIME ZONE fix
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(1);
+
+        var expectedReferentialId = ComputeReferentialId(
+            "Ed-Fi",
+            "DateTimeKeyResource",
+            ("$.eventTimestamp", "2025-01-01T12:00:00Z")
+        );
+        ((Guid)referentialIds.Single()["ReferentialId"]!).Should().Be(expectedReferentialId);
+        ((long)referentialIds.Single()["DocumentId"]!).Should().Be(documentId);
+    }
+
+    [Test]
+    [TestCase(1.5, "1.5", TestName = "Decimal_1point5_trims_single_trailing_zero")]
+    [TestCase(2.0, "2", TestName = "Decimal_2point00_trims_trailing_zeros_and_dot")]
+    [TestCase(100.0, "100", TestName = "Decimal_100point00_does_not_eat_integer_zeros")]
+    public async Task Decimal_key_trigger_emits_canonical_trimmed_form(
+        double rawValue,
+        string expectedCanonical
+    )
+    {
+        // Arrange
+        var documentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DecimalKeyResource");
+
+        // Act
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."DecimalKeyResource" ("DocumentId", "DecimalKey")
+            VALUES (@documentId, @decimalKey);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("decimalKey", (decimal)rawValue)
+        );
+
+        // Assert
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(1);
+
+        var expectedReferentialId = ComputeReferentialId(
+            "Ed-Fi",
+            "DecimalKeyResource",
+            ("$.decimalKey", expectedCanonical)
+        );
+        ((Guid)referentialIds.Single()["ReferentialId"]!).Should().Be(expectedReferentialId);
+        ((long)referentialIds.Single()["DocumentId"]!).Should().Be(documentId);
+    }
+
+    [Test]
+    public async Task Decimal_reference_trigger_emits_canonical_form_for_reference_identity_path()
+    {
+        // Arrange — insert a DecimalKeyResource with decimalKey = 1.50
+        var decimalKeyDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DecimalKeyResource");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."DecimalKeyResource" ("DocumentId", "DecimalKey")
+            VALUES (@documentId, @decimalKey);
+            """,
+            new NpgsqlParameter("documentId", decimalKeyDocumentId),
+            new NpgsqlParameter("decimalKey", 1.50m)
+        );
+
+        // Insert a DecimalRefResource referencing the above
+        var refResourceId = "ref-001";
+        var refDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DecimalRefResource");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."DecimalRefResource" ("DocumentId", "RefResourceId", "DecimalKeyReference_DocumentId", "DecimalKeyReference_DecimalKey")
+            VALUES (@documentId, @refResourceId, @decimalKeyDocumentId, @decimalKey);
+            """,
+            new NpgsqlParameter("documentId", refDocumentId),
+            new NpgsqlParameter("refResourceId", refResourceId),
+            new NpgsqlParameter("decimalKeyDocumentId", decimalKeyDocumentId),
+            new NpgsqlParameter("decimalKey", 1.50m)
+        );
+
+        // Assert — DecimalRefResource's ReferentialId uses the canonical "1.5" form for decimalKey
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(2);
+
+        var expectedRefResourceReferentialId = ComputeReferentialId(
+            "Ed-Fi",
+            "DecimalRefResource",
+            ("$.refResourceId", refResourceId),
+            ("$.decimalKeyReference.decimalKey", "1.5")
+        );
+
+        var refRow = referentialIds.Single(r => (long)r["DocumentId"]! == refDocumentId);
+        ((Guid)refRow["ReferentialId"]!).Should().Be(expectedRefResourceReferentialId);
+    }
+
     private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
     {
         return await _database.ExecuteScalarAsync<short>(

@@ -5,7 +5,7 @@
     "projectEndpointName": "ed-fi",
     "projectVersion": "5.0.0",
     "isExtensionProject": false,
-    "description": "Referential-identity fixture - Student, School (subclass), and StudentSchoolAssociation with references",
+    "description": "Referential-identity fixture - Student, School (subclass), StudentSchoolAssociation with references, plus decimal/datetime/decimal-reference resources",
     "abstractResources": {
       "EducationOrganization": {
         "identityJsonPaths": [
@@ -21,7 +21,10 @@
       "resourcebs": "resourceBs",
       "keyunifiedresources": "keyUnifiedResources",
       "edorgdependentresources": "edOrgDependentResources",
-      "edorgdependentchildresources": "edOrgDependentChildResources"
+      "edorgdependentchildresources": "edOrgDependentChildResources",
+      "decimalkeyresources": "decimalKeyResources",
+      "datetimekeyresources": "dateTimeKeyResources",
+      "decimalrefresources": "decimalRefResources"
     },
     "educationOrganizationHierarchy": {
       "EducationOrganization": {},
@@ -39,7 +42,10 @@
       "ResourceB": "resourceBs",
       "KeyUnifiedResource": "keyUnifiedResources",
       "EdOrgDependentResource": "edOrgDependentResources",
-      "EdOrgDependentChildResource": "edOrgDependentChildResources"
+      "EdOrgDependentChildResource": "edOrgDependentChildResources",
+      "DecimalKeyResource": "decimalKeyResources",
+      "DateTimeKeyResource": "dateTimeKeyResources",
+      "DecimalRefResource": "decimalRefResources"
     },
     "resourceSchemas": {
       "students": {
@@ -529,6 +535,153 @@
             }
           },
           "required": ["edOrgDependentChildResourceId", "edOrgDependentResourceReference"]
+        }
+      },
+      "decimalKeyResources": {
+        "resourceName": "DecimalKeyResource",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.decimalKey"
+        ],
+        "numericJsonPaths": [
+          "$.decimalKey"
+        ],
+        "dateTimeJsonPaths": [],
+        "documentPathsMapping": {
+          "DecimalKey": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.decimalKey"
+          }
+        },
+        "decimalPropertyValidationInfos": [
+          {
+            "path": "$.decimalKey",
+            "totalDigits": 9,
+            "decimalPlaces": 2
+          }
+        ],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "decimalKey": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "decimalKey"
+          ]
+        }
+      },
+      "dateTimeKeyResources": {
+        "resourceName": "DateTimeKeyResource",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.eventTimestamp"
+        ],
+        "numericJsonPaths": [],
+        "dateTimeJsonPaths": [
+          "$.eventTimestamp"
+        ],
+        "documentPathsMapping": {
+          "EventTimestamp": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.eventTimestamp"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "eventTimestamp": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "eventTimestamp"
+          ]
+        }
+      },
+      "decimalRefResources": {
+        "resourceName": "DecimalRefResource",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.refResourceId",
+          "$.decimalKeyReference.decimalKey"
+        ],
+        "numericJsonPaths": [
+          "$.decimalKeyReference.decimalKey"
+        ],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [
+          {
+            "path": "$.decimalKeyReference.decimalKey",
+            "totalDigits": 9,
+            "decimalPlaces": 2
+          }
+        ],
+        "documentPathsMapping": {
+          "RefResourceId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.refResourceId"
+          },
+          "DecimalKeyReference": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "DecimalKeyResource",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.decimalKey",
+                "referenceJsonPath": "$.decimalKeyReference.decimalKey",
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "refResourceId": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "decimalKeyReference": {
+              "type": "object",
+              "properties": {
+                "decimalKey": {
+                  "type": "number"
+                }
+              },
+              "required": ["decimalKey"]
+            }
+          },
+          "required": ["refResourceId", "decimalKeyReference"]
         }
       }
     }

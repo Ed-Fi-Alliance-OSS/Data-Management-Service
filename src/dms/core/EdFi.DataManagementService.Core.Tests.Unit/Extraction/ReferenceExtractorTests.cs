@@ -1464,4 +1464,99 @@ public class ReferenceExtractorTests
             refArray.DocumentReferences.Should().HaveCount(3);
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_A_Reference_Whose_Reference_Json_Path_Is_In_Numeric_Json_Paths
+        : ReferenceExtractorTests
+    {
+        private DocumentReference _documentReference = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Order")
+                .WithNumericJsonPaths(["$.productReference.productPrice"])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathReference(
+                    "Product",
+                    [new("$.productPrice", "$.productReference.productPrice")]
+                )
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "orders");
+
+            _documentReference = ExtractSingleReference(
+                resourceSchema,
+                """
+                {
+                    "productReference": {
+                        "productPrice": 1.50
+                    }
+                }
+                """
+            );
+        }
+
+        [Test]
+        public void It_canonicalizes_the_decimal_reference_identity_value_using_the_reference_json_path()
+        {
+            var elements = _documentReference.DocumentIdentity.DocumentIdentityElements;
+            elements.Should().HaveCount(1);
+            elements[0].IdentityJsonPath.Value.Should().Be("$.productPrice");
+            elements[0].IdentityValue.Should().Be("1.5");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_A_Reference_Whose_Reference_Json_Path_Is_Not_In_Numeric_Json_Paths
+        : ReferenceExtractorTests
+    {
+        private DocumentReference _documentReference = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Order")
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathReference(
+                    "Product",
+                    [new("$.productCode", "$.productReference.productCode")]
+                )
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "orders");
+
+            _documentReference = ExtractSingleReference(
+                resourceSchema,
+                """
+                {
+                    "productReference": {
+                        "productCode": "ABC-1.50"
+                    }
+                }
+                """
+            );
+        }
+
+        [Test]
+        public void It_passes_the_string_reference_identity_value_through_unchanged()
+        {
+            var elements = _documentReference.DocumentIdentity.DocumentIdentityElements;
+            elements.Should().HaveCount(1);
+            elements[0].IdentityJsonPath.Value.Should().Be("$.productCode");
+            elements[0].IdentityValue.Should().Be("ABC-1.50");
+        }
+    }
 }

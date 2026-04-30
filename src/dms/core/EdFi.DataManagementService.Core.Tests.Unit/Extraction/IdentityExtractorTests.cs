@@ -162,6 +162,94 @@ public class ExtractDocumentIdentityTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Extracting_A_Decimal_Top_Level_Identity : ExtractDocumentIdentityTests
+    {
+        internal DocumentIdentity? documentIdentity;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Widget")
+                .WithIdentityJsonPaths(["$.widgetScore"])
+                .WithNumericJsonPaths(["$.widgetScore"])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathScalar("WidgetScore", "$.widgetScore")
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "widgets");
+
+            (documentIdentity, _) = resourceSchema.ExtractIdentities(
+                JsonNode.Parse(
+                    """
+                    {
+                        "widgetScore": 1.50
+                    }
+"""
+                )!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_canonicalizes_the_decimal_identity_value()
+        {
+            documentIdentity!.DocumentIdentityElements.Should().HaveCount(1);
+            documentIdentity!.DocumentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.widgetScore");
+            documentIdentity!.DocumentIdentityElements[0].IdentityValue.Should().Be("1.5");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_A_String_Top_Level_Identity_That_Is_Not_In_NumericJsonPaths
+        : ExtractDocumentIdentityTests
+    {
+        internal DocumentIdentity? documentIdentity;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Widget")
+                .WithIdentityJsonPaths(["$.widgetCode"])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathScalar("WidgetCode", "$.widgetCode")
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "widgets");
+
+            (documentIdentity, _) = resourceSchema.ExtractIdentities(
+                JsonNode.Parse(
+                    """
+                    {
+                        "widgetCode": "ABC-1.50"
+                    }
+"""
+                )!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_passes_the_string_identity_value_through_unchanged()
+        {
+            documentIdentity!.DocumentIdentityElements.Should().HaveCount(1);
+            documentIdentity!.DocumentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.widgetCode");
+            documentIdentity!.DocumentIdentityElements[0].IdentityValue.Should().Be("ABC-1.50");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_An_Identity_That_Includes_A_School_Year_Reference
         : ExtractDocumentIdentityTests
     {

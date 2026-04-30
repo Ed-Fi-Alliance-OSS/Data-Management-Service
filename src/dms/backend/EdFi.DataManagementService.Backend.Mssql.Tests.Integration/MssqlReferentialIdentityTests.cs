@@ -924,6 +924,143 @@ public class MssqlReferentialIdentityTests
         );
     }
 
+    [Test]
+    public async Task DateTime_trigger_emits_utc_z_suffix()
+    {
+        // Arrange — plain UTC wall-clock literal; datetime2 is timezone-naive (no offset suffix)
+        var documentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DateTimeKeyResource");
+
+        // Act
+        await InsertDateTimeKeyResourceAsync(documentId, "2025-01-01T12:00:00");
+
+        // Assert — trigger must append Z so the ReferentialId matches the Core canonical form
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(1);
+
+        var expectedReferentialId = ComputeReferentialId(
+            "Ed-Fi",
+            "DateTimeKeyResource",
+            ("$.eventTimestamp", "2025-01-01T12:00:00Z")
+        );
+
+        ((Guid)referentialIds.Single()["ReferentialId"]!).Should().Be(expectedReferentialId);
+        ((long)referentialIds.Single()["DocumentId"]!).Should().Be(documentId);
+    }
+
+    [Test]
+    [TestCase("1.5", "1.5", TestName = "Single trailing zero stripped (1.50 stored as 1.5)")]
+    [TestCase("2.00", "2", TestName = "Fractional zeros and decimal point stripped (2.00 -> 2)")]
+    [TestCase("100.00", "100", TestName = "Integer trailing zeros preserved (100.00 -> 100)")]
+    public async Task Decimal_top_level_identity_trims_trailing_zeros(
+        string insertedValue,
+        string expectedCanonical
+    )
+    {
+        // Arrange
+        var documentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DecimalKeyResource");
+
+        // Act
+        await InsertDecimalKeyResourceAsync(documentId, insertedValue);
+
+        // Assert
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(1);
+
+        var expectedReferentialId = ComputeReferentialId(
+            "Ed-Fi",
+            "DecimalKeyResource",
+            ("$.decimalKey", expectedCanonical)
+        );
+
+        ((Guid)referentialIds.Single()["ReferentialId"]!).Should().Be(expectedReferentialId);
+        ((long)referentialIds.Single()["DocumentId"]!).Should().Be(documentId);
+    }
+
+    [Test]
+    public async Task Decimal_reference_identity_trims_trailing_zeros()
+    {
+        // Arrange — insert DecimalKeyResource with decimalKey=1.50 (stored as decimal(9,2))
+        var decimalKeyDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DecimalKeyResource");
+        await InsertDecimalKeyResourceAsync(decimalKeyDocumentId, "1.50");
+
+        var refResourceId = "ref-dec-1";
+        var decimalRefDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DecimalRefResource");
+
+        // Act — insert DecimalRefResource referencing the DecimalKeyResource row
+        await InsertDecimalRefResourceAsync(
+            decimalRefDocumentId,
+            refResourceId,
+            decimalKeyDocumentId,
+            "1.50"
+        );
+
+        // Assert — DecimalRefResource RI: reference path $.decimalKeyReference.decimalKey canonical form
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(2);
+
+        var expectedDecimalRefReferentialId = ComputeReferentialId(
+            "Ed-Fi",
+            "DecimalRefResource",
+            ("$.refResourceId", refResourceId),
+            ("$.decimalKeyReference.decimalKey", "1.5")
+        );
+
+        var decimalRefRow = referentialIds.Single(r => (long)r["DocumentId"]! == decimalRefDocumentId);
+        ((Guid)decimalRefRow["ReferentialId"]!).Should().Be(expectedDecimalRefReferentialId);
+    }
+
+    private async Task InsertDateTimeKeyResourceAsync(long documentId, string eventTimestamp)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[DateTimeKeyResource] ([DocumentId], [EventTimestamp])
+            VALUES (@documentId, @eventTimestamp);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@eventTimestamp", eventTimestamp)
+        );
+    }
+
+    private async Task InsertDecimalKeyResourceAsync(long documentId, string decimalKey)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[DecimalKeyResource] ([DocumentId], [DecimalKey])
+            VALUES (@documentId, @decimalKey);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter(
+                "@decimalKey",
+                decimal.Parse(decimalKey, System.Globalization.CultureInfo.InvariantCulture)
+            )
+        );
+    }
+
+    private async Task InsertDecimalRefResourceAsync(
+        long documentId,
+        string refResourceId,
+        long decimalKeyReferenceDocumentId,
+        string decimalKeyReferenceDecimalKey
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[DecimalRefResource] ([DocumentId], [RefResourceId], [DecimalKeyReference_DocumentId], [DecimalKeyReference_DecimalKey])
+            VALUES (@documentId, @refResourceId, @decimalKeyReferenceDocumentId, @decimalKeyReferenceDecimalKey);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@refResourceId", refResourceId),
+            new SqlParameter("@decimalKeyReferenceDocumentId", decimalKeyReferenceDocumentId),
+            new SqlParameter(
+                "@decimalKeyReferenceDecimalKey",
+                decimal.Parse(
+                    decimalKeyReferenceDecimalKey,
+                    System.Globalization.CultureInfo.InvariantCulture
+                )
+            )
+        );
+    }
+
     private static IEnumerable<TestCaseData> CollationScenarios()
     {
         yield return new TestCaseData("STU001", "STU002").SetName("Plain value change");

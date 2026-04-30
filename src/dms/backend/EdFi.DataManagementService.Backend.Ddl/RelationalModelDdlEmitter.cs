@@ -1159,23 +1159,39 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             case ScalarKind.DateTime:
                 // PG timestamp::text gives 'YYYY-MM-DD HH:MM:SS' (space, no T).
-                // Use to_char for ISO 8601 with T separator.
+                // Use to_char with AT TIME ZONE 'UTC' to produce the ISO 8601 form with T
+                // separator and a literal Z suffix, independent of the session timezone.
                 //
-                // No AT TIME ZONE 'UTC' conversion: the PG column type is timestamptz, which
-                // stores UTC internally but displays in the session timezone. The trigger fires
-                // in the same session as the INSERT/UPDATE, so to_char always reproduces the
-                // original literal that was inserted — matching what Core's ReferentialIdCalculator
-                // hashes from the raw JSON string. Adding AT TIME ZONE 'UTC' here would break
-                // parity because the C# path does not normalize to UTC before hashing.
-                // The DMS application must use a consistent session timezone (UTC recommended).
-                // See also EmitMssqlColumnToNvarchar (datetime2 is timezone-naive, no issue).
+                // Core normalizes incoming DateTime values to UTC before persistence:
+                // JsonHelpers.TryNormalizeDateTimeString parses with
+                // DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal
+                // and emits yyyy-MM-ddTHH:mm:ssZ. AT TIME ZONE 'UTC' here ensures the
+                // trigger reproduces that canonical UTC form regardless of the session
+                // timezone, so the trigger-computed ReferentialId always matches what
+                // Core's ReferentialIdCalculator hashes.
+                // Precedent: PostgresqlReferenceLookupCommandBuilder uses the same form.
                 writer.Append("to_char(NEW.");
                 writer.Append(quoted);
-                writer.Append(", 'YYYY-MM-DD\"T\"HH24:MI:SS')");
+                writer.Append(" AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')");
+                break;
+
+            case ScalarKind.Decimal:
+                // Decimal columns carry column-scale trailing zeros (e.g., decimal(9,2) renders
+                // 1.50, 2.00) that Core never hashes — IdentityValueCanonicalizer strips them.
+                // Use two nested regexp_replace calls to strip trailing fractional zeros and then
+                // a trailing decimal point so the trigger output matches the Core canonical form.
+                //   regexp_replace(NEW.col::text, '(\.[0-9]*?)0+$', '\1') strips trailing zeros
+                //   after the decimal: 1.50 → 1.5, 2.00 → 2., 100 → 100 (no decimal, unchanged).
+                //   The outer regexp_replace(..., '\.$', '') then drops any resulting lone decimal
+                //   point: 2. → 2, 100 → 100 (unchanged).
+                // Cases verified: 1.50→1.5, 2.00→2, 100.00→100, 1.5→1.5, 100→100, 0→0, -1.50→-1.5.
+                writer.Append("regexp_replace(regexp_replace(NEW.");
+                writer.Append(quoted);
+                writer.Append("""::text, '(\.[0-9]*?)0+$', '\1'), '\.$', '')""");
                 break;
 
             default:
-                // String, Int32, Int64, Date, Time, Decimal, Boolean — ::text is deterministic.
+                // String, Int32, Int64, Date, Time, Boolean — ::text is deterministic.
                 writer.Append("NEW.");
                 writer.Append(quoted);
                 writer.Append("::text");
@@ -1357,12 +1373,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 break;
 
             case ScalarKind.DateTime:
-                // ISO 8601: YYYY-MM-DDTHH:mm:ss (CONVERT style 126, truncated to 19 chars).
+                // ISO 8601: YYYY-MM-DDTHH:mm:ssZ (CONVERT style 126, truncated to 19 chars, with UTC Z suffix).
                 // Truncation to whole seconds matches PG to_char() which also omits fractional
-                // seconds, ensuring cross-engine identity hash parity.
+                // seconds, ensuring cross-engine identity hash parity. datetime2 is timezone-naive
+                // because Core normalizes incoming offsets to UTC before persistence, so appending
+                // the literal Z suffix is sufficient.
                 writer.Append("CONVERT(nvarchar(19), i.");
                 writer.Append(quoted);
-                writer.Append(", 126)");
+                writer.Append(", 126) + N'Z'");
                 break;
 
             case ScalarKind.Time:
@@ -1380,8 +1398,38 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(" = 1 THEN N'true' ELSE N'false' END");
                 break;
 
+            case ScalarKind.Decimal:
+                // Trim trailing fractional zeros and a trailing decimal point to match Core's
+                // canonical decimal form (no exponent, no trailing zeros, no trailing decimal
+                // point). Uses deterministic CAST/CHARINDEX/PATINDEX/LEFT/REVERSE — no FORMAT().
+                // Example transformations: 1.50 → 1.5, 2.00 → 2, 100.00 → 100, 1.5 → 1.5.
+                writer.Append("CASE WHEN CHARINDEX(N'.', CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max))) = 0 THEN CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max)) ELSE CASE WHEN RIGHT(LEFT(CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max)), LEN(CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max))) - PATINDEX('%[^0]%', REVERSE(CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max)))) + 1), 1) = N'.' THEN LEFT(CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max)), LEN(CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max))) - PATINDEX('%[^0]%', REVERSE(CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max))))) ELSE LEFT(CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max)), LEN(CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max))) - PATINDEX('%[^0]%', REVERSE(CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max)))) + 1) END END");
+                break;
+
             default:
-                // Int32, Int64, Decimal — CAST is deterministic and matches Core/PG formatting.
+                // Int32, Int64 — CAST is deterministic and matches Core/PG formatting.
                 writer.Append("CAST(i.");
                 writer.Append(quoted);
                 writer.Append(" AS nvarchar(max))");

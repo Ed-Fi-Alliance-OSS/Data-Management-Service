@@ -1,6 +1,6 @@
 {
   "dialect": "pgsql",
-  "effective_schema_hash": "944f17699511435162631bce81c2e9847f454da6852158449af8f3da6c4a8874",
+  "effective_schema_hash": "9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3",
   "relational_mapping_version": "v1",
   "projects": [
     {
@@ -12,6 +12,24 @@
     }
   ],
   "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DateTimeKeyResource",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DecimalKeyResource",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DecimalRefResource",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
     {
       "project_name": "Ed-Fi",
       "resource_name": "EdOrgDependentChildResource",
@@ -239,6 +257,105 @@
       ],
       "include_columns": [
         "SourceEducationOrganizationId"
+      ]
+    },
+    {
+      "name": "PK_DateTimeKeyResource",
+      "table": {
+        "schema": "edfi",
+        "name": "DateTimeKeyResource"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_DateTimeKeyResource_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "DateTimeKeyResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "EventTimestamp"
+      ]
+    },
+    {
+      "name": "PK_DecimalKeyResource",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalKeyResource"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_DecimalKeyResource_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalKeyResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DecimalKey"
+      ]
+    },
+    {
+      "name": "UX_DecimalKeyResource_RefKey",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalKeyResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId",
+        "DecimalKey"
+      ]
+    },
+    {
+      "name": "IX_DecimalRefResource_DecimalKeyReference_DocumentId_1972800496",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalRefResource"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "DecimalKeyReference_DocumentId",
+        "DecimalKeyReference_DecimalKey"
+      ]
+    },
+    {
+      "name": "PK_DecimalRefResource",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalRefResource"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_DecimalRefResource_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalRefResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "RefResourceId",
+        "DecimalKeyReference_DocumentId"
       ]
     },
     {
@@ -642,6 +759,123 @@
   ],
   "triggers": [
     {
+      "name": "TR_DateTimeKeyResource_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "DateTimeKeyResource"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "EventTimestamp"
+      ],
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "DateTimeKeyResource",
+      "identity_elements": [
+        {
+          "column": "EventTimestamp",
+          "identity_json_path": "$.eventTimestamp"
+        }
+      ]
+    },
+    {
+      "name": "TR_DateTimeKeyResource_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "DateTimeKeyResource"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "EventTimestamp"
+      ]
+    },
+    {
+      "name": "TR_DecimalKeyResource_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalKeyResource"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "DecimalKey"
+      ],
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "DecimalKeyResource",
+      "identity_elements": [
+        {
+          "column": "DecimalKey",
+          "identity_json_path": "$.decimalKey"
+        }
+      ]
+    },
+    {
+      "name": "TR_DecimalKeyResource_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalKeyResource"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "DecimalKey"
+      ]
+    },
+    {
+      "name": "TR_DecimalRefResource_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalRefResource"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "RefResourceId",
+        "DecimalKeyReference_DecimalKey"
+      ],
+      "resource_key_id": 3,
+      "project_name": "Ed-Fi",
+      "resource_name": "DecimalRefResource",
+      "identity_elements": [
+        {
+          "column": "RefResourceId",
+          "identity_json_path": "$.refResourceId"
+        },
+        {
+          "column": "DecimalKeyReference_DecimalKey",
+          "identity_json_path": "$.decimalKeyReference.decimalKey"
+        }
+      ]
+    },
+    {
+      "name": "TR_DecimalRefResource_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalRefResource"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "RefResourceId",
+        "DecimalKeyReference_DecimalKey"
+      ]
+    },
+    {
       "name": "TR_EdOrgDependentChildResource_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -656,7 +890,7 @@
         "EdOrgDependentResourceReference_EdOrgDependentResourceId",
         "EdOrgDependentResourceReference_EducationOrganizationId"
       ],
-      "resource_key_id": 1,
+      "resource_key_id": 4,
       "project_name": "Ed-Fi",
       "resource_name": "EdOrgDependentChildResource",
       "identity_elements": [
@@ -704,7 +938,7 @@
         "EdOrgDependentResourceId",
         "EducationOrganization_EducationOrganizationId"
       ],
-      "resource_key_id": 2,
+      "resource_key_id": 5,
       "project_name": "Ed-Fi",
       "resource_name": "EdOrgDependentResource",
       "identity_elements": [
@@ -749,7 +983,7 @@
         "StudentUniqueId_Unified",
         "ResourceBReference_ResourceBId"
       ],
-      "resource_key_id": 4,
+      "resource_key_id": 7,
       "project_name": "Ed-Fi",
       "resource_name": "KeyUnifiedResource",
       "identity_elements": [
@@ -806,7 +1040,7 @@
         "ResourceAId",
         "StudentReference_StudentUniqueId"
       ],
-      "resource_key_id": 5,
+      "resource_key_id": 8,
       "project_name": "Ed-Fi",
       "resource_name": "ResourceA",
       "identity_elements": [
@@ -849,7 +1083,7 @@
         "ResourceBId",
         "StudentReference_StudentUniqueId"
       ],
-      "resource_key_id": 6,
+      "resource_key_id": 9,
       "project_name": "Ed-Fi",
       "resource_name": "ResourceB",
       "identity_elements": [
@@ -944,7 +1178,7 @@
       "identity_projection_columns": [
         "SchoolId"
       ],
-      "resource_key_id": 7,
+      "resource_key_id": 10,
       "project_name": "Ed-Fi",
       "resource_name": "School",
       "identity_elements": [
@@ -954,7 +1188,7 @@
         }
       ],
       "superclass_alias": {
-        "resource_key_id": 3,
+        "resource_key_id": 6,
         "project_name": "Ed-Fi",
         "resource_name": "EducationOrganization",
         "identity_elements": [
@@ -992,7 +1226,7 @@
       "identity_projection_columns": [
         "StudentUniqueId"
       ],
-      "resource_key_id": 8,
+      "resource_key_id": 11,
       "project_name": "Ed-Fi",
       "resource_name": "Student",
       "identity_elements": [
@@ -1030,7 +1264,7 @@
         "StudentUniqueId",
         "SchoolReference_SchoolId"
       ],
-      "resource_key_id": 9,
+      "resource_key_id": 12,
       "project_name": "Ed-Fi",
       "resource_name": "StudentSchoolAssociation",
       "identity_elements": [
@@ -1061,6 +1295,376 @@
     }
   ],
   "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "DateTimeKeyResource"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "DateTimeKeyResource",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EventTimestamp",
+              "kind": "Scalar",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": "$.eventTimestamp",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_DateTimeKeyResource_NK",
+              "columns": [
+                "EventTimestamp"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_DateTimeKeyResource_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "DecimalKeyResource"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "DecimalKeyResource",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DecimalKey",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Decimal",
+                "precision": 9,
+                "scale": 2
+              },
+              "is_nullable": false,
+              "source_path": "$.decimalKey",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_DecimalKeyResource_NK",
+              "columns": [
+                "DecimalKey"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_DecimalKeyResource_RefKey",
+              "columns": [
+                "DocumentId",
+                "DecimalKey"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_DecimalKeyResource_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "DecimalRefResource"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "DecimalRefResource",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DecimalKeyReference_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.decimalKeyReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DecimalKeyReference_DecimalKey",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Decimal",
+                "precision": 9,
+                "scale": 2
+              },
+              "is_nullable": false,
+              "source_path": "$.decimalKeyReference.decimalKey",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "RefResourceId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 64
+              },
+              "is_nullable": false,
+              "source_path": "$.refResourceId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_DecimalRefResource_NK",
+              "columns": [
+                "RefResourceId",
+                "DecimalKeyReference_DocumentId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_DecimalRefResource_DecimalKeyReference_RefKey",
+              "columns": [
+                "DecimalKeyReference_DocumentId",
+                "DecimalKeyReference_DecimalKey"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "DecimalKeyResource"
+              },
+              "target_columns": [
+                "DocumentId",
+                "DecimalKey"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_DecimalRefResource_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_DecimalRefResource_DecimalKeyReference_AllNone",
+              "fk_column": "DecimalKeyReference_DocumentId",
+              "dependent_columns": [
+                "DecimalKeyReference_DecimalKey"
+              ]
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.decimalKeyReference",
+          "table": {
+            "schema": "edfi",
+            "name": "DecimalRefResource"
+          },
+          "fk_column": "DecimalKeyReference_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "DecimalKeyResource"
+          },
+          "identity_bindings": [
+            {
+              "identity_json_path": "$.decimalKey",
+              "reference_json_path": "$.decimalKeyReference.decimalKey",
+              "column": "DecimalKeyReference_DecimalKey"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
     {
       "resource": {
         "project_name": "Ed-Fi",
