@@ -77,13 +77,36 @@ also append `-v`. Examples:
 
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
-When `USE_RELATIONAL_BACKEND=true`, you **must** run
-`provision-relational-e2e-database.ps1` before `start-local-dms.ps1` so
-`dms.EffectiveSchema` exists before startup validation runs.
+When `USE_RELATIONAL_BACKEND=true`, the relational E2E database must be
+provisioned and DMS must observe the provisioned `dms.EffectiveSchema` before
+it can serve requests. Because `provision-relational-e2e-database.ps1`
+provisions inside the running `dms-postgresql` container, the sequence is:
 
-If you skip provisioning, DMS will start successfully, but requests to the
+1. Start the Docker environment so PostgreSQL is up:
+
+   ```pwsh
+   ./start-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational
+   ```
+
+2. Run the provisioning script:
+
+   ```pwsh
+   ./provision-relational-e2e-database.ps1 -EnvironmentFile ./.env.e2e.relational
+   ```
+
+3. Restart DMS so cached startup-validation state is discarded:
+
+   ```pwsh
+   docker restart dms-local-dms-1
+   ```
+
+This is the same sequence used by the `E2ETests` build target
+(`build-dms.ps1` → `Initialize-RelationalE2EDatabase`).
+
+If DMS starts before provisioning has run (or against a database missing
+`dms.EffectiveSchema`), DMS will start successfully but requests to the
 affected instances return HTTP 503 (Service Unavailable). To recover, run the
-provisioning script and restart DMS.
+provisioning script and restart DMS as in steps 2 and 3 above.
 
 If you want to use Keycloak as the identity provider, pass the `-IdentityProvider keycloak` parameter to the startup script. This will configure the environment to use Keycloak authentication, and you must ensure Keycloak is running and properly configured.
 

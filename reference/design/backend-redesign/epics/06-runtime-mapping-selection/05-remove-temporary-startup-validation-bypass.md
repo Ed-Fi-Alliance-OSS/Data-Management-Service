@@ -38,11 +38,17 @@ Align with:
 
 ## Acceptance Criteria
 
-- When `USE_RELATIONAL_BACKEND=true`, operators must run
-  `provision-relational-e2e-database.ps1` before `start-local-dms.ps1` so
-  `dms.EffectiveSchema` and related fingerprint metadata exist before DMS
-  startup validation executes. Provisioning remains a separate lifecycle task
-  and is intentionally not coupled into the local startup script.
+- When `USE_RELATIONAL_BACKEND=true`, the relational E2E database must be
+  provisioned and DMS must observe the provisioned `dms.EffectiveSchema`
+  before it can serve requests. Because
+  `provision-relational-e2e-database.ps1` provisions inside the running
+  `dms-postgresql` container, operators must (1) start the Docker
+  environment via `start-local-dms.ps1`, (2) run
+  `provision-relational-e2e-database.ps1`, and (3) restart the DMS
+  container so cached startup-validation state is discarded. This matches
+  the `E2ETests` build target's `Initialize-RelationalE2EDatabase` step.
+  Provisioning remains a separate lifecycle task and is intentionally not
+  coupled into the local startup script.
 - The temporary startup bypass flag
   `AppSettings.ValidateProvisionedMappingsOnStartup` is removed entirely.
 - Startup validation executes unconditionally. Missing, malformed, or
