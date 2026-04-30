@@ -16,7 +16,6 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
@@ -330,39 +329,6 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IResourceKeyRowReader>()
                 .Should()
                 .BeOfType<MssqlResourceKeyRowReader>();
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_Core_App_Settings_Are_Bound_For_Startup : WebApplicationBuilderExtensionsTests
-    {
-        [Test]
-        public void It_defaults_validate_provisioned_mappings_on_startup_to_false_when_unset()
-        {
-            using var serviceProvider = CreateServices("postgresql");
-
-            var appSettings = serviceProvider.GetRequiredService<IOptions<CoreAppSettings>>().Value;
-
-            appSettings.ValidateProvisionedMappingsOnStartup.Should().BeFalse();
-            appSettings.UseRelationalBackend.Should().BeFalse();
-        }
-
-        [Test]
-        public void It_allows_validate_provisioned_mappings_on_startup_to_be_enabled_explicitly()
-        {
-            using var serviceProvider = CreateServices(
-                "postgresql",
-                new Dictionary<string, string?>
-                {
-                    ["AppSettings:ValidateProvisionedMappingsOnStartup"] = "true",
-                }
-            );
-
-            var appSettings = serviceProvider.GetRequiredService<IOptions<CoreAppSettings>>().Value;
-
-            appSettings.ValidateProvisionedMappingsOnStartup.Should().BeTrue();
-            appSettings.UseRelationalBackend.Should().BeFalse();
         }
     }
 }

@@ -12,7 +12,6 @@ services:
       NEED_DATABASE_SETUP: ${NEED_DATABASE_SETUP:-true}
       AppSettings__DeployDatabaseOnStartup: ${DMS_DEPLOY_DATABASE_ON_STARTUP:-false}
       AppSettings__UseRelationalBackend: ${USE_RELATIONAL_BACKEND:-false}
-      AppSettings__ValidateProvisionedMappingsOnStartup: ${DMS_VALIDATE_PROVISIONED_MAPPINGS_ON_STARTUP:-false}
       AppSettings__BypassStringTypeCoercion: ${BYPASS_STRING_COERCION:-false}
       AppSettings__AllowIdentityUpdateOverrides: ${ALLOW_IDENTITY_UPDATE_OVERRIDES:-}
       Serilog__MinimumLevel__Default: ${LOG_LEVEL:-DEBUG}

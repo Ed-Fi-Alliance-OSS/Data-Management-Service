@@ -5,6 +5,17 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1097
 
 # Story: Remove Temporary Startup Validation Bypass After Provisioning Is Ready
 
+> **Status: Complete.** The runtime bypass was already a no-op when this
+> story was picked up — instance validation had been moved to
+> `ValidateStartupInstancesTask` (gated only by `UseRelationalBackend`). The
+> work shipped under this story removed the dead
+> `AppSettings.ValidateProvisionedMappingsOnStartup` property, its
+> configuration bindings (`appsettings.json`, both Docker Compose files), the
+> operator README paragraph, and the dead test paths that referenced it.
+> AC #1 and AC #3 below have been rewritten to reflect the shipped multi-
+> instance-safe model documented in
+> `ValidateStartupInstancesTask.cs:18-27`.
+
 ## Description
 
 `DMS-1047` introduced startup-time PostgreSQL runtime mapping validation against
@@ -27,17 +38,32 @@ Align with:
 
 ## Acceptance Criteria
 
-- The provisioning path used by local Docker startup, the OpenAPI-spec workflow,
-  the DMS E2E suite, and the Instance Management E2E suite creates
-  `dms.EffectiveSchema` and related fingerprint metadata before DMS startup
-  validation executes.
+- When `USE_RELATIONAL_BACKEND=true`, the relational E2E database must be
+  provisioned and DMS must observe the provisioned `dms.EffectiveSchema`
+  before it can serve requests. Because
+  `provision-relational-e2e-database.ps1` provisions inside the running
+  `dms-postgresql` container, operators must (1) start the Docker
+  environment via `start-local-dms.ps1`, (2) run
+  `provision-relational-e2e-database.ps1`, and (3) restart the DMS
+  container so cached startup-validation state is discarded. This matches
+  the `E2ETests` build target's `Initialize-RelationalE2EDatabase` step.
+  Provisioning remains a separate lifecycle task and is intentionally not
+  coupled into the local startup script.
 - The temporary startup bypass flag
-  `AppSettings.ValidateProvisionedMappingsOnStartup` is removed entirely, or its
-  default is restored to strict startup validation.
-- Startup-time validation fails fast with actionable diagnostics when
-  provisioning metadata is missing, malformed, or mismatched.
+  `AppSettings.ValidateProvisionedMappingsOnStartup` is removed entirely.
+- Startup validation executes unconditionally. Missing, malformed, or
+  mismatched provisioning metadata is logged with actionable remediation.
+  Per-instance failures are cached and surface as 503 at request time while
+  other instances continue serving (multi-instance-safe failure model — see
+  `ValidateStartupInstancesTask.cs:18-27`).
 - Automated coverage proves provisioning-ready environments pass with startup
-  validation enabled and no temporary bypass.
+  validation enabled (`PostgresqlEffectiveSchemaHashMismatchTests`,
+  `MssqlEffectiveSchemaHashMismatchTests`) and that environments missing
+  provisioning fail safely: per-instance startup handling is covered by
+  `ValidateStartupInstancesTaskTests` (e.g.
+  `Given_One_Bad_Instance_And_One_Good_Instance`), and the request-time 503
+  surface is covered by
+  `ValidateDatabaseFingerprintMiddlewareMissingTableTests.Given_Database_Is_Not_Provisioned`.
 
 ## Tasks
 
