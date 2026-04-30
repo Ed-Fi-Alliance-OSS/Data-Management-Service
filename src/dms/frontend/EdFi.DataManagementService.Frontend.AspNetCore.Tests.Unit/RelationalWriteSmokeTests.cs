@@ -410,6 +410,8 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IRelationalReadMaterializer>();
                 services.RemoveAll<IReadableProfileProjector>();
                 services.RemoveAll<IReferenceResolver>();
+                services.RemoveAll<IRelationalWriteExceptionClassifier>();
+                services.RemoveAll<IRelationalDeleteConstraintResolver>();
                 services.RemoveAll<IRelationalWriteSessionFactory>();
 
                 services.AddSingleton(jwtValidationService);
@@ -428,14 +430,10 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton(A.Fake<IRelationalReadMaterializer>());
                 services.AddSingleton(A.Fake<IReadableProfileProjector>());
                 services.AddSingleton(A.Fake<IReferenceResolver>());
-                services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
-                services.AddSingleton<IRelationalWriteExceptionClassifier>(
-                    new NoOpRelationalWriteExceptionClassifier()
-                );
+                services.AddSingleton(A.Fake<IRelationalWriteExceptionClassifier>());
                 services.AddSingleton(A.Fake<IRelationalDeleteConstraintResolver>());
-                services.AddSingleton<IRelationalWriteSessionFactory>(
-                    A.Fake<IRelationalWriteSessionFactory>()
-                );
+                services.AddSingleton(A.Fake<IRelationalWriteSessionFactory>());
+                services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
             });
         });
     }

@@ -290,7 +290,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         var insertResult = await handler.HandlePostAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
-        // Attempt to delete it via the AcademicSubjectDescriptor resource endpoint —
+        // Attempt to delete it via the AcademicSubjectDescriptor resource endpoint -
         // must not delete cross-resource.
         var result = await handler.HandleDeleteAsync(
             _database.MappingSet,
@@ -536,6 +536,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
+        services.AddTestReadableProfileProjector();
         services.AddPostgresqlReferenceResolver();
 
         return services.BuildServiceProvider(

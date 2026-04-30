@@ -212,6 +212,25 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
     }
 
     [Test]
+    public async Task It_returns_etag_mismatch_when_if_match_does_not_match_the_current_representation()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-0000-0000-0000-000000000003"));
+        var upsert = await InvokeAsync(repository =>
+            repository.UpsertDocument(CreateUpsertRequest(documentUuid))
+        );
+        upsert.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+        var delete = await InvokeAsync(repository =>
+            repository.DeleteDocumentById(
+                CreateDeleteRequest(_schoolResourceInfo, documentUuid, ifMatchEtag: "\"stale-etag\"")
+            )
+        );
+
+        delete.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        (await CountDocumentsAsync(documentUuid)).Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_delete_failure_reference_with_the_resolved_referencing_resource_name_when_the_document_is_referenced_by_another_document()
     {
         // Seed a Program document, then stitch a School document with a
@@ -352,7 +371,11 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         );
     }
 
-    private DeleteRequest CreateDeleteRequest(ResourceInfo resourceInfo, DocumentUuid documentUuid)
+    private DeleteRequest CreateDeleteRequest(
+        ResourceInfo resourceInfo,
+        DocumentUuid documentUuid,
+        string? ifMatchEtag = null
+    )
     {
         return new DeleteRequest(
             DocumentUuid: documentUuid,
@@ -361,7 +384,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             ResourceAuthorizationPathways: [],
             TraceId: new TraceId("pg-delete-invocation"),
             DeleteInEdOrgHierarchy: false,
-            Headers: [],
+            Headers: ifMatchEtag is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatchEtag },
             MappingSet: _mappingSet
         );
     }

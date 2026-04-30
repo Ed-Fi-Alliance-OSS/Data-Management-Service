@@ -11,6 +11,7 @@ using Json.Path;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
+using static EdFi.DataManagementService.Old.Postgresql.OptimisticLockHelper;
 using static EdFi.DataManagementService.Old.Postgresql.ReferenceHelper;
 
 namespace EdFi.DataManagementService.Old.Postgresql.Operation;
@@ -464,6 +465,17 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             long documentId =
                 documentFromDb.Id
                 ?? throw new InvalidOperationException("documentFromDb.Id should never be null");
+
+            // Enforce If-Match for POST-as-update: reject with 412 when the client-supplied
+            // If-Match header does not match the currently stored ETag.
+            if (IsDocumentLocked(upsertRequest.Headers, documentFromDb.EdfiDoc))
+            {
+                _logger.LogInformation(
+                    "Failure: _etag does not match on upsert-as-update - {TraceId}",
+                    upsertRequest.TraceId.Value
+                );
+                return new UpsertResult.UpsertFailureETagMisMatch();
+            }
 
             // Check if document has been modified
             if (

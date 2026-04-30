@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -87,6 +88,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         cancellationToken.ThrowIfCancellationRequested();
         RelationalWriteExecutorResult? writeFailureResult = null;
         var executionRequest = request;
+        JsonNode? cachedCommittedDoc = null;
 
         await using var writeSession = await _writeSessionFactory
             .CreateAsync(cancellationToken)
@@ -95,6 +97,38 @@ internal sealed class DefaultRelationalWriteExecutor(
         try
         {
             var targetContext = request.TargetContext;
+
+            // If-Match pre-check uses the incoming (pre-session) target context. For PUT and
+            // POST-as-update the target is already ExistingDocument before the executor is
+            // called, so the DocumentId is available here. Performing the check before
+            // referenceResolver.ResolveAsync eliminates unnecessary reference-resolution
+            // queries on every rejected stale-ETag request.
+            // If-Match: * is not supported; any non-null value (including "*") is treated as
+            // a literal ETag for precondition enforcement and will fail unless it matches.
+            if (
+                request.IfMatchEtag is not null
+                && targetContext is RelationalWriteTargetContext.ExistingDocument ifMatchTarget
+            )
+            {
+                var (etagMismatch, ifMatchCommittedDoc) = await CheckIfMatchEtagAsync(
+                        request,
+                        ifMatchTarget,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (etagMismatch is not null)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return etagMismatch;
+                }
+
+                // Cache the committed representation already read during the pre-check so the
+                // guarded no-op path can reuse it without issuing a second database round-trip.
+                cachedCommittedDoc = ifMatchCommittedDoc;
+            }
+
             var referenceResolver = new ReferenceResolver(
                 _referenceResolverAdapterFactory.CreateSessionAdapter(
                     writeSession.Connection,
@@ -153,9 +187,40 @@ internal sealed class DefaultRelationalWriteExecutor(
                 currentState = inSessionTargetResolution.CurrentState;
             }
 
+            // When a POST's in-session resolution discovers the document already exists
+            // (target flipped CreateNew → ExistingDocument), enforce If-Match before any
+            // write work proceeds. The early pre-check was skipped because the incoming
+            // target context was CreateNew and no DocumentId was yet available.
+            // If-Match: * is not supported; any non-null value (including "*") is treated as
+            // a literal ETag for precondition enforcement and will fail unless it matches.
+            if (
+                request.IfMatchEtag is not null
+                && request.TargetContext is RelationalWriteTargetContext.CreateNew
+                && targetContext is RelationalWriteTargetContext.ExistingDocument postFlipTarget
+            )
+            {
+                var (postFlipMismatch, postFlipCommittedDoc) = await CheckIfMatchEtagAsync(
+                        request,
+                        postFlipTarget,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (postFlipMismatch is not null)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return postFlipMismatch;
+                }
+
+                // Cache the committed representation already read during the post-flip check
+                // so the guarded no-op path can reuse it without a second database round-trip.
+                cachedCommittedDoc = postFlipCommittedDoc;
+            }
+
             RelationalWriteMergeResult mergeResult;
 
-            // Profile decision sequence — runs before flattening for profile-aware dispatch
+            // Profile decision sequence - runs before flattening for profile-aware dispatch
             if (request.ProfileWriteContext is not null)
             {
                 var profileWriteContext = request.ProfileWriteContext;
@@ -397,17 +462,21 @@ internal sealed class DefaultRelationalWriteExecutor(
                     return BuildStaleNoOpCompareResult(request.OperationKind);
                 }
 
-                var guardedNoOpCommittedResponse = await _committedRepresentationReader
-                    .ReadAsync(
-                        executionRequest,
-                        new RelationalWritePersistResult(
-                            guardedTarget.DocumentId,
-                            guardedTarget.DocumentUuid
-                        ),
-                        writeSession,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                // Reuse the representation already fetched by the If-Match pre-check when
+                // available; fall back to a fresh read when no pre-check was performed.
+                var guardedNoOpCommittedResponse =
+                    cachedCommittedDoc
+                    ?? await _committedRepresentationReader
+                        .ReadAsync(
+                            executionRequest,
+                            new RelationalWritePersistResult(
+                                guardedTarget.DocumentId,
+                                guardedTarget.DocumentUuid
+                            ),
+                            writeSession,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
 
                 await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
                 return BuildGuardedNoOpSuccessResult(
@@ -472,6 +541,86 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
+    }
+
+    private static RelationalWriteExecutorResult BuildETagMismatchResult(
+        RelationalWriteOperationKind operationKind
+    ) =>
+        operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureETagMisMatch()
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureETagMisMatch()
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+
+    private async Task<(
+        RelationalWriteExecutorResult? Mismatch,
+        JsonNode? CommittedDoc
+    )> CheckIfMatchEtagAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetContext.ExistingDocument existingTarget,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        // Acquire a row-level lock on dms.Document before reading the committed
+        // representation. The lock is held for the lifetime of this transaction,
+        // preventing a concurrent writer from modifying the row between the ETag
+        // comparison and the subsequent write DML, eliminating the TOCTOU race on
+        // the If-Match changed-write path.
+        // PostgreSQL uses FOR UPDATE; MSSQL uses UPDLOCK/HOLDLOCK/ROWLOCK.
+        var rowFound = await AcquireDocumentRowLockAsync(
+                request.MappingSet.Key.Dialect,
+                existingTarget.DocumentId,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        // The document was resolved as existing before the executor session opened, but the
+        // row is gone now (concurrent DELETE or rollback). Short-circuit without attempting
+        // committed-representation rehydration — that read would find no row and would throw
+        // InvalidOperationException from GetCommittedResponseEtag. Returning the ETag mismatch
+        // result is the correct semantic: the client's precondition no longer holds.
+        if (!rowFound)
+        {
+            return (BuildETagMismatchResult(request.OperationKind), null);
+        }
+
+        var committedRepresentation = await _committedRepresentationReader
+            .ReadAsync(
+                request,
+                new RelationalWritePersistResult(existingTarget.DocumentId, existingTarget.DocumentUuid),
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var currentEtag = GetCommittedResponseEtag(committedRepresentation);
+
+        return string.Equals(currentEtag, request.IfMatchEtag, StringComparison.Ordinal)
+            ? (null, committedRepresentation)
+            : (BuildETagMismatchResult(request.OperationKind), null);
+    }
+
+    private static async Task<bool> AcquireDocumentRowLockAsync(
+        SqlDialect dialect,
+        long documentId,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = writeSession.CreateCommand(
+            DocumentRowLock.BuildCommand(dialect, documentId)
+        );
+        var scalar = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        // null / DBNull means the WHERE clause matched no row — the document was deleted
+        // (or never committed) between target resolution and lock acquisition.
+        return scalar is not null and not DBNull;
     }
 
     private static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
@@ -560,7 +709,10 @@ internal sealed class DefaultRelationalWriteExecutor(
         }
     }
 
-    private static string GetCommittedResponseEtag(JsonNode committedResponse)
+    private static string GetCommittedResponseEtag(
+        JsonNode committedResponse,
+        [CallerMemberName] string callerName = ""
+    )
     {
         ArgumentNullException.ThrowIfNull(committedResponse);
 
@@ -572,7 +724,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         )
         {
             throw new InvalidOperationException(
-                "Committed relational write readback did not produce an external response _etag."
+                $"Committed relational write readback did not produce an external response _etag. Caller: {callerName}"
             );
         }
 

@@ -104,6 +104,8 @@ public class Given_MssqlGeneratedDdlTestDatabase
         authorCollectionItemDefault.Should().Contain("NEXT VALUE FOR");
         (await _database.SequenceExistsAsync("dms", "ChangeVersionSequence")).Should().BeTrue();
         (await _database.SequenceExistsAsync("dms", "CollectionItemIdSequence")).Should().BeTrue();
+        firstDocumentState.DocumentId.Should().BePositive();
+        secondDocumentState.DocumentId.Should().BePositive();
 
         secondDocumentState.Should().Be(firstDocumentState);
         secondCollectionItemId.Should().Be(firstCollectionItemId);

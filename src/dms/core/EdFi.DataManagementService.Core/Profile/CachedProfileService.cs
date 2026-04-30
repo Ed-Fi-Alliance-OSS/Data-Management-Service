@@ -339,8 +339,9 @@ internal class CachedProfileService(
             return contentTypeValidation;
         }
 
-        ProfileContentType contentType =
-            method == RequestMethod.GET ? ProfileContentType.Read : ProfileContentType.Write;
+        ProfileContentType contentType = method is RequestMethod.GET or RequestMethod.DELETE
+            ? ProfileContentType.Read
+            : ProfileContentType.Write;
 
         return ProfileResolutionResult.Success(
             new ProfileContext(
@@ -365,7 +366,7 @@ internal class CachedProfileService(
             resourceName,
             method
         );
-        bool isReadOperation = method == RequestMethod.GET;
+        bool isReadOperation = method is RequestMethod.GET or RequestMethod.DELETE;
         List<(ProfileDefinition Definition, ResourceProfile ResourceProfile)> applicableProfiles =
             cachedProfiles
                 .AssignedProfileNames.Select(profileName =>
@@ -414,8 +415,9 @@ internal class CachedProfileService(
                 return contentTypeValidation;
             }
 
-            ProfileContentType contentType =
-                method == RequestMethod.GET ? ProfileContentType.Read : ProfileContentType.Write;
+            ProfileContentType contentType = method is RequestMethod.GET or RequestMethod.DELETE
+                ? ProfileContentType.Read
+                : ProfileContentType.Write;
 
             return ProfileResolutionResult.Success(
                 new ProfileContext(
@@ -433,10 +435,12 @@ internal class CachedProfileService(
 
     /// <summary>
     /// Determines the appropriate ProfileUsageType based on the HTTP method.
-    /// GET requests use Readable, all other methods use Writable.
+    /// GET and DELETE requests use Readable, all other methods use Writable.
     /// </summary>
     private static ProfileUsageType GetUsageTypeForMethod(RequestMethod method) =>
-        method == RequestMethod.GET ? ProfileUsageType.Readable : ProfileUsageType.Writable;
+        method is RequestMethod.GET or RequestMethod.DELETE
+            ? ProfileUsageType.Readable
+            : ProfileUsageType.Writable;
 
     private static IReadOnlyList<string> GetAvailableProfileContentTypes(
         CachedApplicationProfiles cachedProfiles,
@@ -446,7 +450,7 @@ internal class CachedProfileService(
     )
     {
         ProfileUsageType usageType = GetUsageTypeForMethod(method);
-        bool isReadOperation = method == RequestMethod.GET;
+        bool isReadOperation = method is RequestMethod.GET or RequestMethod.DELETE;
 
         return cachedProfiles
             .AssignedProfileNames.Select(profileName =>
@@ -501,7 +505,7 @@ internal class CachedProfileService(
         RequestMethod method
     )
     {
-        bool isReadOperation = method == RequestMethod.GET;
+        bool isReadOperation = method is RequestMethod.GET or RequestMethod.DELETE;
 
         if (usageType == ProfileUsageType.Writable && isReadOperation)
         {
@@ -545,7 +549,7 @@ internal class CachedProfileService(
         string profileName
     )
     {
-        bool isReadOperation = method == RequestMethod.GET;
+        bool isReadOperation = method is RequestMethod.GET or RequestMethod.DELETE;
 
         if (isReadOperation && resourceProfile.ReadContentType == null)
         {
@@ -587,7 +591,7 @@ internal class CachedProfileService(
         RequestMethod method
     )
     {
-        bool isReadOperation = method == RequestMethod.GET;
+        bool isReadOperation = method is RequestMethod.GET or RequestMethod.DELETE;
         int statusCode = isReadOperation ? 406 : 415;
         string headerType = isReadOperation ? "Accept" : "Content-Type";
 

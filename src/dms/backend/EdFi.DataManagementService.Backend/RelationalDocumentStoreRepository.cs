@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -85,7 +86,9 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalUpsertRequest.EdfiDoc,
                         relationalUpsertRequest.DocumentUuid,
                         relationalUpsertRequest.DocumentInfo.ReferentialId,
-                        relationalUpsertRequest.TraceId
+                        relationalUpsertRequest.TraceId,
+                        ifMatchEtag: ExtractIfMatchEtag(relationalUpsertRequest.Headers),
+                        backendProfileWriteContext: relationalUpsertRequest.BackendProfileWriteContext
                     )
                 )
                 .ConfigureAwait(false);
@@ -94,6 +97,7 @@ public sealed class RelationalDocumentStoreRepository(
         var profileWriteContext = relationalUpsertRequest.BackendProfileWriteContext;
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
+        var ifMatchEtag = ExtractIfMatchEtag(relationalUpsertRequest.Headers);
 
         var result = await ExecuteWriteGuardRails<UpsertResult>(
                 requestBody: selectedBody,
@@ -119,7 +123,8 @@ public sealed class RelationalDocumentStoreRepository(
                             $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a POST request."
                         ),
                     },
-                profileWriteContext
+                profileWriteContext,
+                ifMatchEtag
             )
             .ConfigureAwait(false);
 
@@ -191,7 +196,9 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalUpdateRequest.EdfiDoc,
                         relationalUpdateRequest.DocumentUuid,
                         referentialId: null,
-                        relationalUpdateRequest.TraceId
+                        relationalUpdateRequest.TraceId,
+                        ifMatchEtag: ExtractIfMatchEtag(relationalUpdateRequest.Headers),
+                        backendProfileWriteContext: relationalUpdateRequest.BackendProfileWriteContext
                     )
                 )
                 .ConfigureAwait(false);
@@ -200,6 +207,7 @@ public sealed class RelationalDocumentStoreRepository(
         var profileWriteContext = relationalUpdateRequest.BackendProfileWriteContext;
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
+        var ifMatchEtag = ExtractIfMatchEtag(relationalUpdateRequest.Headers);
 
         var result = await ExecuteWriteGuardRails<UpdateResult>(
                 requestBody: selectedBody,
@@ -222,7 +230,8 @@ public sealed class RelationalDocumentStoreRepository(
                             $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a PUT request."
                         ),
                     },
-                profileWriteContext
+                profileWriteContext,
+                ifMatchEtag
             )
             .ConfigureAwait(false);
 
@@ -253,16 +262,25 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet,
                 resource,
                 relationalDeleteRequest.DocumentUuid,
-                relationalDeleteRequest.TraceId
+                relationalDeleteRequest.TraceId,
+                ExtractIfMatchEtag(relationalDeleteRequest.Headers),
+                relationalDeleteRequest.IfMatchReadableProjectionContext
             );
         }
 
-        return DeleteDocumentByIdAsync(relationalDeleteRequest, mappingSet);
+        return DeleteDocumentByIdAsync(
+            relationalDeleteRequest,
+            mappingSet,
+            ExtractIfMatchEtag(relationalDeleteRequest.Headers),
+            default
+        );
     }
 
     private async Task<DeleteResult> DeleteDocumentByIdAsync(
         IRelationalDeleteRequest relationalDeleteRequest,
-        MappingSet mappingSet
+        MappingSet mappingSet,
+        string? ifMatchEtag,
+        CancellationToken cancellationToken
     )
     {
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
@@ -311,16 +329,67 @@ public sealed class RelationalDocumentStoreRepository(
 
                 if (resolved is null)
                 {
-                    outcome = new DeleteResult.DeleteFailureNotExists();
+                    outcome = ifMatchEtag is not null
+                        ? new DeleteResult.DeleteFailureETagMisMatch()
+                        : new DeleteResult.DeleteFailureNotExists();
                 }
                 else
                 {
-                    // Authorization-check statements will join this DELETE in a future DMS-1009 child
-                    // ticket; If-Match/ETag validation against the resolved ContentVersion is likewise
-                    // deferred. Until then, this path stays gated behind the UseRelationalBackend
-                    // setting, while production DELETE traffic continues to flow through the Old
-                    // Postgresql DeleteDocumentById handler which already enforces both.
-                    // See reference/design/backend-redesign/design-docs/auth.md for the target shape.
+                    if (ifMatchEtag is not null)
+                    {
+                        var locked = await TryLockDeleteTargetAsync(
+                                sessionCommandExecutor,
+                                mappingSet.Key.Dialect,
+                                resolved.DocumentId
+                            )
+                            .ConfigureAwait(false);
+
+                        if (!locked)
+                        {
+                            outcome = new DeleteResult.DeleteFailureETagMisMatch();
+                            await writeSession.RollbackAsync().ConfigureAwait(false);
+                            return outcome;
+                        }
+
+                        bool ifMatchOk;
+
+                        try
+                        {
+                            ifMatchOk = await ValidateIfMatchForDeleteAsync(
+                                    mappingSet,
+                                    resource,
+                                    resolved.DocumentId,
+                                    ifMatchEtag,
+                                    relationalDeleteRequest.IfMatchReadableProjectionContext,
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            _logger.LogError(
+                                ex,
+                                "Failed to validate If-Match precondition for relational DELETE on {DocumentUuid} - {TraceId}",
+                                documentUuid.Value,
+                                LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                            );
+
+                            await writeSession.RollbackAsync().ConfigureAwait(false);
+                            return new DeleteResult.UnknownFailure(
+                                "An unexpected error occurred while processing the delete request."
+                            );
+                        }
+
+                        if (!ifMatchOk)
+                        {
+                            outcome = new DeleteResult.DeleteFailureETagMisMatch();
+                            await writeSession.RollbackAsync().ConfigureAwait(false);
+                            return outcome;
+                        }
+                    }
+
+                    // Delete the resolved document only after the optional If-Match precondition
+                    // has been validated against the currently committed representation.
                     var deleteCommand = BuildDocumentDeleteByDocumentIdCommand(
                         mappingSet.Key.Dialect,
                         resolved.DocumentId
@@ -410,6 +479,92 @@ public sealed class RelationalDocumentStoreRepository(
 
             return outcome;
         }
+    }
+
+    private async Task<bool> ValidateIfMatchForDeleteAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        long documentId,
+        string ifMatchEtag,
+        ReadableProfileProjectionContext? ifMatchReadableProjectionContext,
+        CancellationToken cancellationToken
+    )
+    {
+        var readPlanPreparation = PrepareExistingDocumentReadPlan(mappingSet, resource);
+
+        if (readPlanPreparation.ReadPlan is null)
+        {
+            throw new InvalidOperationException(
+                readPlanPreparation.FailureMessage
+                    ?? RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(resource)
+            );
+        }
+
+        var hydratedPage = await _documentHydrator
+            .HydrateAsync(
+                readPlanPreparation.ReadPlan,
+                new PageKeysetSpec.Single(documentId),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (hydratedPage.DocumentMetadata.Count == 0)
+        {
+            return false;
+        }
+
+        if (hydratedPage.DocumentMetadata.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Relational DELETE hydration for document id {documentId} returned "
+                    + $"{hydratedPage.DocumentMetadata.Count} metadata rows, but exactly 1 was expected."
+            );
+        }
+
+        var documentMetadata = hydratedPage.DocumentMetadata[0];
+        var committedDocument = _readMaterializer.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlanPreparation.ReadPlan,
+                documentMetadata,
+                hydratedPage.TableRowsInDependencyOrder,
+                hydratedPage.DescriptorRowsInPlanOrder,
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+        );
+
+        // Apply profile projection if the delete request carried a readable-profile projection context.
+        if (ifMatchReadableProjectionContext is not null)
+        {
+            committedDocument = _readableProfileProjector.Project(
+                committedDocument,
+                ifMatchReadableProjectionContext.ContentTypeDefinition,
+                ifMatchReadableProjectionContext.IdentityPropertyNames
+            );
+            RelationalApiMetadataFormatter.RefreshEtag(committedDocument);
+        }
+
+        return string.Equals(
+            GetCommittedResponseEtag(committedDocument),
+            ifMatchEtag,
+            StringComparison.Ordinal
+        );
+    }
+
+    private static async Task<bool> TryLockDeleteTargetAsync(
+        IRelationalCommandExecutor commandExecutor,
+        SqlDialect dialect,
+        long documentId
+    )
+    {
+        var command = DocumentRowLock.BuildCommand(dialect, documentId);
+
+        return await commandExecutor
+            .ExecuteReaderAsync(
+                command,
+                static async (reader, cancellationToken) =>
+                    await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            )
+            .ConfigureAwait(false);
     }
 
     private static RelationalCommand BuildDocumentDeleteByDocumentIdCommand(
@@ -577,6 +732,16 @@ public sealed class RelationalDocumentStoreRepository(
         return BuildQuerySuccess(relationalQueryRequest, resource, readPlan, hydratedPage);
     }
 
+    private static string? ExtractIfMatchEtag(Dictionary<string, string> headers)
+    {
+        // HTTP/2 (RFC 7540 §8.1.2) mandates lowercase header names; search OrdinalIgnoreCase
+        // so the value is found regardless of header-name casing used by the client or proxy.
+        var value = headers
+            .FirstOrDefault(kv => kv.Key.Equals("If-Match", StringComparison.OrdinalIgnoreCase))
+            .Value;
+        return value;
+    }
+
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
         System.Text.Json.Nodes.JsonNode requestBody,
         TraceId traceId,
@@ -588,7 +753,8 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
         Func<RelationalWriteExecutorResult, TResult> executorResultProjector,
-        BackendProfileWriteContext? profileWriteContext = null
+        BackendProfileWriteContext? profileWriteContext = null,
+        string? ifMatchEtag = null
     )
     {
         ArgumentNullException.ThrowIfNull(requestBody);
@@ -628,6 +794,19 @@ public sealed class RelationalDocumentStoreRepository(
 
             if (targetResolution.ImmediateResult is not null)
             {
+                // RFC 7232 §3.1: a PUT with an If-Match precondition against a missing resource
+                // must return 412 (Precondition Failed) rather than 404 (Not Found).
+                if (
+                    ifMatchEtag is not null
+                    && targetResolution.ImmediateResult
+                        is RelationalWriteExecutorResult.Update(UpdateResult.UpdateFailureNotExists)
+                )
+                {
+                    return executorResultProjector(
+                        new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+                    );
+                }
+
                 return executorResultProjector(targetResolution.ImmediateResult);
             }
 
@@ -657,15 +836,17 @@ public sealed class RelationalDocumentStoreRepository(
                             DescriptorReferences: descriptorReferences
                         ),
                         targetContext: targetResolution.TargetContext!,
-                        profileWriteContext: profileWriteContext
+                        profileWriteContext: profileWriteContext,
+                        ifMatchEtag: ifMatchEtag
                     )
                 )
                 .ConfigureAwait(false);
 
-            if (
-                executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
-                && attemptIndex == 0
-            )
+            // A stale guarded no-op compare is only provisional on the first attempt.
+            // Re-run once against freshly resolved state so the caller either:
+            // - re-evaluates an unconditional write against current state, or
+            // - rechecks If-Match on the retried attempt.
+            if (ShouldRetryAfterStaleNoOpCompare(executorResult, attemptIndex))
             {
                 continue;
             }
@@ -894,6 +1075,28 @@ public sealed class RelationalDocumentStoreRepository(
         relationalGetRequest.ReadMode == RelationalGetRequestReadMode.ExternalResponse
         && relationalGetRequest.ReadableProfileProjectionContext is not null;
 
+    private static string GetCommittedResponseEtag(
+        JsonNode committedResponse,
+        [System.Runtime.CompilerServices.CallerMemberName] string callerName = ""
+    )
+    {
+        ArgumentNullException.ThrowIfNull(committedResponse);
+
+        if (
+            committedResponse is not JsonObject documentObject
+            || documentObject["_etag"] is not JsonValue etagValue
+            || !etagValue.TryGetValue(out string? etag)
+            || string.IsNullOrWhiteSpace(etag)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Committed relational readback did not produce an external response _etag. Caller: {callerName}"
+            );
+        }
+
+        return etag;
+    }
+
     private QueryResult BuildQuerySuccess(
         IRelationalQueryRequest relationalQueryRequest,
         QualifiedResourceName resource,
@@ -977,4 +1180,11 @@ public sealed class RelationalDocumentStoreRepository(
                 paramName
             );
     }
+
+    private static bool ShouldRetryAfterStaleNoOpCompare(
+        RelationalWriteExecutorResult executorResult,
+        int attemptIndex
+    ) =>
+        executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
+        && attemptIndex == 0;
 }
