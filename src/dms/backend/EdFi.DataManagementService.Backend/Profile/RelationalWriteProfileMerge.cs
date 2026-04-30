@@ -1671,16 +1671,18 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// canonicalization to resolve document-reference natural-key parts deterministically.
     /// The per-row request/stored helpers use <c>(bindingIndex, ordinalPath)</c> via
     /// <see cref="FlatteningResolvedReferenceLookupSet.GetDocumentId"/> for request-side
-    /// resolution, but an ancestor's ordinal path is not directly observable from the
-    /// address. Instead, ancestor canonicalization scans the ancestor's scope-wide current
-    /// rows for a unique row whose natural-key columns match the stored natural-key parts
-    /// and reads the resolved backend document id directly from the matched row's FK column.
-    /// This mirrors the per-row Strategy-2 scalar-match fallback in
-    /// <see cref="TryResolveDocumentIdFromCurrentRows"/>, narrowed to scope-wide current
-    /// rows because index-build time has no per-(scope, parent-instance) partitioning.
-    /// When the natural-key parts cannot be uniquely resolved against the current rows,
-    /// the helper fails closed (rather than leaving the URI/natural-key in place silently)
-    /// to avoid the same lookup-miss-via-form-mismatch shape the descriptor pass closes.</para>
+    /// resolution; the ancestor pass mirrors that on the request side via the child's
+    /// derived ordinal-path prefix and otherwise scans the current rows for a unique row
+    /// whose natural-key columns match the stored natural-key parts and reads the resolved
+    /// backend document id directly from the matched row's FK column. The current-row scan
+    /// is restricted to the target parent partition (looked up in
+    /// <paramref name="currentRowsByJsonScopeAndParent"/> by <c>(ancestor scope, canonical
+    /// target parent address)</c>) so siblings in different parent instances are not
+    /// treated as ambiguous matches — Slice 5 design line 47, mirroring the descriptor
+    /// pass's partitioning. When the natural-key parts cannot be uniquely resolved within
+    /// that partition (and the request-side cache also misses), the helper fails closed
+    /// rather than leaving the URI/natural-key in place silently, avoiding the same
+    /// lookup-miss-via-form-mismatch shape the descriptor pass closes.</para>
     ///
     /// <para>If <paramref name="address"/> has no ancestor instances, returns the original
     /// reference unchanged. If no ancestor changes, returns the original reference.</para>
@@ -1884,7 +1886,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                     documentReferenceParts,
                     ancestor.JsonScope,
                     resolvedReferenceLookups,
-                    ancestorRows,
+                    canonicalParentAddress,
+                    currentRowsByJsonScopeAndParent,
                     ancestorRequestOrdinalPath,
                     ancestorHasRequestOrdinalPath
                 );
@@ -2073,10 +2076,24 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <see cref="AncestorCollectionInstance.SemanticIdentityInOrder"/>. Each
     /// <see cref="DocumentReferenceIdentityPart"/> identifies an FK-backed identity slot
     /// and the reference natural-key bindings on the ancestor's table. Resolution scans
-    /// <paramref name="currentRows"/> for a unique row whose natural-key columns match the
-    /// stored identity parts (Shape A — scope-wide adaptation of the per-row Strategy-2
-    /// scalar match in <see cref="TryResolveByReferenceScalarMatch"/>); the matched row's
+    /// the current rows scoped to the target parent partition (looked up in
+    /// <paramref name="currentRowsByJsonScopeAndParent"/> by
+    /// <c>(ancestorJsonScope, canonicalTargetParentAddress)</c>) for a unique row whose
+    /// natural-key columns match the stored identity parts (Strategy-2 scalar match
+    /// adapted from <see cref="TryResolveByReferenceScalarMatch"/>); the matched row's
     /// FK column yields the backend document id.
+    /// <para>
+    /// Slice 5 design line 47 — and the descriptor-pass mirror at
+    /// <see cref="TryResolveAncestorDescriptorIdFromCurrentRows"/> — require the scan to
+    /// be parent-partitioned, not scope-wide. A valid nested shape can have the same
+    /// referenced document natural key under two different parent instances; a scope-wide
+    /// scan would treat that as ambiguous and fail closed even though each parent
+    /// partition has exactly one valid match. When the partition map has no entry for the
+    /// target (e.g., extension-child parents whose containing-scope address could not be
+    /// derived), the partition lookup returns empty and the row scan resolves to null —
+    /// the request-cycle reference cache may still resolve (inserted parents), otherwise
+    /// the helper fails closed below.
+    /// </para>
     /// <para>
     /// Slice 5 CP2 (Task 12.7): natural-key matching is descriptor-aware. When the natural
     /// key contains a <see cref="ColumnKind.DescriptorFk"/> part (e.g.,
@@ -2089,25 +2106,41 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <see cref="DocumentReferenceIdentityPartsMatch"/>.
     /// </para>
     /// <para>
-    /// When deterministic resolution fails — no current rows, no scalar parts, ambiguous
+    /// When deterministic resolution fails — no partition rows, no scalar parts, ambiguous
     /// or no match — the helper fails closed (Shape B) with a descriptive
     /// <see cref="InvalidOperationException"/>. Silent partial canonicalization is
     /// explicitly avoided: a stale natural-key form would mask the same lookup-miss shape
     /// in nested recursion that the descriptor pass closes for descriptor URIs.
     /// </para>
     /// </summary>
-    private static ImmutableArray<SemanticIdentityPart> CanonicalizeAncestorDocumentReferenceParts(
+    internal static ImmutableArray<SemanticIdentityPart> CanonicalizeAncestorDocumentReferenceParts(
         ImmutableArray<SemanticIdentityPart> identity,
         TableWritePlan ancestorTablePlan,
         IReadOnlyList<DocumentReferenceIdentityPart> documentReferenceParts,
         string ancestorJsonScope,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        ImmutableArray<CurrentCollectionRowSnapshot> currentRows,
+        ScopeInstanceAddress canonicalTargetParentAddress,
+        IReadOnlyDictionary<
+            (string JsonScope, ScopeInstanceAddress ParentAddress),
+            ImmutableArray<CurrentCollectionRowSnapshot>
+        > currentRowsByJsonScopeAndParent,
         ReadOnlySpan<int> ancestorRequestOrdinalPath,
         bool hasRequestOrdinalPath
     )
     {
         ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+        // Slice 5 design line 47: partition the row scan by the target parent address so
+        // siblings in different parent instances are not treated as ambiguous matches. The
+        // request-cycle reference cache lookup below stays unchanged — it is keyed by
+        // (BindingIndex, ordinalPath) and is already partition-correct by construction.
+        var partitionCurrentRows =
+            currentRowsByJsonScopeAndParent.TryGetValue(
+                (ancestorJsonScope, canonicalTargetParentAddress),
+                out var partitionRows
+            ) && !partitionRows.IsDefault
+                ? partitionRows
+                : ImmutableArray<CurrentCollectionRowSnapshot>.Empty;
 
         foreach (var documentIdentityPart in documentReferenceParts)
         {
@@ -2152,18 +2185,21 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 );
             }
 
-            // Stored-side path or request-side cache miss: fall back to the current-row scan.
-            // Matched-update parents always have a current row, so this preserves the prior
-            // behavior; for the request-side path, the cache hit takes precedence so inserted
-            // parents resolve via the cache instead of failing closed against an empty
-            // current-rows table.
+            // Stored-side path or request-side cache miss: fall back to the current-row scan
+            // restricted to the target parent partition (Slice 5 design line 47). Matched-update
+            // parents always have a current row in their partition, so this preserves the prior
+            // behavior for the single-partition case while closing the false-ambiguity gap when
+            // the same referenced document natural key appears under two different parent
+            // instances. For the request-side path, the cache hit above takes precedence so
+            // inserted parents resolve via the cache instead of failing closed against an empty
+            // partition.
             resolvedDocumentId ??= TryResolveAncestorDocumentReferenceIdFromCurrentRows(
                 identity,
                 documentReferenceParts,
                 documentIdentityPart,
                 ancestorTablePlan,
                 resolvedReferenceLookups,
-                currentRows
+                partitionCurrentRows
             );
 
             if (resolvedDocumentId is null)
@@ -2172,15 +2208,15 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                     "Cannot canonicalize document-reference ancestor identity for scope "
                         + $"'{LogSanitizer.SanitizeForLog(ancestorJsonScope)}': natural-key parts "
                         + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))} could not be "
-                        + "uniquely resolved against the parent table's current rows for FK column "
-                        + $"'{LogSanitizer.SanitizeForLog(documentIdentityPart.Binding.FkColumn.Value)}' "
+                        + "uniquely resolved against the target parent partition's current rows "
+                        + $"for FK column '{LogSanitizer.SanitizeForLog(documentIdentityPart.Binding.FkColumn.Value)}' "
                         + $"on table '{LogSanitizer.SanitizeForLog(ProfileBindingClassificationCore.FormatTable(ancestorTablePlan))}'. "
                         + "Slice 5 CP2 (Task 12.5) fails closed here to avoid the same "
                         + "lookup-miss-via-form-mismatch shape that ancestor descriptor "
                         + "canonicalization closes for descriptor URIs. This typically indicates "
-                        + "either current-row coverage is incomplete for the ancestor's scope or "
-                        + $"the natural-key parts (count: {currentRows.Length} current rows for "
-                        + "the ancestor scope) are ambiguous across multiple parents."
+                        + "either partition coverage is incomplete for the ancestor's parent "
+                        + $"address or the natural-key parts (count: {partitionCurrentRows.Length} "
+                        + "current rows in the target parent partition) are ambiguous within it."
                 );
             }
 
@@ -2200,8 +2236,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// the reference natural-key parts in <paramref name="identity"/>, then returns the
     /// matched row's FK column value at <paramref name="targetPart"/>. Mirrors
     /// <see cref="TryResolveDocumentIdFromCurrentRows"/>'s full-match then scalar-fallback
-    /// strategies, adapted to scope-wide ancestor canonicalization where positional fallback
-    /// is not available.
+    /// strategies. Callers (the ancestor canonicalization path) restrict
+    /// <paramref name="currentRows"/> to a single parent partition so the uniqueness checks
+    /// here do not conflate siblings in different parent instances; positional fallback is
+    /// not available at ancestor canonicalization time.
     /// <para>
     /// Slice 5 CP2 (Task 12.7): natural-key matching is descriptor-aware — when the natural
     /// key contains a <see cref="ColumnKind.DescriptorFk"/> part, the stored URI is
