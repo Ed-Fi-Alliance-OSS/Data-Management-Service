@@ -50,26 +50,31 @@ internal static class ProfileCollectionPlanner
     /// </summary>
     private static ProfileCollectionPlanResult BuildMergedVisibleSequence(ProfileCollectionScopeInput input)
     {
-        // Build a lookup from semantic identity key → CurrentCollectionRowSnapshot, restricted to
-        // those rows that also appear in VisibleStoredRows. This is the "matched" set for this scope.
-        var visibleStoredKeys = input
-            .VisibleStoredRows.Select(r => SemanticIdentityKeys.BuildKey(r.Address.SemanticIdentityInOrder))
-            .ToHashSet();
-
-        // currentByIdentity was already validated in invariants; rebuild cheaply for the matching pass.
-        var matchedCurrentByIdentity = input
-            .CurrentRows.Where(r =>
-                visibleStoredKeys.Contains(SemanticIdentityKeys.BuildKey(r.SemanticIdentityInOrder))
+        // Pre-compute the semantic identity key for every visible-stored row and current row
+        // exactly once, then drive every downstream lookup off the cached pair. The previous
+        // implementation built each row's key 2-4x across the four indexes plus the Phase 2
+        // loop; the cached form is behavior-preserving and keeps the same invariant-ordering
+        // contract (ValidateInvariants is untouched and still runs first via Plan).
+        var visibleStoredEntries = input
+            .VisibleStoredRows.Select(row =>
+                (Row: row, Key: SemanticIdentityKeys.BuildKey(row.Address.SemanticIdentityInOrder))
             )
-            .ToDictionary(r => SemanticIdentityKeys.BuildKey(r.SemanticIdentityInOrder));
+            .ToArray();
+        var visibleStoredByIdentity = visibleStoredEntries.ToDictionary(p => p.Key, p => p.Row);
+
+        var currentRowEntries = input
+            .CurrentRows.Select(row =>
+                (Row: row, Key: SemanticIdentityKeys.BuildKey(row.SemanticIdentityInOrder))
+            )
+            .ToArray();
+
+        // Matched current rows are those whose semantic identity also appears in visible-stored.
+        var matchedCurrentByIdentity = currentRowEntries
+            .Where(p => visibleStoredByIdentity.ContainsKey(p.Key))
+            .ToDictionary(p => p.Key, p => p.Row);
 
         // Build candidate lookup for retrieving the CollectionWriteCandidate per request item.
         var candidateByIdentityKey = input.RequestCandidates.ToDictionary(SemanticIdentityKeys.BuildKey);
-
-        // Also build visible-stored lookup to retrieve HiddenMemberPaths per matched row.
-        var visibleStoredByIdentity = input.VisibleStoredRows.ToDictionary(r =>
-            SemanticIdentityKeys.BuildKey(r.Address.SemanticIdentityInOrder)
-        );
 
         // Phase 1: build mergedVisibleSequence in request order.
         var mergedVisibleSequence = new List<ProfileCollectionPlanEntry>();
@@ -109,9 +114,8 @@ internal static class ProfileCollectionPlanner
             capacity: input.CurrentRows.Length + mergedVisibleSequence.Count
         );
         var mergedCursor = 0;
-        foreach (var currentRow in input.CurrentRows)
+        foreach (var (currentRow, currentKey) in currentRowEntries)
         {
-            var currentKey = SemanticIdentityKeys.BuildKey(currentRow.SemanticIdentityInOrder);
             if (!visibleStoredByIdentity.ContainsKey(currentKey))
             {
                 // Hidden slot: preserve verbatim.
