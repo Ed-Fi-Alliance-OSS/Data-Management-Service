@@ -3058,102 +3058,35 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
     /// <summary>
     /// Resolves a concrete JSON array item node from <paramref name="requestBody"/> using a
-    /// path like <c>$.classPeriods[0]</c>. Used as a fallback when the built-in
-    /// <see cref="RelationalWriteFlattener.TryGetRelativeLeafNode"/> cannot navigate
-    /// array-indexed paths directly.
+    /// path like <c>$.classPeriods[0]</c>. Delegates to
+    /// <see cref="RelationalJsonPathSupport.ParseConcretePath"/> +
+    /// <see cref="RelationalWriteFlattener.TryNavigateConcreteNode"/> so concrete-path
+    /// semantics live in one place. Returns <c>null</c> for malformed paths or paths that
+    /// do not resolve to a node, matching the previous local-walker behavior.
     /// </summary>
     internal static JsonNode? ResolveCollectionItemNode(JsonNode requestBody, string requestJsonPath)
     {
-        // Simple path walker: splits on '[' and ']' to handle array-indexed paths.
-        // E.g. "$.classPeriods[0]" → navigate to "classPeriods" array, then element 0.
         try
         {
-            JsonNode? current = requestBody;
-            // Strip leading "$." or "$"
-            var path = requestJsonPath.StartsWith("$.", StringComparison.Ordinal)
-                ? requestJsonPath[2..]
-                : requestJsonPath.TrimStart('$').TrimStart('.');
-
-            foreach (var segment in SplitJsonPathSegments(path))
-            {
-                if (current is null)
-                {
-                    return null;
-                }
-
-                if (int.TryParse(segment, out var arrayIndex))
-                {
-                    current = current is JsonArray arr && arrayIndex < arr.Count ? arr[arrayIndex] : null;
-                }
-                else
-                {
-                    current = current is JsonObject obj ? obj[segment] : null;
-                }
-            }
-
-            return current;
+            var parsed = RelationalJsonPathSupport.ParseConcretePath(new JsonPath(requestJsonPath));
+            var segments = RelationalJsonPathSupport.GetRestrictedSegments(
+                new JsonPathExpression(parsed.WildcardPath, [])
+            );
+            return RelationalWriteFlattener.TryNavigateConcreteNode(
+                requestBody,
+                segments,
+                parsed.OrdinalPath.AsSpan(),
+                out var resolved
+            )
+                ? resolved
+                : null;
         }
-        catch
+        catch (InvalidOperationException)
         {
+            // ParseConcretePath / GetRestrictedSegments throws for malformed input; preserve
+            // the previous null-on-not-resolved contract.
             return null;
         }
-    }
-
-    private static IEnumerable<string> SplitJsonPathSegments(string path)
-    {
-        // Split "addresses[0]" into ["addresses", "0"]
-        var segments = new List<string>();
-        var remaining = path;
-        while (!string.IsNullOrEmpty(remaining))
-        {
-            var dotIdx = remaining.IndexOf('.');
-            var bracketIdx = remaining.IndexOf('[');
-
-            if (dotIdx == -1 && bracketIdx == -1)
-            {
-                segments.Add(remaining);
-                break;
-            }
-
-            int nextIdx;
-            if (dotIdx == -1)
-            {
-                nextIdx = bracketIdx;
-            }
-            else if (bracketIdx == -1)
-            {
-                nextIdx = dotIdx;
-            }
-            else
-            {
-                nextIdx = Math.Min(dotIdx, bracketIdx);
-            }
-
-            if (nextIdx > 0)
-            {
-                segments.Add(remaining[..nextIdx]);
-            }
-
-            if (nextIdx == bracketIdx)
-            {
-                var closeIdx = remaining.IndexOf(']', bracketIdx);
-                if (closeIdx > bracketIdx + 1)
-                {
-                    segments.Add(remaining[(bracketIdx + 1)..closeIdx]);
-                    remaining = remaining[(closeIdx + 1)..].TrimStart('.');
-                }
-                else
-                {
-                    break;
-                }
-            }
-            else
-            {
-                remaining = remaining[(dotIdx + 1)..];
-            }
-        }
-
-        return segments;
     }
 
     private static IReadOnlyList<object?[]>? TryFindHydratedRowsForTable(
