@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Profile;
 
@@ -20,8 +19,8 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// matched-row classifier's <c>Exact</c> rule.
 /// </summary>
 /// <remarks>
-/// Slice 5 CP4 retired the executor fence on collection-descendant inlined non-collection
-/// scopes. Without this expansion the row's <c>HiddenMemberPaths</c> only reflects the
+/// Slice 5 CP4 allows collection-descendant inlined non-collection scopes to reach profile
+/// merge. Without this expansion the row's <c>HiddenMemberPaths</c> only reflects the
 /// collection scope's own member filter — Core's <c>StoredSideExistenceLookupBuilder</c>
 /// emits descendant inlined scopes' hidden paths in separate <c>StoredScopeStates</c>,
 /// which the row-level classifier never consults. A profile that pairs a permissive
@@ -128,7 +127,7 @@ internal static class ProfileCollectionRowHiddenPathExpander
                 continue;
             }
 
-            var rowIdentityKey = BuildSemanticIdentityKey(lastAncestor.SemanticIdentityInOrder);
+            var rowIdentityKey = SemanticIdentityKeys.BuildKey(lastAncestor.SemanticIdentityInOrder);
             var relativeScopePath = stateScope[scopePrefix.Length..];
 
             additionsByRowIdentityKey ??= new Dictionary<string, List<string>>(StringComparer.Ordinal);
@@ -152,7 +151,7 @@ internal static class ProfileCollectionRowHiddenPathExpander
         var builder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(rows.Length);
         foreach (var row in rows)
         {
-            var rowKey = BuildSemanticIdentityKey(row.Address.SemanticIdentityInOrder);
+            var rowKey = SemanticIdentityKeys.BuildKey(row.Address.SemanticIdentityInOrder);
             if (additionsByRowIdentityKey.TryGetValue(rowKey, out var additions) && additions.Count > 0)
             {
                 var combined = new HashSet<string>(StringComparer.Ordinal);
@@ -176,13 +175,4 @@ internal static class ProfileCollectionRowHiddenPathExpander
         }
         return builder.MoveToImmutable();
     }
-
-    /// <summary>
-    /// Serializes a semantic-identity sequence to a stable string key by joining each part's
-    /// JSON-string representation with a pipe delimiter. Mirrors
-    /// <see cref="ProfileCollectionPlanner"/>'s key shape so descendant ancestor identities and
-    /// row identities compare under the same normalization.
-    /// </summary>
-    private static string BuildSemanticIdentityKey(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join("|", identity.Select(p => p.Value?.ToJsonString() ?? "null"));
 }

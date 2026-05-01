@@ -865,8 +865,8 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
         var requestBody = JsonNode.Parse(RequestBodyJson)!;
 
         // Build a profile context with only the $ scope (no inlined or collection scopes).
-        // The slice-fence classifier returns RootTableOnly and the profile merge synthesizer
-        // produces a root-only merge result; the persister leaves the extension table alone.
+        // The profile merge synthesizer produces a root-only merge result; the persister leaves
+        // the extension table alone.
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
         var rootScopeState = new RequestScopeState(
             Address: new ScopeInstanceAddress("$", []),

@@ -63,7 +63,7 @@ internal sealed record RelationalWriteProfileMergeRequest
         {
             throw new ArgumentException(
                 "Slice 4 profile merge top-level collection candidates must carry "
-                    + "DbTableKind.Collection (root-attached base collection). Other root-candidate table kinds are fenced and must be addressed in a later slice.",
+                    + "DbTableKind.Collection (root-attached base collection). Other root-candidate table kinds must be handled by their own merge paths.",
                 nameof(flattenedWriteSet)
             );
         }
@@ -233,9 +233,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         }
 
         // 2. Per-separate-table merge for every non-root table in dependency order. Plans may
-        //    legitimately carry non-RootExtension tables that the executor's slice-fence has
-        //    fenced out of the request path; those are silently skipped here so the
-        //    no-profile persister can handle their rows unchanged.
+        //    legitimately carry non-RootExtension tables that the current request did not
+        //    exercise; those are silently skipped here so the no-profile persister can handle
+        //    their rows unchanged.
 
         for (
             var tableIndex = 1;
@@ -249,10 +249,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 // Slice 3 handles only root-attached RootExtension tables. Plans may
                 // carry unused Collection / ExtensionCollection / CollectionExtensionScope
                 // tables (e.g., a multi-table School plan where the profiled request touches
-                // only root scopes). The executor's slice-fence ensures the request itself
-                // does not exercise those scopes; the synthesizer silently leaves them
-                // untouched so their rows flow through the no-profile persister path
-                // unchanged (matching slice 2's multi-table-but-root-only-runtime behavior).
+                // only root scopes). The synthesizer silently leaves them untouched so their
+                // rows flow through the no-profile persister path unchanged.
                 continue;
             }
 

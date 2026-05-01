@@ -612,8 +612,8 @@ public sealed record RelationalWriteExecutorRequest
 
     /// <summary>
     /// Optional profile write context when a writable profile applies.
-    /// Null when no profile applies. Downstream stages use this to decide
-    /// whether to run the no-profile merge/persist path or fence for DMS-1124.
+    /// Null when no profile applies. Downstream stages use this to decide whether to run the
+    /// profile-constrained flatten/merge path or the no-profile merge/persist path.
     /// </summary>
     public BackendProfileWriteContext? ProfileWriteContext { get; init; }
 }

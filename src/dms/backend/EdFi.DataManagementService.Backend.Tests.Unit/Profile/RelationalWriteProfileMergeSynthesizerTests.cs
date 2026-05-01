@@ -1052,9 +1052,8 @@ public class Given_Synthesizer_SeparateTable_HiddenStored_Preserves_With_Identic
 /// Regression pin: slice-3 synthesizer must silently skip plan tables whose kind is
 /// not <see cref="DbTableKind.RootExtension"/> instead of throwing. Reproduces the
 /// multi-table School write-plan scenario (root + root-extension + collection-extension-scope)
-/// where the profiled request only exercises root scopes — the executor's slice-fence
-/// keeps the request from touching the collection-extension-scope table, so the
-/// synthesizer must let it pass through untouched (the no-profile persister handles it).
+/// where the profiled request only exercises root scopes, so the synthesizer must let the
+/// collection-extension-scope table pass through untouched (the no-profile persister handles it).
 /// </summary>
 [TestFixture]
 public class Given_Synthesizer_With_Multi_Table_Plan_And_Unused_Collection_Scope_Skips_Silently
@@ -6550,9 +6549,8 @@ public class Given_reference_backed_top_level_collection_with_descriptor_in_natu
 // an extra scalar column for hidden-member-path coverage).
 //
 // The walker's behavior is directly testable via Synthesize because CP2 Task 12
-// retired the constructor-side fence on nested CollectionCandidates. The
-// executor's RequiredSliceFamily.NestedAndExtensionCollections fence remains in
-// place — these tests bypass the executor entirely.
+// retired the constructor-side fence on nested CollectionCandidates. These tests
+// exercise walker behavior directly instead of going through the full executor pipeline.
 // ────────────────────────────────────────────────────────────────────────────
 
 /// <summary>

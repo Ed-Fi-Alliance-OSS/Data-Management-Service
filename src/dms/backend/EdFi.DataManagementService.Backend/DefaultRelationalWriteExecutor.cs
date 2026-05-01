@@ -233,69 +233,11 @@ internal sealed class DefaultRelationalWriteExecutor(
                     );
                 }
 
-                // Step 4: Slice-fence classification
-                // CompiledScopeCatalog includes any inlined (non-table-backed) scopes the profile
-                // middleware discovered via ContentTypeScopeDiscovery. Extract them by difference
-                // so the topology index inherits the correct ancestor topology for each one.
-                var tableBackedScopes = new HashSet<string>(
-                    request.WritePlan.TablePlansInDependencyOrder.Select(tp =>
-                        tp.TableModel.JsonScope.Canonical
-                    ),
-                    StringComparer.Ordinal
-                );
-                var inlinedScopes = profileWriteContext
-                    .CompiledScopeCatalog.Where(d => !tableBackedScopes.Contains(d.JsonScope))
-                    .Select(d => (d.JsonScope, d.ScopeKind))
-                    .ToArray();
-                var topologyIndex = ScopeTopologyIndex.BuildFromWritePlan(request.WritePlan, inlinedScopes);
-                var requiredFamily = profileAppliedWriteContext is not null
-                    ? ProfileSliceFenceClassifier.ClassifyForExistingDocument(
-                        profileAppliedWriteContext,
-                        topologyIndex
-                    )
-                    : ProfileSliceFenceClassifier.ClassifyForCreateNew(
-                        effectiveProfileRequest,
-                        topologyIndex
-                    );
-
-                // Slice 3 widens the fence for root-attached separate-table scopes
-                // (e.g. $._ext.sample on School). Slice 5 CP3 also allows
-                // collection-aligned separate-table scopes; both shapes classify as
-                // SeparateTableNonCollection and now flow through the same executor path.
-                // Slice 4 widens the fence to TopLevelCollection requests; Slice 5 CP4
-                // retires the prior TopLevelCollectionFenceGate (the walker's topology-
-                // driven child enumeration now handles inlined top-level collections,
-                // collection-descendant inlined non-collection scopes, and the other
-                // shapes the predicate fenced). Slice 5 CP4 also opens the slice gate on
-                // NestedAndExtensionCollections: nested base collections, root-extension
-                // child collections, collection-aligned 1:1 extension scopes, and nested
-                // collections under aligned-extension scopes all flow through to the
-                // synthesizer.
-                bool fencePassed = requiredFamily switch
-                {
-                    RequiredSliceFamily.RootTableOnly => true,
-                    RequiredSliceFamily.SeparateTableNonCollection => true,
-                    RequiredSliceFamily.TopLevelCollection => true,
-                    RequiredSliceFamily.NestedAndExtensionCollections => true,
-                    _ => throw new InvalidOperationException(
-                        $"Unhandled RequiredSliceFamily '{requiredFamily}' at the profile fence gate. "
-                            + "A new family was added without updating the executor's fence switch."
-                    ),
-                };
-
-                if (!fencePassed)
-                {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return BuildSliceFenceResult(request.OperationKind, requiredFamily);
-                }
-
-                // Slice-2 classification passed: flatten + profile synthesize. The profile merge
-                // synthesizer itself is root-only, but the compiled write plan may still carry
-                // multiple tables — those remain valid Slice 2 inputs as long as the flattened
-                // handoff is root-only. Non-root flattened buffers on the root row (root-extension
-                // rows, collection candidates) must fail closed; the synthesizer's input contract
-                // enforces that invariant so upstream fencing bugs surface here rather than
-                // silently producing a partial merge result.
+                // Step 4: Profile flattening and synthesis
+                // Contract validation has already rejected mismatches between the profile and the
+                // write contract. Profile-constrained writes now proceed directly to flattening and
+                // profile merge synthesis; the synthesizer's input contracts still fail closed for
+                // invalid flattened buffers rather than silently producing a partial merge result.
                 var profileFlattenedWriteSet = _writeFlattener.Flatten(
                     new FlatteningInput(
                         executionRequest.OperationKind,
@@ -646,24 +588,6 @@ internal sealed class DefaultRelationalWriteExecutor(
     )
     {
         var message = $"Profile write contract mismatch: {failures[0].Message}";
-        return operationKind switch
-        {
-            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UnknownFailure(message)
-            ),
-            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UnknownFailure(message)
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
-        };
-    }
-
-    private static RelationalWriteExecutorResult BuildSliceFenceResult(
-        RelationalWriteOperationKind operationKind,
-        RequiredSliceFamily requiredFamily
-    )
-    {
-        var message = $"Profile-aware persist for {requiredFamily} shapes is not yet supported (DMS-1124).";
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(

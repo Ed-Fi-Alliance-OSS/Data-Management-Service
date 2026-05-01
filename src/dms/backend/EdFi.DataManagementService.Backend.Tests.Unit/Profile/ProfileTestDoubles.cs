@@ -693,8 +693,7 @@ internal static class ProfileTestDoubles
     /// <see cref="DbTableKind.CollectionExtensionScope"/>) that the slice-3 synthesizer
     /// must silently skip. Used to exercise the synthesizer's "carry unused tables
     /// through" behavior when the write plan contains non-root-extension scopes the
-    /// current request never touches (the executor's slice-fence ensures the request
-    /// itself avoids those scopes).
+    /// current request never touches.
     /// </summary>
     internal static ResourceWritePlan BuildRootPlusRootExtensionPlusUnusedTablePlan(
         RootExtensionBindingSpec extensionBinding,

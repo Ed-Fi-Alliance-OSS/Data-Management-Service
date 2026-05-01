@@ -465,8 +465,8 @@ internal static class ProfileBindingClassificationCore
                     throw new InvalidOperationException(
                         $"Table '{FormatTable(tableWritePlan)}' contains a "
                             + $"{nameof(WriteValueSource.Ordinal)} binding at index {bindingIndex}, "
-                            + "which the profile-aware binding classifier does not support in slice 3. "
-                            + "Collection-shaped scopes must be fenced upstream."
+                            + "which the non-collection profile-aware binding classifier does not support. "
+                            + "Collection-shaped scopes must use row-level classification."
                     );
                 }
                 return RootBindingDisposition.StorageManaged;
@@ -688,8 +688,8 @@ internal static class ProfileBindingClassificationCore
     /// longest table-backed JSON-scope prefix with segment-boundary semantics. Returns
     /// <c>null</c> if no table-backed ancestor exists (e.g., the scope itself is not under
     /// any table-backed scope canonical). Shares prefix semantics with
-    /// <see cref="ResolveOwnerTableScope"/> so fence-gate ownership lookups and
-    /// per-table classification ownership resolution use identical rules.
+    /// <see cref="ResolveOwnerTableScope"/> so profile-scope ownership lookups and per-table
+    /// classification ownership resolution use identical rules.
     /// </summary>
     internal static TableWritePlan? ResolveOwnerTablePlan(string scopeAddress, ResourceWritePlan writePlan)
     {
