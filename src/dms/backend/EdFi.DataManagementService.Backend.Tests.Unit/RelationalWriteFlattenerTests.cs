@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -4362,4 +4363,171 @@ public class Given_RelationalWriteFlattener
             return new JsonPathExpression(canonical, segments);
         }
     }
+}
+
+/// <summary>
+/// Regression for the inlined-parent-collection traversal gap: when a collection table's
+/// JsonScope is <c>$.parents[*].detail.children[*]</c>, the immediate JSON parent
+/// (<c>$.parents[*].detail</c>) is an inlined non-collection scope with no backing table
+/// plan. The flattener must still reach the children table by routing the child plan
+/// through the nearest table-backed ancestor (<c>$.parents[*]</c>) so each parent
+/// candidate carries its child collection candidates with the parent's PhysicalRowIdentity
+/// stamped into the parent-key slot.
+/// </summary>
+[TestFixture]
+public class Given_RelationalWriteFlattener_with_an_inlined_parent_collection
+{
+    private const long DocumentId = 345L;
+    private RelationalWriteFlattener _sut = null!;
+    private ResourceWritePlan _writePlan = null!;
+    private DocumentUuid _documentUuid;
+
+    [SetUp]
+    public void Setup()
+    {
+        _sut = new RelationalWriteFlattener();
+        var (plan, _, _) = NestedTopologyBuilders.BuildRootParentsAndDetailChildrenPlan();
+        _writePlan = plan;
+        _documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+    }
+
+    [Test]
+    public void It_emits_inlined_parent_nested_collection_candidates_under_the_owning_parent_candidate()
+    {
+        var body = JsonNode.Parse(
+            """
+            {
+              "parents": [
+                {
+                  "identityField0": "A",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "A1" },
+                      { "identityField0": "A2" }
+                    ]
+                  }
+                },
+                {
+                  "identityField0": "B",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "B1" }
+                    ]
+                  }
+                }
+              ]
+            }
+            """
+        )!;
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(DocumentId, _documentUuid),
+            _writePlan,
+            body,
+            EmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        var parentCandidates = result.RootRow.CollectionCandidates;
+        parentCandidates.Should().HaveCount(2, "the request body has two top-level parent rows");
+
+        var parentACandidate = parentCandidates[0];
+        parentACandidate.SemanticIdentityValues.Should().Equal("A");
+        var parentACollectionItemId = parentACandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+
+        parentACandidate
+            .CollectionCandidates.Should()
+            .HaveCount(
+                2,
+                "parent A's `detail.children` array has two items reachable through the inlined `detail` scope"
+            );
+
+        var parentAFirstChild = parentACandidate.CollectionCandidates[0];
+        parentAFirstChild.OrdinalPath.Should().Equal(0, 0);
+        parentAFirstChild.RequestOrder.Should().Be(0);
+        parentAFirstChild.SemanticIdentityValues.Should().Equal("A1");
+        // Children plan layout: [ChildItemId, ParentItemId, Ordinal, IdentityField0].
+        // ParentItemId binds via WriteValueSource.ParentKeyPart(0) so it must point at the
+        // owning parent candidate's PhysicalRowIdentity slot 0 (the parent's CollectionItemId).
+        parentAFirstChild
+            .Values[1]
+            .Should()
+            .BeSameAs(
+                parentACollectionItemId,
+                "the parent-key slot resolves to the owning parent candidate's CollectionItemId"
+            );
+        parentAFirstChild.Values[2].Should().Be(new FlattenedWriteValue.Literal(0));
+        parentAFirstChild.Values[3].Should().Be(new FlattenedWriteValue.Literal("A1"));
+
+        var parentASecondChild = parentACandidate.CollectionCandidates[1];
+        parentASecondChild.OrdinalPath.Should().Equal(0, 1);
+        parentASecondChild.RequestOrder.Should().Be(1);
+        parentASecondChild.SemanticIdentityValues.Should().Equal("A2");
+        parentASecondChild.Values[1].Should().BeSameAs(parentACollectionItemId);
+
+        var parentBCandidate = parentCandidates[1];
+        parentBCandidate.SemanticIdentityValues.Should().Equal("B");
+        var parentBCollectionItemId = parentBCandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        parentBCandidate.CollectionCandidates.Should().HaveCount(1);
+        var parentBOnlyChild = parentBCandidate.CollectionCandidates[0];
+        parentBOnlyChild.OrdinalPath.Should().Equal(1, 0);
+        parentBOnlyChild.SemanticIdentityValues.Should().Equal("B1");
+        // Cross-parent key isolation: B's child must reference B's CollectionItemId, not A's.
+        parentBOnlyChild.Values[1].Should().BeSameAs(parentBCollectionItemId);
+        parentBOnlyChild.Values[1].Should().NotBeSameAs(parentACollectionItemId);
+    }
+
+    [Test]
+    public void It_rejects_duplicate_inlined_parent_nested_collection_semantic_identity_values_under_the_same_parent()
+    {
+        var body = JsonNode.Parse(
+            """
+            {
+              "parents": [
+                {
+                  "identityField0": "A",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "X" },
+                      { "identityField0": "X" }
+                    ]
+                  }
+                }
+              ]
+            }
+            """
+        )!;
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(DocumentId, _documentUuid),
+            _writePlan,
+            body,
+            EmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+        act.Should().Throw<RelationalWriteRequestValidationException>();
+    }
+
+    private static ResolvedReferenceSet EmptyResolvedReferences() =>
+        new(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
 }

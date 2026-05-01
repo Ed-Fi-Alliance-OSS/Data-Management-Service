@@ -113,6 +113,17 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         ArgumentNullException.ThrowIfNull(writePlan);
 
+        // The traversal in MaterializeCollectionCandidates only re-enters table-backed
+        // scopes (root, root extension, collection rows, aligned-extension scopes), so a
+        // collection table whose immediate JSON parent is an inlined non-collection scope
+        // (e.g. $.parents[*].detail.children[*]) must be reached from its nearest
+        // table-backed ancestor with the inlined intermediate property segments folded
+        // into the child plan's relative path.
+        var tableBackedScopes = new HashSet<string>(
+            writePlan.TablePlansInDependencyOrder.Select(static plan => plan.TableModel.JsonScope.Canonical),
+            StringComparer.Ordinal
+        );
+
         Dictionary<string, List<CollectionChildPlan>> childPlansByParentScope = new(StringComparer.Ordinal);
 
         foreach (
@@ -138,9 +149,26 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 );
             }
 
-            var parentScopeSegments = scopeSegments[..^2];
+            // Walk the ancestor prefix from the immediate JSON parent back toward the
+            // root, picking the longest prefix whose canonical is table-backed. The root
+            // scope "$" (segment length 0) is always table-backed, so the loop is
+            // guaranteed to terminate.
+            var parentSegmentLength = scopeSegments.Length - 2;
+            while (parentSegmentLength > 0)
+            {
+                var candidateScope = RelationalJsonPathSupport.BuildCanonical(
+                    scopeSegments[..parentSegmentLength]
+                );
+                if (tableBackedScopes.Contains(candidateScope))
+                {
+                    break;
+                }
+                parentSegmentLength--;
+            }
+
+            var parentScopeSegments = scopeSegments[..parentSegmentLength];
             var parentScopeCanonical = RelationalJsonPathSupport.BuildCanonical(parentScopeSegments);
-            var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
+            var relativeScopeSegments = scopeSegments[parentSegmentLength..];
 
             if (!childPlansByParentScope.TryGetValue(parentScopeCanonical, out var childPlans))
             {

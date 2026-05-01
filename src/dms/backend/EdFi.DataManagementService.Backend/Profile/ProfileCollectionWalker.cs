@@ -67,6 +67,13 @@ internal sealed class ProfileCollectionWalker
         ImmutableArray<VisibleRequestCollectionItem>
     > _visibleRequestItemsByChildScopeAndParent;
 
+    private readonly HashSet<string> _tableBackedJsonScopes;
+
+    private readonly IReadOnlyDictionary<
+        (string JsonScope, ScopeInstanceAddress ParentAddress),
+        ImmutableArray<CurrentCollectionRowSnapshot>
+    > _currentRowsByJsonScopeAndParent;
+
     public ProfileCollectionWalker(
         RelationalWriteProfileMergeRequest request,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
@@ -88,6 +95,21 @@ internal sealed class ProfileCollectionWalker
         );
         _currentSeparateScopeRowsByTableAndParentIdentity = BuildCurrentSeparateScopeRowsIndex(_request);
 
+        // Set of table-backed JsonScopes used by EnumerateDirectChildCollectionScopes /
+        // ResolveEffectiveChildParentScopeAddress to detect collection tables whose
+        // immediate JSON parent is an inlined non-collection scope (e.g.
+        // $.parents[*].detail.children[*]). Such children dispatch from the nearest
+        // table-backed ancestor (the parent collection row) but their effective parent
+        // address carries the inlined JsonScope so the per-(scope, parent-instance)
+        // visible-stored / visible-request indexes — which Core keys by the inlined parent
+        // address — match.
+        _tableBackedJsonScopes = new HashSet<string>(
+            _request.WritePlan.TablePlansInDependencyOrder.Select(plan =>
+                plan.TableModel.JsonScope.Canonical
+            ),
+            StringComparer.Ordinal
+        );
+
         // Slice 5 CP2 fix: build a JsonScope→TableWritePlan map and a JsonScope→current-rows
         // map so visible-stored / visible-request index keys can canonicalize ancestor
         // identities at construction time. Without this, the indexes would be keyed by raw
@@ -100,7 +122,7 @@ internal sealed class ProfileCollectionWalker
             _request,
             _currentCollectionRowsByTableAndParentIdentity
         );
-        var currentRowsByJsonScopeAndParent = BuildCurrentRowsByJsonScopeAndParent(
+        _currentRowsByJsonScopeAndParent = BuildCurrentRowsByJsonScopeAndParent(
             _request,
             _currentCollectionRowsByTableAndParentIdentity
         );
@@ -110,7 +132,7 @@ internal sealed class ProfileCollectionWalker
             _request,
             tablePlanByJsonScope,
             currentRowsByJsonScope,
-            currentRowsByJsonScopeAndParent,
+            _currentRowsByJsonScopeAndParent,
             storedRowsByJsonScope,
             _resolvedReferenceLookups
         );
@@ -118,7 +140,7 @@ internal sealed class ProfileCollectionWalker
             _request,
             tablePlanByJsonScope,
             currentRowsByJsonScope,
-            currentRowsByJsonScopeAndParent,
+            _currentRowsByJsonScopeAndParent,
             storedRowsByJsonScope,
             _resolvedReferenceLookups
         );
@@ -160,14 +182,16 @@ internal sealed class ProfileCollectionWalker
 
         // The root case treats the synthetic ScopeInstanceAddress($, []) as the parent
         // address; nested cases re-enter this method with a non-root
-        // parentContext.ContainingScopeAddress.
-        var parentScopeAddress = parentContext.ContainingScopeAddress;
+        // parentContext.ContainingScopeAddress. Per-child the effective parent address
+        // may differ from parentContext.ContainingScopeAddress when the child's immediate
+        // JSON parent is an inlined non-collection scope (see
+        // ResolveEffectiveChildParentScopeAddress).
 
         // Iterate in TablePlansInDependencyOrder so first-rejection-wins is deterministic
         // across runs. Filter to direct topological children of the parent's JsonScope:
         // the root case yields top-level base collection tables; a nested-collection
-        // parent yields its direct nested-base collection tables (and, after CP3,
-        // CollectionExtensionScope children).
+        // parent yields its direct nested-base collection tables, CollectionExtensionScope
+        // children, and inlined-parent base/extension collection children.
         foreach (var tablePlan in EnumerateDirectChildCollectionScopes(parentContext))
         {
             var jsonScope = tablePlan.TableModel.JsonScope.Canonical;
@@ -188,11 +212,20 @@ internal sealed class ProfileCollectionWalker
                 ? ImmutableArray<CollectionWriteCandidate>.Empty
                 : candidates.ToImmutableArray();
 
+            // For inlined-parent children (e.g. $.parents[*].detail.children[*] dispatched
+            // from $.parents[*]) the visible-stored / visible-request indexes are keyed by
+            // the inlined parent JsonScope ($.parents[*].detail) carrying the parent
+            // collection row's ancestor chain. Resolve that effective parent address per
+            // child so the lookup matches Core-emitted addresses.
+            var effectiveParentScopeAddress = ResolveEffectiveChildParentScopeAddress(
+                parentContext,
+                jsonScope
+            );
+
             // Read visible-request items and visible-stored rows from the per-merge
             // indexes built at construction. The index is keyed by
-            // (childScope, parentAddress) so the same code path will serve nested
-            // cases once Tasks 9-11 land.
-            var visibleIndexKey = (jsonScope, parentScopeAddress);
+            // (childScope, parentAddress).
+            var visibleIndexKey = (jsonScope, effectiveParentScopeAddress);
             var visibleRequestItemsForScope = _visibleRequestItemsByChildScopeAndParent.TryGetValue(
                 visibleIndexKey,
                 out var visibleRequestItemBucket
@@ -336,7 +369,7 @@ internal sealed class ProfileCollectionWalker
 
             var input = new ProfileCollectionScopeInput(
                 JsonScope: jsonScope,
-                ParentScopeAddress: parentScopeAddress,
+                ParentScopeAddress: effectiveParentScopeAddress,
                 RequestCandidates: requestCandidatesForScope,
                 VisibleRequestItems: canonicalizedVisibleRequestItems,
                 VisibleStoredRows: canonicalizedVisibleStoredRows,
@@ -1117,12 +1150,104 @@ internal sealed class ProfileCollectionWalker
                 tableKind is DbTableKind.CollectionExtensionScope
                     ? IsDirectCollectionExtensionScopeChild(parentScope, childScope)
                         || IsDirectMirroredCollectionExtensionScopeChild(parentScope, childScope)
-                    : IsDirectTopologicalChild(parentScope, childScope)
+                    : IsTopologicallyOwnedCollectionChild(parentScope, childScope)
             )
             {
                 yield return tablePlan;
             }
         }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="childScope"/> is a base- or extension-
+    /// collection child whose nearest table-backed ancestor JsonScope equals
+    /// <paramref name="parentScope"/>. Generalizes <see cref="IsDirectTopologicalChild"/>
+    /// to admit shapes where the immediate JSON parent of the child collection is an
+    /// inlined non-collection scope (e.g.
+    /// <c>$.parents[*].detail.children[*]</c> from <c>$.parents[*]</c>): the
+    /// <c>detail</c> intermediate has no backing table plan, so the child must dispatch
+    /// from the parent collection row whose JsonScope is its nearest table-backed
+    /// ancestor.
+    /// </summary>
+    private bool IsTopologicallyOwnedCollectionChild(string parentScope, string childScope)
+    {
+        if (IsDirectTopologicalChild(parentScope, childScope))
+        {
+            return true;
+        }
+
+        if (!_tableBackedJsonScopes.Contains(parentScope))
+        {
+            return false;
+        }
+
+        return string.Equals(
+            ResolveNearestTableBackedAncestorScope(childScope),
+            parentScope,
+            StringComparison.Ordinal
+        );
+    }
+
+    /// <summary>
+    /// Walks up from a collection scope's immediate JSON parent (per
+    /// <see cref="ComputeParentJsonScope"/>) toward the document root, stripping inlined
+    /// property segments until a table-backed scope is reached. The root scope <c>$</c>
+    /// is always table-backed, so the walk is guaranteed to terminate.
+    /// </summary>
+    private string ResolveNearestTableBackedAncestorScope(string childScope)
+    {
+        var ancestor = ComputeParentJsonScope(childScope);
+        while (
+            !_tableBackedJsonScopes.Contains(ancestor)
+            && !string.Equals(ancestor, "$", StringComparison.Ordinal)
+        )
+        {
+            var lastDot = ancestor.LastIndexOf('.');
+            if (lastDot < 0)
+            {
+                return "$";
+            }
+            ancestor = ancestor[..lastDot];
+        }
+        return ancestor;
+    }
+
+    /// <summary>
+    /// Returns the effective parent <see cref="ScopeInstanceAddress"/> for dispatching the
+    /// child collection at <paramref name="childJsonScope"/> from
+    /// <paramref name="parentContext"/>. When the child's immediate JSON parent equals the
+    /// parent context's JsonScope (the standard direct-child case), the parent's own
+    /// containing-scope address is returned unchanged. When the child's immediate JSON
+    /// parent is an inlined non-collection scope below the parent context (e.g. child
+    /// <c>$.parents[*].detail.children[*]</c> dispatched from <c>$.parents[*]</c>), the
+    /// returned address carries the inlined JsonScope and the parent context's ancestor
+    /// chain — the inlined scope contributes no
+    /// <see cref="AncestorCollectionInstance"/> because it is not a collection instance.
+    /// This matches Core's <see cref="CollectionRowAddress.ParentAddress"/> shape for
+    /// such children, which the per-(scope, parent-instance) visible-stored /
+    /// visible-request indexes are keyed by.
+    /// </summary>
+    private static ScopeInstanceAddress ResolveEffectiveChildParentScopeAddress(
+        ProfileCollectionWalkerContext parentContext,
+        string childJsonScope
+    )
+    {
+        var immediateParentJsonScope = ComputeParentJsonScope(childJsonScope);
+        if (
+            string.Equals(
+                immediateParentJsonScope,
+                parentContext.ContainingScopeAddress.JsonScope,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return parentContext.ContainingScopeAddress;
+        }
+
+        return new ScopeInstanceAddress(
+            immediateParentJsonScope,
+            parentContext.ContainingScopeAddress.AncestorCollectionInstances
+        );
     }
 
     /// <summary>
@@ -1413,6 +1538,16 @@ internal sealed class ProfileCollectionWalker
         (string ChildJsonScope, ScopeInstanceAddress ParentAddress),
         ImmutableArray<VisibleRequestCollectionItem>
     > VisibleRequestItemsByChildScopeAndParent => _visibleRequestItemsByChildScopeAndParent;
+
+    /// <summary>
+    /// For testing only. Exposes the per-(scope, parent containing-scope address) current-
+    /// row partition index. Consumed by the canonicalize helpers to do partitioned
+    /// positional fallback within a single parent partition.
+    /// </summary>
+    internal IReadOnlyDictionary<
+        (string JsonScope, ScopeInstanceAddress ParentAddress),
+        ImmutableArray<CurrentCollectionRowSnapshot>
+    > CurrentRowsByJsonScopeAndParent => _currentRowsByJsonScopeAndParent;
 
     // ── Index construction ─────────────────────────────────────────────────
     //
@@ -1934,6 +2069,13 @@ internal sealed class ProfileCollectionWalker
     ///   <item><description>Nested collection parent: the bucket key's first value is the
     ///   parent's <c>StableRowIdentity</c>; that long looks up the parent row's
     ///   previously-registered address.</description></item>
+    ///   <item><description>Inlined non-collection parent (e.g.
+    ///   <c>$.parents[*].detail</c> for child <c>$.parents[*].detail.children[*]</c>):
+    ///   the inlined scope has no backing table plan, so the partition's address borrows
+    ///   the nearest table-backed ancestor's ancestor chain and substitutes the inlined
+    ///   parent JsonScope. Without this, the per-(scope, parent-instance) partition for
+    ///   the inlined-parent children scope is missing and ancestor descriptor / document-
+    ///   reference canonicalization fails closed for any descendant.</description></item>
     /// </list>
     /// Returns <c>null</c> when the parent table or row cannot be located — the caller skips
     /// those buckets and the partitioned positional fallback is unavailable for descendants
@@ -1998,7 +2140,13 @@ internal sealed class ProfileCollectionWalker
 
         if (!tableByJsonScope.TryGetValue(parentJsonScope, out var parentTable))
         {
-            return null;
+            return ResolveInlinedParentContainingScopeAddress(
+                parentJsonScope,
+                parentKey,
+                tableByJsonScope,
+                tableKindByJsonScope,
+                addressByTableAndStableId
+            );
         }
 
         if (parentKey.Values.IsDefaultOrEmpty)
@@ -2014,6 +2162,132 @@ internal sealed class ProfileCollectionWalker
         return addressByTableAndStableId.TryGetValue((parentTable, parentStableId), out var addr)
             ? addr
             : null;
+    }
+
+    /// <summary>
+    /// Resolves the partition address when <paramref name="parentJsonScope"/> is an inlined
+    /// non-collection scope below a table-backed ancestor (e.g.
+    /// <c>$.parents[*].detail</c> for child <c>$.parents[*].detail.children[*]</c>;
+    /// <c>$._ext.sample.detail</c> below a root-extension scope; or
+    /// <c>$.parents[*]._ext.aligned.detail</c> below an aligned-extension scope). Walks up
+    /// to the nearest table-backed ancestor and dispatches per-kind so the partition shape
+    /// mirrors the corresponding direct-parent branch of
+    /// <see cref="ResolveParentContainingScopeAddress"/>:
+    /// <list type="bullet">
+    ///   <item><description>Document root: empty ancestor chain (1:1 with the document).</description></item>
+    ///   <item><description>Root extension: empty ancestor chain (1:1 with the document) — required because
+    ///   <see cref="DbTableKind.RootExtension"/> rows are not registered in
+    ///   <paramref name="addressByTableAndStableId"/>.</description></item>
+    ///   <item><description>Aligned extension scope: borrow the underlying base collection row's chain
+    ///   (which already includes the parent collection's self-entry) — required because
+    ///   <see cref="DbTableKind.CollectionExtensionScope"/> rows are not registered in
+    ///   <paramref name="addressByTableAndStableId"/>.</description></item>
+    ///   <item><description>Collection / extension collection: existing
+    ///   <c>StableRowIdentity</c> lookup, with the inlined JsonScope substituted onto the
+    ///   ancestor row's chain.</description></item>
+    /// </list>
+    /// The inlined scope contributes no <see cref="AncestorCollectionInstance"/> because
+    /// it is not a collection instance, mirroring the runtime-walk behavior of
+    /// <see cref="ResolveEffectiveChildParentScopeAddress"/>.
+    /// </summary>
+    private static ScopeInstanceAddress? ResolveInlinedParentContainingScopeAddress(
+        string parentJsonScope,
+        ParentIdentityKey parentKey,
+        IReadOnlyDictionary<string, DbTableName> tableByJsonScope,
+        IReadOnlyDictionary<string, DbTableKind> tableKindByJsonScope,
+        IReadOnlyDictionary<(DbTableName, long), ScopeInstanceAddress> addressByTableAndStableId
+    )
+    {
+        // Walk up the inlined parent's JSON path stripping property segments until we
+        // reach a table-backed scope (or the document root). Inlined property segments
+        // never carry [*], so stripping the trailing dotted property segment is a
+        // structural step toward the nearest table-backed ancestor.
+        var nearestTableBacked = parentJsonScope;
+        while (
+            !tableByJsonScope.ContainsKey(nearestTableBacked)
+            && !string.Equals(nearestTableBacked, "$", StringComparison.Ordinal)
+        )
+        {
+            var lastDot = nearestTableBacked.LastIndexOf('.');
+            if (lastDot < 0)
+            {
+                nearestTableBacked = "$";
+                break;
+            }
+            nearestTableBacked = nearestTableBacked[..lastDot];
+        }
+
+        if (string.Equals(nearestTableBacked, "$", StringComparison.Ordinal))
+        {
+            // Inlined scope hanging directly off the document root. The 1:1 root parent
+            // contributes no ancestor instances, mirroring the RootExtension shape.
+            return new ScopeInstanceAddress(
+                parentJsonScope,
+                ImmutableArray<AncestorCollectionInstance>.Empty
+            );
+        }
+
+        var nearestKind = tableKindByJsonScope.TryGetValue(nearestTableBacked, out var resolvedKind)
+            ? resolvedKind
+            : DbTableKind.Unspecified;
+
+        if (nearestKind is DbTableKind.RootExtension)
+        {
+            // Inlined scope below a root-extension scope (e.g. $._ext.sample.detail when
+            // children live at $._ext.sample.detail.children[*]). The root extension is
+            // 1:1 with the document, so the inlined-detail scope inherits its empty
+            // ancestor chain.
+            return new ScopeInstanceAddress(
+                parentJsonScope,
+                ImmutableArray<AncestorCollectionInstance>.Empty
+            );
+        }
+
+        if (nearestKind is DbTableKind.CollectionExtensionScope)
+        {
+            // Inlined scope below an aligned-extension scope (e.g.
+            // $.parents[*]._ext.aligned.detail when children live at
+            // $.parents[*]._ext.aligned.detail.children[*]). The aligned scope is 1:1
+            // with the underlying base collection row, so the inlined-detail scope
+            // borrows that collection row's previously-registered ancestor chain (which
+            // already includes the parent collection's self-entry).
+            var parentCollectionScope = StripAlignedScopeToParentCollectionScope(nearestTableBacked);
+            if (
+                parentCollectionScope is null
+                || !tableByJsonScope.TryGetValue(parentCollectionScope, out var parentCollectionTable)
+                || parentKey.Values.IsDefaultOrEmpty
+                || parentKey.Values[0] is not FlattenedWriteValue.Literal { Value: long alignedStableId }
+                || !addressByTableAndStableId.TryGetValue(
+                    (parentCollectionTable, alignedStableId),
+                    out var parentCollectionAddr
+                )
+            )
+            {
+                return null;
+            }
+            return new ScopeInstanceAddress(
+                parentJsonScope,
+                parentCollectionAddr.AncestorCollectionInstances
+            );
+        }
+
+        // Collection / extension-collection nearest ancestor: the child's parentKey FK
+        // points at that collection row's StableRowIdentity, which is registered in
+        // addressByTableAndStableId.
+        if (
+            !tableByJsonScope.TryGetValue(nearestTableBacked, out var nearestTable)
+            || parentKey.Values.IsDefaultOrEmpty
+            || parentKey.Values[0] is not FlattenedWriteValue.Literal { Value: long inlinedParentStableId }
+            || !addressByTableAndStableId.TryGetValue(
+                (nearestTable, inlinedParentStableId),
+                out var nearestAddr
+            )
+        )
+        {
+            return null;
+        }
+
+        return new ScopeInstanceAddress(parentJsonScope, nearestAddr.AncestorCollectionInstances);
     }
 
     /// <summary>

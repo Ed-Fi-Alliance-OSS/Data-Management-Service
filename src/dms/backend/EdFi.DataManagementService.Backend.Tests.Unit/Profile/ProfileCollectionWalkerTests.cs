@@ -1383,11 +1383,637 @@ internal static class AlignedExtensionScopeTopologyBuilders
     }
 }
 
+/// <summary>
+/// Slice 5 regression: when a child collection's immediate JSON parent is an inlined
+/// non-collection scope (here <c>$.parents[*].detail</c>) with no backing table plan, the
+/// walker must still dispatch the child collection from the nearest table-backed ancestor
+/// (<c>$.parents[*]</c>) using an effective parent address whose JsonScope is the inlined
+/// scope. Without that, <c>EnumerateDirectChildCollectionScopes</c>'s string-direct-child
+/// check rejects the child path and the children scope is never visited; the per-(scope,
+/// parent-instance) index lookup also misses because Core-emitted addresses carry the
+/// inlined parent scope. This fixture proves both routes work end-to-end: matched-update
+/// rows survive across two parent partitions and FK-rewrite stamps the parent's
+/// PhysicalRowIdentity into each child's parent-key slot.
+/// </summary>
+[TestFixture]
+public class Given_two_top_level_collection_rows_each_with_an_inlined_parent_nested_collection
+{
+    private const long DocumentId = 345L;
+    private const long ParentAItemId = 100L;
+    private const long ParentBItemId = 200L;
+    private const long ChildA1ItemId = 1001L;
+    private const long ChildB1ItemId = 2001L;
+
+    private TableWritePlan _childrenPlan = null!;
+    private Dictionary<DbTableName, ProfileTableStateBuilder> _tableStateBuilders = null!;
+    private ProfileCollectionWalker _walker = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, parentsPlan, childrenPlan) =
+            NestedTopologyBuilders.BuildRootParentsAndDetailChildrenPlan();
+        _childrenPlan = childrenPlan;
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        // parentsPlan is consumed below via NestedTopologyBuilders.BuildParentCandidate /
+        // BuildCurrentState; assigning to a local keeps the deconstruction shape clear.
+
+        // Request body: two parents, each carrying one nested child reachable through the
+        // inlined `detail` non-collection scope.
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject
+                {
+                    ["identityField0"] = "A",
+                    ["detail"] = new JsonObject
+                    {
+                        ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "A1" }),
+                    },
+                },
+                new JsonObject
+                {
+                    ["identityField0"] = "B",
+                    ["detail"] = new JsonObject
+                    {
+                        ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "B1" }),
+                    },
+                }
+            ),
+        };
+
+        var childA1 = NestedTopologyBuilders.BuildDetailChildCandidate(
+            childrenPlan,
+            "A1",
+            parentArrayIndex: 0,
+            requestOrder: 0
+        );
+        var childB1 = NestedTopologyBuilders.BuildDetailChildCandidate(
+            childrenPlan,
+            "B1",
+            parentArrayIndex: 1,
+            requestOrder: 0
+        );
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "A",
+            0,
+            nestedChildren: [childA1]
+        );
+        var candidateB = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "B",
+            1,
+            nestedChildren: [childB1]
+        );
+
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
+            NestedTopologyBuilders.BuildParentRequestItem("B", arrayIndex: 1),
+            NestedTopologyBuilders.BuildDetailChildRequestItem(
+                "A",
+                "A1",
+                parentArrayIndex: 0,
+                childArrayIndex: 0
+            ),
+            NestedTopologyBuilders.BuildDetailChildRequestItem(
+                "B",
+                "B1",
+                parentArrayIndex: 1,
+                childArrayIndex: 0
+            )
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA, candidateB]);
+
+        // Stored: parents A, B; children A1 under A and B1 under B. Both children carry
+        // ParentAddress with the inlined `$.parents[*].detail` JsonScope so the visible-
+        // stored index keys it under the inlined parent address.
+        var storedRows = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentStoredRow("A"),
+            NestedTopologyBuilders.BuildParentStoredRow("B"),
+            NestedTopologyBuilders.BuildDetailChildStoredRow("A", "A1"),
+            NestedTopologyBuilders.BuildDetailChildStoredRow("B", "B1")
+        );
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = NestedTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentAItemId, DocumentId, 1, "A"],
+                [ParentBItemId, DocumentId, 2, "B"],
+            ],
+            childRows:
+            [
+                [ChildA1ItemId, ParentAItemId, 1, "A1"],
+                [ChildB1ItemId, ParentBItemId, 1, "B1"],
+            ]
+        );
+
+        var mergeRequest = new RelationalWriteProfileMergeRequest(
+            writePlan: plan,
+            flattenedWriteSet: flattened,
+            writableRequestBody: body,
+            currentState: currentState,
+            profileRequest: request,
+            profileAppliedContext: context,
+            resolvedReferences: EmptyResolvedReferenceSet()
+        );
+
+        _tableStateBuilders = [];
+        foreach (var p in plan.TablePlansInDependencyOrder)
+        {
+            _tableStateBuilders[p.TableModel.Table] = new ProfileTableStateBuilder(p);
+        }
+
+        _walker = new ProfileCollectionWalker(
+            mergeRequest,
+            EmptyResolvedReferenceLookups(plan),
+            _tableStateBuilders
+        );
+
+        var rootContext = new ProfileCollectionWalkerContext(
+            ContainingScopeAddress: new ScopeInstanceAddress("$", []),
+            ParentPhysicalIdentityValues: [new FlattenedWriteValue.Literal(DocumentId)],
+            RequestSubstructure: flattened.RootRow,
+            ParentRequestNode: body
+        );
+
+        var outcome = _walker.WalkChildren(rootContext, WalkMode.Normal);
+        outcome.Should().BeNull("the inlined-parent-collection walk completes without rejection");
+    }
+
+    [Test]
+    public void It_partitions_current_rows_under_the_effective_inlined_parent_address_per_parent_instance()
+    {
+        // Ancestor descriptor / document-reference canonicalization on descendants of the
+        // inlined-parent children scope reads currentRowsByJsonScopeAndParent keyed by
+        // (childJsonScope, effective parent ScopeInstanceAddress). Without the inlined-
+        // parent fix in ResolveParentContainingScopeAddress, this partition is empty for
+        // inlined-parent children — the resolver returns null because $.parents[*].detail
+        // has no backing table plan — and any descendant ancestor canonicalization that
+        // requires a per-parent partition fails closed.
+        var partitionA = (
+            JsonScope: NestedTopologyBuilders.DetailChildrenScope,
+            ParentAddress: NestedTopologyBuilders.DetailParentAddress("A")
+        );
+        var partitionB = (
+            JsonScope: NestedTopologyBuilders.DetailChildrenScope,
+            ParentAddress: NestedTopologyBuilders.DetailParentAddress("B")
+        );
+
+        _walker
+            .CurrentRowsByJsonScopeAndParent.Should()
+            .ContainKey(
+                partitionA,
+                "parent A's child A1 must live in a partition keyed by the inlined-detail address for A"
+            );
+        _walker
+            .CurrentRowsByJsonScopeAndParent.Should()
+            .ContainKey(
+                partitionB,
+                "parent B's child B1 must live in a partition keyed by the inlined-detail address for B"
+            );
+
+        _walker.CurrentRowsByJsonScopeAndParent[partitionA].Length.Should().Be(1);
+        _walker.CurrentRowsByJsonScopeAndParent[partitionB].Length.Should().Be(1);
+
+        // Cross-parent isolation: each partition's lone child row must carry the correct
+        // ParentItemId (parent A's CollectionItemId for A1; parent B's for B1). A wrong-
+        // parent partition assignment would surface as the wrong stable ID here.
+        var parentItemIdBindingIndex = RelationalWriteMergeSupport.FindBindingIndex(
+            _childrenPlan,
+            new DbColumnName("ParentItemId")
+        );
+        _walker
+            .CurrentRowsByJsonScopeAndParent[partitionA][0]
+            .ProjectedCurrentRow.Values[parentItemIdBindingIndex]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(ParentAItemId));
+        _walker
+            .CurrentRowsByJsonScopeAndParent[partitionB][0]
+            .ProjectedCurrentRow.Values[parentItemIdBindingIndex]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(ParentBItemId));
+    }
+
+    [Test]
+    public void It_aggregates_two_merged_child_rows_into_a_single_children_table_state()
+    {
+        // Both children are matched-update entries (each parent's child has a stored row
+        // and a request candidate), so the children table builder must carry two merged
+        // rows. Without the inlined-parent fix, the walker never visits the children scope
+        // and the builder is empty.
+        var childrenBuilder = _tableStateBuilders[_childrenPlan.TableModel.Table];
+        childrenBuilder
+            .HasContent.Should()
+            .BeTrue("the recursion must visit the inlined-parent children scope");
+        var state = childrenBuilder.Build();
+        state.MergedRows.Length.Should().Be(2);
+        state.CurrentRows.Length.Should().Be(2);
+    }
+
+    [Test]
+    public void It_rewrites_each_merged_child_row_parent_key_to_the_owning_parent_physical_identity()
+    {
+        // Cross-parent FK isolation: child A1's ParentItemId must equal parent A's
+        // PhysicalRowIdentity, and child B1's ParentItemId must equal parent B's. A
+        // wrong-parent dispatch (e.g. dispatching both children under the same parent
+        // address) would surface here as duplicate or swapped FK values.
+        var parentItemIdBindingIndex = RelationalWriteMergeSupport.FindBindingIndex(
+            _childrenPlan,
+            new DbColumnName("ParentItemId")
+        );
+        var identityBindingIndex = RelationalWriteMergeSupport.FindBindingIndex(
+            _childrenPlan,
+            new DbColumnName("IdentityField0")
+        );
+        var state = _tableStateBuilders[_childrenPlan.TableModel.Table].Build();
+        var pairs = state
+            .MergedRows.Select(r =>
+                (
+                    Identity: r.Values[identityBindingIndex] is FlattenedWriteValue.Literal il
+                        ? il.Value
+                        : null,
+                    ParentItemId: r.Values[parentItemIdBindingIndex] is FlattenedWriteValue.Literal pl
+                        ? pl.Value
+                        : null
+                )
+            )
+            .OrderBy(p => p.Identity as string)
+            .ToList();
+        pairs
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Identity: (object?)"A1", ParentItemId: (object?)ParentAItemId),
+                    (Identity: (object?)"B1", ParentItemId: (object?)ParentBItemId),
+                }
+            );
+    }
+}
+
+/// <summary>
+/// Slice 5 follow-up: the inlined-parent partition fix in
+/// <c>ResolveInlinedParentContainingScopeAddress</c> must also handle the case where the
+/// nearest table-backed ancestor of an inlined-parent collection is a
+/// <see cref="DbTableKind.RootExtension"/> scope. <c>addressByTableAndStableId</c> only
+/// registers <see cref="DbTableKind.Collection"/> /
+/// <see cref="DbTableKind.ExtensionCollection"/> rows, so a collection at
+/// <c>$._ext.sample.detail.children[*]</c> would silently lose its
+/// <c>currentRowsByJsonScopeAndParent</c> partition without a kind-aware fallback —
+/// ancestor descriptor / document-reference canonicalization on any descendant of these
+/// children would then fail closed.
+/// </summary>
+[TestFixture]
+public class Given_an_inlined_parent_collection_under_a_root_extension_scope
+{
+    [Test]
+    public void It_partitions_current_rows_under_the_inlined_detail_address_with_an_empty_ancestor_chain()
+    {
+        var (plan, _, childrenPlan) = RootExtensionInlinedDetailTopologyBuilders.Build();
+        const long documentId = 345L;
+        const long childItemId = 9001L;
+
+        // Empty body: the partition we care about lives in the per-merge index, which is
+        // built at construction time from current state. The walk itself need not run.
+        var body = new JsonObject { ["_ext"] = new JsonObject { ["sample"] = new JsonObject() } };
+        var request = NestedTopologyBuilders.BuildRequest(
+            body,
+            ImmutableArray<VisibleRequestCollectionItem>.Empty
+        );
+        var context = NestedTopologyBuilders.BuildContext(
+            request,
+            ImmutableArray<VisibleStoredCollectionRow>.Empty
+        );
+
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var rootExtensionPlan = plan.TablePlansInDependencyOrder[1];
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                DocumentId: documentId,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [documentId],
+                    ]
+                ),
+                new HydratedTableRows(
+                    rootExtensionPlan.TableModel,
+                    [
+                        [documentId],
+                    ]
+                ),
+                new HydratedTableRows(
+                    childrenPlan.TableModel,
+                    [
+                        [childItemId, documentId, 1, "C1"],
+                    ]
+                ),
+            ],
+            []
+        );
+
+        var mergeRequest = new RelationalWriteProfileMergeRequest(
+            writePlan: plan,
+            flattenedWriteSet: NestedTopologyBuilders.BuildFlattenedWriteSet(
+                rootPlan,
+                ImmutableArray<CollectionWriteCandidate>.Empty
+            ),
+            writableRequestBody: body,
+            currentState: currentState,
+            profileRequest: request,
+            profileAppliedContext: context,
+            resolvedReferences: EmptyResolvedReferenceSet()
+        );
+
+        var tableStateBuilders = new Dictionary<DbTableName, ProfileTableStateBuilder>();
+        foreach (var p in plan.TablePlansInDependencyOrder)
+        {
+            tableStateBuilders[p.TableModel.Table] = new ProfileTableStateBuilder(p);
+        }
+
+        var walker = new ProfileCollectionWalker(
+            mergeRequest,
+            EmptyResolvedReferenceLookups(plan),
+            tableStateBuilders
+        );
+
+        // The expected partition key carries the inlined `detail` JsonScope and an empty
+        // ancestor chain — the root extension is 1:1 with the document, so the inlined-
+        // detail scope inherits its empty chain (mirroring the existing RootExtension
+        // direct-parent branch in ResolveParentContainingScopeAddress).
+        var partition = (
+            JsonScope: RootExtensionInlinedDetailTopologyBuilders.ChildrenScope,
+            ParentAddress: new ScopeInstanceAddress(
+                RootExtensionInlinedDetailTopologyBuilders.DetailScope,
+                ImmutableArray<AncestorCollectionInstance>.Empty
+            )
+        );
+
+        walker
+            .CurrentRowsByJsonScopeAndParent.Should()
+            .ContainKey(
+                partition,
+                "the children under inlined detail below a RootExtension must register a partition entry so descendant ancestor canonicalization has a parent-instance bucket to look up"
+            );
+        walker.CurrentRowsByJsonScopeAndParent[partition].Length.Should().Be(1);
+    }
+}
+
+internal static class RootExtensionInlinedDetailTopologyBuilders
+{
+    private static readonly DbSchemaName _edfiSchema = new("edfi");
+    private static readonly DbSchemaName _sampleSchema = new("sample");
+    public const string RootExtensionScope = "$._ext.sample";
+    public const string DetailScope = "$._ext.sample.detail";
+    public const string ChildrenScope = "$._ext.sample.detail.children[*]";
+
+    public static (
+        ResourceWritePlan Plan,
+        TableWritePlan RootExtensionPlan,
+        TableWritePlan ChildrenPlan
+    ) Build()
+    {
+        var rootPlan = BuildRootPlan();
+        var rootExtensionPlan = BuildRootExtensionPlan();
+        var childrenPlan = BuildChildrenPlan();
+
+        var resourceWritePlan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "RootExtensionInlinedDetailTest"),
+                PhysicalSchema: _edfiSchema,
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder:
+                [
+                    rootPlan.TableModel,
+                    rootExtensionPlan.TableModel,
+                    childrenPlan.TableModel,
+                ],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, rootExtensionPlan, childrenPlan]
+        );
+        return (resourceWritePlan, rootExtensionPlan, childrenPlan);
+    }
+
+    private static TableWritePlan BuildRootPlan()
+    {
+        var docIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var rootTableModel = new DbTableModel(
+            Table: new DbTableName(_edfiSchema, "RootExtensionInlinedDetailTest"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                "PK_RootExtensionInlinedDetailTest",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [docIdColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+        return new TableWritePlan(
+            TableModel: rootTableModel,
+            InsertSql: "INSERT INTO edfi.\"RootExtensionInlinedDetailTest\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 1, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(docIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan BuildRootExtensionPlan()
+    {
+        var docIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(_sampleSchema, "RootExtensionInlinedDetailTestExtension"),
+            JsonScope: new JsonPathExpression(
+                RootExtensionScope,
+                [new JsonPathSegment.Property("_ext"), new JsonPathSegment.Property("sample")]
+            ),
+            Key: new TableKey(
+                "PK_RootExtensionInlinedDetailTestExtension",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [docIdColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.RootExtension,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO sample.\"RootExtensionInlinedDetailTestExtension\" VALUES (@DocumentId)",
+            UpdateSql: null,
+            DeleteByParentSql: "DELETE FROM sample.\"RootExtensionInlinedDetailTestExtension\" WHERE \"DocumentId\" = @DocumentId",
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 1, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(docIdColumn, new WriteValueSource.ParentKeyPart(0), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan BuildChildrenPlan()
+    {
+        var childItemIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ChildItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var documentIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var identityColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("IdentityField0"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression(
+                "$.identityField0",
+                [new JsonPathSegment.Property("identityField0")]
+            ),
+            TargetResource: null
+        );
+        DbColumnModel[] columns = [childItemIdColumn, documentIdColumn, ordinalColumn, identityColumn];
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(_sampleSchema, "RootExtensionInlinedDetailTestChildren"),
+            JsonScope: new JsonPathExpression(ChildrenScope, []),
+            Key: new TableKey(
+                "PK_RootExtensionInlinedDetailTestChildren",
+                [new DbKeyColumn(new DbColumnName("ChildItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("ChildItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        identityColumn.SourceJsonPath!.Value,
+                        identityColumn.ColumnName
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO sample.\"RootExtensionInlinedDetailTestChildren\" VALUES (@ChildItemId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, columns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(childItemIdColumn, new WriteValueSource.Precomputed(), "ChildItemId"),
+                new WriteColumnBinding(documentIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    identityColumn,
+                    new WriteValueSource.Scalar(
+                        identityColumn.SourceJsonPath!.Value,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "IdentityField0"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(identityColumn.SourceJsonPath!.Value, 3),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE sample.\"RootExtensionInlinedDetailTestChildren\" SET X = @X WHERE \"ChildItemId\" = @ChildItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM sample.\"RootExtensionInlinedDetailTestChildren\" WHERE \"ChildItemId\" = @ChildItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("ChildItemId"),
+                0
+            )
+        );
+    }
+}
+
 internal static class NestedTopologyBuilders
 {
     private static readonly DbSchemaName _schema = new("edfi");
     public const string ParentsScope = "$.parents[*]";
     public const string ChildrenScope = "$.parents[*].children[*]";
+    public const string DetailScope = "$.parents[*].detail";
+    public const string DetailChildrenScope = "$.parents[*].detail.children[*]";
 
     public static (
         ResourceWritePlan Plan,
@@ -1436,6 +2062,44 @@ internal static class NestedTopologyBuilders
         var rootPlan = BuildMinimalRootPlan();
         var parentsPlan = BuildParentsCollectionPlan();
         var childrenPlan = BuildChildrenCollectionPlanWithExtraScalar();
+
+        var resourceWritePlan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "NestedTest"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder:
+                [
+                    rootPlan.TableModel,
+                    parentsPlan.TableModel,
+                    childrenPlan.TableModel,
+                ],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, parentsPlan, childrenPlan]
+        );
+        return (resourceWritePlan, parentsPlan, childrenPlan);
+    }
+
+    /// <summary>
+    /// Variant of <see cref="BuildRootParentsAndChildrenPlan"/> whose children collection
+    /// hangs off an inlined non-collection scope <c>$.parents[*].detail</c> rather than
+    /// directly off the parent collection scope. The <c>detail</c> object has no backing
+    /// table plan, so this fixture exercises the inlined-parent-collection traversal path
+    /// where the nearest table-backed ancestor of <c>$.parents[*].detail.children[*]</c>
+    /// is the parents collection at <c>$.parents[*]</c>.
+    /// </summary>
+    public static (
+        ResourceWritePlan Plan,
+        TableWritePlan ParentsPlan,
+        TableWritePlan ChildrenPlan
+    ) BuildRootParentsAndDetailChildrenPlan()
+    {
+        var rootPlan = BuildMinimalRootPlan();
+        var parentsPlan = BuildParentsCollectionPlan();
+        var childrenPlan = BuildDetailChildrenCollectionPlan();
 
         var resourceWritePlan = new ResourceWritePlan(
             new RelationalResourceModel(
@@ -1864,6 +2528,120 @@ internal static class NestedTopologyBuilders
         );
     }
 
+    private static TableWritePlan BuildDetailChildrenCollectionPlan()
+    {
+        // Same column layout/binding as BuildChildrenCollectionPlan, but the table's
+        // JsonScope places the array under an inlined `detail` property of the parent
+        // collection row: $.parents[*].detail.children[*]. The `detail` scope is NOT
+        // table-backed (no plan in the write plan), so traversal must reach the children
+        // table from the nearest table-backed ancestor ($.parents[*]) through the inlined
+        // intermediate scope.
+        var childItemIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ChildItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var parentItemIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ParentItemId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var identityColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("IdentityField0"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression(
+                "$.identityField0",
+                [new JsonPathSegment.Property("identityField0")]
+            ),
+            TargetResource: null
+        );
+        DbColumnModel[] columns = [childItemIdColumn, parentItemIdColumn, ordinalColumn, identityColumn];
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(_schema, "ChildrenTable"),
+            JsonScope: new JsonPathExpression(DetailChildrenScope, []),
+            Key: new TableKey(
+                "PK_ChildrenTable",
+                [new DbKeyColumn(new DbColumnName("ChildItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("ChildItemId")],
+                RootScopeLocatorColumns: [],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ParentItemId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        identityColumn.SourceJsonPath!.Value,
+                        identityColumn.ColumnName
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"ChildrenTable\" VALUES (@ChildItemId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, columns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(childItemIdColumn, new WriteValueSource.Precomputed(), "ChildItemId"),
+                new WriteColumnBinding(
+                    parentItemIdColumn,
+                    new WriteValueSource.ParentKeyPart(0),
+                    "ParentItemId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    identityColumn,
+                    new WriteValueSource.Scalar(
+                        identityColumn.SourceJsonPath!.Value,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "IdentityField0"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(identityColumn.SourceJsonPath!.Value, 3),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.\"ChildrenTable\" SET X = @X WHERE \"ChildItemId\" = @ChildItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.\"ChildrenTable\" WHERE \"ChildItemId\" = @ChildItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("ChildItemId"),
+                0
+            )
+        );
+    }
+
     public static CollectionWriteCandidate BuildParentCandidate(
         TableWritePlan parentsPlan,
         string identityValue,
@@ -1939,6 +2717,77 @@ internal static class NestedTopologyBuilders
 
     public static ScopeInstanceAddress ParentRowAddress(string parentSemanticIdentity) =>
         new(ParentsScope, [new AncestorCollectionInstance(ParentsScope, Identity(parentSemanticIdentity))]);
+
+    /// <summary>
+    /// Effective parent address used by the planner/index when the immediate JSON parent of
+    /// a child collection is the inlined non-collection scope <see cref="DetailScope"/>.
+    /// JsonScope is the inlined scope; the ancestor chain is the parent collection row's
+    /// chain (the inlined scope contributes no <see cref="AncestorCollectionInstance"/>
+    /// because it is not itself a collection instance).
+    /// </summary>
+    public static ScopeInstanceAddress DetailParentAddress(string parentSemanticIdentity) =>
+        new(DetailScope, [new AncestorCollectionInstance(ParentsScope, Identity(parentSemanticIdentity))]);
+
+    public static VisibleRequestCollectionItem BuildDetailChildRequestItem(
+        string parentSemanticIdentity,
+        string childIdentity,
+        int parentArrayIndex,
+        int childArrayIndex,
+        bool creatable = true
+    ) =>
+        new(
+            new CollectionRowAddress(
+                DetailChildrenScope,
+                DetailParentAddress(parentSemanticIdentity),
+                Identity(childIdentity)
+            ),
+            creatable,
+            $"$.parents[{parentArrayIndex}].detail.children[{childArrayIndex}]"
+        );
+
+    public static VisibleStoredCollectionRow BuildDetailChildStoredRow(
+        string parentSemanticIdentity,
+        string childIdentity,
+        ImmutableArray<string>? hiddenMemberPaths = null
+    ) =>
+        new(
+            new CollectionRowAddress(
+                DetailChildrenScope,
+                DetailParentAddress(parentSemanticIdentity),
+                Identity(childIdentity)
+            ),
+            hiddenMemberPaths ?? ImmutableArray<string>.Empty
+        );
+
+    /// <summary>
+    /// CollectionWriteCandidate that hangs under a parent at <see cref="DetailChildrenScope"/>.
+    /// Layout matches BuildDetailChildrenCollectionPlan: [ChildItemId, ParentItemId, Ordinal,
+    /// IdentityField0]. ParentItemId is resolved by the walker via
+    /// <see cref="WriteValueSource.ParentKeyPart"/> at emission time, so we leave that slot
+    /// as a null literal here.
+    /// </summary>
+    public static CollectionWriteCandidate BuildDetailChildCandidate(
+        TableWritePlan childrenPlan,
+        string identityValue,
+        int parentArrayIndex,
+        int requestOrder
+    )
+    {
+        var values = new FlattenedWriteValue[childrenPlan.ColumnBindings.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = new FlattenedWriteValue.Literal(null);
+        }
+        values[3] = new FlattenedWriteValue.Literal(identityValue);
+
+        return new CollectionWriteCandidate(
+            tableWritePlan: childrenPlan,
+            ordinalPath: [parentArrayIndex, requestOrder],
+            requestOrder: requestOrder,
+            values: values,
+            semanticIdentityValues: [identityValue]
+        );
+    }
 
     public static VisibleRequestCollectionItem BuildParentRequestItem(
         string identityValue,
