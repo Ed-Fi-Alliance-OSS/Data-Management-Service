@@ -3126,6 +3126,244 @@ public class Given_a_descriptor_backed_parent_collection_with_nested_children
 }
 
 /// <summary>
+/// Slice 5 review fix: regression for hidden inlined-descendant path expansion under a
+/// parent collection whose semantic identity is descriptor-backed. The walker canonicalizes
+/// child rows' <c>ParentAddress.AncestorCollectionInstances</c> at index-build time
+/// (descriptor URI → Int64 id), but the per-row hidden-path expansion reconstructs the
+/// child <c>CollectionRowAddress</c> from the descendant <see cref="StoredScopeState"/>'s
+/// raw ancestor chain (still URI form). If the expansion runs after parent-address
+/// canonicalization, the reconstructed key never matches the canonical row key in the
+/// expander's bucket dictionary, the inlined hidden member path is silently dropped, and
+/// the matched-row classifier later treats the descendant member as visible writable —
+/// allowing flattened-null candidates to overwrite stored values on update.
+/// <para>
+/// Fixture: descriptor-backed parents + scalar-identity nested children. Two stored child
+/// rows (C1, C2) under one URI parent. A single stored scope state for the inlined
+/// non-collection descendant <c>$.parents[*].children[*].period</c> targets the C1 child
+/// (raw URI parent + raw "C1" child in its ancestor chain) and contributes hidden member
+/// path <c>endDate</c>. After the walker constructs its visible-stored index, the C1
+/// row in the canonical bucket must carry <c>period.endDate</c> in
+/// <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>; C2 must not.
+/// </para>
+/// </summary>
+[TestFixture]
+public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_member
+{
+    private const long DocumentId = 345L;
+    private const long ParentItemId = 100L;
+    private const long ParentDescriptorId = 42L;
+    private const long ChildA1ItemId = 1001L;
+    private const long ChildA2ItemId = 1002L;
+
+    private ProfileCollectionWalker _walker = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, parentsPlan, childrenPlan) =
+            DescriptorBackedNestedTopologyBuilders.BuildRootParentsAndChildrenPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject { ["parentTypeDescriptor"] = DescriptorBackedNestedTopologyBuilders.ParentUri }
+            ),
+        };
+
+        var candidate = DescriptorBackedNestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            ParentDescriptorId,
+            requestOrder: 0
+        );
+        var requestItems = ImmutableArray.Create(
+            DescriptorBackedNestedTopologyBuilders.BuildParentRequestItemWithUri(
+                DescriptorBackedNestedTopologyBuilders.ParentUri,
+                arrayIndex: 0
+            )
+        );
+        var request = DescriptorBackedNestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = DescriptorBackedNestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidate]);
+
+        var storedRows = ImmutableArray.Create(
+            DescriptorBackedNestedTopologyBuilders.BuildParentStoredRowWithUri(
+                DescriptorBackedNestedTopologyBuilders.ParentUri
+            ),
+            DescriptorBackedNestedTopologyBuilders.BuildChildStoredRowWithUriParent(
+                DescriptorBackedNestedTopologyBuilders.ParentUri,
+                "C1"
+            ),
+            DescriptorBackedNestedTopologyBuilders.BuildChildStoredRowWithUriParent(
+                DescriptorBackedNestedTopologyBuilders.ParentUri,
+                "C2"
+            )
+        );
+
+        // Stored scope state for the inlined non-collection descendant
+        // $.parents[*].children[*].period under the C1 child row. Raw ancestor chain:
+        // [URI parent, "C1" child]. The expander reconstructs the child row's
+        // CollectionRowAddress from this chain — both ancestors are in raw form here, so
+        // the reconstructed key only compares equal to the row's stored key when the
+        // expansion runs BEFORE parent-address canonicalization rewrites the URI to Int64.
+        var inlinedDescendantState = new StoredScopeState(
+            Address: new ScopeInstanceAddress(
+                JsonScope: "$.parents[*].children[*].period",
+                AncestorCollectionInstances:
+                [
+                    new AncestorCollectionInstance(
+                        DescriptorBackedNestedTopologyBuilders.ParentsScope,
+                        [
+                            new SemanticIdentityPart(
+                                DescriptorBackedNestedTopologyBuilders.ParentDescriptorRelativePath,
+                                JsonValue.Create(DescriptorBackedNestedTopologyBuilders.ParentUri),
+                                IsPresent: true
+                            ),
+                        ]
+                    ),
+                    new AncestorCollectionInstance(
+                        DescriptorBackedNestedTopologyBuilders.ChildrenScope,
+                        [
+                            new SemanticIdentityPart(
+                                "$.identityField0",
+                                JsonValue.Create("C1"),
+                                IsPresent: true
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            Visibility: ProfileVisibilityKind.VisiblePresent,
+            HiddenMemberPaths: ["endDate"]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            ImmutableArray.Create(inlinedDescendantState),
+            storedRows
+        );
+
+        var currentState = DescriptorBackedNestedTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentItemId, DocumentId, 1, ParentDescriptorId],
+            ],
+            childRows:
+            [
+                [ChildA1ItemId, ParentItemId, 1, "C1"],
+                [ChildA2ItemId, ParentItemId, 2, "C2"],
+            ]
+        );
+
+        var resolvedRefs = DescriptorBackedNestedTopologyBuilders.BuildResolvedReferenceSet(
+            DescriptorBackedNestedTopologyBuilders.ParentUri,
+            ParentDescriptorId
+        );
+
+        var mergeRequest = new RelationalWriteProfileMergeRequest(
+            writePlan: plan,
+            flattenedWriteSet: flattened,
+            writableRequestBody: body,
+            currentState: currentState,
+            profileRequest: request,
+            profileAppliedContext: context,
+            resolvedReferences: resolvedRefs
+        );
+
+        Dictionary<DbTableName, ProfileTableStateBuilder> tableStateBuilders = [];
+        foreach (var p in plan.TablePlansInDependencyOrder)
+        {
+            tableStateBuilders[p.TableModel.Table] = new ProfileTableStateBuilder(p);
+        }
+
+        _walker = new ProfileCollectionWalker(
+            mergeRequest,
+            FlatteningResolvedReferenceLookupSet.Create(plan, resolvedRefs),
+            tableStateBuilders
+        );
+    }
+
+    [Test]
+    public void It_attaches_inlined_descendant_hidden_path_to_the_canonicalized_child_row()
+    {
+        var canonicalParentAddress = new ScopeInstanceAddress(
+            DescriptorBackedNestedTopologyBuilders.ParentsScope,
+            [
+                new AncestorCollectionInstance(
+                    DescriptorBackedNestedTopologyBuilders.ParentsScope,
+                    [
+                        new SemanticIdentityPart(
+                            DescriptorBackedNestedTopologyBuilders.ParentDescriptorRelativePath,
+                            JsonValue.Create(ParentDescriptorId),
+                            IsPresent: true
+                        ),
+                    ]
+                ),
+            ]
+        );
+        var canonicalKey = (DescriptorBackedNestedTopologyBuilders.ChildrenScope, canonicalParentAddress);
+
+        _walker
+            .VisibleStoredRowsByChildScopeAndParent.Should()
+            .ContainKey(canonicalKey, "the children index must carry the canonicalized parent ancestor");
+
+        var childBucket = _walker.VisibleStoredRowsByChildScopeAndParent[canonicalKey];
+
+        var c1Row = childBucket.Single(r =>
+            r.Address.SemanticIdentityInOrder[0].Value!.GetValue<string>() == "C1"
+        );
+        c1Row
+            .HiddenMemberPaths.Should()
+            .Contain(
+                "period.endDate",
+                "the inlined descendant scope state targeting C1 must fold its hidden member path "
+                    + "onto C1's canonical row in the index. The expander reconstructs C1's address "
+                    + "from the descendant state's raw URI ancestor chain, so the expansion must run "
+                    + "before parent-address canonicalization rewrites the URI to Int64 — otherwise "
+                    + "the lookup misses and the matched-row overlay later overwrites the stored "
+                    + "hidden value with a flattened null."
+            );
+    }
+
+    [Test]
+    public void It_does_not_fold_descendant_hidden_path_onto_a_sibling_child_row()
+    {
+        var canonicalParentAddress = new ScopeInstanceAddress(
+            DescriptorBackedNestedTopologyBuilders.ParentsScope,
+            [
+                new AncestorCollectionInstance(
+                    DescriptorBackedNestedTopologyBuilders.ParentsScope,
+                    [
+                        new SemanticIdentityPart(
+                            DescriptorBackedNestedTopologyBuilders.ParentDescriptorRelativePath,
+                            JsonValue.Create(ParentDescriptorId),
+                            IsPresent: true
+                        ),
+                    ]
+                ),
+            ]
+        );
+        var canonicalKey = (DescriptorBackedNestedTopologyBuilders.ChildrenScope, canonicalParentAddress);
+        var childBucket = _walker.VisibleStoredRowsByChildScopeAndParent[canonicalKey];
+
+        var c2Row = childBucket.Single(r =>
+            r.Address.SemanticIdentityInOrder[0].Value!.GetValue<string>() == "C2"
+        );
+        c2Row
+            .HiddenMemberPaths.Should()
+            .NotContain(
+                "period.endDate",
+                "the descendant state targets C1's identity only — the full structural address "
+                    + "match must still discriminate C1 from its sibling C2"
+            );
+    }
+}
+
+/// <summary>
 /// Local builders for a 3-table nested-topology test plan with a descriptor-backed parent
 /// collection at <c>$.parents[*]</c> (URI form in Core-emitted addresses; Int64 form in the
 /// canonicalized current state) and a scalar-identity nested children collection at

@@ -236,24 +236,6 @@ internal sealed class ProfileCollectionWalker
                 ? visibleStoredRowBucket
                 : ImmutableArray<VisibleStoredCollectionRow>.Empty;
 
-            // Fold inlined non-collection descendant scope hidden paths onto each row so
-            // the matched-row classifier sees them. Done before canonicalization so
-            // descendant ancestor identities (un-canonicalized URIs / natural keys) compare
-            // against the same un-canonicalized row identities.
-            if (
-                _request.ProfileAppliedContext is { } profileAppliedContextForExpand
-                && !visibleStoredRowsForScope.IsDefaultOrEmpty
-            )
-            {
-                visibleStoredRowsForScope = ProfileCollectionRowHiddenPathExpander.Expand(
-                    visibleStoredRowsForScope,
-                    profileAppliedContextForExpand.StoredScopeStates,
-                    jsonScope,
-                    tablePlan,
-                    _request.WritePlan
-                );
-            }
-
             // Read current rows from the projection index, then adapt each projection to
             // the snapshot shape consumed by the planner. The projection is a strict
             // superset of the snapshot, so this is a per-row field projection.
@@ -2283,7 +2265,21 @@ internal sealed class ProfileCollectionWalker
             request.ProfileAppliedContext?.VisibleStoredCollectionRows
             ?? ImmutableArray<VisibleStoredCollectionRow>.Empty;
 
-        foreach (var row in storedRows)
+        // Fold inlined non-collection descendant scope hidden paths onto each row before
+        // ancestor canonicalization. ProfileCollectionRowHiddenPathExpander reconstructs
+        // each row's CollectionRowAddress from the descendant StoredScopeState's raw
+        // ancestor chain (URIs / document-reference natural keys). If we canonicalized
+        // first, the row's own ParentAddress would carry backend-id ancestors that no
+        // longer compare equal to the raw reconstructed key, and inlined hidden paths
+        // under a descriptor- or reference-backed parent would silently fail to attach.
+        var expandedStoredRows = ExpandHiddenPathsBeforeAncestorCanonicalization(
+            storedRows,
+            request.ProfileAppliedContext?.StoredScopeStates ?? ImmutableArray<StoredScopeState>.Empty,
+            tablePlanByJsonScope,
+            request.WritePlan
+        );
+
+        foreach (var row in expandedStoredRows)
         {
             // Canonicalize ancestor identities so both the index key and the row's own
             // Address.ParentAddress carry backend-id ancestors that match the walker's
@@ -2324,6 +2320,76 @@ internal sealed class ProfileCollectionWalker
             result[key] = [.. bucket];
         }
         return result;
+    }
+
+    /// <summary>
+    /// Returns <paramref name="rows"/> with each row's <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>
+    /// augmented by <see cref="ProfileCollectionRowHiddenPathExpander.Expand"/>, grouping rows
+    /// by collection JsonScope so the expander runs once per scope. Original ordering is
+    /// preserved so downstream per-(scope, parent) bucket ordering — which the planner relies
+    /// on for deterministic ordinal recomputation — stays unchanged.
+    /// </summary>
+    private static ImmutableArray<VisibleStoredCollectionRow> ExpandHiddenPathsBeforeAncestorCanonicalization(
+        ImmutableArray<VisibleStoredCollectionRow> rows,
+        ImmutableArray<StoredScopeState> storedScopeStates,
+        IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
+        ResourceWritePlan writePlan
+    )
+    {
+        if (rows.IsDefaultOrEmpty || storedScopeStates.IsDefaultOrEmpty)
+        {
+            return rows;
+        }
+
+        // Group row positions by collection JsonScope so a single Expand call covers all
+        // rows in that scope. Tracking the original index lets us write each expanded row
+        // back into the result at its original position.
+        var indexesByScope = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        for (var i = 0; i < rows.Length; i++)
+        {
+            var scope = rows[i].Address.JsonScope;
+            if (!indexesByScope.TryGetValue(scope, out var bucket))
+            {
+                bucket = [];
+                indexesByScope[scope] = bucket;
+            }
+            bucket.Add(i);
+        }
+
+        VisibleStoredCollectionRow[]? mutated = null;
+        foreach (var (scope, indexes) in indexesByScope)
+        {
+            if (!tablePlanByJsonScope.TryGetValue(scope, out var tablePlan))
+            {
+                continue;
+            }
+
+            var bucketBuilder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(indexes.Count);
+            foreach (var idx in indexes)
+            {
+                bucketBuilder.Add(rows[idx]);
+            }
+            var bucket = bucketBuilder.MoveToImmutable();
+
+            var expanded = ProfileCollectionRowHiddenPathExpander.Expand(
+                bucket,
+                storedScopeStates,
+                scope,
+                tablePlan,
+                writePlan
+            );
+
+            for (var i = 0; i < indexes.Count; i++)
+            {
+                if (!ReferenceEquals(bucket[i], expanded[i]))
+                {
+                    mutated ??= rows.ToArray();
+                    mutated[indexes[i]] = expanded[i];
+                }
+            }
+        }
+
+        return mutated is null ? rows : ImmutableArray.Create(mutated);
     }
 
     private static IReadOnlyDictionary<
