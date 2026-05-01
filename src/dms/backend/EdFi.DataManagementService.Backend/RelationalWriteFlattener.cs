@@ -988,11 +988,14 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     /// <see cref="CollectionRowAddress.SemanticIdentityInOrder"/>.
     /// </summary>
     /// <remarks>
-    /// Counterparts: <c>RelationalWriteNoProfileMerge.BuildCurrentRowSemanticIdentityParts</c>
-    /// (DB-row, hardcodes <c>IsPresent: true</c>) and the inline DB-row projection in
-    /// <c>ProfileCollectionWalker</c> (DB-row, prefers Core-emitted identity paths). The three
-    /// remain separate because this builder is request-side and presence-probed; only the
-    /// shared scope-relative path normalization is centralized in
+    /// Used by the profile-aware merge path, where candidate keys must align with
+    /// visible-request-item keys reconstructed from <see cref="CollectionRowAddress"/>.
+    /// The no-profile merge path intentionally does not consume these parts and matches
+    /// current rows on raw <see cref="CollectionWriteCandidate.SemanticIdentityValues"/>
+    /// instead — absent-vs-explicit-null identity fidelity for the no-profile path is
+    /// out of scope here and tracked separately under DMS-1132. The companion DB-row
+    /// projection lives inline in <c>ProfileCollectionWalker</c>; the shared scope-relative
+    /// path normalization is centralized in
     /// <see cref="RelationalWriteMergeSupport.ToScopeRelativePath"/>.
     /// </remarks>
     private static ImmutableArray<SemanticIdentityPart> MaterializeSemanticIdentityParts(

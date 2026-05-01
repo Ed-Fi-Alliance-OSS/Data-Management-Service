@@ -4,11 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Profile;
-using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -185,7 +182,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             var matchedCurrentRow = currentStateProjection.TryMatchCollectionRow(
                 collectionCandidate.TableWritePlan,
                 parentPhysicalRowIdentityValues,
-                collectionCandidate.SemanticIdentityInOrder
+                collectionCandidate.SemanticIdentityValues
             );
             var mergedValues = RewriteParentKeyPartValues(
                 collectionCandidate.TableWritePlan,
@@ -432,7 +429,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         public RelationalWriteMergedTableRow? TryMatchCollectionRow(
             TableWritePlan tableWritePlan,
             IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
-            ImmutableArray<SemanticIdentityPart> requestSemanticIdentity
+            IReadOnlyList<object?> semanticIdentityValues
         )
         {
             if (
@@ -447,26 +444,16 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
             return projectedCollectionTableState.TryMatch(
                 parentPhysicalRowIdentityValues,
-                requestSemanticIdentity
+                semanticIdentityValues
             );
         }
     }
 
-    /// <summary>
-    /// Per-table current-state index keyed by (parent-scope key, semantic identity key) for
-    /// no-profile collection matching. Both the constructor and <see cref="TryMatch"/> route
-    /// the identity through <see cref="SemanticIdentityKeys.BuildKey"/> deliberately — the
-    /// presence-aware shared key path preserves missing-vs-explicit-null fidelity in the
-    /// no-profile flow the same way the profile-aware merge does. Regression coverage for
-    /// this end-to-end behavior lives in
-    /// <c>RelationalWriteNoProfileMergeSynthesizerTests</c> (see the
-    /// missing-vs-explicit-null collection-identity matching tests).
-    /// </summary>
     private sealed class ProjectedCollectionTableState
     {
         private readonly Dictionary<
             object?[],
-            Dictionary<string, RelationalWriteMergedTableRow>
+            Dictionary<object?[], RelationalWriteMergedTableRow>
         > _rowsByParentKey;
 
         public ProjectedCollectionTableState(
@@ -476,21 +463,20 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         {
             TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
 
-            _rowsByParentKey = new Dictionary<object?[], Dictionary<string, RelationalWriteMergedTableRow>>(
-                ObjectValueArrayComparer.Instance
-            );
+            _rowsByParentKey = new Dictionary<
+                object?[],
+                Dictionary<object?[], RelationalWriteMergedTableRow>
+            >(ObjectValueArrayComparer.Instance);
 
             foreach (var currentRow in currentRows)
             {
                 var parentScopeKey = ExtractParentScopeKey(tableWritePlan, currentRow.Values);
-                var semanticIdentityKey = SemanticIdentityKeys.BuildKey(
-                    BuildCurrentRowSemanticIdentityParts(tableWritePlan, currentRow.Values)
-                );
+                var semanticIdentityKey = ExtractSemanticIdentityKey(tableWritePlan, currentRow.Values);
 
                 if (!_rowsByParentKey.TryGetValue(parentScopeKey, out var rowsBySemanticIdentity))
                 {
-                    rowsBySemanticIdentity = new Dictionary<string, RelationalWriteMergedTableRow>(
-                        StringComparer.Ordinal
+                    rowsBySemanticIdentity = new Dictionary<object?[], RelationalWriteMergedTableRow>(
+                        ObjectValueArrayComparer.Instance
                     );
                     _rowsByParentKey.Add(parentScopeKey, rowsBySemanticIdentity);
                 }
@@ -508,7 +494,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
         public RelationalWriteMergedTableRow? TryMatch(
             IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
-            ImmutableArray<SemanticIdentityPart> requestSemanticIdentity
+            IReadOnlyList<object?> semanticIdentityValues
         )
         {
             var parentScopeKey = TryProjectLiteralLookupKey(parentPhysicalRowIdentityValues);
@@ -521,7 +507,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 return null;
             }
 
-            var semanticIdentityKey = SemanticIdentityKeys.BuildKey(requestSemanticIdentity);
+            var semanticIdentityKey = semanticIdentityValues.ToArray();
 
             return rowsBySemanticIdentity.TryGetValue(semanticIdentityKey, out var currentRow)
                 ? currentRow
@@ -556,23 +542,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             return parentScopeKey;
         }
 
-        // Builds the SemanticIdentityPart sequence for a DB-projected current row using the
-        // same scope-relative path convention as the flattener (and Core's
-        // AddressDerivationEngine.ReadSemanticIdentity / ProfileCollectionWalker stored-row
-        // projection). Stored rows always count as IsPresent: true: a row that exists in the
-        // table had each bound column persisted, even when the persisted value is SQL NULL.
-        // This mirrors the rule documented in ProfileCollectionWalker.cs and prevents a
-        // request candidate with a missing identity part from matching a current row whose
-        // persisted identity column happens to be NULL.
-        //
-        // Counterparts: RelationalWriteFlattener.MaterializeSemanticIdentityParts (request-
-        // side, presence probed against the request JSON) and ProfileCollectionWalker's
-        // inline current-row projection (DB-row, prefers Core-emitted identity paths from
-        // semanticIdentityPathsByCollectionScope before falling back to scope-relative
-        // normalization). The three remain separate because their presence and path-source
-        // rules differ; only the shared scope-relative path normalization is centralized in
-        // RelationalWriteMergeSupport.ToScopeRelativePath.
-        private static ImmutableArray<SemanticIdentityPart> BuildCurrentRowSemanticIdentityParts(
+        private static object?[] ExtractSemanticIdentityKey(
             TableWritePlan tableWritePlan,
             IReadOnlyList<FlattenedWriteValue> values
         )
@@ -583,27 +553,19 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                     $"Collection table '{FormatTable(tableWritePlan)}' does not have a compiled collection merge plan."
                 );
 
-            var scopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
-            var bindings = mergePlan.SemanticIdentityBindings;
-            var parts = new SemanticIdentityPart[bindings.Length];
+            object?[] semanticIdentityKey = new object?[mergePlan.SemanticIdentityBindings.Length];
 
-            for (var index = 0; index < bindings.Length; index++)
+            for (var index = 0; index < mergePlan.SemanticIdentityBindings.Length; index++)
             {
-                var binding = bindings[index];
-                var rawValue = ExtractLiteralValue(
+                var semanticIdentityBinding = mergePlan.SemanticIdentityBindings[index];
+                semanticIdentityKey[index] = ExtractLiteralValue(
                     tableWritePlan,
-                    values[binding.BindingIndex],
-                    tableWritePlan.ColumnBindings[binding.BindingIndex].Column.ColumnName
+                    values[semanticIdentityBinding.BindingIndex],
+                    tableWritePlan.ColumnBindings[semanticIdentityBinding.BindingIndex].Column.ColumnName
                 );
-                JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
-                var relativePath = RelationalWriteMergeSupport.ToScopeRelativePath(
-                    binding.RelativePath.Canonical,
-                    scopeCanonical
-                );
-                parts[index] = new SemanticIdentityPart(relativePath, jsonValue, IsPresent: true);
             }
 
-            return [.. parts];
+            return semanticIdentityKey;
         }
 
         private static object?[]? TryProjectLiteralLookupKey(IReadOnlyList<FlattenedWriteValue> values)

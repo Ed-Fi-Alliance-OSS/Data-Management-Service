@@ -397,12 +397,12 @@ public sealed record CollectionWriteCandidate
             );
         }
 
-        SemanticIdentityInOrder = semanticIdentityInOrder is not null
-            ? FlattenedWriteContractSupport.ToImmutableArray(
+        SemanticIdentityInOrder = semanticIdentityInOrder is null
+            ? BuildDefaultSemanticIdentityInOrder(mergePlan, SemanticIdentityValues)
+            : FlattenedWriteContractSupport.ToImmutableArray(
                 semanticIdentityInOrder,
                 nameof(semanticIdentityInOrder)
-            )
-            : DeriveSemanticIdentityInOrderFromValues(SemanticIdentityValues, mergePlan);
+            );
 
         if (SemanticIdentityInOrder.Length != mergePlan.SemanticIdentityBindings.Length)
         {
@@ -412,38 +412,6 @@ public sealed record CollectionWriteCandidate
                 nameof(semanticIdentityInOrder)
             );
         }
-    }
-
-    // TODO(DMS-1132): Remove this fallback. Production never hits it; ~36 direct test
-    // instantiations of CollectionWriteCandidate plus broader helper-based test reliance
-    // still depend on it. The fallback collapses missing-vs-explicit-null, which is the
-    // distinction Slice 5 introduced presence-aware identity keys for, so test fixtures
-    // reaching this path may silently mask presence-aware regressions. Migrate test sites
-    // to a ForTests factory that requires an explicit semanticIdentityInOrder, then
-    // delete this method and the SemanticIdentityValues-only constructor branch.
-    private static ImmutableArray<SemanticIdentityPart> DeriveSemanticIdentityInOrderFromValues(
-        ImmutableArray<object?> values,
-        CollectionMergePlan mergePlan
-    )
-    {
-        // Legacy fallback used when a caller does not supply presence-aware identity. Treats
-        // each part as <c>IsPresent: value is not null</c>, which preserves the historical
-        // shape but collapses missing-vs-explicit-null. Production callers (the flattener)
-        // must supply <see cref="SemanticIdentityPart"/> with explicit presence; this branch
-        // exists for in-memory test builders that did not yet adopt the presence-aware path.
-        var bindings = mergePlan.SemanticIdentityBindings;
-        var parts = new SemanticIdentityPart[bindings.Length];
-        for (var i = 0; i < bindings.Length; i++)
-        {
-            var rawValue = values[i];
-            JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
-            parts[i] = new SemanticIdentityPart(
-                bindings[i].RelativePath.Canonical,
-                jsonValue,
-                IsPresent: rawValue is not null
-            );
-        }
-        return [.. parts];
     }
 
     /// <summary>
@@ -472,13 +440,8 @@ public sealed record CollectionWriteCandidate
     public ImmutableArray<object?> SemanticIdentityValues { get; init; }
 
     /// <summary>
-    /// The compiled semantic identity in <see cref="SemanticIdentityPart"/> form, parallel
-    /// to <see cref="SemanticIdentityValues"/>. Each entry pairs the binding's relative path
-    /// with the materialized JSON value and a presence flag that distinguishes a missing
-    /// property from an explicit JSON null. Production candidates produced by the flattener
-    /// supply this directly; legacy in-memory builders that pass only
-    /// <see cref="SemanticIdentityValues"/> get a fallback whose <c>IsPresent</c> is derived
-    /// as <c>value is not null</c>.
+    /// The compiled semantic-identity parts in deterministic binding order, preserving
+    /// missing-vs-explicit-null semantics for profile collection matching.
     /// </summary>
     public ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder { get; init; }
 
@@ -491,6 +454,30 @@ public sealed record CollectionWriteCandidate
     /// Nested collection candidates that hang directly from this collection scope.
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
+
+    private static ImmutableArray<SemanticIdentityPart> BuildDefaultSemanticIdentityInOrder(
+        CollectionMergePlan mergePlan,
+        ImmutableArray<object?> semanticIdentityValues
+    )
+    {
+        var builder = ImmutableArray.CreateBuilder<SemanticIdentityPart>(
+            mergePlan.SemanticIdentityBindings.Length
+        );
+
+        for (var i = 0; i < mergePlan.SemanticIdentityBindings.Length; i++)
+        {
+            var value = semanticIdentityValues[i];
+            builder.Add(
+                new SemanticIdentityPart(
+                    mergePlan.SemanticIdentityBindings[i].RelativePath.Canonical,
+                    value is null ? null : JsonValue.Create(value),
+                    IsPresent: value is not null
+                )
+            );
+        }
+
+        return builder.MoveToImmutable();
+    }
 }
 
 /// <summary>
