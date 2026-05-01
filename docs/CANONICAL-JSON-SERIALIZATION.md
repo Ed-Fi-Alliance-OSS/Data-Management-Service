@@ -147,40 +147,44 @@ ETag: R2aCXlHmGFXaM2OJ+SBjzA==
 
 Implementation: `EdFi.DataManagementService.Backend.RelationalApiMetadataFormatter.FormatEtag`.
 
-### Quoting deviation from RFC 7232
+### Quoting Deviation From RFC 7232
 
-RFC 7232 §2.3 specifies that an ETag value MUST be enclosed in double-quote characters
-(`"\"<opaque>\""`). DMS ETags are intentionally **unquoted** to preserve behavioral parity
-with the legacy ODS implementation, which clients depend on.
+RFC 7232 section 2.3 specifies that an ETag value must be enclosed in double quotes.
+DMS ETags are intentionally **unquoted** to preserve behavioral parity with the legacy
+ODS implementation, which clients depend on.
 
 This deviation is tracked for future RFC-conformance work. A client sending an `If-Match`
 header must supply the raw unquoted Base64 string exactly as received in the `_etag` field
-or `ETag` response header — no surrounding quotes should be added.
+or `ETag` response header. No surrounding quotes should be added.
 
 > **Future work**: Adopt RFC 7232-conformant quoting and update the `If-Match` comparison
-> to strip surrounding double-quotes before ordinal comparison.
+> to strip surrounding double quotes before ordinal comparison.
 > See the Ed-Fi Jira backlog for a future RFC-conformance ticket.
 
-### If-Match wildcard (`*`)
+### If-Match Wildcard (`*`)
 
-RFC 7232 §3.1 defines the `*` wildcard to mean "any existing representation". DMS honours
-this semantics: when a client sends `If-Match: *` on a PUT or POST-as-update request, the
-ETag comparison is bypassed entirely and the write proceeds as if no `If-Match` header was
-present. The row-level lock normally acquired during the ETag pre-check is also skipped in
-this case.
+RFC 7232 section 3.1 defines the `*` wildcard to mean "any existing representation".
+DMS does **not** support that wildcard form.
 
-First-time POST inserts are unaffected: the wildcard guard inside `CheckIfMatchEtagAsync` is
-only reached when an existing document has been found, so a `CreateNew` target continues to
-insert normally regardless of the `If-Match` value.
+This is intentional for compatibility with Ed-Fi ODS/API behavior. The ODS/API documents
+`If-Match` using concrete `_etag` values and does not document support for wildcard
+preconditions. To avoid introducing a concurrency contract that diverges from ODS/API,
+DMS requires clients to send the exact `_etag` value returned by a prior read.
 
-Implementation: `DefaultRelationalWriteExecutor.CheckIfMatchEtagAsync` (early return for
-`request.IfMatchEtag == "*"`).
+As a result:
+
+- `If-Match: *` is treated as unsupported and does not act as "match any existing representation".
+- Clients should send the concrete unquoted Base64 `_etag` value exactly as received.
+- Blank or malformed `If-Match` values are not treated as an unconditional write signal.
+
+Implementation: DMS compares client `If-Match` values against the computed current `_etag`
+for guarded update and delete flows and does not provide special wildcard bypass semantics.
 
 ## Verification
 
 To verify canonicalization is working correctly:
 
-1. Create two JSON files with identical content but different formatting/ordering
+1. Create two JSON files with identical content but different formatting or ordering
 2. Run both through the canonicalizer
 3. The output bytes should be identical
 4. The computed hashes should match
