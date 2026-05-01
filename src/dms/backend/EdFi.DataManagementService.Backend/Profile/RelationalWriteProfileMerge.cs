@@ -13,13 +13,13 @@ using EdFi.DataManagementService.Core.Profile;
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Request contract for the profile merge synthesizer. Slice 4 narrows the earlier Slice 3
-/// rejection of root-level <see cref="CollectionWriteCandidate"/>s: root-attached base
-/// collection candidates (<see cref="DbTableKind.Collection"/>) are accepted. Slice 5
-/// further opens the gate to nested <c>CollectionCandidates</c> under those root-attached
-/// base collection candidates, attached-aligned scope data, and collection candidates under
-/// <see cref="RootExtensionWriteRowBuffer"/>. Non-Collection root table kinds remain
-/// structurally invalid.
+/// Request contract for the profile merge synthesizer. Root-level
+/// <see cref="CollectionWriteCandidate"/>s are accepted only for root-attached base
+/// collection candidates (<see cref="DbTableKind.Collection"/>). Nested
+/// <c>CollectionCandidates</c> under those root-attached base collection candidates,
+/// attached-aligned scope data, and collection candidates under
+/// <see cref="RootExtensionWriteRowBuffer"/> are supported. Non-Collection root table
+/// kinds remain structurally invalid.
 /// </summary>
 internal sealed record RelationalWriteProfileMergeRequest
 {
@@ -62,7 +62,7 @@ internal sealed record RelationalWriteProfileMergeRequest
         if (invalidRootCollectionCandidate is not null)
         {
             throw new ArgumentException(
-                "Slice 4 profile merge top-level collection candidates must carry "
+                "Profile merge top-level collection candidates must carry "
                     + "DbTableKind.Collection (root-attached base collection). Other root-candidate table kinds must be handled by their own merge paths.",
                 nameof(flattenedWriteSet)
             );
@@ -75,7 +75,7 @@ internal sealed record RelationalWriteProfileMergeRequest
         if (invalidRootExtensionTablePlan is not null)
         {
             throw new ArgumentException(
-                "Slice 3 profile merge requires every root-extension row to use a "
+                "Profile merge requires every root-extension row to use a "
                     + $"{nameof(DbTableKind.RootExtension)} table plan; got "
                     + $"'{invalidRootExtensionTablePlan.TableModel.IdentityMetadata.TableKind}' "
                     + $"for table '{ProfileBindingClassificationCore.FormatTable(invalidRootExtensionTablePlan)}'.",
@@ -115,9 +115,9 @@ internal interface IRelationalWriteProfileMergeSynthesizer
 /// Profile merge synthesizer. Composes the root-table binding classifier, the per-disposition
 /// overlay, and the post-overlay key-unification resolver for the root table, then iterates
 /// root-attached separate-table non-collection (<see cref="DbTableKind.RootExtension"/>) plans
-/// composing their own classifier/resolver plus the separate-table decider. Slice 3 does not
-/// support guarded no-op; <see cref="RelationalWriteMergeResult.SupportsGuardedNoOp"/> is
-/// always <c>false</c>. Returns a <see cref="ProfileMergeOutcome"/> discriminated union so the
+/// composing their own classifier/resolver plus the separate-table decider. Guarded no-op is
+/// not supported; <see cref="RelationalWriteMergeResult.SupportsGuardedNoOp"/> is always
+/// <c>false</c>. Returns a <see cref="ProfileMergeOutcome"/> discriminated union so the
 /// executor can short-circuit to a typed <see cref="UpsertResult.UpsertFailureProfileDataPolicy"/>
 /// / <see cref="UpdateResult.UpdateFailureProfileDataPolicy"/> on a separate-table
 /// create-denied outcome without throwing.
@@ -150,7 +150,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // each append into the table's builder. Finalization iterates
         // TablePlansInDependencyOrder and emits one TableState per touched table; this is
         // the spec's Section 3 "Table-state aggregation" requirement and the structural
-        // prerequisite for Task 9b's nested recursion.
+        // prerequisite for the walker's nested recursion.
         var tableStateBuilders = new Dictionary<DbTableName, ProfileTableStateBuilder>();
         foreach (var plan in request.WritePlan.TablePlansInDependencyOrder)
         {
@@ -189,8 +189,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         //     "delete-all-visible" scenarios (Blocker #2 fix: spec Section 7.7) are driven
         //     from the union of request-side, stored-side, and DB-side sources rather than
         //     only when request-side candidates are present.
-        // Build root context for the walker. Slice 5 walker shells out to the existing
-        // top-level body via shim until CP2 moves the body in.
+        // Build the root walker context. The walker owns top-level collection synthesis
+        // directly: WalkChildren reads the per-merge indexes and dispatches through the
+        // planner per scope.
         var rootContext = new ProfileCollectionWalkerContext(
             ContainingScopeAddress: new ScopeInstanceAddress("$", []),
             ParentPhysicalIdentityValues: [.. parentPhysicalRowIdentityValues],
@@ -246,11 +247,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             var tablePlan = request.WritePlan.TablePlansInDependencyOrder[tableIndex];
             if (tablePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.RootExtension)
             {
-                // Slice 3 handles only root-attached RootExtension tables. Plans may
-                // carry unused Collection / ExtensionCollection / CollectionExtensionScope
-                // tables (e.g., a multi-table School plan where the profiled request touches
-                // only root scopes). The synthesizer silently leaves them untouched so their
-                // rows flow through the no-profile persister path unchanged.
+                // This loop handles only root-attached RootExtension tables. Plans may carry
+                // unused Collection / ExtensionCollection / CollectionExtensionScope tables
+                // (e.g., a multi-table School plan where the profiled request touches only
+                // root scopes). The synthesizer silently leaves them untouched so their rows
+                // flow through the no-profile persister path unchanged.
                 continue;
             }
 
@@ -556,7 +557,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             );
         }
 
-        // Express the Slice 3 decision matrix's "actionable" conditions directly so genuine
+        // Express the separate-table matrix's "actionable" conditions directly so genuine
         // no-ops never reach the decider. Skip covers only the matrix cells that have no
         // decider-side outcome:
         //   - VisibleAbsent request with no matched stored visible row (no-op delete target).
@@ -687,11 +688,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         var projectedCurrentRow = currentRowProjection.ProjectedRow;
         var currentRowByColumnName = currentRowProjection.ColumnNameProjection;
 
-        // Slice 5 CP5: collect non-collection descendant inlined scope states once and feed
-        // the same envelope to both the classifier and the resolver. A descendant scope whose
-        // owner table is this same physical table contributes its own stored hidden-member
-        // paths and visibility to bindings on this table, ensuring the matched-row overlay
-        // and key-unification resolution honor descendant-scope governance instead of falling
+        // Collect non-collection descendant inlined scope states once and feed the same
+        // envelope to both the classifier and the resolver. A descendant scope whose owner
+        // table is this same physical table contributes its own stored hidden-member paths
+        // and visibility to bindings on this table, ensuring the matched-row overlay and
+        // key-unification resolution honor descendant-scope governance instead of falling
         // through to the direct scope.
         var descendantStates = ProfileSeparateScopeDescendantStates.Collect(
             request.WritePlan,
@@ -1644,8 +1645,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// the per-row helpers, narrowed to scope-wide current rows because ancestor canonicalization
     /// happens at index-build time without per-(scope, parent-instance) partitioning.</para>
     ///
-    /// <para>For document-reference parts, Slice 5 CP2 (Task 12.5) extends ancestor
-    /// canonicalization to resolve document-reference natural-key parts deterministically.
+    /// <para>Document-reference ancestor parts are also canonicalized deterministically.
     /// The per-row request/stored helpers use <c>(bindingIndex, ordinalPath)</c> via
     /// <see cref="FlatteningResolvedReferenceLookupSet.GetDocumentId"/> for request-side
     /// resolution; the ancestor pass mirrors that on the request side via the child's
@@ -1655,11 +1655,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// is restricted to the target parent partition (looked up in
     /// <paramref name="currentRowsByJsonScopeAndParent"/> by <c>(ancestor scope, canonical
     /// target parent address)</c>) so siblings in different parent instances are not
-    /// treated as ambiguous matches — Slice 5 design line 47, mirroring the descriptor
-    /// pass's partitioning. When the natural-key parts cannot be uniquely resolved within
-    /// that partition (and the request-side cache also misses), the helper fails closed
-    /// rather than leaving the URI/natural-key in place silently, avoiding the same
-    /// lookup-miss-via-form-mismatch shape the descriptor pass closes.</para>
+    /// treated as ambiguous matches, mirroring the descriptor pass's partitioning. When
+    /// the natural-key parts cannot be uniquely resolved within that partition (and the
+    /// request-side cache also misses), the helper fails closed rather than leaving the
+    /// URI/natural-key in place silently, avoiding the same lookup-miss-via-form-mismatch
+    /// shape the descriptor pass closes.</para>
     ///
     /// <para>If <paramref name="address"/> has no ancestor instances, returns the original
     /// reference unchanged. If no ancestor changes, returns the original reference.</para>
@@ -1800,8 +1800,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 ? ImmutableArray<VisibleStoredCollectionRow>.Empty
                 : ancestorStoredRows;
 
-            // Slice 5 fix: build the target parent address pair so per-partition positional
-            // fallback can intersect ancestor stored rows (raw URI form) with the right
+            // Build the target parent address pair so per-partition positional fallback can
+            // intersect ancestor stored rows (raw URI form) with the right
             // partition's current rows (canonical Int64 form). Raw form is built from the
             // input chain; canonical form uses the in-progress builder so far, mirroring how
             // BuildContainingScopeAddress walks ancestors during the walker's recursion.
@@ -1837,13 +1837,13 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             if (documentReferenceParts.Count > 0)
             {
-                // Slice 5 CP2 (Task 13.9): for the request-side path, derive the ancestor's
-                // ordinal path within the request as the prefix of the child's parsed ordinal
-                // path matching the wildcard count of the ancestor's JsonScope. This lets the
-                // resolver use the request-cycle reference cache for inserted parents (no
-                // current row exists yet). The stored-side path passes hasRequestOrdinalPath
-                // = false so the cache lookup is skipped and only the current-row scan is
-                // used (stored ancestors always have a current row).
+                // For the request-side path, derive the ancestor's ordinal path within the
+                // request as the prefix of the child's parsed ordinal path matching the
+                // wildcard count of the ancestor's JsonScope. This lets the resolver use the
+                // request-cycle reference cache for inserted parents (no current row exists
+                // yet). The stored-side path passes hasRequestOrdinalPath = false so the
+                // cache lookup is skipped and only the current-row scan is used (stored
+                // ancestors always have a current row).
                 ReadOnlySpan<int> ancestorRequestOrdinalPath = default;
                 bool ancestorHasRequestOrdinalPath = false;
 
@@ -2015,15 +2015,14 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             if (fallbackId is null)
             {
-                // Slice 5 design constraint (05-nested-and-extension-collection-merge.md:56):
-                // the Slice 4 fail-closed throw shape carries over unchanged. Leaving the URI
-                // form in place silently mis-buckets the row in the walker's address-keyed
-                // visible-stored index because recursion looks up by canonical Int64 — the
-                // bucket and the lookup carry different forms and the planner mistakes
-                // unmatched current rows for hidden preserves. The throw fires only when all
-                // three Slice 4 conditions hold: cache miss, scalar-match absent or
-                // ambiguous, and count-equal positional pairing cannot resolve (counts
-                // diverge or the URI is absent from the visible-stored ancestor list).
+                // Fail closed when the ancestor descriptor URI cannot be canonicalized.
+                // Leaving the URI form in place silently mis-buckets the row in the walker's
+                // address-keyed visible-stored index because recursion looks up by canonical
+                // Int64 — the bucket and the lookup carry different forms and the planner
+                // mistakes unmatched current rows for hidden preserves. The throw fires only
+                // when the cache misses, scalar matching is absent or ambiguous, and
+                // count-equal positional pairing cannot resolve (counts diverge or the URI
+                // is absent from the visible-stored ancestor list).
                 throw new InvalidOperationException(
                     "Cannot canonicalize descriptor-URI ancestor identity for scope "
                         + $"'{LogSanitizer.SanitizeForLog(ancestorTablePlan.TableModel.JsonScope.Canonical)}': "
@@ -2060,9 +2059,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// adapted from <see cref="TryResolveByReferenceScalarMatch"/>); the matched row's
     /// FK column yields the backend document id.
     /// <para>
-    /// Slice 5 design line 47 — and the descriptor-pass mirror at
-    /// <see cref="TryResolveAncestorDescriptorIdFromCurrentRows"/> — require the scan to
-    /// be parent-partitioned, not scope-wide. A valid nested shape can have the same
+    /// Parent-partitioned resolution — and the descriptor-pass mirror at
+    /// <see cref="TryResolveAncestorDescriptorIdFromCurrentRows"/> — require the scan
+    /// to be parent-partitioned, not scope-wide. A valid nested shape can have the same
     /// referenced document natural key under two different parent instances; a scope-wide
     /// scan would treat that as ambiguous and fail closed even though each parent
     /// partition has exactly one valid match. When the partition map has no entry for the
@@ -2072,8 +2071,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// the helper fails closed below.
     /// </para>
     /// <para>
-    /// Slice 5 CP2 (Task 12.7): natural-key matching is descriptor-aware. When the natural
-    /// key contains a <see cref="ColumnKind.DescriptorFk"/> part (e.g.,
+    /// Natural-key matching is descriptor-aware. When the natural key contains a
+    /// <see cref="ColumnKind.DescriptorFk"/> part (e.g.,
     /// <c>programReference.programTypeDescriptor</c>), the stored ancestor identity carries
     /// the URI string while the current row carries the canonical Int64 descriptor id;
     /// matching uses the request-cycle URI cache
@@ -2107,10 +2106,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     {
         ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
 
-        // Slice 5 design line 47: partition the row scan by the target parent address so
-        // siblings in different parent instances are not treated as ambiguous matches. The
-        // request-cycle reference cache lookup below stays unchanged — it is keyed by
-        // (BindingIndex, ordinalPath) and is already partition-correct by construction.
+        // Partition the row scan by the target parent address so siblings in different
+        // parent instances are not treated as ambiguous matches. The request-cycle
+        // reference cache lookup below stays unchanged — it is keyed by (BindingIndex,
+        // ordinalPath) and is already partition-correct by construction.
         var partitionCurrentRows =
             currentRowsByJsonScopeAndParent.TryGetValue(
                 (ancestorJsonScope, canonicalTargetParentAddress),
@@ -2140,7 +2139,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             // canonicalization. Skipping based on long-parseability left the index keyed by
             // the natural-key form while the walker's recursion lookup is built from the
             // canonicalized DocumentId form, producing the same lookup-miss class fixed for
-            // descriptor URIs in Slice 5 CP2 Task 11.5.
+            // descriptor URIs by ancestor descriptor canonicalization.
             //
             // Idempotency at recursion time is not a concern: the walker's recursion does not
             // re-canonicalize ancestor parts — it only looks up the indexes that this method
@@ -2149,11 +2148,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             // canonical-vs-raw flag rather than type-parseability.
             long? resolvedDocumentId = null;
 
-            // Slice 5 CP2 (Task 13.9): on the request-side path, try the request-cycle
-            // reference cache first. This succeeds for inserted parents (no current row
-            // exists yet) where the stored-side current-row scan would return null. The
-            // ordinal path is the prefix of the child item's parsed ordinal path that
-            // corresponds to the ancestor's JsonScope wildcards.
+            // On the request-side path, try the request-cycle reference cache first. This
+            // succeeds for inserted parents (no current row exists yet) where the
+            // stored-side current-row scan would return null. The ordinal path is the
+            // prefix of the child item's parsed ordinal path that corresponds to the
+            // ancestor's JsonScope wildcards.
             if (hasRequestOrdinalPath)
             {
                 resolvedDocumentId = resolvedReferenceLookups.GetDocumentId(
@@ -2163,13 +2162,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             }
 
             // Stored-side path or request-side cache miss: fall back to the current-row scan
-            // restricted to the target parent partition (Slice 5 design line 47). Matched-update
-            // parents always have a current row in their partition, so this preserves the prior
-            // behavior for the single-partition case while closing the false-ambiguity gap when
-            // the same referenced document natural key appears under two different parent
-            // instances. For the request-side path, the cache hit above takes precedence so
-            // inserted parents resolve via the cache instead of failing closed against an empty
-            // partition.
+            // restricted to the target parent partition. Matched-update parents always have
+            // a current row in their partition, so this preserves the prior behavior for the
+            // single-partition case while closing the false-ambiguity gap when the same
+            // referenced document natural key appears under two different parent instances.
+            // For the request-side path, the cache hit above takes precedence so inserted
+            // parents resolve via the cache instead of failing closed against an empty partition.
             resolvedDocumentId ??= TryResolveAncestorDocumentReferenceIdFromCurrentRows(
                 identity,
                 documentReferenceParts,
@@ -2188,11 +2186,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                         + "uniquely resolved against the target parent partition's current rows "
                         + $"for FK column '{LogSanitizer.SanitizeForLog(documentIdentityPart.Binding.FkColumn.Value)}' "
                         + $"on table '{LogSanitizer.SanitizeForLog(ProfileBindingClassificationCore.FormatTable(ancestorTablePlan))}'. "
-                        + "Slice 5 CP2 (Task 12.5) fails closed here to avoid the same "
-                        + "lookup-miss-via-form-mismatch shape that ancestor descriptor "
-                        + "canonicalization closes for descriptor URIs. This typically indicates "
-                        + "either partition coverage is incomplete for the ancestor's parent "
-                        + $"address or the natural-key parts (count: {partitionCurrentRows.Length} "
+                        + "Ancestor document-reference canonicalization fails closed here to avoid "
+                        + "lookup misses caused by mixed canonical and natural-key identity forms. "
+                        + "This typically indicates either partition coverage is incomplete for "
+                        + "the ancestor's parent address or the natural-key parts "
+                        + $"(count: {partitionCurrentRows.Length} "
                         + "current rows in the target parent partition) are ambiguous within it."
                 );
             }
@@ -2218,10 +2216,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// here do not conflate siblings in different parent instances; positional fallback is
     /// not available at ancestor canonicalization time.
     /// <para>
-    /// Slice 5 CP2 (Task 12.7): natural-key matching is descriptor-aware — when the natural
-    /// key contains a <see cref="ColumnKind.DescriptorFk"/> part, the stored URI is
-    /// canonicalized via <paramref name="resolvedReferenceLookups"/> before comparing
-    /// against the current row's Int64 descriptor id. The shared comparison helper
+    /// Natural-key matching is descriptor-aware — when the natural key contains a
+    /// <see cref="ColumnKind.DescriptorFk"/> part, the stored URI is canonicalized via
+    /// <paramref name="resolvedReferenceLookups"/> before comparing against the current
+    /// row's Int64 descriptor id. The shared comparison helper
     /// <see cref="DocumentReferenceIdentityPartsMatch"/> performs this canonicalization for
     /// both this ancestor path and the per-row <see cref="TryResolveByReferenceFullMatch"/>
     /// path. Without descriptor-aware comparison, a composite natural key with a descriptor
@@ -2290,10 +2288,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
     /// <summary>
     /// Resolves the canonical Int64 descriptor id for an ancestor's URI-form identity within
-    /// the target parent partition. Mirrors the Slice 4 per-row chain (cache → scalar →
-    /// positional → fail-closed throw at the caller) adapted to ancestor canonicalization
+    /// the target parent partition. Mirrors the per-row descriptor resolution chain
+    /// (cache → scalar → positional → fail-closed throw at the caller) adapted to ancestor canonicalization
     /// using the per-(scope, parent address) partition map so both strategies operate on
-    /// the same single-partition slice required by Slice 5 design line 47.
+    /// the same single parent partition required by nested and extension-child matching.
     /// <list type="number">
     ///   <item>Strategy 1 — scalar match scoped to the target partition's current rows.
     ///   Looks up <c>(ancestorJsonScope, canonicalTargetParentAddress)</c> in
@@ -2315,8 +2313,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Returns <c>null</c> when no strategy resolves (or when the partition map has no
     /// entry for the target — e.g., extension-collection parents whose containing-scope
     /// address could not be derived); the caller then throws fail-closed, preserving the
-    /// design constraint at <c>05-nested-and-extension-collection-merge.md:56</c>
-    /// ("Slice 4 runtime fail-closed throw shape carries over unchanged") together with
+    /// fail-closed descriptor-resolution constraint at
+    /// <c>05-nested-and-extension-collection-merge.md:56</c> together with
     /// the per-parent partitioning rule at <c>05-nested-and-extension-collection-merge.md:47</c>.
     /// </para>
     /// </summary>
@@ -2355,11 +2353,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             .Where(i => !descriptorIndices.Contains(i))
             .ToList();
 
-        // Strategy 1: scalar match scoped to the target parent partition. Slice 5 design line
-        // 47 requires nested/extension-child matching to use stable parent address plus
-        // ancestor context, not scope-wide state — siblings in different partitions can
-        // share scalar values (e.g., `code = "A"` under two different parents) and a
-        // scope-wide scan would treat them as ambiguous.
+        // Strategy 1: scalar match scoped to the target parent partition. Nested and
+        // extension-child matching uses stable parent address plus ancestor context, not
+        // scope-wide state — siblings in different partitions can share scalar values (e.g.,
+        // `code = "A"` under two different parents) and a scope-wide scan would treat them
+        // as ambiguous.
         if (scalarIndices.Count > 0)
         {
             var scalarMatchId = TryResolveByScalarMatch(
@@ -2705,17 +2703,13 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Rewrites the descriptor-backed parts of <paramref name="identity"/> for stored-side
     /// rows by looking up URI → Int64 from the request-cycle cache.
     ///
-    /// <para><b>Slice 4 fence shape:</b>
-    /// Slice 4 does not add an executor-level fence on descriptor-backed top-level collection
-    /// identity — rejecting at the planner/executor would block the common cases this method
-    /// handles correctly (URI in cache; mixed scalar+descriptor identity; descriptor-only
-    /// without hidden rows). Instead, the single structurally-ambiguous case — any identity
-    /// shape with hidden rows interleaved in current rows and a URI cache miss for a stored
-    /// row whose scalar match is ambiguous or absent — is narrowed to a runtime fail-closed
-    /// throw below. That combination is rare in standard Ed-Fi profiles but must not silently
-    /// return an incorrect descriptor id. A later slice may widen support by seeding the
-    /// descriptor resolver from the stored body or adding a planner-level reject; until then
-    /// the throw is the Slice 4 fence.</para>
+    /// <para><b>Fail-closed boundary:</b>
+    /// Descriptor-backed top-level collection identity is supported for the common cases
+    /// this method handles correctly (URI in cache; mixed scalar+descriptor identity;
+    /// descriptor-only without hidden rows). The structurally ambiguous case — hidden rows
+    /// interleaved in current rows plus a URI cache miss for a stored row whose scalar match
+    /// is ambiguous or absent — fails closed at runtime. That combination is rare in standard
+    /// Ed-Fi profiles but must not silently return an incorrect descriptor id.</para>
     ///
     /// <para><b>Cache-miss fallback (delete-by-absence support):</b>
     /// When a stored URI is not in the request-cycle cache — which happens during a PUT that
@@ -2925,12 +2919,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // currentRows is sorted by StoredOrdinal (see the walker's projection index). This
         // method does NOT independently verify the correspondence — a structural check
         // would require resolving each current row's Int64 descriptor id back to its URI
-        // (a DB roundtrip against the descriptor projection), which is out of scope for
-        // Slice 4. If the upstream contract is broken (body out of ordinal order, or
-        // VisibleStoredRows mis-ordered), positional rewrite would silently swap descriptor
-        // ids before the planner runs and downstream invariants would pass against the
-        // rewritten values. A later slice may add the reverse-resolution check; until then
-        // this is a documented residual risk fenced behind the count-equality guard.
+        // (a DB roundtrip against the descriptor projection). If the upstream contract is
+        // broken (body out of ordinal order, or VisibleStoredRows mis-ordered), positional
+        // rewrite would silently swap descriptor ids before the planner runs and downstream
+        // invariants would pass against the rewritten values. This residual risk is fenced
+        // behind the count-equality guard.
         //
         // Safe ONLY when currentRows.Length == storedRowsLength. Count equality is a
         // necessary (not sufficient) condition for one-to-one ordinal correspondence and is

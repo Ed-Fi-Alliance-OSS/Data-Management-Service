@@ -15,10 +15,10 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// <c>currentCollectionRowsByTableAndParentIdentity</c> is constructed.
 /// </summary>
 /// <remarks>
-/// CP2 Task 7b: this projection is a strict superset of
-/// <see cref="CurrentCollectionRowSnapshot"/> — the walker adapts to a snapshot at the
-/// planner-input use site via <see cref="ToSnapshot"/> so the planner contract continues
-/// to consume the snapshot shape unchanged.
+/// This projection is a strict superset of <see cref="CurrentCollectionRowSnapshot"/> —
+/// the walker adapts to a snapshot at the planner-input use site via
+/// <see cref="ToSnapshot"/> so the planner contract continues to consume the snapshot
+/// shape unchanged.
 /// </remarks>
 /// <param name="ProjectedRow">Binding-indexed merged-row representation for overlay consumption.</param>
 /// <param name="SemanticIdentityInOrder">Compiled semantic identity in deterministic binding order.</param>

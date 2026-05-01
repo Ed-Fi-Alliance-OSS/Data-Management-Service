@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// shared per-scope profile inputs, producing a per-binding
 /// <see cref="RootBindingDisposition"/> array plus the resolver-owned binding index
 /// set. Extracted from <see cref="ProfileRootTableBindingClassifier"/> without
-/// behavior change so Slice 3's separate-table classifier can reuse the same
+/// behavior change so root-table and separate-table classifiers share the same
 /// governance logic.
 /// </summary>
 internal static class ProfileBindingClassificationCore
@@ -450,11 +450,11 @@ internal static class ProfileBindingClassificationCore
                 return RootBindingDisposition.StorageManaged;
             case WriteValueSource.ParentKeyPart:
                 // Root-attached separate tables legitimately carry ParentKeyPart bindings
-                // (how the row aligns to its parent root row). The no-profile persister
-                // already handles parent-key rewriting in a separate step, not via
-                // key-unification. Classify as StorageManaged so the synthesizer skips it
-                // during profile overlay; Task 5 will add a ParentKeyPart rewrite step
-                // for separate-table rows mirroring the no-profile path.
+                // (how the row aligns to its parent root row). Parent-key rewriting is a
+                // separate step, not key-unification: the no-profile persister handles it
+                // for the no-profile path, and the profile separate-scope synthesis path
+                // calls RewriteSeparateScopeParentKeyParts. Classify as StorageManaged so
+                // profile overlay skips it.
                 return RootBindingDisposition.StorageManaged;
             case WriteValueSource.Ordinal:
                 // Row-level callers may supply collection tables with Ordinal bindings.
@@ -581,8 +581,8 @@ internal static class ProfileBindingClassificationCore
     /// failure rather than silent under-preservation.
     /// </summary>
     /// <remarks>
-    /// Slice 3 scope-relevance filter: a stored scope is "relevant to this table" only when
-    /// the stored scope is <em>owned by</em> this table — that is, when the longest
+    /// Scope-relevance filter: a stored scope is "relevant to this table" only when the
+    /// stored scope is <em>owned by</em> this table — that is, when the longest
     /// table-backed JSON-scope prefix of the stored scope's address equals this table's
     /// own <see cref="DbTableModel.JsonScope"/>. The profile context carries stored scope
     /// states for every scope on the resource (root + extensions); each per-table

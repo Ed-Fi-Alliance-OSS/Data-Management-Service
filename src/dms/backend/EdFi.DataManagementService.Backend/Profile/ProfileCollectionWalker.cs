@@ -30,11 +30,11 @@ internal delegate SeparateScopeSynthesisResult SynthesizeSeparateScopeInstanceDe
 /// <c>SynthesizeSeparateScopeInstance</c>.
 /// </summary>
 /// <remarks>
-/// CP2 Task 7 added four read-only per-merge indexes built at construction. CP2 Task 8
-/// migrated the top-level synthesis body into <see cref="WalkChildren"/>, which now reads
-/// the per-merge indexes directly and dispatches through the planner per scope. Nested
-/// cases (Tasks 9-13) re-enter <see cref="WalkChildren"/> with a non-root
-/// <see cref="ProfileCollectionWalkerContext"/>.
+/// Construction builds four read-only per-merge indexes (current collection rows,
+/// current separate-scope rows, visible-stored rows, visible-request items) keyed by
+/// <c>(table or scope, parent-instance address)</c>. <see cref="WalkChildren"/> reads those
+/// indexes directly and dispatches through the planner per scope. Nested cases re-enter
+/// <see cref="WalkChildren"/> with a non-root <see cref="ProfileCollectionWalkerContext"/>.
 /// </remarks>
 internal sealed class ProfileCollectionWalker
 {
@@ -106,13 +106,13 @@ internal sealed class ProfileCollectionWalker
             StringComparer.Ordinal
         );
 
-        // Slice 5 CP2 fix: build a JsonScope→TableWritePlan map and a JsonScope→current-rows
-        // map so visible-stored / visible-request index keys can canonicalize ancestor
-        // identities at construction time. Without this, the indexes would be keyed by raw
-        // Core-emitted addresses (descriptor URIs / document-reference natural keys in
-        // ancestors) while the walker's recursion lookup uses canonicalized backend-id
-        // ancestors, causing nested children of descriptor- or reference-backed parents to
-        // be invisible to the child planner.
+        // Build a JsonScope→TableWritePlan map and a JsonScope→current-rows map so the
+        // visible-stored / visible-request index keys can canonicalize ancestor identities
+        // at construction time. Without this, the indexes would be keyed by raw Core-emitted
+        // addresses (descriptor URIs / document-reference natural keys in ancestors) while
+        // the walker's recursion lookup uses canonicalized backend-id ancestors, causing
+        // nested children of descriptor- or reference-backed parents to be invisible to the
+        // child planner.
         var tablePlanByJsonScope = BuildTablePlanByJsonScope(_request);
         var currentRowsByJsonScope = BuildCurrentRowsByJsonScope(
             _request,
@@ -148,10 +148,10 @@ internal sealed class ProfileCollectionWalker
     /// synthesizer must propagate; returns <c>null</c> on successful completion.
     /// </summary>
     /// <remarks>
-    /// CP2 Task 8 moves the top-level synthesis body from
-    /// <see cref="RelationalWriteProfileMergeSynthesizer"/> into this method. The walker
-    /// now owns the per-(scope, parent-instance) planner dispatch surface for the root
-    /// case; nested cases extend the same surface in CP2 Tasks 9-11.
+    /// Owns the per-(scope, parent-instance) planner dispatch surface for both the root
+    /// case and nested cases. The root case treats the synthetic
+    /// <c>ScopeInstanceAddress($, [])</c> as the parent address; nested cases re-enter
+    /// this method with a non-root <see cref="ProfileCollectionWalkerContext"/>.
     /// </remarks>
     public ProfileMergeOutcome? WalkChildren(ProfileCollectionWalkerContext parentContext, WalkMode mode)
     {
@@ -236,10 +236,10 @@ internal sealed class ProfileCollectionWalker
                 ? visibleStoredRowBucket
                 : ImmutableArray<VisibleStoredCollectionRow>.Empty;
 
-            // Slice 5 CP4 fix: fold inlined non-collection descendant scope hidden paths
-            // onto each row so the matched-row classifier sees them. Done before
-            // canonicalization so descendant ancestor identities (un-canonicalized URIs /
-            // natural keys) compare against the same un-canonicalized row identities.
+            // Fold inlined non-collection descendant scope hidden paths onto each row so
+            // the matched-row classifier sees them. Done before canonicalization so
+            // descendant ancestor identities (un-canonicalized URIs / natural keys) compare
+            // against the same un-canonicalized row identities.
             if (
                 _request.ProfileAppliedContext is { } profileAppliedContextForExpand
                 && !visibleStoredRowsForScope.IsDefaultOrEmpty
@@ -256,7 +256,7 @@ internal sealed class ProfileCollectionWalker
 
             // Read current rows from the projection index, then adapt each projection to
             // the snapshot shape consumed by the planner. The projection is a strict
-            // superset of the snapshot (Task 7b), so this is a per-row field projection.
+            // superset of the snapshot, so this is a per-row field projection.
             var currentRowsForScope = ImmutableArray<CurrentCollectionRowSnapshot>.Empty;
             if (currentState is not null)
             {
@@ -596,8 +596,8 @@ internal sealed class ProfileCollectionWalker
             // Append into the per-table builder rather than constructing a TableState
             // here. The synthesizer finalizes one TableState per touched table after the
             // walk returns, in TablePlansInDependencyOrder. This is the structural
-            // prerequisite for nested recursion (Task 9b): multiple recursion calls for
-            // the same nested-children table aggregate into one consolidated TableState.
+            // prerequisite for nested recursion: multiple recursion calls for the same
+            // nested-children table aggregate into one consolidated TableState.
             if (!_tableStateBuilders.TryGetValue(tablePlan.TableModel.Table, out var builder))
             {
                 throw new InvalidOperationException(
@@ -633,9 +633,12 @@ internal sealed class ProfileCollectionWalker
     /// binding-disposition overlays. Every emitted row is byte-identical to the current
     /// row, so the persister's set-difference (current present + merged identical = no-op)
     /// preserves the row in storage.</para>
-    /// <para>Aligned-extension scope preservation in Preserve mode lands in CP3 (Task 18)
-    /// when <c>SynthesizeSeparateScopeInstance</c> is wired into the walker; for now only
-    /// collection children are preserved here.</para>
+    /// <para>Both collection child scopes and collection-aligned extension scopes are
+    /// preserved here: collection children emit identity merged-rows under the parent's
+    /// physical identity and recurse in Preserve mode for each preserved row's
+    /// descendants, while <see cref="DbTableKind.CollectionExtensionScope"/> children
+    /// dispatch to <see cref="PreserveAlignedExtensionScope"/>, which preserves the
+    /// aligned extension row and recurses in Preserve mode under it.</para>
     /// </remarks>
     private ProfileMergeOutcome? WalkChildrenPreserveMode(ProfileCollectionWalkerContext parentContext)
     {
@@ -1056,8 +1059,8 @@ internal sealed class ProfileCollectionWalker
     /// <c>CollectionCandidates</c>. For a matched/inserted collection-row parent, this is
     /// the <see cref="CollectionWriteCandidate"/>'s nested <c>CollectionCandidates</c>.
     /// For a root-extension parent, this is the <see cref="RootExtensionWriteRowBuffer"/>'s
-    /// child <c>CollectionCandidates</c>. For an aligned-extension scope parent (CP4
-    /// Task 25), this is the <see cref="CandidateAttachedAlignedScopeData"/>'s child
+    /// child <c>CollectionCandidates</c>. For an aligned-extension scope parent, this is
+    /// the <see cref="CandidateAttachedAlignedScopeData"/>'s child
     /// <c>CollectionCandidates</c>. Other <c>RequestSubstructure</c> shapes and
     /// <c>null</c> request substructure return an empty array.
     /// </summary>
@@ -1386,8 +1389,7 @@ internal sealed class ProfileCollectionWalker
     // ── Test-only accessors ────────────────────────────────────────────────
     //
     // These mirror the four private indexes for unit-test verification. The indexes are
-    // consumed by WalkChildren for the root case starting CP2 Task 8, and by nested cases
-    // in CP2 Tasks 9-13.
+    // consumed by WalkChildren for both the root case and nested cases.
 
     /// <summary>For testing only. Exposes the per-merge collection-row index.</summary>
     internal IReadOnlyDictionary<
@@ -1600,8 +1602,8 @@ internal sealed class ProfileCollectionWalker
                 var storedOrdinal = ExtractRequiredInt32(ordinalLiteral, tablePlan, "stored ordinal");
 
                 // Stable row identity (long) and column-name-keyed hydrated row are required
-                // by the planner-input contract once the walker takes over the top-level body
-                // (CP2 Task 8). Both are derivable here at index-construction time:
+                // by the planner-input contract for the walker's top-level body. Both are
+                // derivable here at index-construction time:
                 //   StableRowIdentity: ProjectedRow.Values[mergePlan.StableRowIdentityBindingIndex].
                 //   CurrentRowByColumnName: covers every column on the table model (including
                 //     UnifiedAlias columns absent from ColumnBindings) for hidden key-unification
@@ -1738,10 +1740,10 @@ internal sealed class ProfileCollectionWalker
 
     /// <summary>
     /// Builds a <c>JsonScope → TableWritePlan</c> dictionary used by ancestor-identity
-    /// canonicalization at index-build time. Slice 5 CP2 fix: ancestor identities arrive in
-    /// raw Core-emitted form (descriptor URIs / document-reference natural keys); the
-    /// canonicalize helpers need the ancestor's table plan to discover descriptor / document-
-    /// reference identity bindings.
+    /// canonicalization at index-build time. Ancestor identities arrive in raw Core-emitted
+    /// form (descriptor URIs / document-reference natural keys); the canonicalize helpers
+    /// need the ancestor's table plan to discover descriptor / document-reference identity
+    /// bindings.
     /// </summary>
     private static IReadOnlyDictionary<string, TableWritePlan> BuildTablePlanByJsonScope(
         RelationalWriteProfileMergeRequest request
@@ -1823,8 +1825,8 @@ internal sealed class ProfileCollectionWalker
     }
 
     /// <summary>
-    /// Per-(scope, parent containing-scope address) index of current rows. Slice 5 fix:
-    /// gives ancestor descriptor canonicalization a way to do count-equal positional
+    /// Per-(scope, parent containing-scope address) index of current rows. Gives
+    /// ancestor descriptor canonicalization a way to do count-equal positional
     /// fallback within a single parent partition. The scope-wide index alone intermixes
     /// partitions in dictionary-iteration order, so positional pairing across partitions
     /// is unsafe; this index slices each scope by the same canonical parent address that
@@ -2288,11 +2290,11 @@ internal sealed class ProfileCollectionWalker
 
         foreach (var row in storedRows)
         {
-            // Slice 5 CP2 fix: canonicalize ancestor identities so both the index key and
-            // the row's own Address.ParentAddress carry backend-id ancestors that match the
-            // walker's recursion-side lookup keys. The planner enforces structural equality
-            // between input.ParentScopeAddress (built from canonicalized stored row identity
-            // during recursion) and each row's Address.ParentAddress, so both sides of the
+            // Canonicalize ancestor identities so both the index key and the row's own
+            // Address.ParentAddress carry backend-id ancestors that match the walker's
+            // recursion-side lookup keys. The planner enforces structural equality between
+            // input.ParentScopeAddress (built from canonicalized stored row identity during
+            // recursion) and each row's Address.ParentAddress, so both sides of the
             // structural match must use the canonicalized form.
             var canonicalizedParent = RelationalWriteProfileMergeSynthesizer.CanonicalizeAddressAncestors(
                 row.Address.ParentAddress,
@@ -2350,14 +2352,13 @@ internal sealed class ProfileCollectionWalker
 
         foreach (var item in request.ProfileRequest.VisibleRequestCollectionItems)
         {
-            // Slice 5 CP2 fix: canonicalize ancestor identities (see BuildVisibleStoredRowsIndex).
-            // Slice 5 CP2 Task 13.9: use the request-side canonicalization path so document-
-            // reference ancestors backed by an INSERTED parent (no current row yet) resolve
-            // via the request-cycle reference cache (FlatteningResolvedReferenceLookupSet)
-            // using the child item's RequestJsonPath ordinal-path prefix matching the
-            // ancestor's wildcard count. The stored-side index keeps using the current-row
-            // scan via the no-RequestJsonPath overload — stored ancestors always have a
-            // current row.
+            // Canonicalize ancestor identities (see BuildVisibleStoredRowsIndex). Use the
+            // request-side canonicalization path so document-reference ancestors backed by
+            // an INSERTED parent (no current row yet) resolve via the request-cycle
+            // reference cache (FlatteningResolvedReferenceLookupSet) using the child item's
+            // RequestJsonPath ordinal-path prefix matching the ancestor's wildcard count.
+            // The stored-side index keeps using the current-row scan via the
+            // no-RequestJsonPath overload — stored ancestors always have a current row.
             var canonicalizedParent =
                 RelationalWriteProfileMergeSynthesizer.CanonicalizeAddressAncestorsForRequestItem(
                     item.Address.ParentAddress,
@@ -2501,7 +2502,7 @@ internal sealed class ProfileCollectionWalker
     /// Custom equality comparer for the <c>(childJsonScope, parentAddress)</c> tuple keys
     /// used by the visible-rows / visible-items indexes. Delegates to
     /// <see cref="ScopeInstanceAddressComparer"/> for the address part so structural
-    /// equality matches the semantics already used elsewhere in Slice 4 / 5.
+    /// equality matches the structural address semantics used by the profile indexes.
     /// </summary>
     internal sealed class ChildScopeAndParentComparer
         : IEqualityComparer<(string ChildJsonScope, ScopeInstanceAddress ParentAddress)>
@@ -2643,10 +2644,10 @@ internal sealed class ParentIdentityKey : IEquatable<ParentIdentityKey>
 /// that table).
 /// </para>
 /// <para>
-/// Multiple recursion calls for the same table (Task 9b) feed the same builder, so the
-/// finalized TableState carries the union of all merged + current rows from every
-/// recursion path. This is the spec's per-table aggregation requirement
-/// (Section 3 "Table-state aggregation").
+/// Multiple recursion calls for the same table feed the same builder, so the finalized
+/// TableState carries the union of all merged + current rows from every recursion path.
+/// This is the spec's per-table aggregation requirement (Section 3 "Table-state
+/// aggregation").
 /// </para>
 /// </remarks>
 internal sealed class ProfileTableStateBuilder

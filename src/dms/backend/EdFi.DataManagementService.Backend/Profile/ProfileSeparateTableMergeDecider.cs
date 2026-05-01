@@ -79,7 +79,7 @@ internal interface IProfileSeparateTableMergeDecider
 
 /// <summary>
 /// Stateless implementation of <see cref="IProfileSeparateTableMergeDecider"/>.
-/// Implements the Slice 3 decision matrix as a clear if-chain with no dead
+/// Implements the separate-table decision matrix as a clear if-chain with no dead
 /// branches. Hidden-stored-with-row dominates all non-VisiblePresent request
 /// shapes; a VisiblePresent request paired with a Hidden stored scope is an
 /// inconsistent tuple under a consistent writable profile and falls through

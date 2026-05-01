@@ -125,9 +125,9 @@ internal class ProfileWritePipelineMiddleware(
         var inlinedScopes = ContentTypeScopeDiscovery.DiscoverInlinedScopes(writeContentType, tableScopeSet);
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, inlinedScopes);
 
-        // Slice 1 only enforces root-level creatability, so only the "$" entry is required.
-        // RequiredFieldsForInsert comes from ResourceSchema.jsonSchemaForInsert.required and is
-        // populated by ProvideApiSchemaMiddleware earlier in the pipeline.
+        // Creatability enforcement only needs the root "$" schema-required entry.
+        // RequiredFieldsForInsert comes from ResourceSchema.jsonSchemaForInsert.required and
+        // is populated by ProvideApiSchemaMiddleware earlier in the pipeline.
         IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope = isCreate
             ? new Dictionary<string, IReadOnlyList<string>>
             {

@@ -245,9 +245,9 @@ internal sealed class DefaultRelationalWriteExecutor(
                         executionRequest.WritePlan,
                         profileWritableBody,
                         resolvedReferences,
-                        // Profile Slice 3 decision matrix: separate-table outcome comes from
-                        // scope metadata (RequestScopeState/StoredScopeState), not inferred
-                        // buffer presence. The shaper may emit a visible-present scope with
+                        // Profile separate-table outcome comes from scope metadata
+                        // (RequestScopeState/StoredScopeState), not inferred from buffer
+                        // presence. The shaper may emit a visible-present scope with
                         // no bound scalar data (e.g. _ext: { sample: {} } when all members
                         // are absent under the profile); the synthesizer must still see a
                         // buffer so Insert/Update overlay can run. See

@@ -22,7 +22,7 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// enforces first-present-wins canonical agreement, writes the canonical binding, and
 /// delegates to <see cref="ProfileKeyUnificationGuardrails"/> for presence-gated-null and
 /// canonical-non-nullable checks. Extracted from <see cref="ProfileRootKeyUnificationResolver"/>
-/// without behavior change so Slice 3's separate-table resolver can reuse the same logic.
+/// without behavior change so root-table and separate-table resolvers share the same logic.
 /// </summary>
 /// <remarks>
 /// Exception typing is preserved from the flattener:
@@ -541,11 +541,11 @@ internal static class ProfileKeyUnificationCore
     /// scope, not a nested sub-scope. The scope-state path
     /// (<see cref="ClassifyMemberVisibility"/>) reduces paths against the longest-match
     /// candidate scope, which may be nested; the row-level path here assumes the caller has
-    /// already normalized hidden paths to the table's JsonScope. In Slice 4, callers populate
+    /// already normalized hidden paths to the table's JsonScope. Callers populate
     /// <c>HiddenMemberPaths</c> from
     /// <see cref="ProfileCollectionRowKeyUnificationContext.HiddenMemberPaths"/>, which Core
-    /// emits at the table's JsonScope. If a future caller needs nested-scope hidden paths,
-    /// this classifier must be extended to accept an explicit strip-scope parameter.
+    /// emits at the table's JsonScope. Nested-scope hidden paths require an explicit
+    /// strip-scope parameter before they can be accepted here.
     /// </para>
     /// </remarks>
     private static MemberVisibility ClassifyMemberVisibilityFromHiddenSet(

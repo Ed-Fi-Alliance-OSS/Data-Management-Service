@@ -2594,18 +2594,18 @@ public class Given_ProfileMergeRequest_with_top_level_base_collection_candidate
     }
 }
 
-// ── Slice 4 top-level collection synthesizer fixtures ──────────────────────────
+// ── Top-level collection synthesizer fixtures ──────────────────────────────────
 //
 // These fixtures exercise the full synthesizer path for top-level collection candidates
 // on the root row.  The collection table layout produced by
-// Slice4Builders.MinimalCollectionTableWritePlan is:
+// ProfileCollectionMergeTestDoubles.MinimalCollectionTableWritePlan is:
 //   [0] CollectionItemId  (Precomputed)  — StableRowIdentityBindingIndex = 0
 //   [1] ParentDocumentId  (DocumentId)   — parent key (not ParentKeyPart, so no rewrite)
 //   [2] Ordinal           (Ordinal)      — OrdinalBindingIndex = 2
 //   [3] IdentityField0    (Scalar)       — SemanticIdentityBinding 0, binding index 3
 
 /// <summary>
-/// Local helpers for Slice-4 synthesizer fixtures. Shared between fixtures in this file.
+/// Local helpers for top-level collection synthesizer fixtures. Shared between fixtures in this file.
 /// Candidates, stored rows, and request items use the "$.addresses[*]" scope with a single
 /// identity field "$.identityField0".
 /// </summary>
@@ -2627,7 +2627,10 @@ internal static class CollectionSynthesizerBuilders
     /// </summary>
     public static (ResourceWritePlan Plan, TableWritePlan CollectionPlan) BuildRootAndCollectionPlan()
     {
-        var collectionPlan = Slice4Builders.MinimalCollectionTableWritePlan(CollectionScope, 1);
+        var collectionPlan = ProfileCollectionMergeTestDoubles.MinimalCollectionTableWritePlan(
+            CollectionScope,
+            1
+        );
         var rootPlan = BuildMinimalRootPlan();
 
         var resourceWritePlan = new ResourceWritePlan(

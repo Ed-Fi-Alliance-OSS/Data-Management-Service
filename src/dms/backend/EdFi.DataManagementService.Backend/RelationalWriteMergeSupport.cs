@@ -10,10 +10,8 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// Shared, projection-focused helpers used by the relational write merge
-/// synthesizers (no-profile today, profile-merge in a later slice) and the
-/// post-overlay key-unification resolver. Extracted without behavior change
-/// from <see cref="RelationalWriteNoProfileMergeSynthesizer"/>.
+/// Shared, projection-focused helpers used by the relational write merge synthesizers
+/// and the post-overlay key-unification resolver.
 /// </summary>
 internal static class RelationalWriteMergeSupport
 {

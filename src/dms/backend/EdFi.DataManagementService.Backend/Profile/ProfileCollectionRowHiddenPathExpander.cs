@@ -19,14 +19,15 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// matched-row classifier's <c>Exact</c> rule.
 /// </summary>
 /// <remarks>
-/// Slice 5 CP4 allows collection-descendant inlined non-collection scopes to reach profile
-/// merge. Without this expansion the row's <c>HiddenMemberPaths</c> only reflects the
-/// collection scope's own member filter — Core's <c>StoredSideExistenceLookupBuilder</c>
-/// emits descendant inlined scopes' hidden paths in separate <c>StoredScopeStates</c>,
-/// which the row-level classifier never consults. A profile that pairs a permissive
-/// collection-level rule with a restrictive sub-rule on an inlined child object would
-/// classify hidden child members as <see cref="RootBindingDisposition.VisibleWritable"/>,
-/// allowing flattened-null candidates to overwrite stored values on update.
+/// Collection-descendant inlined non-collection scopes reach profile merge as separate
+/// <c>StoredScopeStates</c>. Without this expansion the row's <c>HiddenMemberPaths</c>
+/// would only reflect the collection scope's own member filter — Core's
+/// <c>StoredSideExistenceLookupBuilder</c> emits descendant inlined scopes' hidden paths
+/// in those separate states, which the row-level classifier never consults. A profile
+/// that pairs a permissive collection-level rule with a restrictive sub-rule on an
+/// inlined child object would then classify hidden child members as
+/// <see cref="RootBindingDisposition.VisibleWritable"/>, allowing flattened-null
+/// candidates to overwrite stored values on update.
 /// </remarks>
 internal static class ProfileCollectionRowHiddenPathExpander
 {
