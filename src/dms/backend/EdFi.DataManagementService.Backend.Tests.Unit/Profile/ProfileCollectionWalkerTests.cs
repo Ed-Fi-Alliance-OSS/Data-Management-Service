@@ -3126,8 +3126,8 @@ public class Given_a_descriptor_backed_parent_collection_with_nested_children
 }
 
 /// <summary>
-/// Slice 5 review fix: regression for hidden inlined-descendant path expansion under a
-/// parent collection whose semantic identity is descriptor-backed. The walker canonicalizes
+/// Hidden inlined-descendant path expansion under a parent collection whose semantic
+/// identity is descriptor-backed. The walker canonicalizes
 /// child rows' <c>ParentAddress.AncestorCollectionInstances</c> at index-build time
 /// (descriptor URI → Int64 id), but the per-row hidden-path expansion reconstructs the
 /// child <c>CollectionRowAddress</c> from the descendant <see cref="StoredScopeState"/>'s
