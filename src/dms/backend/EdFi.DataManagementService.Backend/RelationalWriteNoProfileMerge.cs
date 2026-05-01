@@ -4,8 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -182,7 +185,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             var matchedCurrentRow = currentStateProjection.TryMatchCollectionRow(
                 collectionCandidate.TableWritePlan,
                 parentPhysicalRowIdentityValues,
-                collectionCandidate.SemanticIdentityValues
+                collectionCandidate.SemanticIdentityInOrder
             );
             var mergedValues = RewriteParentKeyPartValues(
                 collectionCandidate.TableWritePlan,
@@ -452,7 +455,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         public RelationalWriteMergedTableRow? TryMatchCollectionRow(
             TableWritePlan tableWritePlan,
             IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
-            IReadOnlyList<object?> semanticIdentityValues
+            ImmutableArray<SemanticIdentityPart> requestSemanticIdentity
         )
         {
             if (
@@ -467,7 +470,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
             return projectedCollectionTableState.TryMatch(
                 parentPhysicalRowIdentityValues,
-                semanticIdentityValues
+                requestSemanticIdentity
             );
         }
     }
@@ -476,7 +479,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
     {
         private readonly Dictionary<
             object?[],
-            Dictionary<object?[], RelationalWriteMergedTableRow>
+            Dictionary<string, RelationalWriteMergedTableRow>
         > _rowsByParentKey;
 
         public ProjectedCollectionTableState(
@@ -486,20 +489,21 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         {
             TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
 
-            _rowsByParentKey = new Dictionary<
-                object?[],
-                Dictionary<object?[], RelationalWriteMergedTableRow>
-            >(ObjectValueArrayComparer.Instance);
+            _rowsByParentKey = new Dictionary<object?[], Dictionary<string, RelationalWriteMergedTableRow>>(
+                ObjectValueArrayComparer.Instance
+            );
 
             foreach (var currentRow in currentRows)
             {
                 var parentScopeKey = ExtractParentScopeKey(tableWritePlan, currentRow.Values);
-                var semanticIdentityKey = ExtractSemanticIdentityKey(tableWritePlan, currentRow.Values);
+                var semanticIdentityKey = SemanticIdentityKeys.BuildKey(
+                    BuildCurrentRowSemanticIdentityParts(tableWritePlan, currentRow.Values)
+                );
 
                 if (!_rowsByParentKey.TryGetValue(parentScopeKey, out var rowsBySemanticIdentity))
                 {
-                    rowsBySemanticIdentity = new Dictionary<object?[], RelationalWriteMergedTableRow>(
-                        ObjectValueArrayComparer.Instance
+                    rowsBySemanticIdentity = new Dictionary<string, RelationalWriteMergedTableRow>(
+                        StringComparer.Ordinal
                     );
                     _rowsByParentKey.Add(parentScopeKey, rowsBySemanticIdentity);
                 }
@@ -517,7 +521,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
         public RelationalWriteMergedTableRow? TryMatch(
             IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
-            IReadOnlyList<object?> semanticIdentityValues
+            ImmutableArray<SemanticIdentityPart> requestSemanticIdentity
         )
         {
             var parentScopeKey = TryProjectLiteralLookupKey(parentPhysicalRowIdentityValues);
@@ -530,7 +534,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 return null;
             }
 
-            var semanticIdentityKey = semanticIdentityValues.ToArray();
+            var semanticIdentityKey = SemanticIdentityKeys.BuildKey(requestSemanticIdentity);
 
             return rowsBySemanticIdentity.TryGetValue(semanticIdentityKey, out var currentRow)
                 ? currentRow
@@ -565,7 +569,15 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             return parentScopeKey;
         }
 
-        private static object?[] ExtractSemanticIdentityKey(
+        // Builds the SemanticIdentityPart sequence for a DB-projected current row using the
+        // same scope-relative path convention as the flattener (and Core's
+        // AddressDerivationEngine.ReadSemanticIdentity / ProfileCollectionWalker stored-row
+        // projection). Stored rows always count as IsPresent: true: a row that exists in the
+        // table had each bound column persisted, even when the persisted value is SQL NULL.
+        // This mirrors the rule documented in ProfileCollectionWalker.cs and prevents a
+        // request candidate with a missing identity part from matching a current row whose
+        // persisted identity column happens to be NULL.
+        private static ImmutableArray<SemanticIdentityPart> BuildCurrentRowSemanticIdentityParts(
             TableWritePlan tableWritePlan,
             IReadOnlyList<FlattenedWriteValue> values
         )
@@ -576,19 +588,40 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                     $"Collection table '{FormatTable(tableWritePlan)}' does not have a compiled collection merge plan."
                 );
 
-            object?[] semanticIdentityKey = new object?[mergePlan.SemanticIdentityBindings.Length];
+            var scopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+            var bindings = mergePlan.SemanticIdentityBindings;
+            var parts = new SemanticIdentityPart[bindings.Length];
 
-            for (var index = 0; index < mergePlan.SemanticIdentityBindings.Length; index++)
+            for (var index = 0; index < bindings.Length; index++)
             {
-                var semanticIdentityBinding = mergePlan.SemanticIdentityBindings[index];
-                semanticIdentityKey[index] = ExtractLiteralValue(
+                var binding = bindings[index];
+                var rawValue = ExtractLiteralValue(
                     tableWritePlan,
-                    values[semanticIdentityBinding.BindingIndex],
-                    tableWritePlan.ColumnBindings[semanticIdentityBinding.BindingIndex].Column.ColumnName
+                    values[binding.BindingIndex],
+                    tableWritePlan.ColumnBindings[binding.BindingIndex].Column.ColumnName
                 );
+                JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
+                var relativePath = ToScopeRelativeIdentityPath(
+                    binding.RelativePath.Canonical,
+                    scopeCanonical
+                );
+                parts[index] = new SemanticIdentityPart(relativePath, jsonValue, IsPresent: true);
             }
 
-            return semanticIdentityKey;
+            return [.. parts];
+        }
+
+        private static string ToScopeRelativeIdentityPath(string canonicalPath, string scopeCanonical)
+        {
+            var scopePrefix = scopeCanonical + ".";
+            if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
+            {
+                return canonicalPath[scopePrefix.Length..];
+            }
+
+            return canonicalPath.StartsWith("$.", StringComparison.Ordinal)
+                ? canonicalPath[2..]
+                : canonicalPath;
         }
 
         private static object?[]? TryProjectLiteralLookupKey(IReadOnlyList<FlattenedWriteValue> values)

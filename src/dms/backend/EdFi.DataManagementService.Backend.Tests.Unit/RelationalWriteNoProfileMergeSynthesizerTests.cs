@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -153,6 +156,77 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
         LiteralValue(addressState.MergedRows[1].Values[2]).Should().Be(1);
         LiteralValue(addressState.MergedRows[1].Values[3]).Should().Be("Physical");
         LiteralValue(addressState.MergedRows[1].Values[4]).Should().Be("New");
+    }
+
+    [Test]
+    public void It_distinguishes_missing_from_explicit_null_when_matching_collection_current_rows()
+    {
+        // Repro for Finding 17: a request candidate with a missing identity part must not
+        // match a current row whose persisted identity column is NULL, while a request
+        // candidate with an explicit JSON null identity must match that same NULL row.
+        var fixture = CreateFixture();
+        var missingCandidateId = NewCollectionItemId();
+        var explicitNullCandidateId = NewCollectionItemId();
+
+        var missingIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("addressType", Value: null, IsPresent: false)
+        );
+        var explicitNullIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("addressType", Value: null, IsPresent: true)
+        );
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [Literal(345L), Literal("Lincoln High")],
+                collectionCandidates:
+                [
+                    CreateAddressCandidate(
+                        fixture,
+                        requestOrder: 0,
+                        collectionItemId: missingCandidateId,
+                        addressType: null,
+                        city: "Missing City",
+                        semanticIdentityInOrder: missingIdentity
+                    ),
+                    CreateAddressCandidate(
+                        fixture,
+                        requestOrder: 1,
+                        collectionItemId: explicitNullCandidateId,
+                        addressType: null,
+                        city: "Null City",
+                        semanticIdentityInOrder: explicitNullIdentity
+                    ),
+                ]
+            )
+        );
+
+        var currentState = CreateCurrentState(
+            fixture,
+            rootRows:
+            [
+                [345L, "Lincoln High"],
+            ],
+            addressRows:
+            [
+                [11L, 345L, 0, null, "Persisted City"],
+            ]
+        );
+
+        var result = _sut.Synthesize(
+            new RelationalWriteNoProfileMergeRequest(fixture.WritePlan, flattenedWriteSet, currentState)
+        );
+
+        var addressState = result.TablesInDependencyOrder[2];
+        addressState.MergedRows.Should().HaveCount(2);
+
+        // The missing-identity candidate must not match the persisted NULL row, so it keeps
+        // its original unresolved collection-id placeholder.
+        addressState.MergedRows[0].Values[0].Should().BeSameAs(missingCandidateId);
+
+        // The explicit-null-identity candidate must match the persisted NULL row and reuse
+        // the stable id 11.
+        LiteralValue(addressState.MergedRows[1].Values[0]).Should().Be(11L);
     }
 
     [Test]
@@ -434,11 +508,15 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
         WritePlanFixture fixture,
         int requestOrder,
         FlattenedWriteValue collectionItemId,
-        string addressType,
+        string? addressType,
         string city,
-        IReadOnlyList<CollectionWriteCandidate>? periods = null
+        IReadOnlyList<CollectionWriteCandidate>? periods = null,
+        ImmutableArray<SemanticIdentityPart>? semanticIdentityInOrder = null
     )
     {
+        var resolvedSemanticIdentityInOrder =
+            semanticIdentityInOrder ?? BuildScopeRelativeIdentity(fixture.AddressPlan, [addressType]);
+
         return new CollectionWriteCandidate(
             fixture.AddressPlan,
             ordinalPath: [requestOrder],
@@ -452,7 +530,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 Literal(city),
             ],
             semanticIdentityValues: [addressType],
-            collectionCandidates: periods ?? []
+            collectionCandidates: periods ?? [],
+            semanticIdentityInOrder: resolvedSemanticIdentityInOrder.ToArray()
         );
     }
 
@@ -478,7 +557,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 Literal(beginDate),
                 Literal(room),
             ],
-            semanticIdentityValues: [beginDate]
+            semanticIdentityValues: [beginDate],
+            semanticIdentityInOrder: BuildScopeRelativeIdentity(fixture.PeriodPlan, [beginDate]).ToArray()
         );
     }
 
@@ -504,8 +584,53 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 Literal(startTime),
                 Literal(room),
             ],
-            semanticIdentityValues: [sessionDate, startTime]
+            semanticIdentityValues: [sessionDate, startTime],
+            semanticIdentityInOrder: BuildScopeRelativeIdentity(
+                    fixture.SchedulePlan,
+                    [sessionDate, startTime]
+                )
+                .ToArray()
         );
+    }
+
+    /// <summary>
+    /// Helper that builds a presence-aware <see cref="SemanticIdentityPart"/> sequence using
+    /// the same scope-relative path convention the production flattener emits, so test
+    /// candidates align with the new no-profile merge matcher's current-row identity contract.
+    /// </summary>
+    private static ImmutableArray<SemanticIdentityPart> BuildScopeRelativeIdentity(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<object?> semanticIdentityValues
+    )
+    {
+        var mergePlan = tableWritePlan.CollectionMergePlan!;
+        var scopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+        var bindings = mergePlan.SemanticIdentityBindings;
+        var parts = new SemanticIdentityPart[bindings.Length];
+
+        for (var index = 0; index < bindings.Length; index++)
+        {
+            var rawValue = semanticIdentityValues[index];
+            JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
+            var relativePath = ToScopeRelativeIdentityPath(
+                bindings[index].RelativePath.Canonical,
+                scopeCanonical
+            );
+            parts[index] = new SemanticIdentityPart(relativePath, jsonValue, IsPresent: rawValue is not null);
+        }
+
+        return [.. parts];
+    }
+
+    private static string ToScopeRelativeIdentityPath(string canonicalPath, string scopeCanonical)
+    {
+        var scopePrefix = scopeCanonical + ".";
+        if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
+        {
+            return canonicalPath[scopePrefix.Length..];
+        }
+
+        return canonicalPath.StartsWith("$.", StringComparison.Ordinal) ? canonicalPath[2..] : canonicalPath;
     }
 
     private static TableWritePlan CreateRootPlan()
