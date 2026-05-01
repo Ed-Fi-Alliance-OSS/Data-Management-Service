@@ -392,7 +392,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     (ordinalPath, semanticIdentityValues)
                 );
 
-                var childParentKeyParts = GetPhysicalRowIdentityValues(childPlan.TableWritePlan, values);
+                var childParentKeyParts = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
+                    childPlan.TableWritePlan,
+                    values
+                );
                 var nestedCollectionCandidates = MaterializeCollectionCandidates(
                     flatteningInput,
                     traversalPlans,
@@ -1099,29 +1102,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return semanticIdentityValues;
     }
 
-    private static IReadOnlyList<FlattenedWriteValue> GetPhysicalRowIdentityValues(
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<FlattenedWriteValue> values
-    )
-    {
-        var physicalRowIdentityColumns = tableWritePlan
-            .TableModel
-            .IdentityMetadata
-            .PhysicalRowIdentityColumns;
-        FlattenedWriteValue[] physicalRowIdentityValues = new FlattenedWriteValue[
-            physicalRowIdentityColumns.Count
-        ];
-
-        for (var index = 0; index < physicalRowIdentityColumns.Count; index++)
-        {
-            physicalRowIdentityValues[index] = values[
-                FindBindingIndex(tableWritePlan, physicalRowIdentityColumns[index])
-            ];
-        }
-
-        return physicalRowIdentityValues;
-    }
-
     private static IEnumerable<CollectionScopeInstance> EnumerateCollectionScopeInstances(
         JsonNode parentScopeNode,
         CollectionChildPlan childPlan
@@ -1401,21 +1381,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return absoluteSegments[scopeSegments.Length..];
-    }
-
-    private static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)
-    {
-        for (var index = 0; index < tableWritePlan.ColumnBindings.Length; index++)
-        {
-            if (tableWritePlan.ColumnBindings[index].Column.ColumnName.Equals(columnName))
-            {
-                return index;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Table '{FormatTable(tableWritePlan)}' does not have a write binding for column '{columnName.Value}'."
-        );
     }
 
     internal static DbColumnModel GetRequiredColumnModel(
