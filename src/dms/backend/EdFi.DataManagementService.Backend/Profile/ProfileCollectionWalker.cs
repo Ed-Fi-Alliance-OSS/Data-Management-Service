@@ -267,17 +267,7 @@ internal sealed class ProfileCollectionWalker
                 // ProjectCurrentRowsForScope filter, which compared each child locator
                 // column to its specific parent slot — slots the child does not reference
                 // never participated in matching.
-                var parentSlotMap = ResolveParentKeyPartSlotsForChild(tablePlan);
-                var parentValuesForLookup =
-                    parentSlotMap.Length == 0
-                        ? ImmutableArray<FlattenedWriteValue>.Empty
-                        : ImmutableArray.CreateRange(
-                            parentSlotMap.Select(slot =>
-                                slot >= 0 && slot < parentContext.ParentPhysicalIdentityValues.Length
-                                    ? parentContext.ParentPhysicalIdentityValues[slot]
-                                    : (FlattenedWriteValue)new FlattenedWriteValue.Literal(null)
-                            )
-                        );
+                var parentValuesForLookup = ProjectParentValuesForChildLookup(tablePlan, parentContext);
 
                 var currentIndexKey = (
                     tablePlan.TableModel.Table,
@@ -463,10 +453,11 @@ internal sealed class ProfileCollectionWalker
                         // from request substructure. Even when no candidates are
                         // attached for a child scope, stored visible rows under the
                         // matched parent must still be reverse-coverage-checked.
-                        var matchedRowPhysicalIdentity = ExtractPhysicalRowIdentityValues(
-                            tablePlan,
-                            mergedRow.Values
-                        );
+                        var matchedRowPhysicalIdentity =
+                            RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
+                                tablePlan,
+                                mergedRow.Values
+                            );
                         var matchedRowContainingAddress = BuildContainingScopeAddress(
                             parentContext,
                             jsonScope,
@@ -507,10 +498,11 @@ internal sealed class ProfileCollectionWalker
                             jsonScope,
                             hiddenEntry.StoredRow.SemanticIdentityInOrder
                         );
-                        var hiddenPhysicalIdentity = ExtractPhysicalRowIdentityValues(
-                            tablePlan,
-                            hiddenEntry.StoredRow.ProjectedCurrentRow.Values
-                        );
+                        var hiddenPhysicalIdentity =
+                            RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
+                                tablePlan,
+                                hiddenEntry.StoredRow.ProjectedCurrentRow.Values
+                            );
                         var hiddenContext = new ProfileCollectionWalkerContext(
                             ContainingScopeAddress: hiddenContainingAddress,
                             ParentPhysicalIdentityValues: hiddenPhysicalIdentity,
@@ -544,10 +536,11 @@ internal sealed class ProfileCollectionWalker
                         // the recursion with the inserted row's PhysicalRowIdentity.
                         // Brand-new rows have no DB descendants, so the nested planner
                         // runs on request-side substructure only.
-                        var insertedPhysicalIdentity = ExtractPhysicalRowIdentityValues(
-                            tablePlan,
-                            insertMergedRow.Values
-                        );
+                        var insertedPhysicalIdentity =
+                            RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
+                                tablePlan,
+                                insertMergedRow.Values
+                            );
                         var insertedSemanticIdentity = insertEntry.RequestCandidate.SemanticIdentityInOrder;
                         var insertedContainingAddress = BuildContainingScopeAddress(
                             parentContext,
@@ -698,10 +691,11 @@ internal sealed class ProfileCollectionWalker
                     childTablePlan.TableModel.JsonScope.Canonical,
                     currentRow.SemanticIdentityInOrder
                 );
-                var preservedRowPhysicalIdentity = ExtractPhysicalRowIdentityValues(
-                    childTablePlan,
-                    currentRow.ProjectedRow.Values
-                );
+                var preservedRowPhysicalIdentity =
+                    RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
+                        childTablePlan,
+                        currentRow.ProjectedRow.Values
+                    );
                 var preservedRowContext = new ProfileCollectionWalkerContext(
                     ContainingScopeAddress: preservedRowContainingAddress,
                     ParentPhysicalIdentityValues: preservedRowPhysicalIdentity,
@@ -788,7 +782,7 @@ internal sealed class ProfileCollectionWalker
 
         var alignedContext = new ProfileCollectionWalkerContext(
             ContainingScopeAddress: BuildAlignedScopeAddress(parentContext, alignedScopeTablePlan),
-            ParentPhysicalIdentityValues: ExtractPhysicalRowIdentityValues(
+            ParentPhysicalIdentityValues: RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
                 alignedScopeTablePlan,
                 currentRow.Values
             ),
@@ -863,7 +857,7 @@ internal sealed class ProfileCollectionWalker
 
         var alignedContext = new ProfileCollectionWalkerContext(
             ContainingScopeAddress: alignedScopeAddress,
-            ParentPhysicalIdentityValues: ExtractPhysicalRowIdentityValues(
+            ParentPhysicalIdentityValues: RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
                 alignedScopeTablePlan,
                 recursionSourceRow.Values
             ),
@@ -1371,32 +1365,6 @@ internal sealed class ProfileCollectionWalker
             new AncestorCollectionInstance(rowJsonScope, rowSemanticIdentity)
         );
         return new ScopeInstanceAddress(rowJsonScope, extendedAncestors);
-    }
-
-    /// <summary>
-    /// Extracts the physical-row-identity slice of a merged row's binding-indexed values
-    /// for use as the parent identity of nested-children recursion. Mirrors the helper in
-    /// <see cref="RelationalWriteNoProfileMergeSynthesizer"/> so the walker's recursion
-    /// keeps the same parent-identity shape that the no-profile path produces.
-    /// </summary>
-    private static ImmutableArray<FlattenedWriteValue> ExtractPhysicalRowIdentityValues(
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<FlattenedWriteValue> values
-    )
-    {
-        var physicalRowIdentityColumns = tableWritePlan
-            .TableModel
-            .IdentityMetadata
-            .PhysicalRowIdentityColumns;
-        var physicalRowIdentityValues = new FlattenedWriteValue[physicalRowIdentityColumns.Count];
-        for (var i = 0; i < physicalRowIdentityColumns.Count; i++)
-        {
-            var columnName = physicalRowIdentityColumns[i];
-            physicalRowIdentityValues[i] = values[
-                RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
-            ];
-        }
-        return [.. physicalRowIdentityValues];
     }
 
     /// <summary>

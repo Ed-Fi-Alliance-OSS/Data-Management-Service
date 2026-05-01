@@ -32,6 +32,33 @@ internal static class RelationalWriteMergeSupport
         );
     }
 
+    /// <summary>
+    /// Extracts the physical-row-identity slice of a row's binding-indexed values for use as
+    /// the parent identity of nested-children recursion. Iterates the table's
+    /// <see cref="DbTableModel.IdentityMetadata"/>.<c>PhysicalRowIdentityColumns</c> and pulls
+    /// each column's value from <paramref name="values"/> via <see cref="FindBindingIndex"/>.
+    /// Shared by the no-profile synthesizer, profile-merge synthesizer, and profile collection
+    /// walker so all three keep the same parent-identity shape.
+    /// </summary>
+    internal static ImmutableArray<FlattenedWriteValue> ExtractPhysicalRowIdentityValues(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<FlattenedWriteValue> values
+    )
+    {
+        var physicalRowIdentityColumns = tableWritePlan
+            .TableModel
+            .IdentityMetadata
+            .PhysicalRowIdentityColumns;
+        var physicalRowIdentityValues = new FlattenedWriteValue[physicalRowIdentityColumns.Count];
+        for (var index = 0; index < physicalRowIdentityColumns.Count; index++)
+        {
+            var columnName = physicalRowIdentityColumns[index];
+            physicalRowIdentityValues[index] = values[FindBindingIndex(tableWritePlan, columnName)];
+        }
+
+        return [.. physicalRowIdentityValues];
+    }
+
     internal static ImmutableArray<FlattenedWriteValue> ProjectComparableValues(
         TableWritePlan tableWritePlan,
         IReadOnlyList<FlattenedWriteValue> values

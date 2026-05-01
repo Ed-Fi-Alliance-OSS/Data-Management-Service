@@ -480,7 +480,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         var rootExtensionContext = new ProfileCollectionWalkerContext(
             ContainingScopeAddress: new ScopeInstanceAddress(tablePlan.TableModel.JsonScope.Canonical, []),
-            ParentPhysicalIdentityValues: ExtractPhysicalRowIdentityValues(
+            ParentPhysicalIdentityValues: RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
                 tablePlan,
                 recursionSourceRow.Values
             ),
@@ -960,27 +960,6 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         )
             ? scopeNode
             : null;
-    }
-
-    private static ImmutableArray<FlattenedWriteValue> ExtractPhysicalRowIdentityValues(
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<FlattenedWriteValue> values
-    )
-    {
-        var physicalRowIdentityColumns = tableWritePlan
-            .TableModel
-            .IdentityMetadata
-            .PhysicalRowIdentityColumns;
-        var physicalRowIdentityValues = new FlattenedWriteValue[physicalRowIdentityColumns.Count];
-        for (var i = 0; i < physicalRowIdentityColumns.Count; i++)
-        {
-            var columnName = physicalRowIdentityColumns[i];
-            physicalRowIdentityValues[i] = values[
-                RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
-            ];
-        }
-
-        return [.. physicalRowIdentityValues];
     }
 
     // -- Document-reference canonicalization helpers ------------------------
