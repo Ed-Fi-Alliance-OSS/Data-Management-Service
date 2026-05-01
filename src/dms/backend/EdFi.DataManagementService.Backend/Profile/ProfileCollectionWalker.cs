@@ -2512,12 +2512,15 @@ internal sealed class ProfileCollectionWalker
             && ScopeInstanceAddressComparer.ScopeInstanceAddressEquals(x.ParentAddress, y.ParentAddress);
 
         public int GetHashCode((string ChildJsonScope, ScopeInstanceAddress ParentAddress) obj) =>
-            // Cheap structural hash: child scope + the parent address's JsonScope + ancestor
-            // count. Equality remains strict; this is just for bucketing.
+            // Mix the child scope with the canonical structural hash of the parent address,
+            // so sibling parent instances at the same depth and JsonScope hash to distinct
+            // buckets when their ancestor identity contents differ. Delegating to
+            // ScopeInstanceAddressComparer.GetHashCode keeps this consistent with the
+            // structural equality used by Equals (and with CollectionRowAddressComparer's
+            // hash composition).
             HashCode.Combine(
                 StringComparer.Ordinal.GetHashCode(obj.ChildJsonScope),
-                StringComparer.Ordinal.GetHashCode(obj.ParentAddress.JsonScope),
-                obj.ParentAddress.AncestorCollectionInstances.Length
+                ScopeInstanceAddressComparer.Instance.GetHashCode(obj.ParentAddress)
             );
     }
 }
