@@ -124,11 +124,13 @@ Resolution validation: The expander now reconstructs each descendant state's own
 - Source: Agent 3, Finding 2
 - Severity: low
 - Validation: valid
-- Addressed: not addressed
+- Addressed: addressed
 
 `src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs:274` has a slice fence switch where every current `RequiredSliceFamily` returns true, so `src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs:286` and `src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs:661` are dead for current code. This should be simplified now that Slice 5 is open. The following comment at `src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs:292` is also stale Slice 2/root-only language.
 
 Validation reasoning: Valid. The current `RequiredSliceFamily` enum has only four values, and the executor switch returns `true` for all four while the default case throws instead of producing `false`; the classifier only returns those enum values, so `if (!fencePassed)` and its only `BuildSliceFenceResult(...)` call are dead for current code. The nearby comments confirm Slice 5 opened collection and nested/extension collection handling, but the post-fence comment still says "Slice-2 classification passed" and describes the synthesizer as root-only.
+
+Resolution validation: The dead slice-fence code is gone from `DefaultRelationalWriteExecutor.cs`. The `RequiredSliceFamily`/`fencePassed` switch path is removed, the unreachable `if (!fencePassed)` branch is removed, and `BuildSliceFenceResult` is no longer present. The stale Slice 2/root-only post-fence comment is gone; the executor now flows directly from contract validation into profile flattening and synthesis with stable behavior-focused comments. Verification: `rg -n "RequiredSliceFamily|fencePassed|BuildSliceFenceResult|Slice-2|root-only|classification passed" src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs` returns no matches; broader `rg "RequiredSliceFamily|BuildSliceFenceResult|fencePassed" src/dms/backend` also returns no matches.
 
 ## Finding 13: Semantic identity key generation should be centralized before DMS-1132
 
@@ -191,19 +193,23 @@ Validation reasoning: Valid originally, but stale against the current workspace.
 - Source: Agent 4, Finding 4
 - Severity: low
 - Validation: valid
-- Addressed: not addressed
+- Addressed: addressed (same fix as Finding 12)
 
 The slice fence code is now dead: every current `RequiredSliceFamily` maps to true, making the `if (!fencePassed)` branch and `src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs:661` unreachable. Either remove it or introduce an explicit future/unsupported family.
 
 Validation reasoning: Valid. The current fence switch maps every declared `RequiredSliceFamily` value to `true`, and the classifier only returns those declared families. That means `if (!fencePassed)` cannot be reached for any current classifier output; an unexpected enum value would hit the switch default and throw instead of returning `false`. `BuildSliceFenceResult` is still present and only called from that unreachable branch.
+
+Resolution validation: Same fix as Finding 12. The `RequiredSliceFamily`/`fencePassed` switch path, the unreachable `if (!fencePassed)` branch, and `BuildSliceFenceResult` are all gone from `DefaultRelationalWriteExecutor.cs`. Verification: `rg -n "RequiredSliceFamily|fencePassed|BuildSliceFenceResult" src/dms/backend` returns no matches.
 
 ## Finding 19: There is avoidable duplication and unrelated test churn
 
 - Source: Agent 4, Finding 5
 - Severity: low
 - Validation: valid
-- Addressed: not addressed
+- Addressed: addressed
 
 `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/IntegrationFixtureGoldenTests.cs:13` has two nearly identical fixture classes. `RecordingLogger<T>` is duplicated in `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/TestSupport/DeleteTestHelpers.cs:65` while the original still exists in `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/RecordingLogger.cs:15`. The branch also removes delete-path FK diagnostic assertions, which looks unrelated to this story.
 
 Validation reasoning: Valid for the avoidable duplication/test-churn concern. `IntegrationFixtureGoldenTests.cs` repeats the same fixture setup/assertion body across three classes even though `DdlGoldenFixtureTestBase` already provides the shared golden-fixture pattern used by nearby tests, and `DeleteTestHelpers.cs` defines a second `RecordingLogger<T>` while the original still exists in `Backend.Tests.Common`. The branch also removed `InternalsVisibleTo` for the unit test assembly from the common test project, which explains the local copy but is still churn around test support. The narrower subclaim that FK diagnostic assertions were removed was not supported; those assertions still exist in the delete tests, and the branch diff only changes logger namespace/imports.
+
+Resolution validation: The three integration fixture golden test classes (`Given_FixtureRunner_With_Profile_Collection_Aligned_Extension_Fixture`, `Given_FixtureRunner_With_Profile_Collection_Aligned_Extension_Hidden_Descendant_Fixture`, `Given_FixtureRunner_With_Profile_Nested_And_Root_Extension_Children_Fixture`) now derive from a small `IntegrationFixtureGoldenTestBase` that itself derives from `DdlGoldenFixtureTestBase`, so they only declare a `FixtureName` instead of duplicating setup/assertion bodies. The base gained an opt-in `NormalizeActualOutput` hook that the integration base overrides to trim trailing blank lines from generated SQL — a behavior-preserving move of the previously duplicated `NormalizeGeneratedSqlFiles` helper. The duplicate `RecordingLogger<T>` and duplicate `LogRecord` were removed from `Backend.Tests.Unit/TestSupport/DeleteTestHelpers.cs`, leaving only `ConfigurableRelationalWriteExceptionClassifier` there; `InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Tests.Unit"` was added to `Backend.Tests.Common.csproj` so the unit-test delete-path fixtures (`DescriptorWriteHandlerDeleteTests`, `RelationalDeleteConstraintResolverTests`, `RelationalDocumentStoreRepositoryTests`) consume the shared internal logger via `using EdFi.DataManagementService.Backend.Tests.Common;`. The narrower delete-path FK diagnostic assertion claim was already unsupported; those `_logger.Records.Should().ContainSingle(... LogLevel.Information/Warning ...)` and `.NotContain(...)` assertions remain intact in all three delete-path test files. Verification: `dotnet csharpier format` ran on the three affected directories; `dotnet build` succeeded with 0 warnings / 0 errors on both `Backend.Ddl.Tests.Unit` and `Backend.Tests.Unit`; the targeted DDL fixture filter passed 78/78 tests; the targeted delete-path filter passed 77/77 tests; `rg "class RecordingLogger|record LogRecord"` returns only the shared `Backend.Tests.Common/RecordingLogger.cs` matches; `git diff --check` is clean.

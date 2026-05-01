@@ -22,6 +22,12 @@ public abstract class DdlGoldenFixtureTestBase
 
     protected abstract string ResolveFixtureDirectory(string projectRoot);
 
+    /// <summary>
+    /// Hook for subclasses to massage the FixtureRunner's actual/ output before comparison
+    /// (e.g. trim trailing whitespace from generated SQL). Default is a no-op.
+    /// </summary>
+    protected virtual void NormalizeActualOutput(string actualDir) { }
+
     [OneTimeSetUp]
     public void Setup()
     {
@@ -30,6 +36,7 @@ public abstract class DdlGoldenFixtureTestBase
 
         _config = FixtureConfigReader.Read(_fixtureDirectory);
         _actualDir = FixtureRunner.Run(_fixtureDirectory);
+        NormalizeActualOutput(_actualDir);
         _result = FixtureComparer.Compare(_fixtureDirectory);
     }
 
