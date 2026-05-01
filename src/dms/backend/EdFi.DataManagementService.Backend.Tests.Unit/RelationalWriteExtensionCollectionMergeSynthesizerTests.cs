@@ -464,7 +464,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
         {
             var rawValue = semanticIdentityValues[index];
             JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
-            var relativePath = ToScopeRelativeIdentityPath(
+            var relativePath = RelationalWriteMergeSupport.ToScopeRelativePath(
                 bindings[index].RelativePath.Canonical,
                 scopeCanonical
             );
@@ -472,17 +472,6 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
         }
 
         return [.. parts];
-    }
-
-    private static string ToScopeRelativeIdentityPath(string canonicalPath, string scopeCanonical)
-    {
-        var scopePrefix = scopeCanonical + ".";
-        if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
-        {
-            return canonicalPath[scopePrefix.Length..];
-        }
-
-        return canonicalPath.StartsWith("$.", StringComparison.Ordinal) ? canonicalPath[2..] : canonicalPath;
     }
 
     private static TableWritePlan CreateRootPlan()

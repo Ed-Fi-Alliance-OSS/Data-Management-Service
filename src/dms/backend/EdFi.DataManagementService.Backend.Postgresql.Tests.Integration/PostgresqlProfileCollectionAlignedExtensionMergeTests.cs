@@ -1370,8 +1370,8 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_a_no
 // ── Aligned-extension child collection scenarios ─────────────────────────────────────────
 // PostgreSQL mirror of MssqlProfileCollectionAlignedExtensionMergeTests's aligned-extension-
 // child fixtures. Exercises the runtime merge path against
-// "aligned"."ParentResourceExtensionParentChildren" so the Slice 5 acceptance gap noted by
-// Agent 1 is closed on PostgreSQL as well as MSSQL.
+// "aligned"."ParentResourceExtensionParentChildren" so the aligned-extension-child runtime
+// is exercised on PostgreSQL as well as MSSQL.
 
 [TestFixture]
 [Category("DatabaseIntegration")]
