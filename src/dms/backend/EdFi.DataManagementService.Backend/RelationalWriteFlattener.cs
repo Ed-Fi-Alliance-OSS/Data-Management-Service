@@ -1000,7 +1000,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             var binding = bindings[i];
             var rawValue = semanticIdentityValues[i];
             JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
-            var relativePath = ToScopeRelativeIdentityPath(binding.RelativePath.Canonical, scopeCanonical);
+            var relativePath = RelationalWriteMergeSupport.ToScopeRelativePath(
+                binding.RelativePath.Canonical,
+                scopeCanonical
+            );
             var isPresent = ProbeIdentityPathPresence(scopeNode, relativePath);
             parts[i] = new SemanticIdentityPart(relativePath, jsonValue, isPresent);
         }
@@ -1052,23 +1055,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// Normalizes a binding's canonical path to the scope-relative form Core publishes (e.g.
-    /// <c>"$.addresses[*].streetNumber"</c> with scope <c>"$.addresses[*]"</c> becomes
-    /// <c>"streetNumber"</c>). Falls back to stripping a leading <c>"$."</c> for paths that
-    /// do not nest under the supplied scope.
-    /// </summary>
-    private static string ToScopeRelativeIdentityPath(string canonicalPath, string scopeCanonical)
-    {
-        var scopePrefix = scopeCanonical + ".";
-        if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
-        {
-            return canonicalPath[scopePrefix.Length..];
-        }
-
-        return canonicalPath.StartsWith("$.", StringComparison.Ordinal) ? canonicalPath[2..] : canonicalPath;
     }
 
     private static object?[] MaterializeSemanticIdentityValues(

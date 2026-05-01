@@ -31,6 +31,29 @@ internal static class RelationalWriteMergeSupport
     }
 
     /// <summary>
+    /// Normalizes a binding's canonical path to the scope-relative form Core publishes
+    /// (e.g. <c>"$.addresses[*].streetNumber"</c> with scope <c>"$.addresses[*]"</c>
+    /// becomes <c>"streetNumber"</c>). Falls back to stripping a leading <c>"$."</c> for
+    /// paths that do not nest under the supplied scope.
+    /// </summary>
+    /// <remarks>
+    /// Shared by the flattener, no-profile synthesizer, and profile collection walker so all
+    /// three normalize identity / member paths the same way. The External assembly's
+    /// <c>CompiledScopeAdapterFactory</c> carries an independent copy (External cannot
+    /// reference Backend); keep the bodies in sync if either side changes.
+    /// </remarks>
+    internal static string ToScopeRelativePath(string canonicalPath, string scopeCanonical)
+    {
+        var scopePrefix = scopeCanonical + ".";
+        if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
+        {
+            return canonicalPath[scopePrefix.Length..];
+        }
+
+        return canonicalPath.StartsWith("$.", StringComparison.Ordinal) ? canonicalPath[2..] : canonicalPath;
+    }
+
+    /// <summary>
     /// Extracts the physical-row-identity slice of a row's binding-indexed values for use as
     /// the parent identity of nested-children recursion. Iterates the table's
     /// <see cref="DbTableModel.IdentityMetadata"/>.<c>PhysicalRowIdentityColumns</c> and pulls

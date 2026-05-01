@@ -578,7 +578,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                     tableWritePlan.ColumnBindings[binding.BindingIndex].Column.ColumnName
                 );
                 JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
-                var relativePath = ToScopeRelativeIdentityPath(
+                var relativePath = RelationalWriteMergeSupport.ToScopeRelativePath(
                     binding.RelativePath.Canonical,
                     scopeCanonical
                 );
@@ -586,19 +586,6 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             }
 
             return [.. parts];
-        }
-
-        private static string ToScopeRelativeIdentityPath(string canonicalPath, string scopeCanonical)
-        {
-            var scopePrefix = scopeCanonical + ".";
-            if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
-            {
-                return canonicalPath[scopePrefix.Length..];
-            }
-
-            return canonicalPath.StartsWith("$.", StringComparison.Ordinal)
-                ? canonicalPath[2..]
-                : canonicalPath;
         }
 
         private static object?[]? TryProjectLiteralLookupKey(IReadOnlyList<FlattenedWriteValue> values)

@@ -1370,22 +1370,6 @@ internal sealed class ProfileCollectionWalker
         return new ScopeInstanceAddress(rowJsonScope, extendedAncestors);
     }
 
-    /// <summary>
-    /// Converts a canonical path to the same scope-relative member path form emitted by
-    /// <c>CompiledScopeAdapterFactory</c> so walker-synthesized ancestor addresses
-    /// match Core profile metadata structurally.
-    /// </summary>
-    private static string ToScopeRelativePath(string canonicalPath, string scopeCanonical)
-    {
-        var scopePrefix = scopeCanonical + ".";
-        if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
-        {
-            return canonicalPath[scopePrefix.Length..];
-        }
-
-        return canonicalPath.StartsWith("$.", StringComparison.Ordinal) ? canonicalPath[2..] : canonicalPath;
-    }
-
     // ── Test-only accessors ────────────────────────────────────────────────
     //
     // These mirror the four private indexes for unit-test verification. The indexes are
@@ -1577,7 +1561,7 @@ internal sealed class ProfileCollectionWalker
                                 )
                                 && identityPartIndex < emittedPaths.Length
                                     ? emittedPaths[identityPartIndex]
-                                    : ToScopeRelativePath(
+                                    : RelationalWriteMergeSupport.ToScopeRelativePath(
                                         binding.RelativePath.Canonical,
                                         tablePlan.TableModel.JsonScope.Canonical
                                     );
