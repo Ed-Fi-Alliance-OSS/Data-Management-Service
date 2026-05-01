@@ -77,13 +77,16 @@ internal static class ProfileCollectionRowHiddenPathExpander
 
         var collectionTableJsonScope = collectionTablePlan.TableModel.JsonScope.Canonical;
         var scopePrefix = collectionScope + ".";
+        var parentJsonScope = ProfileCollectionWalker.ComputeParentJsonScope(collectionScope);
 
-        // Bucket additions by the row's semantic-identity key. A descendant scope's last
-        // AncestorCollectionInstance pins it to a specific row in this collection; the key
-        // string captures that identity. Identities here are the un-canonicalized values
-        // emitted by Core (URIs / natural keys), which match the un-canonicalized values
-        // on the supplied rows.
-        Dictionary<string, List<string>>? additionsByRowIdentityKey = null;
+        // Bucket additions by the row's full structural CollectionRowAddress. Nested
+        // collection identities are only stable within their parent, so two parents can
+        // legally hold child rows with the same SemanticIdentityInOrder. Keying only by
+        // the last ancestor's identity would fold a descendant scope state from
+        // P2 -> child onto P1's same-identity child row. The full address — collection
+        // scope, parent ScopeInstanceAddress (including the parent's own ancestor chain),
+        // and row semantic identity — is unique per row.
+        Dictionary<CollectionRowAddress, List<string>>? additionsByRowAddress = null;
 
         foreach (var state in storedScopeStates)
         {
@@ -118,7 +121,8 @@ internal static class ProfileCollectionRowHiddenPathExpander
                 continue;
             }
 
-            var lastAncestor = state.Address.AncestorCollectionInstances[^1];
+            var ancestors = state.Address.AncestorCollectionInstances;
+            var lastAncestor = ancestors[^1];
             if (!string.Equals(lastAncestor.JsonScope, collectionScope, StringComparison.Ordinal))
             {
                 // Defense-in-depth: a descendant under a different collection scope could not
@@ -127,14 +131,27 @@ internal static class ProfileCollectionRowHiddenPathExpander
                 continue;
             }
 
-            var rowIdentityKey = SemanticIdentityKeys.BuildKey(lastAncestor.SemanticIdentityInOrder);
+            // Reconstruct the row's CollectionRowAddress from the descendant state. The
+            // parent address's JsonScope is the collection's immediate JSON parent
+            // (per ProfileCollectionWalker.ComputeParentJsonScope), and its ancestor
+            // chain is the descendant ancestor chain with the last entry — which pins
+            // the row inside this collection — removed.
+            var parentAncestors = ancestors.RemoveAt(ancestors.Length - 1);
+            var rowAddress = new CollectionRowAddress(
+                JsonScope: collectionScope,
+                ParentAddress: new ScopeInstanceAddress(parentJsonScope, parentAncestors),
+                SemanticIdentityInOrder: lastAncestor.SemanticIdentityInOrder
+            );
+
             var relativeScopePath = stateScope[scopePrefix.Length..];
 
-            additionsByRowIdentityKey ??= new Dictionary<string, List<string>>(StringComparer.Ordinal);
-            if (!additionsByRowIdentityKey.TryGetValue(rowIdentityKey, out var bucket))
+            additionsByRowAddress ??= new Dictionary<CollectionRowAddress, List<string>>(
+                CollectionRowAddressComparer.Instance
+            );
+            if (!additionsByRowAddress.TryGetValue(rowAddress, out var bucket))
             {
                 bucket = [];
-                additionsByRowIdentityKey[rowIdentityKey] = bucket;
+                additionsByRowAddress[rowAddress] = bucket;
             }
 
             foreach (var memberPath in state.HiddenMemberPaths)
@@ -143,7 +160,7 @@ internal static class ProfileCollectionRowHiddenPathExpander
             }
         }
 
-        if (additionsByRowIdentityKey is null)
+        if (additionsByRowAddress is null)
         {
             return rows;
         }
@@ -151,8 +168,7 @@ internal static class ProfileCollectionRowHiddenPathExpander
         var builder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(rows.Length);
         foreach (var row in rows)
         {
-            var rowKey = SemanticIdentityKeys.BuildKey(row.Address.SemanticIdentityInOrder);
-            if (additionsByRowIdentityKey.TryGetValue(rowKey, out var additions) && additions.Count > 0)
+            if (additionsByRowAddress.TryGetValue(row.Address, out var additions) && additions.Count > 0)
             {
                 var combined = new HashSet<string>(StringComparer.Ordinal);
                 if (!row.HiddenMemberPaths.IsDefaultOrEmpty)

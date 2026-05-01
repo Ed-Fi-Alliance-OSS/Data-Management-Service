@@ -257,6 +257,122 @@ public class ProfileCollectionRowHiddenPathExpanderTests
     }
 
     /// <summary>
+    /// Regression: nested-collection identity is only stable within its parent. Two parent
+    /// rows P1 and P2 each contain a child row with the same semantic identity ("Shared").
+    /// A stored inlined-descendant scope under <c>P2 -> Shared</c> contributes a hidden path,
+    /// and the walker dispatches expansion for the P1 child bucket. The expander must not
+    /// fold P2's descendant hidden path onto P1's child row, because the row's full
+    /// <see cref="CollectionRowAddress"/> (including the parent ancestor chain) differs.
+    /// </summary>
+    [TestFixture]
+    public class Given_Same_Child_Identity_Under_Different_Parents
+        : ProfileCollectionRowHiddenPathExpanderTests
+    {
+        private ImmutableArray<VisibleStoredCollectionRow> _expanded;
+
+        [SetUp]
+        public void Setup()
+        {
+            var (plan, _, childrenPlan) = NestedTopologyBuilders.BuildRootParentsAndChildrenPlan();
+
+            // The walker has already bucketed visible-stored rows for the P1 child scope:
+            // only P1's "Shared" child appears in `rows`. The descendant scope under
+            // $.parents[*].children[*].period belongs to P2's "Shared" child, evidenced by
+            // its full ancestor chain (P2 -> Shared). The expander must compare the full
+            // CollectionRowAddress, not just the last ancestor's semantic identity, so the
+            // P2-rooted descendant path is rejected for the P1 row.
+            var p1ChildRow = NestedTopologyBuilders.BuildChildStoredRow("P1", "Shared");
+            var p2DescendantState = new StoredScopeState(
+                Address: new ScopeInstanceAddress(
+                    JsonScope: "$.parents[*].children[*].period",
+                    AncestorCollectionInstances:
+                    [
+                        new AncestorCollectionInstance(
+                            NestedTopologyBuilders.ParentsScope,
+                            NestedTopologyBuilders.Identity("P2")
+                        ),
+                        new AncestorCollectionInstance(
+                            NestedTopologyBuilders.ChildrenScope,
+                            NestedTopologyBuilders.Identity("Shared")
+                        ),
+                    ]
+                ),
+                Visibility: ProfileVisibilityKind.VisiblePresent,
+                HiddenMemberPaths: ["endDate"]
+            );
+
+            _expanded = ProfileCollectionRowHiddenPathExpander.Expand(
+                rows: [p1ChildRow],
+                storedScopeStates: [p2DescendantState],
+                collectionScope: NestedTopologyBuilders.ChildrenScope,
+                collectionTablePlan: childrenPlan,
+                writePlan: plan
+            );
+        }
+
+        [Test]
+        public void It_does_not_fold_descendant_path_from_a_different_parent()
+        {
+            _expanded.Should().HaveCount(1);
+            _expanded[0].HiddenMemberPaths.Should().NotContain("period.endDate");
+        }
+    }
+
+    /// <summary>
+    /// Companion to <see cref="Given_Same_Child_Identity_Under_Different_Parents"/>: when the
+    /// descendant's full ancestor chain matches the row being walked (same parent <c>P1</c>
+    /// and same child identity <c>Shared</c>), the expander folds <c>period.endDate</c> onto
+    /// that row. This proves the structural address match accepts the legitimate case it
+    /// must accept while rejecting the cross-parent case above.
+    /// </summary>
+    [TestFixture]
+    public class Given_Same_Child_Identity_Under_Same_Parent : ProfileCollectionRowHiddenPathExpanderTests
+    {
+        private ImmutableArray<VisibleStoredCollectionRow> _expanded;
+
+        [SetUp]
+        public void Setup()
+        {
+            var (plan, _, childrenPlan) = NestedTopologyBuilders.BuildRootParentsAndChildrenPlan();
+
+            var p1ChildRow = NestedTopologyBuilders.BuildChildStoredRow("P1", "Shared");
+            var p1DescendantState = new StoredScopeState(
+                Address: new ScopeInstanceAddress(
+                    JsonScope: "$.parents[*].children[*].period",
+                    AncestorCollectionInstances:
+                    [
+                        new AncestorCollectionInstance(
+                            NestedTopologyBuilders.ParentsScope,
+                            NestedTopologyBuilders.Identity("P1")
+                        ),
+                        new AncestorCollectionInstance(
+                            NestedTopologyBuilders.ChildrenScope,
+                            NestedTopologyBuilders.Identity("Shared")
+                        ),
+                    ]
+                ),
+                Visibility: ProfileVisibilityKind.VisiblePresent,
+                HiddenMemberPaths: ["endDate"]
+            );
+
+            _expanded = ProfileCollectionRowHiddenPathExpander.Expand(
+                rows: [p1ChildRow],
+                storedScopeStates: [p1DescendantState],
+                collectionScope: NestedTopologyBuilders.ChildrenScope,
+                collectionTablePlan: childrenPlan,
+                writePlan: plan
+            );
+        }
+
+        [Test]
+        public void It_folds_descendant_path_when_full_ancestor_chain_matches()
+        {
+            _expanded.Should().HaveCount(1);
+            _expanded[0].HiddenMemberPaths.Should().Contain("period.endDate");
+        }
+    }
+
+    /// <summary>
     /// Two rows in the same collection differ only in <see cref="SemanticIdentityPart.IsPresent"/>:
     /// one row has the identity property missing entirely, the other has it as explicit JSON
     /// null. A descendant <see cref="StoredScopeState"/> belongs to only the explicit-null
