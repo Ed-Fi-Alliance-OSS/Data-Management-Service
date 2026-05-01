@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -341,9 +342,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         foreach (var childPlan in childPlans)
         {
-            Dictionary<object?[], int[]> firstOrdinalPathBySemanticIdentity = new(
-                SemanticIdentityValueArrayComparer.Instance
-            );
+            Dictionary<string, (int[] OrdinalPath, object?[] Values)> firstOrdinalPathBySemanticIdentityKey =
+                new(StringComparer.Ordinal);
 
             foreach (
                 var collectionScopeInstance in EnumerateCollectionScopeInstances(parentScopeNode, childPlan)
@@ -363,24 +363,34 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     childPlan.TableWritePlan,
                     values
                 );
+                var semanticIdentityInOrder = MaterializeSemanticIdentityParts(
+                    childPlan.TableWritePlan,
+                    collectionScopeInstance.ScopeNode,
+                    semanticIdentityValues
+                );
 
-                if (
-                    firstOrdinalPathBySemanticIdentity.TryGetValue(
-                        semanticIdentityValues,
-                        out var firstOrdinalPath
-                    )
-                )
+                // Duplicate detection uses the presence-aware key so that an explicit JSON
+                // null and a missing identity property remain distinct identities under the
+                // SemanticIdentityPart contract. Two array elements with the same null value
+                // are duplicates only when both are present-null or both are missing — never
+                // across the boundary.
+                var semanticIdentityKey = Profile.SemanticIdentityKeys.BuildKey(semanticIdentityInOrder);
+
+                if (firstOrdinalPathBySemanticIdentityKey.TryGetValue(semanticIdentityKey, out var firstSeen))
                 {
                     throw CreateDuplicateSemanticIdentityException(
                         childPlan.TableWritePlan,
                         parentScopeCanonical,
-                        firstOrdinalPath,
+                        firstSeen.OrdinalPath,
                         ordinalPath,
-                        semanticIdentityValues
+                        firstSeen.Values
                     );
                 }
 
-                firstOrdinalPathBySemanticIdentity.Add(semanticIdentityValues, ordinalPath);
+                firstOrdinalPathBySemanticIdentityKey.Add(
+                    semanticIdentityKey,
+                    (ordinalPath, semanticIdentityValues)
+                );
 
                 var childParentKeyParts = GetPhysicalRowIdentityValues(childPlan.TableWritePlan, values);
                 var nestedCollectionCandidates = MaterializeCollectionCandidates(
@@ -410,7 +420,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                         values,
                         semanticIdentityValues,
                         attachedAlignedScopeData,
-                        collectionCandidates: nestedCollectionCandidates
+                        collectionCandidates: nestedCollectionCandidates,
+                        semanticIdentityInOrder: semanticIdentityInOrder
                     )
                 );
             }
@@ -960,6 +971,104 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         values[collectionKeyPreallocationPlan.BindingIndex] =
             FlattenedWriteValue.UnresolvedCollectionItemId.Create();
         valueAssigned[collectionKeyPreallocationPlan.BindingIndex] = true;
+    }
+
+    /// <summary>
+    /// Builds the candidate's <see cref="CollectionWriteCandidate.SemanticIdentityInOrder"/>
+    /// from compiled bindings, the materialized identity values, and a presence probe against
+    /// the source JSON node. <see cref="SemanticIdentityPart.IsPresent"/> reflects whether the
+    /// JSON property at the binding's relative path was present in the request body — keeping
+    /// missing-vs-explicit-null fidelity end-to-end. <see cref="SemanticIdentityPart.RelativePath"/>
+    /// is normalized to scope-relative form (the convention Core's address derivation engine
+    /// publishes), so candidate-side keys produced by <see cref="SemanticIdentityKeys.BuildKey(CollectionWriteCandidate)"/>
+    /// align with visible-request-item keys produced from
+    /// <see cref="CollectionRowAddress.SemanticIdentityInOrder"/>.
+    /// </summary>
+    private static ImmutableArray<SemanticIdentityPart> MaterializeSemanticIdentityParts(
+        TableWritePlan tableWritePlan,
+        JsonNode scopeNode,
+        object?[] semanticIdentityValues
+    )
+    {
+        var collectionMergePlan = tableWritePlan.CollectionMergePlan!;
+        var bindings = collectionMergePlan.SemanticIdentityBindings;
+        var scopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+        var parts = new SemanticIdentityPart[bindings.Length];
+
+        for (var i = 0; i < bindings.Length; i++)
+        {
+            var binding = bindings[i];
+            var rawValue = semanticIdentityValues[i];
+            JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
+            var relativePath = ToScopeRelativeIdentityPath(binding.RelativePath.Canonical, scopeCanonical);
+            var isPresent = ProbeIdentityPathPresence(scopeNode, relativePath);
+            parts[i] = new SemanticIdentityPart(relativePath, jsonValue, isPresent);
+        }
+
+        return [.. parts];
+    }
+
+    /// <summary>
+    /// Returns whether the JSON property at the binding's path exists on
+    /// <paramref name="scopeNode"/>, distinguishing a missing property from an explicit JSON
+    /// null. Walks the canonical relative path one segment at a time and returns <c>false</c>
+    /// the moment any intermediate object lacks the property — matching the navigation
+    /// semantics used by <c>AddressDerivationEngine.TryNavigateRelativePath</c> in Core, so
+    /// the candidate-side presence flag converges with stored-side / address-side derivations.
+    /// </summary>
+    private static bool ProbeIdentityPathPresence(JsonNode scopeNode, string scopeRelativePath)
+    {
+        if (string.IsNullOrEmpty(scopeRelativePath))
+        {
+            return false;
+        }
+
+        if (scopeNode is not JsonObject objNode)
+        {
+            return false;
+        }
+
+        var segments = scopeRelativePath.Split('.');
+        JsonNode? cursor = objNode;
+
+        for (var i = 0; i < segments.Length; i++)
+        {
+            if (cursor is not JsonObject current)
+            {
+                return false;
+            }
+
+            if (!current.TryGetPropertyValue(segments[i], out var next))
+            {
+                return false;
+            }
+
+            if (i == segments.Length - 1)
+            {
+                return true;
+            }
+
+            cursor = next;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Normalizes a binding's canonical path to the scope-relative form Core publishes (e.g.
+    /// <c>"$.addresses[*].streetNumber"</c> with scope <c>"$.addresses[*]"</c> becomes
+    /// <c>"streetNumber"</c>). Falls back to stripping a leading <c>"$."</c> for paths that
+    /// do not nest under the supplied scope.
+    /// </summary>
+    private static string ToScopeRelativeIdentityPath(string canonicalPath, string scopeCanonical)
+    {
+        var scopePrefix = scopeCanonical + ".";
+        if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
+        {
+            return canonicalPath[scopePrefix.Length..];
+        }
+
+        return canonicalPath.StartsWith("$.", StringComparison.Ordinal) ? canonicalPath[2..] : canonicalPath;
     }
 
     private static object?[] MaterializeSemanticIdentityValues(
@@ -1858,47 +1967,4 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     );
 
     private sealed record CollectionScopeInstance(int RequestOrder, JsonObject ScopeNode);
-
-    private sealed class SemanticIdentityValueArrayComparer : IEqualityComparer<object?[]>
-    {
-        public static SemanticIdentityValueArrayComparer Instance { get; } = new();
-
-        public bool Equals(object?[]? x, object?[]? y)
-        {
-            if (ReferenceEquals(x, y))
-            {
-                return true;
-            }
-
-            if (x is null || y is null || x.Length != y.Length)
-            {
-                return false;
-            }
-
-            for (var index = 0; index < x.Length; index++)
-            {
-                if (!Equals(x[index], y[index]))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        public int GetHashCode(object?[] values)
-        {
-            ArgumentNullException.ThrowIfNull(values);
-
-            HashCode hashCode = new();
-            hashCode.Add(values.Length);
-
-            for (var index = 0; index < values.Length; index++)
-            {
-                hashCode.Add(values[index]);
-            }
-
-            return hashCode.ToHashCode();
-        }
-    }
 }

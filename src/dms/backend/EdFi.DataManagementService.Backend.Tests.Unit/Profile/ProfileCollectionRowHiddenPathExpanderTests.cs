@@ -255,4 +255,62 @@ public class ProfileCollectionRowHiddenPathExpanderTests
             expanded[0].HiddenMemberPaths.Should().BeEquivalentTo("addressType");
         }
     }
+
+    /// <summary>
+    /// Two rows in the same collection differ only in <see cref="SemanticIdentityPart.IsPresent"/>:
+    /// one row has the identity property missing entirely, the other has it as explicit JSON
+    /// null. A descendant <see cref="StoredScopeState"/> belongs to only the explicit-null
+    /// row. Under the presence-aware key the descendant's hidden paths must fold onto that
+    /// row alone — never onto the missing-identity row.
+    /// </summary>
+    [TestFixture]
+    public class Given_Sibling_Rows_Differing_Only_By_Identity_Presence
+        : ProfileCollectionRowHiddenPathExpanderTests
+    {
+        private ImmutableArray<VisibleStoredCollectionRow> _expanded;
+
+        [SetUp]
+        public void Setup()
+        {
+            var plan = AdapterFactoryTestFixtures.BuildRootAndCollectionPlan();
+            var collectionPlan = plan.TablePlansInDependencyOrder[1];
+
+            var missingIdentity = ImmutableArray.Create(
+                new SemanticIdentityPart("addressType", null, IsPresent: false)
+            );
+            var explicitNullIdentity = ImmutableArray.Create(
+                new SemanticIdentityPart("addressType", null, IsPresent: true)
+            );
+
+            _expanded = ProfileCollectionRowHiddenPathExpander.Expand(
+                rows: [Row(missingIdentity, "addressType"), Row(explicitNullIdentity, "addressType")],
+                storedScopeStates:
+                [
+                    DescendantState(
+                        "$.addresses[*].period",
+                        explicitNullIdentity,
+                        ProfileVisibilityKind.VisiblePresent,
+                        "endDate"
+                    ),
+                ],
+                collectionScope: CollectionScope,
+                collectionTablePlan: collectionPlan,
+                writePlan: plan
+            );
+        }
+
+        [Test]
+        public void It_folds_hidden_paths_onto_the_explicit_null_row_only()
+        {
+            _expanded.Should().HaveCount(2);
+
+            var missingRow = _expanded[0];
+            missingRow.Address.SemanticIdentityInOrder[0].IsPresent.Should().BeFalse();
+            missingRow.HiddenMemberPaths.Should().NotContain("period.endDate");
+
+            var explicitNullRow = _expanded[1];
+            explicitNullRow.Address.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
+            explicitNullRow.HiddenMemberPaths.Should().Contain("period.endDate");
+        }
+    }
 }

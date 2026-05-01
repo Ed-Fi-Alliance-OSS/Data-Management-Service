@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Profile;
 
@@ -54,22 +53,22 @@ internal static class ProfileCollectionPlanner
         // Build a lookup from semantic identity key → CurrentCollectionRowSnapshot, restricted to
         // those rows that also appear in VisibleStoredRows. This is the "matched" set for this scope.
         var visibleStoredKeys = input
-            .VisibleStoredRows.Select(r => BuildSemanticIdentityKey(r.Address.SemanticIdentityInOrder))
+            .VisibleStoredRows.Select(r => SemanticIdentityKeys.BuildKey(r.Address.SemanticIdentityInOrder))
             .ToHashSet();
 
         // currentByIdentity was already validated in invariants; rebuild cheaply for the matching pass.
         var matchedCurrentByIdentity = input
             .CurrentRows.Where(r =>
-                visibleStoredKeys.Contains(BuildSemanticIdentityKey(r.SemanticIdentityInOrder))
+                visibleStoredKeys.Contains(SemanticIdentityKeys.BuildKey(r.SemanticIdentityInOrder))
             )
-            .ToDictionary(r => BuildSemanticIdentityKey(r.SemanticIdentityInOrder));
+            .ToDictionary(r => SemanticIdentityKeys.BuildKey(r.SemanticIdentityInOrder));
 
         // Build candidate lookup for retrieving the CollectionWriteCandidate per request item.
-        var candidateByIdentityKey = input.RequestCandidates.ToDictionary(BuildCandidateIdentityKey);
+        var candidateByIdentityKey = input.RequestCandidates.ToDictionary(SemanticIdentityKeys.BuildKey);
 
         // Also build visible-stored lookup to retrieve HiddenMemberPaths per matched row.
         var visibleStoredByIdentity = input.VisibleStoredRows.ToDictionary(r =>
-            BuildSemanticIdentityKey(r.Address.SemanticIdentityInOrder)
+            SemanticIdentityKeys.BuildKey(r.Address.SemanticIdentityInOrder)
         );
 
         // Phase 1: build mergedVisibleSequence in request order.
@@ -77,7 +76,7 @@ internal static class ProfileCollectionPlanner
 
         foreach (var visibleRequestItem in input.VisibleRequestItems)
         {
-            var key = BuildSemanticIdentityKey(visibleRequestItem.Address.SemanticIdentityInOrder);
+            var key = SemanticIdentityKeys.BuildKey(visibleRequestItem.Address.SemanticIdentityInOrder);
 
             if (matchedCurrentByIdentity.TryGetValue(key, out var currentRow))
             {
@@ -112,7 +111,7 @@ internal static class ProfileCollectionPlanner
         var mergedCursor = 0;
         foreach (var currentRow in input.CurrentRows)
         {
-            var currentKey = BuildSemanticIdentityKey(currentRow.SemanticIdentityInOrder);
+            var currentKey = SemanticIdentityKeys.BuildKey(currentRow.SemanticIdentityInOrder);
             if (!visibleStoredByIdentity.ContainsKey(currentKey))
             {
                 // Hidden slot: preserve verbatim.
@@ -279,7 +278,7 @@ internal static class ProfileCollectionPlanner
         var currentByIdentity = new Dictionary<string, CurrentCollectionRowSnapshot>();
         foreach (var row in input.CurrentRows)
         {
-            var key = BuildSemanticIdentityKey(row.SemanticIdentityInOrder);
+            var key = SemanticIdentityKeys.BuildKey(row.SemanticIdentityInOrder);
             if (!currentByIdentity.TryAdd(key, row))
             {
                 throw new InvalidOperationException(
@@ -298,7 +297,7 @@ internal static class ProfileCollectionPlanner
         var seen = new HashSet<string>();
         foreach (var identity in input.VisibleStoredRows.Select(r => r.Address.SemanticIdentityInOrder))
         {
-            var key = BuildSemanticIdentityKey(identity);
+            var key = SemanticIdentityKeys.BuildKey(identity);
             if (!seen.Add(key))
             {
                 throw new InvalidOperationException(
@@ -317,7 +316,7 @@ internal static class ProfileCollectionPlanner
     {
         foreach (var identity in input.VisibleStoredRows.Select(r => r.Address.SemanticIdentityInOrder))
         {
-            var key = BuildSemanticIdentityKey(identity);
+            var key = SemanticIdentityKeys.BuildKey(identity);
             if (!currentByIdentity.ContainsKey(key))
             {
                 throw new InvalidOperationException(
@@ -340,7 +339,7 @@ internal static class ProfileCollectionPlanner
         var lastStoredOrdinal = int.MinValue;
         foreach (var address in input.VisibleStoredRows.Select(r => r.Address))
         {
-            var key = BuildSemanticIdentityKey(address.SemanticIdentityInOrder);
+            var key = SemanticIdentityKeys.BuildKey(address.SemanticIdentityInOrder);
             var currentRow = currentByIdentity[key];
             if (currentRow.StoredOrdinal <= lastStoredOrdinal)
             {
@@ -367,7 +366,7 @@ internal static class ProfileCollectionPlanner
         var candidatesByIdentityKey = new Dictionary<string, CollectionWriteCandidate>();
         foreach (var candidate in input.RequestCandidates)
         {
-            var key = BuildCandidateIdentityKey(candidate);
+            var key = SemanticIdentityKeys.BuildKey(candidate);
             if (!candidatesByIdentityKey.TryAdd(key, candidate))
             {
                 throw new InvalidOperationException(
@@ -386,7 +385,7 @@ internal static class ProfileCollectionPlanner
         var seen = new HashSet<string>();
         foreach (var identity in input.VisibleRequestItems.Select(i => i.Address.SemanticIdentityInOrder))
         {
-            var key = BuildSemanticIdentityKey(identity);
+            var key = SemanticIdentityKeys.BuildKey(identity);
             if (!seen.Add(key))
             {
                 throw new InvalidOperationException(
@@ -405,7 +404,7 @@ internal static class ProfileCollectionPlanner
     {
         foreach (var identity in input.VisibleRequestItems.Select(i => i.Address.SemanticIdentityInOrder))
         {
-            var candidateKey = BuildSemanticIdentityKey(identity);
+            var candidateKey = SemanticIdentityKeys.BuildKey(identity);
             if (!candidatesByIdentityKey.ContainsKey(candidateKey))
             {
                 throw new InvalidOperationException(
@@ -422,12 +421,12 @@ internal static class ProfileCollectionPlanner
     {
         // Build a set of address-side keys from VisibleRequestItems for O(1) lookup.
         var visibleRequestKeys = input
-            .VisibleRequestItems.Select(i => BuildSemanticIdentityKey(i.Address.SemanticIdentityInOrder))
+            .VisibleRequestItems.Select(i => SemanticIdentityKeys.BuildKey(i.Address.SemanticIdentityInOrder))
             .ToHashSet();
 
         foreach (var candidate in input.RequestCandidates)
         {
-            var key = BuildCandidateIdentityKey(candidate);
+            var key = SemanticIdentityKeys.BuildKey(candidate);
             if (!visibleRequestKeys.Contains(key))
             {
                 throw new InvalidOperationException(
@@ -450,7 +449,7 @@ internal static class ProfileCollectionPlanner
         var lastRequestOrder = int.MinValue;
         foreach (var address in input.VisibleRequestItems.Select(i => i.Address))
         {
-            var candidateKey = BuildSemanticIdentityKey(address.SemanticIdentityInOrder);
+            var candidateKey = SemanticIdentityKeys.BuildKey(address.SemanticIdentityInOrder);
             var candidate = candidatesByIdentityKey[candidateKey];
             if (candidate.RequestOrder <= lastRequestOrder)
             {
@@ -466,35 +465,11 @@ internal static class ProfileCollectionPlanner
     }
 
     /// <summary>
-    /// Builds a string key from a <see cref="SemanticIdentityPart"/> array by serializing each
-    /// part's value to its JSON string form and joining with a pipe delimiter. Used for
-    /// current-row, visible-stored, and visible-request-item identity lookups.
-    /// </summary>
-    private static string BuildSemanticIdentityKey(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join("|", identity.Select(p => p.Value?.ToJsonString() ?? "null"));
-
-    /// <summary>
-    /// Builds a string key from a <see cref="CollectionWriteCandidate"/> by wrapping each CLR
-    /// value in a <see cref="JsonValue"/> and serializing to its JSON string form, then joining
-    /// with a pipe delimiter. This normalizes CLR values (e.g. <c>"A1"</c>) to the same JSON
-    /// representation produced by <see cref="BuildAddressAsCandidateKey"/> (e.g. <c>"\"A1\""</c>)
-    /// so that candidate keys and address keys are always comparable.
-    /// </summary>
-    private static string BuildCandidateIdentityKey(CollectionWriteCandidate candidate) =>
-        string.Join(
-            "|",
-            candidate.SemanticIdentityValues.Select(v =>
-                v is null ? "null" : JsonValue.Create(v)?.ToJsonString() ?? "null"
-            )
-        );
-
-    /// <summary>
-    /// Formats a candidate's semantic identity as a pipe-joined diagnostics string using the
-    /// same key form as <see cref="BuildCandidateIdentityKey"/>. Used in exception messages
-    /// where <see cref="SemanticIdentityPart"/> context is unavailable.
+    /// Formats a candidate's semantic identity as a human-readable diagnostics string. Used in
+    /// exception messages alongside <see cref="LogSanitizer.SanitizeForLog"/>.
     /// </summary>
     private static string FormatCandidateIdentity(CollectionWriteCandidate candidate) =>
-        BuildCandidateIdentityKey(candidate);
+        SemanticIdentityKeys.FormatForDiagnostics(candidate.SemanticIdentityInOrder);
 
     /// <summary>
     /// Formats a semantic identity into a human-readable diagnostics string
@@ -505,7 +480,7 @@ internal static class ProfileCollectionPlanner
     /// control characters.
     /// </summary>
     private static string FormatIdentity(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join(",", identity.Select(p => $"{p.RelativePath}={p.Value?.ToJsonString() ?? "null"}"));
+        SemanticIdentityKeys.FormatForDiagnostics(identity);
 }
 
 /// <summary>

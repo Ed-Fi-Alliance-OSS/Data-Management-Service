@@ -94,8 +94,13 @@ internal static class Slice4Builders
     /// <see cref="CollectionWriteCandidate.SemanticIdentityValues"/> stores each part's
     /// underlying CLR value directly (e.g. the raw <c>string</c> from
     /// <c>JsonValue.GetValue&lt;string&gt;()</c>), matching the real flattener output from
-    /// <c>RelationalWriteFlattener</c>. The planner's <c>BuildCandidateIdentityKey</c> wraps
-    /// these via <c>JsonValue.Create</c> to normalize them before key comparison.
+    /// <c>RelationalWriteFlattener</c>. The candidate's
+    /// <see cref="CollectionWriteCandidate.SemanticIdentityInOrder"/> is the supplied identity
+    /// array verbatim, so test-built candidates carry the same presence-aware
+    /// <see cref="SemanticIdentityPart.RelativePath"/> /
+    /// <see cref="SemanticIdentityPart.IsPresent"/> values that the matching
+    /// <c>VisibleRequestCollectionItem</c> uses — keeping the planner's shared
+    /// <c>SemanticIdentityKeys</c> lookups consistent without forcing real flattener output.
     /// </summary>
     public static CollectionWriteCandidate BuildCollectionWriteCandidate(
         string jsonScope,
@@ -120,7 +125,8 @@ internal static class Slice4Builders
                 new FlattenedWriteValue.Literal(null),
                 tableWritePlan.ColumnBindings.Length
             ),
-            semanticIdentityValues: semanticIdentityValues
+            semanticIdentityValues: semanticIdentityValues,
+            semanticIdentityInOrder: identity
         );
     }
 
@@ -252,6 +258,143 @@ internal static class Slice4Builders
                 0
             )
         );
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Presence-sensitive semantic identity
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_ProfileCollectionPlanner_with_missing_and_explicit_null_identity_parts
+{
+    private ProfileCollectionPlanResult _result = null!;
+
+    private static readonly ImmutableArray<SemanticIdentityPart> _missingIdentity =
+    [
+        new SemanticIdentityPart("$.identityField0", null, IsPresent: false),
+    ];
+
+    private static readonly ImmutableArray<SemanticIdentityPart> _explicitNullIdentity =
+    [
+        new SemanticIdentityPart("$.identityField0", null, IsPresent: true),
+    ];
+
+    [SetUp]
+    public void Setup()
+    {
+        var input = new ProfileCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [],
+            VisibleRequestItems: [],
+            VisibleStoredRows: [],
+            CurrentRows:
+            [
+                Slice4Builders.BuildCurrentCollectionRowSnapshot(
+                    _missingIdentity,
+                    storedOrdinal: 1,
+                    stableRowIdentity: 101L
+                ),
+                Slice4Builders.BuildCurrentCollectionRowSnapshot(
+                    _explicitNullIdentity,
+                    storedOrdinal: 2,
+                    stableRowIdentity: 102L
+                ),
+            ]
+        );
+
+        _result = ProfileCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_treats_missing_and_explicit_null_as_distinct_semantic_identities()
+    {
+        var success = _result.Should().BeOfType<ProfileCollectionPlanResult.Success>().Subject;
+        success.Plan.Sequence.Should().HaveCount(2);
+        success.Plan.Sequence.Should().AllBeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>();
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Visible request item + candidate: explicit-null and missing identity are distinct
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_ProfileCollectionPlanner_with_visible_request_items_split_by_identity_presence
+{
+    private ProfileCollectionPlanResult _result = null!;
+
+    private static readonly ImmutableArray<SemanticIdentityPart> _missingIdentity =
+    [
+        new SemanticIdentityPart("$.identityField0", null, IsPresent: false),
+    ];
+
+    private static readonly ImmutableArray<SemanticIdentityPart> _explicitNullIdentity =
+    [
+        new SemanticIdentityPart("$.identityField0", null, IsPresent: true),
+    ];
+
+    [SetUp]
+    public void Setup()
+    {
+        const string scope = "$.addresses[*]";
+
+        // Two distinct visible request items / candidates that differ only in IsPresent.
+        // Under presence-aware identity, they must NOT collide as duplicates and each must
+        // map to its own candidate.
+        var missingCandidate = Slice4Builders.BuildCollectionWriteCandidate(
+            scope,
+            _missingIdentity,
+            requestOrder: 0
+        );
+        var explicitNullCandidate = Slice4Builders.BuildCollectionWriteCandidate(
+            scope,
+            _explicitNullIdentity,
+            requestOrder: 1
+        );
+        var missingItem = Slice4Builders.BuildVisibleRequestCollectionItem(
+            scope,
+            _missingIdentity,
+            creatable: true,
+            requestJsonPath: "$.addresses[0]"
+        );
+        var explicitNullItem = Slice4Builders.BuildVisibleRequestCollectionItem(
+            scope,
+            _explicitNullIdentity,
+            creatable: true,
+            requestJsonPath: "$.addresses[1]"
+        );
+
+        var input = new ProfileCollectionScopeInput(
+            JsonScope: scope,
+            ParentScopeAddress: Slice4Builders.RootScopeAddress(),
+            RequestCandidates: [missingCandidate, explicitNullCandidate],
+            VisibleRequestItems: [missingItem, explicitNullItem],
+            VisibleStoredRows: [],
+            CurrentRows: []
+        );
+
+        _result = ProfileCollectionPlanner.Plan(input);
+    }
+
+    [Test]
+    public void It_emits_two_distinct_visible_insert_entries()
+    {
+        var success = _result.Should().BeOfType<ProfileCollectionPlanResult.Success>().Subject;
+        success.Plan.Sequence.Should().HaveCount(2);
+        success.Plan.Sequence.Should().AllBeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
+    }
+
+    [Test]
+    public void It_pairs_each_visible_request_item_with_its_own_candidate()
+    {
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        var first = (ProfileCollectionPlanEntry.VisibleInsertEntry)success.Plan.Sequence[0];
+        var second = (ProfileCollectionPlanEntry.VisibleInsertEntry)success.Plan.Sequence[1];
+        first.RequestCandidate.Should().NotBeSameAs(second.RequestCandidate);
+        first.RequestCandidate.SemanticIdentityInOrder[0].IsPresent.Should().BeFalse();
+        second.RequestCandidate.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
     }
 }
 

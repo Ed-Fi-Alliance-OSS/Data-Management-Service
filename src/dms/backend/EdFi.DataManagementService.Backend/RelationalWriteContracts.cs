@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -331,7 +332,8 @@ public sealed record CollectionWriteCandidate
         IEnumerable<FlattenedWriteValue> values,
         IEnumerable<object?> semanticIdentityValues,
         IEnumerable<CandidateAttachedAlignedScopeData>? attachedAlignedScopeData = null,
-        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
+        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null,
+        IEnumerable<SemanticIdentityPart>? semanticIdentityInOrder = null
     )
     {
         TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
@@ -394,6 +396,47 @@ public sealed record CollectionWriteCandidate
                 nameof(semanticIdentityValues)
             );
         }
+
+        SemanticIdentityInOrder = semanticIdentityInOrder is not null
+            ? FlattenedWriteContractSupport.ToImmutableArray(
+                semanticIdentityInOrder,
+                nameof(semanticIdentityInOrder)
+            )
+            : DeriveSemanticIdentityInOrderFromValues(SemanticIdentityValues, mergePlan);
+
+        if (SemanticIdentityInOrder.Length != mergePlan.SemanticIdentityBindings.Length)
+        {
+            throw new ArgumentException(
+                $"{nameof(semanticIdentityInOrder)} must contain one entry per compiled semantic identity binding. "
+                    + $"Expected {mergePlan.SemanticIdentityBindings.Length}, actual {SemanticIdentityInOrder.Length}.",
+                nameof(semanticIdentityInOrder)
+            );
+        }
+    }
+
+    private static ImmutableArray<SemanticIdentityPart> DeriveSemanticIdentityInOrderFromValues(
+        ImmutableArray<object?> values,
+        CollectionMergePlan mergePlan
+    )
+    {
+        // Legacy fallback used when a caller does not supply presence-aware identity. Treats
+        // each part as <c>IsPresent: value is not null</c>, which preserves the historical
+        // shape but collapses missing-vs-explicit-null. Production callers (the flattener)
+        // must supply <see cref="SemanticIdentityPart"/> with explicit presence; this branch
+        // exists for in-memory test builders that did not yet adopt the presence-aware path.
+        var bindings = mergePlan.SemanticIdentityBindings;
+        var parts = new SemanticIdentityPart[bindings.Length];
+        for (var i = 0; i < bindings.Length; i++)
+        {
+            var rawValue = values[i];
+            JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
+            parts[i] = new SemanticIdentityPart(
+                bindings[i].RelativePath.Canonical,
+                jsonValue,
+                IsPresent: rawValue is not null
+            );
+        }
+        return [.. parts];
     }
 
     /// <summary>
@@ -420,6 +463,17 @@ public sealed record CollectionWriteCandidate
     /// The compiled semantic-identity values in deterministic binding order.
     /// </summary>
     public ImmutableArray<object?> SemanticIdentityValues { get; init; }
+
+    /// <summary>
+    /// The compiled semantic identity in <see cref="SemanticIdentityPart"/> form, parallel
+    /// to <see cref="SemanticIdentityValues"/>. Each entry pairs the binding's relative path
+    /// with the materialized JSON value and a presence flag that distinguishes a missing
+    /// property from an explicit JSON null. Production candidates produced by the flattener
+    /// supply this directly; legacy in-memory builders that pass only
+    /// <see cref="SemanticIdentityValues"/> get a fallback whose <c>IsPresent</c> is derived
+    /// as <c>value is not null</c>.
+    /// </summary>
+    public ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder { get; init; }
 
     /// <summary>
     /// Collection-aligned one-to-one scopes that remain attached to the owning collection candidate.

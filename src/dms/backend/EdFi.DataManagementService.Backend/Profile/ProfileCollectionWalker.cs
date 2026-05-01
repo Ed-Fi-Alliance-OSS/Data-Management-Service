@@ -42,10 +42,6 @@ internal sealed class ProfileCollectionWalker
     private readonly FlatteningResolvedReferenceLookupSet _resolvedReferenceLookups;
     private readonly IReadOnlyDictionary<DbTableName, ProfileTableStateBuilder> _tableStateBuilders;
     private readonly SynthesizeSeparateScopeInstanceDelegate? _synthesizeSeparateScopeInstance;
-    private readonly IReadOnlyDictionary<
-        string,
-        ImmutableArray<string>
-    > _semanticIdentityPathsByCollectionScope;
 
     private readonly IReadOnlyDictionary<
         (DbTableName Table, ParentIdentityKey ParentKey),
@@ -88,10 +84,10 @@ internal sealed class ProfileCollectionWalker
             tableStateBuilders ?? throw new ArgumentNullException(nameof(tableStateBuilders));
         _synthesizeSeparateScopeInstance = synthesizeSeparateScopeInstance;
 
-        _semanticIdentityPathsByCollectionScope = BuildSemanticIdentityPathsByCollectionScope(_request);
+        var semanticIdentityPathsByCollectionScope = BuildSemanticIdentityPathsByCollectionScope(_request);
         _currentCollectionRowsByTableAndParentIdentity = BuildCurrentCollectionRowsIndex(
             _request,
-            _semanticIdentityPathsByCollectionScope
+            semanticIdentityPathsByCollectionScope
         );
         _currentSeparateScopeRowsByTableAndParentIdentity = BuildCurrentSeparateScopeRowsIndex(_request);
 
@@ -422,9 +418,7 @@ internal sealed class ProfileCollectionWalker
                 {
                     case ProfileCollectionPlanEntry.MatchedUpdateEntry matchedEntry:
                         // Resolve the concrete request item node from the writable request body.
-                        var candidateKey = BuildCandidateIdentityKey(
-                            matchedEntry.RequestCandidate.SemanticIdentityValues
-                        );
+                        var candidateKey = SemanticIdentityKeys.BuildKey(matchedEntry.RequestCandidate);
                         if (!candidateKeyToRequestItem.TryGetValue(candidateKey, out var requestItem))
                         {
                             throw new InvalidOperationException(
@@ -554,10 +548,7 @@ internal sealed class ProfileCollectionWalker
                             tablePlan,
                             insertMergedRow.Values
                         );
-                        var insertedSemanticIdentity = BuildSemanticIdentityPartsFromCandidate(
-                            tablePlan,
-                            insertEntry.RequestCandidate.SemanticIdentityValues
-                        );
+                        var insertedSemanticIdentity = insertEntry.RequestCandidate.SemanticIdentityInOrder;
                         var insertedContainingAddress = BuildContainingScopeAddress(
                             parentContext,
                             jsonScope,
@@ -567,9 +558,7 @@ internal sealed class ProfileCollectionWalker
                         // when planning ran; recover it from the candidate-key lookup
                         // we already built. The lookup must contain it because every
                         // VisibleInsertEntry corresponds to a creatable VisibleRequestItem.
-                        var insertCandidateKey = BuildCandidateIdentityKey(
-                            insertEntry.RequestCandidate.SemanticIdentityValues
-                        );
+                        var insertCandidateKey = SemanticIdentityKeys.BuildKey(insertEntry.RequestCandidate);
                         if (
                             !candidateKeyToRequestItem.TryGetValue(
                                 insertCandidateKey,
@@ -1048,9 +1037,10 @@ internal sealed class ProfileCollectionWalker
     }
 
     /// <summary>
-    /// Builds a lookup from candidate identity key (same format as the planner uses) to the
-    /// matching <see cref="VisibleRequestCollectionItem"/>. Used to resolve the concrete
-    /// request item node for matched-update entries.
+    /// Builds a lookup from candidate identity key (the shared
+    /// <see cref="SemanticIdentityKeys"/> shape used by the planner) to the matching
+    /// <see cref="VisibleRequestCollectionItem"/>. Used to resolve the concrete request item
+    /// node for matched-update entries.
     /// </summary>
     private static Dictionary<string, VisibleRequestCollectionItem> BuildCandidateKeyToRequestItemLookup(
         ImmutableArray<VisibleRequestCollectionItem> visibleRequestItems
@@ -1059,34 +1049,12 @@ internal sealed class ProfileCollectionWalker
         var result = new Dictionary<string, VisibleRequestCollectionItem>(StringComparer.Ordinal);
         foreach (var item in visibleRequestItems)
         {
-            // Build the same key the planner uses for VisibleRequestItems (via AddressKey).
-            var addressKey = BuildAddressIdentityKey(item.Address.SemanticIdentityInOrder);
+            var addressKey = SemanticIdentityKeys.BuildKey(item.Address.SemanticIdentityInOrder);
             result.TryAdd(addressKey, item);
         }
 
         return result;
     }
-
-    /// <summary>
-    /// Builds a string key from the candidate's raw CLR semantic identity values by
-    /// wrapping each value in a <see cref="JsonValue"/> and serializing to JSON string form,
-    /// then joining with a pipe delimiter. Mirrors the planner's <c>BuildCandidateIdentityKey</c>.
-    /// </summary>
-    private static string BuildCandidateIdentityKey(IReadOnlyList<object?> semanticIdentityValues) =>
-        string.Join(
-            "|",
-            semanticIdentityValues.Select(v =>
-                v is null ? "null" : JsonValue.Create(v)?.ToJsonString() ?? "null"
-            )
-        );
-
-    /// <summary>
-    /// Builds a string key from a <see cref="CollectionRowAddress"/>'s semantic identity
-    /// parts by serializing each part's JSON value, then joining with a pipe delimiter.
-    /// Mirrors the planner's <c>BuildSemanticIdentityKey</c>.
-    /// </summary>
-    private static string BuildAddressIdentityKey(ImmutableArray<SemanticIdentityPart> identityParts) =>
-        string.Join("|", identityParts.Select(p => p.Value?.ToJsonString() ?? "null"));
 
     /// <summary>
     /// Returns the collection candidates available under the given parent context. For the
@@ -1432,68 +1400,6 @@ internal sealed class ProfileCollectionWalker
     }
 
     /// <summary>
-    /// Constructs <see cref="ImmutableArray{T}"/> of <see cref="SemanticIdentityPart"/> from
-    /// an inserted candidate's raw CLR semantic identity values, pairing each value with
-    /// the relative path declared on the table plan's
-    /// <c>CollectionMergePlan.SemanticIdentityBindings</c>. <see cref="SemanticIdentityPart.IsPresent"/>
-    /// is <c>true</c> for inserts because the value is present by definition (a candidate
-    /// would not exist otherwise). Used to seed the synthetic
-    /// <see cref="ScopeInstanceAddress"/> when recursing into a freshly-inserted row.
-    /// </summary>
-    private ImmutableArray<SemanticIdentityPart> BuildSemanticIdentityPartsFromCandidate(
-        TableWritePlan tableWritePlan,
-        ImmutableArray<object?> semanticIdentityValues
-    )
-    {
-        var bindings =
-            tableWritePlan.CollectionMergePlan?.SemanticIdentityBindings
-            ?? throw new InvalidOperationException(
-                $"Collection table '{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}' "
-                    + "does not have a compiled collection merge plan."
-            );
-        if (bindings.Length != semanticIdentityValues.Length)
-        {
-            throw new InvalidOperationException(
-                $"Collection table '{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}' "
-                    + $"has {bindings.Length} compiled semantic-identity bindings but the candidate "
-                    + $"carries {semanticIdentityValues.Length} semantic-identity values. Walker "
-                    + "cannot construct a synthetic ScopeInstanceAddress with mismatched arity."
-            );
-        }
-
-        var parts = new SemanticIdentityPart[bindings.Length];
-        for (var i = 0; i < bindings.Length; i++)
-        {
-            var rawValue = semanticIdentityValues[i];
-            JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
-            parts[i] = new SemanticIdentityPart(
-                ResolveSemanticIdentityPath(tableWritePlan, i, bindings[i]),
-                jsonValue,
-                IsPresent: rawValue is not null
-            );
-        }
-        return [.. parts];
-    }
-
-    private string ResolveSemanticIdentityPath(
-        TableWritePlan tableWritePlan,
-        int identityPartIndex,
-        CollectionMergeSemanticIdentityBinding binding
-    )
-    {
-        var scope = tableWritePlan.TableModel.JsonScope.Canonical;
-        if (
-            _semanticIdentityPathsByCollectionScope.TryGetValue(scope, out var emittedPaths)
-            && identityPartIndex < emittedPaths.Length
-        )
-        {
-            return emittedPaths[identityPartIndex];
-        }
-
-        return ToScopeRelativePath(binding.RelativePath.Canonical, scope);
-    }
-
-    /// <summary>
     /// Converts a canonical path to the same scope-relative member path form emitted by
     /// <c>CompiledScopeAdapterFactory</c> so walker-synthesized ancestor addresses
     /// match Core profile metadata structurally.
@@ -1705,11 +1611,19 @@ internal sealed class ProfileCollectionWalker
                                         binding.RelativePath.Canonical,
                                         tablePlan.TableModel.JsonScope.Canonical
                                     );
-                            return new SemanticIdentityPart(
-                                identityPath,
-                                jsonNode,
-                                IsPresent: rawValue is not null
-                            );
+                            // Stored DB-projected rows always count as "present" for the
+                            // identity binding: a row that exists in the table had every
+                            // bound column persisted, even when the persisted value is
+                            // SQL NULL. This mirrors Core's stored-side projection in
+                            // AddressDerivationEngine.ReadSemanticIdentity, which sets
+                            // IsPresent=true for any identity path whose JSON leaf can be
+                            // navigated (including JSON null leaves). Without this
+                            // alignment, the new presence-aware planner key would mismatch
+                            // a Core VisibleStoredCollectionRow whose IsPresent is true
+                            // against a walker CurrentCollectionRowSnapshot whose IsPresent
+                            // is false, breaking reverse stored coverage on nullable
+                            // identity columns.
+                            return new SemanticIdentityPart(identityPath, jsonNode, IsPresent: true);
                         }
                     )
                     .ToImmutableArray();
