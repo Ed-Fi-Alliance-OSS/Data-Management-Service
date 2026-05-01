@@ -898,15 +898,29 @@ internal sealed class ProfileCollectionWalker
     )
     {
         var parentSlotMap = ResolveParentKeyPartSlotsForChild(childTablePlan);
-        return parentSlotMap.Length == 0
-            ? ImmutableArray<FlattenedWriteValue>.Empty
-            : ImmutableArray.CreateRange(
-                parentSlotMap.Select(slot =>
-                    slot >= 0 && slot < parentContext.ParentPhysicalIdentityValues.Length
-                        ? parentContext.ParentPhysicalIdentityValues[slot]
-                        : (FlattenedWriteValue)new FlattenedWriteValue.Literal(null)
-                )
-            );
+        if (parentSlotMap.Length == 0)
+        {
+            return ImmutableArray<FlattenedWriteValue>.Empty;
+        }
+
+        var parentValues = parentContext.ParentPhysicalIdentityValues;
+        var projected = new FlattenedWriteValue[parentSlotMap.Length];
+        for (var i = 0; i < parentSlotMap.Length; i++)
+        {
+            var slot = parentSlotMap[i];
+            if (slot < 0 || slot >= parentValues.Length)
+            {
+                throw new InvalidOperationException(
+                    $"Compiled ParentKeyPart slot {slot} for child table "
+                        + $"'{ProfileBindingClassificationCore.FormatTable(childTablePlan)}' is out of range "
+                        + $"for parent physical-identity buffer of length {parentValues.Length}. "
+                        + "Walker invariant violated: structural drift between compiled write plan "
+                        + "and walker parent-context shape."
+                );
+            }
+            projected[i] = parentValues[slot];
+        }
+        return ImmutableArray.Create(projected);
     }
 
     private static ScopeInstanceAddress BuildAlignedScopeAddress(

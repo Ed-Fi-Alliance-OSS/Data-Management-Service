@@ -104,8 +104,11 @@ internal static class ProfileCollectionPlanner
             {
                 // Unmatched and not creatable: reject immediately before Phase 2.
                 return new ProfileCollectionPlanResult.CreatabilityRejection(
-                    visibleRequestItem.Address,
-                    $"Profile does not allow creating new collection items in scope '{input.JsonScope}'."
+                    $"Profile does not allow creating new collection items in scope '{input.JsonScope}': "
+                        + LogSanitizer.SanitizeForLog(
+                            FormatIdentity(visibleRequestItem.Address.SemanticIdentityInOrder)
+                        )
+                        + "."
                 );
             }
         }
@@ -551,8 +554,7 @@ internal abstract record ProfileCollectionPlanResult
 {
     public sealed record Success(ProfileCollectionPlan Plan) : ProfileCollectionPlanResult;
 
-    public sealed record CreatabilityRejection(CollectionRowAddress OffendingAddress, string Reason)
-        : ProfileCollectionPlanResult;
+    public sealed record CreatabilityRejection(string Reason) : ProfileCollectionPlanResult;
 }
 
 internal abstract record ProfileCollectionPlanEntry

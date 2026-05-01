@@ -27,13 +27,6 @@ internal interface IProfileSeparateTableBindingClassifier
     ProfileSeparateTableBindingClassification Classify(
         ResourceWritePlan writePlan,
         TableWritePlan separateTablePlan,
-        ProfileAppliedWriteRequest profileRequest,
-        ProfileAppliedWriteContext? profileAppliedContext
-    );
-
-    ProfileSeparateTableBindingClassification Classify(
-        ResourceWritePlan writePlan,
-        TableWritePlan separateTablePlan,
         ScopeInstanceAddress scopeAddress,
         RequestScopeState? requestScope,
         StoredScopeState? storedScope
@@ -56,32 +49,6 @@ internal interface IProfileSeparateTableBindingClassifier
 /// </summary>
 internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTableBindingClassifier
 {
-    public ProfileSeparateTableBindingClassification Classify(
-        ResourceWritePlan writePlan,
-        TableWritePlan separateTablePlan,
-        ProfileAppliedWriteRequest profileRequest,
-        ProfileAppliedWriteContext? profileAppliedContext
-    )
-    {
-        ArgumentNullException.ThrowIfNull(writePlan);
-        ArgumentNullException.ThrowIfNull(separateTablePlan);
-        ArgumentNullException.ThrowIfNull(profileRequest);
-
-        GuardLegacyTableKind(separateTablePlan);
-
-        var resolverOwnedBindingIndices = ProfileBindingClassificationCore.CollectResolverOwnedIndices(
-            separateTablePlan
-        );
-        var bindingsByIndex = ProfileBindingClassificationCore.ClassifyBindings(
-            writePlan,
-            separateTablePlan,
-            profileRequest,
-            profileAppliedContext,
-            resolverOwnedBindingIndices
-        );
-        return new ProfileSeparateTableBindingClassification(bindingsByIndex, resolverOwnedBindingIndices);
-    }
-
     public ProfileSeparateTableBindingClassification Classify(
         ResourceWritePlan writePlan,
         TableWritePlan separateTablePlan,
@@ -126,21 +93,6 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
             resolverOwnedBindingIndices
         );
         return new ProfileSeparateTableBindingClassification(bindingsByIndex, resolverOwnedBindingIndices);
-    }
-
-    private static void GuardLegacyTableKind(TableWritePlan separateTablePlan)
-    {
-        var tableKind = separateTablePlan.TableModel.IdentityMetadata.TableKind;
-        if (tableKind is not DbTableKind.RootExtension)
-        {
-            throw new ArgumentException(
-                $"{nameof(ProfileSeparateTableBindingClassifier)} legacy JsonScope-keyed overload supports only "
-                    + $"{nameof(DbTableKind.RootExtension)} tables; got {tableKind} "
-                    + $"for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'. "
-                    + $"Use the instance-aware overload for {nameof(DbTableKind.CollectionExtensionScope)} tables.",
-                nameof(separateTablePlan)
-            );
-        }
     }
 
     private static void GuardInstanceAwareTableKind(TableWritePlan separateTablePlan)

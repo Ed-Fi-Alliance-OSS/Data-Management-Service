@@ -1206,10 +1206,10 @@ public class Given_Planner_with_unmatched_non_creatable_visible_request_returns_
         _result.Should().BeOfType<ProfileCollectionPlanResult.CreatabilityRejection>();
 
     [Test]
-    public void It_returns_rejection_with_matching_identity()
+    public void It_returns_rejection_naming_the_offending_identity()
     {
         var rejection = (ProfileCollectionPlanResult.CreatabilityRejection)_result;
-        rejection.OffendingAddress.SemanticIdentityInOrder.Should().BeEquivalentTo(_identity);
+        rejection.Reason.Should().Contain("NEW1");
     }
 }
 
@@ -1284,7 +1284,8 @@ public class Given_Planner_with_matched_update_and_non_creatable_insert_returns_
     public void It_returns_rejection_pointing_at_NEW1_not_V1()
     {
         var rejection = (ProfileCollectionPlanResult.CreatabilityRejection)_result;
-        rejection.OffendingAddress.SemanticIdentityInOrder.Should().BeEquivalentTo(_new1Identity);
+        rejection.Reason.Should().Contain("NEW1");
+        rejection.Reason.Should().NotContain("V1");
     }
 }
 

@@ -31,7 +31,6 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// </remarks>
 internal sealed record ProfileSeparateTableKeyUnificationContext(
     JsonNode WritableRequestBody,
-    RelationalWriteCurrentState? CurrentState,
     IReadOnlyDictionary<DbColumnName, object?> CurrentRowByColumnName,
     FlatteningResolvedReferenceLookupSet ResolvedReferenceLookups,
     ProfileAppliedWriteRequest ProfileRequest,
@@ -58,13 +57,6 @@ internal interface IProfileSeparateTableKeyUnificationResolver
     void Resolve(
         TableWritePlan separateTablePlan,
         ProfileSeparateTableKeyUnificationContext context,
-        FlattenedWriteValue[] mergedRowValuesMutable,
-        ImmutableHashSet<int> resolverOwnedBindingIndices
-    );
-
-    void Resolve(
-        TableWritePlan separateTablePlan,
-        ProfileSeparateTableKeyUnificationContext context,
         ScopeInstanceAddress scopeAddress,
         RequestScopeState? requestScope,
         StoredScopeState? storedScope,
@@ -86,46 +78,6 @@ internal interface IProfileSeparateTableKeyUnificationResolver
 
 internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSeparateTableKeyUnificationResolver
 {
-    public void Resolve(
-        TableWritePlan separateTablePlan,
-        ProfileSeparateTableKeyUnificationContext context,
-        FlattenedWriteValue[] mergedRowValuesMutable,
-        ImmutableHashSet<int> resolverOwnedBindingIndices
-    )
-    {
-        ArgumentNullException.ThrowIfNull(separateTablePlan);
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(mergedRowValuesMutable);
-        ArgumentNullException.ThrowIfNull(resolverOwnedBindingIndices);
-
-        GuardLegacyTableKind(separateTablePlan);
-
-        if (mergedRowValuesMutable.Length != separateTablePlan.ColumnBindings.Length)
-        {
-            throw new InvalidOperationException(
-                $"Merged row value buffer length {mergedRowValuesMutable.Length} does not match "
-                    + $"separate table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}' binding count "
-                    + $"{separateTablePlan.ColumnBindings.Length}."
-            );
-        }
-
-        if (separateTablePlan.KeyUnificationPlans.Length == 0)
-        {
-            return;
-        }
-
-        ProfileKeyUnificationCore.ResolveKeyUnification(
-            separateTablePlan,
-            context.CurrentRowByColumnName,
-            context.WritableRequestBody,
-            context.ResolvedReferenceLookups,
-            context.ProfileRequest,
-            context.ProfileAppliedContext,
-            mergedRowValuesMutable,
-            resolverOwnedBindingIndices
-        );
-    }
-
     public void Resolve(
         TableWritePlan separateTablePlan,
         ProfileSeparateTableKeyUnificationContext context,
@@ -191,21 +143,6 @@ internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSepar
             mergedRowValuesMutable,
             resolverOwnedBindingIndices
         );
-    }
-
-    private static void GuardLegacyTableKind(TableWritePlan separateTablePlan)
-    {
-        var tableKind = separateTablePlan.TableModel.IdentityMetadata.TableKind;
-        if (tableKind is not DbTableKind.RootExtension)
-        {
-            throw new ArgumentException(
-                $"{nameof(ProfileSeparateTableKeyUnificationResolver)} legacy JsonScope-keyed overload supports only "
-                    + $"{nameof(DbTableKind.RootExtension)} tables; got {tableKind} "
-                    + $"for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'. "
-                    + $"Use the instance-aware overload for {nameof(DbTableKind.CollectionExtensionScope)} tables.",
-                nameof(separateTablePlan)
-            );
-        }
     }
 
     private static void GuardInstanceAwareTableKind(TableWritePlan separateTablePlan)

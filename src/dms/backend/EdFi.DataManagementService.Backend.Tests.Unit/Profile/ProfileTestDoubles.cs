@@ -1594,7 +1594,6 @@ internal static class ProfileTestDoubles
     internal static ProfileSeparateTableKeyUnificationContext BuildSeparateTableResolverContext(
         ResourceWritePlan writePlan,
         JsonNode? writableBody = null,
-        RelationalWriteCurrentState? currentState = null,
         IReadOnlyDictionary<DbColumnName, object?>? currentRowByColumnName = null,
         FlatteningResolvedReferenceLookupSet? resolvedReferenceLookups = null,
         ProfileAppliedWriteRequest? profileRequest = null,
@@ -1602,7 +1601,6 @@ internal static class ProfileTestDoubles
     ) =>
         new(
             WritableRequestBody: writableBody ?? new JsonObject(),
-            CurrentState: currentState,
             CurrentRowByColumnName: currentRowByColumnName ?? new Dictionary<DbColumnName, object?>(),
             ResolvedReferenceLookups: resolvedReferenceLookups ?? EmptyResolvedReferenceLookups(writePlan),
             ProfileRequest: profileRequest ?? CreateRequest(),

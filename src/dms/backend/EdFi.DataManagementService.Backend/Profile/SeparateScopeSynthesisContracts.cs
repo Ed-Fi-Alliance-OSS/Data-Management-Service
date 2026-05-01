@@ -47,5 +47,5 @@ internal readonly record struct SeparateScopeSynthesisResult(
     ) => new(outcome, state, null);
 
     public static SeparateScopeSynthesisResult Reject(ProfileCreatabilityRejection rejection) =>
-        new(ProfileSeparateTableMergeOutcome.RejectCreateDenied, null, rejection);
+        new(Outcome: null, TableState: null, Rejection: rejection);
 }

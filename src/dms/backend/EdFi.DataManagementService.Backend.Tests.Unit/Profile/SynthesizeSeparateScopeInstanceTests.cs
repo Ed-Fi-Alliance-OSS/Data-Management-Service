@@ -222,8 +222,7 @@ public class Given_SynthesizeSeparateScopeInstance_when_visible_present_is_not_c
     }
 
     [Test]
-    public void It_routes_to_reject_create_denied() =>
-        _result.Outcome.Should().Be(ProfileSeparateTableMergeOutcome.RejectCreateDenied);
+    public void It_leaves_outcome_null_on_reject() => _result.Outcome.Should().BeNull();
 
     [Test]
     public void It_returns_a_creatability_rejection_for_the_scope()
@@ -694,8 +693,7 @@ public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_visible
     }
 
     [Test]
-    public void It_routes_to_reject_create_denied() =>
-        _result.Outcome.Should().Be(ProfileSeparateTableMergeOutcome.RejectCreateDenied);
+    public void It_leaves_outcome_null_on_reject() => _result.Outcome.Should().BeNull();
 
     [Test]
     public void It_returns_a_creatability_rejection_for_the_aligned_scope()
@@ -752,8 +750,7 @@ public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_hidden_
     }
 
     [Test]
-    public void It_rejects_hidden_request_data() =>
-        _result.Outcome.Should().Be(ProfileSeparateTableMergeOutcome.RejectCreateDenied);
+    public void It_leaves_outcome_null_on_reject() => _result.Outcome.Should().BeNull();
 
     [Test]
     public void It_returns_a_profile_policy_rejection_for_the_aligned_scope()
@@ -786,8 +783,7 @@ public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_hidden_
     }
 
     [Test]
-    public void It_rejects_hidden_request_data() =>
-        _result.Outcome.Should().Be(ProfileSeparateTableMergeOutcome.RejectCreateDenied);
+    public void It_leaves_outcome_null_on_reject() => _result.Outcome.Should().BeNull();
 
     [Test]
     public void It_returns_a_profile_policy_rejection_for_the_aligned_scope()

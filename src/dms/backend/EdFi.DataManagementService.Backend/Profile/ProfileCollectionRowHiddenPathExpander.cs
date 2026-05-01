@@ -169,7 +169,7 @@ internal static class ProfileCollectionRowHiddenPathExpander
         var builder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(rows.Length);
         foreach (var row in rows)
         {
-            if (additionsByRowAddress.TryGetValue(row.Address, out var additions) && additions.Count > 0)
+            if (additionsByRowAddress.TryGetValue(row.Address, out var additions))
             {
                 var combined = new HashSet<string>(StringComparer.Ordinal);
                 if (!row.HiddenMemberPaths.IsDefaultOrEmpty)

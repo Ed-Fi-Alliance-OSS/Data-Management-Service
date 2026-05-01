@@ -24,13 +24,6 @@ internal readonly record struct ProfileSeparateScopeDescendantStates(
     ImmutableArray<StoredScopeState> StoredScopes
 )
 {
-    public static readonly ProfileSeparateScopeDescendantStates Empty = new(
-        ImmutableArray<RequestScopeState>.Empty,
-        ImmutableArray<StoredScopeState>.Empty
-    );
-
-    public bool IsEmpty => RequestScopes.IsDefaultOrEmpty && StoredScopes.IsDefaultOrEmpty;
-
     /// <summary>
     /// Collects request and stored scope states for descendant inlined non-collection scopes
     /// of <paramref name="directScopeAddress"/> whose owner table equals

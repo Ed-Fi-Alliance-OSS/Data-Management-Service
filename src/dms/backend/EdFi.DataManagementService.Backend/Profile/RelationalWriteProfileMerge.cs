@@ -725,7 +725,6 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // request body, not the root body.
         var resolverContext = new ProfileSeparateTableKeyUnificationContext(
             WritableRequestBody: scopedRequestNode,
-            CurrentState: request.CurrentState,
             CurrentRowByColumnName: currentRowByColumnName,
             ResolvedReferenceLookups: resolvedReferenceLookups,
             ProfileRequest: request.ProfileRequest,
@@ -1850,7 +1849,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 if (hasRequestOrdinalPath)
                 {
                     var ancestorWildcardCount = CountWildcardSegments(ancestor.JsonScope);
-                    if (ancestorWildcardCount >= 0 && ancestorWildcardCount <= requestOrdinalPath.Length)
+                    if (ancestorWildcardCount <= requestOrdinalPath.Length)
                     {
                         ancestorRequestOrdinalPath = requestOrdinalPath[..ancestorWildcardCount];
                         ancestorHasRequestOrdinalPath = true;

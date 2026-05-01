@@ -72,8 +72,11 @@ internal static class SemanticIdentityKeys
     /// Builds a dictionary key from a <see cref="CollectionWriteCandidate"/> by delegating to
     /// the part-array overload using <see cref="CollectionWriteCandidate.SemanticIdentityInOrder"/>.
     /// </summary>
-    public static string BuildKey(CollectionWriteCandidate candidate) =>
-        BuildKey(candidate.SemanticIdentityInOrder);
+    public static string BuildKey(CollectionWriteCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        return BuildKey(candidate.SemanticIdentityInOrder);
+    }
 
     /// <summary>
     /// Formats a <see cref="SemanticIdentityPart"/> sequence for human-readable diagnostic
