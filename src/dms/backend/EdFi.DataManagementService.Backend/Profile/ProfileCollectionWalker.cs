@@ -1758,21 +1758,23 @@ internal sealed class ProfileCollectionWalker
     }
 
     /// <summary>
-    /// Builds a <c>JsonScope → current rows</c> dictionary used as a scope-wide fallback by
-    /// ancestor descriptor canonicalization when a URI is missing from the request-cycle
-    /// resolved-reference cache (e.g. delete-by-absence parents whose descriptor URI was
-    /// never resolved as part of the current request body). The ancestor canonicalize helper
-    /// scans these rows for a unique scalar-match and copies the descriptor id back.
+    /// Builds a <c>JsonScope → current rows</c> dictionary used by ancestor descriptor
+    /// canonicalization when a URI is missing from the request-cycle resolved-reference
+    /// cache (e.g. delete-by-absence parents whose descriptor URI was never resolved as
+    /// part of the current request body). The ancestor canonicalize helper scans these
+    /// rows for a <em>unique</em> scalar-match and copies the descriptor id back.
     /// </summary>
     /// <remarks>
-    /// Unlike <see cref="_currentCollectionRowsByTableAndParentIdentity"/>, this index is
-    /// keyed by JsonScope alone and covers all current rows on the table — index-build time
-    /// has no per-(scope, parent-instance) partitioning available because we are constructing
-    /// the parent-keyed indexes themselves. Scope-wide scanning is acceptable for the
-    /// canonicalize fallback because semantic identity within a single document boundary
-    /// disambiguates: scalar-part collisions across different parents are rare in practice
-    /// and surface as ambiguous matches that fall through to "leave as-is" (and a subsequent
-    /// index-lookup miss surfaces deterministically).
+    /// This index is keyed by JsonScope alone and covers all current rows on the table —
+    /// index-build time has no per-(scope, parent-instance) partitioning available
+    /// because we are constructing the parent-keyed indexes themselves. The scope-wide
+    /// scan is used only for the unique-scalar-match step. If the scalar match is
+    /// ambiguous, callers fall through to count-equal positional pairing within a single
+    /// parent partition (see <see cref="BuildCurrentRowsByJsonScopeAndParent"/>); when
+    /// neither path resolves the URI the helper fails closed at the call site rather
+    /// than leaving the URI form in place, because a URI-form ancestor identity
+    /// silently mis-buckets the row in the walker's address-keyed visible-stored
+    /// index.
     /// </remarks>
     private static IReadOnlyDictionary<
         string,

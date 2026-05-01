@@ -1920,10 +1920,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <see cref="AncestorCollectionInstance.SemanticIdentityInOrder"/>. URI cache hits are
     /// preferred; URI cache misses fall back to scanning <paramref name="currentRows"/> for a
     /// scalar-match row whose descriptor id is then copied at the same index position. If
-    /// neither resolves the URI, the part is left unchanged so callers can detect the failure
-    /// via subsequent index-lookup miss (the bug that the calling site fixed for the
-    /// per-row identity case carries through to ancestor canonicalization unchanged when the
-    /// URI is genuinely missing from both the cache and current rows).
+    /// neither the resolver cache nor scalar-match yields a unique descriptor id and
+    /// count-equal positional pairing cannot resolve the URI, the helper fails closed via
+    /// <see cref="InvalidOperationException"/> rather than leaving the URI form in place,
+    /// because a URI-form ancestor identity silently mis-buckets the row in the walker's
+    /// address-keyed visible-stored index — recursion looks up by canonical Int64 and a
+    /// URI-form bucket and the lookup key would carry different forms.
     /// </summary>
     private static ImmutableArray<SemanticIdentityPart> CanonicalizeAncestorDescriptorParts(
         ImmutableArray<SemanticIdentityPart> identity,

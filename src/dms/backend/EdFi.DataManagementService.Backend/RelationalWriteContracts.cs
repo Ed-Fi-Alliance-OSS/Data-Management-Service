@@ -414,6 +414,13 @@ public sealed record CollectionWriteCandidate
         }
     }
 
+    // TODO(DMS-1132): Remove this fallback. Production never hits it; ~36 direct test
+    // instantiations of CollectionWriteCandidate plus broader helper-based test reliance
+    // still depend on it. The fallback collapses missing-vs-explicit-null, which is the
+    // distinction Slice 5 introduced presence-aware identity keys for, so test fixtures
+    // reaching this path may silently mask presence-aware regressions. Migrate test sites
+    // to a ForTests factory that requires an explicit semanticIdentityInOrder, then
+    // delete this method and the SemanticIdentityValues-only constructor branch.
     private static ImmutableArray<SemanticIdentityPart> DeriveSemanticIdentityInOrderFromValues(
         ImmutableArray<object?> values,
         CollectionMergePlan mergePlan
