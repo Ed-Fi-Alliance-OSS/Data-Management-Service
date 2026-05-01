@@ -44,7 +44,6 @@ internal static class ProfileKeyUnificationCore
         TableWritePlan tableWritePlan,
         IReadOnlyDictionary<DbColumnName, object?> currentRowByColumnName,
         JsonNode writableRequestBody,
-        RelationalWriteCurrentState? currentState,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ProfileAppliedWriteRequest profileRequest,
         ProfileAppliedWriteContext? profileAppliedContext,
@@ -76,12 +75,6 @@ internal static class ProfileKeyUnificationCore
             profileAppliedContext
         );
 
-        // currentState is accepted on the public surface for parity with the original
-        // ProfileRootKeyUnificationContext; ResolveOne does not consume it because per-member
-        // evaluation routes through currentRowByColumnName for hidden governance and the
-        // request body for visible members.
-        _ = currentState;
-
         foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
         {
             ResolveOne(
@@ -110,7 +103,6 @@ internal static class ProfileKeyUnificationCore
         TableWritePlan tableWritePlan,
         IReadOnlyDictionary<DbColumnName, object?> currentRowByColumnName,
         JsonNode writableRequestBody,
-        RelationalWriteCurrentState? currentState,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ScopeInstanceAddress scopeAddress,
         RequestScopeState? requestScope,
@@ -122,7 +114,6 @@ internal static class ProfileKeyUnificationCore
             tableWritePlan,
             currentRowByColumnName,
             writableRequestBody,
-            currentState,
             resolvedReferenceLookups,
             scopeAddress,
             requestScope,
@@ -144,7 +135,6 @@ internal static class ProfileKeyUnificationCore
         TableWritePlan tableWritePlan,
         IReadOnlyDictionary<DbColumnName, object?> currentRowByColumnName,
         JsonNode writableRequestBody,
-        RelationalWriteCurrentState? currentState,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ScopeInstanceAddress scopeAddress,
         RequestScopeState? requestScope,
@@ -181,8 +171,6 @@ internal static class ProfileKeyUnificationCore
             storedScope,
             descendantStates
         );
-
-        _ = currentState;
 
         foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
         {
