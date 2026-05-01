@@ -46,7 +46,9 @@ internal static class ProfileCollectionPlanner
     /// entry from <c>mergedVisibleSequence</c> in first-come-first-served order (matching the request's
     /// reordering of visibles). Visible slots reached after the merged cursor is exhausted are omitted;
     /// the persister's delete-by-absence mechanism handles their removal. Leftover merged entries
-    /// (new inserts beyond the previous visible count) are appended at the end after all current rows.</para>
+    /// (new inserts beyond the previous visible count) are appended immediately after the last
+    /// previously visible row for that scope instance, before any trailing hidden rows. When there
+    /// is no previously visible row, leftovers are appended at the end after all current rows.</para>
     /// </summary>
     private static ProfileCollectionPlanResult BuildMergedVisibleSequence(ProfileCollectionScopeInput input)
     {
@@ -113,9 +115,24 @@ internal static class ProfileCollectionPlanner
         var output = new List<ProfileCollectionPlanEntry>(
             capacity: input.CurrentRows.Length + mergedVisibleSequence.Count
         );
-        var mergedCursor = 0;
-        foreach (var (currentRow, currentKey) in currentRowEntries)
+
+        // Locate the last previously-visible current row for this scope instance. Leftover
+        // merged-visible entries (extra inserts beyond the previous visible count) must be
+        // appended immediately after this row so they precede any trailing hidden rows. When
+        // no previously-visible row exists, leftovers append at the end after the walk.
+        var lastVisibleStoredIndex = -1;
+        for (var i = 0; i < currentRowEntries.Length; i++)
         {
+            if (visibleStoredByIdentity.ContainsKey(currentRowEntries[i].Key))
+            {
+                lastVisibleStoredIndex = i;
+            }
+        }
+
+        var mergedCursor = 0;
+        for (var i = 0; i < currentRowEntries.Length; i++)
+        {
+            var (currentRow, currentKey) = currentRowEntries[i];
             if (!visibleStoredByIdentity.ContainsKey(currentKey))
             {
                 // Hidden slot: preserve verbatim.
@@ -128,9 +145,20 @@ internal static class ProfileCollectionPlanner
                 mergedCursor++;
             }
             // else: visible slot with no merged entry to consume → omitted, persister deletes by absence.
+
+            if (i == lastVisibleStoredIndex)
+            {
+                // Just processed the last previously-visible row: append any extra inserts
+                // here so they land before trailing hidden rows.
+                while (mergedCursor < mergedVisibleSequence.Count)
+                {
+                    output.Add(mergedVisibleSequence[mergedCursor]);
+                    mergedCursor++;
+                }
+            }
         }
 
-        // Append any leftover merged entries (new inserts beyond previous visible count).
+        // No previously-visible row existed: append any leftover merged entries at the end.
         while (mergedCursor < mergedVisibleSequence.Count)
         {
             output.Add(mergedVisibleSequence[mergedCursor]);

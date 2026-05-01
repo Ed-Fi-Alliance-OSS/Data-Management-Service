@@ -1830,8 +1830,8 @@ public class Given_Planner_example_4_single_hidden_one_insert
 // ────────────────────────────────────────────────────────────────────────────────
 // Task 2.3 — Fixture 5: Example 5 — matched middle, trailing hidden, insert
 // current: [H@1, V1@2, H'@3]; request: [V1', NEW1]
-// expected: [HiddenPreserve(H), MatchedUpdate(V1), HiddenPreserve(H'), VisibleInsert(NEW1)]
-// NEW1 lands AFTER trailing H', not between V1_updated and H'.
+// expected: [HiddenPreserve(H), MatchedUpdate(V1), VisibleInsert(NEW1), HiddenPreserve(H')]
+// NEW1 lands after the last previously visible row (V1), before the trailing hidden H'.
 // ────────────────────────────────────────────────────────────────────────────────
 
 [TestFixture]
@@ -1937,22 +1937,22 @@ public class Given_Planner_example_5_matched_middle_trailing_hidden_insert
     }
 
     [Test]
-    public void It_places_HiddenPreserve_Hprime_at_index_2()
+    public void It_places_VisibleInsert_NEW1_at_index_2()
+    {
+        var success = (ProfileCollectionPlanResult.Success)_result;
+        success.Plan.Sequence[2].Should().BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
+    }
+
+    [Test]
+    public void It_places_HiddenPreserve_Hprime_at_index_3()
     {
         var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
-            .Plan.Sequence[2]
+            .Plan.Sequence[3]
             .Should()
             .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
         entry.StoredRow.StableRowIdentity.Should().Be(3L);
-    }
-
-    [Test]
-    public void It_places_VisibleInsert_NEW1_at_index_3()
-    {
-        var success = (ProfileCollectionPlanResult.Success)_result;
-        success.Plan.Sequence[3].Should().BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
     }
 }
 
@@ -2063,14 +2063,14 @@ public class Given_Planner_matched_only_no_reorder
 // Task 2.3 — Fixture 7: kitchen sink — reorder, delete, inserts, hidden interleave
 // current: [V1@1, H1@2, V2@3, V3@4, H2@5]; request: [V3', NEW_A, V1', NEW_B]; V2 omitted
 // Phase 1: mergedVisible = [V3_upd, NEW_A, V1_upd, NEW_B]
-// Phase 2 walk:
+// Phase 2 walk (last previously-visible current row is V3 at index 3):
 //   V1 slot (visible) → V3_upd (cursor=1)
 //   H1 (hidden) → HiddenPreserve
 //   V2 slot (visible) → NEW_A (cursor=2)
-//   V3 slot (visible) → V1_upd (cursor=3)
+//   V3 slot (visible) → V1_upd (cursor=3); last previously-visible row processed →
+//     append leftover NEW_B (cursor=4) before continuing
 //   H2 (hidden) → HiddenPreserve
-//   Leftover: NEW_B appended at end
-// expected: [V3_upd(id=4), H1(id=2), NEW_A, V1_upd(id=1), H2(id=5), NEW_B]
+// expected: [V3_upd(id=4), H1(id=2), NEW_A, V1_upd(id=1), NEW_B, H2(id=5)]
 // ────────────────────────────────────────────────────────────────────────────────
 
 [TestFixture]
@@ -2239,27 +2239,27 @@ public class Given_Planner_kitchen_sink_reorder_delete_inserts_hidden_interleave
     }
 
     [Test]
-    public void It_places_HiddenPreserve_H2_at_index_4()
+    public void It_places_VisibleInsert_NEW_B_at_index_4()
     {
         var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[4]
             .Should()
-            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
             .Subject;
-        entry.StoredRow.StableRowIdentity.Should().Be(5L);
+        entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW_B");
     }
 
     [Test]
-    public void It_places_VisibleInsert_NEW_B_at_index_5()
+    public void It_places_HiddenPreserve_H2_at_index_5()
     {
         var success = (ProfileCollectionPlanResult.Success)_result;
         var entry = success
             .Plan.Sequence[5]
             .Should()
-            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>()
+            .BeOfType<ProfileCollectionPlanEntry.HiddenPreserveEntry>()
             .Subject;
-        entry.RequestCandidate.SemanticIdentityValues.Should().ContainSingle().Which.Should().Be("NEW_B");
+        entry.StoredRow.StableRowIdentity.Should().Be(5L);
     }
 }
 
