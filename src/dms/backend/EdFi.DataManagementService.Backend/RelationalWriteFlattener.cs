@@ -987,6 +987,14 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     /// align with visible-request-item keys produced from
     /// <see cref="CollectionRowAddress.SemanticIdentityInOrder"/>.
     /// </summary>
+    /// <remarks>
+    /// Counterparts: <c>RelationalWriteNoProfileMerge.BuildCurrentRowSemanticIdentityParts</c>
+    /// (DB-row, hardcodes <c>IsPresent: true</c>) and the inline DB-row projection in
+    /// <c>ProfileCollectionWalker</c> (DB-row, prefers Core-emitted identity paths). The three
+    /// remain separate because this builder is request-side and presence-probed; only the
+    /// shared scope-relative path normalization is centralized in
+    /// <see cref="RelationalWriteMergeSupport.ToScopeRelativePath"/>.
+    /// </remarks>
     private static ImmutableArray<SemanticIdentityPart> MaterializeSemanticIdentityParts(
         TableWritePlan tableWritePlan,
         JsonNode scopeNode,

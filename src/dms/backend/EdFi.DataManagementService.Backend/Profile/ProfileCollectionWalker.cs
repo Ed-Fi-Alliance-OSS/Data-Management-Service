@@ -1545,6 +1545,15 @@ internal sealed class ProfileCollectionWalker
                     .Select(bi => projectedRow.Values[bi])
                     .ToImmutableArray();
 
+                // Walker-inline DB-row SemanticIdentityPart builder. Counterparts:
+                // RelationalWriteFlattener.MaterializeSemanticIdentityParts (request-side,
+                // presence-probed against the request JSON) and
+                // RelationalWriteNoProfileMerge.BuildCurrentRowSemanticIdentityParts (DB-row,
+                // pulls raw values via ExtractLiteralValue). The three remain separate
+                // because this variant prefers Core-emitted identity paths from
+                // semanticIdentityPathsByCollectionScope before falling back to scope-relative
+                // normalization, which the other two do not. Only the shared scope-relative
+                // path normalization is centralized in RelationalWriteMergeSupport.ToScopeRelativePath.
                 var identityParts = mergePlan
                     .SemanticIdentityBindings.Select(
                         (binding, identityPartIndex) =>

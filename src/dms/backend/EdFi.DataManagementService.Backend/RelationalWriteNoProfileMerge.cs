@@ -452,6 +452,16 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         }
     }
 
+    /// <summary>
+    /// Per-table current-state index keyed by (parent-scope key, semantic identity key) for
+    /// no-profile collection matching. Both the constructor and <see cref="TryMatch"/> route
+    /// the identity through <see cref="SemanticIdentityKeys.BuildKey"/> deliberately — the
+    /// presence-aware shared key path preserves missing-vs-explicit-null fidelity in the
+    /// no-profile flow the same way the profile-aware merge does. Regression coverage for
+    /// this end-to-end behavior lives in
+    /// <c>RelationalWriteNoProfileMergeSynthesizerTests</c> (see the
+    /// missing-vs-explicit-null collection-identity matching tests).
+    /// </summary>
     private sealed class ProjectedCollectionTableState
     {
         private readonly Dictionary<
@@ -554,6 +564,14 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         // This mirrors the rule documented in ProfileCollectionWalker.cs and prevents a
         // request candidate with a missing identity part from matching a current row whose
         // persisted identity column happens to be NULL.
+        //
+        // Counterparts: RelationalWriteFlattener.MaterializeSemanticIdentityParts (request-
+        // side, presence probed against the request JSON) and ProfileCollectionWalker's
+        // inline current-row projection (DB-row, prefers Core-emitted identity paths from
+        // semanticIdentityPathsByCollectionScope before falling back to scope-relative
+        // normalization). The three remain separate because their presence and path-source
+        // rules differ; only the shared scope-relative path normalization is centralized in
+        // RelationalWriteMergeSupport.ToScopeRelativePath.
         private static ImmutableArray<SemanticIdentityPart> BuildCurrentRowSemanticIdentityParts(
             TableWritePlan tableWritePlan,
             IReadOnlyList<FlattenedWriteValue> values
