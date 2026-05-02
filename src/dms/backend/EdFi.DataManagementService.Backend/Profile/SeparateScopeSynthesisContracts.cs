@@ -11,13 +11,19 @@ namespace EdFi.DataManagementService.Backend.Profile;
 internal readonly record struct SeparateScopeBuffer(
     TableWritePlan TableWritePlan,
     ImmutableArray<FlattenedWriteValue> Values,
-    ImmutableArray<CollectionWriteCandidate> CollectionCandidates
+    ImmutableArray<CollectionWriteCandidate> CollectionCandidates,
+    bool HasSubmittedScopeData
 )
 {
     public static SeparateScopeBuffer From(RootExtensionWriteRowBuffer buffer)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        return new SeparateScopeBuffer(buffer.TableWritePlan, buffer.Values, buffer.CollectionCandidates);
+        return new SeparateScopeBuffer(
+            buffer.TableWritePlan,
+            buffer.Values,
+            buffer.CollectionCandidates,
+            buffer.HasSubmittedScopeData
+        );
     }
 
     public static SeparateScopeBuffer From(CandidateAttachedAlignedScopeData scopeData)
@@ -26,7 +32,8 @@ internal readonly record struct SeparateScopeBuffer(
         return new SeparateScopeBuffer(
             scopeData.TableWritePlan,
             scopeData.Values,
-            scopeData.CollectionCandidates
+            scopeData.CollectionCandidates,
+            scopeData.HasSubmittedScopeData
         );
     }
 }

@@ -325,6 +325,62 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
             .Equal(0, new DateOnly(2026, 9, 1), new TimeOnly(8, 15), "Updated Room");
     }
 
+    [Test]
+    public void It_matches_collection_rows_on_raw_semantic_identity_values_for_no_profile_writes()
+    {
+        var fixture = CreateFixture();
+        var collectionItemId = NewCollectionItemId();
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [Literal(345L), Literal("Lincoln High")],
+                collectionCandidates:
+                [
+                    new CollectionWriteCandidate(
+                        fixture.AddressPlan,
+                        ordinalPath: [0],
+                        requestOrder: 0,
+                        values:
+                        [
+                            collectionItemId,
+                            Literal(345L),
+                            Literal(0),
+                            Literal((string?)null),
+                            Literal("New City"),
+                        ],
+                        semanticIdentityValues: [null],
+                        semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                            fixture.AddressPlan,
+                            [null]
+                        )
+                    ),
+                ]
+            )
+        );
+        var currentState = CreateCurrentState(
+            fixture,
+            rootRows:
+            [
+                [345L, "Lincoln High"],
+            ],
+            addressRows:
+            [
+                [50L, 345L, 0, null, "Old City"],
+            ]
+        );
+
+        var result = _sut.Synthesize(
+            new RelationalWriteNoProfileMergeRequest(fixture.WritePlan, flattenedWriteSet, currentState)
+        );
+
+        var addressState = result.TablesInDependencyOrder[2];
+        addressState.MergedRows.Should().ContainSingle();
+        LiteralValue(addressState.MergedRows[0].Values[0])
+            .Should()
+            .Be(50L, "no-profile match must consult raw SemanticIdentityValues, not presence metadata");
+        LiteralValue(addressState.MergedRows[0].Values[4]).Should().Be("New City");
+    }
+
     private static WritePlanFixture CreateFixture()
     {
         var rootPlan = CreateRootPlan();
@@ -452,7 +508,11 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 Literal(city),
             ],
             semanticIdentityValues: [addressType],
-            collectionCandidates: periods ?? []
+            collectionCandidates: periods ?? [],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                fixture.AddressPlan,
+                [addressType]
+            )
         );
     }
 
@@ -478,7 +538,11 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 Literal(beginDate),
                 Literal(room),
             ],
-            semanticIdentityValues: [beginDate]
+            semanticIdentityValues: [beginDate],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                fixture.PeriodPlan,
+                [beginDate]
+            )
         );
     }
 
@@ -504,7 +568,11 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 Literal(startTime),
                 Literal(room),
             ],
-            semanticIdentityValues: [sessionDate, startTime]
+            semanticIdentityValues: [sessionDate, startTime],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                fixture.SchedulePlan,
+                [sessionDate, startTime]
+            )
         );
     }
 

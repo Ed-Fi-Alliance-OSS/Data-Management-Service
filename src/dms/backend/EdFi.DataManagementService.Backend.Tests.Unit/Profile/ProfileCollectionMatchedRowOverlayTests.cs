@@ -145,7 +145,11 @@ internal static class OverlayTestFixtures
             ordinalPath: [0],
             requestOrder: 0,
             values: flatValues,
-            semanticIdentityValues: [values[AddressTypeBindingIndex]]
+            semanticIdentityValues: [values[AddressTypeBindingIndex]],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [values[AddressTypeBindingIndex]]
+            )
         );
     }
 
@@ -206,7 +210,11 @@ internal static class OverlayTestFixtures
             ordinalPath: [0],
             requestOrder: 0,
             values: flatValues,
-            semanticIdentityValues: []
+            semanticIdentityValues: [],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                []
+            )
         );
     }
 }

@@ -278,7 +278,8 @@ public sealed record RootExtensionWriteRowBuffer
     public RootExtensionWriteRowBuffer(
         TableWritePlan tableWritePlan,
         IEnumerable<FlattenedWriteValue> values,
-        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
+        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null,
+        bool hasSubmittedScopeData = false
     )
     {
         TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
@@ -287,6 +288,7 @@ public sealed record RootExtensionWriteRowBuffer
             collectionCandidates ?? [],
             nameof(collectionCandidates)
         );
+        HasSubmittedScopeData = hasSubmittedScopeData;
 
         FlattenedWriteContractSupport.ValidateBindingCount(TableWritePlan, Values, nameof(values));
 
@@ -318,6 +320,16 @@ public sealed record RootExtensionWriteRowBuffer
     /// Collection candidates nested directly under this root extension scope.
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
+
+    /// <summary>
+    /// True when the request body actually contained at least one bound property at this scope —
+    /// distinguishing "submitted with explicit null fields" from a buffer the flattener
+    /// synthesized for an absent scope under <c>EmitEmptyRootExtensionBuffers</c>. The
+    /// profile-aware merge consults this flag as defense-in-depth when guarding hidden scopes,
+    /// since a presence-aware signal is the only reliable way to tell explicit-null submission
+    /// apart from default-flattened null values.
+    /// </summary>
+    public bool HasSubmittedScopeData { get; init; }
 }
 
 /// <summary>
@@ -397,12 +409,22 @@ public sealed record CollectionWriteCandidate
             );
         }
 
-        SemanticIdentityInOrder = semanticIdentityInOrder is null
-            ? BuildDefaultSemanticIdentityInOrder(mergePlan, SemanticIdentityValues)
-            : FlattenedWriteContractSupport.ToImmutableArray(
-                semanticIdentityInOrder,
-                nameof(semanticIdentityInOrder)
+        if (semanticIdentityInOrder is null)
+        {
+            throw new ArgumentNullException(
+                nameof(semanticIdentityInOrder),
+                $"{nameof(CollectionWriteCandidate)} requires explicit "
+                    + $"{nameof(SemanticIdentityPart)} metadata. Production callers must pass parts built "
+                    + "from JSON-side presence probes; test fixtures that do not exercise presence semantics "
+                    + $"may opt into lossy inference via "
+                    + $"{nameof(InferSemanticIdentityInOrderForTests)}."
             );
+        }
+
+        SemanticIdentityInOrder = FlattenedWriteContractSupport.ToImmutableArray(
+            semanticIdentityInOrder,
+            nameof(semanticIdentityInOrder)
+        );
 
         if (SemanticIdentityInOrder.Length != mergePlan.SemanticIdentityBindings.Length)
         {
@@ -455,18 +477,55 @@ public sealed record CollectionWriteCandidate
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
 
-    private static ImmutableArray<SemanticIdentityPart> BuildDefaultSemanticIdentityInOrder(
-        CollectionMergePlan mergePlan,
-        ImmutableArray<object?> semanticIdentityValues
+    /// <summary>
+    /// Lossy inference helper for tests that do not need to differentiate a missing
+    /// nullable identity property from an explicit JSON null. Treats every non-null
+    /// value as <c>IsPresent: true</c> and every null value as <c>IsPresent: false</c>,
+    /// which collapses the missing-vs-explicit-null distinction the
+    /// <see cref="SemanticIdentityPart"/> contract preserves.
+    /// </summary>
+    /// <remarks>
+    /// Production callers MUST build <see cref="SemanticIdentityPart"/> instances from
+    /// JSON-side presence probes (see
+    /// <c>RelationalWriteFlattener.MaterializeSemanticIdentityParts</c>) and pass them
+    /// to the constructor. This helper exists only so test fixtures whose scenarios do
+    /// not exercise presence semantics can opt into the inference at the call site —
+    /// keeping the fallback visible rather than implicit. New production code paths
+    /// must not call this helper.
+    /// </remarks>
+    internal static ImmutableArray<SemanticIdentityPart> InferSemanticIdentityInOrderForTests(
+        TableWritePlan tableWritePlan,
+        IEnumerable<object?> semanticIdentityValues
     )
     {
+        ArgumentNullException.ThrowIfNull(tableWritePlan);
+        ArgumentNullException.ThrowIfNull(semanticIdentityValues);
+
+        var mergePlan =
+            tableWritePlan.CollectionMergePlan
+            ?? throw new ArgumentException(
+                $"{nameof(tableWritePlan)} must have a {nameof(TableWritePlan.CollectionMergePlan)}.",
+                nameof(tableWritePlan)
+            );
+
+        var values = semanticIdentityValues.ToArray();
+
+        if (values.Length != mergePlan.SemanticIdentityBindings.Length)
+        {
+            throw new ArgumentException(
+                $"{nameof(semanticIdentityValues)} must contain one entry per compiled semantic identity binding. "
+                    + $"Expected {mergePlan.SemanticIdentityBindings.Length}, actual {values.Length}.",
+                nameof(semanticIdentityValues)
+            );
+        }
+
         var builder = ImmutableArray.CreateBuilder<SemanticIdentityPart>(
             mergePlan.SemanticIdentityBindings.Length
         );
 
         for (var i = 0; i < mergePlan.SemanticIdentityBindings.Length; i++)
         {
-            var value = semanticIdentityValues[i];
+            var value = values[i];
             builder.Add(
                 new SemanticIdentityPart(
                     mergePlan.SemanticIdentityBindings[i].RelativePath.Canonical,
@@ -488,7 +547,8 @@ public sealed record CandidateAttachedAlignedScopeData
     public CandidateAttachedAlignedScopeData(
         TableWritePlan tableWritePlan,
         IEnumerable<FlattenedWriteValue> values,
-        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
+        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null,
+        bool hasSubmittedScopeData = false
     )
     {
         TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
@@ -497,6 +557,7 @@ public sealed record CandidateAttachedAlignedScopeData
             collectionCandidates ?? [],
             nameof(collectionCandidates)
         );
+        HasSubmittedScopeData = hasSubmittedScopeData;
 
         FlattenedWriteContractSupport.ValidateTableKind(
             TableWritePlan,
@@ -520,6 +581,12 @@ public sealed record CandidateAttachedAlignedScopeData
     /// Extension child collections nested under this aligned scope.
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
+
+    /// <summary>
+    /// True when the request body actually contained at least one bound property at this scope.
+    /// See <see cref="RootExtensionWriteRowBuffer.HasSubmittedScopeData"/> for the rationale.
+    /// </summary>
+    public bool HasSubmittedScopeData { get; init; }
 }
 
 /// <summary>

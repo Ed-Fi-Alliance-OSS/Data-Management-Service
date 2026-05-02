@@ -306,7 +306,11 @@ public class Given_Synthesizer_SeparateTable_Contract_Allows_CollectionCandidate
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Physical"),
             ],
-            semanticIdentityValues: ["Physical"]
+            semanticIdentityValues: ["Physical"],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
         );
 
         var extensionRow = new RootExtensionWriteRowBuffer(
@@ -1777,7 +1781,11 @@ public class Given_ProfileMergeRequest_with_attached_aligned_scope_data_on_top_l
                 new FlattenedWriteValue.Literal("Physical"),
             ],
             semanticIdentityValues: ["Physical"],
-            attachedAlignedScopeData: [attachedAlignedScope]
+            attachedAlignedScopeData: [attachedAlignedScope],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
         );
 
         var flattenedWriteSet = new FlattenedWriteSet(
@@ -1855,7 +1863,11 @@ public class Given_a_RelationalWriteProfileMergeRequest_with_AttachedAlignedScop
                 new FlattenedWriteValue.Literal("Mailing"),
             ],
             semanticIdentityValues: ["Mailing"],
-            attachedAlignedScopeData: [attachedAlignedScope]
+            attachedAlignedScopeData: [attachedAlignedScope],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Mailing"]
+            )
         );
 
         // The TOP-LEVEL candidate has empty AttachedAlignedScopeData; the nested candidate
@@ -1872,7 +1884,11 @@ public class Given_a_RelationalWriteProfileMergeRequest_with_AttachedAlignedScop
                 new FlattenedWriteValue.Literal("Physical"),
             ],
             semanticIdentityValues: ["Physical"],
-            collectionCandidates: [nestedCandidate]
+            collectionCandidates: [nestedCandidate],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
         );
 
         var flattenedWriteSet = new FlattenedWriteSet(
@@ -1931,7 +1947,11 @@ public class Given_ProfileMergeRequest_accepts_collection_candidate_under_root_e
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Physical"),
             ],
-            semanticIdentityValues: ["Physical"]
+            semanticIdentityValues: ["Physical"],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
         );
 
         var extensionRow = new RootExtensionWriteRowBuffer(
@@ -2268,7 +2288,11 @@ internal static class RootExtensionChildCollectionTopologyBuilders
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [identityValue]
+            semanticIdentityValues: [identityValue],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                childPlan,
+                [identityValue]
+            )
         );
     }
 
@@ -2506,7 +2530,11 @@ public class Given_ProfileMergeRequest_with_non_collection_root_candidate_still_
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Code1"),
             ],
-            semanticIdentityValues: ["Code1"]
+            semanticIdentityValues: ["Code1"],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                extCollectionPlan,
+                ["Code1"]
+            )
         );
 
         var flattenedWriteSet = new FlattenedWriteSet(
@@ -2564,7 +2592,11 @@ public class Given_ProfileMergeRequest_with_top_level_base_collection_candidate
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Physical"),
             ],
-            semanticIdentityValues: ["Physical"]
+            semanticIdentityValues: ["Physical"],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
         );
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
@@ -2717,7 +2749,11 @@ internal static class CollectionSynthesizerBuilders
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [identityValue]
+            semanticIdentityValues: [identityValue],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [identityValue]
+            )
         );
     }
 
@@ -3474,7 +3510,11 @@ internal static class DocumentReferenceCanonicalizeBuilders
             ordinalPath: [0],
             requestOrder: 0,
             values: values,
-            semanticIdentityValues: [SchoolDocumentId, SchoolDocumentId]
+            semanticIdentityValues: [SchoolDocumentId, SchoolDocumentId],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [SchoolDocumentId, SchoolDocumentId]
+            )
         );
     }
 
@@ -4101,7 +4141,11 @@ internal static class DescriptorCanonicalizeBuilders
             ordinalPath: [0],
             requestOrder: 0,
             values: values,
-            semanticIdentityValues: [descriptorId]
+            semanticIdentityValues: [descriptorId],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [descriptorId]
+            )
         );
     }
 
@@ -4912,7 +4956,11 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
             ordinalPath: [0],
             requestOrder: 0,
             values: candidateValues,
-            semanticIdentityValues: ["Springfield", DescriptorCanonicalizeBuilders.AddressTypeId]
+            semanticIdentityValues: ["Springfield", DescriptorCanonicalizeBuilders.AddressTypeId],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Springfield", DescriptorCanonicalizeBuilders.AddressTypeId]
+            )
         );
 
         // Request item carries: city = "Springfield" (scalar, unchanged), descriptorUri (string from Core).
@@ -5340,7 +5388,11 @@ internal static class MixedIdentityBuilders
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [city, descriptorId]
+            semanticIdentityValues: [city, descriptorId],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [city, descriptorId]
+            )
         );
     }
 
@@ -7797,7 +7849,11 @@ internal static class ThreeLevelTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [identityValue],
-            collectionCandidates: nestedGrandchildren
+            collectionCandidates: nestedGrandchildren,
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                childrenPlan,
+                [identityValue]
+            )
         );
     }
 
@@ -7819,7 +7875,11 @@ internal static class ThreeLevelTopologyBuilders
             ordinalPath: [0, 0, requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [identityValue]
+            semanticIdentityValues: [identityValue],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                grandchildrenPlan,
+                [identityValue]
+            )
         );
     }
 

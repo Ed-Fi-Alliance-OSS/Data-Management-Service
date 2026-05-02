@@ -795,6 +795,67 @@ public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_hidden_
 }
 
 [TestFixture]
+public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_hidden_request_with_explicit_null_only_submitted_data
+{
+    private SeparateScopeSynthesisResult _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenario = AlignedSeparateScopeInstanceScenario.Create(
+            requestScope: AlignedSeparateScopeInstanceScenario.BuildRequestScope(
+                ProfileVisibilityKind.Hidden,
+                false
+            ),
+            storedScope: null,
+            buffer: AlignedSeparateScopeInstanceScenario.BufferKind.PresentExplicitNullsOnly,
+            currentRow: AlignedSeparateScopeInstanceScenario.CurrentRowKind.Absent
+        );
+
+        _result = scenario.Invoke();
+    }
+
+    [Test]
+    public void It_leaves_outcome_null_on_reject() => _result.Outcome.Should().BeNull();
+
+    [Test]
+    public void It_returns_a_profile_policy_rejection_for_explicit_null_only_submitted_hidden_data()
+    {
+        _result.Rejection.Should().NotBeNull();
+        _result.Rejection!.ScopeJsonScope.Should().Be(AlignedExtensionScopeTopologyBuilders.AlignedScope);
+        _result.Rejection.Message.Should().Contain("forbids writing hidden scope");
+    }
+}
+
+[TestFixture]
+public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_hidden_request_with_default_flattened_buffer_only
+{
+    private SeparateScopeSynthesisResult _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenario = AlignedSeparateScopeInstanceScenario.Create(
+            requestScope: AlignedSeparateScopeInstanceScenario.BuildRequestScope(
+                ProfileVisibilityKind.Hidden,
+                false
+            ),
+            storedScope: null,
+            buffer: AlignedSeparateScopeInstanceScenario.BufferKind.PresentEmptyDefaultFlattened,
+            currentRow: AlignedSeparateScopeInstanceScenario.CurrentRowKind.Absent
+        );
+
+        _result = scenario.Invoke();
+    }
+
+    [Test]
+    public void It_does_not_reject_for_default_flattened_null_buffer_with_no_submitted_scope_data()
+    {
+        _result.Rejection.Should().BeNull();
+    }
+}
+
+[TestFixture]
 public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_visible_present_with_no_buffer
 {
     private Action _act = null!;
@@ -994,6 +1055,8 @@ internal sealed record AlignedSeparateScopeInstanceScenario(
         Absent,
         Present,
         PresentCollectionOnly,
+        PresentExplicitNullsOnly,
+        PresentEmptyDefaultFlattened,
     }
 
     public enum CurrentRowKind
@@ -1033,10 +1096,15 @@ internal sealed record AlignedSeparateScopeInstanceScenario(
             AlignedExtensionScopeTopologyBuilders.BuildRootParentsAndAlignedScopePlan();
         var rootPlan = plan.TablePlansInDependencyOrder[0];
 
-        var alignedValues =
-            buffer is BufferKind.PresentCollectionOnly
-                ? BuildValues(alignedPlan, [])
-                : BuildValues(alignedPlan, [null, "Blue"]);
+        var alignedValues = buffer switch
+        {
+            BufferKind.PresentCollectionOnly => BuildValues(alignedPlan, []),
+            BufferKind.PresentExplicitNullsOnly or BufferKind.PresentEmptyDefaultFlattened => BuildValues(
+                alignedPlan,
+                [null, null]
+            ),
+            _ => BuildValues(alignedPlan, [null, "Blue"]),
+        };
 
         var candidateChildPlan = parentsPlan;
         ImmutableArray<CollectionWriteCandidate> alignedChildCandidates =
@@ -1048,15 +1116,22 @@ internal sealed record AlignedSeparateScopeInstanceScenario(
                         ordinalPath: [0],
                         requestOrder: 0,
                         values: BuildValues(candidateChildPlan, [ParentItemId, DocumentId, 1, ParentCode]),
-                        semanticIdentityValues: [ParentCode]
+                        semanticIdentityValues: [ParentCode],
+                        semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                            candidateChildPlan,
+                            [ParentCode]
+                        )
                     ),
                 ]
                 : [];
 
+        var hasSubmittedScopeData = buffer is BufferKind.Present or BufferKind.PresentExplicitNullsOnly;
+
         var alignedScopeData = new CandidateAttachedAlignedScopeData(
             alignedPlan,
             alignedValues,
-            alignedChildCandidates
+            alignedChildCandidates,
+            hasSubmittedScopeData: hasSubmittedScopeData
         );
 
         var body = new JsonObject
@@ -1118,9 +1193,7 @@ internal sealed record AlignedSeparateScopeInstanceScenario(
             alignedPlan,
             AlignedExtensionScopeTopologyBuilders.AlignedScopeAddress(ParentCode),
             [new FlattenedWriteValue.Literal(ParentItemId)],
-            buffer is BufferKind.Present or BufferKind.PresentCollectionOnly
-                ? SeparateScopeBuffer.From(alignedScopeData)
-                : null,
+            buffer is BufferKind.Absent ? null : SeparateScopeBuffer.From(alignedScopeData),
             body["parents"]![0]!["_ext"]!["aligned"],
             requestScope,
             storedScope,

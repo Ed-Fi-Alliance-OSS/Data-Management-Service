@@ -9,14 +9,12 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -24,6 +22,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Tests.Common.ProfileCollectionAlignedExtensionScenarios;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
@@ -64,10 +63,10 @@ file sealed class MssqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler
 }
 
 internal sealed class MssqlProfileCollectionAlignedExtensionProjectionInvoker(
-    ImmutableArray<MssqlProfileCollectionAlignedExtensionStoredParentRow> storedParentRows,
-    ImmutableArray<MssqlProfileCollectionAlignedExtensionStoredAlignedScope> storedAlignedScopes,
-    ImmutableArray<MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow> storedAlignedChildRows,
-    ImmutableArray<MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow> storedExtensionChildRows
+    ImmutableArray<StoredParentRow> storedParentRows,
+    ImmutableArray<StoredAlignedScope> storedAlignedScopes,
+    ImmutableArray<StoredAlignedChildRow> storedAlignedChildRows,
+    ImmutableArray<StoredExtensionChildRow> storedExtensionChildRows
 ) : IStoredStateProjectionInvoker
 {
     public ProfileAppliedWriteContext ProjectStoredState(
@@ -82,7 +81,7 @@ internal sealed class MssqlProfileCollectionAlignedExtensionProjectionInvoker(
         );
         storedScopeStates.AddRange(
             storedAlignedScopes.Select(scope => new StoredScopeState(
-                MssqlProfileCollectionAlignedExtensionSupport.AlignedScopeAddress(scope.ParentCode),
+                AlignedScopeAddress(scope.ParentCode),
                 scope.Visibility,
                 scope.HiddenMemberPaths
             ))
@@ -91,26 +90,19 @@ internal sealed class MssqlProfileCollectionAlignedExtensionProjectionInvoker(
         var visibleStoredRows = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>();
         visibleStoredRows.AddRange(
             storedParentRows.Select(row => new VisibleStoredCollectionRow(
-                MssqlProfileCollectionAlignedExtensionSupport.ParentCollectionRowAddress(row.ParentCode),
+                ParentCollectionRowAddress(row.ParentCode),
                 row.HiddenMemberPaths
             ))
         );
         visibleStoredRows.AddRange(
             storedAlignedChildRows.Select(row => new VisibleStoredCollectionRow(
-                MssqlProfileCollectionAlignedExtensionSupport.AlignedChildCollectionRowAddress(
-                    row.ParentCode,
-                    row.ChildCode
-                ),
+                AlignedChildCollectionRowAddress(row.ParentCode, row.ChildCode),
                 row.HiddenMemberPaths
             ))
         );
         visibleStoredRows.AddRange(
             storedExtensionChildRows.Select(row => new VisibleStoredCollectionRow(
-                MssqlProfileCollectionAlignedExtensionSupport.ExtensionChildCollectionRowAddress(
-                    row.ParentCode,
-                    row.ChildCode,
-                    row.ExtensionChildCode
-                ),
+                ExtensionChildCollectionRowAddress(row.ParentCode, row.ChildCode, row.ExtensionChildCode),
                 row.HiddenMemberPaths
             ))
         );
@@ -124,138 +116,8 @@ internal sealed class MssqlProfileCollectionAlignedExtensionProjectionInvoker(
     }
 }
 
-internal sealed record MssqlProfileCollectionAlignedExtensionParentInput(
-    string ParentCode,
-    string ParentName,
-    MssqlProfileCollectionAlignedExtensionAlignedInput? Aligned = null
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionAlignedInput(
-    string AlignedVisibleScalar,
-    string AlignedHiddenScalar,
-    IReadOnlyList<MssqlProfileCollectionAlignedExtensionAlignedChildInput>? Children = null
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionAlignedChildInput(
-    string ChildCode,
-    string? ChildValue,
-    IReadOnlyList<MssqlProfileCollectionAlignedExtensionExtensionChildInput>? ExtensionChildren = null
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-    string ExtensionChildCode,
-    string? ExtensionChildValue
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionRequestParentItem(
-    string ParentCode,
-    int ArrayIndex,
-    bool Creatable = true
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionRequestAlignedScope(
-    string ParentCode,
-    ProfileVisibilityKind Visibility,
-    bool Creatable
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-    string ParentCode,
-    string ChildCode,
-    int ParentArrayIndex,
-    int ChildArrayIndex,
-    bool Creatable = true
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
-    string ParentCode,
-    string ChildCode,
-    string ExtensionChildCode,
-    int ParentArrayIndex,
-    int ChildArrayIndex,
-    int ExtensionChildArrayIndex,
-    bool Creatable = true
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionStoredParentRow(
-    string ParentCode,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionStoredAlignedScope(
-    string ParentCode,
-    ProfileVisibilityKind Visibility,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(
-    string ParentCode,
-    string ChildCode,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-    string ParentCode,
-    string ChildCode,
-    string ExtensionChildCode,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionParentRow(
-    long CollectionItemId,
-    long ParentResourceDocumentId,
-    int Ordinal,
-    string ParentCode,
-    string ParentName
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionAlignedRow(
-    long BaseCollectionItemId,
-    long ParentResourceDocumentId,
-    string? AlignedVisibleScalar,
-    string? AlignedHiddenScalar
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionAlignedChildRow(
-    long CollectionItemId,
-    long BaseCollectionItemId,
-    long ParentResourceDocumentId,
-    int Ordinal,
-    string ChildCode,
-    string? ChildValue
-);
-
-internal sealed record MssqlProfileCollectionAlignedExtensionExtensionChildRow(
-    long CollectionItemId,
-    long ParentCollectionItemId,
-    long ParentResourceDocumentId,
-    int Ordinal,
-    string ExtensionChildCode,
-    string? ExtensionChildValue
-);
-
 internal static class MssqlProfileCollectionAlignedExtensionSupport
 {
-    public const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension";
-
-    public const string ParentScope = "$.parents[*]";
-    public const string AlignedScope = "$.parents[*]._ext.aligned";
-    public const string AlignedChildScope = "$.parents[*]._ext.aligned.children[*]";
-    public const string ExtensionChildScope = "$.parents[*]._ext.aligned.children[*].extensionChildren[*]";
-
-    public static readonly QualifiedResourceName ParentResource = new("Ed-Fi", "ParentResource");
-
-    public static readonly ResourceInfo ParentResourceInfo = new(
-        ProjectName: new ProjectName("Ed-Fi"),
-        ResourceName: new ResourceName("ParentResource"),
-        IsDescriptor: false,
-        ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
-    );
-
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
@@ -271,227 +133,36 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
         );
     }
 
-    public static JsonNode CreateParentResourceBody(
-        int parentResourceId,
-        params MssqlProfileCollectionAlignedExtensionParentInput[] parents
-    )
-    {
-        JsonArray parentNodes = [];
-        foreach (var parent in parents)
-        {
-            JsonObject parentNode = new()
-            {
-                ["parentCode"] = parent.ParentCode,
-                ["parentName"] = parent.ParentName,
-            };
-
-            if (parent.Aligned is not null)
-            {
-                JsonObject alignedNode = new()
-                {
-                    ["alignedVisibleScalar"] = parent.Aligned.AlignedVisibleScalar,
-                    ["alignedHiddenScalar"] = parent.Aligned.AlignedHiddenScalar,
-                };
-
-                if (parent.Aligned.Children is not null)
-                {
-                    JsonArray childNodes = [];
-                    foreach (var child in parent.Aligned.Children)
-                    {
-                        JsonObject childNode = new() { ["childCode"] = child.ChildCode };
-                        if (child.ChildValue is not null)
-                        {
-                            childNode["childValue"] = child.ChildValue;
-                        }
-                        if (child.ExtensionChildren is not null)
-                        {
-                            JsonArray extensionChildNodes = [];
-                            foreach (var extensionChild in child.ExtensionChildren)
-                            {
-                                JsonObject extensionChildNode = new()
-                                {
-                                    ["extensionChildCode"] = extensionChild.ExtensionChildCode,
-                                };
-                                if (extensionChild.ExtensionChildValue is not null)
-                                {
-                                    extensionChildNode["extensionChildValue"] =
-                                        extensionChild.ExtensionChildValue;
-                                }
-                                extensionChildNodes.Add(extensionChildNode);
-                            }
-                            childNode["extensionChildren"] = extensionChildNodes;
-                        }
-                        childNodes.Add(childNode);
-                    }
-                    alignedNode["children"] = childNodes;
-                }
-
-                parentNode["_ext"] = new JsonObject { ["aligned"] = alignedNode };
-            }
-
-            parentNodes.Add(parentNode);
-        }
-
-        return new JsonObject { ["parentResourceId"] = parentResourceId, ["parents"] = parentNodes };
-    }
-
-    public static DocumentInfo CreateDocumentInfo(int parentResourceId)
-    {
-        var identity = new DocumentIdentity([
-            new DocumentIdentityElement(
-                new JsonPath("$.parentResourceId"),
-                parentResourceId.ToString(CultureInfo.InvariantCulture)
-            ),
-        ]);
-
-        return new DocumentInfo(
-            DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(ParentResourceInfo, identity),
-            DocumentReferences: [],
-            DocumentReferenceArrays: [],
-            DescriptorReferences: [],
-            SuperclassIdentity: null
-        );
-    }
-
-    public static ImmutableArray<SemanticIdentityPart> ParentIdentity(string parentCode) =>
-        [new SemanticIdentityPart("parentCode", JsonValue.Create(parentCode), IsPresent: true)];
-
-    public static CollectionRowAddress ParentCollectionRowAddress(string parentCode) =>
-        new(ParentScope, new ScopeInstanceAddress("$", []), ParentIdentity(parentCode));
-
-    public static ScopeInstanceAddress ParentContainingScopeAddress(string parentCode) =>
-        new(ParentScope, [new AncestorCollectionInstance(ParentScope, ParentIdentity(parentCode))]);
-
-    public static ScopeInstanceAddress AlignedScopeAddress(string parentCode) =>
-        new(AlignedScope, ParentContainingScopeAddress(parentCode).AncestorCollectionInstances);
-
-    public static ImmutableArray<SemanticIdentityPart> AlignedChildIdentity(string childCode) =>
-        [new SemanticIdentityPart("childCode", JsonValue.Create(childCode), IsPresent: true)];
-
-    public static CollectionRowAddress AlignedChildCollectionRowAddress(
-        string parentCode,
-        string childCode
-    ) => new(AlignedChildScope, AlignedScopeAddress(parentCode), AlignedChildIdentity(childCode));
-
-    public static ImmutableArray<SemanticIdentityPart> ExtensionChildIdentity(string extensionChildCode) =>
-        [
-            new SemanticIdentityPart(
-                "extensionChildCode",
-                JsonValue.Create(extensionChildCode),
-                IsPresent: true
-            ),
-        ];
-
-    public static ScopeInstanceAddress AlignedChildContainingScopeAddress(string parentCode, string childCode)
-    {
-        var alignedScopeAncestors = AlignedScopeAddress(parentCode).AncestorCollectionInstances;
-        return new ScopeInstanceAddress(
-            AlignedChildScope,
-            alignedScopeAncestors.Add(
-                new AncestorCollectionInstance(AlignedChildScope, AlignedChildIdentity(childCode))
-            )
-        );
-    }
-
-    public static CollectionRowAddress ExtensionChildCollectionRowAddress(
-        string parentCode,
-        string childCode,
-        string extensionChildCode
-    ) =>
-        new(
-            ExtensionChildScope,
-            AlignedChildContainingScopeAddress(parentCode, childCode),
-            ExtensionChildIdentity(extensionChildCode)
-        );
-
     public static BackendProfileWriteContext CreateProfileContext(
         ResourceWritePlan writePlan,
         JsonNode requestBody,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionRequestParentItem> requestParentItems,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionRequestAlignedScope> requestAlignedScopes,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionStoredParentRow> storedParentRows,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionStoredAlignedScope> storedAlignedScopes,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow>? storedAlignedChildRows =
-            null,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem>? requestAlignedChildItems =
-            null,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow>? storedExtensionChildRows =
-            null,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem>? requestExtensionChildItems =
-            null,
+        IReadOnlyList<RequestParentItem> requestParentItems,
+        IReadOnlyList<RequestAlignedScope> requestAlignedScopes,
+        IReadOnlyList<StoredParentRow> storedParentRows,
+        IReadOnlyList<StoredAlignedScope> storedAlignedScopes,
+        IReadOnlyList<StoredAlignedChildRow>? storedAlignedChildRows = null,
+        IReadOnlyList<RequestAlignedChildItem>? requestAlignedChildItems = null,
+        IReadOnlyList<StoredExtensionChildRow>? storedExtensionChildRows = null,
+        IReadOnlyList<RequestExtensionChildItem>? requestExtensionChildItems = null,
         bool rootCreatable = true,
         string profileName = "collection-aligned-extension-profile"
-    )
-    {
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
-        var visibleRequestItemsBuilder = ImmutableArray.CreateBuilder<VisibleRequestCollectionItem>();
-        visibleRequestItemsBuilder.AddRange(
-            requestParentItems.Select(item => new VisibleRequestCollectionItem(
-                ParentCollectionRowAddress(item.ParentCode),
-                item.Creatable,
-                $"$.parents[{item.ArrayIndex}]"
-            ))
-        );
-        if (requestAlignedChildItems is not null)
-        {
-            visibleRequestItemsBuilder.AddRange(
-                requestAlignedChildItems.Select(item => new VisibleRequestCollectionItem(
-                    AlignedChildCollectionRowAddress(item.ParentCode, item.ChildCode),
-                    item.Creatable,
-                    $"$.parents[{item.ParentArrayIndex}]._ext.aligned.children[{item.ChildArrayIndex}]"
-                ))
-            );
-        }
-        if (requestExtensionChildItems is not null)
-        {
-            visibleRequestItemsBuilder.AddRange(
-                requestExtensionChildItems.Select(item => new VisibleRequestCollectionItem(
-                    ExtensionChildCollectionRowAddress(
-                        item.ParentCode,
-                        item.ChildCode,
-                        item.ExtensionChildCode
-                    ),
-                    item.Creatable,
-                    $"$.parents[{item.ParentArrayIndex}]._ext.aligned.children[{item.ChildArrayIndex}].extensionChildren[{item.ExtensionChildArrayIndex}]"
-                ))
-            );
-        }
-        var visibleRequestItems = visibleRequestItemsBuilder.ToImmutable();
-
-        var requestScopeStates = ImmutableArray.CreateBuilder<RequestScopeState>();
-        requestScopeStates.Add(
-            new RequestScopeState(
-                new ScopeInstanceAddress("$", []),
-                ProfileVisibilityKind.VisiblePresent,
-                rootCreatable
-            )
-        );
-        requestScopeStates.AddRange(
-            requestAlignedScopes.Select(scope => new RequestScopeState(
-                AlignedScopeAddress(scope.ParentCode),
-                scope.Visibility,
-                scope.Creatable
-            ))
-        );
-
-        return new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: requestBody,
-                RootResourceCreatable: rootCreatable,
-                RequestScopeStates: requestScopeStates.ToImmutable(),
-                VisibleRequestCollectionItems: visibleRequestItems
-            ),
-            ProfileName: profileName,
-            CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new MssqlProfileCollectionAlignedExtensionProjectionInvoker(
+    ) =>
+        ProfileCollectionAlignedExtensionScenarios.CreateProfileContext(
+            writePlan,
+            requestBody,
+            requestParentItems,
+            requestAlignedScopes,
+            new MssqlProfileCollectionAlignedExtensionProjectionInvoker(
                 [.. storedParentRows],
                 [.. storedAlignedScopes],
                 [.. (storedAlignedChildRows ?? [])],
                 [.. (storedExtensionChildRows ?? [])]
-            )
+            ),
+            requestAlignedChildItems,
+            requestExtensionChildItems,
+            rootCreatable,
+            profileName
         );
-    }
 
     public static async Task<UpsertResult> SeedAsync(
         ServiceProvider serviceProvider,
@@ -646,9 +317,10 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             """
         );
 
-    public static async Task<
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionParentRow>
-    > ReadParentRowsAsync(MssqlGeneratedDdlTestDatabase database, DocumentUuid documentUuid)
+    public static async Task<IReadOnlyList<ParentRow>> ReadParentRowsAsync(
+        MssqlGeneratedDdlTestDatabase database,
+        DocumentUuid documentUuid
+    )
     {
         var rows = await database.QueryRowsAsync(
             """
@@ -666,7 +338,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
 
-        return rows.Select(row => new MssqlProfileCollectionAlignedExtensionParentRow(
+        return rows.Select(row => new ParentRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "ParentResource_DocumentId"),
                 GetInt32(row, "Ordinal"),
@@ -676,7 +348,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             .ToArray();
     }
 
-    public static async Task<MssqlProfileCollectionAlignedExtensionAlignedRow?> TryReadAlignedRowAsync(
+    public static async Task<AlignedRow?> TryReadAlignedRowAsync(
         MssqlGeneratedDdlTestDatabase database,
         DocumentUuid documentUuid
     )
@@ -697,7 +369,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
 
         return rows.Count == 0
             ? null
-            : new MssqlProfileCollectionAlignedExtensionAlignedRow(
+            : new AlignedRow(
                 GetInt64(rows[0], "BaseCollectionItemId"),
                 GetInt64(rows[0], "ParentResource_DocumentId"),
                 GetNullableString(rows[0], "AlignedVisibleScalar"),
@@ -730,9 +402,10 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             """
         );
 
-    public static async Task<
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionAlignedChildRow>
-    > ReadAlignedChildRowsAsync(MssqlGeneratedDdlTestDatabase database, DocumentUuid documentUuid)
+    public static async Task<IReadOnlyList<AlignedChildRow>> ReadAlignedChildRowsAsync(
+        MssqlGeneratedDdlTestDatabase database,
+        DocumentUuid documentUuid
+    )
     {
         var rows = await database.QueryRowsAsync(
             """
@@ -751,7 +424,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
 
-        return rows.Select(row => new MssqlProfileCollectionAlignedExtensionAlignedChildRow(
+        return rows.Select(row => new AlignedChildRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "BaseCollectionItemId"),
                 GetInt64(row, "ParentResource_DocumentId"),
@@ -762,9 +435,10 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             .ToArray();
     }
 
-    public static async Task<
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionExtensionChildRow>
-    > ReadExtensionChildRowsAsync(MssqlGeneratedDdlTestDatabase database, DocumentUuid documentUuid)
+    public static async Task<IReadOnlyList<ExtensionChildRow>> ReadExtensionChildRowsAsync(
+        MssqlGeneratedDdlTestDatabase database,
+        DocumentUuid documentUuid
+    )
     {
         var rows = await database.QueryRowsAsync(
             """
@@ -783,7 +457,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
 
-        return rows.Select(row => new MssqlProfileCollectionAlignedExtensionExtensionChildRow(
+        return rows.Select(row => new ExtensionChildRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "ParentCollectionItemId"),
                 GetInt64(row, "ParentResource_DocumentId"),
@@ -831,9 +505,7 @@ internal abstract class MssqlProfileCollectionAlignedExtensionFixtureBase
             );
         }
 
-        Fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            MssqlProfileCollectionAlignedExtensionSupport.FixtureRelativePath
-        );
+        Fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         MappingSet = Fixture.MappingSet;
         Database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(Fixture.GeneratedDdl);
         ServiceProvider = MssqlProfileCollectionAlignedExtensionSupport.CreateServiceProvider();
@@ -852,23 +524,18 @@ internal abstract class MssqlProfileCollectionAlignedExtensionFixtureBase
         }
     }
 
-    protected ResourceWritePlan WritePlan =>
-        MappingSet.WritePlansByResource[MssqlProfileCollectionAlignedExtensionSupport.ParentResource];
+    protected ResourceWritePlan WritePlan => MappingSet.WritePlansByResource[ParentResource];
 
     protected BackendProfileWriteContext CreateProfileContext(
         JsonNode requestBody,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionRequestParentItem> requestParentItems,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionRequestAlignedScope> requestAlignedScopes,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionStoredParentRow>? storedParentRows = null,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionStoredAlignedScope>? storedAlignedScopes = null,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow>? storedAlignedChildRows =
-            null,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem>? requestAlignedChildItems =
-            null,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow>? storedExtensionChildRows =
-            null,
-        IReadOnlyList<MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem>? requestExtensionChildItems =
-            null
+        IReadOnlyList<RequestParentItem> requestParentItems,
+        IReadOnlyList<RequestAlignedScope> requestAlignedScopes,
+        IReadOnlyList<StoredParentRow>? storedParentRows = null,
+        IReadOnlyList<StoredAlignedScope>? storedAlignedScopes = null,
+        IReadOnlyList<StoredAlignedChildRow>? storedAlignedChildRows = null,
+        IReadOnlyList<RequestAlignedChildItem>? requestAlignedChildItems = null,
+        IReadOnlyList<StoredExtensionChildRow>? storedExtensionChildRows = null,
+        IReadOnlyList<RequestExtensionChildItem>? requestExtensionChildItems = null
     ) =>
         MssqlProfileCollectionAlignedExtensionSupport.CreateProfileContext(
             WritePlan,
@@ -929,20 +596,15 @@ internal abstract class MssqlProfileCollectionAlignedExtensionFixtureBase
         seedResult.Should().BeOfType<UpsertResult.InsertSuccess>();
     }
 
-    protected static MssqlProfileCollectionAlignedExtensionRequestParentItem RequestParent() =>
-        new(ParentCode, ArrayIndex: 0);
+    protected static RequestParentItem RequestParent() => new(ParentCode, ArrayIndex: 0);
 
-    protected static MssqlProfileCollectionAlignedExtensionStoredParentRow StoredParent() =>
-        new(ParentCode, []);
+    protected static StoredParentRow StoredParent() => new(ParentCode, []);
 
-    protected static MssqlProfileCollectionAlignedExtensionRequestAlignedScope RequestAligned(
-        ProfileVisibilityKind visibility,
-        bool creatable
-    ) => new(ParentCode, visibility, creatable);
+    protected static RequestAlignedScope RequestAligned(ProfileVisibilityKind visibility, bool creatable) =>
+        new(ParentCode, visibility, creatable);
 
-    protected static MssqlProfileCollectionAlignedExtensionStoredAlignedScope StoredAligned(
-        ProfileVisibilityKind visibility
-    ) => new(ParentCode, visibility, []);
+    protected static StoredAlignedScope StoredAligned(ProfileVisibilityKind visibility) =>
+        new(ParentCode, visibility, []);
 
     protected static string FormatResult(UpsertResult result) =>
         result switch
@@ -966,20 +628,16 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpsertResult _postResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionParentRow> _parentRows = null!;
-    private MssqlProfileCollectionAlignedExtensionAlignedRow? _alignedRow;
+    private IReadOnlyList<ParentRow> _parentRows = null!;
+    private AlignedRow? _alignedRow;
     private long _alignedChildRowCount;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Created Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput("CreatedVisible", "CreatedHidden")
-            )
+            new ParentInput(ParentCode, "Created Parent", new AlignedInput("CreatedVisible", "CreatedHidden"))
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1014,7 +672,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
             .Should()
             .ContainSingle()
             .Which.Should()
-            .Match<MssqlProfileCollectionAlignedExtensionParentRow>(row =>
+            .Match<ParentRow>(row =>
                 row.Ordinal == 1 && row.ParentCode == ParentCode && row.ParentName == "Created Parent"
             );
 
@@ -1045,9 +703,9 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(ParentCode, "Created Parent")
+            new ParentInput(ParentCode, "Created Parent")
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1086,12 +744,12 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Hidden Request Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput("HiddenVisible", "HiddenHidden")
+                new AlignedInput("HiddenVisible", "HiddenHidden")
             )
         );
         var profileContext = CreateProfileContext(
@@ -1123,28 +781,20 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private MssqlProfileCollectionAlignedExtensionAlignedRow? _alignedRow;
+    private AlignedRow? _alignedRow;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Seed Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput("SeedVisible", "SeedHidden")
-            )
+            new ParentInput(ParentCode, "Seed Parent", new AlignedInput("SeedVisible", "SeedHidden"))
         );
         await SeedAsync(seedBody, "mssql-profile-collection-aligned-visible-present-seed");
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Updated Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput("UpdatedVisible", "UpdatedHidden")
-            )
+            new ParentInput(ParentCode, "Updated Parent", new AlignedInput("UpdatedVisible", "UpdatedHidden"))
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1190,19 +840,15 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Seed Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput("SeedVisible", "SeedHidden")
-            )
+            new ParentInput(ParentCode, "Seed Parent", new AlignedInput("SeedVisible", "SeedHidden"))
         );
         await SeedAsync(seedBody, "mssql-profile-collection-aligned-visible-absent-seed");
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(ParentCode, "Updated Parent")
+            new ParentInput(ParentCode, "Updated Parent")
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1238,24 +884,20 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private MssqlProfileCollectionAlignedExtensionAlignedRow? _alignedRow;
+    private AlignedRow? _alignedRow;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Seed Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput("StoredVisible", "StoredHidden")
-            )
+            new ParentInput(ParentCode, "Seed Parent", new AlignedInput("StoredVisible", "StoredHidden"))
         );
         await SeedAsync(seedBody, "mssql-profile-collection-aligned-hidden-storage-seed");
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(ParentCode, "Updated Parent")
+            new ParentInput(ParentCode, "Updated Parent")
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1296,24 +938,21 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_a_no
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionParentRow> _parentRowsAfterPut = null!;
+    private IReadOnlyList<ParentRow> _parentRowsAfterPut = null!;
     private int _alignedRowCount;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
-            ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(ParentCode, "Seed Parent")
-        );
+        var seedBody = CreateParentResourceBody(ParentResourceId, new ParentInput(ParentCode, "Seed Parent"));
         await SeedAsync(seedBody, "mssql-profile-collection-aligned-create-denied-seed");
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Rejected Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput("RejectedVisible", "RejectedHidden")
+                new AlignedInput("RejectedVisible", "RejectedHidden")
             )
         );
         var profileContext = CreateProfileContext(
@@ -1365,23 +1004,23 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_with_ali
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpsertResult _postResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionAlignedChildRow> _childRows = null!;
+    private IReadOnlyList<AlignedChildRow> _childRows = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Created Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "CreatedVisible",
                     "CreatedHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "ValueB"),
+                        new AlignedChildInput("ChildA", "ValueA"),
+                        new AlignedChildInput("ChildB", "ValueB"),
                     ]
                 )
             )
@@ -1392,18 +1031,8 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_with_ali
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             requestAlignedChildItems:
             [
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildB",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 1
-                ),
+                new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0),
+                new RequestAlignedChildItem(ParentCode, "ChildB", ParentArrayIndex: 0, ChildArrayIndex: 1),
             ]
         );
 
@@ -1448,24 +1077,24 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifyin
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsBeforePut = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsAfterPut = null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsBeforePut = null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "OriginalA"),
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "OriginalB"),
+                        new AlignedChildInput("ChildA", "OriginalA"),
+                        new AlignedChildInput("ChildB", "OriginalB"),
                     ]
                 )
             )
@@ -1476,18 +1105,18 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifyin
             DocumentUuid
         );
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "OriginalA"),
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "ChangedB"),
+                        new AlignedChildInput("ChildA", "OriginalA"),
+                        new AlignedChildInput("ChildB", "ChangedB"),
                     ]
                 )
             )
@@ -1499,22 +1128,12 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifyin
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
             [
-                new MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildA", []),
-                new MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildB", []),
+                new StoredAlignedChildRow(ParentCode, "ChildA", []),
+                new StoredAlignedChildRow(ParentCode, "ChildB", []),
             ],
             [
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildB",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 1
-                ),
+                new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0),
+                new RequestAlignedChildItem(ParentCode, "ChildB", ParentArrayIndex: 0, ChildArrayIndex: 1),
             ]
         );
 
@@ -1577,41 +1196,38 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_omitting
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsAfterPut = null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "ValueB"),
+                        new AlignedChildInput("ChildA", "ValueA"),
+                        new AlignedChildInput("ChildB", "ValueB"),
                     ]
                 )
             )
         );
         await SeedAsync(seedBody, "mssql-profile-collection-aligned-extension-child-delete-seed");
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
-                    Children:
-                    [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                    ]
+                    Children: [new AlignedChildInput("ChildA", "ValueA")]
                 )
             )
         );
@@ -1622,17 +1238,10 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_omitting
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
             [
-                new MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildA", []),
-                new MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildB", []),
+                new StoredAlignedChildRow(ParentCode, "ChildA", []),
+                new StoredAlignedChildRow(ParentCode, "ChildB", []),
             ],
-            [
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
-            ]
+            [new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0)]
         );
 
         _putResult = await ExecuteProfiledPutAsync(
@@ -1669,24 +1278,24 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_reorderi
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsBeforePut = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsAfterPut = null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsBeforePut = null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "ValueB"),
+                        new AlignedChildInput("ChildA", "ValueA"),
+                        new AlignedChildInput("ChildB", "ValueB"),
                     ]
                 )
             )
@@ -1697,19 +1306,19 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_reorderi
             DocumentUuid
         );
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "ValueB"),
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput("ChildC", "ValueC"),
+                        new AlignedChildInput("ChildB", "ValueB"),
+                        new AlignedChildInput("ChildA", "ValueA"),
+                        new AlignedChildInput("ChildC", "ValueC"),
                     ]
                 )
             )
@@ -1721,28 +1330,13 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_reorderi
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
             [
-                new MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildA", []),
-                new MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildB", []),
+                new StoredAlignedChildRow(ParentCode, "ChildA", []),
+                new StoredAlignedChildRow(ParentCode, "ChildB", []),
             ],
             [
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildB",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 1
-                ),
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildC",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 2
-                ),
+                new RequestAlignedChildItem(ParentCode, "ChildB", ParentArrayIndex: 0, ChildArrayIndex: 0),
+                new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 1),
+                new RequestAlignedChildItem(ParentCode, "ChildC", ParentArrayIndex: 0, ChildArrayIndex: 2),
             ]
         );
 
@@ -1809,35 +1403,28 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_with_nes
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpsertResult _postResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRows =
-        null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRows = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Created Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "CreatedVisible",
                     "CreatedHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "BetaValue"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "AlphaValue"),
+                                new ExtensionChildInput("ExtChildBeta", "BetaValue"),
                             ]
                         ),
                     ]
@@ -1850,16 +1437,11 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_with_nes
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             requestAlignedChildItems:
             [
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
+                new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0),
             ],
             requestExtensionChildItems:
             [
-                new MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildAlpha",
@@ -1867,7 +1449,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_with_nes
                     ChildArrayIndex: 0,
                     ExtensionChildArrayIndex: 0
                 ),
-                new MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildBeta",
@@ -1922,37 +1504,29 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifyin
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsBeforePut =
-        null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsAfterPut =
-        null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsBeforePut = null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "OriginalAlpha"
-                                ),
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "OriginalBeta"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "OriginalAlpha"),
+                                new ExtensionChildInput("ExtChildBeta", "OriginalBeta"),
                             ]
                         ),
                     ]
@@ -1966,29 +1540,23 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifyin
                 DocumentUuid
             );
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "OriginalAlpha"
-                                ),
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "ChangedBeta"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "OriginalAlpha"),
+                                new ExtensionChildInput("ExtChildBeta", "ChangedBeta"),
                             ]
                         ),
                     ]
@@ -2001,31 +1569,14 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifyin
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
-            [new MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new StoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0)],
             [
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildAlpha", []),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildBeta", []),
             ],
             [
-                new MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildAlpha",
-                    []
-                ),
-                new MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildBeta",
-                    []
-                ),
-            ],
-            [
-                new MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildAlpha",
@@ -2033,7 +1584,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifyin
                     ChildArrayIndex: 0,
                     ExtensionChildArrayIndex: 0
                 ),
-                new MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildBeta",
@@ -2104,35 +1655,28 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_omitting
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsAfterPut =
-        null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "BetaValue"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "AlphaValue"),
+                                new ExtensionChildInput("ExtChildBeta", "BetaValue"),
                             ]
                         ),
                     ]
@@ -2141,26 +1685,20 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_omitting
         );
         await SeedAsync(seedBody, "mssql-profile-collection-nested-extension-child-delete-seed");
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
-                            ExtensionChildren:
-                            [
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                            ]
+                            ExtensionChildren: [new ExtensionChildInput("ExtChildAlpha", "AlphaValue")]
                         ),
                     ]
                 )
@@ -2172,31 +1710,14 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_omitting
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
-            [new MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new StoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0)],
             [
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildAlpha", []),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildBeta", []),
             ],
             [
-                new MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildAlpha",
-                    []
-                ),
-                new MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildBeta",
-                    []
-                ),
-            ],
-            [
-                new MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildAlpha",
@@ -2242,37 +1763,29 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_reorderi
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsBeforePut =
-        null!;
-    private IReadOnlyList<MssqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsAfterPut =
-        null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsBeforePut = null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "BetaValue"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "AlphaValue"),
+                                new ExtensionChildInput("ExtChildBeta", "BetaValue"),
                             ]
                         ),
                     ]
@@ -2286,33 +1799,24 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_reorderi
                 DocumentUuid
             );
 
-        var writeBody = MssqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new MssqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new MssqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new MssqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "BetaValue"
-                                ),
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                                new MssqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildGamma",
-                                    "GammaValue"
-                                ),
+                                new ExtensionChildInput("ExtChildBeta", "BetaValue"),
+                                new ExtensionChildInput("ExtChildAlpha", "AlphaValue"),
+                                new ExtensionChildInput("ExtChildGamma", "GammaValue"),
                             ]
                         ),
                     ]
@@ -2325,31 +1829,14 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_reorderi
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
-            [new MssqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new StoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0)],
             [
-                new MssqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildAlpha", []),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildBeta", []),
             ],
             [
-                new MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildAlpha",
-                    []
-                ),
-                new MssqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildBeta",
-                    []
-                ),
-            ],
-            [
-                new MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildBeta",
@@ -2357,7 +1844,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_reorderi
                     ChildArrayIndex: 0,
                     ExtensionChildArrayIndex: 0
                 ),
-                new MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildAlpha",
@@ -2365,7 +1852,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_reorderi
                     ChildArrayIndex: 0,
                     ExtensionChildArrayIndex: 1
                 ),
-                new MssqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildGamma",

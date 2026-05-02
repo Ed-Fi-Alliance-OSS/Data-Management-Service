@@ -9,13 +9,11 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
@@ -25,6 +23,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Tests.Common.ProfileCollectionAlignedExtensionScenarios;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
@@ -75,10 +74,10 @@ file sealed class PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHa
 }
 
 internal sealed class PostgresqlProfileCollectionAlignedExtensionProjectionInvoker(
-    ImmutableArray<PostgresqlProfileCollectionAlignedExtensionStoredParentRow> storedParentRows,
-    ImmutableArray<PostgresqlProfileCollectionAlignedExtensionStoredAlignedScope> storedAlignedScopes,
-    ImmutableArray<PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow> storedAlignedChildRows,
-    ImmutableArray<PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow> storedExtensionChildRows
+    ImmutableArray<StoredParentRow> storedParentRows,
+    ImmutableArray<StoredAlignedScope> storedAlignedScopes,
+    ImmutableArray<StoredAlignedChildRow> storedAlignedChildRows,
+    ImmutableArray<StoredExtensionChildRow> storedExtensionChildRows
 ) : IStoredStateProjectionInvoker
 {
     public ProfileAppliedWriteContext ProjectStoredState(
@@ -93,7 +92,7 @@ internal sealed class PostgresqlProfileCollectionAlignedExtensionProjectionInvok
         );
         storedScopeStates.AddRange(
             storedAlignedScopes.Select(scope => new StoredScopeState(
-                PostgresqlProfileCollectionAlignedExtensionSupport.AlignedScopeAddress(scope.ParentCode),
+                AlignedScopeAddress(scope.ParentCode),
                 scope.Visibility,
                 scope.HiddenMemberPaths
             ))
@@ -102,26 +101,19 @@ internal sealed class PostgresqlProfileCollectionAlignedExtensionProjectionInvok
         var visibleStoredRows = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>();
         visibleStoredRows.AddRange(
             storedParentRows.Select(row => new VisibleStoredCollectionRow(
-                PostgresqlProfileCollectionAlignedExtensionSupport.ParentCollectionRowAddress(row.ParentCode),
+                ParentCollectionRowAddress(row.ParentCode),
                 row.HiddenMemberPaths
             ))
         );
         visibleStoredRows.AddRange(
             storedAlignedChildRows.Select(row => new VisibleStoredCollectionRow(
-                PostgresqlProfileCollectionAlignedExtensionSupport.AlignedChildCollectionRowAddress(
-                    row.ParentCode,
-                    row.ChildCode
-                ),
+                AlignedChildCollectionRowAddress(row.ParentCode, row.ChildCode),
                 row.HiddenMemberPaths
             ))
         );
         visibleStoredRows.AddRange(
             storedExtensionChildRows.Select(row => new VisibleStoredCollectionRow(
-                PostgresqlProfileCollectionAlignedExtensionSupport.ExtensionChildCollectionRowAddress(
-                    row.ParentCode,
-                    row.ChildCode,
-                    row.ExtensionChildCode
-                ),
+                ExtensionChildCollectionRowAddress(row.ParentCode, row.ChildCode, row.ExtensionChildCode),
                 row.HiddenMemberPaths
             ))
         );
@@ -135,138 +127,8 @@ internal sealed class PostgresqlProfileCollectionAlignedExtensionProjectionInvok
     }
 }
 
-internal sealed record PostgresqlProfileCollectionAlignedExtensionParentInput(
-    string ParentCode,
-    string ParentName,
-    PostgresqlProfileCollectionAlignedExtensionAlignedInput? Aligned = null
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionAlignedInput(
-    string AlignedVisibleScalar,
-    string AlignedHiddenScalar,
-    IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionAlignedChildInput>? Children = null
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
-    string ChildCode,
-    string? ChildValue,
-    IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionExtensionChildInput>? ExtensionChildren = null
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-    string ExtensionChildCode,
-    string? ExtensionChildValue
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionRequestParentItem(
-    string ParentCode,
-    int ArrayIndex,
-    bool Creatable = true
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionRequestAlignedScope(
-    string ParentCode,
-    ProfileVisibilityKind Visibility,
-    bool Creatable
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-    string ParentCode,
-    string ChildCode,
-    int ParentArrayIndex,
-    int ChildArrayIndex,
-    bool Creatable = true
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
-    string ParentCode,
-    string ChildCode,
-    string ExtensionChildCode,
-    int ParentArrayIndex,
-    int ChildArrayIndex,
-    int ExtensionChildArrayIndex,
-    bool Creatable = true
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionStoredParentRow(
-    string ParentCode,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionStoredAlignedScope(
-    string ParentCode,
-    ProfileVisibilityKind Visibility,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(
-    string ParentCode,
-    string ChildCode,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-    string ParentCode,
-    string ChildCode,
-    string ExtensionChildCode,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionParentRow(
-    long CollectionItemId,
-    long ParentResourceDocumentId,
-    int Ordinal,
-    string ParentCode,
-    string ParentName
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionAlignedRow(
-    long BaseCollectionItemId,
-    long ParentResourceDocumentId,
-    string? AlignedVisibleScalar,
-    string? AlignedHiddenScalar
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionAlignedChildRow(
-    long CollectionItemId,
-    long BaseCollectionItemId,
-    long ParentResourceDocumentId,
-    int Ordinal,
-    string ChildCode,
-    string? ChildValue
-);
-
-internal sealed record PostgresqlProfileCollectionAlignedExtensionExtensionChildRow(
-    long CollectionItemId,
-    long ParentCollectionItemId,
-    long ParentResourceDocumentId,
-    int Ordinal,
-    string ExtensionChildCode,
-    string? ExtensionChildValue
-);
-
 internal static class PostgresqlProfileCollectionAlignedExtensionSupport
 {
-    public const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension";
-
-    public const string ParentScope = "$.parents[*]";
-    public const string AlignedScope = "$.parents[*]._ext.aligned";
-    public const string AlignedChildScope = "$.parents[*]._ext.aligned.children[*]";
-    public const string ExtensionChildScope = "$.parents[*]._ext.aligned.children[*].extensionChildren[*]";
-
-    public static readonly QualifiedResourceName ParentResource = new("Ed-Fi", "ParentResource");
-
-    public static readonly ResourceInfo ParentResourceInfo = new(
-        ProjectName: new ProjectName("Ed-Fi"),
-        ResourceName: new ResourceName("ParentResource"),
-        IsDescriptor: false,
-        ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
-    );
-
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
@@ -288,227 +150,36 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
         );
     }
 
-    public static JsonNode CreateParentResourceBody(
-        int parentResourceId,
-        params PostgresqlProfileCollectionAlignedExtensionParentInput[] parents
-    )
-    {
-        JsonArray parentNodes = [];
-        foreach (var parent in parents)
-        {
-            JsonObject parentNode = new()
-            {
-                ["parentCode"] = parent.ParentCode,
-                ["parentName"] = parent.ParentName,
-            };
-
-            if (parent.Aligned is not null)
-            {
-                JsonObject alignedNode = new()
-                {
-                    ["alignedVisibleScalar"] = parent.Aligned.AlignedVisibleScalar,
-                    ["alignedHiddenScalar"] = parent.Aligned.AlignedHiddenScalar,
-                };
-
-                if (parent.Aligned.Children is not null)
-                {
-                    JsonArray childNodes = [];
-                    foreach (var child in parent.Aligned.Children)
-                    {
-                        JsonObject childNode = new() { ["childCode"] = child.ChildCode };
-                        if (child.ChildValue is not null)
-                        {
-                            childNode["childValue"] = child.ChildValue;
-                        }
-                        if (child.ExtensionChildren is not null)
-                        {
-                            JsonArray extensionChildNodes = [];
-                            foreach (var extensionChild in child.ExtensionChildren)
-                            {
-                                JsonObject extensionChildNode = new()
-                                {
-                                    ["extensionChildCode"] = extensionChild.ExtensionChildCode,
-                                };
-                                if (extensionChild.ExtensionChildValue is not null)
-                                {
-                                    extensionChildNode["extensionChildValue"] =
-                                        extensionChild.ExtensionChildValue;
-                                }
-                                extensionChildNodes.Add(extensionChildNode);
-                            }
-                            childNode["extensionChildren"] = extensionChildNodes;
-                        }
-                        childNodes.Add(childNode);
-                    }
-                    alignedNode["children"] = childNodes;
-                }
-
-                parentNode["_ext"] = new JsonObject { ["aligned"] = alignedNode };
-            }
-
-            parentNodes.Add(parentNode);
-        }
-
-        return new JsonObject { ["parentResourceId"] = parentResourceId, ["parents"] = parentNodes };
-    }
-
-    public static DocumentInfo CreateDocumentInfo(int parentResourceId)
-    {
-        var identity = new DocumentIdentity([
-            new DocumentIdentityElement(
-                new JsonPath("$.parentResourceId"),
-                parentResourceId.ToString(CultureInfo.InvariantCulture)
-            ),
-        ]);
-
-        return new DocumentInfo(
-            DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(ParentResourceInfo, identity),
-            DocumentReferences: [],
-            DocumentReferenceArrays: [],
-            DescriptorReferences: [],
-            SuperclassIdentity: null
-        );
-    }
-
-    public static ImmutableArray<SemanticIdentityPart> ParentIdentity(string parentCode) =>
-        [new SemanticIdentityPart("parentCode", JsonValue.Create(parentCode), IsPresent: true)];
-
-    public static CollectionRowAddress ParentCollectionRowAddress(string parentCode) =>
-        new(ParentScope, new ScopeInstanceAddress("$", []), ParentIdentity(parentCode));
-
-    public static ScopeInstanceAddress ParentContainingScopeAddress(string parentCode) =>
-        new(ParentScope, [new AncestorCollectionInstance(ParentScope, ParentIdentity(parentCode))]);
-
-    public static ScopeInstanceAddress AlignedScopeAddress(string parentCode) =>
-        new(AlignedScope, ParentContainingScopeAddress(parentCode).AncestorCollectionInstances);
-
-    public static ImmutableArray<SemanticIdentityPart> AlignedChildIdentity(string childCode) =>
-        [new SemanticIdentityPart("childCode", JsonValue.Create(childCode), IsPresent: true)];
-
-    public static CollectionRowAddress AlignedChildCollectionRowAddress(
-        string parentCode,
-        string childCode
-    ) => new(AlignedChildScope, AlignedScopeAddress(parentCode), AlignedChildIdentity(childCode));
-
-    public static ImmutableArray<SemanticIdentityPart> ExtensionChildIdentity(string extensionChildCode) =>
-        [
-            new SemanticIdentityPart(
-                "extensionChildCode",
-                JsonValue.Create(extensionChildCode),
-                IsPresent: true
-            ),
-        ];
-
-    public static ScopeInstanceAddress AlignedChildContainingScopeAddress(string parentCode, string childCode)
-    {
-        var alignedScopeAncestors = AlignedScopeAddress(parentCode).AncestorCollectionInstances;
-        return new ScopeInstanceAddress(
-            AlignedChildScope,
-            alignedScopeAncestors.Add(
-                new AncestorCollectionInstance(AlignedChildScope, AlignedChildIdentity(childCode))
-            )
-        );
-    }
-
-    public static CollectionRowAddress ExtensionChildCollectionRowAddress(
-        string parentCode,
-        string childCode,
-        string extensionChildCode
-    ) =>
-        new(
-            ExtensionChildScope,
-            AlignedChildContainingScopeAddress(parentCode, childCode),
-            ExtensionChildIdentity(extensionChildCode)
-        );
-
     public static BackendProfileWriteContext CreateProfileContext(
         ResourceWritePlan writePlan,
         JsonNode requestBody,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionRequestParentItem> requestParentItems,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionRequestAlignedScope> requestAlignedScopes,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionStoredParentRow> storedParentRows,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionStoredAlignedScope> storedAlignedScopes,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow>? storedAlignedChildRows =
-            null,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem>? requestAlignedChildItems =
-            null,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow>? storedExtensionChildRows =
-            null,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem>? requestExtensionChildItems =
-            null,
+        IReadOnlyList<RequestParentItem> requestParentItems,
+        IReadOnlyList<RequestAlignedScope> requestAlignedScopes,
+        IReadOnlyList<StoredParentRow> storedParentRows,
+        IReadOnlyList<StoredAlignedScope> storedAlignedScopes,
+        IReadOnlyList<StoredAlignedChildRow>? storedAlignedChildRows = null,
+        IReadOnlyList<RequestAlignedChildItem>? requestAlignedChildItems = null,
+        IReadOnlyList<StoredExtensionChildRow>? storedExtensionChildRows = null,
+        IReadOnlyList<RequestExtensionChildItem>? requestExtensionChildItems = null,
         bool rootCreatable = true,
         string profileName = "collection-aligned-extension-profile"
-    )
-    {
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
-        var visibleRequestItemsBuilder = ImmutableArray.CreateBuilder<VisibleRequestCollectionItem>();
-        visibleRequestItemsBuilder.AddRange(
-            requestParentItems.Select(item => new VisibleRequestCollectionItem(
-                ParentCollectionRowAddress(item.ParentCode),
-                item.Creatable,
-                $"$.parents[{item.ArrayIndex}]"
-            ))
-        );
-        if (requestAlignedChildItems is not null)
-        {
-            visibleRequestItemsBuilder.AddRange(
-                requestAlignedChildItems.Select(item => new VisibleRequestCollectionItem(
-                    AlignedChildCollectionRowAddress(item.ParentCode, item.ChildCode),
-                    item.Creatable,
-                    $"$.parents[{item.ParentArrayIndex}]._ext.aligned.children[{item.ChildArrayIndex}]"
-                ))
-            );
-        }
-        if (requestExtensionChildItems is not null)
-        {
-            visibleRequestItemsBuilder.AddRange(
-                requestExtensionChildItems.Select(item => new VisibleRequestCollectionItem(
-                    ExtensionChildCollectionRowAddress(
-                        item.ParentCode,
-                        item.ChildCode,
-                        item.ExtensionChildCode
-                    ),
-                    item.Creatable,
-                    $"$.parents[{item.ParentArrayIndex}]._ext.aligned.children[{item.ChildArrayIndex}].extensionChildren[{item.ExtensionChildArrayIndex}]"
-                ))
-            );
-        }
-        var visibleRequestItems = visibleRequestItemsBuilder.ToImmutable();
-
-        var requestScopeStates = ImmutableArray.CreateBuilder<RequestScopeState>();
-        requestScopeStates.Add(
-            new RequestScopeState(
-                new ScopeInstanceAddress("$", []),
-                ProfileVisibilityKind.VisiblePresent,
-                rootCreatable
-            )
-        );
-        requestScopeStates.AddRange(
-            requestAlignedScopes.Select(scope => new RequestScopeState(
-                AlignedScopeAddress(scope.ParentCode),
-                scope.Visibility,
-                scope.Creatable
-            ))
-        );
-
-        return new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: requestBody,
-                RootResourceCreatable: rootCreatable,
-                RequestScopeStates: requestScopeStates.ToImmutable(),
-                VisibleRequestCollectionItems: visibleRequestItems
-            ),
-            ProfileName: profileName,
-            CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new PostgresqlProfileCollectionAlignedExtensionProjectionInvoker(
+    ) =>
+        ProfileCollectionAlignedExtensionScenarios.CreateProfileContext(
+            writePlan,
+            requestBody,
+            requestParentItems,
+            requestAlignedScopes,
+            new PostgresqlProfileCollectionAlignedExtensionProjectionInvoker(
                 [.. storedParentRows],
                 [.. storedAlignedScopes],
                 [.. (storedAlignedChildRows ?? [])],
                 [.. (storedExtensionChildRows ?? [])]
-            )
+            ),
+            requestAlignedChildItems,
+            requestExtensionChildItems,
+            rootCreatable,
+            profileName
         );
-    }
 
     public static async Task<UpsertResult> SeedAsync(
         ServiceProvider serviceProvider,
@@ -663,9 +334,10 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             """
         );
 
-    public static async Task<
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionParentRow>
-    > ReadParentRowsAsync(PostgresqlGeneratedDdlTestDatabase database, DocumentUuid documentUuid)
+    public static async Task<IReadOnlyList<ParentRow>> ReadParentRowsAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        DocumentUuid documentUuid
+    )
     {
         var rows = await database.QueryRowsAsync(
             """
@@ -683,7 +355,7 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
 
-        return rows.Select(row => new PostgresqlProfileCollectionAlignedExtensionParentRow(
+        return rows.Select(row => new ParentRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "ParentResource_DocumentId"),
                 GetInt32(row, "Ordinal"),
@@ -693,7 +365,7 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             .ToArray();
     }
 
-    public static async Task<PostgresqlProfileCollectionAlignedExtensionAlignedRow?> TryReadAlignedRowAsync(
+    public static async Task<AlignedRow?> TryReadAlignedRowAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         DocumentUuid documentUuid
     )
@@ -714,7 +386,7 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
 
         return rows.Count == 0
             ? null
-            : new PostgresqlProfileCollectionAlignedExtensionAlignedRow(
+            : new AlignedRow(
                 GetInt64(rows[0], "BaseCollectionItemId"),
                 GetInt64(rows[0], "ParentResource_DocumentId"),
                 GetNullableString(rows[0], "AlignedVisibleScalar"),
@@ -747,9 +419,10 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             """
         );
 
-    public static async Task<
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionAlignedChildRow>
-    > ReadAlignedChildRowsAsync(PostgresqlGeneratedDdlTestDatabase database, DocumentUuid documentUuid)
+    public static async Task<IReadOnlyList<AlignedChildRow>> ReadAlignedChildRowsAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        DocumentUuid documentUuid
+    )
     {
         var rows = await database.QueryRowsAsync(
             """
@@ -768,7 +441,7 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
 
-        return rows.Select(row => new PostgresqlProfileCollectionAlignedExtensionAlignedChildRow(
+        return rows.Select(row => new AlignedChildRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "BaseCollectionItemId"),
                 GetInt64(row, "ParentResource_DocumentId"),
@@ -779,9 +452,10 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             .ToArray();
     }
 
-    public static async Task<
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionExtensionChildRow>
-    > ReadExtensionChildRowsAsync(PostgresqlGeneratedDdlTestDatabase database, DocumentUuid documentUuid)
+    public static async Task<IReadOnlyList<ExtensionChildRow>> ReadExtensionChildRowsAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        DocumentUuid documentUuid
+    )
     {
         var rows = await database.QueryRowsAsync(
             """
@@ -800,7 +474,7 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
 
-        return rows.Select(row => new PostgresqlProfileCollectionAlignedExtensionExtensionChildRow(
+        return rows.Select(row => new ExtensionChildRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "ParentCollectionItemId"),
                 GetInt64(row, "ParentResource_DocumentId"),
@@ -841,9 +515,7 @@ internal abstract class PostgresqlProfileCollectionAlignedExtensionFixtureBase
     [OneTimeSetUp]
     public async Task BaseOneTimeSetUp()
     {
-        Fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            PostgresqlProfileCollectionAlignedExtensionSupport.FixtureRelativePath
-        );
+        Fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         MappingSet = Fixture.MappingSet;
         Database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(Fixture.GeneratedDdl);
         ServiceProvider = PostgresqlProfileCollectionAlignedExtensionSupport.CreateServiceProvider();
@@ -862,24 +534,18 @@ internal abstract class PostgresqlProfileCollectionAlignedExtensionFixtureBase
         }
     }
 
-    protected ResourceWritePlan WritePlan =>
-        MappingSet.WritePlansByResource[PostgresqlProfileCollectionAlignedExtensionSupport.ParentResource];
+    protected ResourceWritePlan WritePlan => MappingSet.WritePlansByResource[ParentResource];
 
     protected BackendProfileWriteContext CreateProfileContext(
         JsonNode requestBody,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionRequestParentItem> requestParentItems,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionRequestAlignedScope> requestAlignedScopes,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionStoredParentRow>? storedParentRows = null,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionStoredAlignedScope>? storedAlignedScopes =
-            null,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow>? storedAlignedChildRows =
-            null,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem>? requestAlignedChildItems =
-            null,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow>? storedExtensionChildRows =
-            null,
-        IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem>? requestExtensionChildItems =
-            null
+        IReadOnlyList<RequestParentItem> requestParentItems,
+        IReadOnlyList<RequestAlignedScope> requestAlignedScopes,
+        IReadOnlyList<StoredParentRow>? storedParentRows = null,
+        IReadOnlyList<StoredAlignedScope>? storedAlignedScopes = null,
+        IReadOnlyList<StoredAlignedChildRow>? storedAlignedChildRows = null,
+        IReadOnlyList<RequestAlignedChildItem>? requestAlignedChildItems = null,
+        IReadOnlyList<StoredExtensionChildRow>? storedExtensionChildRows = null,
+        IReadOnlyList<RequestExtensionChildItem>? requestExtensionChildItems = null
     ) =>
         PostgresqlProfileCollectionAlignedExtensionSupport.CreateProfileContext(
             WritePlan,
@@ -940,20 +606,15 @@ internal abstract class PostgresqlProfileCollectionAlignedExtensionFixtureBase
         seedResult.Should().BeOfType<UpsertResult.InsertSuccess>();
     }
 
-    protected static PostgresqlProfileCollectionAlignedExtensionRequestParentItem RequestParent() =>
-        new(ParentCode, ArrayIndex: 0);
+    protected static RequestParentItem RequestParent() => new(ParentCode, ArrayIndex: 0);
 
-    protected static PostgresqlProfileCollectionAlignedExtensionStoredParentRow StoredParent() =>
-        new(ParentCode, []);
+    protected static StoredParentRow StoredParent() => new(ParentCode, []);
 
-    protected static PostgresqlProfileCollectionAlignedExtensionRequestAlignedScope RequestAligned(
-        ProfileVisibilityKind visibility,
-        bool creatable
-    ) => new(ParentCode, visibility, creatable);
+    protected static RequestAlignedScope RequestAligned(ProfileVisibilityKind visibility, bool creatable) =>
+        new(ParentCode, visibility, creatable);
 
-    protected static PostgresqlProfileCollectionAlignedExtensionStoredAlignedScope StoredAligned(
-        ProfileVisibilityKind visibility
-    ) => new(ParentCode, visibility, []);
+    protected static StoredAlignedScope StoredAligned(ProfileVisibilityKind visibility) =>
+        new(ParentCode, visibility, []);
 
     protected static string FormatResult(UpsertResult result) =>
         result switch
@@ -977,20 +638,16 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpsertResult _postResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionParentRow> _parentRows = null!;
-    private PostgresqlProfileCollectionAlignedExtensionAlignedRow? _alignedRow;
+    private IReadOnlyList<ParentRow> _parentRows = null!;
+    private AlignedRow? _alignedRow;
     private long _alignedChildRowCount;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Created Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput("CreatedVisible", "CreatedHidden")
-            )
+            new ParentInput(ParentCode, "Created Parent", new AlignedInput("CreatedVisible", "CreatedHidden"))
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1025,7 +682,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
             .Should()
             .ContainSingle()
             .Which.Should()
-            .Match<PostgresqlProfileCollectionAlignedExtensionParentRow>(row =>
+            .Match<ParentRow>(row =>
                 row.Ordinal == 1 && row.ParentCode == ParentCode && row.ParentName == "Created Parent"
             );
 
@@ -1056,9 +713,9 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(ParentCode, "Created Parent")
+            new ParentInput(ParentCode, "Created Parent")
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1097,12 +754,12 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Hidden Request Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput("HiddenVisible", "HiddenHidden")
+                new AlignedInput("HiddenVisible", "HiddenHidden")
             )
         );
         var profileContext = CreateProfileContext(
@@ -1136,28 +793,20 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private PostgresqlProfileCollectionAlignedExtensionAlignedRow? _alignedRow;
+    private AlignedRow? _alignedRow;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Seed Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput("SeedVisible", "SeedHidden")
-            )
+            new ParentInput(ParentCode, "Seed Parent", new AlignedInput("SeedVisible", "SeedHidden"))
         );
         await SeedAsync(seedBody, "pgsql-profile-collection-aligned-visible-present-seed");
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Updated Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput("UpdatedVisible", "UpdatedHidden")
-            )
+            new ParentInput(ParentCode, "Updated Parent", new AlignedInput("UpdatedVisible", "UpdatedHidden"))
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1203,19 +852,15 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Seed Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput("SeedVisible", "SeedHidden")
-            )
+            new ParentInput(ParentCode, "Seed Parent", new AlignedInput("SeedVisible", "SeedHidden"))
         );
         await SeedAsync(seedBody, "pgsql-profile-collection-aligned-visible-absent-seed");
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(ParentCode, "Updated Parent")
+            new ParentInput(ParentCode, "Updated Parent")
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1251,24 +896,20 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private PostgresqlProfileCollectionAlignedExtensionAlignedRow? _alignedRow;
+    private AlignedRow? _alignedRow;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
-                ParentCode,
-                "Seed Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput("StoredVisible", "StoredHidden")
-            )
+            new ParentInput(ParentCode, "Seed Parent", new AlignedInput("StoredVisible", "StoredHidden"))
         );
         await SeedAsync(seedBody, "pgsql-profile-collection-aligned-hidden-storage-seed");
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(ParentCode, "Updated Parent")
+            new ParentInput(ParentCode, "Updated Parent")
         );
         var profileContext = CreateProfileContext(
             writeBody,
@@ -1309,27 +950,21 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_a_no
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionParentRow> _parentRowsAfterPut = null!;
+    private IReadOnlyList<ParentRow> _parentRowsAfterPut = null!;
     private int _alignedRowCount;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
-            ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(ParentCode, "Seed Parent")
-        );
+        var seedBody = CreateParentResourceBody(ParentResourceId, new ParentInput(ParentCode, "Seed Parent"));
         await SeedAsync(seedBody, "pgsql-profile-collection-aligned-create-denied-seed");
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Rejected Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
-                    "RejectedVisible",
-                    "RejectedHidden"
-                )
+                new AlignedInput("RejectedVisible", "RejectedHidden")
             )
         );
         var profileContext = CreateProfileContext(
@@ -1380,23 +1015,23 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_create_reque
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpsertResult _postResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionAlignedChildRow> _childRows = null!;
+    private IReadOnlyList<AlignedChildRow> _childRows = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Created Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "CreatedVisible",
                     "CreatedHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "ValueB"),
+                        new AlignedChildInput("ChildA", "ValueA"),
+                        new AlignedChildInput("ChildB", "ValueB"),
                     ]
                 )
             )
@@ -1407,18 +1042,8 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_create_reque
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             requestAlignedChildItems:
             [
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildB",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 1
-                ),
+                new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0),
+                new RequestAlignedChildItem(ParentCode, "ChildB", ParentArrayIndex: 0, ChildArrayIndex: 1),
             ]
         );
 
@@ -1463,32 +1088,24 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsBeforePut =
-        null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsAfterPut =
-        null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsBeforePut = null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
-                            "ChildA",
-                            "OriginalA"
-                        ),
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
-                            "ChildB",
-                            "OriginalB"
-                        ),
+                        new AlignedChildInput("ChildA", "OriginalA"),
+                        new AlignedChildInput("ChildB", "OriginalB"),
                     ]
                 )
             )
@@ -1500,24 +1117,18 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
                 DocumentUuid
             );
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
-                            "ChildA",
-                            "OriginalA"
-                        ),
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
-                            "ChildB",
-                            "ChangedB"
-                        ),
+                        new AlignedChildInput("ChildA", "OriginalA"),
+                        new AlignedChildInput("ChildB", "ChangedB"),
                     ]
                 )
             )
@@ -1529,30 +1140,12 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
             [
-                new PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(
-                    ParentCode,
-                    "ChildA",
-                    []
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(
-                    ParentCode,
-                    "ChildB",
-                    []
-                ),
+                new StoredAlignedChildRow(ParentCode, "ChildA", []),
+                new StoredAlignedChildRow(ParentCode, "ChildB", []),
             ],
             [
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildB",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 1
-                ),
+                new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0),
+                new RequestAlignedChildItem(ParentCode, "ChildB", ParentArrayIndex: 0, ChildArrayIndex: 1),
             ]
         );
 
@@ -1614,42 +1207,38 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsAfterPut =
-        null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "ValueB"),
+                        new AlignedChildInput("ChildA", "ValueA"),
+                        new AlignedChildInput("ChildB", "ValueB"),
                     ]
                 )
             )
         );
         await SeedAsync(seedBody, "postgres-profile-collection-aligned-extension-child-delete-seed");
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
-                    Children:
-                    [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                    ]
+                    Children: [new AlignedChildInput("ChildA", "ValueA")]
                 )
             )
         );
@@ -1660,25 +1249,10 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
             [
-                new PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(
-                    ParentCode,
-                    "ChildA",
-                    []
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(
-                    ParentCode,
-                    "ChildB",
-                    []
-                ),
+                new StoredAlignedChildRow(ParentCode, "ChildA", []),
+                new StoredAlignedChildRow(ParentCode, "ChildB", []),
             ],
-            [
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
-            ]
+            [new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0)]
         );
 
         _putResult = await ExecuteProfiledPutAsync(
@@ -1716,26 +1290,24 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsBeforePut =
-        null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionAlignedChildRow> _childRowsAfterPut =
-        null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsBeforePut = null!;
+    private IReadOnlyList<AlignedChildRow> _childRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "ValueB"),
+                        new AlignedChildInput("ChildA", "ValueA"),
+                        new AlignedChildInput("ChildB", "ValueB"),
                     ]
                 )
             )
@@ -1747,19 +1319,19 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
                 DocumentUuid
             );
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildB", "ValueB"),
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildA", "ValueA"),
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput("ChildC", "ValueC"),
+                        new AlignedChildInput("ChildB", "ValueB"),
+                        new AlignedChildInput("ChildA", "ValueA"),
+                        new AlignedChildInput("ChildC", "ValueC"),
                     ]
                 )
             )
@@ -1771,36 +1343,13 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
             [
-                new PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(
-                    ParentCode,
-                    "ChildA",
-                    []
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(
-                    ParentCode,
-                    "ChildB",
-                    []
-                ),
+                new StoredAlignedChildRow(ParentCode, "ChildA", []),
+                new StoredAlignedChildRow(ParentCode, "ChildB", []),
             ],
             [
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildB",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 1
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildC",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 2
-                ),
+                new RequestAlignedChildItem(ParentCode, "ChildB", ParentArrayIndex: 0, ChildArrayIndex: 0),
+                new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 1),
+                new RequestAlignedChildItem(ParentCode, "ChildC", ParentArrayIndex: 0, ChildArrayIndex: 2),
             ]
         );
 
@@ -1860,35 +1409,28 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_create_reque
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpsertResult _postResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRows =
-        null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRows = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Created Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "CreatedVisible",
                     "CreatedHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "BetaValue"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "AlphaValue"),
+                                new ExtensionChildInput("ExtChildBeta", "BetaValue"),
                             ]
                         ),
                     ]
@@ -1901,16 +1443,11 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_create_reque
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             requestAlignedChildItems:
             [
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
+                new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0),
             ],
             requestExtensionChildItems:
             [
-                new PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildAlpha",
@@ -1918,7 +1455,7 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_create_reque
                     ChildArrayIndex: 0,
                     ExtensionChildArrayIndex: 0
                 ),
-                new PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildBeta",
@@ -1974,37 +1511,29 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsBeforePut =
-        null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsAfterPut =
-        null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsBeforePut = null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "OriginalAlpha"
-                                ),
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "OriginalBeta"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "OriginalAlpha"),
+                                new ExtensionChildInput("ExtChildBeta", "OriginalBeta"),
                             ]
                         ),
                     ]
@@ -2018,29 +1547,23 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
                 DocumentUuid
             );
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "OriginalAlpha"
-                                ),
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "ChangedBeta"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "OriginalAlpha"),
+                                new ExtensionChildInput("ExtChildBeta", "ChangedBeta"),
                             ]
                         ),
                     ]
@@ -2053,31 +1576,14 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
-            [new PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new StoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0)],
             [
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildAlpha", []),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildBeta", []),
             ],
             [
-                new PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildAlpha",
-                    []
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildBeta",
-                    []
-                ),
-            ],
-            [
-                new PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildAlpha",
@@ -2085,7 +1591,7 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
                     ChildArrayIndex: 0,
                     ExtensionChildArrayIndex: 0
                 ),
-                new PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildBeta",
@@ -2156,35 +1662,28 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsAfterPut =
-        null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "BetaValue"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "AlphaValue"),
+                                new ExtensionChildInput("ExtChildBeta", "BetaValue"),
                             ]
                         ),
                     ]
@@ -2193,26 +1692,20 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
         );
         await SeedAsync(seedBody, "postgres-profile-collection-nested-extension-child-delete-seed");
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
-                            ExtensionChildren:
-                            [
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                            ]
+                            ExtensionChildren: [new ExtensionChildInput("ExtChildAlpha", "AlphaValue")]
                         ),
                     ]
                 )
@@ -2224,31 +1717,14 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
-            [new PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new StoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0)],
             [
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildAlpha", []),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildBeta", []),
             ],
             [
-                new PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildAlpha",
-                    []
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildBeta",
-                    []
-                ),
-            ],
-            [
-                new PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildAlpha",
@@ -2294,37 +1770,29 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsBeforePut =
-        null!;
-    private IReadOnlyList<PostgresqlProfileCollectionAlignedExtensionExtensionChildRow> _extensionChildRowsAfterPut =
-        null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsBeforePut = null!;
+    private IReadOnlyList<ExtensionChildRow> _extensionChildRowsAfterPut = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Seed Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "BetaValue"
-                                ),
+                                new ExtensionChildInput("ExtChildAlpha", "AlphaValue"),
+                                new ExtensionChildInput("ExtChildBeta", "BetaValue"),
                             ]
                         ),
                     ]
@@ -2338,33 +1806,24 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
                 DocumentUuid
             );
 
-        var writeBody = PostgresqlProfileCollectionAlignedExtensionSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            new PostgresqlProfileCollectionAlignedExtensionParentInput(
+            new ParentInput(
                 ParentCode,
                 "Updated Parent",
-                new PostgresqlProfileCollectionAlignedExtensionAlignedInput(
+                new AlignedInput(
                     "StoredVisible",
                     "StoredHidden",
                     Children:
                     [
-                        new PostgresqlProfileCollectionAlignedExtensionAlignedChildInput(
+                        new AlignedChildInput(
                             "ChildA",
                             "ValueA",
                             ExtensionChildren:
                             [
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildBeta",
-                                    "BetaValue"
-                                ),
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildAlpha",
-                                    "AlphaValue"
-                                ),
-                                new PostgresqlProfileCollectionAlignedExtensionExtensionChildInput(
-                                    "ExtChildGamma",
-                                    "GammaValue"
-                                ),
+                                new ExtensionChildInput("ExtChildBeta", "BetaValue"),
+                                new ExtensionChildInput("ExtChildAlpha", "AlphaValue"),
+                                new ExtensionChildInput("ExtChildGamma", "GammaValue"),
                             ]
                         ),
                     ]
@@ -2377,31 +1836,14 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
             [RequestAligned(ProfileVisibilityKind.VisiblePresent, creatable: true)],
             [StoredParent()],
             [StoredAligned(ProfileVisibilityKind.VisiblePresent)],
-            [new PostgresqlProfileCollectionAlignedExtensionStoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new StoredAlignedChildRow(ParentCode, "ChildA", [])],
+            [new RequestAlignedChildItem(ParentCode, "ChildA", ParentArrayIndex: 0, ChildArrayIndex: 0)],
             [
-                new PostgresqlProfileCollectionAlignedExtensionRequestAlignedChildItem(
-                    ParentCode,
-                    "ChildA",
-                    ParentArrayIndex: 0,
-                    ChildArrayIndex: 0
-                ),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildAlpha", []),
+                new StoredExtensionChildRow(ParentCode, "ChildA", "ExtChildBeta", []),
             ],
             [
-                new PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildAlpha",
-                    []
-                ),
-                new PostgresqlProfileCollectionAlignedExtensionStoredExtensionChildRow(
-                    ParentCode,
-                    "ChildA",
-                    "ExtChildBeta",
-                    []
-                ),
-            ],
-            [
-                new PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildBeta",
@@ -2409,7 +1851,7 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
                     ChildArrayIndex: 0,
                     ExtensionChildArrayIndex: 0
                 ),
-                new PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildAlpha",
@@ -2417,7 +1859,7 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
                     ChildArrayIndex: 0,
                     ExtensionChildArrayIndex: 1
                 ),
-                new PostgresqlProfileCollectionAlignedExtensionRequestExtensionChildItem(
+                new RequestExtensionChildItem(
                     ParentCode,
                     "ChildA",
                     "ExtChildGamma",

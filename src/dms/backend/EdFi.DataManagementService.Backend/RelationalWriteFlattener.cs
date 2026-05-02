@@ -292,9 +292,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups
             );
 
+            var hasSubmittedScopeData = HasBoundScopeData(scopeObject);
+
             if (
                 !flatteningInput.EmitEmptyRootExtensionBuffers
-                && !HasBoundScopeData(scopeObject)
+                && !hasSubmittedScopeData
                 && collectionCandidates.Count == 0
             )
             {
@@ -312,7 +314,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     ordinal: 0,
                     ordinalPath: []
                 ),
-                collectionCandidates: collectionCandidates
+                collectionCandidates: collectionCandidates,
+                hasSubmittedScopeData: hasSubmittedScopeData
             );
         }
     }
@@ -491,9 +494,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups
             );
 
+            var hasSubmittedScopeData = HasBoundScopeData(scopeObject);
+
             if (
                 !flatteningInput.EmitEmptyRootExtensionBuffers
-                && !HasBoundScopeData(scopeObject)
+                && !hasSubmittedScopeData
                 && childCollectionCandidates.Count == 0
             )
             {
@@ -512,7 +517,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                         ordinal: 0,
                         ordinalPath: parentOrdinalPath
                     ),
-                    childCollectionCandidates
+                    childCollectionCandidates,
+                    hasSubmittedScopeData: hasSubmittedScopeData
                 )
             );
         }

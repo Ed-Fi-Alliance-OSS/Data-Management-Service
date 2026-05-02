@@ -47,7 +47,11 @@ public class Given_RelationalWriteContracts
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Home"),
             ],
-            semanticIdentityValues: ["Home"]
+            semanticIdentityValues: ["Home"],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                _fixture.CollectionPlan,
+                ["Home"]
+            )
         );
 
         var writeSet = new FlattenedWriteSet(
@@ -94,6 +98,10 @@ public class Given_RelationalWriteContracts
                 new FlattenedWriteValue.Literal("Home"),
             ],
             semanticIdentityValues: ["Home"],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                _fixture.CollectionPlan,
+                ["Home"]
+            ),
             attachedAlignedScopeData: [alignedScopeData]
         );
 
@@ -131,6 +139,55 @@ public class Given_RelationalWriteContracts
         act.Should()
             .Throw<ArgumentException>()
             .WithMessage("*RootExtensionWriteRowBuffer*RootExtension*CollectionExtensionScope*");
+    }
+
+    [Test]
+    public void It_rejects_collection_write_candidate_without_explicit_semantic_identity_in_order()
+    {
+        var act = () =>
+            new CollectionWriteCandidate(
+                _fixture.CollectionPlan,
+                ordinalPath: [0],
+                requestOrder: 0,
+                values:
+                [
+                    NewCollectionItemId(),
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(0),
+                    new FlattenedWriteValue.Literal("Home"),
+                ],
+                semanticIdentityValues: ["Home"]
+            );
+
+        act.Should()
+            .Throw<ArgumentNullException>()
+            .WithMessage("*InferSemanticIdentityInOrderForTests*semanticIdentityInOrder*");
+    }
+
+    [Test]
+    public void It_infers_semantic_identity_in_order_with_value_based_presence_for_tests()
+    {
+        var inferred = CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            _fixture.CollectionPlan,
+            ["Home"]
+        );
+
+        inferred.Should().HaveCount(1);
+        inferred[0].IsPresent.Should().BeTrue();
+        inferred[0].Value!.GetValue<string>().Should().Be("Home");
+    }
+
+    [Test]
+    public void It_infers_missing_presence_for_null_identity_value_in_test_helper()
+    {
+        var inferred = CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            _fixture.CollectionPlan,
+            [(string?)null]
+        );
+
+        inferred.Should().HaveCount(1);
+        inferred[0].IsPresent.Should().BeFalse();
+        inferred[0].Value.Should().BeNull();
     }
 
     private static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>

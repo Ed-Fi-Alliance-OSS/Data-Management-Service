@@ -9,13 +9,11 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
@@ -25,6 +23,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Tests.Common.ProfileNestedCollectionScenarios;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
@@ -72,107 +71,11 @@ file sealed class PostgresqlProfileNestedNoOpUpdateCascadeHandler : IUpdateCasca
         );
 }
 
-internal sealed record PostgresqlProfileNestedChildInput(string ChildCode, string ChildValue);
-
-internal sealed record PostgresqlProfileNestedParentInput(
-    string ParentCode,
-    string ParentName,
-    IReadOnlyList<PostgresqlProfileNestedChildInput>? Children = null
-);
-
-internal sealed record PostgresqlProfileNestedRootExtChildInput(
-    string RootExtChildCode,
-    string RootExtChildValue
-);
-
-internal sealed record PostgresqlProfileNestedRootExtInput(
-    string RootExtVisibleScalar,
-    string RootExtHiddenScalar,
-    IReadOnlyList<PostgresqlProfileNestedRootExtChildInput>? Children = null
-);
-
-internal sealed record PostgresqlProfileNestedRequestParentItem(
-    string ParentCode,
-    int ArrayIndex,
-    bool Creatable = true
-);
-
-internal sealed record PostgresqlProfileNestedRequestChildItem(
-    string ParentCode,
-    string ChildCode,
-    int ParentArrayIndex,
-    int ChildArrayIndex,
-    bool Creatable = true
-);
-
-internal sealed record PostgresqlProfileNestedRequestRootExtChildItem(
-    string RootExtChildCode,
-    int ArrayIndex,
-    bool Creatable = true
-);
-
-internal sealed record PostgresqlProfileNestedStoredParentRow(
-    string ParentCode,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record PostgresqlProfileNestedStoredChildRow(
-    string ParentCode,
-    string ChildCode,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record PostgresqlProfileNestedStoredRootExtChildRow(
-    string RootExtChildCode,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record PostgresqlProfileNestedRequestRootExtScope(
-    ProfileVisibilityKind Visibility,
-    bool Creatable
-);
-
-internal sealed record PostgresqlProfileNestedStoredRootExtScope(
-    ProfileVisibilityKind Visibility,
-    ImmutableArray<string> HiddenMemberPaths
-);
-
-internal sealed record PostgresqlProfileNestedParentRow(
-    long CollectionItemId,
-    long ParentResourceDocumentId,
-    int Ordinal,
-    string? ParentCode,
-    string? ParentName
-);
-
-internal sealed record PostgresqlProfileNestedChildRow(
-    long CollectionItemId,
-    long ParentCollectionItemId,
-    long ParentResourceDocumentId,
-    int Ordinal,
-    string? ChildCode,
-    string? ChildValue
-);
-
-internal sealed record PostgresqlProfileNestedRootExtRow(
-    long DocumentId,
-    string? RootExtVisibleScalar,
-    string? RootExtHiddenScalar
-);
-
-internal sealed record PostgresqlProfileNestedRootExtChildRow(
-    long CollectionItemId,
-    long ParentResourceDocumentId,
-    int Ordinal,
-    string? RootExtChildCode,
-    string? RootExtChildValue
-);
-
 internal sealed class PostgresqlProfileNestedProjectionInvoker(
-    ImmutableArray<PostgresqlProfileNestedStoredParentRow> storedParentRows,
-    ImmutableArray<PostgresqlProfileNestedStoredChildRow> storedChildRows,
-    ImmutableArray<PostgresqlProfileNestedStoredRootExtChildRow> storedRootExtChildRows,
-    PostgresqlProfileNestedStoredRootExtScope? storedRootExtScope
+    ImmutableArray<StoredParentRow> storedParentRows,
+    ImmutableArray<StoredChildRow> storedChildRows,
+    ImmutableArray<StoredRootExtChildRow> storedRootExtChildRows,
+    StoredRootExtScope? storedRootExtScope
 ) : IStoredStateProjectionInvoker
 {
     public ProfileAppliedWriteContext ProjectStoredState(
@@ -190,7 +93,7 @@ internal sealed class PostgresqlProfileNestedProjectionInvoker(
         {
             storedScopeStates.Add(
                 new StoredScopeState(
-                    new ScopeInstanceAddress(PostgresqlProfileNestedSupport.RootExtScope, []),
+                    new ScopeInstanceAddress(RootExtScope, []),
                     storedRootExtScope.Visibility,
                     storedRootExtScope.HiddenMemberPaths
                 )
@@ -202,7 +105,7 @@ internal sealed class PostgresqlProfileNestedProjectionInvoker(
         {
             visibleStoredRows.Add(
                 new VisibleStoredCollectionRow(
-                    PostgresqlProfileNestedSupport.ParentRowAddress(parentRow.ParentCode),
+                    ParentRowAddress(parentRow.ParentCode),
                     parentRow.HiddenMemberPaths
                 )
             );
@@ -212,7 +115,7 @@ internal sealed class PostgresqlProfileNestedProjectionInvoker(
         {
             visibleStoredRows.Add(
                 new VisibleStoredCollectionRow(
-                    PostgresqlProfileNestedSupport.ChildRowAddress(childRow.ParentCode, childRow.ChildCode),
+                    ChildRowAddress(childRow.ParentCode, childRow.ChildCode),
                     childRow.HiddenMemberPaths
                 )
             );
@@ -222,7 +125,7 @@ internal sealed class PostgresqlProfileNestedProjectionInvoker(
         {
             visibleStoredRows.Add(
                 new VisibleStoredCollectionRow(
-                    PostgresqlProfileNestedSupport.RootExtChildRowAddress(rootExtChildRow.RootExtChildCode),
+                    RootExtChildRowAddress(rootExtChildRow.RootExtChildCode),
                     rootExtChildRow.HiddenMemberPaths
                 )
             );
@@ -239,26 +142,6 @@ internal sealed class PostgresqlProfileNestedProjectionInvoker(
 
 internal static class PostgresqlProfileNestedSupport
 {
-    public const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-nested-and-root-extension-children";
-
-    public const string ParentScope = "$.parents[*]";
-    public const string ChildScope = "$.parents[*].children[*]";
-    public const string RootExtScope = "$._ext.root_ext";
-    public const string RootExtChildScope = "$._ext.root_ext.root_ext_children[*]";
-
-    public static readonly QualifiedResourceName ParentResource = new("Ed-Fi", "ParentResource");
-
-    public static readonly ResourceInfo ParentResourceInfo = new(
-        ProjectName: new ProjectName("Ed-Fi"),
-        ResourceName: new ResourceName("ParentResource"),
-        IsDescriptor: false,
-        ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
-    );
-
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
@@ -277,211 +160,36 @@ internal static class PostgresqlProfileNestedSupport
         );
     }
 
-    public static JsonNode CreateParentResourceBody(
-        int parentResourceId,
-        IReadOnlyList<PostgresqlProfileNestedParentInput>? parents = null,
-        PostgresqlProfileNestedRootExtInput? rootExt = null
-    )
-    {
-        var body = new JsonObject { ["parentResourceId"] = parentResourceId };
-
-        if (parents is not null)
-        {
-            JsonArray parentNodes = [];
-            foreach (var parent in parents)
-            {
-                JsonObject parentNode = new()
-                {
-                    ["parentCode"] = parent.ParentCode,
-                    ["parentName"] = parent.ParentName,
-                };
-
-                if (parent.Children is not null)
-                {
-                    JsonArray childNodes = [];
-                    foreach (var child in parent.Children)
-                    {
-                        childNodes.Add(
-                            new JsonObject
-                            {
-                                ["childCode"] = child.ChildCode,
-                                ["childValue"] = child.ChildValue,
-                            }
-                        );
-                    }
-                    parentNode["children"] = childNodes;
-                }
-
-                parentNodes.Add(parentNode);
-            }
-            body["parents"] = parentNodes;
-        }
-
-        if (rootExt is not null)
-        {
-            JsonObject rootExtNode = new()
-            {
-                ["rootExtVisibleScalar"] = rootExt.RootExtVisibleScalar,
-                ["rootExtHiddenScalar"] = rootExt.RootExtHiddenScalar,
-            };
-
-            if (rootExt.Children is not null)
-            {
-                JsonArray rootExtChildNodes = [];
-                foreach (var child in rootExt.Children)
-                {
-                    rootExtChildNodes.Add(
-                        new JsonObject
-                        {
-                            ["rootExtChildCode"] = child.RootExtChildCode,
-                            ["rootExtChildValue"] = child.RootExtChildValue,
-                        }
-                    );
-                }
-                rootExtNode["root_ext_children"] = rootExtChildNodes;
-            }
-
-            body["_ext"] = new JsonObject { ["root_ext"] = rootExtNode };
-        }
-
-        return body;
-    }
-
-    public static DocumentInfo CreateDocumentInfo(int parentResourceId)
-    {
-        var identity = new DocumentIdentity([
-            new DocumentIdentityElement(
-                new JsonPath("$.parentResourceId"),
-                parentResourceId.ToString(CultureInfo.InvariantCulture)
-            ),
-        ]);
-
-        return new DocumentInfo(
-            DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(ParentResourceInfo, identity),
-            DocumentReferences: [],
-            DocumentReferenceArrays: [],
-            DescriptorReferences: [],
-            SuperclassIdentity: null
-        );
-    }
-
-    public static ImmutableArray<SemanticIdentityPart> ParentIdentity(string parentCode) =>
-        [new SemanticIdentityPart("parentCode", JsonValue.Create(parentCode), IsPresent: true)];
-
-    public static ImmutableArray<SemanticIdentityPart> ChildIdentity(string childCode) =>
-        [new SemanticIdentityPart("childCode", JsonValue.Create(childCode), IsPresent: true)];
-
-    public static ImmutableArray<SemanticIdentityPart> RootExtChildIdentity(string rootExtChildCode) =>
-        [new SemanticIdentityPart("rootExtChildCode", JsonValue.Create(rootExtChildCode), IsPresent: true)];
-
-    public static ScopeInstanceAddress ParentContainingScopeAddress(string parentCode) =>
-        new(ParentScope, [new AncestorCollectionInstance(ParentScope, ParentIdentity(parentCode))]);
-
-    public static CollectionRowAddress ParentRowAddress(string parentCode) =>
-        new(ParentScope, new ScopeInstanceAddress("$", []), ParentIdentity(parentCode));
-
-    public static CollectionRowAddress ChildRowAddress(string parentCode, string childCode) =>
-        new(ChildScope, ParentContainingScopeAddress(parentCode), ChildIdentity(childCode));
-
-    public static CollectionRowAddress RootExtChildRowAddress(string rootExtChildCode) =>
-        new(
-            RootExtChildScope,
-            new ScopeInstanceAddress(RootExtScope, []),
-            RootExtChildIdentity(rootExtChildCode)
-        );
-
     public static BackendProfileWriteContext CreateProfileContext(
         ResourceWritePlan writePlan,
         JsonNode requestBody,
-        IReadOnlyList<PostgresqlProfileNestedRequestParentItem> requestParentItems,
-        IReadOnlyList<PostgresqlProfileNestedRequestChildItem>? requestChildItems = null,
-        IReadOnlyList<PostgresqlProfileNestedRequestRootExtChildItem>? requestRootExtChildItems = null,
-        PostgresqlProfileNestedRequestRootExtScope? requestRootExtScope = null,
-        IReadOnlyList<PostgresqlProfileNestedStoredParentRow>? storedParentRows = null,
-        IReadOnlyList<PostgresqlProfileNestedStoredChildRow>? storedChildRows = null,
-        IReadOnlyList<PostgresqlProfileNestedStoredRootExtChildRow>? storedRootExtChildRows = null,
-        PostgresqlProfileNestedStoredRootExtScope? storedRootExtScope = null,
+        IReadOnlyList<RequestParentItem> requestParentItems,
+        IReadOnlyList<RequestChildItem>? requestChildItems = null,
+        IReadOnlyList<RequestRootExtChildItem>? requestRootExtChildItems = null,
+        RequestRootExtScope? requestRootExtScope = null,
+        IReadOnlyList<StoredParentRow>? storedParentRows = null,
+        IReadOnlyList<StoredChildRow>? storedChildRows = null,
+        IReadOnlyList<StoredRootExtChildRow>? storedRootExtChildRows = null,
+        StoredRootExtScope? storedRootExtScope = null,
         bool rootCreatable = true,
         string profileName = "nested-and-root-ext-profile"
-    )
-    {
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
-
-        var visibleRequestItems = ImmutableArray.CreateBuilder<VisibleRequestCollectionItem>();
-        foreach (var item in requestParentItems)
-        {
-            visibleRequestItems.Add(
-                new VisibleRequestCollectionItem(
-                    ParentRowAddress(item.ParentCode),
-                    item.Creatable,
-                    $"$.parents[{item.ArrayIndex}]"
-                )
-            );
-        }
-        if (requestChildItems is not null)
-        {
-            foreach (var item in requestChildItems)
-            {
-                visibleRequestItems.Add(
-                    new VisibleRequestCollectionItem(
-                        ChildRowAddress(item.ParentCode, item.ChildCode),
-                        item.Creatable,
-                        $"$.parents[{item.ParentArrayIndex}].children[{item.ChildArrayIndex}]"
-                    )
-                );
-            }
-        }
-        if (requestRootExtChildItems is not null)
-        {
-            foreach (var item in requestRootExtChildItems)
-            {
-                visibleRequestItems.Add(
-                    new VisibleRequestCollectionItem(
-                        RootExtChildRowAddress(item.RootExtChildCode),
-                        item.Creatable,
-                        $"$._ext.root_ext.root_ext_children[{item.ArrayIndex}]"
-                    )
-                );
-            }
-        }
-
-        var requestScopeStates = ImmutableArray.CreateBuilder<RequestScopeState>();
-        requestScopeStates.Add(
-            new RequestScopeState(
-                new ScopeInstanceAddress("$", []),
-                ProfileVisibilityKind.VisiblePresent,
-                rootCreatable
-            )
-        );
-        if (requestRootExtScope is not null)
-        {
-            requestScopeStates.Add(
-                new RequestScopeState(
-                    new ScopeInstanceAddress(RootExtScope, []),
-                    requestRootExtScope.Visibility,
-                    requestRootExtScope.Creatable
-                )
-            );
-        }
-
-        return new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: requestBody,
-                RootResourceCreatable: rootCreatable,
-                RequestScopeStates: requestScopeStates.ToImmutable(),
-                VisibleRequestCollectionItems: visibleRequestItems.ToImmutable()
-            ),
-            ProfileName: profileName,
-            CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new PostgresqlProfileNestedProjectionInvoker(
+    ) =>
+        ProfileNestedCollectionScenarios.CreateProfileContext(
+            writePlan,
+            requestBody,
+            requestParentItems,
+            new PostgresqlProfileNestedProjectionInvoker(
                 [.. storedParentRows ?? []],
                 [.. storedChildRows ?? []],
                 [.. storedRootExtChildRows ?? []],
                 storedRootExtScope
-            )
+            ),
+            requestChildItems,
+            requestRootExtChildItems,
+            requestRootExtScope,
+            rootCreatable,
+            profileName
         );
-    }
 
     public static async Task<UpsertResult> SeedAsync(
         ServiceProvider serviceProvider,
@@ -567,7 +275,7 @@ internal static class PostgresqlProfileNestedSupport
         return await repository.UpdateDocumentById(updateRequest);
     }
 
-    public static async Task<IReadOnlyList<PostgresqlProfileNestedParentRow>> ReadParentRowsAsync(
+    public static async Task<IReadOnlyList<ParentRow>> ReadParentRowsAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         DocumentUuid documentUuid
     )
@@ -588,7 +296,7 @@ internal static class PostgresqlProfileNestedSupport
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
 
-        return rows.Select(row => new PostgresqlProfileNestedParentRow(
+        return rows.Select(row => new ParentRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "ParentResource_DocumentId"),
                 GetInt32(row, "Ordinal"),
@@ -598,7 +306,7 @@ internal static class PostgresqlProfileNestedSupport
             .ToArray();
     }
 
-    public static async Task<IReadOnlyList<PostgresqlProfileNestedChildRow>> ReadChildRowsAsync(
+    public static async Task<IReadOnlyList<ChildRow>> ReadChildRowsAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         DocumentUuid documentUuid
     )
@@ -620,7 +328,7 @@ internal static class PostgresqlProfileNestedSupport
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
 
-        return rows.Select(row => new PostgresqlProfileNestedChildRow(
+        return rows.Select(row => new ChildRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "ParentCollectionItemId"),
                 GetInt64(row, "ParentResource_DocumentId"),
@@ -631,7 +339,7 @@ internal static class PostgresqlProfileNestedSupport
             .ToArray();
     }
 
-    public static async Task<PostgresqlProfileNestedRootExtRow?> TryReadRootExtRowAsync(
+    public static async Task<RootExtRow?> TryReadRootExtRowAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         DocumentUuid documentUuid
     )
@@ -651,14 +359,14 @@ internal static class PostgresqlProfileNestedSupport
 
         return rows.Count == 0
             ? null
-            : new PostgresqlProfileNestedRootExtRow(
+            : new RootExtRow(
                 GetInt64(rows[0], "DocumentId"),
                 GetNullableString(rows[0], "RootExtVisibleScalar"),
                 GetNullableString(rows[0], "RootExtHiddenScalar")
             );
     }
 
-    public static async Task<IReadOnlyList<PostgresqlProfileNestedRootExtChildRow>> ReadRootExtChildRowsAsync(
+    public static async Task<IReadOnlyList<RootExtChildRow>> ReadRootExtChildRowsAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         DocumentUuid documentUuid
     )
@@ -679,7 +387,7 @@ internal static class PostgresqlProfileNestedSupport
             new NpgsqlParameter("documentUuid", documentUuid.Value)
         );
 
-        return rows.Select(row => new PostgresqlProfileNestedRootExtChildRow(
+        return rows.Select(row => new RootExtChildRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "ParentResource_DocumentId"),
                 GetInt32(row, "Ordinal"),
@@ -714,9 +422,7 @@ internal abstract class PostgresqlProfileNestedFixtureBase
     [OneTimeSetUp]
     public async Task BaseOneTimeSetUp()
     {
-        Fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            PostgresqlProfileNestedSupport.FixtureRelativePath
-        );
+        Fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         MappingSet = Fixture.MappingSet;
         Database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(Fixture.GeneratedDdl);
         ServiceProvider = PostgresqlProfileNestedSupport.CreateServiceProvider();
@@ -735,8 +441,7 @@ internal abstract class PostgresqlProfileNestedFixtureBase
         }
     }
 
-    protected ResourceWritePlan WritePlan =>
-        MappingSet.WritePlansByResource[PostgresqlProfileNestedSupport.ParentResource];
+    protected ResourceWritePlan WritePlan => MappingSet.WritePlansByResource[ParentResource];
 
     protected Task<UpdateResult> ExecuteProfiledPutAsync(
         JsonNode writeBody,
@@ -795,40 +500,40 @@ internal class Given_a_ProfileNested_put_request_updating_visible_children_with_
     private const string HiddenChildCode = "CHILD-H1";
 
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileNestedChildRow> _childRows = null!;
+    private IReadOnlyList<ChildRow> _childRows = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
             parents:
             [
-                new PostgresqlProfileNestedParentInput(
+                new ParentInput(
                     ParentCode,
                     "Seed Parent",
                     Children:
                     [
-                        new PostgresqlProfileNestedChildInput(VisibleChildCodeA, "SeedV1"),
-                        new PostgresqlProfileNestedChildInput(VisibleChildCodeB, "SeedV2"),
-                        new PostgresqlProfileNestedChildInput(HiddenChildCode, "SeedHidden"),
+                        new ChildInput(VisibleChildCodeA, "SeedV1"),
+                        new ChildInput(VisibleChildCodeB, "SeedV2"),
+                        new ChildInput(HiddenChildCode, "SeedHidden"),
                     ]
                 ),
             ]
         );
         await SeedAsync(seedBody, "pgsql-profile-nested-vru-seed");
 
-        var writeBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
             parents:
             [
-                new PostgresqlProfileNestedParentInput(
+                new ParentInput(
                     ParentCode,
                     "Updated Parent",
                     Children:
                     [
-                        new PostgresqlProfileNestedChildInput(VisibleChildCodeA, "UpdatedV1"),
-                        new PostgresqlProfileNestedChildInput(VisibleChildCodeB, "UpdatedV2"),
+                        new ChildInput(VisibleChildCodeA, "UpdatedV1"),
+                        new ChildInput(VisibleChildCodeB, "UpdatedV2"),
                     ]
                 ),
             ]
@@ -837,17 +542,17 @@ internal class Given_a_ProfileNested_put_request_updating_visible_children_with_
         var profileContext = PostgresqlProfileNestedSupport.CreateProfileContext(
             WritePlan,
             writeBody.DeepClone(),
-            requestParentItems: [new PostgresqlProfileNestedRequestParentItem(ParentCode, ArrayIndex: 0)],
+            requestParentItems: [new RequestParentItem(ParentCode, ArrayIndex: 0)],
             requestChildItems:
             [
-                new PostgresqlProfileNestedRequestChildItem(ParentCode, VisibleChildCodeA, 0, 0),
-                new PostgresqlProfileNestedRequestChildItem(ParentCode, VisibleChildCodeB, 0, 1),
+                new RequestChildItem(ParentCode, VisibleChildCodeA, 0, 0),
+                new RequestChildItem(ParentCode, VisibleChildCodeB, 0, 1),
             ],
-            storedParentRows: [new PostgresqlProfileNestedStoredParentRow(ParentCode, [])],
+            storedParentRows: [new StoredParentRow(ParentCode, [])],
             storedChildRows:
             [
-                new PostgresqlProfileNestedStoredChildRow(ParentCode, VisibleChildCodeA, []),
-                new PostgresqlProfileNestedStoredChildRow(ParentCode, VisibleChildCodeB, []),
+                new StoredChildRow(ParentCode, VisibleChildCodeA, []),
+                new StoredChildRow(ParentCode, VisibleChildCodeB, []),
             ]
         );
 
@@ -895,44 +600,44 @@ internal class Given_a_ProfileNested_put_request_omitting_visible_children_with_
     private const string HiddenChildCode = "CHILD-H1";
 
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileNestedChildRow> _childRows = null!;
+    private IReadOnlyList<ChildRow> _childRows = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
             parents:
             [
-                new PostgresqlProfileNestedParentInput(
+                new ParentInput(
                     ParentCode,
                     "Seed Parent",
                     Children:
                     [
-                        new PostgresqlProfileNestedChildInput(VisibleChildCodeA, "SeedV1"),
-                        new PostgresqlProfileNestedChildInput(VisibleChildCodeB, "SeedV2"),
-                        new PostgresqlProfileNestedChildInput(HiddenChildCode, "SeedHidden"),
+                        new ChildInput(VisibleChildCodeA, "SeedV1"),
+                        new ChildInput(VisibleChildCodeB, "SeedV2"),
+                        new ChildInput(HiddenChildCode, "SeedHidden"),
                     ]
                 ),
             ]
         );
         await SeedAsync(seedBody, "pgsql-profile-nested-vrd-seed");
 
-        var writeBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            parents: [new PostgresqlProfileNestedParentInput(ParentCode, "Updated Parent", Children: [])]
+            parents: [new ParentInput(ParentCode, "Updated Parent", Children: [])]
         );
 
         var profileContext = PostgresqlProfileNestedSupport.CreateProfileContext(
             WritePlan,
             writeBody.DeepClone(),
-            requestParentItems: [new PostgresqlProfileNestedRequestParentItem(ParentCode, ArrayIndex: 0)],
+            requestParentItems: [new RequestParentItem(ParentCode, ArrayIndex: 0)],
             requestChildItems: [],
-            storedParentRows: [new PostgresqlProfileNestedStoredParentRow(ParentCode, [])],
+            storedParentRows: [new StoredParentRow(ParentCode, [])],
             storedChildRows:
             [
-                new PostgresqlProfileNestedStoredChildRow(ParentCode, VisibleChildCodeA, []),
-                new PostgresqlProfileNestedStoredChildRow(ParentCode, VisibleChildCodeB, []),
+                new StoredChildRow(ParentCode, VisibleChildCodeA, []),
+                new StoredChildRow(ParentCode, VisibleChildCodeB, []),
             ]
         );
 
@@ -975,35 +680,35 @@ internal class Given_a_ProfileNested_put_request_updating_root_extension_child_c
     private const string RootExtChildCodeB = "REC-V2";
 
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileNestedRootExtChildRow> _rootExtChildRows = null!;
-    private PostgresqlProfileNestedRootExtRow? _rootExtRow;
+    private IReadOnlyList<RootExtChildRow> _rootExtChildRows = null!;
+    private RootExtRow? _rootExtRow;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            rootExt: new PostgresqlProfileNestedRootExtInput(
+            rootExt: new RootExtInput(
                 "SeedVisible",
                 "SeedHidden",
                 Children:
                 [
-                    new PostgresqlProfileNestedRootExtChildInput(RootExtChildCodeA, "SeedRECV1"),
-                    new PostgresqlProfileNestedRootExtChildInput(RootExtChildCodeB, "SeedRECV2"),
+                    new RootExtChildInput(RootExtChildCodeA, "SeedRECV1"),
+                    new RootExtChildInput(RootExtChildCodeB, "SeedRECV2"),
                 ]
             )
         );
         await SeedAsync(seedBody, "pgsql-profile-nested-rec-update-seed");
 
-        var writeBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            rootExt: new PostgresqlProfileNestedRootExtInput(
+            rootExt: new RootExtInput(
                 "UpdatedVisible",
                 "UpdatedHidden",
                 Children:
                 [
-                    new PostgresqlProfileNestedRootExtChildInput(RootExtChildCodeA, "UpdatedRECV1"),
-                    new PostgresqlProfileNestedRootExtChildInput(RootExtChildCodeB, "UpdatedRECV2"),
+                    new RootExtChildInput(RootExtChildCodeA, "UpdatedRECV1"),
+                    new RootExtChildInput(RootExtChildCodeB, "UpdatedRECV2"),
                 ]
             )
         );
@@ -1014,22 +719,19 @@ internal class Given_a_ProfileNested_put_request_updating_root_extension_child_c
             requestParentItems: [],
             requestRootExtChildItems:
             [
-                new PostgresqlProfileNestedRequestRootExtChildItem(RootExtChildCodeA, ArrayIndex: 0),
-                new PostgresqlProfileNestedRequestRootExtChildItem(RootExtChildCodeB, ArrayIndex: 1),
+                new RequestRootExtChildItem(RootExtChildCodeA, ArrayIndex: 0),
+                new RequestRootExtChildItem(RootExtChildCodeB, ArrayIndex: 1),
             ],
-            requestRootExtScope: new PostgresqlProfileNestedRequestRootExtScope(
+            requestRootExtScope: new RequestRootExtScope(
                 ProfileVisibilityKind.VisiblePresent,
                 Creatable: true
             ),
             storedRootExtChildRows:
             [
-                new PostgresqlProfileNestedStoredRootExtChildRow(RootExtChildCodeA, []),
-                new PostgresqlProfileNestedStoredRootExtChildRow(RootExtChildCodeB, []),
+                new StoredRootExtChildRow(RootExtChildCodeA, []),
+                new StoredRootExtChildRow(RootExtChildCodeB, []),
             ],
-            storedRootExtScope: new PostgresqlProfileNestedStoredRootExtScope(
-                ProfileVisibilityKind.VisiblePresent,
-                []
-            )
+            storedRootExtScope: new StoredRootExtScope(ProfileVisibilityKind.VisiblePresent, [])
         );
 
         _putResult = await ExecuteProfiledPutAsync(
@@ -1085,21 +787,21 @@ internal class Given_a_ProfileNested_put_request_with_hidden_root_extension_scop
     private const string RootExtChildCodeB = "REC-H2";
 
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileNestedRootExtChildRow> _rootExtChildRows = null!;
-    private PostgresqlProfileNestedRootExtRow? _rootExtRow;
+    private IReadOnlyList<RootExtChildRow> _rootExtChildRows = null!;
+    private RootExtRow? _rootExtRow;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            rootExt: new PostgresqlProfileNestedRootExtInput(
+            rootExt: new RootExtInput(
                 "SeedVisible",
                 "SeedHidden",
                 Children:
                 [
-                    new PostgresqlProfileNestedRootExtChildInput(RootExtChildCodeA, "SeedRECH1"),
-                    new PostgresqlProfileNestedRootExtChildInput(RootExtChildCodeB, "SeedRECH2"),
+                    new RootExtChildInput(RootExtChildCodeA, "SeedRECH1"),
+                    new RootExtChildInput(RootExtChildCodeB, "SeedRECH2"),
                 ]
             )
         );
@@ -1107,25 +809,19 @@ internal class Given_a_ProfileNested_put_request_with_hidden_root_extension_scop
 
         // Request body keeps only the root document. Hidden extension scope means the
         // synthesizer never sees a payload for the extension and must not touch storage.
-        var writeBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(ParentResourceId);
+        var writeBody = CreateParentResourceBody(ParentResourceId);
 
         var profileContext = PostgresqlProfileNestedSupport.CreateProfileContext(
             WritePlan,
             writeBody.DeepClone(),
             requestParentItems: [],
-            requestRootExtScope: new PostgresqlProfileNestedRequestRootExtScope(
-                ProfileVisibilityKind.Hidden,
-                Creatable: false
-            ),
+            requestRootExtScope: new RequestRootExtScope(ProfileVisibilityKind.Hidden, Creatable: false),
             storedRootExtChildRows:
             [
-                new PostgresqlProfileNestedStoredRootExtChildRow(RootExtChildCodeA, []),
-                new PostgresqlProfileNestedStoredRootExtChildRow(RootExtChildCodeB, []),
+                new StoredRootExtChildRow(RootExtChildCodeA, []),
+                new StoredRootExtChildRow(RootExtChildCodeB, []),
             ],
-            storedRootExtScope: new PostgresqlProfileNestedStoredRootExtScope(
-                ProfileVisibilityKind.Hidden,
-                []
-            )
+            storedRootExtScope: new StoredRootExtScope(ProfileVisibilityKind.Hidden, [])
         );
 
         _putResult = await ExecuteProfiledPutAsync(
@@ -1185,33 +881,29 @@ internal class Given_a_ProfileNested_put_request_with_creatable_false_on_childre
     public async Task ScenarioOneTimeSetUp()
     {
         // Storage has parent A with NO stored children.
-        var seedBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
-            parents: [new PostgresqlProfileNestedParentInput(ParentACode, "Seed", Children: [])]
+            parents: [new ParentInput(ParentACode, "Seed", Children: [])]
         );
         await SeedAsync(seedBody, "pgsql-profile-nested-3l-seed");
 
         // Request adds a new child under parent A; profile makes the child scope visible
         // but NOT creatable, so the planner must reject the insert.
-        var writeBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
             parents:
             [
-                new PostgresqlProfileNestedParentInput(
-                    ParentACode,
-                    "Updated",
-                    Children: [new PostgresqlProfileNestedChildInput(ChildCodeA, "NewValue")]
-                ),
+                new ParentInput(ParentACode, "Updated", Children: [new ChildInput(ChildCodeA, "NewValue")]),
             ]
         );
 
         var profileContext = PostgresqlProfileNestedSupport.CreateProfileContext(
             WritePlan,
             writeBody.DeepClone(),
-            requestParentItems: [new PostgresqlProfileNestedRequestParentItem(ParentACode, ArrayIndex: 0)],
+            requestParentItems: [new RequestParentItem(ParentACode, ArrayIndex: 0)],
             requestChildItems:
             [
-                new PostgresqlProfileNestedRequestChildItem(
+                new RequestChildItem(
                     ParentACode,
                     ChildCodeA,
                     ParentArrayIndex: 0,
@@ -1219,7 +911,7 @@ internal class Given_a_ProfileNested_put_request_with_creatable_false_on_childre
                     Creatable: false
                 ),
             ],
-            storedParentRows: [new PostgresqlProfileNestedStoredParentRow(ParentACode, [])]
+            storedParentRows: [new StoredParentRow(ParentACode, [])]
         );
 
         _putResult = await ExecuteProfiledPutAsync(writeBody, profileContext, "pgsql-profile-nested-3l-put");
@@ -1248,44 +940,44 @@ internal class Given_a_ProfileNested_put_request_omitting_all_visible_children_w
     private const string HiddenChild = "CHILD-DAH-H";
 
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileNestedChildRow> _childRows = null!;
+    private IReadOnlyList<ChildRow> _childRows = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
-        var seedBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
             parents:
             [
-                new PostgresqlProfileNestedParentInput(
+                new ParentInput(
                     ParentCode,
                     "Seed",
                     Children:
                     [
-                        new PostgresqlProfileNestedChildInput(VisibleChildA, "SeedV1"),
-                        new PostgresqlProfileNestedChildInput(VisibleChildB, "SeedV2"),
-                        new PostgresqlProfileNestedChildInput(HiddenChild, "SeedHidden"),
+                        new ChildInput(VisibleChildA, "SeedV1"),
+                        new ChildInput(VisibleChildB, "SeedV2"),
+                        new ChildInput(HiddenChild, "SeedHidden"),
                     ]
                 ),
             ]
         );
         await SeedAsync(seedBody, "pgsql-profile-nested-dah-seed");
 
-        var writeBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
-            parents: [new PostgresqlProfileNestedParentInput(ParentCode, "Updated", Children: [])]
+            parents: [new ParentInput(ParentCode, "Updated", Children: [])]
         );
 
         var profileContext = PostgresqlProfileNestedSupport.CreateProfileContext(
             WritePlan,
             writeBody.DeepClone(),
-            requestParentItems: [new PostgresqlProfileNestedRequestParentItem(ParentCode, ArrayIndex: 0)],
+            requestParentItems: [new RequestParentItem(ParentCode, ArrayIndex: 0)],
             requestChildItems: [],
-            storedParentRows: [new PostgresqlProfileNestedStoredParentRow(ParentCode, [])],
+            storedParentRows: [new StoredParentRow(ParentCode, [])],
             storedChildRows:
             [
-                new PostgresqlProfileNestedStoredChildRow(ParentCode, VisibleChildA, []),
-                new PostgresqlProfileNestedStoredChildRow(ParentCode, VisibleChildB, []),
+                new StoredChildRow(ParentCode, VisibleChildA, []),
+                new StoredChildRow(ParentCode, VisibleChildB, []),
             ]
         );
 
@@ -1326,21 +1018,21 @@ internal class Given_a_ProfileNested_put_request_with_a_hidden_member_path_on_a_
     private const string ChildCode = "CHILD-HMP";
 
     private UpdateResult _putResult = null!;
-    private IReadOnlyList<PostgresqlProfileNestedChildRow> _childRows = null!;
+    private IReadOnlyList<ChildRow> _childRows = null!;
 
     [OneTimeSetUp]
     public async Task ScenarioOneTimeSetUp()
     {
         // Stored child carries the hidden value; the matched-row overlay must preserve
         // it on the merge regardless of what the request sends.
-        var seedBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var seedBody = CreateParentResourceBody(
             ParentResourceId,
             parents:
             [
-                new PostgresqlProfileNestedParentInput(
+                new ParentInput(
                     ParentCode,
                     "Seed",
-                    Children: [new PostgresqlProfileNestedChildInput(ChildCode, "StoredHiddenValue")]
+                    Children: [new ChildInput(ChildCode, "StoredHiddenValue")]
                 ),
             ]
         );
@@ -1348,14 +1040,14 @@ internal class Given_a_ProfileNested_put_request_with_a_hidden_member_path_on_a_
 
         // Request tries to overwrite the hidden scalar; the matched-row overlay must
         // ignore the request value at that path and copy the stored value forward.
-        var writeBody = PostgresqlProfileNestedSupport.CreateParentResourceBody(
+        var writeBody = CreateParentResourceBody(
             ParentResourceId,
             parents:
             [
-                new PostgresqlProfileNestedParentInput(
+                new ParentInput(
                     ParentCode,
                     "Updated",
-                    Children: [new PostgresqlProfileNestedChildInput(ChildCode, "RequestAttemptedValue")]
+                    Children: [new ChildInput(ChildCode, "RequestAttemptedValue")]
                 ),
             ]
         );
@@ -1363,17 +1055,10 @@ internal class Given_a_ProfileNested_put_request_with_a_hidden_member_path_on_a_
         var profileContext = PostgresqlProfileNestedSupport.CreateProfileContext(
             WritePlan,
             writeBody.DeepClone(),
-            requestParentItems: [new PostgresqlProfileNestedRequestParentItem(ParentCode, ArrayIndex: 0)],
-            requestChildItems: [new PostgresqlProfileNestedRequestChildItem(ParentCode, ChildCode, 0, 0)],
-            storedParentRows: [new PostgresqlProfileNestedStoredParentRow(ParentCode, [])],
-            storedChildRows:
-            [
-                new PostgresqlProfileNestedStoredChildRow(
-                    ParentCode,
-                    ChildCode,
-                    HiddenMemberPaths: ["childValue"]
-                ),
-            ]
+            requestParentItems: [new RequestParentItem(ParentCode, ArrayIndex: 0)],
+            requestChildItems: [new RequestChildItem(ParentCode, ChildCode, 0, 0)],
+            storedParentRows: [new StoredParentRow(ParentCode, [])],
+            storedChildRows: [new StoredChildRow(ParentCode, ChildCode, HiddenMemberPaths: ["childValue"])]
         );
 
         _putResult = await ExecuteProfiledPutAsync(writeBody, profileContext, "pgsql-profile-nested-hmp-put");

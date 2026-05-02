@@ -2668,7 +2668,11 @@ internal static class NestedTopologyBuilders
             values: values,
             semanticIdentityValues: [identityValue],
             attachedAlignedScopeData: attachedAlignedScopeData,
-            collectionCandidates: nestedChildren
+            collectionCandidates: nestedChildren,
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                parentsPlan,
+                [identityValue]
+            )
         );
     }
 
@@ -2705,7 +2709,11 @@ internal static class NestedTopologyBuilders
             ordinalPath: [0, requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [identityValue]
+            semanticIdentityValues: [identityValue],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                childrenPlan,
+                [identityValue]
+            )
         );
     }
 
@@ -2785,7 +2793,11 @@ internal static class NestedTopologyBuilders
             ordinalPath: [parentArrayIndex, requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [identityValue]
+            semanticIdentityValues: [identityValue],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                childrenPlan,
+                [identityValue]
+            )
         );
     }
 
@@ -3709,7 +3721,11 @@ internal static class DescriptorBackedNestedTopologyBuilders
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [descriptorId]
+            semanticIdentityValues: [descriptorId],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                parentsPlan,
+                [descriptorId]
+            )
         );
     }
 
@@ -4951,7 +4967,11 @@ internal static class NumericDocumentReferenceBackedNestedTopologyBuilders
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [referenceDocumentId]
+            semanticIdentityValues: [referenceDocumentId],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                parentsPlan,
+                [referenceDocumentId]
+            )
         );
     }
 
@@ -5494,7 +5514,11 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [referenceDocumentId]
+            semanticIdentityValues: [referenceDocumentId],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                parentsPlan,
+                [referenceDocumentId]
+            )
         );
     }
 
@@ -5595,7 +5619,11 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
             ordinalPath: [parentArrayIndex, childArrayIndex],
             requestOrder: childArrayIndex,
             values: values,
-            semanticIdentityValues: [childIdentity]
+            semanticIdentityValues: [childIdentity],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                childrenPlan,
+                [childIdentity]
+            )
         );
     }
 
@@ -5629,7 +5657,11 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [referenceDocumentId],
-            collectionCandidates: nestedChildren
+            collectionCandidates: nestedChildren,
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                parentsPlan,
+                [referenceDocumentId]
+            )
         );
     }
 
@@ -7151,7 +7183,11 @@ internal static class AlignedExtensionScopeWithChildrenTopologyBuilders
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [identityValue]
+            semanticIdentityValues: [identityValue],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                alignedChildrenPlan,
+                [identityValue]
+            )
         );
     }
 
