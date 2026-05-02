@@ -447,7 +447,7 @@ internal static class ProfileKeyUnificationCore
             tableWritePlan.TableModel.JsonScope.Canonical,
             member.RelativePath.Canonical
         );
-        var containingScope = TryMatchLongestScope(memberPath, candidateScopes);
+        var containingScope = ProfileScopePathHelpers.TryMatchLongestScope(memberPath, candidateScopes);
 
         if (containingScope is null)
         {
@@ -457,13 +457,14 @@ internal static class ProfileKeyUnificationCore
 
         var storedScope = lookupStoredScope(containingScope);
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
-        var strippedMemberPath = StripScopePrefix(memberPath, containingScope);
+        var strippedMemberPath = ProfileScopePathHelpers.StripScopePrefix(memberPath, containingScope);
         var governingPath = member switch
         {
-            KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived => StripScopePrefix(
-                refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
-                containingScope
-            ),
+            KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived =>
+                ProfileScopePathHelpers.StripScopePrefix(
+                    refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
+                    containingScope
+                ),
             _ => strippedMemberPath,
         };
 
@@ -513,14 +514,14 @@ internal static class ProfileKeyUnificationCore
     /// scope-relative form (e.g. <c>"memberA"</c>), which mirrors the
     /// <c>CanonicalScopeRelativeMemberPaths</c> convention used by
     /// <c>VisibleStoredCollectionRow.HiddenMemberPaths</c>. The absolute binding path and the
-    /// absolute reference-object path must therefore be stripped via <see cref="StripScopePrefix"/>
+    /// absolute reference-object path must therefore be stripped via <see cref="ProfileScopePathHelpers.StripScopePrefix"/>
     /// before the lookup — exactly as the scope-state path in
     /// <see cref="ClassifyMemberVisibility"/> does.
     /// </para>
     /// <para>
-    /// For the root scope (<c>"$"</c>), <c>StripScopePrefix("$.memberA", "$") = "memberA"</c>,
+    /// For the root scope (<c>"$"</c>), <c>ProfileScopePathHelpers.StripScopePrefix("$.memberA", "$") = "memberA"</c>,
     /// and for a collection scope (<c>"$.classPeriods[*]"</c>),
-    /// <c>StripScopePrefix("$.classPeriods[*].memberA", "$.classPeriods[*]") = "memberA"</c>.
+    /// <c>ProfileScopePathHelpers.StripScopePrefix("$.classPeriods[*].memberA", "$.classPeriods[*]") = "memberA"</c>.
     /// Both produce the bare form that matches entries in the hidden set.
     /// </para>
     /// <para>
@@ -552,14 +553,15 @@ internal static class ProfileKeyUnificationCore
             scope,
             member.RelativePath.Canonical
         );
-        var strippedMemberPath = StripScopePrefix(memberPath, scope);
+        var strippedMemberPath = ProfileScopePathHelpers.StripScopePrefix(memberPath, scope);
 
         var governingPath = member switch
         {
-            KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived => StripScopePrefix(
-                refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
-                scope
-            ),
+            KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived =>
+                ProfileScopePathHelpers.StripScopePrefix(
+                    refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
+                    scope
+                ),
             _ => strippedMemberPath,
         };
 
@@ -642,35 +644,6 @@ internal static class ProfileKeyUnificationCore
         return isPresent
             ? KeyUnificationMemberEvaluation.Present(storedValue!)
             : KeyUnificationMemberEvaluation.Absent;
-    }
-
-    private static string? TryMatchLongestScope(string bindingPath, ImmutableArray<string> candidateScopes)
-    {
-        foreach (var scope in candidateScopes)
-        {
-            if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-            {
-                return scope;
-            }
-            if (
-                bindingPath.StartsWith(scope, StringComparison.Ordinal)
-                && bindingPath.Length > scope.Length
-                && bindingPath[scope.Length] == '.'
-            )
-            {
-                return scope;
-            }
-        }
-        return null;
-    }
-
-    private static string StripScopePrefix(string bindingPath, string scope)
-    {
-        if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-        {
-            return string.Empty;
-        }
-        return bindingPath[(scope.Length + 1)..];
     }
 
     private static string FormatLiteral(object? value) =>

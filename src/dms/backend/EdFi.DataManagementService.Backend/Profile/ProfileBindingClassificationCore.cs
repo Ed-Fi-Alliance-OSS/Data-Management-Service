@@ -233,21 +233,28 @@ internal static class ProfileBindingClassificationCore
                     tableScopeCanonicalForKeyUnification,
                     member.RelativePath.Canonical
                 );
-                var containingScope = TryMatchLongestScope(memberPathAbsolute, candidateScopes);
+                var containingScope = ProfileScopePathHelpers.TryMatchLongestScope(
+                    memberPathAbsolute,
+                    candidateScopes
+                );
 
                 if (containingScope is null)
                 {
                     continue;
                 }
 
-                var strippedMemberPath = StripScopePrefix(memberPathAbsolute, containingScope);
+                var strippedMemberPath = ProfileScopePathHelpers.StripScopePrefix(
+                    memberPathAbsolute,
+                    containingScope
+                );
                 var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
                 var governingPath = member switch
                 {
-                    KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived => StripScopePrefix(
-                        refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
-                        containingScope
-                    ),
+                    KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived =>
+                        ProfileScopePathHelpers.StripScopePrefix(
+                            refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
+                            containingScope
+                        ),
                     _ => strippedMemberPath,
                 };
 
@@ -494,14 +501,14 @@ internal static class ProfileBindingClassificationCore
         governingPathAbsolute = ToAbsoluteBindingPath(tableScopeCanonical, governingPathAbsolute);
 
         // Longest-prefix scope match. If no profile scope matches, the binding is ungoverned.
-        var containingScope = TryMatchLongestScope(bindingPath, candidateScopes);
+        var containingScope = ProfileScopePathHelpers.TryMatchLongestScope(bindingPath, candidateScopes);
         if (containingScope is null)
         {
             return RootBindingDisposition.VisibleWritable;
         }
 
-        var memberPath = StripScopePrefix(bindingPath, containingScope);
-        var governingPath = StripScopePrefix(governingPathAbsolute, containingScope);
+        var memberPath = ProfileScopePathHelpers.StripScopePrefix(bindingPath, containingScope);
+        var governingPath = ProfileScopePathHelpers.StripScopePrefix(governingPathAbsolute, containingScope);
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(binding.Source);
 
         // Record this binding under its containing scope so the post-pass drift check can
@@ -668,7 +675,7 @@ internal static class ProfileBindingClassificationCore
     /// Returns the longest table-backed JSON-scope prefix of <paramref name="scopeAddress"/>
     /// from <paramref name="tableBackedScopesLongestFirst"/>, or <c>null</c> if no
     /// table-backed scope is a segment-boundary prefix of <paramref name="scopeAddress"/>.
-    /// Prefix semantics match <see cref="TryMatchLongestScope"/>: a prefix must equal
+    /// Prefix semantics match <see cref="ProfileScopePathHelpers.TryMatchLongestScope"/>: a prefix must equal
     /// <paramref name="scopeAddress"/>, or be followed by a <c>.</c> separator. This is the
     /// "which table owns this scope?" resolver — the returned value is the JSON scope of
     /// the table that owns a binding at <paramref name="scopeAddress"/>. The caller treats
@@ -714,7 +721,7 @@ internal static class ProfileBindingClassificationCore
     /// Returns <c>true</c> when <paramref name="maybePrefix"/> is equal to
     /// <paramref name="scopeAddress"/>, or is a segment-boundary prefix (i.e., followed by
     /// a <c>.</c> separator). Mirrors the segment-boundary rule used by
-    /// <see cref="TryMatchLongestScope"/> so table-ownership resolution and binding-to-
+    /// <see cref="ProfileScopePathHelpers.TryMatchLongestScope"/> so table-ownership resolution and binding-to-
     /// scope matching share identical prefix semantics.
     /// </summary>
     private static bool IsEqualOrSegmentPrefix(string maybePrefix, string scopeAddress)
@@ -787,39 +794,6 @@ internal static class ProfileBindingClassificationCore
             ),
         };
 
-    private static string? TryMatchLongestScope(string bindingPath, ImmutableArray<string> candidateScopes)
-    {
-        // candidateScopes is pre-sorted longest-first.
-        foreach (var scope in candidateScopes)
-        {
-            if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-            {
-                return scope;
-            }
-            if (
-                bindingPath.StartsWith(scope, StringComparison.Ordinal)
-                && bindingPath.Length > scope.Length
-                && bindingPath[scope.Length] == '.'
-            )
-            {
-                return scope;
-            }
-        }
-        return null;
-    }
-
-    private static string StripScopePrefix(string bindingPath, string scope)
-    {
-        if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-        {
-            // Binding path equals the scope itself — member path is empty (rare; an exact-path
-            // hidden match would also have to be empty-string for it to govern).
-            return string.Empty;
-        }
-        // bindingPath = scope + '.' + memberPath
-        return bindingPath[(scope.Length + 1)..];
-    }
-
     internal static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 
@@ -868,12 +842,6 @@ internal static class ProfileBindingClassificationCore
                 $"Unexpected binding path '{bindingPath}' for table scope '{tableScope}': "
                     + "expected a canonical JSON path beginning with '$'."
             );
-        }
-
-        if (string.Equals(tableScope, "$", StringComparison.Ordinal))
-        {
-            // Root scope: the scope-relative path "$.foo" is already absolute against "$".
-            return bindingPath;
         }
 
         return tableScope + bindingPath.AsSpan(1).ToString();

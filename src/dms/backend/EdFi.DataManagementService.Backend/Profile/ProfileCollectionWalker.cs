@@ -1671,14 +1671,11 @@ internal sealed class ProfileCollectionWalker
                     tablePlan.TableModel,
                     hydratedRow
                 );
-                var parentValues = parentBindingIndexes
-                    .Select(bi => projectedRow.Values[bi])
-                    .ToImmutableArray();
 
                 result[(tablePlan.TableModel.Table, parentKey)] = new CurrentSeparateScopeRowProjection(
                     ProjectedRow: projectedRow,
                     ColumnNameProjection: columnNameProjection,
-                    ParentPhysicalIdentityValues: parentValues
+                    ParentPhysicalIdentityValues: parentKey.Values
                 );
             }
         }
