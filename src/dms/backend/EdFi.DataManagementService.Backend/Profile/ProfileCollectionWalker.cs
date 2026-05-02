@@ -1285,12 +1285,9 @@ internal sealed class ProfileCollectionWalker
     /// Returns <c>true</c> when <paramref name="childScope"/> is a mirrored collection-aligned
     /// extension scope of the form
     /// <c>$._ext.&lt;extensionName&gt;.&lt;parentRemainder&gt;._ext.&lt;extensionName&gt;</c>
-    /// where <c>parentRemainder</c> equals <paramref name="parentScope"/> minus its leading
-    /// <c>$</c>. Mirrors the flattener's mirrored-extension detection in
-    /// <c>RelationalWriteFlattener.BuildAttachedAlignedScopePlansByParentScope</c>, which
-    /// maps such scopes back to the base parent collection. Without this, the walker would
-    /// silently skip mirrored aligned scopes during dispatch because the canonical child
-    /// path does not start with the parent scope.
+    /// whose implied parent collection scope equals <paramref name="parentScope"/>.
+    /// Delegates the strict shape contract to <see cref="AlignedExtensionScopeSupport"/>
+    /// so the flattener and the walker classify mirrored scopes identically.
     /// </summary>
     internal static bool IsDirectMirroredCollectionExtensionScopeChild(string parentScope, string childScope)
     {
@@ -1302,48 +1299,9 @@ internal sealed class ProfileCollectionWalker
             return false;
         }
 
-        const string mirroredExtensionPrefix = "$._ext.";
-        if (!childScope.StartsWith(mirroredExtensionPrefix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var afterPrefix = childScope.AsSpan(mirroredExtensionPrefix.Length);
-        var firstDot = afterPrefix.IndexOf('.');
-        var firstBracket = afterPrefix.IndexOf('[');
-        if (firstDot < 0 || (firstBracket >= 0 && firstBracket < firstDot))
-        {
-            return false;
-        }
-
-        var firstExtensionName = afterPrefix[..firstDot];
-        if (firstExtensionName.IsEmpty)
-        {
-            return false;
-        }
-
-        var trailingExtensionSuffixLength = "._ext.".Length + firstExtensionName.Length;
-        if (
-            childScope.Length
-            < mirroredExtensionPrefix.Length + firstExtensionName.Length + trailingExtensionSuffixLength
-        )
-        {
-            return false;
-        }
-
-        var trailingStart = childScope.Length - trailingExtensionSuffixLength;
-        if (
-            !childScope.AsSpan(trailingStart, "._ext.".Length).SequenceEqual("._ext.")
-            || !childScope.AsSpan(trailingStart + "._ext.".Length).SequenceEqual(firstExtensionName)
-        )
-        {
-            return false;
-        }
-
-        var middleStart = mirroredExtensionPrefix.Length + firstExtensionName.Length;
-        var middle = childScope.AsSpan(middleStart, trailingStart - middleStart);
-        var parentRemainder = parentScope.AsSpan(1);
-        return middle.SequenceEqual(parentRemainder);
+        return AlignedExtensionScopeSupport.Classify(childScope)
+                is { IsMirrored: true, ParentCollectionScope: var impliedParentScope }
+            && string.Equals(impliedParentScope, parentScope, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -2171,37 +2129,15 @@ internal sealed class ProfileCollectionWalker
     /// parent collection's JsonScope. Handles both shapes:
     /// <list type="bullet">
     ///   <item><description>Standard: <c>"$.A[*]._ext.sample"</c> → <c>"$.A[*]"</c>.</description></item>
-    ///   <item><description>Mirrored (per <c>RelationalWriteFlattener</c>'s mirrored-extension
-    ///   detection): <c>"$._ext.sample.A[*]._ext.sample"</c> → <c>"$.A[*]"</c>.</description></item>
+    ///   <item><description>Mirrored (per <see cref="AlignedExtensionScopeSupport"/>'s
+    ///   matching-name contract): <c>"$._ext.sample.A[*]._ext.sample"</c> →
+    ///   <c>"$.A[*]"</c>.</description></item>
     /// </list>
     /// Returns <c>null</c> when the scope does not match the aligned-extension trailing
     /// pattern.
     /// </summary>
-    internal static string? StripAlignedScopeToParentCollectionScope(string alignedScope)
-    {
-        var lastExt = alignedScope.LastIndexOf("._ext.", StringComparison.Ordinal);
-        if (lastExt < 0)
-        {
-            return null;
-        }
-
-        var afterLastExt = alignedScope.AsSpan(lastExt + "._ext.".Length);
-        if (afterLastExt.IsEmpty || afterLastExt.IndexOf('.') >= 0 || afterLastExt.IndexOf('[') >= 0)
-        {
-            return null;
-        }
-
-        var trailingExtName = afterLastExt.ToString();
-        var withoutTrailing = alignedScope[..lastExt];
-
-        var mirroredPrefix = $"$._ext.{trailingExtName}.";
-        if (withoutTrailing.StartsWith(mirroredPrefix, StringComparison.Ordinal))
-        {
-            return "$." + withoutTrailing[mirroredPrefix.Length..];
-        }
-
-        return withoutTrailing;
-    }
+    internal static string? StripAlignedScopeToParentCollectionScope(string alignedScope) =>
+        AlignedExtensionScopeSupport.Classify(alignedScope)?.ParentCollectionScope;
 
     /// <summary>
     /// Strips the trailing array-element segment from a canonical JsonScope to yield the

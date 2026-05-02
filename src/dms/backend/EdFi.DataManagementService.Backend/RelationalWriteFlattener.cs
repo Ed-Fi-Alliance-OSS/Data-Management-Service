@@ -206,22 +206,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 .GetRestrictedSegments(tableWritePlan.TableModel.JsonScope)
                 .ToArray();
 
-            if (
-                scopeSegments.Length < 2
-                || scopeSegments[^2] is not JsonPathSegment.Property extensionMarker
-                || scopeSegments[^1] is not JsonPathSegment.Property
-                || !string.Equals(extensionMarker.Name, "_ext", StringComparison.Ordinal)
-            )
-            {
-                throw new InvalidOperationException(
+            var alignedScopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+            var alignedShape =
+                AlignedExtensionScopeSupport.Classify(alignedScopeCanonical)
+                ?? throw new InvalidOperationException(
                     $"Collection-aligned extension table '{FormatTable(tableWritePlan)}' does not have a canonical aligned scope."
                 );
-            }
-
-            var isMirroredExtensionScope =
-                scopeSegments.Length >= 4
-                && scopeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
-                && scopeSegments[1] is JsonPathSegment.Property;
+            var isMirroredExtensionScope = alignedShape.IsMirrored;
             var parentScopeSegments = isMirroredExtensionScope ? scopeSegments[2..^2] : scopeSegments[..^2];
             var parentScopeCanonical = RelationalJsonPathSupport.BuildCanonical(parentScopeSegments);
             var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
