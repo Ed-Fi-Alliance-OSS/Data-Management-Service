@@ -44,8 +44,22 @@ public class Given_SeparateTableClassifier_instance_aware_overload_for_sibling_s
         var storedB = new StoredScopeState(addressB, ProfileVisibilityKind.VisiblePresent, []);
 
         var classifier = new ProfileSeparateTableBindingClassifier();
-        _hiddenInstance = classifier.Classify(plan, separateTable, addressA, requestA, storedA);
-        _visibleInstance = classifier.Classify(plan, separateTable, addressB, requestB, storedB);
+        _hiddenInstance = classifier.Classify(
+            plan,
+            separateTable,
+            addressA,
+            requestA,
+            storedA,
+            descendantStates: default
+        );
+        _visibleInstance = classifier.Classify(
+            plan,
+            separateTable,
+            addressB,
+            requestB,
+            storedB,
+            descendantStates: default
+        );
     }
 
     [Test]
@@ -95,7 +109,8 @@ public class Given_SeparateTableClassifier_instance_aware_overload_for_Collectio
                 separateTable,
                 scopeAddress,
                 requestScope,
-                storedScope: null
+                storedScope: null,
+                descendantStates: default
             );
         }
         catch (Exception ex)
@@ -141,7 +156,8 @@ public class Given_SeparateTableClassifier_rejects_unsupported_table_kind
                 separateTable,
                 scopeAddress,
                 requestScope,
-                storedScope: null
+                storedScope: null,
+                descendantStates: default
             );
     }
 

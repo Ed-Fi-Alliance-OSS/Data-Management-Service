@@ -51,6 +51,7 @@ public class Given_SeparateTableResolver_instance_aware_overload_for_CollectionE
                 scopeAddress,
                 requestScope,
                 storedScope: null,
+                descendantStates: default,
                 row,
                 ImmutableHashSet<int>.Empty
             );
@@ -100,6 +101,7 @@ public class Given_SeparateTableResolver_rejects_unsupported_table_kind
                 scopeAddress,
                 requestScope,
                 storedScope: null,
+                descendantStates: default,
                 row,
                 ImmutableHashSet.Create(1)
             );
@@ -169,6 +171,7 @@ public class Given_SeparateTableResolver_instance_aware_overload_for_sibling_sco
             addressB,
             requestB,
             storedB,
+            descendantStates: default,
             _row,
             resolverOwned
         );

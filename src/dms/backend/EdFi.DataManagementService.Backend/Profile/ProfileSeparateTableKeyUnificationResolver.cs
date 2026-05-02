@@ -60,16 +60,6 @@ internal interface IProfileSeparateTableKeyUnificationResolver
         ScopeInstanceAddress scopeAddress,
         RequestScopeState? requestScope,
         StoredScopeState? storedScope,
-        FlattenedWriteValue[] mergedRowValuesMutable,
-        ImmutableHashSet<int> resolverOwnedBindingIndices
-    );
-
-    void Resolve(
-        TableWritePlan separateTablePlan,
-        ProfileSeparateTableKeyUnificationContext context,
-        ScopeInstanceAddress scopeAddress,
-        RequestScopeState? requestScope,
-        StoredScopeState? storedScope,
         ProfileSeparateScopeDescendantStates descendantStates,
         FlattenedWriteValue[] mergedRowValuesMutable,
         ImmutableHashSet<int> resolverOwnedBindingIndices
@@ -78,26 +68,6 @@ internal interface IProfileSeparateTableKeyUnificationResolver
 
 internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSeparateTableKeyUnificationResolver
 {
-    public void Resolve(
-        TableWritePlan separateTablePlan,
-        ProfileSeparateTableKeyUnificationContext context,
-        ScopeInstanceAddress scopeAddress,
-        RequestScopeState? requestScope,
-        StoredScopeState? storedScope,
-        FlattenedWriteValue[] mergedRowValuesMutable,
-        ImmutableHashSet<int> resolverOwnedBindingIndices
-    ) =>
-        Resolve(
-            separateTablePlan,
-            context,
-            scopeAddress,
-            requestScope,
-            storedScope,
-            descendantStates: default,
-            mergedRowValuesMutable,
-            resolverOwnedBindingIndices
-        );
-
     public void Resolve(
         TableWritePlan separateTablePlan,
         ProfileSeparateTableKeyUnificationContext context,

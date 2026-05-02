@@ -29,14 +29,6 @@ internal interface IProfileSeparateTableBindingClassifier
         TableWritePlan separateTablePlan,
         ScopeInstanceAddress scopeAddress,
         RequestScopeState? requestScope,
-        StoredScopeState? storedScope
-    );
-
-    ProfileSeparateTableBindingClassification Classify(
-        ResourceWritePlan writePlan,
-        TableWritePlan separateTablePlan,
-        ScopeInstanceAddress scopeAddress,
-        RequestScopeState? requestScope,
         StoredScopeState? storedScope,
         ProfileSeparateScopeDescendantStates descendantStates
     );
@@ -49,22 +41,6 @@ internal interface IProfileSeparateTableBindingClassifier
 /// </summary>
 internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTableBindingClassifier
 {
-    public ProfileSeparateTableBindingClassification Classify(
-        ResourceWritePlan writePlan,
-        TableWritePlan separateTablePlan,
-        ScopeInstanceAddress scopeAddress,
-        RequestScopeState? requestScope,
-        StoredScopeState? storedScope
-    ) =>
-        Classify(
-            writePlan,
-            separateTablePlan,
-            scopeAddress,
-            requestScope,
-            storedScope,
-            descendantStates: default
-        );
-
     public ProfileSeparateTableBindingClassification Classify(
         ResourceWritePlan writePlan,
         TableWritePlan separateTablePlan,
