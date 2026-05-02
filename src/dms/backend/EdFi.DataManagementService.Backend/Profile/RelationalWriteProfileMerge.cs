@@ -186,9 +186,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 : request.FlattenedWriteSet.RootRow.Values;
 
         // 1a. Top-level collection merge — runs unconditionally so that stored-only
-        //     "delete-all-visible" scenarios (Blocker #2 fix: spec Section 7.7) are driven
-        //     from the union of request-side, stored-side, and DB-side sources rather than
-        //     only when request-side candidates are present.
+        //     "delete-all-visible" scenarios (spec Section 7.7) are driven from the union
+        //     of request-side, stored-side, and DB-side sources rather than only when
+        //     request-side candidates are present.
         // Build the root walker context. The walker owns top-level collection synthesis
         // directly: WalkChildren reads the per-merge indexes and dispatches through the
         // planner per scope.

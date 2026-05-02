@@ -365,12 +365,13 @@ internal sealed class ProfileCollectionWalker
             // 4. Translate plan entries to merged rows in sequence order.
             var mergedRows = new List<RelationalWriteMergedTableRow>(success.Plan.Sequence.Length);
 
-            // Blocker #1 fix: CurrentRows must contain ALL rows currently in the DB for
-            // this scope — including omitted-visible rows that the planner excluded from
+            // Invariant: CurrentRows must contain ALL rows currently in the DB for this
+            // scope — including omitted-visible rows that the planner excluded from
             // Sequence. The persister's delete-by-absence logic relies on the set-difference
             // (StableRowIdentity in CurrentRows but not in MergedRows → delete). Building
-            // currentCollectionRows only from plan Sequence entries means omitted-visible
-            // rows are invisible to the persister and are never deleted.
+            // currentCollectionRows only from plan Sequence entries would make
+            // omitted-visible rows invisible to the persister, so they would never be
+            // deleted.
             var currentCollectionRows = currentRowsForScope.Select(snap => snap.ProjectedCurrentRow).ToList();
 
             // Build a lookup from candidate identity key → VisibleRequestCollectionItem so we

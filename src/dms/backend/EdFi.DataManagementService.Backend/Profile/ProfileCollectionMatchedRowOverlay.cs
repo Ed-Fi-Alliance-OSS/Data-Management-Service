@@ -188,7 +188,7 @@ internal static class ProfileCollectionMatchedRowOverlay
                 RootBindingDisposition.HiddenPreserved => storedValues[i],
                 RootBindingDisposition.StorageManaged => storedValues[i],
                 RootBindingDisposition.ClearOnVisibleAbsent => throw new InvalidOperationException(
-                    $"ClearOnVisibleAbsent disposition is not expected for top-level collection rows; "
+                    $"ClearOnVisibleAbsent disposition is not expected for collection rows; "
                         + "row-level omission is row-delete, not per-column clear. "
                         + $"Binding index {i} on table '{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}' "
                         + $"produced {nameof(RootBindingDisposition.ClearOnVisibleAbsent)}."

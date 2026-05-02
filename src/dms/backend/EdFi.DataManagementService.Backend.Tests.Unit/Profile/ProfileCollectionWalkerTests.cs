@@ -207,21 +207,19 @@ public class Given_a_walker_constructed_for_a_top_level_base_collection
 }
 
 /// <summary>
-/// CP2 Task 9: when the walker emits a matched parent row at <c>$.parents[*]</c>, it must
-/// recurse <see cref="ProfileCollectionWalker.WalkChildren"/> with a nested-row context so
-/// direct child collection scopes (here, <c>$.parents[*].children[*]</c>) get planned. The
-/// nested-recursion code path is exercised even when the request supplies no candidates
-/// for the nested children scope: the constructor-side fence in
-/// <c>RelationalWriteProfileMergeRequest</c> still rejects fully-realized nested
-/// CollectionCandidates (Task 12 retires it). What this fixture proves structurally is
-/// that the walker visits the nested children scope under each matched parent, reads the
-/// children's current rows from the per-merge index keyed by the parent's
-/// PhysicalRowIdentity, and the per-table builder (Task 9a) aggregates the children rows
-/// across recursion calls into ONE consolidated <see cref="RelationalWriteMergedTableState"/>
-/// for the children table. Stored visible rows under each parent are reverse-coverage-
-/// checked and (with no candidates available) omitted from the merged sequence,
-/// producing 3 currentCollectionRows + 0 merged rows on the consolidated children table
-/// state — the correct partitioning the persister consumes for delete-by-absence.
+/// When the walker emits a matched parent row at <c>$.parents[*]</c>, it must recurse
+/// <see cref="ProfileCollectionWalker.WalkChildren"/> with a nested-row context so direct
+/// child collection scopes (here, <c>$.parents[*].children[*]</c>) get planned. This
+/// fixture deliberately supplies no nested CollectionCandidates so the recursion path
+/// can be observed in isolation: the walker still visits the nested children scope
+/// under each matched parent, reads the children's current rows from the per-merge index
+/// keyed by the parent's PhysicalRowIdentity, and the per-table builder aggregates the
+/// children rows across recursion calls into ONE consolidated
+/// <see cref="RelationalWriteMergedTableState"/> for the children table. Stored visible
+/// rows under each parent are reverse-coverage-checked and (with no candidates available)
+/// omitted from the merged sequence, producing 3 currentCollectionRows + 0 merged rows
+/// on the consolidated children table state — the correct partitioning the persister
+/// consumes for delete-by-absence.
 /// </summary>
 [TestFixture]
 public class Given_two_top_level_collection_rows_each_with_a_nested_base_collection
@@ -245,9 +243,10 @@ public class Given_two_top_level_collection_rows_each_with_a_nested_base_collect
         _childrenPlan = childrenPlan;
         var rootPlan = plan.TablePlansInDependencyOrder[0];
 
-        // Request body shape: parent rows with no children-array attached, since the
-        // constructor fence forbids nested CollectionCandidates and Task 9 isn't retiring
-        // that fence. The request body still references parents A and B at the top level.
+        // Request body shape: parent rows with no children-array attached. This fixture is
+        // purposely scoped to "recursion + delete-by-absence partitioning"; richer
+        // nested-merge scenarios are covered by their own fixtures. The request body still
+        // references parents A and B at the top level.
         var body = new JsonObject
         {
             ["parents"] = new JsonArray(
@@ -256,20 +255,18 @@ public class Given_two_top_level_collection_rows_each_with_a_nested_base_collect
             ),
         };
 
-        // Top-level CollectionCandidates carry parents A, B with empty CollectionCandidates
-        // (the constructor gate verifies this). The candidate Values arrays follow the
-        // parents table binding order: [ParentItemId, ParentDocumentId, Ordinal, IdentityField0].
+        // Top-level CollectionCandidates carry parents A, B with empty nested
+        // CollectionCandidates. The candidate Values arrays follow the parents table
+        // binding order: [ParentItemId, ParentDocumentId, Ordinal, IdentityField0].
         var candidateA = NestedTopologyBuilders.BuildParentCandidate(parentsPlan, "A", 0);
         var candidateB = NestedTopologyBuilders.BuildParentCandidate(parentsPlan, "B", 1);
 
         // Request items: parents A, B only. The nested children scope has no visible
-        // request items because the constructor fence on RelationalWriteProfileMergeRequest
-        // forbids nested CollectionCandidates; the planner's request-side coverage
-        // invariant requires every visible request item to have a matching candidate, so
-        // including child request items here without children candidates would fail-closed.
-        // Task 12 retires the constructor fence and lets the full nested-merge flow
-        // exercise; this Task 9 fixture is purposely scoped to "recursion + delete-by-
-        // absence partitioning" so the structural recursion is observable in isolation.
+        // request items here because no nested CollectionCandidates are attached; the
+        // planner's request-side coverage invariant requires every visible request item
+        // to have a matching candidate, so including child request items without children
+        // candidates would fail-closed. Keeping the structure scoped this way isolates the
+        // recursion path so the structural behavior is observable.
         var requestItems = ImmutableArray.Create(
             NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
             NestedTopologyBuilders.BuildParentRequestItem("B", arrayIndex: 1)
@@ -720,27 +717,28 @@ public class Given_a_hidden_top_level_parent_with_nested_descendants
 
         // Request body: only parent B is in the request (parent A is hidden, so the
         // profile cannot expose it for write). No children are attached to B in the
-        // request body because the constructor fence on RelationalWriteProfileMergeRequest
-        // forbids nested CollectionCandidates (Task 12 retires the fence).
+        // request body — this fixture deliberately omits nested CollectionCandidates so
+        // the Normal-mode HiddenPreserveEntry path for the nested child can be exercised
+        // in isolation.
         var body = new JsonObject
         {
             ["parents"] = new JsonArray(new JsonObject { ["identityField0"] = "B" }),
         };
 
         // Top-level CollectionCandidate for B only — A is hidden and has no candidate.
-        // Empty CollectionCandidates on B passes the constructor gate.
+        // B carries empty nested CollectionCandidates.
         var candidateB = NestedTopologyBuilders.BuildParentCandidate(parentsPlan, "B", 0);
 
         // Visible-request-items: B at $.parents[0] (creatable so an unmatched insert
         // would also be valid; the planner sees B as matched here because B is in
         // VisibleStoredCollectionRows).
         //
-        // No visible-request-item for B's child: the constructor fence forbids the
-        // nested candidate, and the planner's request-side coverage invariant requires
-        // every visible request item to have a matching candidate. So B's child is
-        // represented to the planner via current rows only — a hidden row in the nested
-        // children scope, routed through the Normal-mode HiddenPreserveEntry switch case
-        // (which DOES recompute the ordinal) for exactly the contrast this fixture pins.
+        // No visible-request-item for B's child: this fixture supplies no nested
+        // candidate, and the planner's request-side coverage invariant requires every
+        // visible request item to have a matching candidate. So B's child is represented
+        // to the planner via current rows only — a hidden row in the nested children
+        // scope, routed through the Normal-mode HiddenPreserveEntry switch case (which
+        // DOES recompute the ordinal) for exactly the contrast this fixture pins.
         var requestItems = ImmutableArray.Create(
             NestedTopologyBuilders.BuildParentRequestItem("B", arrayIndex: 0)
         );
@@ -2954,9 +2952,8 @@ public class Given_a_descriptor_backed_parent_collection_with_nested_children
         var rootPlan = plan.TablePlansInDependencyOrder[0];
 
         // Request body: one parent referencing a descriptor URI. No nested-children
-        // CollectionCandidates (the constructor fence on RelationalWriteProfileMergeRequest
-        // still rejects fully-realized nested candidates per Task 12), matching the existing
-        // nested-walker fixtures.
+        // CollectionCandidates are attached, matching the existing nested-walker fixtures
+        // that scope the assertion to the descriptor-canonicalization path.
         var body = new JsonObject
         {
             ["parents"] = new JsonArray(
@@ -3063,13 +3060,13 @@ public class Given_a_descriptor_backed_parent_collection_with_nested_children
     public void It_routes_children_through_delete_by_absence_when_visible_stored_lookup_hits()
     {
         // Discriminator: the children scope has two visible-stored rows under the matched
-        // parent address but ZERO visible-request items (the constructor fence forbids
-        // nested CollectionCandidates) and TWO current rows. The persister's correct
-        // outcome is delete-by-absence — visible-stored rows whose visible-request items
-        // were omitted from the request must be deleted. The planner achieves this by
-        // emitting NO entries for those rows (Phase 2 hits the "visible slot with no
-        // merged entry to consume → omitted" branch), so the children TableState carries
-        // ZERO merged rows; the persister's set-difference (current − merged) deletes both.
+        // parent address but ZERO visible-request items (this fixture supplies no nested
+        // CollectionCandidates) and TWO current rows. The persister's correct outcome is
+        // delete-by-absence — visible-stored rows whose visible-request items were omitted
+        // from the request must be deleted. The planner achieves this by emitting NO
+        // entries for those rows (Phase 2 hits the "visible slot with no merged entry to
+        // consume → omitted" branch), so the children TableState carries ZERO merged
+        // rows. The persister's set-difference (current − merged) then deletes both.
         //
         // Without the ancestor-canonicalization fix, the walker's recursion lookup at
         // (childScope, parentAddrWithInt64Ancestor) misses the index entry keyed by
