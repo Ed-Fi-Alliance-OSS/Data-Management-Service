@@ -291,8 +291,8 @@ public class Given_Synthesizer_SeparateTable_Contract_Allows_CollectionCandidate
         var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
         var extensionPlan = AdapterFactoryTestFixtures.BuildRootExtensionTableWritePlan(extensionTableModel);
 
-        // Nested collection candidate under the extension row — CP3 Task 21 allows
-        // request construction so the walker can handle the shape.
+        // Nested collection candidate under the extension row — request construction
+        // accepts this shape so the walker can handle it.
         var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
         var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
         var nestedCollectionCandidate = new CollectionWriteCandidate(
@@ -1816,9 +1816,9 @@ public class Given_ProfileMergeRequest_with_attached_aligned_scope_data_on_top_l
 }
 
 /// <summary>
-/// CP3 Task 21 retires the constructor fence on AttachedAlignedScopeData at any
-/// collection-candidate depth. Nested attached aligned data must now be accepted by
-/// request construction and handled by the walker when that topology opens.
+/// The constructor no longer fences AttachedAlignedScopeData at any collection-candidate
+/// depth. Nested attached aligned data is accepted by request construction and handled
+/// by the walker when that topology opens.
 /// </summary>
 [TestFixture]
 public class Given_a_RelationalWriteProfileMergeRequest_with_AttachedAlignedScopeData_on_a_nested_candidate
@@ -1841,8 +1841,8 @@ public class Given_a_RelationalWriteProfileMergeRequest_with_AttachedAlignedScop
             alignedTableModel
         );
 
-        // The NESTED candidate carries non-empty AttachedAlignedScopeData. CP3 Task 21
-        // accepts this at construction time.
+        // The NESTED candidate carries non-empty AttachedAlignedScopeData; this is
+        // accepted at construction time.
         var attachedAlignedScope = new CandidateAttachedAlignedScopeData(
             tableWritePlan: alignedPlan,
             values:
@@ -2886,8 +2886,8 @@ internal static class CollectionSynthesizerBuilders
 //    integration tests land that capability. The underlying key-unification path is
 //    exercised by ProfileKeyUnificationCoreTests + ProfileCollectionMatchedRowOverlayTests.
 //
-// 2. CP3 Task 21 retires the constructor and emission-site fences for
-//    AttachedAlignedScopeData and root-extension child CollectionCandidates. The remaining
+// 2. The constructor and emission-site fences for AttachedAlignedScopeData and
+//    root-extension child CollectionCandidates have been retired. The remaining
 //    constructor validation only rejects structurally invalid table kinds.
 // ------------------------------------------------------------------------
 
