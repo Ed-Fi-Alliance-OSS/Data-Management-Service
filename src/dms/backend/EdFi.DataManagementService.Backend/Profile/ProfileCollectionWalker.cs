@@ -391,29 +391,13 @@ internal sealed class ProfileCollectionWalker
                 {
                     case ProfileCollectionPlanEntry.MatchedUpdateEntry matchedEntry:
                         // Resolve the concrete request item node from the writable request body.
-                        var candidateKey = SemanticIdentityKeys.BuildKey(matchedEntry.RequestCandidate);
-                        if (!candidateKeyToRequestItem.TryGetValue(candidateKey, out var requestItem))
-                        {
-                            throw new InvalidOperationException(
-                                $"MatchedUpdateEntry for scope '{jsonScope}' could not locate a "
-                                    + "VisibleRequestCollectionItem for the candidate's semantic identity."
-                            );
-                        }
-
-                        var concreteRequestItemNode =
-                            RelationalWriteProfileMergeSynthesizer.ResolveCollectionItemNode(
-                                writableRequestBody,
-                                requestItem.RequestJsonPath
-                            );
-
-                        if (concreteRequestItemNode is null)
-                        {
-                            throw new InvalidOperationException(
-                                $"Top-level collection merge for scope '{jsonScope}' could not navigate "
-                                    + $"the request body to item path '{requestItem.RequestJsonPath}'. "
-                                    + "The visible request item must correspond to an existing array element."
-                            );
-                        }
+                        var (_, concreteRequestItemNode) = ResolveCandidateRequestItem(
+                            nameof(ProfileCollectionPlanEntry.MatchedUpdateEntry),
+                            jsonScope,
+                            writableRequestBody,
+                            matchedEntry.RequestCandidate,
+                            candidateKeyToRequestItem
+                        );
 
                         var mergedRow = ProfileCollectionMatchedRowOverlay.BuildMatchedRowEmission(
                             resourceWritePlan,
@@ -534,28 +518,13 @@ internal sealed class ProfileCollectionWalker
                         // when planning ran; recover it from the candidate-key lookup
                         // we already built. The lookup must contain it because every
                         // VisibleInsertEntry corresponds to a creatable VisibleRequestItem.
-                        var insertCandidateKey = SemanticIdentityKeys.BuildKey(insertEntry.RequestCandidate);
-                        if (
-                            !candidateKeyToRequestItem.TryGetValue(
-                                insertCandidateKey,
-                                out var insertRequestItem
-                            )
-                        )
-                        {
-                            throw new InvalidOperationException(
-                                $"VisibleInsertEntry for scope '{jsonScope}' could not locate a "
-                                    + "VisibleRequestCollectionItem for the candidate's semantic identity."
-                            );
-                        }
-                        var insertConcreteRequestItemNode =
-                            RelationalWriteProfileMergeSynthesizer.ResolveCollectionItemNode(
-                                writableRequestBody,
-                                insertRequestItem.RequestJsonPath
-                            )
-                            ?? throw new InvalidOperationException(
-                                $"VisibleInsertEntry for scope '{jsonScope}' could not navigate "
-                                    + $"the request body to item path '{insertRequestItem.RequestJsonPath}'."
-                            );
+                        var (_, insertConcreteRequestItemNode) = ResolveCandidateRequestItem(
+                            nameof(ProfileCollectionPlanEntry.VisibleInsertEntry),
+                            jsonScope,
+                            writableRequestBody,
+                            insertEntry.RequestCandidate,
+                            candidateKeyToRequestItem
+                        );
                         var insertedContext = new ProfileCollectionWalkerContext(
                             ContainingScopeAddress: insertedContainingAddress,
                             ParentPhysicalIdentityValues: insertedPhysicalIdentity,
@@ -1048,6 +1017,52 @@ internal sealed class ProfileCollectionWalker
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Looks up the <see cref="VisibleRequestCollectionItem"/> matching the supplied
+    /// <paramref name="requestCandidate"/> in <paramref name="candidateKeyToRequestItem"/>
+    /// and resolves the concrete request item JSON node from the writable request body.
+    /// Both the lookup miss and the navigation miss fail closed with an
+    /// <see cref="InvalidOperationException"/> tagged by <paramref name="entryKind"/> so
+    /// each plan-entry switch arm gets a self-describing error without duplicating the
+    /// resolution chain.
+    /// </summary>
+    private static (
+        VisibleRequestCollectionItem RequestItem,
+        JsonNode ConcreteRequestItemNode
+    ) ResolveCandidateRequestItem(
+        string entryKind,
+        string jsonScope,
+        JsonNode writableRequestBody,
+        CollectionWriteCandidate requestCandidate,
+        IReadOnlyDictionary<string, VisibleRequestCollectionItem> candidateKeyToRequestItem
+    )
+    {
+        var candidateKey = SemanticIdentityKeys.BuildKey(requestCandidate);
+        if (!candidateKeyToRequestItem.TryGetValue(candidateKey, out var requestItem))
+        {
+            throw new InvalidOperationException(
+                $"{entryKind} for scope '{jsonScope}' could not locate a "
+                    + "VisibleRequestCollectionItem for the candidate's semantic identity."
+            );
+        }
+
+        var concreteRequestItemNode = RelationalWriteProfileMergeSynthesizer.ResolveCollectionItemNode(
+            writableRequestBody,
+            requestItem.RequestJsonPath
+        );
+
+        if (concreteRequestItemNode is null)
+        {
+            throw new InvalidOperationException(
+                $"{entryKind} for scope '{jsonScope}' could not navigate "
+                    + $"the request body to item path '{requestItem.RequestJsonPath}'. "
+                    + "The visible request item must correspond to an existing array element."
+            );
+        }
+
+        return (requestItem, concreteRequestItemNode);
     }
 
     /// <summary>
@@ -1945,28 +1960,13 @@ internal sealed class ProfileCollectionWalker
         // any descendant.
         if (parentKind is DbTableKind.CollectionExtensionScope)
         {
-            var parentCollectionScope = StripAlignedScopeToParentCollectionScope(parentJsonScope);
-            if (
-                parentCollectionScope is null
-                || !tableByJsonScope.TryGetValue(parentCollectionScope, out var parentCollectionTable)
-            )
-            {
-                return null;
-            }
-            if (parentKey.Values.IsDefaultOrEmpty)
-            {
-                return null;
-            }
-            if (parentKey.Values[0] is not FlattenedWriteValue.Literal { Value: long alignedStableId })
-            {
-                return null;
-            }
-            return addressByTableAndStableId.TryGetValue(
-                (parentCollectionTable, alignedStableId),
-                out var parentCollectionAddr
-            )
-                ? new ScopeInstanceAddress(parentJsonScope, parentCollectionAddr.AncestorCollectionInstances)
-                : null;
+            return TryResolveAlignedExtensionParentAddress(
+                alignedScope: parentJsonScope,
+                outputJsonScope: parentJsonScope,
+                parentKey,
+                tableByJsonScope,
+                addressByTableAndStableId
+            );
         }
 
         if (!tableByJsonScope.TryGetValue(parentJsonScope, out var parentTable))
@@ -2082,23 +2082,12 @@ internal sealed class ProfileCollectionWalker
             // with the underlying base collection row, so the inlined-detail scope
             // borrows that collection row's previously-registered ancestor chain (which
             // already includes the parent collection's self-entry).
-            var parentCollectionScope = StripAlignedScopeToParentCollectionScope(nearestTableBacked);
-            if (
-                parentCollectionScope is null
-                || !tableByJsonScope.TryGetValue(parentCollectionScope, out var parentCollectionTable)
-                || parentKey.Values.IsDefaultOrEmpty
-                || parentKey.Values[0] is not FlattenedWriteValue.Literal { Value: long alignedStableId }
-                || !addressByTableAndStableId.TryGetValue(
-                    (parentCollectionTable, alignedStableId),
-                    out var parentCollectionAddr
-                )
-            )
-            {
-                return null;
-            }
-            return new ScopeInstanceAddress(
-                parentJsonScope,
-                parentCollectionAddr.AncestorCollectionInstances
+            return TryResolveAlignedExtensionParentAddress(
+                alignedScope: nearestTableBacked,
+                outputJsonScope: parentJsonScope,
+                parentKey,
+                tableByJsonScope,
+                addressByTableAndStableId
             );
         }
 
@@ -2136,6 +2125,42 @@ internal sealed class ProfileCollectionWalker
     /// </summary>
     internal static string? StripAlignedScopeToParentCollectionScope(string alignedScope) =>
         AlignedExtensionScopeSupport.Classify(alignedScope)?.ParentCollectionScope;
+
+    /// <summary>
+    /// Resolves the partition address for an aligned-extension scope (or for an inlined
+    /// scope below one) by stripping <paramref name="alignedScope"/> to its underlying
+    /// base collection JsonScope, looking up that collection's table, extracting the
+    /// stable-id locator from <paramref name="parentKey"/>, and returning the matched
+    /// address rebased onto <paramref name="outputJsonScope"/>. Returns <c>null</c> when
+    /// any link in the chain misses; aligned-extension rows are not registered in
+    /// <paramref name="addressByTableAndStableId"/> directly, so this borrowing path is
+    /// the only way to derive their partition address.
+    /// </summary>
+    private static ScopeInstanceAddress? TryResolveAlignedExtensionParentAddress(
+        string alignedScope,
+        string outputJsonScope,
+        ParentIdentityKey parentKey,
+        IReadOnlyDictionary<string, DbTableName> tableByJsonScope,
+        IReadOnlyDictionary<(DbTableName, long), ScopeInstanceAddress> addressByTableAndStableId
+    )
+    {
+        var parentCollectionScope = StripAlignedScopeToParentCollectionScope(alignedScope);
+        if (
+            parentCollectionScope is null
+            || !tableByJsonScope.TryGetValue(parentCollectionScope, out var parentCollectionTable)
+            || parentKey.Values.IsDefaultOrEmpty
+            || parentKey.Values[0] is not FlattenedWriteValue.Literal { Value: long alignedStableId }
+            || !addressByTableAndStableId.TryGetValue(
+                (parentCollectionTable, alignedStableId),
+                out var parentCollectionAddr
+            )
+        )
+        {
+            return null;
+        }
+
+        return new ScopeInstanceAddress(outputJsonScope, parentCollectionAddr.AncestorCollectionInstances);
+    }
 
     /// <summary>
     /// Strips the trailing array-element segment from a canonical JsonScope to yield the
