@@ -2834,8 +2834,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             if (fallbackId is null)
             {
                 throw new InvalidOperationException(
-                    $"descriptor URI not resolvable at merge boundary: stored descriptor URI '{uri}' "
-                        + $"for column '{column.ColumnName.Value}' (path '{wildcardPath}') "
+                    "descriptor URI not resolvable at merge boundary: stored descriptor URI "
+                        + $"'{LogSanitizer.SanitizeForLog(uri)}' for column "
+                        + $"'{LogSanitizer.SanitizeForLog(column.ColumnName.Value)}' "
+                        + $"(path '{LogSanitizer.SanitizeForLog(wildcardPath)}') "
                         + "was not found in the request-cycle descriptor resolution cache and could not "
                         + "be matched against current rows. "
                         + "This can happen when scalar matching is ambiguous or absent (or the identity is "
