@@ -6,7 +6,7 @@
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Thrown by profile-aware planners (e.g. <see cref="ProfileTopLevelCollectionPlanner"/>) when
+/// Thrown by profile-aware planners (e.g. <see cref="ProfileCollectionPlanner"/>) when
 /// Core-emitted profile/scope metadata fails a fail-closed planner invariant. Each such failure
 /// represents a Core/backend contract mismatch — Core handed the backend a profile/schema
 /// combination that the compiled scope catalog cannot satisfy — not a backend internal bug.
