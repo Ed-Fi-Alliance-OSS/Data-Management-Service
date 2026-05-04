@@ -21,18 +21,19 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// canonical <c>JsonScope</c> (e.g. <c>$.classPeriods[*]</c>,
 /// <c>$._ext.sample</c>, <c>$.classPeriods[*]._ext.sample</c>) into a sequence
 /// of property/items navigations and then reading the <c>"required"</c> array
-/// at the resolved schema node. Scopes whose schema node cannot be located
-/// (for example, inlined scopes the API schema does not represent) are simply
-/// omitted from the map; the analyzer then falls back to identity-only
-/// required members for those scopes, preserving prior behavior on shapes the
-/// schema does not describe.
+/// at the resolved schema node. The builder fails closed when a catalog scope
+/// cannot be resolved in the schema by throwing
+/// <see cref="InvalidOperationException"/>: silently omitting such scopes
+/// would let the analyzer fall through to "no schema-required members," which
+/// can wrongly mark a new nested or extension-child scope as creatable when a
+/// hidden required non-identity member would otherwise reject the insert.
 /// </remarks>
 internal static class EffectiveSchemaRequiredMembersBuilder
 {
     /// <summary>
     /// Produces a map of scope <c>JsonScope</c> → schema-required member names
-    /// for every scope in <paramref name="scopeCatalog"/> that is locatable in
-    /// the supplied insert schema.
+    /// for every scope in <paramref name="scopeCatalog"/> against the supplied
+    /// insert schema.
     /// </summary>
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> Build(
         JsonNode jsonSchemaForInsert,
@@ -41,13 +42,19 @@ internal static class EffectiveSchemaRequiredMembersBuilder
     {
         var result = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
-#pragma warning disable S3267 // Loop has continues and side effects; LINQ rewrite would obscure intent.
+#pragma warning disable S3267 // Loop builds a dictionary and throws fail-closed on unresolved scopes; LINQ rewrite would obscure intent.
         foreach (CompiledScopeDescriptor scope in scopeCatalog)
         {
             JsonNode? schemaNode = NavigateToScopeSchemaNode(jsonSchemaForInsert, scope.JsonScope);
             if (schemaNode is null)
             {
-                continue;
+                throw new InvalidOperationException(
+                    $"Compiled scope '{scope.JsonScope}' is present in the scope catalog "
+                        + "but could not be resolved in jsonSchemaForInsert. The scope catalog "
+                        + "and schema must agree; missing entries would silently fail open on "
+                        + "creatability decisions for hidden required non-identity members in "
+                        + "nested/extension-child shapes."
+                );
             }
 
             IReadOnlyList<string> required = ExtractRequiredMembers(schemaNode);

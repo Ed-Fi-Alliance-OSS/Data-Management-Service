@@ -391,8 +391,7 @@ public sealed class CreatabilityAnalyzer(
 
                         if (
                             !AncestorCollectionInstancesEqual(
-                                enrichedItems[j]
-                                    .Address.ParentAddress.AncestorCollectionInstances,
+                                enrichedItems[j].Address.ParentAddress.AncestorCollectionInstances,
                                 parentExtendedAncestors
                             )
                         )
@@ -405,10 +404,7 @@ public sealed class CreatabilityAnalyzer(
                             itemCreatable[i] = false;
 
                             // Emit failure with RequiredVisibleDescendant dependency
-                            var childDescriptor = _scopesByJsonScope.TryGetValue(
-                                childJsonScope,
-                                out var cd2
-                            )
+                            var childDescriptor = _scopesByJsonScope.TryGetValue(childJsonScope, out var cd2)
                                 ? cd2
                                 : null;
                             List<ProfileFailureDiagnostic.CreatabilityDependency> deps =
@@ -429,9 +425,7 @@ public sealed class CreatabilityAnalyzer(
                                     resourceName: resourceName,
                                     method: method,
                                     operation: operation,
-                                    targetKind: DetermineCollectionItemTargetKind(
-                                        collectionJsonScope
-                                    ),
+                                    targetKind: DetermineCollectionItemTargetKind(collectionJsonScope),
                                     affectedAddress: enrichedItems[i].Address,
                                     hiddenCreationRequiredMemberPaths: [],
                                     dependencies: deps
@@ -773,12 +767,20 @@ public sealed class CreatabilityAnalyzer(
 
             // Step 3: Creating → check parent gate and required members
             ScopeMemberFilter memberFilter = classifier.GetMemberFilter(collectionJsonScope);
-            IReadOnlyList<string> effectiveRequired = effectiveSchemaRequiredMembersByScope.TryGetValue(
-                collectionJsonScope,
-                out var req
+            if (
+                !effectiveSchemaRequiredMembersByScope.TryGetValue(
+                    collectionJsonScope,
+                    out var effectiveRequired
+                )
             )
-                ? req
-                : [];
+            {
+                throw new InvalidOperationException(
+                    $"Creatability analysis for collection-item scope '{collectionJsonScope}' has no entry in "
+                        + $"{nameof(effectiveSchemaRequiredMembersByScope)}. The scope catalog and the schema "
+                        + "metadata must agree; missing entries would silently fail open on creatability for "
+                        + "hidden required non-identity members in nested/extension-child shapes."
+                );
+            }
 
             var crResult = CreationRequiredMemberResolver.Resolve(
                 _scopesByJsonScope[collectionJsonScope],
@@ -847,12 +849,15 @@ public sealed class CreatabilityAnalyzer(
 
         // Step 3: Creating → check required members
         ScopeMemberFilter memberFilter = classifier.GetMemberFilter(jsonScope);
-        IReadOnlyList<string> effectiveRequired = effectiveSchemaRequiredMembersByScope.TryGetValue(
-            jsonScope,
-            out var req
-        )
-            ? req
-            : [];
+        if (!effectiveSchemaRequiredMembersByScope.TryGetValue(jsonScope, out var effectiveRequired))
+        {
+            throw new InvalidOperationException(
+                $"Creatability analysis for scope '{jsonScope}' has no entry in "
+                    + $"{nameof(effectiveSchemaRequiredMembersByScope)}. The scope catalog and the schema "
+                    + "metadata must agree; missing entries would silently fail open on creatability for "
+                    + "hidden required non-identity members in nested/extension-child shapes."
+            );
+        }
 
         var crResult = CreationRequiredMemberResolver.Resolve(
             _scopesByJsonScope[jsonScope],
@@ -892,12 +897,15 @@ public sealed class CreatabilityAnalyzer(
     )
     {
         ScopeMemberFilter memberFilter = classifier.GetMemberFilter(jsonScope);
-        IReadOnlyList<string> effectiveRequired = effectiveSchemaRequiredMembersByScope.TryGetValue(
-            jsonScope,
-            out var req
-        )
-            ? req
-            : [];
+        if (!effectiveSchemaRequiredMembersByScope.TryGetValue(jsonScope, out var effectiveRequired))
+        {
+            throw new InvalidOperationException(
+                $"Creatability analysis for parent-gated scope '{jsonScope}' has no entry in "
+                    + $"{nameof(effectiveSchemaRequiredMembersByScope)}. The scope catalog and the schema "
+                    + "metadata must agree; missing entries would silently fail open on creatability for "
+                    + "hidden required non-identity members in nested/extension-child shapes."
+            );
+        }
 
         var crResult = CreationRequiredMemberResolver.Resolve(
             _scopesByJsonScope[jsonScope],

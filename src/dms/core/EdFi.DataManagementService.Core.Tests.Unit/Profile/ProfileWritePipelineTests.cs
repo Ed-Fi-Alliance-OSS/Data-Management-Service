@@ -47,11 +47,16 @@ public abstract class ProfileWritePipelineTests
 
     /// <summary>
     /// Standard effective schema-required members for the shared fixture.
+    /// Provides an entry for every scope in <see cref="SharedFixtureScopes"/> so the
+    /// CreatabilityAnalyzer's fail-closed metadata-presence guard is satisfied for
+    /// child scopes the analyzer touches via the parent-gated and collection-item paths.
     /// </summary>
     protected static IReadOnlyDictionary<string, IReadOnlyList<string>> StandardRequiredMembers =>
         new Dictionary<string, IReadOnlyList<string>>
         {
             ["$"] = ["studentReference", "schoolReference", "entryDate"],
+            ["$.calendarReference"] = [],
+            ["$.classPeriods[*]"] = [],
         };
 
     // -----------------------------------------------------------------------
