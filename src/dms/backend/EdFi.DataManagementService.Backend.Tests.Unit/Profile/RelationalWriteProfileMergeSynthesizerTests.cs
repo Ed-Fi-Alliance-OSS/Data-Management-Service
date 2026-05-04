@@ -45,7 +45,7 @@ public class Given_ProfileSynthesizer_for_CreateNew_with_single_scalar_binding
     }
 
     [Test]
-    public void It_does_not_support_guarded_no_op() => _result.SupportsGuardedNoOp.Should().BeFalse();
+    public void It_supports_guarded_no_op() => _result.SupportsGuardedNoOp.Should().BeTrue();
 
     [Test]
     public void It_produces_single_table_state() => _result.TablesInDependencyOrder.Length.Should().Be(1);
@@ -393,7 +393,7 @@ public class Given_ProfileSynthesizer_with_key_unification_plan_visible_member
     }
 
     [Test]
-    public void It_does_not_support_guarded_no_op() => _result.SupportsGuardedNoOp.Should().BeFalse();
+    public void It_supports_guarded_no_op() => _result.SupportsGuardedNoOp.Should().BeTrue();
 
     [Test]
     public void It_writes_canonical_from_resolver()

@@ -115,11 +115,15 @@ internal interface IRelationalWriteProfileMergeSynthesizer
 /// Profile merge synthesizer. Composes the root-table binding classifier, the per-disposition
 /// overlay, and the post-overlay key-unification resolver for the root table, then iterates
 /// root-attached separate-table non-collection (<see cref="DbTableKind.RootExtension"/>) plans
-/// composing their own classifier/resolver plus the separate-table decider. Guarded no-op is
-/// not supported; <see cref="RelationalWriteMergeResult.SupportsGuardedNoOp"/> is always
-/// <c>false</c>. Returns a <see cref="ProfileMergeOutcome"/> discriminated union so the
-/// executor can short-circuit to a typed <see cref="UpsertResult.UpsertFailureProfileDataPolicy"/>
-/// / <see cref="UpdateResult.UpdateFailureProfileDataPolicy"/> on a separate-table
+/// composing their own classifier/resolver plus the separate-table decider. The synthesized
+/// <see cref="RelationalWriteMergeResult"/> sets <see cref="RelationalWriteMergeResult.SupportsGuardedNoOp"/>
+/// to <c>true</c> so the executor can short-circuit unchanged profiled writes through
+/// <see cref="RelationalWriteGuardedNoOp.IsNoOpCandidate"/>; comparable rowsets are produced
+/// from the same post-merge values that execution would persist (per-row
+/// <see cref="RelationalWriteMergeSupport.ProjectComparableValues"/>). Returns a
+/// <see cref="ProfileMergeOutcome"/> discriminated union so the executor can short-circuit
+/// to a typed <see cref="UpsertResult.UpsertFailureProfileDataPolicy"/> /
+/// <see cref="UpdateResult.UpdateFailureProfileDataPolicy"/> on a separate-table
 /// create-denied outcome without throwing.
 /// </summary>
 internal sealed class RelationalWriteProfileMergeSynthesizer(
@@ -317,7 +321,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         }
 
         return ProfileMergeOutcome.Success(
-            new RelationalWriteMergeResult([.. tableStates], supportsGuardedNoOp: false)
+            new RelationalWriteMergeResult([.. tableStates], supportsGuardedNoOp: true)
         );
     }
 
