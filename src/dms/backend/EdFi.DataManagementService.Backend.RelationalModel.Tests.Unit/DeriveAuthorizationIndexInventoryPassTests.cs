@@ -279,10 +279,10 @@ public class Given_Resource_With_EdOrg_Securable_On_Root_Reference
     }
 
     [Test]
-    public void It_should_index_the_resolved_root_FK_column()
+    public void It_should_index_the_resolved_identity_column()
     {
         var index = _authIndexes.Single();
-        index.KeyColumns.Select(c => c.Value).Should().Equal("EducationOrganization_DocumentId");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("EducationOrganization_EducationOrganizationId");
     }
 
     [Test]
@@ -518,17 +518,20 @@ public class Given_FkSupport_And_Authorization_Index_On_Same_Column
             ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildCourseWithEdOrgSecurable());
 
             // Pre-seed an FK-support index targeting the same root column the auth pass will
-            // emit on. If the auth pass dropped its `_Auth` suffix, the names would collide
-            // and BuildResult would throw via ValidateIndexNameUniqueness.
+            // emit on (the identity scalar). FK-support indexes normally go on FK DocumentId
+            // columns; this synthetic seeding deliberately collides on the identity column to
+            // exercise the name-uniqueness invariant. If the auth pass dropped its `_Auth`
+            // suffix, the names would collide and BuildResult would throw via
+            // ValidateIndexNameUniqueness.
             var courseTable = new DbTableName(new DbSchemaName("edfi"), "Course");
-            var fkColumn = new DbColumnName("EducationOrganization_DocumentId");
+            var sharedColumn = new DbColumnName("EducationOrganization_EducationOrganizationId");
             ctx.IndexInventory.Add(
                 new DbIndexInfo(
                     new DbIndexName(
-                        ConstraintNaming.BuildForeignKeySupportIndexName(courseTable, [fkColumn])
+                        ConstraintNaming.BuildForeignKeySupportIndexName(courseTable, [sharedColumn])
                     ),
                     courseTable,
-                    KeyColumns: [fkColumn],
+                    KeyColumns: [sharedColumn],
                     IsUnique: false,
                     Kind: DbIndexKind.ForeignKeySupport
                 )
@@ -545,8 +548,8 @@ public class Given_FkSupport_And_Authorization_Index_On_Same_Column
             .ToArray();
 
         indexNames.Should().HaveCount(2);
-        indexNames.Should().Contain("IX_Course_EducationOrganization_DocumentId");
-        indexNames.Should().Contain("IX_Course_EducationOrganization_DocumentId_Auth");
+        indexNames.Should().Contain("IX_Course_EducationOrganization_EducationOrganizationId");
+        indexNames.Should().Contain("IX_Course_EducationOrganization_EducationOrganizationId_Auth");
     }
 }
 
@@ -815,12 +818,14 @@ internal static class AuthIndexFixtureResources
     {
         var resourceName = "Course";
         var fkColumn = new DbColumnName("EducationOrganization_DocumentId");
+        var identityColumn = new DbColumnName("EducationOrganization_EducationOrganizationId");
         var rootTable = new DbTableName(_edfiSchema, resourceName);
 
         var columns = new[]
         {
             BuildScalarColumn(new DbColumnName("DocumentId")),
             BuildScalarColumn(fkColumn),
+            BuildScalarColumn(identityColumn),
         };
 
         var binding = new DocumentReferenceBinding(
@@ -836,7 +841,7 @@ internal static class AuthIndexFixtureResources
                     JsonPathExpressionCompiler.Compile(
                         "$.educationOrganizationReference.educationOrganizationId"
                     ),
-                    fkColumn
+                    identityColumn
                 ),
             ]
         );
