@@ -122,7 +122,8 @@ public sealed record FlatteningInput
         ResourceWritePlan writePlan,
         JsonNode selectedBody,
         ResolvedReferenceSet resolvedReferences,
-        bool emitEmptyRootExtensionBuffers = false
+        bool emitEmptyExtensionBuffers = false,
+        bool collapseMissingAndExplicitNullForDuplicateDetection = false
     )
     {
         OperationKind = operationKind;
@@ -131,7 +132,9 @@ public sealed record FlatteningInput
         SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
         ResolvedReferences =
             resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
-        EmitEmptyRootExtensionBuffers = emitEmptyRootExtensionBuffers;
+        EmitEmptyExtensionBuffers = emitEmptyExtensionBuffers;
+        CollapseMissingAndExplicitNullForDuplicateDetection =
+            collapseMissingAndExplicitNullForDuplicateDetection;
     }
 
     /// <summary>
@@ -161,15 +164,35 @@ public sealed record FlatteningInput
 
     /// <summary>
     /// When true, the flattener emits a <see cref="RootExtensionWriteRowBuffer"/> for every
-    /// root-extension scope whose node is present as a JSON object in the selected body, even
-    /// when the object carries no bound scalar data and no collection candidates. The
-    /// profile-aware executor sets this so a profile-shaped body like <c>_ext: { sample: {} }</c>
-    /// (e.g. an explicitly empty visible scope) still produces a buffer for the Slice 3 merge
-    /// synthesizer to overlay, rather than being silently dropped under the default
-    /// "no bound data" heuristic. Non-profile callers leave it off to preserve the historical
-    /// drop-empty behavior.
+    /// root-extension scope and a <see cref="CandidateAttachedAlignedScopeData"/> for every
+    /// collection-aligned extension scope whose node is present as a JSON object in the
+    /// selected body, even when the object carries no bound scalar data and no collection
+    /// candidates. The profile-aware executor sets this so a profile-shaped body like
+    /// <c>_ext: { sample: {} }</c> (e.g. an explicitly empty visible scope) still produces a
+    /// buffer for the profile merge synthesizer to overlay, rather than being silently
+    /// dropped under the default "no bound data" heuristic. Non-profile callers leave it off
+    /// to preserve the historical drop-empty behavior.
     /// </summary>
-    public bool EmitEmptyRootExtensionBuffers { get; init; }
+    public bool EmitEmptyExtensionBuffers { get; init; }
+
+    /// <summary>
+    /// When true, the shared flattener's collection duplicate-detection step treats a missing
+    /// identity property and an explicit JSON <c>null</c> as the same identity value. The
+    /// no-profile merge in <c>RelationalWriteNoProfileMerge.ProjectedCollectionTableState</c>
+    /// matches collection rows by raw <c>object?[]</c> semantic identity values with no presence
+    /// flag, so two siblings whose identity differs only in presence would otherwise survive
+    /// flattening and later collide on the same collapsed merge key. The no-profile executor
+    /// sets this so duplicate request collection items are rejected before reaching the merge
+    /// stage. Profile-aware callers leave it off so
+    /// <see cref="EdFi.DataManagementService.Backend.Profile.SemanticIdentityKeys.BuildKey(System.Collections.Immutable.ImmutableArray{EdFi.DataManagementService.Core.Profile.SemanticIdentityPart})"/>
+    /// continues to distinguish missing from explicit-null identities under the
+    /// <see cref="EdFi.DataManagementService.Core.Profile.SemanticIdentityPart"/> contract;
+    /// presence-aware row-pairing in <c>ProfileCollectionPlanner</c> still observes both
+    /// siblings as distinct identities. DMS-1132 owns full missing-vs-explicit-null identity
+    /// fidelity for the no-profile path; until that lands, collapsing here is the conservative
+    /// fail-closed bridge.
+    /// </summary>
+    public bool CollapseMissingAndExplicitNullForDuplicateDetection { get; init; }
 }
 
 /// <summary>
@@ -277,7 +300,8 @@ public sealed record RootExtensionWriteRowBuffer
     public RootExtensionWriteRowBuffer(
         TableWritePlan tableWritePlan,
         IEnumerable<FlattenedWriteValue> values,
-        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
+        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null,
+        bool hasSubmittedScopeData = false
     )
     {
         TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
@@ -286,6 +310,7 @@ public sealed record RootExtensionWriteRowBuffer
             collectionCandidates ?? [],
             nameof(collectionCandidates)
         );
+        HasSubmittedScopeData = hasSubmittedScopeData;
 
         FlattenedWriteContractSupport.ValidateBindingCount(TableWritePlan, Values, nameof(values));
 
@@ -317,6 +342,16 @@ public sealed record RootExtensionWriteRowBuffer
     /// Collection candidates nested directly under this root extension scope.
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
+
+    /// <summary>
+    /// True when the request body actually contained at least one bound property at this scope —
+    /// distinguishing "submitted with explicit null fields" from a buffer the flattener
+    /// synthesized for an absent scope under <c>EmitEmptyExtensionBuffers</c>. The
+    /// profile-aware merge consults this flag as defense-in-depth when guarding hidden scopes,
+    /// since a presence-aware signal is the only reliable way to tell explicit-null submission
+    /// apart from default-flattened null values.
+    /// </summary>
+    public bool HasSubmittedScopeData { get; init; }
 }
 
 /// <summary>
@@ -396,12 +431,20 @@ public sealed record CollectionWriteCandidate
             );
         }
 
-        SemanticIdentityInOrder = semanticIdentityInOrder is null
-            ? BuildDefaultSemanticIdentityInOrder(mergePlan, SemanticIdentityValues)
-            : FlattenedWriteContractSupport.ToImmutableArray(
-                semanticIdentityInOrder,
-                nameof(semanticIdentityInOrder)
+        if (semanticIdentityInOrder is null)
+        {
+            throw new ArgumentNullException(
+                nameof(semanticIdentityInOrder),
+                $"{nameof(CollectionWriteCandidate)} requires explicit "
+                    + $"{nameof(SemanticIdentityPart)} metadata. Production callers must pass parts built "
+                    + "from JSON-side presence probes."
             );
+        }
+
+        SemanticIdentityInOrder = FlattenedWriteContractSupport.ToImmutableArray(
+            semanticIdentityInOrder,
+            nameof(semanticIdentityInOrder)
+        );
 
         if (SemanticIdentityInOrder.Length != mergePlan.SemanticIdentityBindings.Length)
         {
@@ -453,30 +496,6 @@ public sealed record CollectionWriteCandidate
     /// Nested collection candidates that hang directly from this collection scope.
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
-
-    private static ImmutableArray<SemanticIdentityPart> BuildDefaultSemanticIdentityInOrder(
-        CollectionMergePlan mergePlan,
-        ImmutableArray<object?> semanticIdentityValues
-    )
-    {
-        var builder = ImmutableArray.CreateBuilder<SemanticIdentityPart>(
-            mergePlan.SemanticIdentityBindings.Length
-        );
-
-        for (var i = 0; i < mergePlan.SemanticIdentityBindings.Length; i++)
-        {
-            var value = semanticIdentityValues[i];
-            builder.Add(
-                new SemanticIdentityPart(
-                    mergePlan.SemanticIdentityBindings[i].RelativePath.Canonical,
-                    value is null ? null : JsonValue.Create(value),
-                    IsPresent: value is not null
-                )
-            );
-        }
-
-        return builder.MoveToImmutable();
-    }
 }
 
 /// <summary>
@@ -487,7 +506,8 @@ public sealed record CandidateAttachedAlignedScopeData
     public CandidateAttachedAlignedScopeData(
         TableWritePlan tableWritePlan,
         IEnumerable<FlattenedWriteValue> values,
-        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
+        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null,
+        bool hasSubmittedScopeData = false
     )
     {
         TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
@@ -496,6 +516,7 @@ public sealed record CandidateAttachedAlignedScopeData
             collectionCandidates ?? [],
             nameof(collectionCandidates)
         );
+        HasSubmittedScopeData = hasSubmittedScopeData;
 
         FlattenedWriteContractSupport.ValidateTableKind(
             TableWritePlan,
@@ -519,6 +540,12 @@ public sealed record CandidateAttachedAlignedScopeData
     /// Extension child collections nested under this aligned scope.
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
+
+    /// <summary>
+    /// True when the request body actually contained at least one bound property at this scope.
+    /// See <see cref="RootExtensionWriteRowBuffer.HasSubmittedScopeData"/> for the rationale.
+    /// </summary>
+    public bool HasSubmittedScopeData { get; init; }
 }
 
 /// <summary>
@@ -659,8 +686,8 @@ public sealed record RelationalWriteExecutorRequest
 
     /// <summary>
     /// Optional profile write context when a writable profile applies.
-    /// Null when no profile applies. Downstream stages use this to decide
-    /// whether to run the no-profile merge/persist path or fence for DMS-1124.
+    /// Null when no profile applies. Downstream stages use this to decide whether to run the
+    /// profile-constrained flatten/merge path or the no-profile merge/persist path.
     /// </summary>
     public BackendProfileWriteContext? ProfileWriteContext { get; init; }
 }

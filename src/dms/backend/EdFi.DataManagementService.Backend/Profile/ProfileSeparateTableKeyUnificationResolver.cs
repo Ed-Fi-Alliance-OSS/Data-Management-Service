@@ -12,10 +12,11 @@ using EdFi.DataManagementService.Core.Profile;
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Context carried into the post-overlay key-unification resolver for a root-attached
-/// separate-table (<see cref="DbTableKind.RootExtension"/>) scope. Assembled by the
-/// profile merge synthesizer after it applies the separate-table classifier's per-binding
-/// dispositions to the merged separate-table row. Mirrors
+/// Context carried into the post-overlay key-unification resolver for a separate-table
+/// non-collection scope (<see cref="DbTableKind.RootExtension"/> or
+/// <see cref="DbTableKind.CollectionExtensionScope"/>). Assembled by the profile merge
+/// synthesizer after it applies the separate-table classifier's per-binding dispositions
+/// to the merged separate-table row. Mirrors
 /// <see cref="ProfileRootKeyUnificationContext"/>; the column-name projection field is
 /// named <see cref="CurrentRowByColumnName"/> (without the "Root" prefix) because this
 /// context is for separate-table rows, not the root row.
@@ -30,7 +31,6 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// </remarks>
 internal sealed record ProfileSeparateTableKeyUnificationContext(
     JsonNode WritableRequestBody,
-    RelationalWriteCurrentState? CurrentState,
     IReadOnlyDictionary<DbColumnName, object?> CurrentRowByColumnName,
     FlatteningResolvedReferenceLookupSet ResolvedReferenceLookups,
     ProfileAppliedWriteRequest ProfileRequest,
@@ -38,13 +38,12 @@ internal sealed record ProfileSeparateTableKeyUnificationContext(
 );
 
 /// <summary>
-/// Post-overlay key-unification resolver for a root-attached separate-table
-/// (<see cref="DbTableKind.RootExtension"/>) scope. Run by the profile merge
-/// synthesizer after it applies the separate-table classifier's per-binding
-/// dispositions to the merged separate-table row. Thin wrapper over
-/// <see cref="ProfileKeyUnificationCore"/>: rejects non-<see cref="DbTableKind.RootExtension"/>
-/// tables (collection-aligned scopes belong to slice 5), validates buffer length,
-/// short-circuits on no-key-unification plans, then delegates to the core.
+/// Post-overlay key-unification resolver for a separate-table non-collection scope
+/// (<see cref="DbTableKind.RootExtension"/> or <see cref="DbTableKind.CollectionExtensionScope"/>).
+/// Run by the profile merge synthesizer after it applies the separate-table classifier's
+/// per-binding dispositions to the merged separate-table row. Thin wrapper over
+/// <see cref="ProfileKeyUnificationCore"/>: validates the supported table kind and buffer
+/// length, short-circuits on no-key-unification plans, then delegates to the core.
 /// </summary>
 /// <remarks>
 /// Exception typing is preserved from the flattener:
@@ -58,6 +57,10 @@ internal interface IProfileSeparateTableKeyUnificationResolver
     void Resolve(
         TableWritePlan separateTablePlan,
         ProfileSeparateTableKeyUnificationContext context,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates,
         FlattenedWriteValue[] mergedRowValuesMutable,
         ImmutableHashSet<int> resolverOwnedBindingIndices
     );
@@ -68,26 +71,24 @@ internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSepar
     public void Resolve(
         TableWritePlan separateTablePlan,
         ProfileSeparateTableKeyUnificationContext context,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates,
         FlattenedWriteValue[] mergedRowValuesMutable,
         ImmutableHashSet<int> resolverOwnedBindingIndices
     )
     {
         ArgumentNullException.ThrowIfNull(separateTablePlan);
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(scopeAddress);
         ArgumentNullException.ThrowIfNull(mergedRowValuesMutable);
         ArgumentNullException.ThrowIfNull(resolverOwnedBindingIndices);
 
-        var tableKind = separateTablePlan.TableModel.IdentityMetadata.TableKind;
-        if (tableKind is not DbTableKind.RootExtension)
-        {
-            throw new ArgumentException(
-                $"{nameof(ProfileSeparateTableKeyUnificationResolver)} supports only "
-                    + $"{nameof(DbTableKind.RootExtension)} tables in slice 3; "
-                    + $"got {tableKind} for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'. "
-                    + "Collection-aligned separate-table scopes belong to slice 5.",
-                nameof(separateTablePlan)
-            );
-        }
+        ProfileSeparateTableSupportGuard.EnsureSupportedTableKind(
+            separateTablePlan,
+            nameof(ProfileSeparateTableKeyUnificationResolver)
+        );
 
         if (mergedRowValuesMutable.Length != separateTablePlan.ColumnBindings.Length)
         {
@@ -107,10 +108,11 @@ internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSepar
             separateTablePlan,
             context.CurrentRowByColumnName,
             context.WritableRequestBody,
-            context.CurrentState,
             context.ResolvedReferenceLookups,
-            context.ProfileRequest,
-            context.ProfileAppliedContext,
+            scopeAddress,
+            requestScope,
+            storedScope,
+            descendantStates,
             mergedRowValuesMutable,
             resolverOwnedBindingIndices
         );

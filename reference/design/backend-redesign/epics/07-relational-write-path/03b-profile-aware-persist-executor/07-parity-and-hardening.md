@@ -56,6 +56,7 @@ Earlier slices still own parity expectations for any SQL-sensitive behavior they
 - Supported-slice parity pass for mssql
 - Any dialect-sensitive batch/parameter-limit cases added by the supported slices
 - Any dialect-sensitive lock/freshness behavior relevant to profiled guarded no-op
+- Literal three-level update-allowed/create-denied chain at the provider level (parents → children → grandchildren). Slice 5 delivers this at the synthesizer level (`Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3`) and at the HTTP layer with a two-level matched-update / create-denied-child chain. As part of this slice's parity audit, decide whether the literal three-level provider fixture is merge-blocking; if yes, add a new `IntegrationFixtures/profile-nested-three-level-chain` fixture plus pgsql/mssql provider plumbing and a three-level rejection scenario. Otherwise explicitly document why synthesizer coverage plus two-level provider rejection coverage is sufficient.
 
 ### Documentation / review outputs
 

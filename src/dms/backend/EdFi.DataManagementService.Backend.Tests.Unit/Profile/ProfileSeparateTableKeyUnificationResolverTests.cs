@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Tests.Unit.Profile.ProfileTestDoubles;
@@ -15,359 +16,77 @@ using static EdFi.DataManagementService.Backend.Tests.Unit.Profile.ProfileTestDo
 namespace EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 
 [TestFixture]
-public class Given_SeparateTableResolver_with_no_key_unification_plans_does_nothing
+public class Given_SeparateTableResolver_instance_aware_overload_for_CollectionExtensionScope_table_kind
 {
-    private FlattenedWriteValue[] _row = null!;
-    private FlattenedWriteValue[] _rowBefore = null!;
+    private Exception? _thrown;
 
     [SetUp]
     public void Setup()
     {
-        // RootExtension table with no key-unification plans — resolver must short-circuit.
-        var plan = BuildRootPlusRootExtensionPlan(
-            extensionBindings: new RootExtensionBindingSpec(
-                "FavoriteColor",
-                RootExtensionBindingKind.Scalar,
-                RelativePath: "$._ext.sample.favoriteColor"
-            )
-        );
-        var extensionPlan = plan.TablePlansInDependencyOrder[1];
-
-        var context = BuildSeparateTableResolverContext(
-            plan,
-            profileRequest: CreateRequest(
-                writableBody: null,
-                rootResourceCreatable: true,
-                RequestVisiblePresentScope("$"),
-                RequestVisiblePresentScope("$._ext.sample")
-            )
-        );
-
-        _row = new FlattenedWriteValue[extensionPlan.ColumnBindings.Length];
-        for (var i = 0; i < _row.Length; i++)
-        {
-            _row[i] = new FlattenedWriteValue.Literal($"SEED_{i}");
-        }
-        _rowBefore = (FlattenedWriteValue[])_row.Clone();
-
-        new ProfileSeparateTableKeyUnificationResolver().Resolve(
-            extensionPlan,
-            context,
-            _row,
-            ImmutableHashSet<int>.Empty
-        );
-    }
-
-    [Test]
-    public void It_preserves_every_binding_value()
-    {
-        for (var i = 0; i < _row.Length; i++)
-        {
-            ((FlattenedWriteValue.Literal)_row[i])
-                .Value.Should()
-                .Be(((FlattenedWriteValue.Literal)_rowBefore[i]).Value);
-        }
-    }
-}
-
-[TestFixture]
-public class Given_SeparateTableResolver_with_visible_members_computes_canonical_from_request
-{
-    private FlattenedWriteValue[] _row = null!;
-    private int _canonicalIndex;
-
-    [SetUp]
-    public void Setup()
-    {
-        var (plan, canonicalIdx, _) = BuildRootPlusRootExtensionPlanWithKeyUnification([
-            new KeyUnificationMemberSpec(
-                RelativePath: "$._ext.sample.memberA",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: false
-            ),
-        ]);
-        _canonicalIndex = canonicalIdx;
-
-        // Request body must shape the extension scope so the visible member resolves.
-        // _ext.sample.memberA path in the body.
-        var body = new JsonObject
-        {
-            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["memberA"] = 42 } },
-        };
-        var request = CreateRequest(
-            writableBody: body,
-            rootResourceCreatable: true,
-            RequestVisiblePresentScope("$"),
-            RequestVisiblePresentScope("$._ext.sample")
-        );
-
-        var context = BuildSeparateTableResolverContext(plan, writableBody: body, profileRequest: request);
-
-        var extensionPlan = plan.TablePlansInDependencyOrder[1];
-        _row = NewInitialRow(extensionPlan);
-        var resolverOwned = ImmutableHashSet.Create(canonicalIdx);
-
-        new ProfileSeparateTableKeyUnificationResolver().Resolve(extensionPlan, context, _row, resolverOwned);
-    }
-
-    [Test]
-    public void It_writes_canonical_value_from_request_body() =>
-        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(42);
-
-    private static FlattenedWriteValue[] NewInitialRow(TableWritePlan tablePlan)
-    {
-        var row = new FlattenedWriteValue[tablePlan.ColumnBindings.Length];
-        for (var i = 0; i < row.Length; i++)
-        {
-            row[i] = new FlattenedWriteValue.Literal(null);
-        }
-        return row;
-    }
-}
-
-[TestFixture]
-public class Given_SeparateTableResolver_with_hidden_governed_member_preserves_stored_value
-{
-    private FlattenedWriteValue[] _row = null!;
-    private int _canonicalIndex;
-    private int _presenceIndex;
-
-    [SetUp]
-    public void Setup()
-    {
-        var (plan, canonicalIdx, presenceIndicesByPath) = BuildRootPlusRootExtensionPlanWithKeyUnification([
-            new KeyUnificationMemberSpec(
-                RelativePath: "$._ext.sample.memberA",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: true
-            ),
-        ]);
-        _canonicalIndex = canonicalIdx;
-        _presenceIndex = presenceIndicesByPath["$._ext.sample.memberA"];
-
-        // Stored scope at $._ext.sample hides "memberA" — resolver pulls value from stored row.
-        var request = CreateRequest(
-            writableBody: null,
-            rootResourceCreatable: true,
-            RequestVisiblePresentScope("$"),
-            RequestVisiblePresentScope("$._ext.sample")
-        );
-        var appliedContext = CreateContext(
-            request,
-            storedScopeStates: StoredVisiblePresentScope("$._ext.sample", "memberA")
-        );
-
-        var memberColumn = MemberPathColumnFor("$._ext.sample.memberA");
-        var presenceColumn = PresenceColumnFor("$._ext.sample.memberA");
-        var currentRow = new Dictionary<DbColumnName, object?>
-        {
-            [memberColumn] = 99,
-            [presenceColumn] = true,
-        };
-
-        var context = BuildSeparateTableResolverContext(
-            plan,
-            currentRowByColumnName: currentRow,
-            profileRequest: request,
-            profileAppliedContext: appliedContext
-        );
-
-        var extensionPlan = plan.TablePlansInDependencyOrder[1];
-        _row = NewInitialRow(extensionPlan);
-        var resolverOwned = ImmutableHashSet.Create(canonicalIdx, _presenceIndex);
-
-        new ProfileSeparateTableKeyUnificationResolver().Resolve(extensionPlan, context, _row, resolverOwned);
-    }
-
-    [Test]
-    public void It_writes_canonical_from_stored_hidden_value() =>
-        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(99);
-
-    [Test]
-    public void It_writes_synthetic_presence_true_for_stored_present() =>
-        ((FlattenedWriteValue.Literal)_row[_presenceIndex]).Value.Should().Be(true);
-
-    private static FlattenedWriteValue[] NewInitialRow(TableWritePlan tablePlan)
-    {
-        var row = new FlattenedWriteValue[tablePlan.ColumnBindings.Length];
-        for (var i = 0; i < row.Length; i++)
-        {
-            row[i] = new FlattenedWriteValue.Literal(null);
-        }
-        return row;
-    }
-}
-
-[TestFixture]
-public class Given_SeparateTableResolver_with_mixed_visible_and_hidden_agreement_succeeds
-{
-    private FlattenedWriteValue[] _row = null!;
-    private int _canonicalIndex;
-
-    [SetUp]
-    public void Setup()
-    {
-        var (plan, canonicalIdx, _) = BuildRootPlusRootExtensionPlanWithKeyUnification([
-            new KeyUnificationMemberSpec(
-                RelativePath: "$._ext.sample.memberA",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: false
-            ),
-            new KeyUnificationMemberSpec(
-                RelativePath: "$._ext.sample.memberB",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: false
-            ),
-        ]);
-        _canonicalIndex = canonicalIdx;
-
-        // Visible memberA from request (42); hidden memberB from stored row (42) — agree.
-        var body = new JsonObject
-        {
-            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["memberA"] = 42 } },
-        };
-        var request = CreateRequest(
-            writableBody: body,
-            rootResourceCreatable: true,
-            RequestVisiblePresentScope("$"),
-            RequestVisiblePresentScope("$._ext.sample")
-        );
-        var appliedContext = CreateContext(
-            request,
-            storedScopeStates: StoredVisiblePresentScope("$._ext.sample", "memberB")
-        );
-
-        var currentRow = new Dictionary<DbColumnName, object?>
-        {
-            [MemberPathColumnFor("$._ext.sample.memberA")] = null,
-            [MemberPathColumnFor("$._ext.sample.memberB")] = 42,
-        };
-
-        var context = BuildSeparateTableResolverContext(
-            plan,
-            writableBody: body,
-            currentRowByColumnName: currentRow,
-            profileRequest: request,
-            profileAppliedContext: appliedContext
-        );
-
-        var extensionPlan = plan.TablePlansInDependencyOrder[1];
-        _row = NewInitialRow(extensionPlan);
-        var resolverOwned = ImmutableHashSet.Create(canonicalIdx);
-
-        new ProfileSeparateTableKeyUnificationResolver().Resolve(extensionPlan, context, _row, resolverOwned);
-    }
-
-    [Test]
-    public void It_writes_canonical_from_visible_or_hidden_consistently() =>
-        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(42);
-
-    private static FlattenedWriteValue[] NewInitialRow(TableWritePlan tablePlan)
-    {
-        var row = new FlattenedWriteValue[tablePlan.ColumnBindings.Length];
-        for (var i = 0; i < row.Length; i++)
-        {
-            row[i] = new FlattenedWriteValue.Literal(null);
-        }
-        return row;
-    }
-}
-
-[TestFixture]
-public class Given_SeparateTableResolver_with_visible_hidden_disagreement_fails_closed
-{
-    private Action _act = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var (plan, canonicalIdx, _) = BuildRootPlusRootExtensionPlanWithKeyUnification([
-            new KeyUnificationMemberSpec(
-                RelativePath: "$._ext.sample.memberA",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: false
-            ),
-            new KeyUnificationMemberSpec(
-                RelativePath: "$._ext.sample.memberB",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: false
-            ),
-        ]);
-
-        // Visible memberA = 1, hidden memberB (stored) = 2 — disagree.
-        var body = new JsonObject
-        {
-            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["memberA"] = 1 } },
-        };
-        var request = CreateRequest(
-            writableBody: body,
-            rootResourceCreatable: true,
-            RequestVisiblePresentScope("$"),
-            RequestVisiblePresentScope("$._ext.sample")
-        );
-        var appliedContext = CreateContext(
-            request,
-            storedScopeStates: StoredVisiblePresentScope("$._ext.sample", "memberB")
-        );
-
-        var currentRow = new Dictionary<DbColumnName, object?>
-        {
-            [MemberPathColumnFor("$._ext.sample.memberA")] = null,
-            [MemberPathColumnFor("$._ext.sample.memberB")] = 2,
-        };
-
-        var context = BuildSeparateTableResolverContext(
-            plan,
-            writableBody: body,
-            currentRowByColumnName: currentRow,
-            profileRequest: request,
-            profileAppliedContext: appliedContext
-        );
-
-        var extensionPlan = plan.TablePlansInDependencyOrder[1];
-        var row = new FlattenedWriteValue[extensionPlan.ColumnBindings.Length];
-        for (var i = 0; i < row.Length; i++)
-        {
-            row[i] = new FlattenedWriteValue.Literal(null);
-        }
-        var resolverOwned = ImmutableHashSet.Create(canonicalIdx);
-
-        _act = () =>
-            new ProfileSeparateTableKeyUnificationResolver().Resolve(
-                extensionPlan,
-                context,
-                row,
-                resolverOwned
-            );
-    }
-
-    [Test]
-    public void It_throws_validation_exception_with_key_unification_conflict_message()
-    {
-        _act.Should()
-            .Throw<RelationalWriteRequestValidationException>()
-            .Where(e => e.ValidationFailures[0].Message.Contains("Key-unification conflict"));
-    }
-}
-
-[TestFixture]
-public class Given_SeparateTableResolver_rejects_non_RootExtension_table_kind
-{
-    private Action _act = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        // Separate table tagged as CollectionExtensionScope — the slice 5 scope family
-        // the separate-table resolver must reject.
-        var plan = BuildRootPlusSeparateTableWithKeyUnificationNonRootExtensionKind(
+        var plan = BuildRootPlusSeparateTablePlanWithNonRootExtensionKind(
             nonRootExtensionKind: DbTableKind.CollectionExtensionScope
         );
         var separatePlan = plan.TablePlansInDependencyOrder[1];
-
+        var scopeAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var requestScope = new RequestScopeState(
+            scopeAddress,
+            ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
         var context = BuildSeparateTableResolverContext(
             plan,
-            profileRequest: CreateRequest(scopeStates: RequestVisiblePresentScope("$"))
+            profileRequest: CreateRequest(scopeStates: requestScope)
+        );
+        var row = new FlattenedWriteValue[separatePlan.ColumnBindings.Length];
+        for (var i = 0; i < row.Length; i++)
+        {
+            row[i] = new FlattenedWriteValue.Literal(null);
+        }
+
+        try
+        {
+            new ProfileSeparateTableKeyUnificationResolver().Resolve(
+                separatePlan,
+                context,
+                scopeAddress,
+                requestScope,
+                storedScope: null,
+                descendantStates: default,
+                row,
+                ImmutableHashSet<int>.Empty
+            );
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_does_not_throw() => _thrown.Should().BeNull();
+}
+
+[TestFixture]
+public class Given_SeparateTableResolver_rejects_unsupported_table_kind
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildRootPlusSeparateTableWithKeyUnificationNonRootExtensionKind(
+            nonRootExtensionKind: DbTableKind.Root
+        );
+        var separatePlan = plan.TablePlansInDependencyOrder[1];
+        var scopeAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var requestScope = new RequestScopeState(
+            scopeAddress,
+            ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+        var context = BuildSeparateTableResolverContext(
+            plan,
+            profileRequest: CreateRequest(scopeStates: requestScope)
         );
         var row = new FlattenedWriteValue[separatePlan.ColumnBindings.Length];
         for (var i = 0; i < row.Length; i++)
@@ -379,87 +98,99 @@ public class Given_SeparateTableResolver_rejects_non_RootExtension_table_kind
             new ProfileSeparateTableKeyUnificationResolver().Resolve(
                 separatePlan,
                 context,
+                scopeAddress,
+                requestScope,
+                storedScope: null,
+                descendantStates: default,
                 row,
                 ImmutableHashSet.Create(1)
             );
     }
 
     [Test]
-    public void It_throws_ArgumentException_with_slice_5_guidance() =>
-        _act.Should().Throw<ArgumentException>().WithMessage("*RootExtension*slice 5*");
+    public void It_throws_ArgumentException_with_supported_kinds() =>
+        _act.Should().Throw<ArgumentException>().WithMessage("*RootExtension*CollectionExtensionScope*Root*");
 }
 
 [TestFixture]
-public class Given_SeparateTableResolver_with_stored_context_containing_unrelated_root_scope_resolves_without_contamination
+public class Given_SeparateTableResolver_instance_aware_overload_for_sibling_scope_instances
 {
-    // Multi-table regression pin: the profile context may carry stored scope states for
-    // scopes owned by other tables (e.g., the root $ when resolving an extension table's
-    // key-unification plan). The resolver's core uses longest-prefix scope matching on the
-    // member's own canonical path, so it should select the extension scope owner and
-    // ignore the root scope even when the root also declares HiddenMemberPaths of its own.
+    private const string ParentScope = "$.parents[*]";
+    private const string AlignedScope = "$.parents[*]._ext.aligned";
+
     private FlattenedWriteValue[] _row = null!;
     private int _canonicalIndex;
 
     [SetUp]
     public void Setup()
     {
-        var (plan, canonicalIdx, _) = BuildRootPlusRootExtensionPlanWithKeyUnification([
-            new KeyUnificationMemberSpec(
-                RelativePath: "$._ext.sample.memberA",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: false
-            ),
-        ]);
+        var (plan, canonicalIdx, _) = BuildRootPlusRootExtensionPlanWithKeyUnification(
+            [
+                new KeyUnificationMemberSpec(
+                    RelativePath: "$.memberA",
+                    SourceKind: KeyUnificationMemberSourceKind.Scalar,
+                    PresenceSynthetic: false
+                ),
+            ],
+            extensionJsonScope: AlignedScope
+        );
         _canonicalIndex = canonicalIdx;
 
-        // Request body supplies the extension member; both root and extension scopes present.
-        var body = new JsonObject
-        {
-            ["firstName"] = "Alice",
-            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["memberA"] = 42 } },
-        };
-        var request = CreateRequest(
-            writableBody: body,
+        var addressA = ScopeAddressForParent("A");
+        var addressB = ScopeAddressForParent("B");
+        var requestA = new RequestScopeState(addressA, ProfileVisibilityKind.VisiblePresent, true);
+        var requestB = new RequestScopeState(addressB, ProfileVisibilityKind.VisiblePresent, true);
+        var storedA = new StoredScopeState(addressA, ProfileVisibilityKind.VisiblePresent, ["memberA"]);
+        var storedB = new StoredScopeState(addressB, ProfileVisibilityKind.VisiblePresent, []);
+
+        var scopedBody = new JsonObject { ["memberA"] = 42 };
+        var profileRequest = CreateRequest(
+            writableBody: new JsonObject(),
             rootResourceCreatable: true,
-            RequestVisiblePresentScope("$"),
-            RequestVisiblePresentScope("$._ext.sample")
+            requestA,
+            requestB
         );
+        var appliedContext = CreateContext(profileRequest, visibleStoredBody: null, storedA, storedB);
+        var currentRow = new Dictionary<DbColumnName, object?> { [MemberPathColumnFor("$.memberA")] = 99 };
 
-        // Stored side: BOTH scopes present. The root scope ($) declares HiddenMemberPaths
-        // for the leaf name "memberA" — the identical leaf identifier the extension scope
-        // uses at $._ext.sample.memberA. If scope ownership were determined by leaf name
-        // (instead of by longest table-backed scope prefix), the root's hidden-path entry
-        // would incorrectly bind to the extension member and cause the resolver to pull
-        // the (null) stored value for the extension member column instead of reading from
-        // the request body.
-        var appliedContext = CreateContext(
-            request,
-            visibleStoredBody: null,
-            StoredVisiblePresentScope("$", "memberA"),
-            StoredVisiblePresentScope("$._ext.sample")
-        );
-
-        // If contamination happened, the resolver would look up the extension's member
-        // column in the stored row and find null — but we leave it absent so we'd get a
-        // missing-column InvalidOperationException. Under correct table-localized scope
-        // matching, the resolver reads from the request body and writes 42.
         var context = BuildSeparateTableResolverContext(
             plan,
-            writableBody: body,
-            profileRequest: request,
+            writableBody: scopedBody,
+            currentRowByColumnName: currentRow,
+            profileRequest: profileRequest,
             profileAppliedContext: appliedContext
         );
 
-        var extensionPlan = plan.TablePlansInDependencyOrder[1];
-        _row = NewInitialRow(extensionPlan);
+        var separateTable = plan.TablePlansInDependencyOrder[1];
+        _row = NewInitialRow(separateTable);
         var resolverOwned = ImmutableHashSet.Create(canonicalIdx);
 
-        new ProfileSeparateTableKeyUnificationResolver().Resolve(extensionPlan, context, _row, resolverOwned);
+        new ProfileSeparateTableKeyUnificationResolver().Resolve(
+            separateTable,
+            context,
+            addressB,
+            requestB,
+            storedB,
+            descendantStates: default,
+            _row,
+            resolverOwned
+        );
     }
 
     [Test]
-    public void It_writes_canonical_from_request_body_ignoring_unrelated_root_scope() =>
+    public void It_resolves_from_the_matching_instances_visible_request_member() =>
         ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(42);
+
+    private static ScopeInstanceAddress ScopeAddressForParent(string parentId) =>
+        new(
+            AlignedScope,
+            [
+                new AncestorCollectionInstance(
+                    ParentScope,
+                    [new SemanticIdentityPart("$.parentId", JsonValue.Create(parentId), IsPresent: true)]
+                ),
+            ]
+        );
 
     private static FlattenedWriteValue[] NewInitialRow(TableWritePlan tablePlan)
     {
@@ -473,70 +204,148 @@ public class Given_SeparateTableResolver_with_stored_context_containing_unrelate
 }
 
 /// <summary>
-/// Regression for the Slice 3 scope-navigation contract: production key-unification
-/// member paths on a root-extension plan are compiled as scope-relative
-/// (<c>$.memberA</c>, not <c>$._ext.sample.memberA</c>). After the synthesizer fix,
-/// the caller hands the scope-scoped sub-node of the root request body to the
-/// resolver; the resolver then finds the member by navigating the scope-relative
-/// path against that scoped node.
+/// Slice 5 CP5 — descendant inlined scope governance for separate-table key-unification.
+/// The k-u member's path falls under a descendant inlined non-collection scope
+/// (<c>$._ext.sample.detail</c>) whose owner table equals the direct scope's table. The
+/// descendant stored scope is <c>Hidden</c>; the request body provides a value that would
+/// otherwise overwrite the stored value. The resolver, when given a descendant-state
+/// envelope, must classify the member as hidden-governed under the descendant scope and
+/// pull the canonical value from the stored row instead of the request body.
 /// </summary>
 [TestFixture]
-public class Given_SeparateTableResolver_with_scope_relative_member_path_evaluates_against_scoped_request_node
+public class Given_SeparateTableKuResolver_descendant_hidden_scope_preserves_stored_value
 {
+    private const string DirectScope = "$._ext.sample";
+    private const string DescendantScope = "$._ext.sample.detail";
+    private const string MemberRelativePath = "$._ext.sample.detail.memberA";
+
     private FlattenedWriteValue[] _row = null!;
     private int _canonicalIndex;
     private int _presenceIndex;
+    private ProfileSeparateScopeDescendantStates _descendantStates;
 
     [SetUp]
     public void Setup()
     {
-        // Production-shaped: member path is scope-relative; the scope is $._ext.sample.
-        var (plan, canonicalIdx, presenceByPath) = BuildRootPlusRootExtensionPlanWithKeyUnification([
-            new KeyUnificationMemberSpec(
-                RelativePath: "$.memberA",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: true
-            ),
-        ]);
-        _canonicalIndex = canonicalIdx;
-        _presenceIndex = presenceByPath["$.memberA"];
-
-        // Full root request body contains _ext.sample.memberA — matches production shape.
-        // The fixed caller extracts the $._ext.sample sub-node and passes THAT to the
-        // resolver context, so scope-relative member paths navigate correctly.
-        var rootBody = new JsonObject
-        {
-            ["firstName"] = "Ada",
-            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["memberA"] = 42 } },
-        };
-        var scopedRequestNode = rootBody["_ext"]!["sample"]!;
-
-        var request = CreateRequest(
-            writableBody: rootBody,
-            rootResourceCreatable: true,
-            RequestVisiblePresentScope("$"),
-            RequestVisiblePresentScope("$._ext.sample")
+        var (plan, canonicalIdx, presenceByPath) = BuildRootPlusRootExtensionPlanWithKeyUnification(
+            [
+                new KeyUnificationMemberSpec(
+                    RelativePath: MemberRelativePath,
+                    SourceKind: KeyUnificationMemberSourceKind.Scalar,
+                    PresenceSynthetic: true
+                ),
+            ],
+            extensionJsonScope: DirectScope
         );
+        _canonicalIndex = canonicalIdx;
+        _presenceIndex = presenceByPath[MemberRelativePath];
+
+        var directScopeAddress = new ScopeInstanceAddress(DirectScope, []);
+        var descendantScopeAddress = new ScopeInstanceAddress(DescendantScope, []);
+
+        // Direct scope is VisiblePresent. Descendant scope is VisiblePresent in the request
+        // (the request body contains the descendant member with a competing value), but the
+        // stored side declares the descendant scope Hidden — its governance must take effect
+        // for bindings whose path falls under it.
+        var directRequest = new RequestScopeState(
+            directScopeAddress,
+            ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+        var descendantRequest = new RequestScopeState(
+            descendantScopeAddress,
+            ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+        var directStored = new StoredScopeState(
+            directScopeAddress,
+            ProfileVisibilityKind.VisiblePresent,
+            ImmutableArray<string>.Empty
+        );
+        var descendantStored = new StoredScopeState(
+            descendantScopeAddress,
+            ProfileVisibilityKind.Hidden,
+            ImmutableArray<string>.Empty
+        );
+
+        // Request body provides a value at the descendant member path (would overwrite the
+        // stored value if the descendant scope's hidden governance were not honored).
+        var requestBody = new JsonObject
+        {
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject { ["detail"] = new JsonObject { ["memberA"] = 1 } },
+            },
+        };
+        var profileRequest = CreateRequest(
+            writableBody: requestBody,
+            rootResourceCreatable: true,
+            directRequest,
+            descendantRequest
+        );
+        var appliedContext = CreateContext(
+            profileRequest,
+            visibleStoredBody: null,
+            directStored,
+            descendantStored
+        );
+
+        // Stored row contains the preserved value (99) for the hidden member; presence column
+        // is non-null to signal the stored member is present.
+        var memberColumn = MemberPathColumnFor(MemberRelativePath);
+        var presenceColumn = PresenceColumnFor(MemberRelativePath);
+        var currentRow = new Dictionary<DbColumnName, object?>
+        {
+            [memberColumn] = 99,
+            [presenceColumn] = true,
+        };
 
         var context = BuildSeparateTableResolverContext(
             plan,
-            writableBody: scopedRequestNode,
-            profileRequest: request
+            writableBody: requestBody,
+            currentRowByColumnName: currentRow,
+            profileRequest: profileRequest,
+            profileAppliedContext: appliedContext
         );
 
-        var extensionPlan = plan.TablePlansInDependencyOrder[1];
-        _row = NewInitialRow(extensionPlan);
+        var extensionTable = plan.TablePlansInDependencyOrder[1];
+        _descendantStates = ProfileSeparateScopeDescendantStates.Collect(
+            plan,
+            extensionTable,
+            directScopeAddress,
+            profileRequest,
+            appliedContext
+        );
+
+        _row = NewInitialRow(extensionTable);
         var resolverOwned = ImmutableHashSet.Create(canonicalIdx, _presenceIndex);
 
-        new ProfileSeparateTableKeyUnificationResolver().Resolve(extensionPlan, context, _row, resolverOwned);
+        new ProfileSeparateTableKeyUnificationResolver().Resolve(
+            extensionTable,
+            context,
+            directScopeAddress,
+            directRequest,
+            directStored,
+            _descendantStates,
+            _row,
+            resolverOwned
+        );
     }
 
     [Test]
-    public void It_writes_canonical_from_scope_relative_member_path() =>
-        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(42);
+    public void It_pins_descendant_states_collector_finds_the_descendant_stored_scope() =>
+        _descendantStates
+            .StoredScopes.Should()
+            .Contain(s =>
+                s.Address.JsonScope == DescendantScope && s.Visibility == ProfileVisibilityKind.Hidden
+            );
 
     [Test]
-    public void It_writes_synthetic_presence_true_for_visible_present_member() =>
+    public void It_writes_canonical_from_stored_hidden_descendant_value() =>
+        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(99);
+
+    [Test]
+    public void It_writes_synthetic_presence_true_for_stored_present_descendant_member() =>
         ((FlattenedWriteValue.Literal)_row[_presenceIndex]).Value.Should().Be(true);
 
     private static FlattenedWriteValue[] NewInitialRow(TableWritePlan tablePlan)
@@ -558,82 +367,3 @@ public class Given_SeparateTableResolver_with_scope_relative_member_path_evaluat
 /// exception. Pins that scope-relative member paths interact correctly with
 /// per-scope <c>HiddenMemberPaths</c> governance during key-unification.
 /// </summary>
-[TestFixture]
-public class Given_SeparateTableResolver_with_scope_relative_visible_hidden_disagreement_fails_closed
-{
-    private Action _act = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var (plan, canonicalIdx, _) = BuildRootPlusRootExtensionPlanWithKeyUnification([
-            new KeyUnificationMemberSpec(
-                RelativePath: "$.memberA",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: false
-            ),
-            new KeyUnificationMemberSpec(
-                RelativePath: "$.memberB",
-                SourceKind: KeyUnificationMemberSourceKind.Scalar,
-                PresenceSynthetic: false
-            ),
-        ]);
-
-        // Visible memberA = 1 (from scoped request); hidden memberB (stored) = 2 — disagree.
-        var rootBody = new JsonObject
-        {
-            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["memberA"] = 1 } },
-        };
-        var scopedRequestNode = rootBody["_ext"]!["sample"]!;
-        var request = CreateRequest(
-            writableBody: rootBody,
-            rootResourceCreatable: true,
-            RequestVisiblePresentScope("$"),
-            RequestVisiblePresentScope("$._ext.sample")
-        );
-        // Hidden-member path on the stored scope is scope-relative ("memberB"), matching
-        // the way the classifier derives the member's governing path from its scope.
-        var appliedContext = CreateContext(
-            request,
-            storedScopeStates: StoredVisiblePresentScope("$._ext.sample", "memberB")
-        );
-
-        var currentRow = new Dictionary<DbColumnName, object?>
-        {
-            [MemberPathColumnFor("$.memberA")] = null,
-            [MemberPathColumnFor("$.memberB")] = 2,
-        };
-
-        var context = BuildSeparateTableResolverContext(
-            plan,
-            writableBody: scopedRequestNode,
-            currentRowByColumnName: currentRow,
-            profileRequest: request,
-            profileAppliedContext: appliedContext
-        );
-
-        var extensionPlan = plan.TablePlansInDependencyOrder[1];
-        var row = new FlattenedWriteValue[extensionPlan.ColumnBindings.Length];
-        for (var i = 0; i < row.Length; i++)
-        {
-            row[i] = new FlattenedWriteValue.Literal(null);
-        }
-        var resolverOwned = ImmutableHashSet.Create(canonicalIdx);
-
-        _act = () =>
-            new ProfileSeparateTableKeyUnificationResolver().Resolve(
-                extensionPlan,
-                context,
-                row,
-                resolverOwned
-            );
-    }
-
-    [Test]
-    public void It_throws_validation_exception_with_key_unification_conflict_message()
-    {
-        _act.Should()
-            .Throw<RelationalWriteRequestValidationException>()
-            .Where(e => e.ValidationFailures[0].Message.Contains("Key-unification conflict"));
-    }
-}

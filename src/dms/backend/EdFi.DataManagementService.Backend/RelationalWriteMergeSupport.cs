@@ -10,10 +10,8 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// Shared, projection-focused helpers used by the relational write merge
-/// synthesizers (no-profile today, profile-merge in a later slice) and the
-/// post-overlay key-unification resolver. Extracted without behavior change
-/// from <see cref="RelationalWriteNoProfileMergeSynthesizer"/>.
+/// Shared, projection-focused helpers used by the relational write merge synthesizers
+/// and the post-overlay key-unification resolver.
 /// </summary>
 internal static class RelationalWriteMergeSupport
 {
@@ -30,6 +28,56 @@ internal static class RelationalWriteMergeSupport
         throw new InvalidOperationException(
             $"Table '{FormatTable(tableWritePlan)}' does not contain a binding for column '{columnName.Value}'."
         );
+    }
+
+    /// <summary>
+    /// Normalizes a binding's canonical path to the scope-relative form Core publishes
+    /// (e.g. <c>"$.addresses[*].streetNumber"</c> with scope <c>"$.addresses[*]"</c>
+    /// becomes <c>"streetNumber"</c>). Falls back to stripping a leading <c>"$."</c> for
+    /// paths that do not nest under the supplied scope.
+    /// </summary>
+    /// <remarks>
+    /// Shared by the flattener, no-profile synthesizer, and profile collection walker so all
+    /// three normalize identity / member paths the same way. The External assembly's
+    /// <c>CompiledScopeAdapterFactory</c> carries an independent copy (External cannot
+    /// reference Backend); keep the bodies in sync if either side changes.
+    /// </remarks>
+    internal static string ToScopeRelativePath(string canonicalPath, string scopeCanonical)
+    {
+        var scopePrefix = scopeCanonical + ".";
+        if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
+        {
+            return canonicalPath[scopePrefix.Length..];
+        }
+
+        return canonicalPath.StartsWith("$.", StringComparison.Ordinal) ? canonicalPath[2..] : canonicalPath;
+    }
+
+    /// <summary>
+    /// Extracts the physical-row-identity slice of a row's binding-indexed values for use as
+    /// the parent identity of nested-children recursion. Iterates the table's
+    /// <see cref="DbTableModel.IdentityMetadata"/>.<c>PhysicalRowIdentityColumns</c> and pulls
+    /// each column's value from <paramref name="values"/> via <see cref="FindBindingIndex"/>.
+    /// Shared by the no-profile synthesizer, profile-merge synthesizer, and profile collection
+    /// walker so all three keep the same parent-identity shape.
+    /// </summary>
+    internal static ImmutableArray<FlattenedWriteValue> ExtractPhysicalRowIdentityValues(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<FlattenedWriteValue> values
+    )
+    {
+        var physicalRowIdentityColumns = tableWritePlan
+            .TableModel
+            .IdentityMetadata
+            .PhysicalRowIdentityColumns;
+        var physicalRowIdentityValues = new FlattenedWriteValue[physicalRowIdentityColumns.Count];
+        for (var index = 0; index < physicalRowIdentityColumns.Count; index++)
+        {
+            var columnName = physicalRowIdentityColumns[index];
+            physicalRowIdentityValues[index] = values[FindBindingIndex(tableWritePlan, columnName)];
+        }
+
+        return [.. physicalRowIdentityValues];
     }
 
     internal static ImmutableArray<FlattenedWriteValue> ProjectComparableValues(

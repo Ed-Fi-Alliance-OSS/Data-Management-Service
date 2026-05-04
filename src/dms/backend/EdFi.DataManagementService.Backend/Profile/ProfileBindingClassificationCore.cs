@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// shared per-scope profile inputs, producing a per-binding
 /// <see cref="RootBindingDisposition"/> array plus the resolver-owned binding index
 /// set. Extracted from <see cref="ProfileRootTableBindingClassifier"/> without
-/// behavior change so Slice 3's separate-table classifier can reuse the same
+/// behavior change so root-table and separate-table classifiers share the same
 /// governance logic.
 /// </summary>
 internal static class ProfileBindingClassificationCore
@@ -44,9 +44,66 @@ internal static class ProfileBindingClassificationCore
         return ClassifyBindingsCore(
             writePlan,
             tableWritePlan,
-            profileRequest,
-            profileAppliedContext,
             resolverOwnedBindingIndices,
+            ScopeStateLookup.FromProfile(profileRequest, profileAppliedContext),
+            candidateScopes,
+            hiddenMemberPathsOverride: null
+        );
+    }
+
+    /// <summary>
+    /// Classifies bindings for one structurally-addressed separate-scope instance. The
+    /// caller supplies the request and stored scope states already resolved for
+    /// <paramref name="scopeAddress"/>, avoiding JsonScope-only lookup across sibling
+    /// collection-aligned instances.
+    /// </summary>
+    internal static ImmutableArray<RootBindingDisposition> ClassifyBindings(
+        ResourceWritePlan writePlan,
+        TableWritePlan tableWritePlan,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ImmutableHashSet<int> resolverOwnedBindingIndices
+    ) =>
+        ClassifyBindings(
+            writePlan,
+            tableWritePlan,
+            scopeAddress,
+            requestScope,
+            storedScope,
+            descendantStates: default,
+            resolverOwnedBindingIndices
+        );
+
+    /// <summary>
+    /// Classifies bindings for one structurally-addressed separate-scope instance, plus
+    /// the inlined non-collection descendant scope states whose owner table equals the
+    /// direct scope's table and whose ancestor-instance chain matches. Descendant request
+    /// and stored scopes participate in candidate-scope resolution and stored-scope
+    /// metadata-drift validation alongside the direct scope.
+    /// </summary>
+    internal static ImmutableArray<RootBindingDisposition> ClassifyBindings(
+        ResourceWritePlan writePlan,
+        TableWritePlan tableWritePlan,
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates,
+        ImmutableHashSet<int> resolverOwnedBindingIndices
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writePlan);
+        ArgumentNullException.ThrowIfNull(tableWritePlan);
+        ArgumentNullException.ThrowIfNull(scopeAddress);
+        ArgumentNullException.ThrowIfNull(resolverOwnedBindingIndices);
+
+        var candidateScopes = BuildCandidateScopeSet(requestScope, storedScope, descendantStates);
+
+        return ClassifyBindingsCore(
+            writePlan,
+            tableWritePlan,
+            resolverOwnedBindingIndices,
+            ScopeStateLookup.FromDirect(scopeAddress, requestScope, storedScope, descendantStates),
             candidateScopes,
             hiddenMemberPathsOverride: null
         );
@@ -101,9 +158,11 @@ internal static class ProfileBindingClassificationCore
         return ClassifyBindingsCore(
             writePlan,
             tableWritePlan,
-            profileRequest,
-            profileAppliedContext: null,
             resolverOwnedBindingIndices,
+            // JsonScope-keyed request lookup: safe because row-level callers supply
+            // hidden-member paths explicitly per collection row; no stored-scope state is
+            // consulted on this path.
+            ScopeStateLookup.FromProfile(profileRequest, profileAppliedContext: null),
             candidateScopes,
             hiddenMemberPathsOverride: hiddenMemberPaths
         );
@@ -122,9 +181,8 @@ internal static class ProfileBindingClassificationCore
     private static ImmutableArray<RootBindingDisposition> ClassifyBindingsCore(
         ResourceWritePlan writePlan,
         TableWritePlan tableWritePlan,
-        ProfileAppliedWriteRequest profileRequest,
-        ProfileAppliedWriteContext? profileAppliedContext,
         ImmutableHashSet<int> resolverOwnedBindingIndices,
+        ScopeStateLookup scopeStateLookup,
         ImmutableArray<string> candidateScopes,
         ImmutableArray<string>? hiddenMemberPathsOverride
     )
@@ -151,8 +209,7 @@ internal static class ProfileBindingClassificationCore
                 tableWritePlan,
                 bindingIndex,
                 candidateScopes,
-                profileRequest,
-                profileAppliedContext,
+                scopeStateLookup,
                 bindingsByContainingScope,
                 hiddenMemberPathsOverride
             );
@@ -176,21 +233,28 @@ internal static class ProfileBindingClassificationCore
                     tableScopeCanonicalForKeyUnification,
                     member.RelativePath.Canonical
                 );
-                var containingScope = TryMatchLongestScope(memberPathAbsolute, candidateScopes);
+                var containingScope = ProfileScopePathHelpers.TryMatchLongestScope(
+                    memberPathAbsolute,
+                    candidateScopes
+                );
 
                 if (containingScope is null)
                 {
                     continue;
                 }
 
-                var strippedMemberPath = StripScopePrefix(memberPathAbsolute, containingScope);
+                var strippedMemberPath = ProfileScopePathHelpers.StripScopePrefix(
+                    memberPathAbsolute,
+                    containingScope
+                );
                 var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
                 var governingPath = member switch
                 {
-                    KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived => StripScopePrefix(
-                        refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
-                        containingScope
-                    ),
+                    KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived =>
+                        ProfileScopePathHelpers.StripScopePrefix(
+                            refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
+                            containingScope
+                        ),
                     _ => strippedMemberPath,
                 };
 
@@ -212,11 +276,12 @@ internal static class ProfileBindingClassificationCore
         // Skipped when hiddenMemberPathsOverride is supplied (row-level primitive path)
         // because there is no stored scope context to cross-check; the row-level path runs
         // its own narrower hidden-path coverage check below instead.
-        if (profileAppliedContext is not null && hiddenMemberPathsOverride is null)
+        var storedScopesForMetadata = scopeStateLookup.StoredScopesForMetadata();
+        if (storedScopesForMetadata.Length > 0 && hiddenMemberPathsOverride is null)
         {
             ValidateStoredScopeMetadata(
                 writePlan,
-                profileAppliedContext,
+                storedScopesForMetadata,
                 bindingsByContainingScope,
                 tableWritePlan
             );
@@ -341,13 +406,44 @@ internal static class ProfileBindingClassificationCore
         return [.. set.OrderByDescending(s => s.Length).ThenBy(s => s, StringComparer.Ordinal)];
     }
 
+    internal static ImmutableArray<string> BuildCandidateScopeSet(
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates = default
+    )
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (requestScope is not null)
+        {
+            set.Add(requestScope.Address.JsonScope);
+        }
+        if (storedScope is not null)
+        {
+            set.Add(storedScope.Address.JsonScope);
+        }
+        if (!descendantStates.RequestScopes.IsDefaultOrEmpty)
+        {
+            foreach (var s in descendantStates.RequestScopes)
+            {
+                set.Add(s.Address.JsonScope);
+            }
+        }
+        if (!descendantStates.StoredScopes.IsDefaultOrEmpty)
+        {
+            foreach (var s in descendantStates.StoredScopes)
+            {
+                set.Add(s.Address.JsonScope);
+            }
+        }
+        return [.. set.OrderByDescending(s => s.Length).ThenBy(s => s, StringComparer.Ordinal)];
+    }
+
     private static RootBindingDisposition ClassifyOrdinary(
         ResourceWritePlan writePlan,
         TableWritePlan tableWritePlan,
         int bindingIndex,
         ImmutableArray<string> candidateScopes,
-        ProfileAppliedWriteRequest profileRequest,
-        ProfileAppliedWriteContext? profileAppliedContext,
+        ScopeStateLookup scopeStateLookup,
         Dictionary<string, List<GovernedBindingEntry>> bindingsByContainingScope,
         ImmutableArray<string>? hiddenMemberPathsOverride
     )
@@ -361,11 +457,11 @@ internal static class ProfileBindingClassificationCore
                 return RootBindingDisposition.StorageManaged;
             case WriteValueSource.ParentKeyPart:
                 // Root-attached separate tables legitimately carry ParentKeyPart bindings
-                // (how the row aligns to its parent root row). The no-profile persister
-                // already handles parent-key rewriting in a separate step, not via
-                // key-unification. Classify as StorageManaged so the synthesizer skips it
-                // during profile overlay; Task 5 will add a ParentKeyPart rewrite step
-                // for separate-table rows mirroring the no-profile path.
+                // (how the row aligns to its parent root row). Parent-key rewriting is a
+                // separate step, not key-unification: the no-profile persister handles it
+                // for the no-profile path, and the profile separate-scope synthesis path
+                // calls RewriteSeparateScopeParentKeyParts. Classify as StorageManaged so
+                // profile overlay skips it.
                 return RootBindingDisposition.StorageManaged;
             case WriteValueSource.Ordinal:
                 // Row-level callers may supply collection tables with Ordinal bindings.
@@ -376,8 +472,8 @@ internal static class ProfileBindingClassificationCore
                     throw new InvalidOperationException(
                         $"Table '{FormatTable(tableWritePlan)}' contains a "
                             + $"{nameof(WriteValueSource.Ordinal)} binding at index {bindingIndex}, "
-                            + "which the profile-aware binding classifier does not support in slice 3. "
-                            + "Collection-shaped scopes must be fenced upstream."
+                            + "which the non-collection profile-aware binding classifier does not support. "
+                            + "Collection-shaped scopes must use row-level classification."
                     );
                 }
                 return RootBindingDisposition.StorageManaged;
@@ -405,14 +501,14 @@ internal static class ProfileBindingClassificationCore
         governingPathAbsolute = ToAbsoluteBindingPath(tableScopeCanonical, governingPathAbsolute);
 
         // Longest-prefix scope match. If no profile scope matches, the binding is ungoverned.
-        var containingScope = TryMatchLongestScope(bindingPath, candidateScopes);
+        var containingScope = ProfileScopePathHelpers.TryMatchLongestScope(bindingPath, candidateScopes);
         if (containingScope is null)
         {
             return RootBindingDisposition.VisibleWritable;
         }
 
-        var memberPath = StripScopePrefix(bindingPath, containingScope);
-        var governingPath = StripScopePrefix(governingPathAbsolute, containingScope);
+        var memberPath = ProfileScopePathHelpers.StripScopePrefix(bindingPath, containingScope);
+        var governingPath = ProfileScopePathHelpers.StripScopePrefix(governingPathAbsolute, containingScope);
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(binding.Source);
 
         // Record this binding under its containing scope so the post-pass drift check can
@@ -432,7 +528,7 @@ internal static class ProfileBindingClassificationCore
         // already resolved scope-level visibility before classifying individual members.
         var (hiddenPaths, whollyHidden) = DeriveHiddenPathsForBinding(
             hiddenMemberPathsOverride,
-            profileAppliedContext,
+            scopeStateLookup,
             containingScope
         );
 
@@ -444,7 +540,7 @@ internal static class ProfileBindingClassificationCore
             return RootBindingDisposition.HiddenPreserved;
         }
 
-        var requestScope = ProfileMemberGovernanceRules.LookupRequestScope(profileRequest, containingScope);
+        var requestScope = scopeStateLookup.LookupRequestScope(containingScope);
         if (requestScope is not null && requestScope.Visibility == ProfileVisibilityKind.VisibleAbsent)
         {
             return RootBindingDisposition.ClearOnVisibleAbsent;
@@ -464,7 +560,7 @@ internal static class ProfileBindingClassificationCore
     /// </summary>
     private static (ImmutableArray<string> HiddenPaths, bool WhollyHidden) DeriveHiddenPathsForBinding(
         ImmutableArray<string>? hiddenMemberPathsOverride,
-        ProfileAppliedWriteContext? profileAppliedContext,
+        ScopeStateLookup scopeStateLookup,
         string containingScope
     )
     {
@@ -473,15 +569,7 @@ internal static class ProfileBindingClassificationCore
             return (explicitPaths, false);
         }
 
-        if (profileAppliedContext is null)
-        {
-            return ([], false);
-        }
-
-        var storedScope = ProfileMemberGovernanceRules.LookupStoredScope(
-            profileAppliedContext,
-            containingScope
-        );
+        var storedScope = scopeStateLookup.LookupStoredScope(containingScope);
         if (storedScope is null)
         {
             return ([], false);
@@ -500,8 +588,8 @@ internal static class ProfileBindingClassificationCore
     /// failure rather than silent under-preservation.
     /// </summary>
     /// <remarks>
-    /// Slice 3 scope-relevance filter: a stored scope is "relevant to this table" only when
-    /// the stored scope is <em>owned by</em> this table — that is, when the longest
+    /// Scope-relevance filter: a stored scope is "relevant to this table" only when the
+    /// stored scope is <em>owned by</em> this table — that is, when the longest
     /// table-backed JSON-scope prefix of the stored scope's address equals this table's
     /// own <see cref="DbTableModel.JsonScope"/>. The profile context carries stored scope
     /// states for every scope on the resource (root + extensions); each per-table
@@ -520,7 +608,7 @@ internal static class ProfileBindingClassificationCore
     /// </remarks>
     private static void ValidateStoredScopeMetadata(
         ResourceWritePlan writePlan,
-        ProfileAppliedWriteContext profileAppliedContext,
+        ImmutableArray<StoredScopeState> storedScopeStates,
         Dictionary<string, List<GovernedBindingEntry>> bindingsByContainingScope,
         TableWritePlan tableWritePlan
     )
@@ -535,7 +623,7 @@ internal static class ProfileBindingClassificationCore
             .OrderByDescending(s => s.Length)
             .ToImmutableArray();
 
-        foreach (var storedScope in profileAppliedContext.StoredScopeStates)
+        foreach (var storedScope in storedScopeStates)
         {
             var scopeCanonical = storedScope.Address.JsonScope;
 
@@ -587,7 +675,7 @@ internal static class ProfileBindingClassificationCore
     /// Returns the longest table-backed JSON-scope prefix of <paramref name="scopeAddress"/>
     /// from <paramref name="tableBackedScopesLongestFirst"/>, or <c>null</c> if no
     /// table-backed scope is a segment-boundary prefix of <paramref name="scopeAddress"/>.
-    /// Prefix semantics match <see cref="TryMatchLongestScope"/>: a prefix must equal
+    /// Prefix semantics match <see cref="ProfileScopePathHelpers.TryMatchLongestScope"/>: a prefix must equal
     /// <paramref name="scopeAddress"/>, or be followed by a <c>.</c> separator. This is the
     /// "which table owns this scope?" resolver — the returned value is the JSON scope of
     /// the table that owns a binding at <paramref name="scopeAddress"/>. The caller treats
@@ -607,8 +695,8 @@ internal static class ProfileBindingClassificationCore
     /// longest table-backed JSON-scope prefix with segment-boundary semantics. Returns
     /// <c>null</c> if no table-backed ancestor exists (e.g., the scope itself is not under
     /// any table-backed scope canonical). Shares prefix semantics with
-    /// <see cref="ResolveOwnerTableScope"/> so fence-gate ownership lookups and
-    /// per-table classification ownership resolution use identical rules.
+    /// <see cref="ResolveOwnerTableScope"/> so profile-scope ownership lookups and per-table
+    /// classification ownership resolution use identical rules.
     /// </summary>
     internal static TableWritePlan? ResolveOwnerTablePlan(string scopeAddress, ResourceWritePlan writePlan)
     {
@@ -633,7 +721,7 @@ internal static class ProfileBindingClassificationCore
     /// Returns <c>true</c> when <paramref name="maybePrefix"/> is equal to
     /// <paramref name="scopeAddress"/>, or is a segment-boundary prefix (i.e., followed by
     /// a <c>.</c> separator). Mirrors the segment-boundary rule used by
-    /// <see cref="TryMatchLongestScope"/> so table-ownership resolution and binding-to-
+    /// <see cref="ProfileScopePathHelpers.TryMatchLongestScope"/> so table-ownership resolution and binding-to-
     /// scope matching share identical prefix semantics.
     /// </summary>
     private static bool IsEqualOrSegmentPrefix(string maybePrefix, string scopeAddress)
@@ -706,39 +794,6 @@ internal static class ProfileBindingClassificationCore
             ),
         };
 
-    private static string? TryMatchLongestScope(string bindingPath, ImmutableArray<string> candidateScopes)
-    {
-        // candidateScopes is pre-sorted longest-first.
-        foreach (var scope in candidateScopes)
-        {
-            if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-            {
-                return scope;
-            }
-            if (
-                bindingPath.StartsWith(scope, StringComparison.Ordinal)
-                && bindingPath.Length > scope.Length
-                && bindingPath[scope.Length] == '.'
-            )
-            {
-                return scope;
-            }
-        }
-        return null;
-    }
-
-    private static string StripScopePrefix(string bindingPath, string scope)
-    {
-        if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-        {
-            // Binding path equals the scope itself — member path is empty (rare; an exact-path
-            // hidden match would also have to be empty-string for it to govern).
-            return string.Empty;
-        }
-        // bindingPath = scope + '.' + memberPath
-        return bindingPath[(scope.Length + 1)..];
-    }
-
     internal static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 
@@ -789,13 +844,156 @@ internal static class ProfileBindingClassificationCore
             );
         }
 
-        if (string.Equals(tableScope, "$", StringComparison.Ordinal))
+        return tableScope + bindingPath.AsSpan(1).ToString();
+    }
+
+    private readonly record struct ScopeStateLookup(
+        ProfileAppliedWriteRequest? ProfileRequest,
+        ProfileAppliedWriteContext? ProfileAppliedContext,
+        RequestScopeState? DirectRequestScope,
+        StoredScopeState? DirectStoredScope,
+        ImmutableDictionary<string, RequestScopeState>? DescendantRequestScopesByJsonScope,
+        ImmutableDictionary<string, StoredScopeState>? DescendantStoredScopesByJsonScope,
+        bool UsesDirectScope
+    )
+    {
+        public static ScopeStateLookup FromProfile(
+            ProfileAppliedWriteRequest profileRequest,
+            ProfileAppliedWriteContext? profileAppliedContext
+        )
         {
-            // Root scope: the scope-relative path "$.foo" is already absolute against "$".
-            return bindingPath;
+            ArgumentNullException.ThrowIfNull(profileRequest);
+            return new(profileRequest, profileAppliedContext, null, null, null, null, UsesDirectScope: false);
         }
 
-        return tableScope + bindingPath.AsSpan(1).ToString();
+        public static ScopeStateLookup FromDirect(
+            ScopeInstanceAddress scopeAddress,
+            RequestScopeState? requestScope,
+            StoredScopeState? storedScope,
+            ProfileSeparateScopeDescendantStates descendantStates = default
+        )
+        {
+            ArgumentNullException.ThrowIfNull(scopeAddress);
+            ValidateDirectScopeAddress(scopeAddress, requestScope?.Address, nameof(requestScope));
+            ValidateDirectScopeAddress(scopeAddress, storedScope?.Address, nameof(storedScope));
+
+            ImmutableDictionary<string, RequestScopeState>? requestMap = null;
+            if (!descendantStates.RequestScopes.IsDefaultOrEmpty)
+            {
+                var b = ImmutableDictionary.CreateBuilder<string, RequestScopeState>(StringComparer.Ordinal);
+                foreach (var s in descendantStates.RequestScopes)
+                {
+                    b[s.Address.JsonScope] = s;
+                }
+                requestMap = b.ToImmutable();
+            }
+
+            ImmutableDictionary<string, StoredScopeState>? storedMap = null;
+            if (!descendantStates.StoredScopes.IsDefaultOrEmpty)
+            {
+                var b = ImmutableDictionary.CreateBuilder<string, StoredScopeState>(StringComparer.Ordinal);
+                foreach (var s in descendantStates.StoredScopes)
+                {
+                    b[s.Address.JsonScope] = s;
+                }
+                storedMap = b.ToImmutable();
+            }
+
+            return new(null, null, requestScope, storedScope, requestMap, storedMap, UsesDirectScope: true);
+        }
+
+        public RequestScopeState? LookupRequestScope(string containingScope)
+        {
+            if (UsesDirectScope)
+            {
+                if (
+                    DirectRequestScope is not null
+                    && string.Equals(
+                        DirectRequestScope.Address.JsonScope,
+                        containingScope,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return DirectRequestScope;
+                }
+                return
+                    DescendantRequestScopesByJsonScope is not null
+                    && DescendantRequestScopesByJsonScope.TryGetValue(containingScope, out var s)
+                    ? s
+                    : null;
+            }
+
+            return ProfileMemberGovernanceRules.LookupRequestScope(ProfileRequest!, containingScope);
+        }
+
+        public StoredScopeState? LookupStoredScope(string containingScope)
+        {
+            if (UsesDirectScope)
+            {
+                if (
+                    DirectStoredScope is not null
+                    && string.Equals(
+                        DirectStoredScope.Address.JsonScope,
+                        containingScope,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    return DirectStoredScope;
+                }
+                return
+                    DescendantStoredScopesByJsonScope is not null
+                    && DescendantStoredScopesByJsonScope.TryGetValue(containingScope, out var s)
+                    ? s
+                    : null;
+            }
+
+            return ProfileAppliedContext is null
+                ? null
+                : ProfileMemberGovernanceRules.LookupStoredScope(ProfileAppliedContext, containingScope);
+        }
+
+        public ImmutableArray<StoredScopeState> StoredScopesForMetadata()
+        {
+            if (!UsesDirectScope)
+            {
+                return ProfileAppliedContext?.StoredScopeStates ?? [];
+            }
+
+            var b = ImmutableArray.CreateBuilder<StoredScopeState>();
+            if (DirectStoredScope is not null)
+            {
+                b.Add(DirectStoredScope);
+            }
+            if (DescendantStoredScopesByJsonScope is not null)
+            {
+                foreach (var kv in DescendantStoredScopesByJsonScope)
+                {
+                    b.Add(kv.Value);
+                }
+            }
+            return b.ToImmutable();
+        }
+
+        private static void ValidateDirectScopeAddress(
+            ScopeInstanceAddress scopeAddress,
+            ScopeInstanceAddress? stateAddress,
+            string parameterName
+        )
+        {
+            if (
+                stateAddress is not null
+                && !ScopeInstanceAddressComparer.ScopeInstanceAddressEquals(scopeAddress, stateAddress)
+            )
+            {
+                throw new ArgumentException(
+                    $"The supplied {parameterName} address does not match the separate scope instance "
+                        + $"address '{scopeAddress.JsonScope}'.",
+                    parameterName
+                );
+            }
+        }
     }
 
     private readonly record struct GovernedBindingEntry(

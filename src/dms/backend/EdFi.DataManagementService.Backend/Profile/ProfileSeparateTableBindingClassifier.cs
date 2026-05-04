@@ -4,18 +4,17 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Classification result for a single root-attached separate-table non-collection
-/// scope (<see cref="DbTableKind.RootExtension"/>). Shares the per-binding
-/// disposition vocabulary with <see cref="ProfileRootTableBindingClassification"/>;
-/// reports which bindings the key-unification resolver owns so the synthesizer
-/// skips those during overlay.
+/// Classification result for a single separate-table non-collection scope
+/// (<see cref="DbTableKind.RootExtension"/> or <see cref="DbTableKind.CollectionExtensionScope"/>).
+/// Shares the per-binding disposition vocabulary with
+/// <see cref="ProfileRootTableBindingClassification"/>; reports which bindings the
+/// key-unification resolver owns so the synthesizer skips those during overlay.
 /// </summary>
 internal sealed record ProfileSeparateTableBindingClassification(
     ImmutableArray<RootBindingDisposition> BindingsByIndex,
@@ -27,42 +26,37 @@ internal interface IProfileSeparateTableBindingClassifier
     ProfileSeparateTableBindingClassification Classify(
         ResourceWritePlan writePlan,
         TableWritePlan separateTablePlan,
-        ProfileAppliedWriteRequest profileRequest,
-        ProfileAppliedWriteContext? profileAppliedContext
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates
     );
 }
 
 /// <summary>
 /// Separate-table wrapper over <see cref="ProfileBindingClassificationCore"/> for
-/// root-attached non-collection extension scopes (<see cref="DbTableKind.RootExtension"/>).
-/// Rejects non-<see cref="DbTableKind.RootExtension"/> tables; collection-aligned
-/// separate-table scopes (<see cref="DbTableKind.CollectionExtensionScope"/>) are
-/// fenced out of slice 3 and addressed in slice 5.
+/// non-collection extension scopes (<see cref="DbTableKind.RootExtension"/> or
+/// <see cref="DbTableKind.CollectionExtensionScope"/>).
 /// </summary>
 internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTableBindingClassifier
 {
     public ProfileSeparateTableBindingClassification Classify(
         ResourceWritePlan writePlan,
         TableWritePlan separateTablePlan,
-        ProfileAppliedWriteRequest profileRequest,
-        ProfileAppliedWriteContext? profileAppliedContext
+        ScopeInstanceAddress scopeAddress,
+        RequestScopeState? requestScope,
+        StoredScopeState? storedScope,
+        ProfileSeparateScopeDescendantStates descendantStates
     )
     {
         ArgumentNullException.ThrowIfNull(writePlan);
         ArgumentNullException.ThrowIfNull(separateTablePlan);
-        ArgumentNullException.ThrowIfNull(profileRequest);
+        ArgumentNullException.ThrowIfNull(scopeAddress);
 
-        var tableKind = separateTablePlan.TableModel.IdentityMetadata.TableKind;
-        if (tableKind is not DbTableKind.RootExtension)
-        {
-            throw new ArgumentException(
-                $"{nameof(ProfileSeparateTableBindingClassifier)} supports only "
-                    + $"{nameof(DbTableKind.RootExtension)} tables in slice 3; "
-                    + $"got {tableKind} for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'. "
-                    + "Collection-aligned separate-table scopes belong to slice 5.",
-                nameof(separateTablePlan)
-            );
-        }
+        ProfileSeparateTableSupportGuard.EnsureSupportedTableKind(
+            separateTablePlan,
+            nameof(ProfileSeparateTableBindingClassifier)
+        );
 
         var resolverOwnedBindingIndices = ProfileBindingClassificationCore.CollectResolverOwnedIndices(
             separateTablePlan
@@ -70,8 +64,10 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
         var bindingsByIndex = ProfileBindingClassificationCore.ClassifyBindings(
             writePlan,
             separateTablePlan,
-            profileRequest,
-            profileAppliedContext,
+            scopeAddress,
+            requestScope,
+            storedScope,
+            descendantStates,
             resolverOwnedBindingIndices
         );
         return new ProfileSeparateTableBindingClassification(bindingsByIndex, resolverOwnedBindingIndices);

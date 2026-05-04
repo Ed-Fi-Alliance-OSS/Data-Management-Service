@@ -30,6 +30,11 @@ This slice finishes the profile-aware collection merge surface that the earlier 
 
 - Profile guarded no-op
 - Any hardening explicitly left to `DMS-1132` or later follow-ons
+- Literal provider-level three-level update-allowed/create-denied fixture
+  (`parent -> child -> grandchild`). Slice 5 covers that chain at the
+  synthesizer/unit level and covers provider execution with the two-level nested
+  create-denied companion. Slice 7 owns the provider-level three-level fixture
+  and pgsql/mssql parity decision; see `07-parity-and-hardening.md`.
 
 ## Supported After This Slice
 
@@ -121,7 +126,10 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested extension child collection variant
 - `ProfileHiddenExtensionChildCollectionPreservation`
 - Nested or extension-child `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`
-- Three-level update-allowed/create-denied chain variant
+- Provider-level nested create-denied companion proving matched parent update
+  plus non-creatable child insert rejection. The literal provider-level
+  `parent -> child -> grandchild` variant is explicitly deferred to Slice 7 and
+  is not Slice 5 acceptance criteria.
 - One nested delete-all-visible-while-hidden-rows-remain variant
 - One nested or extension-child hidden-binding preservation case covering FK/descriptor or key-unification/synthetic-presence behavior
 - PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths
@@ -137,9 +145,12 @@ Reviewers for this slice should focus only on:
 
 Reviewers should explicitly ignore:
 
-- root-table-only overlay details,
-- separate-table non-collection behavior, and
-- guarded no-op.
+- root-table-only overlay details
+- separate-table non-collection behavior
+- guarded no-op
+- literal provider-level three-level update-allowed/create-denied fixture
+  coverage; review only that the synthesizer-level three-level coverage and
+  provider-level two-level companion are present for Slice 5.
 
 ## Leaves Behind For Next Slice
 

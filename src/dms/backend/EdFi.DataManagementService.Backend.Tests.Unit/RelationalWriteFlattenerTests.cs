@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -365,6 +366,53 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_emits_collection_aligned_extension_scope_row_for_empty_extension_site_when_profile_empty_buffer_flag_is_set()
+    {
+        // Profile Slice 5: a profile-shaped collection item may carry a VisiblePresent
+        // aligned scope with no bound scalar data after writable shaping. The flattener
+        // must still attach the aligned scope buffer so separate-scope synthesis can apply
+        // the Insert/Update overlay from scope metadata rather than inferring absence from
+        // buffer presence.
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "_ext": {
+                        "sample": {}
+                      }
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
+            emitEmptyExtensionBuffers: true
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+        var addressCandidate = result.RootRow.CollectionCandidates.Single();
+        var addressCollectionItemId = addressCandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+
+        var alignedScope = addressCandidate.AttachedAlignedScopeData.Should().ContainSingle().Subject;
+        var alignedScopeCollectionItemId = alignedScope
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        alignedScopeCollectionItemId.Token.Should().Be(addressCollectionItemId.Token);
+        alignedScope.Values[1].Should().Be(new FlattenedWriteValue.Literal(null));
+        alignedScope.CollectionCandidates.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_does_not_emit_collection_aligned_extension_scope_rows_for_deeply_nested_all_array_extension_sites()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
@@ -661,6 +709,96 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_rejects_collection_siblings_that_collapse_to_the_same_no_profile_semantic_identity_when_one_omits_and_one_explicit_nulls_the_identity_property()
+    {
+        // The shared no-profile flattener path matches collection rows by raw semantic identity
+        // values (object?[]) with no presence flag. With the no-profile mode flag set, a sibling
+        // that omits an identity property and one that sends it as JSON null must be treated as
+        // a duplicate at the shared duplicate-detection stage; otherwise both rows would survive
+        // flattening and later collide in RelationalWriteNoProfileMerge under the same collapsed
+        // key. Profile-aware presence fidelity is covered by the companion profile-mode test
+        // below; DMS-1132 owns missing-vs-explicit-null identity semantics for the no-profile
+        // path.
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressLine1": "123 Main St"
+                    },
+                    {
+                      "addressType": null,
+                      "addressLine1": "456 Oak Ave"
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
+            collapseMissingAndExplicitNullForDuplicateDetection: true
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values [null] under parent scope '$'."
+            );
+    }
+
+    [Test]
+    public void It_keeps_collection_siblings_distinct_in_profile_mode_when_one_omits_and_one_explicit_nulls_the_identity_property()
+    {
+        // Counter-test for the no-profile rejection above: with the default profile-mode flag,
+        // duplicate detection uses presence-aware SemanticIdentityKeys.BuildKey output so a
+        // missing identity property and an explicit JSON null produce distinct keys. The two
+        // siblings must therefore both survive flattening and reach the profile merge planner,
+        // which pairs them by presence-aware identity. This guards against the no-profile fix
+        // collapsing identities universally and rejecting legitimate profile requests where
+        // SemanticIdentityPart.IsPresent intentionally distinguishes the two siblings.
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressLine1": "123 Main St"
+                    },
+                    {
+                      "addressType": null,
+                      "addressLine1": "456 Oak Ave"
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.CollectionCandidates.Select(candidate =>
+                (candidate.RequestOrder, candidate.SemanticIdentityValues[0])
+            )
+            .Should()
+            .Equal((0, (object?)null), (1, (object?)null));
+        result
+            .RootRow.CollectionCandidates.Select(candidate => candidate.SemanticIdentityInOrder[0].IsPresent)
+            .Should()
+            .Equal(false, true);
+    }
+
+    [Test]
     public void It_treats_the_selected_body_as_authoritative_input()
     {
         var originalBody = JsonNode.Parse(
@@ -867,7 +1005,7 @@ public class Given_RelationalWriteFlattener
             )!,
             targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
             resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
-            emitEmptyRootExtensionBuffers: true
+            emitEmptyExtensionBuffers: true
         );
 
         var result = _sut.Flatten(flatteningInput);
@@ -3300,7 +3438,8 @@ public class Given_RelationalWriteFlattener
             JsonNode selectedBody,
             RelationalWriteTargetContext targetContext,
             ResolvedReferenceSet? resolvedReferences = null,
-            bool emitEmptyRootExtensionBuffers = false
+            bool emitEmptyExtensionBuffers = false,
+            bool collapseMissingAndExplicitNullForDuplicateDetection = false
         )
         {
             return new FlatteningInput(
@@ -3309,7 +3448,8 @@ public class Given_RelationalWriteFlattener
                 WritePlan,
                 selectedBody,
                 resolvedReferences ?? ResolvedReferences,
-                emitEmptyRootExtensionBuffers
+                emitEmptyExtensionBuffers,
+                collapseMissingAndExplicitNullForDuplicateDetection
             );
         }
 
@@ -4315,4 +4455,212 @@ public class Given_RelationalWriteFlattener
             return new JsonPathExpression(canonical, segments);
         }
     }
+}
+
+/// <summary>
+/// Regression for the inlined-parent-collection traversal gap: when a collection table's
+/// JsonScope is <c>$.parents[*].detail.children[*]</c>, the immediate JSON parent
+/// (<c>$.parents[*].detail</c>) is an inlined non-collection scope with no backing table
+/// plan. The flattener must still reach the children table by routing the child plan
+/// through the nearest table-backed ancestor (<c>$.parents[*]</c>) so each parent
+/// candidate carries its child collection candidates with the parent's PhysicalRowIdentity
+/// stamped into the parent-key slot.
+/// </summary>
+[TestFixture]
+public class Given_RelationalWriteFlattener_with_an_inlined_parent_collection
+{
+    private const long DocumentId = 345L;
+    private RelationalWriteFlattener _sut = null!;
+    private ResourceWritePlan _writePlan = null!;
+    private DocumentUuid _documentUuid;
+
+    [SetUp]
+    public void Setup()
+    {
+        _sut = new RelationalWriteFlattener();
+        var (plan, _, _) = NestedTopologyBuilders.BuildRootParentsAndDetailChildrenPlan();
+        _writePlan = plan;
+        _documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+    }
+
+    [Test]
+    public void It_emits_inlined_parent_nested_collection_candidates_under_the_owning_parent_candidate()
+    {
+        var body = JsonNode.Parse(
+            """
+            {
+              "parents": [
+                {
+                  "identityField0": "A",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "A1" },
+                      { "identityField0": "A2" }
+                    ]
+                  }
+                },
+                {
+                  "identityField0": "B",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "B1" }
+                    ]
+                  }
+                }
+              ]
+            }
+            """
+        )!;
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(DocumentId, _documentUuid),
+            _writePlan,
+            body,
+            EmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        var parentCandidates = result.RootRow.CollectionCandidates;
+        parentCandidates.Should().HaveCount(2, "the request body has two top-level parent rows");
+
+        var parentACandidate = parentCandidates[0];
+        parentACandidate.SemanticIdentityValues.Should().Equal("A");
+        var parentACollectionItemId = parentACandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+
+        parentACandidate
+            .CollectionCandidates.Should()
+            .HaveCount(
+                2,
+                "parent A's `detail.children` array has two items reachable through the inlined `detail` scope"
+            );
+
+        var parentAFirstChild = parentACandidate.CollectionCandidates[0];
+        parentAFirstChild.OrdinalPath.Should().Equal(0, 0);
+        parentAFirstChild.RequestOrder.Should().Be(0);
+        parentAFirstChild.SemanticIdentityValues.Should().Equal("A1");
+        // Children plan layout: [ChildItemId, ParentItemId, Ordinal, IdentityField0].
+        // ParentItemId binds via WriteValueSource.ParentKeyPart(0) so it must point at the
+        // owning parent candidate's PhysicalRowIdentity slot 0 (the parent's CollectionItemId).
+        parentAFirstChild
+            .Values[1]
+            .Should()
+            .BeSameAs(
+                parentACollectionItemId,
+                "the parent-key slot resolves to the owning parent candidate's CollectionItemId"
+            );
+        parentAFirstChild.Values[2].Should().Be(new FlattenedWriteValue.Literal(0));
+        parentAFirstChild.Values[3].Should().Be(new FlattenedWriteValue.Literal("A1"));
+
+        var parentASecondChild = parentACandidate.CollectionCandidates[1];
+        parentASecondChild.OrdinalPath.Should().Equal(0, 1);
+        parentASecondChild.RequestOrder.Should().Be(1);
+        parentASecondChild.SemanticIdentityValues.Should().Equal("A2");
+        parentASecondChild.Values[1].Should().BeSameAs(parentACollectionItemId);
+
+        var parentBCandidate = parentCandidates[1];
+        parentBCandidate.SemanticIdentityValues.Should().Equal("B");
+        var parentBCollectionItemId = parentBCandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        parentBCandidate.CollectionCandidates.Should().HaveCount(1);
+        var parentBOnlyChild = parentBCandidate.CollectionCandidates[0];
+        parentBOnlyChild.OrdinalPath.Should().Equal(1, 0);
+        parentBOnlyChild.SemanticIdentityValues.Should().Equal("B1");
+        // Cross-parent key isolation: B's child must reference B's CollectionItemId, not A's.
+        parentBOnlyChild.Values[1].Should().BeSameAs(parentBCollectionItemId);
+        parentBOnlyChild.Values[1].Should().NotBeSameAs(parentACollectionItemId);
+    }
+
+    [Test]
+    public void It_rejects_duplicate_inlined_parent_nested_collection_semantic_identity_values_under_the_same_parent()
+    {
+        var body = JsonNode.Parse(
+            """
+            {
+              "parents": [
+                {
+                  "identityField0": "A",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "X" },
+                      { "identityField0": "X" }
+                    ]
+                  }
+                }
+              ]
+            }
+            """
+        )!;
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(DocumentId, _documentUuid),
+            _writePlan,
+            body,
+            EmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+        act.Should().Throw<RelationalWriteRequestValidationException>();
+    }
+
+    [Test]
+    public void It_reports_the_full_concrete_nested_path_when_an_inlined_parent_nested_collection_item_is_not_an_object()
+    {
+        // The nested children scope is wildcard `$.parents[*].detail.children[*]`, so a
+        // shape-violating child (a non-object) at request order 0 under parents[0] must
+        // surface as a RelationalWriteRequestValidationException whose path materializes
+        // both the parent ordinal and the child ordinal — not a leaked
+        // InvalidOperationException from MaterializeConcretePath running out of ordinals.
+        var body = JsonNode.Parse(
+            """
+            {
+              "parents": [
+                {
+                  "identityField0": "A",
+                  "detail": {
+                    "children": [
+                      "not-an-object"
+                    ]
+                  }
+                }
+              ]
+            }
+            """
+        )!;
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(DocumentId, _documentUuid),
+            _writePlan,
+            body,
+            EmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.parents[0].detail.children[0]");
+        exception.ValidationFailures[0].Message.Should().Contain("$.parents[0].detail.children[0]");
+    }
+
+    private static ResolvedReferenceSet EmptyResolvedReferences() =>
+        new(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
 }

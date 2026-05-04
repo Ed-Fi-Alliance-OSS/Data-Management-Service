@@ -114,6 +114,17 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         ArgumentNullException.ThrowIfNull(writePlan);
 
+        // The traversal in MaterializeCollectionCandidates only re-enters table-backed
+        // scopes (root, root extension, collection rows, aligned-extension scopes), so a
+        // collection table whose immediate JSON parent is an inlined non-collection scope
+        // (e.g. $.parents[*].detail.children[*]) must be reached from its nearest
+        // table-backed ancestor with the inlined intermediate property segments folded
+        // into the child plan's relative path.
+        var tableBackedScopes = new HashSet<string>(
+            writePlan.TablePlansInDependencyOrder.Select(static plan => plan.TableModel.JsonScope.Canonical),
+            StringComparer.Ordinal
+        );
+
         Dictionary<string, List<CollectionChildPlan>> childPlansByParentScope = new(StringComparer.Ordinal);
 
         foreach (
@@ -139,9 +150,26 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 );
             }
 
-            var parentScopeSegments = scopeSegments[..^2];
+            // Walk the ancestor prefix from the immediate JSON parent back toward the
+            // root, picking the longest prefix whose canonical is table-backed. The root
+            // scope "$" (segment length 0) is always table-backed, so the loop is
+            // guaranteed to terminate.
+            var parentSegmentLength = scopeSegments.Length - 2;
+            while (parentSegmentLength > 0)
+            {
+                var candidateScope = RelationalJsonPathSupport.BuildCanonical(
+                    scopeSegments[..parentSegmentLength]
+                );
+                if (tableBackedScopes.Contains(candidateScope))
+                {
+                    break;
+                }
+                parentSegmentLength--;
+            }
+
+            var parentScopeSegments = scopeSegments[..parentSegmentLength];
             var parentScopeCanonical = RelationalJsonPathSupport.BuildCanonical(parentScopeSegments);
-            var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
+            var relativeScopeSegments = scopeSegments[parentSegmentLength..];
 
             if (!childPlansByParentScope.TryGetValue(parentScopeCanonical, out var childPlans))
             {
@@ -174,29 +202,32 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             )
         )
         {
-            var scopeSegments = RelationalJsonPathSupport
-                .GetRestrictedSegments(tableWritePlan.TableModel.JsonScope)
-                .ToArray();
-
-            if (
-                scopeSegments.Length < 2
-                || scopeSegments[^2] is not JsonPathSegment.Property extensionMarker
-                || scopeSegments[^1] is not JsonPathSegment.Property
-                || !string.Equals(extensionMarker.Name, "_ext", StringComparison.Ordinal)
-            )
-            {
-                throw new InvalidOperationException(
+            var alignedScopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+            var alignedShape =
+                AlignedExtensionScopeSupport.Classify(alignedScopeCanonical)
+                ?? throw new InvalidOperationException(
                     $"Collection-aligned extension table '{FormatTable(tableWritePlan)}' does not have a canonical aligned scope."
                 );
-            }
+            var isMirroredExtensionScope = alignedShape.IsMirrored;
+            var parentScopeCanonical = alignedShape.ParentCollectionScope;
 
-            var isMirroredExtensionScope =
-                scopeSegments.Length >= 4
-                && scopeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
-                && scopeSegments[1] is JsonPathSegment.Property;
-            var parentScopeSegments = isMirroredExtensionScope ? scopeSegments[2..^2] : scopeSegments[..^2];
-            var parentScopeCanonical = RelationalJsonPathSupport.BuildCanonical(parentScopeSegments);
-            var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
+            // Standard aligned scopes navigate relative to the parent collection scope, so
+            // compute the trailing two-segment "._ext.<name>" remainder for those. Mirrored
+            // aligned scopes navigate from the root using the full scope segments
+            // (NavigateFromRoot=true in TryGetAttachedAlignedScopeNode), so storing relative
+            // segments would be unread, misleading state — leave them empty.
+            ImmutableArray<JsonPathSegment> relativeScopeSegments;
+            if (isMirroredExtensionScope)
+            {
+                relativeScopeSegments = [];
+            }
+            else
+            {
+                var scopeSegments = RelationalJsonPathSupport
+                    .GetRestrictedSegments(tableWritePlan.TableModel.JsonScope)
+                    .ToArray();
+                relativeScopeSegments = [.. scopeSegments[^2..]];
+            }
 
             if (!plansByParentScope.TryGetValue(parentScopeCanonical, out var plans))
             {
@@ -205,11 +236,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             }
 
             plans.Add(
-                new AttachedAlignedScopePlan(
-                    tableWritePlan,
-                    [.. relativeScopeSegments],
-                    isMirroredExtensionScope
-                )
+                new AttachedAlignedScopePlan(tableWritePlan, relativeScopeSegments, isMirroredExtensionScope)
             );
         }
 
@@ -264,9 +291,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups
             );
 
+            var hasSubmittedScopeData = HasBoundScopeData(scopeObject);
+
             if (
-                !flatteningInput.EmitEmptyRootExtensionBuffers
-                && !HasBoundScopeData(scopeObject)
+                !flatteningInput.EmitEmptyExtensionBuffers
+                && !hasSubmittedScopeData
                 && collectionCandidates.Count == 0
             )
             {
@@ -284,7 +313,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     ordinal: 0,
                     ordinalPath: []
                 ),
-                collectionCandidates: collectionCandidates
+                collectionCandidates: collectionCandidates,
+                hasSubmittedScopeData: hasSubmittedScopeData
             );
         }
     }
@@ -314,10 +344,45 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         foreach (var childPlan in childPlans)
         {
-            Dictionary<string, int[]> firstOrdinalPathBySemanticIdentity = new(StringComparer.Ordinal);
+            // Duplicate detection has two modes selected by FlatteningInput, each backed by a
+            // dictionary whose equality semantics match its consumer downstream:
+            //
+            // - Profile mode (default): keyed on the presence-aware SemanticIdentityKeys.BuildKey
+            //   string. An explicit JSON null and a missing identity property produce distinct
+            //   keys under the SemanticIdentityPart contract, so two siblings with the same null
+            //   value are duplicates only when both are present-null or both are missing — never
+            //   across the boundary. ProfileCollectionPlanner relies on this to pair stored rows
+            //   and request candidates by presence-aware identity.
+            //
+            // - No-profile mode (CollapseMissingAndExplicitNullForDuplicateDetection): keyed on
+            //   the raw object?[] semantic identity values via ObjectValueArrayComparer, the
+            //   exact same comparer used by
+            //   RelationalWriteNoProfileMerge.ProjectedCollectionTableState. That ensures every
+            //   pair of values that the no-profile merge would collapse — including missing vs
+            //   explicit null, and decimals like 1.0m vs 1.00m which are .Equals but stringify
+            //   differently — is rejected here as a duplicate before reaching the merge stage.
+            //   A string-encoded key would diverge from the comparer's runtime Equals semantics
+            //   and either miss those duplicates or false-flag legitimate values containing the
+            //   chosen separator characters. DMS-1132 owns full missing-vs-explicit-null
+            //   identity fidelity for the no-profile path.
+            //
+            // SemanticIdentityInOrder is built unconditionally because the profile merge
+            // pipeline still consumes it on every candidate downstream of this method.
+            Dictionary<string, (int[] OrdinalPath, object?[] Values)>? presenceAwareTracker =
+                flatteningInput.CollapseMissingAndExplicitNullForDuplicateDetection
+                    ? null
+                    : new(StringComparer.Ordinal);
+            Dictionary<object?[], (int[] OrdinalPath, object?[] Values)>? collapsedTracker =
+                flatteningInput.CollapseMissingAndExplicitNullForDuplicateDetection
+                    ? new(ObjectValueArrayComparer.Instance)
+                    : null;
 
             foreach (
-                var collectionScopeInstance in EnumerateCollectionScopeInstances(parentScopeNode, childPlan)
+                var collectionScopeInstance in EnumerateCollectionScopeInstances(
+                    parentScopeNode,
+                    childPlan,
+                    parentOrdinalPath
+                )
             )
             {
                 var ordinalPath = AppendOrdinalPath(parentOrdinalPath, collectionScopeInstance.RequestOrder);
@@ -334,32 +399,49 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     childPlan.TableWritePlan,
                     values
                 );
-                var semanticIdentityInOrder = MaterializeSemanticIdentityInOrder(
+                var semanticIdentityInOrder = MaterializeSemanticIdentityParts(
                     childPlan.TableWritePlan,
-                    values,
-                    collectionScopeInstance.ScopeNode
+                    collectionScopeInstance.ScopeNode,
+                    semanticIdentityValues
                 );
-                var semanticIdentityKey = BuildSemanticIdentityKey(semanticIdentityInOrder);
 
-                if (
-                    firstOrdinalPathBySemanticIdentity.TryGetValue(
-                        semanticIdentityKey,
-                        out var firstOrdinalPath
-                    )
-                )
+                (int[] OrdinalPath, object?[] Values) firstSeen;
+                bool isDuplicate;
+                string? presenceAwareKey = null;
+                if (collapsedTracker is not null)
+                {
+                    isDuplicate = collapsedTracker.TryGetValue(semanticIdentityValues, out firstSeen);
+                }
+                else
+                {
+                    presenceAwareKey = Profile.SemanticIdentityKeys.BuildKey(semanticIdentityInOrder);
+                    isDuplicate = presenceAwareTracker!.TryGetValue(presenceAwareKey, out firstSeen);
+                }
+
+                if (isDuplicate)
                 {
                     throw CreateDuplicateSemanticIdentityException(
                         childPlan.TableWritePlan,
                         parentScopeCanonical,
-                        firstOrdinalPath,
+                        firstSeen.OrdinalPath,
                         ordinalPath,
-                        semanticIdentityValues
+                        firstSeen.Values
                     );
                 }
 
-                firstOrdinalPathBySemanticIdentity.Add(semanticIdentityKey, ordinalPath);
+                if (collapsedTracker is not null)
+                {
+                    collapsedTracker.Add(semanticIdentityValues, (ordinalPath, semanticIdentityValues));
+                }
+                else
+                {
+                    presenceAwareTracker!.Add(presenceAwareKey!, (ordinalPath, semanticIdentityValues));
+                }
 
-                var childParentKeyParts = GetPhysicalRowIdentityValues(childPlan.TableWritePlan, values);
+                var childParentKeyParts = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
+                    childPlan.TableWritePlan,
+                    values
+                );
                 var nestedCollectionCandidates = MaterializeCollectionCandidates(
                     flatteningInput,
                     traversalPlans,
@@ -455,7 +537,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups
             );
 
-            if (!HasBoundScopeData(scopeObject) && childCollectionCandidates.Count == 0)
+            var hasSubmittedScopeData = HasBoundScopeData(scopeObject);
+
+            if (
+                !flatteningInput.EmitEmptyExtensionBuffers
+                && !hasSubmittedScopeData
+                && childCollectionCandidates.Count == 0
+            )
             {
                 continue;
             }
@@ -472,7 +560,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                         ordinal: 0,
                         ordinalPath: parentOrdinalPath
                     ),
-                    childCollectionCandidates
+                    childCollectionCandidates,
+                    hasSubmittedScopeData: hasSubmittedScopeData
                 )
             );
         }
@@ -936,6 +1025,101 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         valueAssigned[collectionKeyPreallocationPlan.BindingIndex] = true;
     }
 
+    /// <summary>
+    /// Builds the candidate's <see cref="CollectionWriteCandidate.SemanticIdentityInOrder"/>
+    /// from compiled bindings, the materialized identity values, and a presence probe against
+    /// the source JSON node. <see cref="SemanticIdentityPart.IsPresent"/> reflects whether the
+    /// JSON property at the binding's relative path was present in the request body — keeping
+    /// missing-vs-explicit-null fidelity end-to-end. <see cref="SemanticIdentityPart.RelativePath"/>
+    /// is normalized to scope-relative form (the convention Core's address derivation engine
+    /// publishes), so candidate-side keys produced by <see cref="SemanticIdentityKeys.BuildKey(CollectionWriteCandidate)"/>
+    /// align with visible-request-item keys produced from
+    /// <see cref="CollectionRowAddress.SemanticIdentityInOrder"/>.
+    /// </summary>
+    /// <remarks>
+    /// Used by the profile-aware merge path, where candidate keys must align with
+    /// visible-request-item keys reconstructed from <see cref="CollectionRowAddress"/>.
+    /// The no-profile merge path intentionally does not consume these parts and matches
+    /// current rows on raw <see cref="CollectionWriteCandidate.SemanticIdentityValues"/>
+    /// instead — absent-vs-explicit-null identity fidelity for the no-profile path is
+    /// out of scope here and tracked separately under DMS-1132. The companion DB-row
+    /// projection lives inline in <c>ProfileCollectionWalker</c>; the shared scope-relative
+    /// path normalization is centralized in
+    /// <see cref="RelationalWriteMergeSupport.ToScopeRelativePath"/>.
+    /// </remarks>
+    private static ImmutableArray<SemanticIdentityPart> MaterializeSemanticIdentityParts(
+        TableWritePlan tableWritePlan,
+        JsonNode scopeNode,
+        object?[] semanticIdentityValues
+    )
+    {
+        var collectionMergePlan = tableWritePlan.CollectionMergePlan!;
+        var bindings = collectionMergePlan.SemanticIdentityBindings;
+        var scopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+        var parts = new SemanticIdentityPart[bindings.Length];
+
+        for (var i = 0; i < bindings.Length; i++)
+        {
+            var binding = bindings[i];
+            var rawValue = semanticIdentityValues[i];
+            JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
+            var relativePath = RelationalWriteMergeSupport.ToScopeRelativePath(
+                binding.RelativePath.Canonical,
+                scopeCanonical
+            );
+            var isPresent = ProbeIdentityPathPresence(scopeNode, relativePath);
+            parts[i] = new SemanticIdentityPart(relativePath, jsonValue, isPresent);
+        }
+
+        return [.. parts];
+    }
+
+    /// <summary>
+    /// Returns whether the JSON property at the binding's path exists on
+    /// <paramref name="scopeNode"/>, distinguishing a missing property from an explicit JSON
+    /// null. Walks the canonical relative path one segment at a time and returns <c>false</c>
+    /// the moment any intermediate object lacks the property — matching the navigation
+    /// semantics used by <c>AddressDerivationEngine.TryNavigateRelativePath</c> in Core, so
+    /// the candidate-side presence flag converges with stored-side / address-side derivations.
+    /// </summary>
+    private static bool ProbeIdentityPathPresence(JsonNode scopeNode, string scopeRelativePath)
+    {
+        if (string.IsNullOrEmpty(scopeRelativePath))
+        {
+            return false;
+        }
+
+        if (scopeNode is not JsonObject objNode)
+        {
+            return false;
+        }
+
+        var segments = scopeRelativePath.Split('.');
+        JsonNode? cursor = objNode;
+
+        for (var i = 0; i < segments.Length; i++)
+        {
+            if (cursor is not JsonObject current)
+            {
+                return false;
+            }
+
+            if (!current.TryGetPropertyValue(segments[i], out var next))
+            {
+                return false;
+            }
+
+            if (i == segments.Length - 1)
+            {
+                return true;
+            }
+
+            cursor = next;
+        }
+
+        return false;
+    }
+
     private static object?[] MaterializeSemanticIdentityValues(
         TableWritePlan tableWritePlan,
         IReadOnlyList<FlattenedWriteValue> values
@@ -978,72 +1162,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return semanticIdentityValues;
     }
 
-    private static ImmutableArray<SemanticIdentityPart> MaterializeSemanticIdentityInOrder(
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<FlattenedWriteValue> values,
-        JsonNode scopeNode
-    )
-    {
-        var collectionMergePlan =
-            tableWritePlan.CollectionMergePlan
-            ?? throw new InvalidOperationException(
-                $"Collection table '{FormatTable(tableWritePlan)}' does not have a compiled collection merge plan."
-            );
-
-        var builder = ImmutableArray.CreateBuilder<SemanticIdentityPart>(
-            collectionMergePlan.SemanticIdentityBindings.Length
-        );
-
-        foreach (var semanticIdentityBinding in collectionMergePlan.SemanticIdentityBindings)
-        {
-            if (values[semanticIdentityBinding.BindingIndex] is not FlattenedWriteValue.Literal literalValue)
-            {
-                throw new InvalidOperationException(
-                    $"Collection semantic-identity binding '{semanticIdentityBinding.RelativePath.Canonical}' "
-                        + $"on table '{FormatTable(tableWritePlan)}' did not materialize as a literal value."
-                );
-            }
-
-            var isPresent = TryGetRelativeLeafNode(scopeNode, semanticIdentityBinding.RelativePath, out _);
-
-            builder.Add(
-                new SemanticIdentityPart(
-                    semanticIdentityBinding.RelativePath.Canonical,
-                    literalValue.Value is null ? null : JsonValue.Create(literalValue.Value),
-                    isPresent
-                )
-            );
-        }
-
-        return builder.MoveToImmutable();
-    }
-
-    private static IReadOnlyList<FlattenedWriteValue> GetPhysicalRowIdentityValues(
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<FlattenedWriteValue> values
-    )
-    {
-        var physicalRowIdentityColumns = tableWritePlan
-            .TableModel
-            .IdentityMetadata
-            .PhysicalRowIdentityColumns;
-        FlattenedWriteValue[] physicalRowIdentityValues = new FlattenedWriteValue[
-            physicalRowIdentityColumns.Count
-        ];
-
-        for (var index = 0; index < physicalRowIdentityColumns.Count; index++)
-        {
-            physicalRowIdentityValues[index] = values[
-                FindBindingIndex(tableWritePlan, physicalRowIdentityColumns[index])
-            ];
-        }
-
-        return physicalRowIdentityValues;
-    }
-
-    private static IEnumerable<CollectionScopeInstance> EnumerateCollectionScopeInstances(
+    private static List<CollectionScopeInstance> EnumerateCollectionScopeInstances(
         JsonNode parentScopeNode,
-        CollectionChildPlan childPlan
+        CollectionChildPlan childPlan,
+        ReadOnlySpan<int> parentOrdinalPath
     )
     {
         var relativeScopeSegments = childPlan.RelativeScopeSegments;
@@ -1058,6 +1180,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             );
         }
 
+        List<CollectionScopeInstance> collectionScopeInstances = [];
+
         if (
             !TryNavigateRelativeNode(
                 parentScopeNode,
@@ -1066,7 +1190,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             ) || collectionArrayNode is null
         )
         {
-            yield break;
+            return collectionScopeInstances;
         }
 
         if (collectionArrayNode is not JsonArray collectionArray)
@@ -1078,19 +1202,30 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             );
         }
 
+        var wildcardScope = childPlan.TableWritePlan.TableModel.JsonScope.Canonical;
+
         for (var index = 0; index < collectionArray.Count; index++)
         {
             if (collectionArray[index] is not JsonObject collectionItem)
             {
+                // Wildcard scopes for nested collections (e.g. `$.parents[*].detail.children[*]`)
+                // require the full parent ordinal chain plus this item's index — passing only
+                // [index] lets MaterializeConcretePath throw an internal
+                // InvalidOperationException instead of surfacing a request-shape validation
+                // failure with the concrete request path.
+                var itemOrdinalPath = AppendOrdinalPath(parentOrdinalPath, index);
+                var concretePath = MaterializeConcretePath(wildcardScope, itemOrdinalPath);
                 throw CreateRequestShapeValidationException(
-                    MaterializeConcretePath(childPlan.TableWritePlan.TableModel.JsonScope.Canonical, [index]),
+                    concretePath,
                     $"Collection table '{FormatTable(childPlan.TableWritePlan)}' expected object items at path "
-                        + $"'{childPlan.TableWritePlan.TableModel.JsonScope.Canonical}[{index}]'."
+                        + $"'{concretePath}'."
                 );
             }
 
-            yield return new CollectionScopeInstance(index, collectionItem);
+            collectionScopeInstances.Add(new CollectionScopeInstance(index, collectionItem));
         }
+
+        return collectionScopeInstances;
     }
 
     private static bool TryNavigateRelativeNode(
@@ -1138,7 +1273,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return true;
     }
 
-    private static bool TryNavigateConcreteNode(
+    internal static bool TryNavigateConcreteNode(
         JsonNode scopeNode,
         IReadOnlyList<JsonPathSegment> segments,
         ReadOnlySpan<int> ordinalPath,
@@ -1320,21 +1455,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return absoluteSegments[scopeSegments.Length..];
-    }
-
-    private static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)
-    {
-        for (var index = 0; index < tableWritePlan.ColumnBindings.Length; index++)
-        {
-            if (tableWritePlan.ColumnBindings[index].Column.ColumnName.Equals(columnName))
-            {
-                return index;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Table '{FormatTable(tableWritePlan)}' does not have a write binding for column '{columnName.Value}'."
-        );
     }
 
     internal static DbColumnModel GetRequiredColumnModel(
@@ -1872,10 +1992,4 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     );
 
     private sealed record CollectionScopeInstance(int RequestOrder, JsonObject ScopeNode);
-
-    private static string BuildSemanticIdentityKey(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join("|", identity.Select(part => FormatSemanticIdentityPartForKey(part)));
-
-    private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
-        $"{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
 }

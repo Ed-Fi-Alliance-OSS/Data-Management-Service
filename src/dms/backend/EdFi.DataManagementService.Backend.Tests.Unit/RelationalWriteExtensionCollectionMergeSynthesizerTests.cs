@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -371,7 +374,12 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: [collectionItemId, Literal(345L), Literal(requestOrder), Literal(interventionCode)],
-            semanticIdentityValues: [interventionCode]
+            semanticIdentityValues: [interventionCode],
+            semanticIdentityInOrder: BuildScopeRelativeIdentity(
+                    fixture.RootExtensionChildPlan,
+                    [interventionCode]
+                )
+                .ToArray()
         );
     }
 
@@ -389,7 +397,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
             requestOrder: requestOrder,
             values: [collectionItemId, Literal(345L), Literal(requestOrder), Literal(addressType)],
             semanticIdentityValues: [addressType],
-            attachedAlignedScopeData: attachedAlignedScopeData ?? []
+            attachedAlignedScopeData: attachedAlignedScopeData ?? [],
+            semanticIdentityInOrder: BuildScopeRelativeIdentity(fixture.AddressPlan, [addressType]).ToArray()
         );
     }
 
@@ -427,8 +436,42 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
                 Literal(requestOrder),
                 Literal(serviceName),
             ],
-            semanticIdentityValues: [serviceName]
+            semanticIdentityValues: [serviceName],
+            semanticIdentityInOrder: BuildScopeRelativeIdentity(
+                    fixture.CollectionAlignedExtensionChildPlan,
+                    [serviceName]
+                )
+                .ToArray()
         );
+    }
+
+    /// <summary>
+    /// Helper that builds a presence-aware <see cref="SemanticIdentityPart"/> sequence using
+    /// the same scope-relative path convention the production flattener emits, so test
+    /// candidates align with the new no-profile merge matcher's current-row identity contract.
+    /// </summary>
+    private static ImmutableArray<SemanticIdentityPart> BuildScopeRelativeIdentity(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<object?> semanticIdentityValues
+    )
+    {
+        var mergePlan = tableWritePlan.CollectionMergePlan!;
+        var scopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+        var bindings = mergePlan.SemanticIdentityBindings;
+        var parts = new SemanticIdentityPart[bindings.Length];
+
+        for (var index = 0; index < bindings.Length; index++)
+        {
+            var rawValue = semanticIdentityValues[index];
+            JsonNode? jsonValue = rawValue is null ? null : JsonValue.Create(rawValue);
+            var relativePath = RelationalWriteMergeSupport.ToScopeRelativePath(
+                bindings[index].RelativePath.Canonical,
+                scopeCanonical
+            );
+            parts[index] = new SemanticIdentityPart(relativePath, jsonValue, IsPresent: rawValue is not null);
+        }
+
+        return [.. parts];
     }
 
     private static TableWritePlan CreateRootPlan()

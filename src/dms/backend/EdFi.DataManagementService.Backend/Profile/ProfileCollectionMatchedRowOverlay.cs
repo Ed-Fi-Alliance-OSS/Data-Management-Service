@@ -12,9 +12,9 @@ namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
 /// Composes the row-level binding classifier, key-unification seam, and shared row
-/// helpers into a single matched-row emission call for profile-aware top-level
-/// collection merge. Called once per <see cref="ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry"/>
-/// by the synthesizer's <c>SynthesizeTopLevelCollectionScopes</c> method.
+/// helpers into a single matched-row emission call for profile-aware collection merge.
+/// Called once per <see cref="ProfileCollectionPlanEntry.MatchedUpdateEntry"/> from
+/// <see cref="ProfileCollectionWalker.WalkChildren"/>.
 /// </summary>
 /// <remarks>
 /// Composition order (spec Section 4.5):
@@ -28,10 +28,10 @@ namespace EdFi.DataManagementService.Backend.Profile;
 ///   <item>Build the merged row via <see cref="RelationalWriteRowHelpers.CreateMergedTableRow"/>.</item>
 /// </list>
 /// </remarks>
-internal static class ProfileTopLevelCollectionMatchedRowOverlay
+internal static class ProfileCollectionMatchedRowOverlay
 {
     /// <summary>
-    /// Builds a single merged row for a matched top-level collection row update, applying
+    /// Builds a single merged row for a matched collection row update, applying
     /// profile-aware hidden governance, key-unification preservation, stable-row-identity
     /// continuity, parent-key rewriting, and ordinal stamping in the required composition
     /// order.
@@ -48,7 +48,9 @@ internal static class ProfileTopLevelCollectionMatchedRowOverlay
     /// </param>
     /// <param name="finalOrdinal">The position-derived ordinal (1-based) to stamp onto the row.</param>
     /// <param name="parentPhysicalRowIdentityValues">
-    /// The root row's physical identity values used to rewrite parent-key-part bindings.
+    /// The parent collection-row's physical identity values used to rewrite parent-key-part
+    /// bindings. For top-level collections the parent is the root row; for nested
+    /// collections the parent is the enclosing collection row.
     /// </param>
     /// <param name="concreteRequestItemNode">
     /// The concrete request item JSON node resolved from the writable request body by
@@ -136,7 +138,7 @@ internal static class ProfileTopLevelCollectionMatchedRowOverlay
             }
         }
 
-        // Step 4: Rewrite parent key parts with the root row's physical identity.
+        // Step 4: Rewrite parent key parts with the parent row's physical identity.
         var valuesAfterParentKey = RelationalWriteRowHelpers.RewriteParentKeyPartValues(
             tableWritePlan,
             values,
@@ -186,7 +188,7 @@ internal static class ProfileTopLevelCollectionMatchedRowOverlay
                 RootBindingDisposition.HiddenPreserved => storedValues[i],
                 RootBindingDisposition.StorageManaged => storedValues[i],
                 RootBindingDisposition.ClearOnVisibleAbsent => throw new InvalidOperationException(
-                    $"ClearOnVisibleAbsent disposition is not expected for top-level collection rows; "
+                    $"ClearOnVisibleAbsent disposition is not expected for collection rows; "
                         + "row-level omission is row-delete, not per-column clear. "
                         + $"Binding index {i} on table '{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}' "
                         + $"produced {nameof(RootBindingDisposition.ClearOnVisibleAbsent)}."

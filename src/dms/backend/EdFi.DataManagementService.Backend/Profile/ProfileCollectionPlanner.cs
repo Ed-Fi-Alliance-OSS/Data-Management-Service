@@ -4,22 +4,21 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Pure-function planner for a single top-level collection scope instance. Consumes the
-/// Core-emitted request / stored metadata for the scope, validates fail-closed invariants,
-/// and produces a sequenced <see cref="ProfileTopLevelCollectionPlan"/> describing the final
-/// sibling sequence for the merge. No IO, no builders, no table-state access — the synthesizer
-/// owns all runtime plumbing.
+/// Pure-function planner for a single collection scope instance under a specific parent
+/// instance. Consumes the Core-emitted request / stored metadata for the scope, validates
+/// fail-closed invariants, and produces a sequenced <see cref="ProfileCollectionPlan"/>
+/// describing the final sibling sequence for the merge. No IO, no builders, no table-state
+/// access — the synthesizer owns all runtime plumbing.
 /// </summary>
-internal static class ProfileTopLevelCollectionPlanner
+internal static class ProfileCollectionPlanner
 {
-    public static ProfileTopLevelCollectionPlanResult Plan(ProfileTopLevelCollectionScopeInput input)
+    public static ProfileCollectionPlanResult Plan(ProfileCollectionScopeInput input)
     {
         ValidateInvariants(input);
         return BuildMergedVisibleSequence(input);
@@ -29,58 +28,62 @@ internal static class ProfileTopLevelCollectionPlanner
     /// Builds the final sequenced plan via two logical phases described in spec Section 5.2.
     ///
     /// <para><b>Phase 1 — Build <c>mergedVisibleSequence</c> in request order.</b>
-    /// Walks <see cref="ProfileTopLevelCollectionScopeInput.VisibleRequestItems"/> in request array order.
+    /// Walks <see cref="ProfileCollectionScopeInput.VisibleRequestItems"/> in request array order.
     /// For each item:
     /// <list type="bullet">
-    ///   <item>Emits a <see cref="ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry"/> when the item's
+    ///   <item>Emits a <see cref="ProfileCollectionPlanEntry.MatchedUpdateEntry"/> when the item's
     ///   semantic identity matches a <see cref="CurrentCollectionRowSnapshot"/> (via the visible-stored index).</item>
-    ///   <item>Emits a <see cref="ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry"/> when unmatched and
+    ///   <item>Emits a <see cref="ProfileCollectionPlanEntry.VisibleInsertEntry"/> when unmatched and
     ///   <see cref="VisibleRequestCollectionItem.Creatable"/> is <c>true</c>.</item>
-    ///   <item>Short-circuits with <see cref="ProfileTopLevelCollectionPlanResult.CreatabilityRejection"/> when
+    ///   <item>Short-circuits with <see cref="ProfileCollectionPlanResult.CreatabilityRejection"/> when
     ///   unmatched and <see cref="VisibleRequestCollectionItem.Creatable"/> is <c>false</c>.</item>
     /// </list></para>
     ///
-    /// <para><b>Phase 2 — Walk <see cref="ProfileTopLevelCollectionScopeInput.CurrentRows"/> in stored-ordinal
+    /// <para><b>Phase 2 — Walk <see cref="ProfileCollectionScopeInput.CurrentRows"/> in stored-ordinal
     /// order, interleaving hidden-preserves and consuming <c>mergedVisibleSequence</c> at visible slots.</b>
     /// Hidden rows (not in the visible-stored index) are emitted as
-    /// <see cref="ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry"/>; visible slots consume the next
+    /// <see cref="ProfileCollectionPlanEntry.HiddenPreserveEntry"/>; visible slots consume the next
     /// entry from <c>mergedVisibleSequence</c> in first-come-first-served order (matching the request's
     /// reordering of visibles). Visible slots reached after the merged cursor is exhausted are omitted;
     /// the persister's delete-by-absence mechanism handles their removal. Leftover merged entries
-    /// (new inserts beyond the previous visible count) are appended after the last previously visible
-    /// row, or at the end when there was no previously visible row.</para>
+    /// (new inserts beyond the previous visible count) are appended immediately after the last
+    /// previously visible row for that scope instance, before any trailing hidden rows. When there
+    /// is no previously visible row, leftovers are appended at the end after all current rows.</para>
     /// </summary>
-    private static ProfileTopLevelCollectionPlanResult BuildMergedVisibleSequence(
-        ProfileTopLevelCollectionScopeInput input
-    )
+    private static ProfileCollectionPlanResult BuildMergedVisibleSequence(ProfileCollectionScopeInput input)
     {
-        // Build a lookup from semantic identity key → CurrentCollectionRowSnapshot, restricted to
-        // those rows that also appear in VisibleStoredRows. This is the "matched" set for this scope.
-        var visibleStoredKeys = input
-            .VisibleStoredRows.Select(r => BuildSemanticIdentityKey(r.Address.SemanticIdentityInOrder))
-            .ToHashSet();
-
-        // currentByIdentity was already validated in invariants; rebuild cheaply for the matching pass.
-        var matchedCurrentByIdentity = input
-            .CurrentRows.Where(r =>
-                visibleStoredKeys.Contains(BuildSemanticIdentityKey(r.SemanticIdentityInOrder))
+        // Pre-compute the semantic identity key for every visible-stored row and current row
+        // exactly once, then drive every downstream lookup off the cached pair. The previous
+        // implementation built each row's key 2-4x across the four indexes plus the Phase 2
+        // loop; the cached form is behavior-preserving and keeps the same invariant-ordering
+        // contract (ValidateInvariants is untouched and still runs first via Plan).
+        var visibleStoredEntries = input
+            .VisibleStoredRows.Select(row =>
+                (Row: row, Key: SemanticIdentityKeys.BuildKey(row.Address.SemanticIdentityInOrder))
             )
-            .ToDictionary(r => BuildSemanticIdentityKey(r.SemanticIdentityInOrder));
+            .ToArray();
+        var visibleStoredByIdentity = visibleStoredEntries.ToDictionary(p => p.Key, p => p.Row);
+
+        var currentRowEntries = input
+            .CurrentRows.Select(row =>
+                (Row: row, Key: SemanticIdentityKeys.BuildKey(row.SemanticIdentityInOrder))
+            )
+            .ToArray();
+
+        // Matched current rows are those whose semantic identity also appears in visible-stored.
+        var matchedCurrentByIdentity = currentRowEntries
+            .Where(p => visibleStoredByIdentity.ContainsKey(p.Key))
+            .ToDictionary(p => p.Key, p => p.Row);
 
         // Build candidate lookup for retrieving the CollectionWriteCandidate per request item.
-        var candidateByIdentityKey = input.RequestCandidates.ToDictionary(BuildCandidateIdentityKey);
-
-        // Also build visible-stored lookup to retrieve HiddenMemberPaths per matched row.
-        var visibleStoredByIdentity = input.VisibleStoredRows.ToDictionary(r =>
-            BuildSemanticIdentityKey(r.Address.SemanticIdentityInOrder)
-        );
+        var candidateByIdentityKey = input.RequestCandidates.ToDictionary(SemanticIdentityKeys.BuildKey);
 
         // Phase 1: build mergedVisibleSequence in request order.
-        var mergedVisibleSequence = new List<ProfileTopLevelCollectionPlanEntry>();
+        var mergedVisibleSequence = new List<ProfileCollectionPlanEntry>();
 
         foreach (var visibleRequestItem in input.VisibleRequestItems)
         {
-            var key = BuildSemanticIdentityKey(visibleRequestItem.Address.SemanticIdentityInOrder);
+            var key = SemanticIdentityKeys.BuildKey(visibleRequestItem.Address.SemanticIdentityInOrder);
 
             if (matchedCurrentByIdentity.TryGetValue(key, out var currentRow))
             {
@@ -88,55 +91,55 @@ internal static class ProfileTopLevelCollectionPlanner
                 var hiddenPaths = visibleStoredByIdentity[key].HiddenMemberPaths;
                 var candidate = candidateByIdentityKey[key];
                 mergedVisibleSequence.Add(
-                    new ProfileTopLevelCollectionPlanEntry.MatchedUpdateEntry(
-                        currentRow,
-                        candidate,
-                        hiddenPaths
-                    )
+                    new ProfileCollectionPlanEntry.MatchedUpdateEntry(currentRow, candidate, hiddenPaths)
                 );
             }
             else if (visibleRequestItem.Creatable)
             {
                 // Unmatched but creatable: new row to insert.
                 var candidate = candidateByIdentityKey[key];
-                mergedVisibleSequence.Add(
-                    new ProfileTopLevelCollectionPlanEntry.VisibleInsertEntry(candidate)
-                );
+                mergedVisibleSequence.Add(new ProfileCollectionPlanEntry.VisibleInsertEntry(candidate));
             }
             else
             {
                 // Unmatched and not creatable: reject immediately before Phase 2.
-                return new ProfileTopLevelCollectionPlanResult.CreatabilityRejection(
-                    visibleRequestItem.Address,
-                    $"Profile does not allow creating new collection items in scope '{input.JsonScope}'."
+                return new ProfileCollectionPlanResult.CreatabilityRejection(
+                    $"Profile does not allow creating new collection items in scope '{input.JsonScope}': "
+                        + LogSanitizer.SanitizeForLog(
+                            FormatIdentity(visibleRequestItem.Address.SemanticIdentityInOrder)
+                        )
+                        + "."
                 );
             }
         }
 
         // Phase 2: walk current rows in stored-ordinal order, interleaving hidden-preserves
         // and consuming mergedVisibleSequence at visible slots. See spec Section 5.2.
-        var output = new List<ProfileTopLevelCollectionPlanEntry>(
+        var output = new List<ProfileCollectionPlanEntry>(
             capacity: input.CurrentRows.Length + mergedVisibleSequence.Count
         );
+
+        // Locate the last previously-visible current row for this scope instance. Leftover
+        // merged-visible entries (extra inserts beyond the previous visible count) must be
+        // appended immediately after this row so they precede any trailing hidden rows. When
+        // no previously-visible row exists, leftovers append at the end after the walk.
         var lastVisibleStoredIndex = -1;
-        for (var i = 0; i < input.CurrentRows.Length; i++)
+        for (var i = 0; i < currentRowEntries.Length; i++)
         {
-            var currentKey = BuildSemanticIdentityKey(input.CurrentRows[i].SemanticIdentityInOrder);
-            if (visibleStoredByIdentity.ContainsKey(currentKey))
+            if (visibleStoredByIdentity.ContainsKey(currentRowEntries[i].Key))
             {
                 lastVisibleStoredIndex = i;
             }
         }
 
         var mergedCursor = 0;
-        for (var i = 0; i < input.CurrentRows.Length; i++)
+        for (var i = 0; i < currentRowEntries.Length; i++)
         {
-            var currentRow = input.CurrentRows[i];
-            var currentKey = BuildSemanticIdentityKey(currentRow.SemanticIdentityInOrder);
+            var (currentRow, currentKey) = currentRowEntries[i];
             if (!visibleStoredByIdentity.ContainsKey(currentKey))
             {
                 // Hidden slot: preserve verbatim.
-                output.Add(new ProfileTopLevelCollectionPlanEntry.HiddenPreserveEntry(currentRow));
+                output.Add(new ProfileCollectionPlanEntry.HiddenPreserveEntry(currentRow));
             }
             else if (mergedCursor < mergedVisibleSequence.Count)
             {
@@ -148,42 +151,42 @@ internal static class ProfileTopLevelCollectionPlanner
 
             if (i == lastVisibleStoredIndex)
             {
-                AppendRemainingMergedEntries();
+                // Just processed the last previously-visible row: append any extra inserts
+                // here so they land before trailing hidden rows.
+                while (mergedCursor < mergedVisibleSequence.Count)
+                {
+                    output.Add(mergedVisibleSequence[mergedCursor]);
+                    mergedCursor++;
+                }
             }
         }
 
-        if (lastVisibleStoredIndex == -1)
+        // No previously-visible row existed: append any leftover merged entries at the end.
+        while (mergedCursor < mergedVisibleSequence.Count)
         {
-            AppendRemainingMergedEntries();
+            output.Add(mergedVisibleSequence[mergedCursor]);
+            mergedCursor++;
         }
 
-        return new ProfileTopLevelCollectionPlanResult.Success(
-            new ProfileTopLevelCollectionPlan(output.ToImmutableArray())
-        );
-
-        void AppendRemainingMergedEntries()
-        {
-            while (mergedCursor < mergedVisibleSequence.Count)
-            {
-                output.Add(mergedVisibleSequence[mergedCursor]);
-                mergedCursor++;
-            }
-        }
+        return new ProfileCollectionPlanResult.Success(new ProfileCollectionPlan(output.ToImmutableArray()));
     }
 
     /// <summary>
     /// Runs all ten fail-closed invariants on the scoped planner input. Throws
-    /// <see cref="InvalidOperationException"/> on the first violation, with the offending
-    /// <c>JsonScope</c> and semantic identity embedded in the message.
+    /// <see cref="ProfilePlannerContractMismatchException"/> on the first violation, with the
+    /// offending <c>JsonScope</c> and semantic identity embedded in the message. Each
+    /// violation represents a Core/backend contract mismatch — Core handed the planner a
+    /// profile/scope combination the compiled backend shape cannot satisfy — not a backend
+    /// internal bug, so the executor maps these to a profile contract-mismatch result.
     /// </summary>
     /// <remarks>
     /// Invariant ordering is load-bearing. Coverage invariants (reverse-stored, request-side)
     /// must run before their ordering invariants (stored ordinal, request order). Reordering
     /// without also adding fallback paths in <see cref="ValidateStoredOrdinalOrder"/> or
     /// <see cref="ValidateRequestOrder"/> would surface a <c>KeyNotFoundException</c>
-    /// instead of the intended fail-closed <c>InvalidOperationException</c>.
+    /// instead of the intended fail-closed <see cref="ProfilePlannerContractMismatchException"/>.
     /// </remarks>
-    private static void ValidateInvariants(ProfileTopLevelCollectionScopeInput input)
+    private static void ValidateInvariants(ProfileCollectionScopeInput input)
     {
         // Invariant 6a: pre-scoped input — JsonScope must match for all candidates.
         ValidateCandidateScopes(input);
@@ -227,7 +230,7 @@ internal static class ProfileTopLevelCollectionPlanner
         ValidateRequestOrder(input, candidatesByIdentityKey);
     }
 
-    private static void ValidateCandidateScopes(ProfileTopLevelCollectionScopeInput input)
+    private static void ValidateCandidateScopes(ProfileCollectionScopeInput input)
     {
         foreach (
             var jsonScope in input.RequestCandidates.Select(c =>
@@ -237,8 +240,10 @@ internal static class ProfileTopLevelCollectionPlanner
         {
             if (jsonScope != input.JsonScope)
             {
-                throw new InvalidOperationException(
-                    $"RequestCandidate belongs to scope '{LogSanitizer.SanitizeForLog(jsonScope)}' "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "pre-scoped input: JsonScope mismatch",
+                    message: $"RequestCandidate belongs to scope '{LogSanitizer.SanitizeForLog(jsonScope)}' "
                         + $"but planner input scope is '{input.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: JsonScope mismatch."
                 );
@@ -246,14 +251,16 @@ internal static class ProfileTopLevelCollectionPlanner
         }
     }
 
-    private static void ValidateVisibleRequestItemScopes(ProfileTopLevelCollectionScopeInput input)
+    private static void ValidateVisibleRequestItemScopes(ProfileCollectionScopeInput input)
     {
         foreach (var address in input.VisibleRequestItems.Select(i => i.Address))
         {
             if (address.JsonScope != input.JsonScope)
             {
-                throw new InvalidOperationException(
-                    $"VisibleRequestCollectionItem belongs to scope '{LogSanitizer.SanitizeForLog(address.JsonScope)}' "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "pre-scoped input: JsonScope mismatch",
+                    message: $"VisibleRequestCollectionItem belongs to scope '{LogSanitizer.SanitizeForLog(address.JsonScope)}' "
                         + $"but planner input scope is '{input.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: JsonScope mismatch."
                 );
@@ -266,8 +273,10 @@ internal static class ProfileTopLevelCollectionPlanner
                 )
             )
             {
-                throw new InvalidOperationException(
-                    $"VisibleRequestCollectionItem in scope '{input.JsonScope}' has parent address "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "pre-scoped input: parent scope mismatch",
+                    message: $"VisibleRequestCollectionItem in scope '{input.JsonScope}' has parent address "
                         + $"'{LogSanitizer.SanitizeForLog(address.ParentAddress.JsonScope)}' "
                         + $"but expected '{input.ParentScopeAddress.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: parent scope mismatch."
@@ -276,14 +285,16 @@ internal static class ProfileTopLevelCollectionPlanner
         }
     }
 
-    private static void ValidateVisibleStoredRowScopes(ProfileTopLevelCollectionScopeInput input)
+    private static void ValidateVisibleStoredRowScopes(ProfileCollectionScopeInput input)
     {
         foreach (var address in input.VisibleStoredRows.Select(r => r.Address))
         {
             if (address.JsonScope != input.JsonScope)
             {
-                throw new InvalidOperationException(
-                    $"VisibleStoredCollectionRow belongs to scope '{LogSanitizer.SanitizeForLog(address.JsonScope)}' "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "pre-scoped input: JsonScope mismatch",
+                    message: $"VisibleStoredCollectionRow belongs to scope '{LogSanitizer.SanitizeForLog(address.JsonScope)}' "
                         + $"but planner input scope is '{input.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: JsonScope mismatch."
                 );
@@ -296,8 +307,10 @@ internal static class ProfileTopLevelCollectionPlanner
                 )
             )
             {
-                throw new InvalidOperationException(
-                    $"VisibleStoredCollectionRow in scope '{input.JsonScope}' has parent address "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "pre-scoped input: parent scope mismatch",
+                    message: $"VisibleStoredCollectionRow in scope '{input.JsonScope}' has parent address "
                         + $"'{LogSanitizer.SanitizeForLog(address.ParentAddress.JsonScope)}' "
                         + $"but expected '{input.ParentScopeAddress.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: parent scope mismatch."
@@ -307,17 +320,19 @@ internal static class ProfileTopLevelCollectionPlanner
     }
 
     private static Dictionary<string, CurrentCollectionRowSnapshot> BuildCurrentRowIndex(
-        ProfileTopLevelCollectionScopeInput input
+        ProfileCollectionScopeInput input
     )
     {
         var currentByIdentity = new Dictionary<string, CurrentCollectionRowSnapshot>();
         foreach (var row in input.CurrentRows)
         {
-            var key = BuildSemanticIdentityKey(row.SemanticIdentityInOrder);
+            var key = SemanticIdentityKeys.BuildKey(row.SemanticIdentityInOrder);
             if (!currentByIdentity.TryAdd(key, row))
             {
-                throw new InvalidOperationException(
-                    $"Current rows contain duplicate semantic identity in scope '{input.JsonScope}': "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "current row identity uniqueness",
+                    message: $"Current rows contain duplicate semantic identity in scope '{input.JsonScope}': "
                         + $"{LogSanitizer.SanitizeForLog(FormatIdentity(row.SemanticIdentityInOrder))}. "
                         + "Planner invariant violated: current row identity uniqueness."
                 );
@@ -327,16 +342,18 @@ internal static class ProfileTopLevelCollectionPlanner
         return currentByIdentity;
     }
 
-    private static void ValidateUniqueVisibleStoredRows(ProfileTopLevelCollectionScopeInput input)
+    private static void ValidateUniqueVisibleStoredRows(ProfileCollectionScopeInput input)
     {
         var seen = new HashSet<string>();
         foreach (var identity in input.VisibleStoredRows.Select(r => r.Address.SemanticIdentityInOrder))
         {
-            var key = BuildSemanticIdentityKey(identity);
+            var key = SemanticIdentityKeys.BuildKey(identity);
             if (!seen.Add(key))
             {
-                throw new InvalidOperationException(
-                    $"Duplicate visible stored row in scope '{input.JsonScope}': "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "duplicate visible stored row",
+                    message: $"Duplicate visible stored row in scope '{input.JsonScope}': "
                         + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))}. "
                         + "Planner invariant violated: duplicate visible stored row."
                 );
@@ -345,17 +362,19 @@ internal static class ProfileTopLevelCollectionPlanner
     }
 
     private static void ValidateReverseStoredCoverage(
-        ProfileTopLevelCollectionScopeInput input,
+        ProfileCollectionScopeInput input,
         Dictionary<string, CurrentCollectionRowSnapshot> currentByIdentity
     )
     {
         foreach (var identity in input.VisibleStoredRows.Select(r => r.Address.SemanticIdentityInOrder))
         {
-            var key = BuildSemanticIdentityKey(identity);
+            var key = SemanticIdentityKeys.BuildKey(identity);
             if (!currentByIdentity.ContainsKey(key))
             {
-                throw new InvalidOperationException(
-                    $"VisibleStoredCollectionRow for scope '{input.JsonScope}' with identity "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "reverse stored coverage",
+                    message: $"VisibleStoredCollectionRow for scope '{input.JsonScope}' with identity "
                         + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))} "
                         + "has no matching current row. "
                         + "Planner invariant violated: reverse stored coverage."
@@ -365,7 +384,7 @@ internal static class ProfileTopLevelCollectionPlanner
     }
 
     private static void ValidateStoredOrdinalOrder(
-        ProfileTopLevelCollectionScopeInput input,
+        ProfileCollectionScopeInput input,
         Dictionary<string, CurrentCollectionRowSnapshot> currentByIdentity
     )
     {
@@ -374,12 +393,14 @@ internal static class ProfileTopLevelCollectionPlanner
         var lastStoredOrdinal = int.MinValue;
         foreach (var address in input.VisibleStoredRows.Select(r => r.Address))
         {
-            var key = BuildSemanticIdentityKey(address.SemanticIdentityInOrder);
+            var key = SemanticIdentityKeys.BuildKey(address.SemanticIdentityInOrder);
             var currentRow = currentByIdentity[key];
             if (currentRow.StoredOrdinal <= lastStoredOrdinal)
             {
-                throw new InvalidOperationException(
-                    $"VisibleStoredCollectionRows for scope '{input.JsonScope}' do not map to "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "order consistency: stored",
+                    message: $"VisibleStoredCollectionRows for scope '{input.JsonScope}' do not map to "
                         + $"strictly increasing StoredOrdinals (got {currentRow.StoredOrdinal} after {lastStoredOrdinal}). "
                         + "Planner invariant violated: order consistency: stored."
                 );
@@ -391,21 +412,24 @@ internal static class ProfileTopLevelCollectionPlanner
 
     /// <summary>
     /// Builds the candidate index while enforcing that no two flattened request candidates share
-    /// the same normalized semantic identity. Throws <see cref="InvalidOperationException"/> with
-    /// phrase "duplicate visible request candidate" on the first collision.
+    /// the same normalized semantic identity. Throws
+    /// <see cref="ProfilePlannerContractMismatchException"/> with phrase
+    /// "duplicate visible request candidate" on the first collision.
     /// </summary>
     private static Dictionary<string, CollectionWriteCandidate> ValidateUniqueRequestCandidates(
-        ProfileTopLevelCollectionScopeInput input
+        ProfileCollectionScopeInput input
     )
     {
         var candidatesByIdentityKey = new Dictionary<string, CollectionWriteCandidate>();
         foreach (var candidate in input.RequestCandidates)
         {
-            var key = BuildCandidateIdentityKey(candidate);
+            var key = SemanticIdentityKeys.BuildKey(candidate);
             if (!candidatesByIdentityKey.TryAdd(key, candidate))
             {
-                throw new InvalidOperationException(
-                    $"Duplicate semantic identity among flattened request candidates in scope '{input.JsonScope}': "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "duplicate visible request candidate",
+                    message: $"Duplicate semantic identity among flattened request candidates in scope '{input.JsonScope}': "
                         + $"{LogSanitizer.SanitizeForLog(FormatCandidateIdentity(candidate))}. "
                         + "Planner invariant violated: duplicate visible request candidate."
                 );
@@ -415,16 +439,18 @@ internal static class ProfileTopLevelCollectionPlanner
         return candidatesByIdentityKey;
     }
 
-    private static void ValidateUniqueVisibleRequestItems(ProfileTopLevelCollectionScopeInput input)
+    private static void ValidateUniqueVisibleRequestItems(ProfileCollectionScopeInput input)
     {
         var seen = new HashSet<string>();
         foreach (var identity in input.VisibleRequestItems.Select(i => i.Address.SemanticIdentityInOrder))
         {
-            var key = BuildSemanticIdentityKey(identity);
+            var key = SemanticIdentityKeys.BuildKey(identity);
             if (!seen.Add(key))
             {
-                throw new InvalidOperationException(
-                    $"Duplicate visible request item in scope '{input.JsonScope}': "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "duplicate visible request item",
+                    message: $"Duplicate visible request item in scope '{input.JsonScope}': "
                         + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))}. "
                         + "Planner invariant violated: duplicate visible request item."
                 );
@@ -433,17 +459,19 @@ internal static class ProfileTopLevelCollectionPlanner
     }
 
     private static void ValidateRequestSideCoverage(
-        ProfileTopLevelCollectionScopeInput input,
+        ProfileCollectionScopeInput input,
         Dictionary<string, CollectionWriteCandidate> candidatesByIdentityKey
     )
     {
         foreach (var identity in input.VisibleRequestItems.Select(i => i.Address.SemanticIdentityInOrder))
         {
-            var candidateKey = BuildSemanticIdentityKey(identity);
+            var candidateKey = SemanticIdentityKeys.BuildKey(identity);
             if (!candidatesByIdentityKey.ContainsKey(candidateKey))
             {
-                throw new InvalidOperationException(
-                    $"VisibleRequestCollectionItem for scope '{input.JsonScope}' with identity "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "request-side coverage",
+                    message: $"VisibleRequestCollectionItem for scope '{input.JsonScope}' with identity "
                         + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))} "
                         + "has no matching request candidate. "
                         + "Planner invariant violated: request-side coverage."
@@ -452,20 +480,22 @@ internal static class ProfileTopLevelCollectionPlanner
         }
     }
 
-    private static void ValidateReverseRequestSideCoverage(ProfileTopLevelCollectionScopeInput input)
+    private static void ValidateReverseRequestSideCoverage(ProfileCollectionScopeInput input)
     {
         // Build a set of address-side keys from VisibleRequestItems for O(1) lookup.
         var visibleRequestKeys = input
-            .VisibleRequestItems.Select(i => BuildSemanticIdentityKey(i.Address.SemanticIdentityInOrder))
+            .VisibleRequestItems.Select(i => SemanticIdentityKeys.BuildKey(i.Address.SemanticIdentityInOrder))
             .ToHashSet();
 
         foreach (var candidate in input.RequestCandidates)
         {
-            var key = BuildCandidateIdentityKey(candidate);
+            var key = SemanticIdentityKeys.BuildKey(candidate);
             if (!visibleRequestKeys.Contains(key))
             {
-                throw new InvalidOperationException(
-                    $"Request candidate for scope '{input.JsonScope}' with identity "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "request-side coverage: orphan candidate",
+                    message: $"Request candidate for scope '{input.JsonScope}' with identity "
                         + $"{LogSanitizer.SanitizeForLog(FormatCandidateIdentity(candidate))} "
                         + "has no matching VisibleRequestCollectionItem. "
                         + "Planner invariant violated: request-side coverage: orphan candidate."
@@ -475,7 +505,7 @@ internal static class ProfileTopLevelCollectionPlanner
     }
 
     private static void ValidateRequestOrder(
-        ProfileTopLevelCollectionScopeInput input,
+        ProfileCollectionScopeInput input,
         Dictionary<string, CollectionWriteCandidate> candidatesByIdentityKey
     )
     {
@@ -484,12 +514,14 @@ internal static class ProfileTopLevelCollectionPlanner
         var lastRequestOrder = int.MinValue;
         foreach (var address in input.VisibleRequestItems.Select(i => i.Address))
         {
-            var candidateKey = BuildSemanticIdentityKey(address.SemanticIdentityInOrder);
+            var candidateKey = SemanticIdentityKeys.BuildKey(address.SemanticIdentityInOrder);
             var candidate = candidatesByIdentityKey[candidateKey];
             if (candidate.RequestOrder <= lastRequestOrder)
             {
-                throw new InvalidOperationException(
-                    $"VisibleRequestCollectionItems for scope '{input.JsonScope}' do not map to "
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "order consistency: request",
+                    message: $"VisibleRequestCollectionItems for scope '{input.JsonScope}' do not map to "
                         + $"strictly increasing RequestOrder values (got {candidate.RequestOrder} after {lastRequestOrder}). "
                         + "Planner invariant violated: order consistency: request."
                 );
@@ -500,29 +532,11 @@ internal static class ProfileTopLevelCollectionPlanner
     }
 
     /// <summary>
-    /// Builds an order-based key from a <see cref="SemanticIdentityPart"/> array, preserving
-    /// missing-vs-explicit-null semantics for current-row, visible-stored, visible-request-item,
-    /// and candidate identity lookups. Relative paths are intentionally omitted from the key:
-    /// Core emits bare scope-relative paths while backend merge plans retain <c>$.</c>-prefixed
-    /// relative paths. The contract validator owns path compatibility; the planner only needs
-    /// deterministic identity part order, presence, and value.
-    /// </summary>
-    private static string BuildSemanticIdentityKey(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join("|", identity.Select(FormatSemanticIdentityPartForKey));
-
-    /// <summary>
-    /// Builds the same presence-aware semantic identity key for a <see cref="CollectionWriteCandidate"/>.
-    /// </summary>
-    private static string BuildCandidateIdentityKey(CollectionWriteCandidate candidate) =>
-        BuildSemanticIdentityKey(candidate.SemanticIdentityInOrder);
-
-    /// <summary>
-    /// Formats a candidate's semantic identity as a pipe-joined diagnostics string using the
-    /// same key form as <see cref="BuildCandidateIdentityKey"/>. Used in exception messages
-    /// where <see cref="SemanticIdentityPart"/> context is unavailable.
+    /// Formats a candidate's semantic identity as a human-readable diagnostics string. Used in
+    /// exception messages alongside <see cref="LogSanitizer.SanitizeForLog"/>.
     /// </summary>
     private static string FormatCandidateIdentity(CollectionWriteCandidate candidate) =>
-        BuildCandidateIdentityKey(candidate);
+        SemanticIdentityKeys.FormatForDiagnostics(candidate.SemanticIdentityInOrder);
 
     /// <summary>
     /// Formats a semantic identity into a human-readable diagnostics string
@@ -533,17 +547,7 @@ internal static class ProfileTopLevelCollectionPlanner
     /// control characters.
     /// </summary>
     private static string FormatIdentity(ImmutableArray<SemanticIdentityPart> identity) =>
-        string.Join(
-            ",",
-            identity.Select(p =>
-                p.IsPresent
-                    ? $"{p.RelativePath}={p.Value?.ToJsonString() ?? "null"}"
-                    : $"{p.RelativePath}=<missing>"
-            )
-        );
-
-    private static string FormatSemanticIdentityPartForKey(SemanticIdentityPart part) =>
-        $"{(part.IsPresent ? "present" : "missing")}:{part.Value?.ToJsonString() ?? "null"}";
+        SemanticIdentityKeys.FormatForDiagnostics(identity);
 }
 
 /// <summary>
@@ -553,7 +557,7 @@ internal static class ProfileTopLevelCollectionPlanner
 /// and names their hidden-member paths; <see cref="CurrentRows"/> is the ordered current DB state
 /// for this scope instance.
 /// </summary>
-internal sealed record ProfileTopLevelCollectionScopeInput(
+internal sealed record ProfileCollectionScopeInput(
     string JsonScope,
     ScopeInstanceAddress ParentScopeAddress,
     ImmutableArray<CollectionWriteCandidate> RequestCandidates,
@@ -576,29 +580,26 @@ internal sealed record CurrentCollectionRowSnapshot(
     IReadOnlyDictionary<DbColumnName, object?> CurrentRowByColumnName
 );
 
-internal sealed record ProfileTopLevelCollectionPlan(
-    ImmutableArray<ProfileTopLevelCollectionPlanEntry> Sequence
-);
+internal sealed record ProfileCollectionPlan(ImmutableArray<ProfileCollectionPlanEntry> Sequence);
 
-internal abstract record ProfileTopLevelCollectionPlanResult
+internal abstract record ProfileCollectionPlanResult
 {
-    public sealed record Success(ProfileTopLevelCollectionPlan Plan) : ProfileTopLevelCollectionPlanResult;
+    public sealed record Success(ProfileCollectionPlan Plan) : ProfileCollectionPlanResult;
 
-    public sealed record CreatabilityRejection(CollectionRowAddress OffendingAddress, string Reason)
-        : ProfileTopLevelCollectionPlanResult;
+    public sealed record CreatabilityRejection(string Reason) : ProfileCollectionPlanResult;
 }
 
-internal abstract record ProfileTopLevelCollectionPlanEntry
+internal abstract record ProfileCollectionPlanEntry
 {
     public sealed record MatchedUpdateEntry(
         CurrentCollectionRowSnapshot StoredRow,
         CollectionWriteCandidate RequestCandidate,
         ImmutableArray<string> HiddenMemberPaths
-    ) : ProfileTopLevelCollectionPlanEntry;
+    ) : ProfileCollectionPlanEntry;
 
     public sealed record HiddenPreserveEntry(CurrentCollectionRowSnapshot StoredRow)
-        : ProfileTopLevelCollectionPlanEntry;
+        : ProfileCollectionPlanEntry;
 
     public sealed record VisibleInsertEntry(CollectionWriteCandidate RequestCandidate)
-        : ProfileTopLevelCollectionPlanEntry;
+        : ProfileCollectionPlanEntry;
 }

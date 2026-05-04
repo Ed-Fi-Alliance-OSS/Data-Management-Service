@@ -62,7 +62,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         );
         tableStateBuilders[rootRow.TableWritePlan.TableModel.Table].AddMergedRow(rootRow.Row);
 
-        var rootPhysicalRowIdentityValues = ExtractPhysicalRowIdentityValues(
+        var rootPhysicalRowIdentityValues = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
             rootRow.TableWritePlan,
             rootRow.Row.Values
         );
@@ -124,7 +124,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
             tableStateBuilders[rootExtensionRow.TableWritePlan.TableModel.Table].AddMergedRow(mergedRow.Row);
 
-            var scopePhysicalRowIdentityValues = ExtractPhysicalRowIdentityValues(
+            var scopePhysicalRowIdentityValues = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
                 rootExtensionRow.TableWritePlan,
                 mergedValues
             );
@@ -156,7 +156,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
             tableStateBuilders[alignedScopeData.TableWritePlan.TableModel.Table].AddMergedRow(mergedRow.Row);
 
-            var scopePhysicalRowIdentityValues = ExtractPhysicalRowIdentityValues(
+            var scopePhysicalRowIdentityValues = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
                 alignedScopeData.TableWritePlan,
                 mergedValues
             );
@@ -204,10 +204,11 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             tableStateBuilders[collectionCandidate.TableWritePlan.TableModel.Table]
                 .AddMergedRow(mergedRow.Row);
 
-            var collectionPhysicalRowIdentityValues = ExtractPhysicalRowIdentityValues(
-                collectionCandidate.TableWritePlan,
-                mergedValues
-            );
+            var collectionPhysicalRowIdentityValues =
+                RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
+                    collectionCandidate.TableWritePlan,
+                    mergedValues
+                );
 
             SynthesizeAttachedAlignedScopeRows(
                 collectionCandidate.AttachedAlignedScopeData,
@@ -255,30 +256,6 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             values,
             matchedCurrentRowValues
         );
-
-    private static ImmutableArray<FlattenedWriteValue> ExtractPhysicalRowIdentityValues(
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<FlattenedWriteValue> values
-    )
-    {
-        FlattenedWriteValue[] physicalRowIdentityValues = new FlattenedWriteValue[
-            tableWritePlan.TableModel.IdentityMetadata.PhysicalRowIdentityColumns.Count
-        ];
-
-        for (
-            var index = 0;
-            index < tableWritePlan.TableModel.IdentityMetadata.PhysicalRowIdentityColumns.Count;
-            index++
-        )
-        {
-            var columnName = tableWritePlan.TableModel.IdentityMetadata.PhysicalRowIdentityColumns[index];
-            physicalRowIdentityValues[index] = values[
-                RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
-            ];
-        }
-
-        return physicalRowIdentityValues.ToImmutableArray();
-    }
 
     private static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
@@ -677,49 +654,6 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 IComparable comparable => comparable.CompareTo(right),
                 _ => string.CompareOrdinal(left.ToString(), right.ToString()),
             };
-        }
-    }
-
-    private sealed class ObjectValueArrayComparer : IEqualityComparer<object?[]>
-    {
-        public static ObjectValueArrayComparer Instance { get; } = new();
-
-        public bool Equals(object?[]? left, object?[]? right)
-        {
-            if (ReferenceEquals(left, right))
-            {
-                return true;
-            }
-
-            if (left is null || right is null || left.Length != right.Length)
-            {
-                return false;
-            }
-
-            for (var index = 0; index < left.Length; index++)
-            {
-                if (!Equals(left[index], right[index]))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        public int GetHashCode(object?[] values)
-        {
-            ArgumentNullException.ThrowIfNull(values);
-
-            HashCode hashCode = new();
-            hashCode.Add(values.Length);
-
-            foreach (var value in values)
-            {
-                hashCode.Add(value);
-            }
-
-            return hashCode.ToHashCode();
         }
     }
 }

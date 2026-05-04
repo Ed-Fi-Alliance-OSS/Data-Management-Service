@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Core.Profile;
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Domain outcome for a single root-attached separate-table non-collection scope,
+/// Domain outcome for a single separate-table non-collection scope,
 /// as produced by <see cref="IProfileSeparateTableMergeDecider"/>. The decider
 /// returns only this enum; typed-failure wrapping
 /// (e.g. converting <see cref="RejectCreateDenied"/> into a creatability rejection)
@@ -55,8 +55,8 @@ internal enum ProfileSeparateTableMergeOutcome
 }
 
 /// <summary>
-/// Pure-function decider for a single root-attached separate-table non-collection
-/// scope. Returns the domain outcome (see <see cref="ProfileSeparateTableMergeOutcome"/>);
+/// Pure-function decider for a single separate-table non-collection scope. Returns the
+/// domain outcome (see <see cref="ProfileSeparateTableMergeOutcome"/>);
 /// does not perform any IO or typed-failure wrapping.
 /// </summary>
 internal interface IProfileSeparateTableMergeDecider
@@ -79,7 +79,7 @@ internal interface IProfileSeparateTableMergeDecider
 
 /// <summary>
 /// Stateless implementation of <see cref="IProfileSeparateTableMergeDecider"/>.
-/// Implements the Slice 3 decision matrix as a clear if-chain with no dead
+/// Implements the separate-table decision matrix as a clear if-chain with no dead
 /// branches. Hidden-stored-with-row dominates all non-VisiblePresent request
 /// shapes; a VisiblePresent request paired with a Hidden stored scope is an
 /// inconsistent tuple under a consistent writable profile and falls through

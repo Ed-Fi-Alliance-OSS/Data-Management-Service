@@ -1,0 +1,6 @@
+{
+  "_description": "Aligned extension scope $.parents[*]._ext.aligned with a non-collection inlined descendant sub-object 'detail'. Exercises the synthesizer for descendant inlined scope folding (slice 5 CP5): the descendant scope's columns must inline onto the aligned table (CollectionExtensionScope), not be lifted into a separate child table.",
+  "apiSchemaFiles": ["core.ApiSchema.json", "aligned.ApiSchema.json"],
+  "dialects": ["pgsql", "mssql"],
+  "emitDdlManifest": true
+}

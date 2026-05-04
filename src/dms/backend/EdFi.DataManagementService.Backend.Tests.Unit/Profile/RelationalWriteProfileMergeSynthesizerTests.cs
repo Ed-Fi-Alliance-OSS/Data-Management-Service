@@ -276,7 +276,7 @@ public class Given_ProfileSynthesizer_request_with_inconsistent_current_state_an
 }
 
 [TestFixture]
-public class Given_Synthesizer_SeparateTable_Contract_Rejects_CollectionCandidates_Under_RootExtensionRow
+public class Given_Synthesizer_SeparateTable_Contract_Allows_CollectionCandidates_Under_RootExtensionRow
 {
     private Action _act = null!;
 
@@ -291,7 +291,8 @@ public class Given_Synthesizer_SeparateTable_Contract_Rejects_CollectionCandidat
         var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
         var extensionPlan = AdapterFactoryTestFixtures.BuildRootExtensionTableWritePlan(extensionTableModel);
 
-        // Nested collection candidate under the extension row — must fail closed.
+        // Nested collection candidate under the extension row — request construction
+        // accepts this shape so the walker can handle it.
         var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
         var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
         var nestedCollectionCandidate = new CollectionWriteCandidate(
@@ -305,7 +306,11 @@ public class Given_Synthesizer_SeparateTable_Contract_Rejects_CollectionCandidat
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Physical"),
             ],
-            semanticIdentityValues: ["Physical"]
+            semanticIdentityValues: ["Physical"],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
         );
 
         var extensionRow = new RootExtensionWriteRowBuffer(
@@ -334,11 +339,9 @@ public class Given_Synthesizer_SeparateTable_Contract_Rejects_CollectionCandidat
     }
 
     [Test]
-    public void It_throws_ArgumentException_about_nested_collection_fence()
+    public void It_accepts_the_request_shape()
     {
-        _act.Should()
-            .Throw<ArgumentException>()
-            .WithMessage("*collection candidates nested under root-extension*later slice*");
+        _act.Should().NotThrow();
     }
 }
 
@@ -725,7 +728,7 @@ public class Given_Synthesizer_SeparateTable_VisiblePresent_Stored_Matched_Updat
     }
 }
 
-// Empty visible scope — the flattener's emitEmptyRootExtensionBuffers contract produces a
+// Empty visible scope — the flattener's emitEmptyExtensionBuffers contract produces a
 // buffer with no scope-bound scalar data (all JSON-bound values default to Literal(null)).
 // The synthesizer must honor the Slice 3 decision-matrix rule that separate-table outcomes
 // derive from scope metadata, not buffer content, and should route Insert / Update
@@ -759,7 +762,7 @@ public class Given_Synthesizer_SeparateTable_VisiblePresent_NoStored_EmptyBuffer
             RequestVisiblePresentScope("$"),
             RequestVisiblePresentScope("$._ext.sample", creatable: true)
         );
-        // Emulates the flattener with EmitEmptyRootExtensionBuffers=true producing a buffer
+        // Emulates the flattener with EmitEmptyExtensionBuffers=true producing a buffer
         // whose scope-bound scalar is null.
         var flattened = BuildFlattenedWriteSetWithExtensionRow(
             plan,
@@ -1053,9 +1056,8 @@ public class Given_Synthesizer_SeparateTable_HiddenStored_Preserves_With_Identic
 /// Regression pin: slice-3 synthesizer must silently skip plan tables whose kind is
 /// not <see cref="DbTableKind.RootExtension"/> instead of throwing. Reproduces the
 /// multi-table School write-plan scenario (root + root-extension + collection-extension-scope)
-/// where the profiled request only exercises root scopes — the executor's slice-fence
-/// keeps the request from touching the collection-extension-scope table, so the
-/// synthesizer must let it pass through untouched (the no-profile persister handles it).
+/// where the profiled request only exercises root scopes, so the synthesizer must let the
+/// collection-extension-scope table pass through untouched (the no-profile persister handles it).
 /// </summary>
 [TestFixture]
 public class Given_Synthesizer_With_Multi_Table_Plan_And_Unused_Collection_Scope_Skips_Silently
@@ -1419,9 +1421,9 @@ public class Given_Synthesizer_SeparateTable_HiddenRequest_With_Visible_Stored_A
 /// per C3 (01a-c3-request-visibility-and-writable-shaping.md), every compiled non-collection
 /// scope must have a <see cref="RequestScopeState"/> entry. A null request-scope entry
 /// paired with a matched visible stored row is a Core contract violation, and the
-/// synthesizer's pre-decider contract check catches this and fails closed with a
-/// synthesizer-level message identifying the offending scope instead of deferring the
-/// throw to the decider's generic "no actionable" message.
+/// synthesizer's pre-decider contract check catches this and fails closed as a typed
+/// <see cref="ProfilePlannerContractMismatchException"/> so the executor can shape it as a
+/// profile contract-mismatch result rather than a generic backend exception.
 /// </summary>
 [TestFixture]
 public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And_Row_FailsClosed
@@ -1481,11 +1483,15 @@ public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And
     }
 
     [Test]
-    public void It_throws_with_synthesizer_contract_violation_message() =>
-        _synthesizeAction
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*$._ext.sample*RequestScopeStates has no entry*");
+    public void It_throws_typed_planner_contract_mismatch_with_offending_scope_and_invariant_name()
+    {
+        var thrown = _synthesizeAction.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be("$._ext.sample");
+        thrown.InvariantName.Should().Be("missing RequestScopeState entry");
+        thrown.Message.Should().Contain("$._ext.sample");
+        thrown.Message.Should().Contain("RequestScopeStates has no entry");
+    }
 }
 
 /// <summary>
@@ -1494,8 +1500,9 @@ public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And
 /// non-collection scope must have a <see cref="StoredScopeState"/> entry when a profile
 /// applies. A current stored separate-table row with no StoredScopeState entry would
 /// otherwise silently preserve the row on a VisibleAbsent request instead of deleting or
-/// failing closed. The synthesizer's pre-decider contract check surfaces this as a
-/// Core contract violation.
+/// failing closed. The synthesizer's pre-decider contract check surfaces this as a typed
+/// <see cref="ProfilePlannerContractMismatchException"/> so the executor can shape it as a
+/// profile contract-mismatch result rather than a generic backend exception.
 /// </summary>
 [TestFixture]
 public class Given_Synthesizer_SeparateTable_StoredRow_Without_StoredScopeState_FailsClosed
@@ -1554,11 +1561,102 @@ public class Given_Synthesizer_SeparateTable_StoredRow_Without_StoredScopeState_
     }
 
     [Test]
-    public void It_throws_with_synthesizer_contract_violation_message() =>
-        _synthesizeAction
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*$._ext.sample*StoredScopeStates has no entry*");
+    public void It_throws_typed_planner_contract_mismatch_with_offending_scope_and_invariant_name()
+    {
+        var thrown = _synthesizeAction.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be("$._ext.sample");
+        thrown.InvariantName.Should().Be("missing StoredScopeState entry");
+        thrown.Message.Should().Contain("$._ext.sample");
+        thrown.Message.Should().Contain("StoredScopeStates has no entry");
+    }
+}
+
+/// <summary>
+/// Regression pin for the fail-closed contract between the projected request and the
+/// separate-table decider: when the decider selects Update for a separate-table scope but
+/// the writable request body does not contain that scope's sub-node, the request side is
+/// inconsistent with the metadata the decider acted on. The synthesizer's Update path
+/// must surface this as a typed
+/// <see cref="ProfilePlannerContractMismatchException"/> so the executor can shape it as
+/// a profile contract-mismatch result rather than letting it escape as a generic backend
+/// exception.
+/// </summary>
+[TestFixture]
+public class Given_Synthesizer_SeparateTable_Update_Without_ScopedRequestNode_FailsClosed
+{
+    private Action _synthesizeAction = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+        // Inconsistency under test: the writable request body omits the $._ext.sample
+        // sub-node, yet the projected RequestScopeState still reports VisiblePresent for
+        // the same scope. The Update path must surface this divergence as a typed
+        // contract-mismatch instead of crashing with a generic exception.
+        var body = new JsonObject { ["firstName"] = "Ada" };
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample", creatable: true)
+        );
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredVisiblePresentScope("$._ext.sample")
+        );
+        // Buffer is still emitted for the extension scope so RequireSeparateScopeBuffer
+        // does not throw before the scoped-request-node check is reached.
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, null]
+        );
+        // Stored extension row exists so the decider selects Update (matched-visible-stored
+        // actionable), routing into BuildUpdateState where the scoped-request-node guard
+        // fires.
+        var currentState = BuildCurrentStateWithRootAndExtensionRow(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [345L, "Red"]
+        );
+
+        var synthesizer = BuildProfileSynthesizer();
+        _synthesizeAction = () =>
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_throws_typed_planner_contract_mismatch_with_offending_scope_and_invariant_name()
+    {
+        var thrown = _synthesizeAction.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be("$._ext.sample");
+        thrown.InvariantName.Should().Be("separate-table Update requires scoped request node");
+        thrown.Message.Should().Contain("$._ext.sample");
+        thrown.Message.Should().Contain("requires a scoped request node");
+    }
 }
 
 /// <summary>
@@ -1737,79 +1835,6 @@ public class Given_Synthesizer_SeparateTable_Update_With_ScopeRelative_KeyUnific
 }
 
 [TestFixture]
-public class Given_ProfileMergeRequest_with_nested_collection_candidates_under_top_level
-{
-    private Action _act = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var plan = BuildSingleScalarBindingRootPlan();
-        var body = new JsonObject();
-        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
-
-        var rootPlan = plan.TablePlansInDependencyOrder[0];
-        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
-        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
-
-        // A nested collection candidate hung under the top-level candidate.
-        var nestedCandidate = new CollectionWriteCandidate(
-            tableWritePlan: collectionPlan,
-            ordinalPath: [0, 0],
-            requestOrder: 0,
-            values:
-            [
-                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
-                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Physical"),
-            ],
-            semanticIdentityValues: ["Physical"]
-        );
-
-        var topLevelCandidate = new CollectionWriteCandidate(
-            tableWritePlan: collectionPlan,
-            ordinalPath: [0],
-            requestOrder: 0,
-            values:
-            [
-                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
-                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Mailing"),
-            ],
-            semanticIdentityValues: ["Mailing"],
-            collectionCandidates: [nestedCandidate]
-        );
-
-        var flattenedWriteSet = new FlattenedWriteSet(
-            new RootWriteRowBuffer(
-                rootPlan,
-                [new FlattenedWriteValue.Literal("Ada")],
-                collectionCandidates: [topLevelCandidate]
-            )
-        );
-
-        _act = () =>
-            new RelationalWriteProfileMergeRequest(
-                writePlan: plan,
-                flattenedWriteSet: flattenedWriteSet,
-                writableRequestBody: body,
-                currentState: null,
-                profileRequest: request,
-                profileAppliedContext: null,
-                resolvedReferences: EmptyResolvedReferenceSet()
-            );
-    }
-
-    [Test]
-    public void It_throws_ArgumentException_about_nested_collection_candidates()
-    {
-        _act.Should().Throw<ArgumentException>().WithMessage("*nested CollectionCandidates*Slice 5*");
-    }
-}
-
-[TestFixture]
 public class Given_ProfileMergeRequest_with_attached_aligned_scope_data_on_top_level_candidate
 {
     private Action _act = null!;
@@ -1852,7 +1877,11 @@ public class Given_ProfileMergeRequest_with_attached_aligned_scope_data_on_top_l
                 new FlattenedWriteValue.Literal("Physical"),
             ],
             semanticIdentityValues: ["Physical"],
-            attachedAlignedScopeData: [attachedAlignedScope]
+            attachedAlignedScopeData: [attachedAlignedScope],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
         );
 
         var flattenedWriteSet = new FlattenedWriteSet(
@@ -1876,14 +1905,117 @@ public class Given_ProfileMergeRequest_with_attached_aligned_scope_data_on_top_l
     }
 
     [Test]
-    public void It_throws_ArgumentException_about_attached_aligned_scope_data()
+    public void It_accepts_the_request_shape()
     {
-        _act.Should().Throw<ArgumentException>().WithMessage("*AttachedAlignedScopeData*Slice 5*");
+        _act.Should().NotThrow();
+    }
+}
+
+/// <summary>
+/// The constructor no longer fences AttachedAlignedScopeData at any collection-candidate
+/// depth. Nested attached aligned data is accepted by request construction and handled
+/// by the walker when that topology opens.
+/// </summary>
+[TestFixture]
+public class Given_a_RelationalWriteProfileMergeRequest_with_AttachedAlignedScopeData_on_a_nested_candidate
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan();
+        var body = new JsonObject();
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
+        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
+
+        var alignedTableModel = AdapterFactoryTestFixtures.BuildCollectionExtensionScopeTableModel();
+        var alignedPlan = AdapterFactoryTestFixtures.BuildCollectionExtensionScopeTableWritePlan(
+            alignedTableModel
+        );
+
+        // The NESTED candidate carries non-empty AttachedAlignedScopeData; this is
+        // accepted at construction time.
+        var attachedAlignedScope = new CandidateAttachedAlignedScopeData(
+            tableWritePlan: alignedPlan,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(null),
+            ]
+        );
+        var nestedCandidate = new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0, 0],
+            requestOrder: 0,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Mailing"),
+            ],
+            semanticIdentityValues: ["Mailing"],
+            attachedAlignedScopeData: [attachedAlignedScope],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Mailing"]
+            )
+        );
+
+        // The TOP-LEVEL candidate has empty AttachedAlignedScopeData; the nested candidate
+        // carries the shape now allowed through construction.
+        var topLevelCandidate = new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Physical"),
+            ],
+            semanticIdentityValues: ["Physical"],
+            collectionCandidates: [nestedCandidate],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
+        );
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal("Ada")],
+                collectionCandidates: [topLevelCandidate]
+            )
+        );
+
+        _act = () =>
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: flattenedWriteSet,
+                writableRequestBody: body,
+                currentState: null,
+                profileRequest: request,
+                profileAppliedContext: null,
+                resolvedReferences: EmptyResolvedReferenceSet()
+            );
+    }
+
+    [Test]
+    public void It_accepts_the_request_shape()
+    {
+        _act.Should().NotThrow();
     }
 }
 
 [TestFixture]
-public class Given_ProfileMergeRequest_still_rejects_collection_candidate_under_root_extension_row
+public class Given_ProfileMergeRequest_accepts_collection_candidate_under_root_extension_row
 {
     private Action _act = null!;
 
@@ -1911,7 +2043,11 @@ public class Given_ProfileMergeRequest_still_rejects_collection_candidate_under_
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Physical"),
             ],
-            semanticIdentityValues: ["Physical"]
+            semanticIdentityValues: ["Physical"],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
         );
 
         var extensionRow = new RootExtensionWriteRowBuffer(
@@ -1940,12 +2076,523 @@ public class Given_ProfileMergeRequest_still_rejects_collection_candidate_under_
     }
 
     [Test]
-    public void It_throws_ArgumentException_about_nested_collection_fence_under_root_extension_row()
+    public void It_accepts_the_request_shape()
     {
-        _act.Should()
-            .Throw<ArgumentException>()
-            .WithMessage("*collection candidates nested under root-extension*later slice*");
+        _act.Should().NotThrow();
     }
+}
+
+[TestFixture]
+public class Given_root_extension_scope_with_child_collection_candidate
+{
+    private const long RootExtensionDocumentId = 345L;
+    private ProfileMergeOutcome _outcome;
+    private TableWritePlan _childPlan = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, extensionPlan, childPlan) = RootExtensionChildCollectionTopologyBuilders.BuildPlan();
+        _childPlan = childPlan;
+
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["favoriteColor"] = "Blue",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "C1" }),
+                },
+            },
+        };
+
+        var childCandidate = RootExtensionChildCollectionTopologyBuilders.BuildChildCandidate(
+            childPlan,
+            "C1",
+            requestOrder: 0
+        );
+        var flattened = RootExtensionChildCollectionTopologyBuilders.BuildFlattenedWriteSet(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [RootExtensionDocumentId, "Blue"],
+            childCandidates: [childCandidate]
+        );
+        var request = RootExtensionChildCollectionTopologyBuilders.BuildVisibleRequest(body, "C1");
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: null,
+                    profileRequest: request,
+                    profileAppliedContext: null,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_emits_the_root_extension_child_collection_table_state()
+    {
+        var childTable = _outcome.MergeResult!.TablesInDependencyOrder.SingleOrDefault(s =>
+            s.TableWritePlan.TableModel.Table == _childPlan.TableModel.Table
+        );
+
+        childTable.Should().NotBeNull();
+        childTable!.MergedRows.Should().HaveCount(1);
+        ((FlattenedWriteValue.Literal)childTable.MergedRows[0].Values[3]).Value.Should().Be("C1");
+    }
+
+    [Test]
+    public void It_stamps_the_root_extension_physical_identity_on_the_child_row()
+    {
+        var childTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childPlan.TableModel.Table
+        );
+
+        ((FlattenedWriteValue.Literal)childTable.MergedRows[0].Values[1])
+            .Value.Should()
+            .Be(RootExtensionDocumentId);
+    }
+}
+
+[TestFixture]
+public class Given_updated_root_extension_scope_with_child_collection_candidate
+{
+    private const long RootExtensionDocumentId = 345L;
+    private ProfileMergeOutcome _outcome;
+    private TableWritePlan _childPlan = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, extensionPlan, childPlan) = RootExtensionChildCollectionTopologyBuilders.BuildPlan();
+        _childPlan = childPlan;
+
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["favoriteColor"] = "Blue",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "C1" }),
+                },
+            },
+        };
+
+        var childCandidate = RootExtensionChildCollectionTopologyBuilders.BuildChildCandidate(
+            childPlan,
+            "C1",
+            requestOrder: 0
+        );
+        var flattened = RootExtensionChildCollectionTopologyBuilders.BuildFlattenedWriteSet(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [RootExtensionDocumentId, "Blue"],
+            childCandidates: [childCandidate]
+        );
+        var request = RootExtensionChildCollectionTopologyBuilders.BuildVisibleRequest(body, "C1");
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredVisiblePresentScope(RootExtensionChildCollectionTopologyBuilders.ExtensionScope)
+        );
+        var currentState = RootExtensionChildCollectionTopologyBuilders.BuildCurrentState(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [RootExtensionDocumentId, "Red"],
+            childRows: []
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_walks_the_child_collection_after_the_root_extension_update()
+    {
+        var childTable = _outcome.MergeResult!.TablesInDependencyOrder.SingleOrDefault(s =>
+            s.TableWritePlan.TableModel.Table == _childPlan.TableModel.Table
+        );
+
+        childTable.Should().NotBeNull();
+        childTable!.MergedRows.Should().HaveCount(1);
+        ((FlattenedWriteValue.Literal)childTable.MergedRows[0].Values[1])
+            .Value.Should()
+            .Be(RootExtensionDocumentId);
+    }
+}
+
+[TestFixture]
+public class Given_hidden_root_extension_scope_with_current_child_collection_row
+{
+    private const long RootExtensionDocumentId = 345L;
+    private ProfileMergeOutcome _outcome;
+    private TableWritePlan _childPlan = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, extensionPlan, childPlan) = RootExtensionChildCollectionTopologyBuilders.BuildPlan();
+        _childPlan = childPlan;
+
+        var body = new JsonObject { ["firstName"] = "Ada" };
+        var flattened = RootExtensionChildCollectionTopologyBuilders.BuildFlattenedWriteSet(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [RootExtensionDocumentId, null],
+            childCandidates: []
+        );
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestHiddenScope(RootExtensionChildCollectionTopologyBuilders.ExtensionScope)
+        );
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredHiddenScope(RootExtensionChildCollectionTopologyBuilders.ExtensionScope)
+        );
+        var currentState = RootExtensionChildCollectionTopologyBuilders.BuildCurrentState(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [RootExtensionDocumentId, "Red"],
+            childRows:
+            [
+                [901L, RootExtensionDocumentId, 7, "C1"],
+            ]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_preserves_the_root_extension_child_collection_row()
+    {
+        var childTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childPlan.TableModel.Table
+        );
+
+        childTable.CurrentRows.Should().HaveCount(1);
+        childTable.MergedRows.Should().HaveCount(1);
+        for (var i = 0; i < childTable.CurrentRows[0].Values.Length; i++)
+        {
+            var currentValue = ((FlattenedWriteValue.Literal)childTable.CurrentRows[0].Values[i]).Value;
+            var mergedValue = ((FlattenedWriteValue.Literal)childTable.MergedRows[0].Values[i]).Value;
+            mergedValue.Should().Be(currentValue, $"binding index {i} must be preserved");
+        }
+    }
+}
+
+internal static class RootExtensionChildCollectionTopologyBuilders
+{
+    private static readonly DbSchemaName _schema = new("sample");
+    public const string ExtensionScope = "$._ext.sample";
+    public const string ChildScope = "$._ext.sample.children[*]";
+
+    public static (ResourceWritePlan Plan, TableWritePlan ExtensionPlan, TableWritePlan ChildPlan) BuildPlan()
+    {
+        var basePlan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var rootPlan = basePlan.TablePlansInDependencyOrder[0];
+        var extensionPlan = basePlan.TablePlansInDependencyOrder[1];
+        var childPlan = BuildChildCollectionPlan();
+
+        var resourceWritePlan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "RootExtensionChildTest"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder:
+                [
+                    rootPlan.TableModel,
+                    extensionPlan.TableModel,
+                    childPlan.TableModel,
+                ],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, extensionPlan, childPlan]
+        );
+
+        return (resourceWritePlan, extensionPlan, childPlan);
+    }
+
+    public static CollectionWriteCandidate BuildChildCandidate(
+        TableWritePlan childPlan,
+        string identityValue,
+        int requestOrder
+    )
+    {
+        var values = new FlattenedWriteValue[childPlan.ColumnBindings.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = new FlattenedWriteValue.Literal(null);
+        }
+        values[3] = new FlattenedWriteValue.Literal(identityValue);
+
+        return new CollectionWriteCandidate(
+            tableWritePlan: childPlan,
+            ordinalPath: [requestOrder],
+            requestOrder: requestOrder,
+            values: values,
+            semanticIdentityValues: [identityValue],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                childPlan,
+                [identityValue]
+            )
+        );
+    }
+
+    public static FlattenedWriteSet BuildFlattenedWriteSet(
+        ResourceWritePlan plan,
+        TableWritePlan extensionPlan,
+        object?[] rootLiteralsByBindingIndex,
+        object?[] extensionLiteralsByBindingIndex,
+        ImmutableArray<CollectionWriteCandidate> childCandidates
+    )
+    {
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var rootValues = BuildLiteralValues(rootPlan, rootLiteralsByBindingIndex);
+        var extensionValues = BuildLiteralValues(extensionPlan, extensionLiteralsByBindingIndex);
+        var extensionRow = new RootExtensionWriteRowBuffer(
+            extensionPlan,
+            extensionValues,
+            collectionCandidates: childCandidates
+        );
+
+        return new FlattenedWriteSet(
+            new RootWriteRowBuffer(rootPlan, rootValues, rootExtensionRows: [extensionRow])
+        );
+    }
+
+    public static ProfileAppliedWriteRequest BuildVisibleRequest(JsonNode body, string childIdentity) =>
+        new(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    new ScopeInstanceAddress(ExtensionScope, []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [
+                new VisibleRequestCollectionItem(
+                    new CollectionRowAddress(
+                        ChildScope,
+                        new ScopeInstanceAddress(ExtensionScope, []),
+                        Identity(childIdentity)
+                    ),
+                    Creatable: true,
+                    RequestJsonPath: "$._ext.sample.children[0]"
+                ),
+            ]
+        );
+
+    public static RelationalWriteCurrentState BuildCurrentState(
+        ResourceWritePlan plan,
+        object?[] rootRowValues,
+        object?[]? extensionRowValues,
+        IReadOnlyList<object?[]> childRows
+    )
+    {
+        var rootTableModel = plan.TablePlansInDependencyOrder[0].TableModel;
+        var extensionTableModel = plan.TablePlansInDependencyOrder[1].TableModel;
+        var childTableModel = plan.TablePlansInDependencyOrder[2].TableModel;
+        var extensionRows = extensionRowValues is null ? (IReadOnlyList<object?[]>)[] : [extensionRowValues];
+        return new(
+            new DocumentMetadataRow(
+                DocumentId: 345L,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(rootTableModel, [rootRowValues]),
+                new HydratedTableRows(extensionTableModel, extensionRows),
+                new HydratedTableRows(childTableModel, childRows),
+            ],
+            []
+        );
+    }
+
+    private static TableWritePlan BuildChildCollectionPlan()
+    {
+        var childItemIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ChildItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var documentIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var identityColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("IdentityField0"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression(
+                "$.identityField0",
+                [new JsonPathSegment.Property("identityField0")]
+            ),
+            TargetResource: null
+        );
+        DbColumnModel[] columns = [childItemIdColumn, documentIdColumn, ordinalColumn, identityColumn];
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(_schema, "RootExtensionChildren"),
+            JsonScope: new JsonPathExpression(ChildScope, []),
+            Key: new TableKey(
+                "PK_RootExtensionChildren",
+                [new DbKeyColumn(new DbColumnName("ChildItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.ExtensionCollection,
+                PhysicalRowIdentityColumns: [new DbColumnName("ChildItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        identityColumn.SourceJsonPath!.Value,
+                        identityColumn.ColumnName
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO sample.\"RootExtensionChildren\" VALUES (@ChildItemId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, columns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(childItemIdColumn, new WriteValueSource.Precomputed(), "ChildItemId"),
+                new WriteColumnBinding(documentIdColumn, new WriteValueSource.ParentKeyPart(0), "DocumentId"),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    identityColumn,
+                    new WriteValueSource.Scalar(
+                        identityColumn.SourceJsonPath!.Value,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "IdentityField0"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(identityColumn.SourceJsonPath!.Value, 3),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE sample.\"RootExtensionChildren\" SET X = @X WHERE \"ChildItemId\" = @ChildItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM sample.\"RootExtensionChildren\" WHERE \"ChildItemId\" = @ChildItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("ChildItemId"),
+                0
+            )
+        );
+    }
+
+    private static ImmutableArray<FlattenedWriteValue> BuildLiteralValues(
+        TableWritePlan tablePlan,
+        object?[] literalsByBindingIndex
+    )
+    {
+        var values = new FlattenedWriteValue[tablePlan.ColumnBindings.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = new FlattenedWriteValue.Literal(
+                i < literalsByBindingIndex.Length ? literalsByBindingIndex[i] : null
+            );
+        }
+        return [.. values];
+    }
+
+    public static ImmutableArray<SemanticIdentityPart> Identity(string value) =>
+        [new SemanticIdentityPart("$.identityField0", JsonValue.Create(value), IsPresent: true)];
 }
 
 [TestFixture]
@@ -1963,7 +2610,9 @@ public class Given_ProfileMergeRequest_with_non_collection_root_candidate_still_
         var rootPlan = plan.TablePlansInDependencyOrder[0];
 
         // ExtensionCollection is the non-base-Collection kind that CollectionWriteCandidate
-        // still accepts but the Slice 4 profile merge gate must fence.
+        // still accepts but the profile merge constructor must reject as a structurally
+        // invalid root-attached collection candidate (only DbTableKind.Collection is allowed
+        // for top-level candidates; other kinds belong to their own merge paths).
         var extCollectionTableModel = AdapterFactoryTestFixtures.BuildExtensionCollectionTableModel();
         var extCollectionPlan = AdapterFactoryTestFixtures.BuildExtensionCollectionCandidateTableWritePlan(
             extCollectionTableModel
@@ -1979,7 +2628,11 @@ public class Given_ProfileMergeRequest_with_non_collection_root_candidate_still_
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Code1"),
             ],
-            semanticIdentityValues: ["Code1"]
+            semanticIdentityValues: ["Code1"],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                extCollectionPlan,
+                ["Code1"]
+            )
         );
 
         var flattenedWriteSet = new FlattenedWriteSet(
@@ -2037,7 +2690,11 @@ public class Given_ProfileMergeRequest_with_top_level_base_collection_candidate
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Physical"),
             ],
-            semanticIdentityValues: ["Physical"]
+            semanticIdentityValues: ["Physical"],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Physical"]
+            )
         );
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
@@ -2062,23 +2719,24 @@ public class Given_ProfileMergeRequest_with_top_level_base_collection_candidate
     [Test]
     public void It_does_not_throw()
     {
-        // Root-attached base Collection candidate with no nesting or attached-aligned scope passes the Slice 4 gate.
+        // Root-attached base Collection candidate (DbTableKind.Collection) passes the
+        // profile merge constructor's structural validation for top-level candidates.
         _act.Should().NotThrow();
     }
 }
 
-// ── Slice 4 top-level collection synthesizer fixtures ──────────────────────────
+// ── Top-level collection synthesizer fixtures ──────────────────────────────────
 //
 // These fixtures exercise the full synthesizer path for top-level collection candidates
 // on the root row.  The collection table layout produced by
-// Slice4Builders.MinimalCollectionTableWritePlan is:
+// ProfileCollectionMergeTestDoubles.MinimalCollectionTableWritePlan is:
 //   [0] CollectionItemId  (Precomputed)  — StableRowIdentityBindingIndex = 0
 //   [1] ParentDocumentId  (DocumentId)   — parent key (not ParentKeyPart, so no rewrite)
 //   [2] Ordinal           (Ordinal)      — OrdinalBindingIndex = 2
 //   [3] IdentityField0    (Scalar)       — SemanticIdentityBinding 0, binding index 3
 
 /// <summary>
-/// Local helpers for Slice-4 synthesizer fixtures. Shared between fixtures in this file.
+/// Local helpers for top-level collection synthesizer fixtures. Shared between fixtures in this file.
 /// Candidates, stored rows, and request items use the "$.addresses[*]" scope with a single
 /// identity field "$.identityField0".
 /// </summary>
@@ -2092,12 +2750,6 @@ internal static class CollectionSynthesizerBuilders
     public static ImmutableArray<SemanticIdentityPart> Identity(string value) =>
         [new SemanticIdentityPart(IdentityPath, JsonValue.Create(value), IsPresent: true)];
 
-    public static ImmutableArray<SemanticIdentityPart> ExplicitNullIdentity() =>
-        [new SemanticIdentityPart(IdentityPath, null, IsPresent: true)];
-
-    public static ImmutableArray<SemanticIdentityPart> MissingIdentity() =>
-        [new SemanticIdentityPart(IdentityPath, null, IsPresent: false)];
-
     // ── Write-plan / flattened-write-set builders ──────────────────────────
 
     /// <summary>
@@ -2106,7 +2758,10 @@ internal static class CollectionSynthesizerBuilders
     /// </summary>
     public static (ResourceWritePlan Plan, TableWritePlan CollectionPlan) BuildRootAndCollectionPlan()
     {
-        var collectionPlan = Slice4Builders.MinimalCollectionTableWritePlan(CollectionScope, 1);
+        var collectionPlan = ProfileCollectionMergeTestDoubles.MinimalCollectionTableWritePlan(
+            CollectionScope,
+            1
+        );
         var rootPlan = BuildMinimalRootPlan();
 
         var resourceWritePlan = new ResourceWritePlan(
@@ -2178,13 +2833,6 @@ internal static class CollectionSynthesizerBuilders
         TableWritePlan collectionPlan,
         string identityValue,
         int requestOrder
-    ) => BuildCandidate(collectionPlan, Identity(identityValue), identityValue, requestOrder);
-
-    public static CollectionWriteCandidate BuildCandidate(
-        TableWritePlan collectionPlan,
-        ImmutableArray<SemanticIdentityPart> identity,
-        object? identityStorageValue,
-        int requestOrder
     )
     {
         var values = new FlattenedWriteValue[collectionPlan.ColumnBindings.Length];
@@ -2193,19 +2841,18 @@ internal static class CollectionSynthesizerBuilders
             values[i] = new FlattenedWriteValue.Literal(null);
         }
         // Stamp the identity field value at index 3
-        values[3] = new FlattenedWriteValue.Literal(identityStorageValue);
-
-        var semanticIdentityValues = identity
-            .Select(part => part.Value is JsonValue jsonValue ? (object?)jsonValue.GetValue<object>() : null)
-            .ToArray();
+        values[3] = new FlattenedWriteValue.Literal(identityValue);
 
         return new CollectionWriteCandidate(
             tableWritePlan: collectionPlan,
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: semanticIdentityValues,
-            semanticIdentityInOrder: identity
+            semanticIdentityValues: [identityValue],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [identityValue]
+            )
         );
     }
 
@@ -2232,18 +2879,12 @@ internal static class CollectionSynthesizerBuilders
         string identityValue,
         bool creatable,
         int arrayIndex
-    ) => BuildRequestItem(Identity(identityValue), creatable, arrayIndex);
-
-    public static VisibleRequestCollectionItem BuildRequestItem(
-        ImmutableArray<SemanticIdentityPart> identity,
-        bool creatable,
-        int arrayIndex
     ) =>
         new(
             new CollectionRowAddress(
                 CollectionScope,
                 new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
-                identity
+                Identity(identityValue)
             ),
             creatable,
             $"$.addresses[{arrayIndex}]"
@@ -2255,17 +2896,12 @@ internal static class CollectionSynthesizerBuilders
     public static VisibleStoredCollectionRow BuildStoredRow(
         string identityValue,
         ImmutableArray<string>? hiddenMemberPaths = null
-    ) => BuildStoredRow(Identity(identityValue), hiddenMemberPaths);
-
-    public static VisibleStoredCollectionRow BuildStoredRow(
-        ImmutableArray<SemanticIdentityPart> identity,
-        ImmutableArray<string>? hiddenMemberPaths = null
     ) =>
         new(
             new CollectionRowAddress(
                 CollectionScope,
                 new ScopeInstanceAddress("$", ImmutableArray<AncestorCollectionInstance>.Empty),
-                identity
+                Identity(identityValue)
             ),
             hiddenMemberPaths ?? ImmutableArray<string>.Empty
         );
@@ -2347,16 +2983,11 @@ internal static class CollectionSynthesizerBuilders
 //    The current test harness has no helper for a key-unification-enabled collection
 //    write plan. This fixture is deferred until the overlay tests or the Checkpoint 3
 //    integration tests land that capability. The underlying key-unification path is
-//    exercised by ProfileKeyUnificationCoreTests + ProfileTopLevelCollectionMatchedRowOverlayTests.
+//    exercised by ProfileKeyUnificationCoreTests + ProfileCollectionMatchedRowOverlayTests.
 //
-// 2. Emission-layer defense-in-depth shape fence (nested candidates / attached-aligned /
-//    root-extension-buffer). The constructor gate on RelationalWriteProfileMergeRequest
-//    already rejects these shapes — reaching the emission-layer throws requires bypassing
-//    the constructor. Coverage of the constructor gate is in:
-//      - Given_ProfileMergeRequest_with_nested_collection_candidates_under_top_level
-//      - Given_ProfileMergeRequest_with_attached_aligned_scope_data_on_top_level_candidate
-//      - Given_ProfileMergeRequest_still_rejects_collection_candidate_under_root_extension_row
-//    The emission-layer fence is kept as defense-in-depth per spec Section 4.3.
+// 2. The constructor and emission-site fences for AttachedAlignedScopeData and
+//    root-extension child CollectionCandidates have been retired. The remaining
+//    constructor validation only rejects structurally invalid table kinds.
 // ------------------------------------------------------------------------
 
 /// <summary>
@@ -2640,87 +3271,6 @@ public class Given_Synthesize_top_level_collection_with_matched_and_hidden_and_i
     [Test]
     public void It_has_three_current_collection_rows() =>
         _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(3);
-}
-
-/// <summary>
-/// Regression pin: an explicit-null semantic identity from Core's visible stored stream
-/// must still match the current DB row whose storage value is null.
-/// </summary>
-[TestFixture]
-public class Given_Synthesize_top_level_collection_with_explicit_null_identity
-{
-    private ProfileMergeOutcome _outcome;
-
-    [SetUp]
-    public void Setup()
-    {
-        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
-        var rootPlan = plan.TablePlansInDependencyOrder[0];
-        const long documentId = 345L;
-
-        var explicitNullIdentity = CollectionSynthesizerBuilders.ExplicitNullIdentity();
-        var body = new JsonObject
-        {
-            ["addresses"] = new JsonArray(new JsonObject { ["identityField0"] = null }),
-        };
-
-        var candidate = CollectionSynthesizerBuilders.BuildCandidate(
-            collectionPlan,
-            explicitNullIdentity,
-            identityStorageValue: null,
-            requestOrder: 0
-        );
-        var requestItems = ImmutableArray.Create(
-            CollectionSynthesizerBuilders.BuildRequestItem(
-                explicitNullIdentity,
-                creatable: true,
-                arrayIndex: 0
-            )
-        );
-
-        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
-        var storedRow = CollectionSynthesizerBuilders.BuildStoredRow(explicitNullIdentity);
-        var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRow]);
-
-        object?[] dbRow = [10L, documentId, 1, null];
-        var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
-            rootPlan,
-            collectionPlan,
-            documentId,
-            [dbRow]
-        );
-        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(
-            rootPlan,
-            [candidate],
-            documentId
-        );
-
-        _outcome = BuildProfileSynthesizer()
-            .Synthesize(
-                new RelationalWriteProfileMergeRequest(
-                    writePlan: plan,
-                    flattenedWriteSet: flattened,
-                    writableRequestBody: body,
-                    currentState: currentState,
-                    profileRequest: request,
-                    profileAppliedContext: context,
-                    resolvedReferences: EmptyResolvedReferenceSet()
-                )
-            );
-    }
-
-    [Test]
-    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
-
-    [Test]
-    public void It_updates_the_existing_row_instead_of_inserting_a_new_one()
-    {
-        var mergedRows = _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows;
-        mergedRows.Should().ContainSingle();
-
-        var stableId = (FlattenedWriteValue.Literal)mergedRows[0].Values[0];
-        stableId.Value.Should().Be(10L);
-    }
 }
 
 /// <summary>
@@ -3059,7 +3609,11 @@ internal static class DocumentReferenceCanonicalizeBuilders
             ordinalPath: [0],
             requestOrder: 0,
             values: values,
-            semanticIdentityValues: [SchoolDocumentId, SchoolDocumentId]
+            semanticIdentityValues: [SchoolDocumentId, SchoolDocumentId],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [SchoolDocumentId, SchoolDocumentId]
+            )
         );
     }
 
@@ -3686,7 +4240,11 @@ internal static class DescriptorCanonicalizeBuilders
             ordinalPath: [0],
             requestOrder: 0,
             values: values,
-            semanticIdentityValues: [descriptorId]
+            semanticIdentityValues: [descriptorId],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [descriptorId]
+            )
         );
     }
 
@@ -4497,7 +5055,11 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
             ordinalPath: [0],
             requestOrder: 0,
             values: candidateValues,
-            semanticIdentityValues: ["Springfield", DescriptorCanonicalizeBuilders.AddressTypeId]
+            semanticIdentityValues: ["Springfield", DescriptorCanonicalizeBuilders.AddressTypeId],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                ["Springfield", DescriptorCanonicalizeBuilders.AddressTypeId]
+            )
         );
 
         // Request item carries: city = "Springfield" (scalar, unchanged), descriptorUri (string from Core).
@@ -4925,7 +5487,11 @@ internal static class MixedIdentityBuilders
             ordinalPath: [requestOrder],
             requestOrder: requestOrder,
             values: values,
-            semanticIdentityValues: [city, descriptorId]
+            semanticIdentityValues: [city, descriptorId],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [city, descriptorId]
+            )
         );
     }
 
@@ -6123,4 +6689,1870 @@ public class Given_reference_backed_top_level_collection_with_descriptor_in_natu
     [Test]
     public void It_includes_stored_rows_count_in_message() =>
         _synthesizeAction.Should().Throw<InvalidOperationException>().WithMessage("*stored rows count: 1*");
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// CP2 Task 13 — Synthesizer-level fixtures for nested-base-collection merge.
+//
+// These fixtures call IRelationalWriteProfileMergeSynthesizer.Synthesize directly
+// with realized inputs that exercise the walker's nested-recursion code paths
+// end-to-end at the merge-result level. They reuse NestedTopologyBuilders from
+// ProfileCollectionWalkerTests.cs (same project, same namespace) for write-plan
+// and arrangement helpers, extending them with synthesizer-test-specific
+// variants only where necessary (e.g., the extended children plan that carries
+// an extra scalar column for hidden-member-path coverage).
+//
+// The walker's behavior is directly testable via Synthesize because CP2 Task 12
+// retired the constructor-side fence on nested CollectionCandidates. These tests
+// exercise walker behavior directly instead of going through the full executor pipeline.
+// ────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Fixture 1 (Task 13). Top-level parent matched-update; under that parent, two nested
+/// children — one visible (matched-update), one hidden (preserved). Asserts:
+/// (a) parents table emits one merged row,
+/// (b) children table emits two merged rows,
+/// (c) the visible child's merged row carries the request scalar value,
+/// (d) the hidden child's merged row carries the stored scalar value unchanged.
+/// </summary>
+[TestFixture]
+public class Given_nested_base_collection_visible_row_update_with_hidden_row_preservation
+{
+    private const long DocumentId = 345L;
+    private const long ParentAItemId = 100L;
+    private const long ChildA1ItemId = 1001L;
+    private const long ChildA2HiddenItemId = 1002L;
+
+    private ProfileMergeOutcome _outcome;
+    private TableWritePlan _parentsPlan = null!;
+    private TableWritePlan _childrenPlan = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, parentsPlan, childrenPlan) = NestedTopologyBuilders.BuildRootParentsAndChildrenPlan();
+        _parentsPlan = parentsPlan;
+        _childrenPlan = childrenPlan;
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        // Request body: parent A with one visible child A1.
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject
+                {
+                    ["identityField0"] = "A",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "A1" }),
+                }
+            ),
+        };
+
+        // Build nested child candidate for A1 and attach to parent A's candidate.
+        var childA1Candidate = NestedTopologyBuilders.BuildChildCandidate(childrenPlan, "A1", 0);
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "A",
+            0,
+            nestedChildren: [childA1Candidate]
+        );
+
+        // Visible items: parent A, child A1 (under parent A).
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
+            NestedTopologyBuilders.BuildChildRequestItem(
+                parentSemanticIdentity: "A",
+                childIdentity: "A1",
+                parentArrayIndex: 0,
+                childArrayIndex: 0
+            )
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA]);
+
+        // Stored visible: parent A, child A1 only. A2 is a hidden stored row — present in
+        // current state but not in VisibleStoredCollectionRows, so the planner emits a
+        // HiddenPreserveEntry for A2 that reaches the merged side via the walker's
+        // existing top-level switch path.
+        var storedRows = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentStoredRow("A"),
+            NestedTopologyBuilders.BuildChildStoredRow("A", "A1")
+        );
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = NestedTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentAItemId, DocumentId, 1, "A"],
+            ],
+            childRows:
+            [
+                [ChildA1ItemId, ParentAItemId, 1, "A1"],
+                [ChildA2HiddenItemId, ParentAItemId, 2, "A2"],
+            ]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_emits_one_merged_parent_row()
+    {
+        var parentsTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _parentsPlan.TableModel.Table
+        );
+        parentsTable.MergedRows.Length.Should().Be(1);
+    }
+
+    [Test]
+    public void It_emits_two_merged_child_rows()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        childrenTable.MergedRows.Length.Should().Be(2);
+    }
+
+    [Test]
+    public void It_carries_visible_and_hidden_child_identities_in_the_merged_set()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        var identities = childrenTable
+            .MergedRows.Select(r => ((FlattenedWriteValue.Literal)r.Values[3]).Value as string)
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+        identities.Should().Equal("A1", "A2");
+    }
+
+    [Test]
+    public void It_attaches_each_merged_child_row_to_parent_As_physical_identity()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        var parentItemIdValues = childrenTable
+            .MergedRows.Select(r => ((FlattenedWriteValue.Literal)r.Values[1]).Value)
+            .Select(v => v is null ? -1 : Convert.ToInt64(v))
+            .ToList();
+        parentItemIdValues.Should().AllBeEquivalentTo(ParentAItemId);
+    }
+}
+
+/// <summary>
+/// Fixture 2 (Task 13). Top-level parent matched-update; three stored nested children — two
+/// visible (one in request → matched-update; one omitted → delete-by-absence), one hidden
+/// (preserved). Asserts: nested table has 2 merged rows (the matched + the hidden); the
+/// omitted-visible row is absent from the merged set so the persister deletes it by
+/// set-difference. CurrentRows on the children table-state must include all three stored
+/// rows so the persister can compute the difference.
+/// </summary>
+[TestFixture]
+public class Given_nested_base_collection_visible_row_delete_with_hidden_row_preservation
+{
+    private const long DocumentId = 345L;
+    private const long ParentAItemId = 100L;
+    private const long ChildA1ItemId = 1001L; // visible, kept (matched-update)
+    private const long ChildA2ItemId = 1002L; // visible, omitted (delete-by-absence)
+    private const long ChildA3HiddenItemId = 1003L; // hidden, preserved
+
+    private ProfileMergeOutcome _outcome;
+    private TableWritePlan _childrenPlan = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, parentsPlan, childrenPlan) = NestedTopologyBuilders.BuildRootParentsAndChildrenPlan();
+        _childrenPlan = childrenPlan;
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        // Request: parent A with only A1 attached as a child (A2 omitted).
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject
+                {
+                    ["identityField0"] = "A",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "A1" }),
+                }
+            ),
+        };
+
+        var childA1Candidate = NestedTopologyBuilders.BuildChildCandidate(childrenPlan, "A1", 0);
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "A",
+            0,
+            nestedChildren: [childA1Candidate]
+        );
+
+        // Visible items: parent A; child A1 only (A2 is also visible-stored but omitted
+        // from the request — the planner emits ProfileCollectionPlanEntry for A2 as
+        // "omitted" and the walker's per-table builder leaves A2 out of the merged set).
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
+            NestedTopologyBuilders.BuildChildRequestItem(
+                parentSemanticIdentity: "A",
+                childIdentity: "A1",
+                parentArrayIndex: 0,
+                childArrayIndex: 0
+            )
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA]);
+
+        // Stored visible: A1, A2 (visible). A3 is hidden (not in stored visible).
+        var storedRows = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentStoredRow("A"),
+            NestedTopologyBuilders.BuildChildStoredRow("A", "A1"),
+            NestedTopologyBuilders.BuildChildStoredRow("A", "A2")
+        );
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = NestedTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentAItemId, DocumentId, 1, "A"],
+            ],
+            childRows:
+            [
+                [ChildA1ItemId, ParentAItemId, 1, "A1"],
+                [ChildA2ItemId, ParentAItemId, 2, "A2"],
+                [ChildA3HiddenItemId, ParentAItemId, 3, "A3"],
+            ]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_emits_two_merged_child_rows_excluding_the_omitted_visible_row()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        childrenTable.MergedRows.Length.Should().Be(2);
+        var identities = childrenTable
+            .MergedRows.Select(r => ((FlattenedWriteValue.Literal)r.Values[3]).Value as string)
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+        // A2 must be absent from the merged set — the persister deletes it by set-difference
+        // against CurrentRows.
+        identities.Should().Equal("A1", "A3");
+    }
+
+    [Test]
+    public void It_includes_all_three_stored_rows_in_current_rows_for_set_difference()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        childrenTable.CurrentRows.Length.Should().Be(3);
+    }
+}
+
+/// <summary>
+/// Fixture 3 (Task 13). Top-level parent matched-update; nested visible-request item with no
+/// matching stored row, Creatable=false. The planner rejects with RejectCreateDenied at the
+/// nested children scope and the walker's recursion propagates the rejection through to
+/// Synthesize's outcome. Asserts: outcome is Reject(ProfileCreatabilityRejection) carrying
+/// the children scope.
+/// </summary>
+[TestFixture]
+public class Given_nested_visible_request_item_with_no_visible_stored_match_when_creatable_is_false
+{
+    private const long DocumentId = 345L;
+    private const long ParentAItemId = 100L;
+
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, parentsPlan, childrenPlan) = NestedTopologyBuilders.BuildRootParentsAndChildrenPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject
+                {
+                    ["identityField0"] = "A",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "NEWCHILD" }),
+                }
+            ),
+        };
+
+        var childCandidate = NestedTopologyBuilders.BuildChildCandidate(childrenPlan, "NEWCHILD", 0);
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "A",
+            0,
+            nestedChildren: [childCandidate]
+        );
+
+        // Nested request item: NEWCHILD with creatable=false. The planner sees no matching
+        // visible-stored row → unmatched → rejection.
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
+            NestedTopologyBuilders.BuildChildRequestItem(
+                parentSemanticIdentity: "A",
+                childIdentity: "NEWCHILD",
+                parentArrayIndex: 0,
+                childArrayIndex: 0,
+                creatable: false
+            )
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA]);
+
+        var storedRows = ImmutableArray.Create(NestedTopologyBuilders.BuildParentStoredRow("A"));
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = NestedTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentAItemId, DocumentId, 1, "A"],
+            ],
+            childRows: []
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_a_rejection() => _outcome.IsRejection.Should().BeTrue();
+
+    [Test]
+    public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
+
+    [Test]
+    public void It_identifies_the_nested_children_scope_in_the_rejection()
+    {
+        _outcome.CreatabilityRejection!.ScopeJsonScope.Should().Be(NestedTopologyBuilders.ChildrenScope);
+    }
+}
+
+/// <summary>
+/// Fixture 4 (Task 13). Mirror of Fixture 3 but with Creatable=true on the nested request
+/// item. Asserts: success outcome with one merged row inserted on the children table; the
+/// inserted row's ParentItemId column matches the parent's PhysicalRowIdentity.
+/// </summary>
+[TestFixture]
+public class Given_nested_visible_request_item_with_no_visible_stored_match_when_creatable_is_true
+{
+    private const long DocumentId = 345L;
+    private const long ParentAItemId = 100L;
+
+    private ProfileMergeOutcome _outcome;
+    private TableWritePlan _childrenPlan = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, parentsPlan, childrenPlan) = NestedTopologyBuilders.BuildRootParentsAndChildrenPlan();
+        _childrenPlan = childrenPlan;
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject
+                {
+                    ["identityField0"] = "A",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "NEWCHILD" }),
+                }
+            ),
+        };
+
+        var childCandidate = NestedTopologyBuilders.BuildChildCandidate(childrenPlan, "NEWCHILD", 0);
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "A",
+            0,
+            nestedChildren: [childCandidate]
+        );
+
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
+            NestedTopologyBuilders.BuildChildRequestItem(
+                parentSemanticIdentity: "A",
+                childIdentity: "NEWCHILD",
+                parentArrayIndex: 0,
+                childArrayIndex: 0,
+                creatable: true
+            )
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA]);
+
+        var storedRows = ImmutableArray.Create(NestedTopologyBuilders.BuildParentStoredRow("A"));
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = NestedTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentAItemId, DocumentId, 1, "A"],
+            ],
+            childRows: []
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_emits_one_merged_child_row_for_the_insert()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        childrenTable.MergedRows.Length.Should().Be(1);
+        ((FlattenedWriteValue.Literal)childrenTable.MergedRows[0].Values[3]).Value.Should().Be("NEWCHILD");
+    }
+
+    [Test]
+    public void It_stamps_the_parent_physical_identity_on_the_inserted_child()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        var parentItemId = ((FlattenedWriteValue.Literal)childrenTable.MergedRows[0].Values[1]).Value;
+        Convert.ToInt64(parentItemId).Should().Be(ParentAItemId);
+    }
+}
+
+/// <summary>
+/// Fixture 5 (Task 13). Three-level chain: top-level parent matched-update; nested level-2
+/// collection matched-update; nested level-3 visible-request-item with no stored match and
+/// Creatable=false. Asserts: rejection carries the level-3 (grandchildren) scope, proving
+/// that walker recursion threads the rejection up through both nested levels without losing
+/// the originating scope.
+/// </summary>
+[TestFixture]
+public class Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3
+{
+    private ProfileMergeOutcome _outcome;
+    private const string GrandchildrenScope = "$.parents[*].children[*].grandchildren[*]";
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, parentsPlan, childrenPlan, grandchildrenPlan) =
+            ThreeLevelTopologyBuilders.BuildThreeLevelPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        const long documentId = 345L;
+        const long parentAItemId = 100L;
+        const long childC1ItemId = 1001L;
+
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject
+                {
+                    ["identityField0"] = "A",
+                    ["children"] = new JsonArray(
+                        new JsonObject
+                        {
+                            ["identityField0"] = "C1",
+                            ["grandchildren"] = new JsonArray(new JsonObject { ["identityField0"] = "G1" }),
+                        }
+                    ),
+                }
+            ),
+        };
+
+        var grandchildG1Candidate = ThreeLevelTopologyBuilders.BuildGrandchildCandidate(
+            grandchildrenPlan,
+            "G1",
+            0
+        );
+        var childC1Candidate = ThreeLevelTopologyBuilders.BuildChildCandidate(
+            childrenPlan,
+            "C1",
+            0,
+            nestedGrandchildren: [grandchildG1Candidate]
+        );
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "A",
+            0,
+            nestedChildren: [childC1Candidate]
+        );
+
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
+            NestedTopologyBuilders.BuildChildRequestItem(
+                parentSemanticIdentity: "A",
+                childIdentity: "C1",
+                parentArrayIndex: 0,
+                childArrayIndex: 0
+            ),
+            ThreeLevelTopologyBuilders.BuildGrandchildRequestItem(
+                parentSemanticIdentity: "A",
+                childSemanticIdentity: "C1",
+                grandchildIdentity: "G1",
+                parentArrayIndex: 0,
+                childArrayIndex: 0,
+                grandchildArrayIndex: 0,
+                creatable: false
+            )
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA]);
+
+        // Stored visible: A and A.C1 only (no grandchildren). The grandchildren request item
+        // has no match → rejection at level 3.
+        var storedRows = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentStoredRow("A"),
+            NestedTopologyBuilders.BuildChildStoredRow("A", "C1")
+        );
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = ThreeLevelTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            grandchildrenPlan,
+            documentId,
+            parentRows:
+            [
+                [parentAItemId, documentId, 1, "A"],
+            ],
+            childRows:
+            [
+                [childC1ItemId, parentAItemId, 1, "C1"],
+            ],
+            grandchildRows: []
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_a_rejection() => _outcome.IsRejection.Should().BeTrue();
+
+    [Test]
+    public void It_identifies_the_grandchildren_scope_in_the_rejection()
+    {
+        _outcome.CreatabilityRejection!.ScopeJsonScope.Should().Be(GrandchildrenScope);
+    }
+}
+
+/// <summary>
+/// Fixture 6 (Task 13). Top-level parent matched-update; under that parent, three stored
+/// nested children: two visible (both omitted from request → delete-by-absence), one hidden
+/// (preserved). Asserts: nested merged rows = 1 (the hidden); the two visible rows are
+/// absent from the merged set so the persister deletes both.
+/// </summary>
+[TestFixture]
+public class Given_nested_delete_all_visible_with_hidden_rows_remaining
+{
+    private const long DocumentId = 345L;
+    private const long ParentAItemId = 100L;
+    private const long ChildA1ItemId = 1001L;
+    private const long ChildA2ItemId = 1002L;
+    private const long ChildA3HiddenItemId = 1003L;
+
+    private ProfileMergeOutcome _outcome;
+    private TableWritePlan _childrenPlan = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, parentsPlan, childrenPlan) = NestedTopologyBuilders.BuildRootParentsAndChildrenPlan();
+        _childrenPlan = childrenPlan;
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        // Request: parent A with NO children attached. Both A1 and A2 are visible-stored
+        // but omitted from the request → delete-by-absence. A3 is hidden → preserved.
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(new JsonObject { ["identityField0"] = "A" }),
+        };
+
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(parentsPlan, "A", 0);
+
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0)
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA]);
+
+        // Visible stored: A, A1, A2. A3 hidden.
+        var storedRows = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentStoredRow("A"),
+            NestedTopologyBuilders.BuildChildStoredRow("A", "A1"),
+            NestedTopologyBuilders.BuildChildStoredRow("A", "A2")
+        );
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = NestedTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentAItemId, DocumentId, 1, "A"],
+            ],
+            childRows:
+            [
+                [ChildA1ItemId, ParentAItemId, 1, "A1"],
+                [ChildA2ItemId, ParentAItemId, 2, "A2"],
+                [ChildA3HiddenItemId, ParentAItemId, 3, "A3"],
+            ]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_emits_only_the_hidden_child_in_the_merged_set()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        childrenTable.MergedRows.Length.Should().Be(1);
+        ((FlattenedWriteValue.Literal)childrenTable.MergedRows[0].Values[3]).Value.Should().Be("A3");
+    }
+
+    [Test]
+    public void It_includes_all_three_stored_rows_in_current_rows_for_set_difference()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        childrenTable.CurrentRows.Length.Should().Be(3);
+    }
+}
+
+/// <summary>
+/// Fixture 7 (Task 13). Top-level parent matched-update; nested matched-update where the
+/// stored row carries a hidden-member-path on a non-identity scalar. Asserts: the merged
+/// row preserves the stored value at the hidden path while overlaying the request value at
+/// visible paths. Uses the extended children plan that adds a second scalar binding
+/// (<c>$.scalarField1</c>) so the hidden binding is observable.
+/// </summary>
+[TestFixture]
+public class Given_nested_matched_update_preserves_hidden_member_paths
+{
+    private const long DocumentId = 345L;
+    private const long ParentAItemId = 100L;
+    private const long ChildA1ItemId = 1001L;
+    private const string StoredScalarValue = "stored-hidden-scalar";
+    private const string RequestScalarValue = "request-overlay-scalar";
+
+    private ProfileMergeOutcome _outcome;
+    private TableWritePlan _childrenPlan = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, parentsPlan, childrenPlan) =
+            NestedTopologyBuilders.BuildRootParentsAndChildrenPlanWithExtraChildScalar();
+        _childrenPlan = childrenPlan;
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        // Request body: parent A with one child A1, where A1 carries a request value at
+        // the (visible-from-request perspective, hidden-from-stored perspective) scalar
+        // path. The stored row's HiddenMemberPaths include "scalarField1" — the matched-row
+        // overlay must preserve the stored value at scalarField1 and discard the request
+        // value at the hidden path.
+        var body = new JsonObject
+        {
+            ["parents"] = new JsonArray(
+                new JsonObject
+                {
+                    ["identityField0"] = "A",
+                    ["children"] = new JsonArray(
+                        new JsonObject { ["identityField0"] = "A1", ["scalarField1"] = RequestScalarValue }
+                    ),
+                }
+            ),
+        };
+
+        var childA1Candidate = NestedTopologyBuilders.BuildChildCandidate(
+            childrenPlan,
+            "A1",
+            0,
+            scalarFieldValue: RequestScalarValue
+        );
+        var candidateA = NestedTopologyBuilders.BuildParentCandidate(
+            parentsPlan,
+            "A",
+            0,
+            nestedChildren: [childA1Candidate]
+        );
+
+        var requestItems = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentRequestItem("A", arrayIndex: 0),
+            NestedTopologyBuilders.BuildChildRequestItem(
+                parentSemanticIdentity: "A",
+                childIdentity: "A1",
+                parentArrayIndex: 0,
+                childArrayIndex: 0
+            )
+        );
+
+        var request = NestedTopologyBuilders.BuildRequest(body, requestItems);
+        var flattened = NestedTopologyBuilders.BuildFlattenedWriteSet(rootPlan, [candidateA]);
+
+        // Visible stored: A and A.A1 — but A1 has scalarField1 marked as a hidden member
+        // path. The matched-row overlay must preserve the stored value at that path.
+        var storedRows = ImmutableArray.Create(
+            NestedTopologyBuilders.BuildParentStoredRow("A"),
+            NestedTopologyBuilders.BuildChildStoredRow("A", "A1", hiddenMemberPaths: ["scalarField1"])
+        );
+
+        var context = NestedTopologyBuilders.BuildContext(request, storedRows);
+        var currentState = NestedTopologyBuilders.BuildCurrentState(
+            rootPlan,
+            parentsPlan,
+            childrenPlan,
+            DocumentId,
+            parentRows:
+            [
+                [ParentAItemId, DocumentId, 1, "A"],
+            ],
+            childRows:
+            [
+                [ChildA1ItemId, ParentAItemId, 1, "A1", StoredScalarValue],
+            ]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: context,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_emits_one_merged_child_row()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        childrenTable.MergedRows.Length.Should().Be(1);
+    }
+
+    [Test]
+    public void It_preserves_the_stored_value_at_the_hidden_scalar_path()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        // ScalarField1 is at binding index 4 (the extended children plan's 5th column).
+        var mergedScalar = ((FlattenedWriteValue.Literal)childrenTable.MergedRows[0].Values[4]).Value;
+        mergedScalar
+            .Should()
+            .Be(
+                StoredScalarValue,
+                "the matched-row overlay must preserve the stored value at the hidden "
+                    + "member path, ignoring the request-side value"
+            );
+    }
+
+    [Test]
+    public void It_carries_the_visible_identity_value_unchanged()
+    {
+        var childrenTable = _outcome.MergeResult!.TablesInDependencyOrder.Single(s =>
+            s.TableWritePlan.TableModel.Table == _childrenPlan.TableModel.Table
+        );
+        ((FlattenedWriteValue.Literal)childrenTable.MergedRows[0].Values[3]).Value.Should().Be("A1");
+    }
+}
+
+/// <summary>
+/// Slice 5 CP5 Task 6 regression pin: when a separate-table Update merges a row whose
+/// extension table inlines a non-collection descendant scope and the descendant's stored
+/// scope state names a hidden member path covering the descendant binding, the synthesizer
+/// must preserve the stored value at the descendant binding's column while still overlaying
+/// the request value at the direct-scope binding's column. Before BuildUpdateState was
+/// wired to collect descendant scope states and pass them to the instance-aware classifier
+/// and resolver, the descendant binding fell through to the direct scope's governance and
+/// the request body silently clobbered the hidden stored column.
+/// </summary>
+[TestFixture]
+public class Given_RootExtensionUpdate_hidden_descendant_scope_preserves_stored_value
+{
+    private const string DirectScope = "$._ext.sample";
+    private const string DescendantScope = "$._ext.sample.detail";
+    private const string DescendantBindingPath = "$._ext.sample.detail.someField";
+    private const string StoredDirectValue = "stored_direct";
+    private const string StoredDescendantValue = "stored_descendant";
+    private const string RequestDirectValue = "new_direct";
+    private const string RequestDescendantValue = "request_clobber_attempt";
+
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Plan: root + RootExtension at $._ext.sample. The extension table carries the
+        // direct-scope FavoriteColor binding plus a descendant-scope DetailField binding
+        // sourced from $._ext.sample.detail.someField. The descendant scope is inlined
+        // onto the direct extension table.
+        var plan = BuildRootPlusRootExtensionPlanWithInlinedDescendantScope(
+            descendantScopeRelativePath: DescendantScope,
+            descendantBindingRelativePath: DescendantBindingPath
+        );
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+
+        // Request body: the direct-scope value is overlaid normally; the descendant-scope
+        // value is supplied as well, but the descendant's stored hidden-member-path covers
+        // it so the merged row must preserve the stored value rather than the request value.
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["favoriteColor"] = RequestDirectValue,
+                    ["detail"] = new JsonObject { ["someField"] = RequestDescendantValue },
+                },
+            },
+        };
+
+        // Direct extension scope is VisiblePresent. Descendant scope is also VisiblePresent
+        // but its stored state names "someField" as a hidden member path — which translates
+        // (via descendant-state collection) into HiddenPreserved governance for the
+        // DetailField binding on this same physical extension table.
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope(DirectScope, creatable: true),
+            RequestVisiblePresentScope(DescendantScope)
+        );
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredVisiblePresentScope(DirectScope),
+            StoredVisiblePresentScope(DescendantScope, "someField")
+        );
+
+        // Flattener buffer: extension binding-index ordering matches BuildRootPlusRootExtensionPlan
+        // — [0] DocumentId (ParentKeyPart), [1] FavoriteColor (direct), [2] DetailField (descendant).
+        // The buffer carries both request values; the synthesizer's matched-row overlay must
+        // honor the descendant-scope hidden disposition and discard the descendant request value.
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, RequestDirectValue, RequestDescendantValue]
+        );
+
+        // Stored row carries non-null values at both the direct-scope and descendant-scope
+        // columns, ensuring the matched-row branch is selected and the descendant column has
+        // a real value to be preserved.
+        var currentState = BuildCurrentStateWithRootAndExtensionRow(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [345L, StoredDirectValue, StoredDescendantValue]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_routes_the_extension_table_through_the_Update_branch()
+    {
+        var extensionTable = _outcome.MergeResult!.TablesInDependencyOrder[1];
+        extensionTable.CurrentRows.Length.Should().Be(1);
+        extensionTable.MergedRows.Length.Should().Be(1);
+        var currentDirect = ((FlattenedWriteValue.Literal)extensionTable.CurrentRows[0].Values[1]).Value;
+        var mergedDirect = ((FlattenedWriteValue.Literal)extensionTable.MergedRows[0].Values[1]).Value;
+        // Update branch overlays request values; Preserve emits byte-identical rows. The
+        // direct-scope column must change to distinguish Update from Preserve.
+        mergedDirect.Should().NotBe(currentDirect);
+    }
+
+    [Test]
+    public void It_overlays_the_request_value_on_the_direct_scope_binding()
+    {
+        var extensionTable = _outcome.MergeResult!.TablesInDependencyOrder[1];
+        var mergedDirect = ((FlattenedWriteValue.Literal)extensionTable.MergedRows[0].Values[1]).Value;
+        mergedDirect
+            .Should()
+            .Be(
+                RequestDirectValue,
+                "the direct-scope binding is VisiblePresent with no hidden-member match — "
+                    + "the request value must overlay normally"
+            );
+    }
+
+    [Test]
+    public void It_preserves_the_stored_value_on_the_hidden_descendant_binding()
+    {
+        var extensionTable = _outcome.MergeResult!.TablesInDependencyOrder[1];
+        var mergedDescendant = ((FlattenedWriteValue.Literal)extensionTable.MergedRows[0].Values[2]).Value;
+        mergedDescendant
+            .Should()
+            .Be(
+                StoredDescendantValue,
+                "the descendant-scope binding's hidden-member-path comes from the descendant "
+                    + "stored scope state — BuildUpdateState must collect descendant states and "
+                    + "pass them to the classifier/resolver so the matched-row overlay preserves "
+                    + "the stored column rather than letting the request value clobber it"
+            );
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Three-level topology helpers used by Fixture 5 (Task 13). Adds a grandchildren
+// collection scope at $.parents[*].children[*].grandchildren[*]. The grandchildren
+// plan's ParentItemId binding is a ParentKeyPart referring to slot 0 of the children
+// table's PhysicalRowIdentity (i.e., the children's ChildItemId).
+// ────────────────────────────────────────────────────────────────────────────
+internal static class ThreeLevelTopologyBuilders
+{
+    private static readonly DbSchemaName _schema = new("edfi");
+
+    public const string ParentsScope = NestedTopologyBuilders.ParentsScope;
+    public const string ChildrenScope = NestedTopologyBuilders.ChildrenScope;
+    public const string GrandchildrenScope = "$.parents[*].children[*].grandchildren[*]";
+
+    public static (
+        ResourceWritePlan Plan,
+        TableWritePlan ParentsPlan,
+        TableWritePlan ChildrenPlan,
+        TableWritePlan GrandchildrenPlan
+    ) BuildThreeLevelPlan()
+    {
+        // Reuse the parents/children plans from NestedTopologyBuilders for symmetry, then
+        // append a grandchildren plan keyed on ChildItemId.
+        var (_, parentsPlan, childrenPlan) = NestedTopologyBuilders.BuildRootParentsAndChildrenPlan();
+        var rootPlan = BuildMinimalRootPlan();
+        var grandchildrenPlan = BuildGrandchildrenCollectionPlan();
+
+        var resourceWritePlan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "ThreeLevelTest"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder:
+                [
+                    rootPlan.TableModel,
+                    parentsPlan.TableModel,
+                    childrenPlan.TableModel,
+                    grandchildrenPlan.TableModel,
+                ],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, parentsPlan, childrenPlan, grandchildrenPlan]
+        );
+        return (resourceWritePlan, parentsPlan, childrenPlan, grandchildrenPlan);
+    }
+
+    private static TableWritePlan BuildMinimalRootPlan()
+    {
+        var docIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var rootTableModel = new DbTableModel(
+            Table: new DbTableName(_schema, "ThreeLevelTest"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                "PK_ThreeLevelTest",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [docIdColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+        return new TableWritePlan(
+            TableModel: rootTableModel,
+            InsertSql: "INSERT INTO edfi.\"ThreeLevelTest\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 1, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(docIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan BuildGrandchildrenCollectionPlan()
+    {
+        var grandchildItemIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("GrandchildItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var childItemIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ChildItemId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var identityColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("IdentityField0"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression(
+                "$.identityField0",
+                [new JsonPathSegment.Property("identityField0")]
+            ),
+            TargetResource: null
+        );
+        DbColumnModel[] columns = [grandchildItemIdColumn, childItemIdColumn, ordinalColumn, identityColumn];
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(_schema, "GrandchildrenTable"),
+            JsonScope: new JsonPathExpression(GrandchildrenScope, []),
+            Key: new TableKey(
+                "PK_GrandchildrenTable",
+                [new DbKeyColumn(new DbColumnName("GrandchildItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("GrandchildItemId")],
+                RootScopeLocatorColumns: [],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("ChildItemId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        identityColumn.SourceJsonPath!.Value,
+                        identityColumn.ColumnName
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"GrandchildrenTable\" VALUES (@GrandchildItemId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, columns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    grandchildItemIdColumn,
+                    new WriteValueSource.Precomputed(),
+                    "GrandchildItemId"
+                ),
+                new WriteColumnBinding(
+                    childItemIdColumn,
+                    new WriteValueSource.ParentKeyPart(0),
+                    "ChildItemId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    identityColumn,
+                    new WriteValueSource.Scalar(
+                        identityColumn.SourceJsonPath!.Value,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "IdentityField0"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(identityColumn.SourceJsonPath!.Value, 3),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.\"GrandchildrenTable\" SET X = @X WHERE \"GrandchildItemId\" = @GrandchildItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.\"GrandchildrenTable\" WHERE \"GrandchildItemId\" = @GrandchildItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("GrandchildItemId"),
+                0
+            )
+        );
+    }
+
+    public static CollectionWriteCandidate BuildChildCandidate(
+        TableWritePlan childrenPlan,
+        string identityValue,
+        int requestOrder,
+        IEnumerable<CollectionWriteCandidate>? nestedGrandchildren = null
+    )
+    {
+        var values = new FlattenedWriteValue[childrenPlan.ColumnBindings.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = new FlattenedWriteValue.Literal(null);
+        }
+        values[3] = new FlattenedWriteValue.Literal(identityValue);
+
+        return new CollectionWriteCandidate(
+            tableWritePlan: childrenPlan,
+            ordinalPath: [0, requestOrder],
+            requestOrder: requestOrder,
+            values: values,
+            semanticIdentityValues: [identityValue],
+            collectionCandidates: nestedGrandchildren,
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                childrenPlan,
+                [identityValue]
+            )
+        );
+    }
+
+    public static CollectionWriteCandidate BuildGrandchildCandidate(
+        TableWritePlan grandchildrenPlan,
+        string identityValue,
+        int requestOrder
+    )
+    {
+        var values = new FlattenedWriteValue[grandchildrenPlan.ColumnBindings.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = new FlattenedWriteValue.Literal(null);
+        }
+        values[3] = new FlattenedWriteValue.Literal(identityValue);
+
+        return new CollectionWriteCandidate(
+            tableWritePlan: grandchildrenPlan,
+            ordinalPath: [0, 0, requestOrder],
+            requestOrder: requestOrder,
+            values: values,
+            semanticIdentityValues: [identityValue],
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
+                grandchildrenPlan,
+                [identityValue]
+            )
+        );
+    }
+
+    private static ImmutableArray<SemanticIdentityPart> Identity(string value) =>
+        [new SemanticIdentityPart("$.identityField0", JsonValue.Create(value), IsPresent: true)];
+
+    private static ScopeInstanceAddress ChildRowAddress(
+        string parentSemanticIdentity,
+        string childSemanticIdentity
+    ) =>
+        new(
+            ChildrenScope,
+            [
+                new AncestorCollectionInstance(ParentsScope, Identity(parentSemanticIdentity)),
+                new AncestorCollectionInstance(ChildrenScope, Identity(childSemanticIdentity)),
+            ]
+        );
+
+    public static VisibleRequestCollectionItem BuildGrandchildRequestItem(
+        string parentSemanticIdentity,
+        string childSemanticIdentity,
+        string grandchildIdentity,
+        int parentArrayIndex,
+        int childArrayIndex,
+        int grandchildArrayIndex,
+        bool creatable = true
+    ) =>
+        new(
+            new CollectionRowAddress(
+                GrandchildrenScope,
+                ChildRowAddress(parentSemanticIdentity, childSemanticIdentity),
+                Identity(grandchildIdentity)
+            ),
+            creatable,
+            $"$.parents[{parentArrayIndex}].children[{childArrayIndex}].grandchildren[{grandchildArrayIndex}]"
+        );
+
+    public static RelationalWriteCurrentState BuildCurrentState(
+        TableWritePlan rootPlan,
+        TableWritePlan parentsPlan,
+        TableWritePlan childrenPlan,
+        TableWritePlan grandchildrenPlan,
+        long documentId,
+        IReadOnlyList<object?[]> parentRows,
+        IReadOnlyList<object?[]> childRows,
+        IReadOnlyList<object?[]> grandchildRows
+    ) =>
+        new(
+            new DocumentMetadataRow(
+                DocumentId: documentId,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [documentId],
+                    ]
+                ),
+                new HydratedTableRows(parentsPlan.TableModel, parentRows),
+                new HydratedTableRows(childrenPlan.TableModel, childRows),
+                new HydratedTableRows(grandchildrenPlan.TableModel, grandchildRows),
+            ],
+            []
+        );
+}
+
+/// <summary>
+/// Slice 5 fixture: extension-child non-creatable insert is rejected even when the
+/// existing visible parent extension scope is allowed for matched-update. Storage already
+/// has the root row plus the root-extension row; the request keeps the extension scope
+/// visible-and-creatable (so the matched extension update path is taken) but emits a NEW
+/// child collection item under the extension with Creatable=false. The planner must
+/// reject at the child collection scope and short-circuit the merge.
+/// </summary>
+[TestFixture]
+public class Given_extension_child_non_creatable_insert_with_existing_visible_parent_update_allowed
+{
+    private const long RootExtensionDocumentId = 345L;
+
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, extensionPlan, childPlan) = RootExtensionChildCollectionTopologyBuilders.BuildPlan();
+
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["favoriteColor"] = "Blue",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "C1" }),
+                },
+            },
+        };
+
+        var childCandidate = RootExtensionChildCollectionTopologyBuilders.BuildChildCandidate(
+            childPlan,
+            "C1",
+            requestOrder: 0
+        );
+        var flattened = RootExtensionChildCollectionTopologyBuilders.BuildFlattenedWriteSet(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [RootExtensionDocumentId, "Blue"],
+            childCandidates: [childCandidate]
+        );
+
+        // Request keeps the parent extension scope visible-and-creatable (so the matched
+        // extension update is allowed), but the child collection item carries
+        // Creatable=false. The planner must reject the child insert.
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    new ScopeInstanceAddress(RootExtensionChildCollectionTopologyBuilders.ExtensionScope, []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [
+                new VisibleRequestCollectionItem(
+                    new CollectionRowAddress(
+                        RootExtensionChildCollectionTopologyBuilders.ChildScope,
+                        new ScopeInstanceAddress(
+                            RootExtensionChildCollectionTopologyBuilders.ExtensionScope,
+                            []
+                        ),
+                        RootExtensionChildCollectionTopologyBuilders.Identity("C1")
+                    ),
+                    Creatable: false,
+                    RequestJsonPath: "$._ext.sample.children[0]"
+                ),
+            ]
+        );
+
+        // Stored state: existing visible root and existing visible parent extension row,
+        // no stored children. The visible parent update is therefore allowed (matched
+        // update on the extension scope) — what fails is the unmatched child insert.
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredVisiblePresentScope(RootExtensionChildCollectionTopologyBuilders.ExtensionScope)
+        );
+        var currentState = RootExtensionChildCollectionTopologyBuilders.BuildCurrentState(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [RootExtensionDocumentId, "Red"],
+            childRows: []
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_a_rejection() => _outcome.IsRejection.Should().BeTrue();
+
+    [Test]
+    public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
+
+    [Test]
+    public void It_identifies_the_extension_child_collection_scope_as_the_rejected_scope() =>
+        _outcome
+            .CreatabilityRejection!.ScopeJsonScope.Should()
+            .Be(RootExtensionChildCollectionTopologyBuilders.ChildScope);
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Regression: top-level collection ParentKeyPart FK reads from the root's
+// physical-row-identity slice, not from binding-0 of the root row. The bug
+// surfaces only when the root's DocumentId is not at binding 0 and the
+// top-level collection FK is sourced from WriteValueSource.ParentKeyPart(0).
+// Pins RelationalWriteProfileMerge's use of
+// RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues for the root's
+// parent identity slice handed to the collection walker.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Synthesizer_TopLevelCollection_With_DocumentId_At_NonZero_Root_Binding_And_ParentKeyPart_FK
+{
+    private const long DocumentIdValue = 345L;
+    private const string SchoolIdScalarValue = "scalar-not-document-id";
+    private const string CollectionScope = "$.addresses[*]";
+
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Root plan: [0] SchoolId (Scalar), [1] DocumentId (DocumentId source).
+        // PhysicalRowIdentityColumns lists DocumentId only — so the parent
+        // physical-row-identity slice handed to nested-collection synthesis is
+        // [DocumentIdValue], not the full root row [SchoolIdScalarValue, DocumentIdValue].
+        var rootPlan = BuildRootPlanWithDocumentIdAtBindingOne();
+        // Top-level collection plan whose FK is sourced from ParentKeyPart(0).
+        var collectionPlan = BuildCollectionPlanWithParentKeyPartFk();
+
+        var resourceWritePlan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "School"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder: [rootPlan.TableModel, collectionPlan.TableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, collectionPlan]
+        );
+
+        var body = new JsonObject
+        {
+            ["schoolId"] = SchoolIdScalarValue,
+            ["addresses"] = new JsonArray(new JsonObject { ["identityField0"] = "V1" }),
+        };
+
+        var candidate = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V1", 0);
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("V1", creatable: true, arrayIndex: 0)
+        );
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+
+        // Root flattened row: binding 0 is the SchoolId scalar trap value, binding 1
+        // is the DocumentId. If the synthesizer were to pass the full root row as the
+        // parent physical-row-identity slice, ParentKeyPart(0) would resolve to
+        // SchoolIdScalarValue. With ExtractPhysicalRowIdentityValues, the slice is
+        // [DocumentIdValue] regardless of where DocumentId sits in the bindings.
+        var rootValues = new FlattenedWriteValue[]
+        {
+            new FlattenedWriteValue.Literal(SchoolIdScalarValue),
+            new FlattenedWriteValue.Literal(DocumentIdValue),
+        };
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(rootPlan, rootValues, collectionCandidates: [candidate])
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: resourceWritePlan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: null,
+                    profileRequest: request,
+                    profileAppliedContext: null,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_has_two_table_states() =>
+        _outcome.MergeResult!.TablesInDependencyOrder.Length.Should().Be(2);
+
+    [Test]
+    public void It_emits_one_merged_collection_row() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    [Test]
+    public void It_carries_DocumentId_value_on_top_level_collection_parent_key_part()
+    {
+        var fkValue = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[1];
+        fkValue.Value.Should().Be(DocumentIdValue);
+    }
+
+    [Test]
+    public void It_does_not_leak_root_binding_zero_scalar_into_collection_parent_key_part()
+    {
+        var fkValue = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[1];
+        fkValue.Value.Should().NotBe(SchoolIdScalarValue);
+    }
+
+    private static TableWritePlan BuildRootPlanWithDocumentIdAtBindingOne()
+    {
+        var schoolIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("SchoolId"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+            TargetResource: null
+        );
+        var documentIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var rootTableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "School"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [schoolIdColumn, documentIdColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: rootTableModel,
+            InsertSql: "INSERT INTO edfi.\"School\" (\"SchoolId\", \"DocumentId\") VALUES (@SchoolId, @DocumentId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 2, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    schoolIdColumn,
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "SchoolId"
+                ),
+                new WriteColumnBinding(documentIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan BuildCollectionPlanWithParentKeyPartFk()
+    {
+        // Mirrors the layout of MinimalCollectionTableWritePlan (used by the other
+        // top-level collection fixtures) so the existing CollectionSynthesizerBuilders
+        // helpers (BuildCandidate, BuildRequestItem) keep working unchanged. The single
+        // intentional difference is the FK binding source: ParentKeyPart(0) instead of
+        // DocumentId(), which is exactly the case ExtractPhysicalRowIdentityValues guards.
+        var collectionKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("CollectionItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var parentKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("School_DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var identityColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("IdentityField0"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression(
+                "$.identityField0",
+                [new JsonPathSegment.Property("identityField0")]
+            ),
+            TargetResource: null
+        );
+        var allColumns = new DbColumnModel[]
+        {
+            collectionKeyColumn,
+            parentKeyColumn,
+            ordinalColumn,
+            identityColumn,
+        };
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
+            JsonScope: new JsonPathExpression(CollectionScope, []),
+            Key: new TableKey(
+                "PK_SchoolAddress",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: allColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("School_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("School_DocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        new JsonPathExpression(
+                            "$.identityField0",
+                            [new JsonPathSegment.Property("identityField0")]
+                        ),
+                        new DbColumnName("IdentityField0")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"SchoolAddress\" VALUES (@CollectionItemId, @School_DocumentId, @Ordinal, @IdentityField0)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, allColumns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionKeyColumn,
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    parentKeyColumn,
+                    new WriteValueSource.ParentKeyPart(0),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    identityColumn,
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression(
+                            "$.identityField0",
+                            [new JsonPathSegment.Property("identityField0")]
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "IdentityField0"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        new JsonPathExpression(
+                            "$.identityField0",
+                            [new JsonPathSegment.Property("identityField0")]
+                        ),
+                        3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.\"SchoolAddress\" SET \"IdentityField0\" = @IdentityField0 WHERE \"CollectionItemId\" = @CollectionItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.\"SchoolAddress\" WHERE \"CollectionItemId\" = @CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Walker contract-mismatch shaping: when Core hands the synthesizer a
+// VisibleRequestCollectionItem whose RequestJsonPath does not navigate the
+// writable request body, the walker shapes the failure as
+// ProfilePlannerContractMismatchException so the executor returns the profile
+// contract-mismatch result rather than rethrowing as an unknown failure.
+// Pins ResolveCandidateRequestItem's navigation-miss arm in
+// ProfileCollectionWalker.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Synthesizer_TopLevelCollection_VisibleRequestItem_RequestJsonPath_Does_Not_Navigate
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        // Body has an addresses array with a single element at index 0; Core's
+        // VisibleRequestCollectionItem (below) claims the visible item lives at
+        // index 99, which will not navigate. The matching CollectionWriteCandidate
+        // identity ensures the candidate-key lookup succeeds, so the failure is
+        // squarely the navigation arm of ResolveCandidateRequestItem.
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(new JsonObject { ["identityField0"] = "V1" }),
+        };
+
+        var candidate = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V1", 0);
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("V1", creatable: true, arrayIndex: 99)
+        );
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(rootPlan, [candidate]);
+
+        var synthesizer = BuildProfileSynthesizer();
+        _act = () =>
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: null,
+                    profileRequest: request,
+                    profileAppliedContext: null,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_throws_ProfilePlannerContractMismatchException()
+    {
+        _act.Should().Throw<ProfilePlannerContractMismatchException>();
+    }
+
+    [Test]
+    public void It_tags_the_failure_with_the_offending_scope()
+    {
+        _act.Should()
+            .Throw<ProfilePlannerContractMismatchException>()
+            .Which.JsonScope.Should()
+            .Be(CollectionSynthesizerBuilders.CollectionScope);
+    }
+
+    [Test]
+    public void It_names_the_RequestJsonPath_navigation_invariant()
+    {
+        _act.Should()
+            .Throw<ProfilePlannerContractMismatchException>()
+            .Which.InvariantName.Should()
+            .Contain("RequestJsonPath does not navigate");
+    }
 }

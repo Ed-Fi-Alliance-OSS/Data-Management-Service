@@ -93,7 +93,6 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
             rootTableWritePlan,
             context.CurrentRootRowByColumnName,
             context.WritableRequestBody,
-            context.CurrentState,
             context.ResolvedReferenceLookups,
             context.ProfileRequest,
             context.ProfileAppliedContext,

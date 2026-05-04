@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
 /// Pure row-shaping helpers shared between <see cref="RelationalWriteNoProfileMergeSynthesizer"/>
-/// and the Slice 4 profile top-level collection path. Extracted to avoid duplication as profile
+/// and the profile collection merge path. Extracted to avoid duplication as profile
 /// collection merge adopts the same row-shaping primitives that no-profile already uses.
 /// </summary>
 internal static class RelationalWriteRowHelpers
