@@ -85,7 +85,10 @@ internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSepar
         ArgumentNullException.ThrowIfNull(mergedRowValuesMutable);
         ArgumentNullException.ThrowIfNull(resolverOwnedBindingIndices);
 
-        GuardInstanceAwareTableKind(separateTablePlan);
+        ProfileSeparateTableSupportGuard.EnsureSupportedTableKind(
+            separateTablePlan,
+            nameof(ProfileSeparateTableKeyUnificationResolver)
+        );
 
         if (mergedRowValuesMutable.Length != separateTablePlan.ColumnBindings.Length)
         {
@@ -113,20 +116,5 @@ internal sealed class ProfileSeparateTableKeyUnificationResolver : IProfileSepar
             mergedRowValuesMutable,
             resolverOwnedBindingIndices
         );
-    }
-
-    private static void GuardInstanceAwareTableKind(TableWritePlan separateTablePlan)
-    {
-        var tableKind = separateTablePlan.TableModel.IdentityMetadata.TableKind;
-        if (tableKind is not (DbTableKind.RootExtension or DbTableKind.CollectionExtensionScope))
-        {
-            throw new ArgumentException(
-                $"{nameof(ProfileSeparateTableKeyUnificationResolver)} supports "
-                    + $"{nameof(DbTableKind.RootExtension)} and "
-                    + $"{nameof(DbTableKind.CollectionExtensionScope)} tables; got {tableKind} "
-                    + $"for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'.",
-                nameof(separateTablePlan)
-            );
-        }
     }
 }

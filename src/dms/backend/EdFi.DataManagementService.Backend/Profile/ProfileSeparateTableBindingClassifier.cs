@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Profile;
 
@@ -54,7 +53,10 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
         ArgumentNullException.ThrowIfNull(separateTablePlan);
         ArgumentNullException.ThrowIfNull(scopeAddress);
 
-        GuardInstanceAwareTableKind(separateTablePlan);
+        ProfileSeparateTableSupportGuard.EnsureSupportedTableKind(
+            separateTablePlan,
+            nameof(ProfileSeparateTableBindingClassifier)
+        );
 
         var resolverOwnedBindingIndices = ProfileBindingClassificationCore.CollectResolverOwnedIndices(
             separateTablePlan
@@ -69,20 +71,5 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
             resolverOwnedBindingIndices
         );
         return new ProfileSeparateTableBindingClassification(bindingsByIndex, resolverOwnedBindingIndices);
-    }
-
-    private static void GuardInstanceAwareTableKind(TableWritePlan separateTablePlan)
-    {
-        var tableKind = separateTablePlan.TableModel.IdentityMetadata.TableKind;
-        if (tableKind is not (DbTableKind.RootExtension or DbTableKind.CollectionExtensionScope))
-        {
-            throw new ArgumentException(
-                $"{nameof(ProfileSeparateTableBindingClassifier)} supports "
-                    + $"{nameof(DbTableKind.RootExtension)} and "
-                    + $"{nameof(DbTableKind.CollectionExtensionScope)} tables; got {tableKind} "
-                    + $"for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'.",
-                nameof(separateTablePlan)
-            );
-        }
     }
 }
