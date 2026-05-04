@@ -198,6 +198,13 @@ internal sealed class ProfileCollectionWalker
             .GroupBy(c => c.TableWritePlan.TableModel.JsonScope.Canonical)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // Track which grouped scopes are reached by the topological direct-child
+        // enumeration below. Any scope that survives the loop indicates a flattener /
+        // Core-handover contract mismatch — the candidate was grouped but its scope is not
+        // a direct child of parentContext per the compiled topology, so it would have
+        // been silently dropped from the merge without this fail-closed assertion.
+        var unconsumedCandidateScopes = new HashSet<string>(candidatesByScope.Keys, StringComparer.Ordinal);
+
         // The root case treats the synthetic ScopeInstanceAddress($, []) as the parent
         // address; nested cases re-enter this method with a non-root
         // parentContext.ContainingScopeAddress. Per-child the effective parent address
@@ -226,6 +233,10 @@ internal sealed class ProfileCollectionWalker
             }
 
             candidatesByScope.TryGetValue(jsonScope, out var candidates);
+            // Whether or not candidates were grouped for this scope, the topology's
+            // direct-child enumeration reached the scope, so any grouped candidate has
+            // a chance to flow through the planner. Drop it from the unconsumed set.
+            unconsumedCandidateScopes.Remove(jsonScope);
             var requestCandidatesForScope = candidates is null
                 ? ImmutableArray<CollectionWriteCandidate>.Empty
                 : candidates.ToImmutableArray();
@@ -586,7 +597,58 @@ internal sealed class ProfileCollectionWalker
             }
         }
 
+        // Fail-closed: every grouped candidate scope must have been visited by the
+        // direct-child enumeration above. A leftover scope means a candidate would be
+        // silently dropped from the merge — flag it as a Core/flattener handover
+        // contract mismatch with enough detail to debug.
+        if (unconsumedCandidateScopes.Count > 0)
+        {
+            ThrowOnUnconsumedCandidateScopes(parentContext, unconsumedCandidateScopes, candidatesByScope);
+        }
+
         return null; // All scopes processed without rejection.
+    }
+
+    /// <summary>
+    /// Builds a <see cref="ProfilePlannerContractMismatchException"/> describing the
+    /// candidate scopes that <see cref="WalkChildren"/> grouped from the parent context's
+    /// <c>CollectionCandidates</c> but never reached via
+    /// <see cref="EnumerateDirectChildCollectionScopes"/>. Includes the parent JsonScope,
+    /// the leftover scope(s), the per-scope candidate count, and a sample candidate's
+    /// table and request-order so the contract mismatch can be traced back to the
+    /// flattener / Core hand-off that emitted it.
+    /// </summary>
+    private static void ThrowOnUnconsumedCandidateScopes(
+        ProfileCollectionWalkerContext parentContext,
+        HashSet<string> unconsumedCandidateScopes,
+        Dictionary<string, List<CollectionWriteCandidate>> candidatesByScope
+    )
+    {
+        var orderedLeftovers = unconsumedCandidateScopes.OrderBy(s => s, StringComparer.Ordinal).ToList();
+        var detailParts = new List<string>(orderedLeftovers.Count);
+        foreach (var leftoverScope in orderedLeftovers)
+        {
+            var leftoverCandidates = candidatesByScope[leftoverScope];
+            var sample = leftoverCandidates[0];
+            detailParts.Add(
+                $"scope '{LogSanitizer.SanitizeForLog(leftoverScope)}' "
+                    + $"({leftoverCandidates.Count} candidate(s); "
+                    + $"sample table='{ProfileBindingClassificationCore.FormatTable(sample.TableWritePlan)}', "
+                    + $"requestOrder={sample.RequestOrder})"
+            );
+        }
+
+        throw new ProfilePlannerContractMismatchException(
+            jsonScope: parentContext.ContainingScopeAddress.JsonScope,
+            invariantName: "unconsumed collection candidate scope under parent context",
+            message: $"ProfileCollectionWalker grouped {orderedLeftovers.Count} candidate scope(s) under parent "
+                + $"'{parentContext.ContainingScopeAddress.JsonScope}' that EnumerateDirectChildCollectionScopes "
+                + $"never reached: {string.Join("; ", detailParts)}. "
+                + "Walker invariant violated: every CollectionWriteCandidate's JsonScope must be a direct "
+                + "topological child of the parent context per the compiled write plan. A leftover scope "
+                + "indicates a Core/flattener handover contract mismatch — the candidate would be silently "
+                + "dropped from the merge without this fail-closed assertion."
+        );
     }
 
     /// <summary>
