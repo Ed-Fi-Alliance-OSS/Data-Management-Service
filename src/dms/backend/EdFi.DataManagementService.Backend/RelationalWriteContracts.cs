@@ -122,7 +122,8 @@ public sealed record FlatteningInput
         ResourceWritePlan writePlan,
         JsonNode selectedBody,
         ResolvedReferenceSet resolvedReferences,
-        bool emitEmptyExtensionBuffers = false
+        bool emitEmptyExtensionBuffers = false,
+        bool collapseMissingAndExplicitNullForDuplicateDetection = false
     )
     {
         OperationKind = operationKind;
@@ -132,6 +133,8 @@ public sealed record FlatteningInput
         ResolvedReferences =
             resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
         EmitEmptyExtensionBuffers = emitEmptyExtensionBuffers;
+        CollapseMissingAndExplicitNullForDuplicateDetection =
+            collapseMissingAndExplicitNullForDuplicateDetection;
     }
 
     /// <summary>
@@ -171,6 +174,25 @@ public sealed record FlatteningInput
     /// to preserve the historical drop-empty behavior.
     /// </summary>
     public bool EmitEmptyExtensionBuffers { get; init; }
+
+    /// <summary>
+    /// When true, the shared flattener's collection duplicate-detection step treats a missing
+    /// identity property and an explicit JSON <c>null</c> as the same identity value. The
+    /// no-profile merge in <c>RelationalWriteNoProfileMerge.ProjectedCollectionTableState</c>
+    /// matches collection rows by raw <c>object?[]</c> semantic identity values with no presence
+    /// flag, so two siblings whose identity differs only in presence would otherwise survive
+    /// flattening and later collide on the same collapsed merge key. The no-profile executor
+    /// sets this so duplicate request collection items are rejected before reaching the merge
+    /// stage. Profile-aware callers leave it off so
+    /// <see cref="EdFi.DataManagementService.Backend.Profile.SemanticIdentityKeys.BuildKey(System.Collections.Immutable.ImmutableArray{EdFi.DataManagementService.Core.Profile.SemanticIdentityPart})"/>
+    /// continues to distinguish missing from explicit-null identities under the
+    /// <see cref="EdFi.DataManagementService.Core.Profile.SemanticIdentityPart"/> contract;
+    /// presence-aware row-pairing in <c>ProfileCollectionPlanner</c> still observes both
+    /// siblings as distinct identities. DMS-1132 owns full missing-vs-explicit-null identity
+    /// fidelity for the no-profile path; until that lands, collapsing here is the conservative
+    /// fail-closed bridge.
+    /// </summary>
+    public bool CollapseMissingAndExplicitNullForDuplicateDetection { get; init; }
 }
 
 /// <summary>

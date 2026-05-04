@@ -287,7 +287,16 @@ internal sealed class DefaultRelationalWriteExecutor(
                         executionRequest.TargetContext,
                         executionRequest.WritePlan,
                         executionRequest.SelectedBody,
-                        resolvedReferences
+                        resolvedReferences,
+                        // The no-profile merge matches collection rows by raw object?[] semantic
+                        // identity values with no presence flag, so two siblings whose identity
+                        // differs only in missing-vs-explicit-null would otherwise survive
+                        // flattening and later collide on the same collapsed merge key. Collapse
+                        // the duplicate-detection key here to fail closed before persistence.
+                        // Profile flattening at line 241 leaves this off to preserve
+                        // SemanticIdentityKeys.BuildKey presence-aware identity for
+                        // ProfileCollectionPlanner.
+                        collapseMissingAndExplicitNullForDuplicateDetection: true
                     )
                 );
 

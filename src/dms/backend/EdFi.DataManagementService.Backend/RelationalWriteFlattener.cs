@@ -344,8 +344,38 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         foreach (var childPlan in childPlans)
         {
-            Dictionary<string, (int[] OrdinalPath, object?[] Values)> firstOrdinalPathBySemanticIdentityKey =
-                new(StringComparer.Ordinal);
+            // Duplicate detection has two modes selected by FlatteningInput, each backed by a
+            // dictionary whose equality semantics match its consumer downstream:
+            //
+            // - Profile mode (default): keyed on the presence-aware SemanticIdentityKeys.BuildKey
+            //   string. An explicit JSON null and a missing identity property produce distinct
+            //   keys under the SemanticIdentityPart contract, so two siblings with the same null
+            //   value are duplicates only when both are present-null or both are missing — never
+            //   across the boundary. ProfileCollectionPlanner relies on this to pair stored rows
+            //   and request candidates by presence-aware identity.
+            //
+            // - No-profile mode (CollapseMissingAndExplicitNullForDuplicateDetection): keyed on
+            //   the raw object?[] semantic identity values via ObjectValueArrayComparer, the
+            //   exact same comparer used by
+            //   RelationalWriteNoProfileMerge.ProjectedCollectionTableState. That ensures every
+            //   pair of values that the no-profile merge would collapse — including missing vs
+            //   explicit null, and decimals like 1.0m vs 1.00m which are .Equals but stringify
+            //   differently — is rejected here as a duplicate before reaching the merge stage.
+            //   A string-encoded key would diverge from the comparer's runtime Equals semantics
+            //   and either miss those duplicates or false-flag legitimate values containing the
+            //   chosen separator characters. DMS-1132 owns full missing-vs-explicit-null
+            //   identity fidelity for the no-profile path.
+            //
+            // SemanticIdentityInOrder is built unconditionally because the profile merge
+            // pipeline still consumes it on every candidate downstream of this method.
+            Dictionary<string, (int[] OrdinalPath, object?[] Values)>? presenceAwareTracker =
+                flatteningInput.CollapseMissingAndExplicitNullForDuplicateDetection
+                    ? null
+                    : new(StringComparer.Ordinal);
+            Dictionary<object?[], (int[] OrdinalPath, object?[] Values)>? collapsedTracker =
+                flatteningInput.CollapseMissingAndExplicitNullForDuplicateDetection
+                    ? new(ObjectValueArrayComparer.Instance)
+                    : null;
 
             foreach (
                 var collectionScopeInstance in EnumerateCollectionScopeInstances(parentScopeNode, childPlan)
@@ -371,14 +401,20 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     semanticIdentityValues
                 );
 
-                // Duplicate detection uses the presence-aware key so that an explicit JSON
-                // null and a missing identity property remain distinct identities under the
-                // SemanticIdentityPart contract. Two array elements with the same null value
-                // are duplicates only when both are present-null or both are missing — never
-                // across the boundary.
-                var semanticIdentityKey = Profile.SemanticIdentityKeys.BuildKey(semanticIdentityInOrder);
+                (int[] OrdinalPath, object?[] Values) firstSeen;
+                bool isDuplicate;
+                string? presenceAwareKey = null;
+                if (collapsedTracker is not null)
+                {
+                    isDuplicate = collapsedTracker.TryGetValue(semanticIdentityValues, out firstSeen);
+                }
+                else
+                {
+                    presenceAwareKey = Profile.SemanticIdentityKeys.BuildKey(semanticIdentityInOrder);
+                    isDuplicate = presenceAwareTracker!.TryGetValue(presenceAwareKey, out firstSeen);
+                }
 
-                if (firstOrdinalPathBySemanticIdentityKey.TryGetValue(semanticIdentityKey, out var firstSeen))
+                if (isDuplicate)
                 {
                     throw CreateDuplicateSemanticIdentityException(
                         childPlan.TableWritePlan,
@@ -389,10 +425,14 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     );
                 }
 
-                firstOrdinalPathBySemanticIdentityKey.Add(
-                    semanticIdentityKey,
-                    (ordinalPath, semanticIdentityValues)
-                );
+                if (collapsedTracker is not null)
+                {
+                    collapsedTracker.Add(semanticIdentityValues, (ordinalPath, semanticIdentityValues));
+                }
+                else
+                {
+                    presenceAwareTracker!.Add(presenceAwareKey!, (ordinalPath, semanticIdentityValues));
+                }
 
                 var childParentKeyParts = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
                     childPlan.TableWritePlan,

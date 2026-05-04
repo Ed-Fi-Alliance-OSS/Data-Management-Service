@@ -656,47 +656,4 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             };
         }
     }
-
-    private sealed class ObjectValueArrayComparer : IEqualityComparer<object?[]>
-    {
-        public static ObjectValueArrayComparer Instance { get; } = new();
-
-        public bool Equals(object?[]? left, object?[]? right)
-        {
-            if (ReferenceEquals(left, right))
-            {
-                return true;
-            }
-
-            if (left is null || right is null || left.Length != right.Length)
-            {
-                return false;
-            }
-
-            for (var index = 0; index < left.Length; index++)
-            {
-                if (!Equals(left[index], right[index]))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        public int GetHashCode(object?[] values)
-        {
-            ArgumentNullException.ThrowIfNull(values);
-
-            HashCode hashCode = new();
-            hashCode.Add(values.Length);
-
-            foreach (var value in values)
-            {
-                hashCode.Add(value);
-            }
-
-            return hashCode.ToHashCode();
-        }
-    }
 }

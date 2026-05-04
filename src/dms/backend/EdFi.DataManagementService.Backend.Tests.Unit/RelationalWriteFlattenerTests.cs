@@ -709,6 +709,96 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_rejects_collection_siblings_that_collapse_to_the_same_no_profile_semantic_identity_when_one_omits_and_one_explicit_nulls_the_identity_property()
+    {
+        // The shared no-profile flattener path matches collection rows by raw semantic identity
+        // values (object?[]) with no presence flag. With the no-profile mode flag set, a sibling
+        // that omits an identity property and one that sends it as JSON null must be treated as
+        // a duplicate at the shared duplicate-detection stage; otherwise both rows would survive
+        // flattening and later collide in RelationalWriteNoProfileMerge under the same collapsed
+        // key. Profile-aware presence fidelity is covered by the companion profile-mode test
+        // below; DMS-1132 owns missing-vs-explicit-null identity semantics for the no-profile
+        // path.
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressLine1": "123 Main St"
+                    },
+                    {
+                      "addressType": null,
+                      "addressLine1": "456 Oak Ave"
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
+            collapseMissingAndExplicitNullForDuplicateDetection: true
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values [null] under parent scope '$'."
+            );
+    }
+
+    [Test]
+    public void It_keeps_collection_siblings_distinct_in_profile_mode_when_one_omits_and_one_explicit_nulls_the_identity_property()
+    {
+        // Counter-test for the no-profile rejection above: with the default profile-mode flag,
+        // duplicate detection uses presence-aware SemanticIdentityKeys.BuildKey output so a
+        // missing identity property and an explicit JSON null produce distinct keys. The two
+        // siblings must therefore both survive flattening and reach the profile merge planner,
+        // which pairs them by presence-aware identity. This guards against the no-profile fix
+        // collapsing identities universally and rejecting legitimate profile requests where
+        // SemanticIdentityPart.IsPresent intentionally distinguishes the two siblings.
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressLine1": "123 Main St"
+                    },
+                    {
+                      "addressType": null,
+                      "addressLine1": "456 Oak Ave"
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.CollectionCandidates.Select(candidate =>
+                (candidate.RequestOrder, candidate.SemanticIdentityValues[0])
+            )
+            .Should()
+            .Equal((0, (object?)null), (1, (object?)null));
+        result
+            .RootRow.CollectionCandidates.Select(candidate => candidate.SemanticIdentityInOrder[0].IsPresent)
+            .Should()
+            .Equal(false, true);
+    }
+
+    [Test]
     public void It_treats_the_selected_body_as_authoritative_input()
     {
         var originalBody = JsonNode.Parse(
@@ -3348,7 +3438,8 @@ public class Given_RelationalWriteFlattener
             JsonNode selectedBody,
             RelationalWriteTargetContext targetContext,
             ResolvedReferenceSet? resolvedReferences = null,
-            bool emitEmptyExtensionBuffers = false
+            bool emitEmptyExtensionBuffers = false,
+            bool collapseMissingAndExplicitNullForDuplicateDetection = false
         )
         {
             return new FlatteningInput(
@@ -3357,7 +3448,8 @@ public class Given_RelationalWriteFlattener
                 WritePlan,
                 selectedBody,
                 resolvedReferences ?? ResolvedReferences,
-                emitEmptyExtensionBuffers
+                emitEmptyExtensionBuffers,
+                collapseMissingAndExplicitNullForDuplicateDetection
             );
         }
 
