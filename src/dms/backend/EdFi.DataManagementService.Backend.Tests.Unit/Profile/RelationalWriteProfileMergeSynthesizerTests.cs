@@ -8076,3 +8076,387 @@ public class Given_extension_child_non_creatable_insert_with_existing_visible_pa
             .CreatabilityRejection!.ScopeJsonScope.Should()
             .Be(RootExtensionChildCollectionTopologyBuilders.ChildScope);
 }
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Regression: top-level collection ParentKeyPart FK reads from the root's
+// physical-row-identity slice, not from binding-0 of the root row. The bug
+// surfaces only when the root's DocumentId is not at binding 0 and the
+// top-level collection FK is sourced from WriteValueSource.ParentKeyPart(0).
+// Pins RelationalWriteProfileMerge's use of
+// RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues for the root's
+// parent identity slice handed to the collection walker.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Synthesizer_TopLevelCollection_With_DocumentId_At_NonZero_Root_Binding_And_ParentKeyPart_FK
+{
+    private const long DocumentIdValue = 345L;
+    private const string SchoolIdScalarValue = "scalar-not-document-id";
+    private const string CollectionScope = "$.addresses[*]";
+
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Root plan: [0] SchoolId (Scalar), [1] DocumentId (DocumentId source).
+        // PhysicalRowIdentityColumns lists DocumentId only — so the parent
+        // physical-row-identity slice handed to nested-collection synthesis is
+        // [DocumentIdValue], not the full root row [SchoolIdScalarValue, DocumentIdValue].
+        var rootPlan = BuildRootPlanWithDocumentIdAtBindingOne();
+        // Top-level collection plan whose FK is sourced from ParentKeyPart(0).
+        var collectionPlan = BuildCollectionPlanWithParentKeyPartFk();
+
+        var resourceWritePlan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "School"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder: [rootPlan.TableModel, collectionPlan.TableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, collectionPlan]
+        );
+
+        var body = new JsonObject
+        {
+            ["schoolId"] = SchoolIdScalarValue,
+            ["addresses"] = new JsonArray(new JsonObject { ["identityField0"] = "V1" }),
+        };
+
+        var candidate = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V1", 0);
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("V1", creatable: true, arrayIndex: 0)
+        );
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+
+        // Root flattened row: binding 0 is the SchoolId scalar trap value, binding 1
+        // is the DocumentId. If the synthesizer were to pass the full root row as the
+        // parent physical-row-identity slice, ParentKeyPart(0) would resolve to
+        // SchoolIdScalarValue. With ExtractPhysicalRowIdentityValues, the slice is
+        // [DocumentIdValue] regardless of where DocumentId sits in the bindings.
+        var rootValues = new FlattenedWriteValue[]
+        {
+            new FlattenedWriteValue.Literal(SchoolIdScalarValue),
+            new FlattenedWriteValue.Literal(DocumentIdValue),
+        };
+        var flattened = new FlattenedWriteSet(
+            new RootWriteRowBuffer(rootPlan, rootValues, collectionCandidates: [candidate])
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: resourceWritePlan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: null,
+                    profileRequest: request,
+                    profileAppliedContext: null,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_has_two_table_states() =>
+        _outcome.MergeResult!.TablesInDependencyOrder.Length.Should().Be(2);
+
+    [Test]
+    public void It_emits_one_merged_collection_row() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    [Test]
+    public void It_carries_DocumentId_value_on_top_level_collection_parent_key_part()
+    {
+        var fkValue = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[1];
+        fkValue.Value.Should().Be(DocumentIdValue);
+    }
+
+    [Test]
+    public void It_does_not_leak_root_binding_zero_scalar_into_collection_parent_key_part()
+    {
+        var fkValue = (FlattenedWriteValue.Literal)
+            _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[1];
+        fkValue.Value.Should().NotBe(SchoolIdScalarValue);
+    }
+
+    private static TableWritePlan BuildRootPlanWithDocumentIdAtBindingOne()
+    {
+        var schoolIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("SchoolId"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+            TargetResource: null
+        );
+        var documentIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var rootTableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "School"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [schoolIdColumn, documentIdColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: rootTableModel,
+            InsertSql: "INSERT INTO edfi.\"School\" (\"SchoolId\", \"DocumentId\") VALUES (@SchoolId, @DocumentId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 2, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    schoolIdColumn,
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "SchoolId"
+                ),
+                new WriteColumnBinding(documentIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan BuildCollectionPlanWithParentKeyPartFk()
+    {
+        // Mirrors the layout of MinimalCollectionTableWritePlan (used by the other
+        // top-level collection fixtures) so the existing CollectionSynthesizerBuilders
+        // helpers (BuildCandidate, BuildRequestItem) keep working unchanged. The single
+        // intentional difference is the FK binding source: ParentKeyPart(0) instead of
+        // DocumentId(), which is exactly the case ExtractPhysicalRowIdentityValues guards.
+        var collectionKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("CollectionItemId"),
+            Kind: ColumnKind.CollectionKey,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var parentKeyColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("School_DocumentId"),
+            Kind: ColumnKind.ParentKeyPart,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var ordinalColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("Ordinal"),
+            Kind: ColumnKind.Ordinal,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+        var identityColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("IdentityField0"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression(
+                "$.identityField0",
+                [new JsonPathSegment.Property("identityField0")]
+            ),
+            TargetResource: null
+        );
+        var allColumns = new DbColumnModel[]
+        {
+            collectionKeyColumn,
+            parentKeyColumn,
+            ordinalColumn,
+            identityColumn,
+        };
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
+            JsonScope: new JsonPathExpression(CollectionScope, []),
+            Key: new TableKey(
+                "PK_SchoolAddress",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: allColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("School_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("School_DocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        new JsonPathExpression(
+                            "$.identityField0",
+                            [new JsonPathSegment.Property("identityField0")]
+                        ),
+                        new DbColumnName("IdentityField0")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"SchoolAddress\" VALUES (@CollectionItemId, @School_DocumentId, @Ordinal, @IdentityField0)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, allColumns.Length, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionKeyColumn,
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    parentKeyColumn,
+                    new WriteValueSource.ParentKeyPart(0),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(ordinalColumn, new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    identityColumn,
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression(
+                            "$.identityField0",
+                            [new JsonPathSegment.Property("identityField0")]
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "IdentityField0"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        new JsonPathExpression(
+                            "$.identityField0",
+                            [new JsonPathSegment.Property("identityField0")]
+                        ),
+                        3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE edfi.\"SchoolAddress\" SET \"IdentityField0\" = @IdentityField0 WHERE \"CollectionItemId\" = @CollectionItemId",
+                DeleteByStableRowIdentitySql: "DELETE FROM edfi.\"SchoolAddress\" WHERE \"CollectionItemId\" = @CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Walker contract-mismatch shaping: when Core hands the synthesizer a
+// VisibleRequestCollectionItem whose RequestJsonPath does not navigate the
+// writable request body, the walker shapes the failure as
+// ProfilePlannerContractMismatchException so the executor returns the profile
+// contract-mismatch result rather than rethrowing as an unknown failure.
+// Pins ResolveCandidateRequestItem's navigation-miss arm in
+// ProfileCollectionWalker.
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+public class Given_Synthesizer_TopLevelCollection_VisibleRequestItem_RequestJsonPath_Does_Not_Navigate
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+
+        // Body has an addresses array with a single element at index 0; Core's
+        // VisibleRequestCollectionItem (below) claims the visible item lives at
+        // index 99, which will not navigate. The matching CollectionWriteCandidate
+        // identity ensures the candidate-key lookup succeeds, so the failure is
+        // squarely the navigation arm of ResolveCandidateRequestItem.
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(new JsonObject { ["identityField0"] = "V1" }),
+        };
+
+        var candidate = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V1", 0);
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("V1", creatable: true, arrayIndex: 99)
+        );
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(rootPlan, [candidate]);
+
+        var synthesizer = BuildProfileSynthesizer();
+        _act = () =>
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: null,
+                    profileRequest: request,
+                    profileAppliedContext: null,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_throws_ProfilePlannerContractMismatchException()
+    {
+        _act.Should().Throw<ProfilePlannerContractMismatchException>();
+    }
+
+    [Test]
+    public void It_tags_the_failure_with_the_offending_scope()
+    {
+        _act.Should()
+            .Throw<ProfilePlannerContractMismatchException>()
+            .Which.JsonScope.Should()
+            .Be(CollectionSynthesizerBuilders.CollectionScope);
+    }
+
+    [Test]
+    public void It_names_the_RequestJsonPath_navigation_invariant()
+    {
+        _act.Should()
+            .Throw<ProfilePlannerContractMismatchException>()
+            .Which.InvariantName.Should()
+            .Contain("RequestJsonPath does not navigate");
+    }
+}

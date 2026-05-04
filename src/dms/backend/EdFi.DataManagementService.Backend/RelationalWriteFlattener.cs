@@ -202,10 +202,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             )
         )
         {
-            var scopeSegments = RelationalJsonPathSupport
-                .GetRestrictedSegments(tableWritePlan.TableModel.JsonScope)
-                .ToArray();
-
             var alignedScopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
             var alignedShape =
                 AlignedExtensionScopeSupport.Classify(alignedScopeCanonical)
@@ -213,9 +209,25 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     $"Collection-aligned extension table '{FormatTable(tableWritePlan)}' does not have a canonical aligned scope."
                 );
             var isMirroredExtensionScope = alignedShape.IsMirrored;
-            var parentScopeSegments = isMirroredExtensionScope ? scopeSegments[2..^2] : scopeSegments[..^2];
-            var parentScopeCanonical = RelationalJsonPathSupport.BuildCanonical(parentScopeSegments);
-            var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
+            var parentScopeCanonical = alignedShape.ParentCollectionScope;
+
+            // Standard aligned scopes navigate relative to the parent collection scope, so
+            // compute the trailing two-segment "._ext.<name>" remainder for those. Mirrored
+            // aligned scopes navigate from the root using the full scope segments
+            // (NavigateFromRoot=true in TryGetAttachedAlignedScopeNode), so storing relative
+            // segments would be unread, misleading state — leave them empty.
+            ImmutableArray<JsonPathSegment> relativeScopeSegments;
+            if (isMirroredExtensionScope)
+            {
+                relativeScopeSegments = [];
+            }
+            else
+            {
+                var scopeSegments = RelationalJsonPathSupport
+                    .GetRestrictedSegments(tableWritePlan.TableModel.JsonScope)
+                    .ToArray();
+                relativeScopeSegments = [.. scopeSegments[^2..]];
+            }
 
             if (!plansByParentScope.TryGetValue(parentScopeCanonical, out var plans))
             {
@@ -224,11 +236,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             }
 
             plans.Add(
-                new AttachedAlignedScopePlan(
-                    tableWritePlan,
-                    [.. relativeScopeSegments],
-                    isMirroredExtensionScope
-                )
+                new AttachedAlignedScopePlan(tableWritePlan, relativeScopeSegments, isMirroredExtensionScope)
             );
         }
 

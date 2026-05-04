@@ -1096,10 +1096,22 @@ internal sealed class ProfileCollectionWalker
     /// Looks up the <see cref="VisibleRequestCollectionItem"/> matching the supplied
     /// <paramref name="requestCandidate"/> in <paramref name="candidateKeyToRequestItem"/>
     /// and resolves the concrete request item JSON node from the writable request body.
-    /// Both the lookup miss and the navigation miss fail closed with an
-    /// <see cref="InvalidOperationException"/> tagged by <paramref name="entryKind"/> so
-    /// each plan-entry switch arm gets a self-describing error without duplicating the
-    /// resolution chain.
+    /// The two failure modes are treated differently because they have different causes:
+    /// <list type="bullet">
+    /// <item>The lookup miss is a post-validation walker invariant — the planner's
+    /// reverse-request-side coverage runs over the same canonicalized items the walker
+    /// uses for the lookup, so a miss here means planner/walker drift. It remains a
+    /// fail-fast <see cref="InvalidOperationException"/>.</item>
+    /// <item>The navigation miss is a Core/backend handover contract failure — Core
+    /// promised a visible collection item at <c>RequestJsonPath</c> but that path does
+    /// not navigate to a node on the writable request body Core also handed us. The
+    /// upfront <c>ProfileWriteContractValidator</c> validates addresses against the
+    /// compiled scope catalog but does not validate that <c>RequestJsonPath</c>
+    /// actually navigates the body. The walker shapes this as a
+    /// <see cref="ProfilePlannerContractMismatchException"/> so the executor returns
+    /// the profile contract-mismatch result rather than rethrowing as an unknown
+    /// failure.</item>
+    /// </list>
     /// </summary>
     private static (
         VisibleRequestCollectionItem RequestItem,
@@ -1128,10 +1140,13 @@ internal sealed class ProfileCollectionWalker
 
         if (concreteRequestItemNode is null)
         {
-            throw new InvalidOperationException(
-                $"{entryKind} for scope '{jsonScope}' could not navigate "
-                    + $"the request body to item path '{requestItem.RequestJsonPath}'. "
-                    + "The visible request item must correspond to an existing array element."
+            throw new ProfilePlannerContractMismatchException(
+                jsonScope: jsonScope,
+                invariantName: "VisibleRequestCollectionItem RequestJsonPath does not navigate the writable request body",
+                message: $"{entryKind} for scope '{jsonScope}' could not navigate "
+                    + $"the request body to item path '{LogSanitizer.SanitizeForLog(requestItem.RequestJsonPath)}'. "
+                    + "The visible request item must correspond to an existing array element. "
+                    + "Walker invariant violated: VisibleRequestCollectionItem RequestJsonPath does not navigate the writable request body."
             );
         }
 
