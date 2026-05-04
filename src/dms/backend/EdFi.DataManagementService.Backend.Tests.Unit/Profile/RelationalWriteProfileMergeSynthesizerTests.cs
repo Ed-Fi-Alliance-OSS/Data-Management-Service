@@ -8556,3 +8556,77 @@ public class Given_Synthesizer_TopLevelCollection_VisibleRequestItem_RequestJson
             .Contain("RequestJsonPath does not navigate");
     }
 }
+
+[TestFixture]
+public class Given_ProfileSynthesizer_for_ExistingDocument_with_unchanged_root_scalar
+{
+    private RelationalWriteMergeResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan(scalarRelativePath: "$.firstName");
+        var body = new JsonObject { ["firstName"] = "Ada" };
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+        var appliedContext = CreateContext(request, storedScopeStates: StoredVisiblePresentScope("$"));
+
+        var synthesizer = BuildProfileSynthesizer();
+        _result = UnwrapMergeResult(
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: BuildFlattenedWriteSetFrom(plan, "Ada"),
+                    writableRequestBody: body,
+                    currentState: BuildCurrentStateWithSingleRootRow(plan, "Ada"),
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_supports_guarded_no_op() => _result.SupportsGuardedNoOp.Should().BeTrue();
+
+    [Test]
+    public void It_is_a_no_op_candidate_when_request_matches_stored() =>
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(_result).Should().BeTrue();
+}
+
+[TestFixture]
+public class Given_ProfileSynthesizer_for_ExistingDocument_with_changed_root_scalar
+{
+    private RelationalWriteMergeResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan(scalarRelativePath: "$.firstName");
+        var body = new JsonObject { ["firstName"] = "Ada" };
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+        var appliedContext = CreateContext(request, storedScopeStates: StoredVisiblePresentScope("$"));
+
+        var synthesizer = BuildProfileSynthesizer();
+        _result = UnwrapMergeResult(
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: BuildFlattenedWriteSetFrom(plan, "Ada"),
+                    writableRequestBody: body,
+                    currentState: BuildCurrentStateWithSingleRootRow(plan, "Grace"),
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_supports_guarded_no_op() => _result.SupportsGuardedNoOp.Should().BeTrue();
+
+    [Test]
+    public void It_is_not_a_no_op_candidate_when_request_differs_from_stored() =>
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(_result).Should().BeFalse();
+}
