@@ -61,7 +61,9 @@ public static class RelationalModelSetPasses
             // Authorization-classified entries are appended together, and before
             // ApplyDialectIdentifierShorteningPass / CanonicalizeOrderingPass so the new
             // indexes participate in dialect-aware shortening and canonical ordering.
-            new DeriveAuthorizationIndexInventoryPass(),
+            new DeriveAuthorizationIndexInventoryPass(
+                throwOnMissingPaLiteral: includeCollectionSemanticIdentityValidation
+            ),
             new ApplyDialectIdentifierShorteningPass(),
             new CanonicalizeOrderingPass(),
         ];

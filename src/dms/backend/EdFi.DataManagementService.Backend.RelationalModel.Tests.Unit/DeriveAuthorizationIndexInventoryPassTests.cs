@@ -182,14 +182,14 @@ public class Given_PrimaryAssociation_With_UnifiedAlias_Key
 }
 
 /// <summary>
-/// Test fixture asserting the pass silently skips a PrimaryAssociation when the resource is
-/// present but its root table is missing the expected literal key column. Synthetic test
-/// fixtures (e.g. <c>small/referential-identity</c>) reuse PA names without carrying the
-/// post-key-unification PA columns; throwing here would break those fixtures, and the
-/// authoritative golden manifests are the safety net for real schema drift.
+/// Test fixture asserting the pass silently skips a PrimaryAssociation in default mode when
+/// the resource is present but its root table is missing the expected literal key column.
+/// Synthetic test fixtures (e.g. <c>small/referential-identity</c>) reuse PA names without
+/// carrying the post-key-unification PA columns; in default mode the pass tolerates that and
+/// relies on the strict-mode pipeline to catch real schema drift.
 /// </summary>
 [TestFixture]
-public class Given_PrimaryAssociation_Missing_Required_Column
+public class Given_PrimaryAssociation_Missing_Required_Column_In_Default_Mode
 {
     private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
 
@@ -210,6 +210,43 @@ public class Given_PrimaryAssociation_Missing_Required_Column
     public void It_should_silently_skip_the_PA_emission()
     {
         _authIndexes.Should().BeEmpty();
+    }
+}
+
+/// <summary>
+/// Test fixture asserting the pass throws in strict mode when a PrimaryAssociation resource
+/// is present but its root table is missing the expected literal key column. Strict mode is
+/// the production-runtime configuration; throwing here surfaces real schema drift loudly
+/// instead of silently emitting zero authorization indexes.
+/// </summary>
+[TestFixture]
+public class Given_PrimaryAssociation_Missing_Required_Column_In_Strict_Mode
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        _exception = TestExceptions.CaptureException(() =>
+            AuthorizationIndexTestRunner.BuildStrict(ctx =>
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildStudentSchoolAssociationWithoutKeyColumn()
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_should_name_the_resource_and_missing_column()
+    {
+        _exception!.Message.Should().Contain("StudentSchoolAssociation");
+        _exception.Message.Should().Contain("SchoolId_Unified");
     }
 }
 
@@ -461,6 +498,104 @@ public class Given_Two_Builds_With_The_Same_Input
 }
 
 /// <summary>
+/// Test fixture asserting that an FK-support index and an Authorization index can target the
+/// same root-table column without tripping <c>ValidateIndexNameUniqueness</c> in
+/// <see cref="RelationalModelSetBuilderContext.BuildResult"/>. The <c>_Auth</c> suffix on
+/// authorization index names is the load-bearing differentiator; this test guards against a
+/// future change to <see cref="ConstraintNaming.BuildAuthorizationIndexName"/> dropping or
+/// shifting that suffix in a way that would collide with FK-support index names.
+/// </summary>
+[TestFixture]
+public class Given_FkSupport_And_Authorization_Index_On_Same_Column
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _result = AuthorizationIndexTestRunner.Build(ctx =>
+        {
+            ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildCourseWithEdOrgSecurable());
+
+            // Pre-seed an FK-support index targeting the same root column the auth pass will
+            // emit on. If the auth pass dropped its `_Auth` suffix, the names would collide
+            // and BuildResult would throw via ValidateIndexNameUniqueness.
+            var courseTable = new DbTableName(new DbSchemaName("edfi"), "Course");
+            var fkColumn = new DbColumnName("EducationOrganization_DocumentId");
+            ctx.IndexInventory.Add(
+                new DbIndexInfo(
+                    new DbIndexName(
+                        ConstraintNaming.BuildForeignKeySupportIndexName(courseTable, [fkColumn])
+                    ),
+                    courseTable,
+                    KeyColumns: [fkColumn],
+                    IsUnique: false,
+                    Kind: DbIndexKind.ForeignKeySupport
+                )
+            );
+        });
+    }
+
+    [Test]
+    public void It_should_emit_both_indexes_with_distinct_names()
+    {
+        var indexNames = _result
+            .IndexesInCreateOrder.Where(i => i.Table.Name == "Course")
+            .Select(i => i.Name.Value)
+            .ToArray();
+
+        indexNames.Should().HaveCount(2);
+        indexNames.Should().Contain("IX_Course_EducationOrganization_DocumentId");
+        indexNames.Should().Contain("IX_Course_EducationOrganization_DocumentId_Auth");
+    }
+}
+
+/// <summary>
+/// Test fixture asserting that authorization indexes appear in canonical
+/// <c>(schema, table, name)</c> order in <c>IndexesInCreateOrder</c> after the
+/// <see cref="CanonicalizeOrderingPass"/> runs. Guards against a future refactor to the new
+/// pass that introduces a non-deterministic data structure (e.g. iterating a <c>HashSet</c>):
+/// the canonicalize pass is the safety net, this test asserts it.
+/// </summary>
+[TestFixture]
+public class Given_Multiple_Authorization_Indexes_After_Canonicalize
+{
+    private DbIndexInfo[] _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Add resources in non-canonical order so canonicalization actually has work to do.
+        var result = AuthorizationIndexTestRunner.BuildWithCanonicalize(ctx =>
+        {
+            ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildStudentSchoolAssociation());
+            ctx.ConcreteResourcesInNameOrder.Add(
+                AuthIndexFixtureResources.BuildResourceWithNamespaceSecurable()
+            );
+            ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildStudentContactAssociation());
+        });
+
+        _authIndexes = result.IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization).ToArray();
+    }
+
+    [Test]
+    public void It_should_order_authorization_indexes_by_schema_table_then_name()
+    {
+        var sortKeys = _authIndexes
+            .Select(i => $"{i.Table.Schema.Value}|{i.Table.Name}|{i.Name.Value}")
+            .ToArray();
+        sortKeys.Should().BeInAscendingOrder(StringComparer.Ordinal);
+    }
+
+    [Test]
+    public void It_should_emit_at_least_two_authorization_indexes()
+    {
+        // Sanity check the test actually exercises ordering across multiple entries.
+        _authIndexes.Length.Should().BeGreaterOrEqualTo(2);
+    }
+}
+
+/// <summary>
 /// Test fixture asserting the canonical pass list contains
 /// <see cref="DeriveAuthorizationIndexInventoryPass"/> immediately after
 /// <see cref="DeriveAuthHierarchyPass"/> and before the dialect-shortening / canonicalize passes.
@@ -508,13 +643,36 @@ public class Given_The_Canonical_Pass_List
 /// </summary>
 internal static class AuthorizationIndexTestRunner
 {
-    public static DerivedRelationalModelSet Build(Action<RelationalModelSetBuilderContext> setup)
+    public static DerivedRelationalModelSet Build(Action<RelationalModelSetBuilderContext> setup) =>
+        BuildWith(setup, throwOnMissingPaLiteral: false, includeCanonicalize: false);
+
+    public static DerivedRelationalModelSet BuildStrict(Action<RelationalModelSetBuilderContext> setup) =>
+        BuildWith(setup, throwOnMissingPaLiteral: true, includeCanonicalize: false);
+
+    public static DerivedRelationalModelSet BuildWithCanonicalize(
+        Action<RelationalModelSetBuilderContext> setup
+    ) => BuildWith(setup, throwOnMissingPaLiteral: false, includeCanonicalize: true);
+
+    private static DerivedRelationalModelSet BuildWith(
+        Action<RelationalModelSetBuilderContext> setup,
+        bool throwOnMissingPaLiteral,
+        bool includeCanonicalize
+    )
     {
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder([
-            new SetupFixturePass(setup),
-            new DeriveAuthorizationIndexInventoryPass(),
-        ]);
+        IRelationalModelSetPass[] passes = includeCanonicalize
+            ?
+            [
+                new SetupFixturePass(setup),
+                new DeriveAuthorizationIndexInventoryPass(throwOnMissingPaLiteral),
+                new CanonicalizeOrderingPass(),
+            ]
+            :
+            [
+                new SetupFixturePass(setup),
+                new DeriveAuthorizationIndexInventoryPass(throwOnMissingPaLiteral),
+            ];
+        var builder = new DerivedRelationalModelSetBuilder(passes);
         return builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
 

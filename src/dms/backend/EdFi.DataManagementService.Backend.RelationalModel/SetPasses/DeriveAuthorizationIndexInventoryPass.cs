@@ -40,8 +40,20 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// (so all auth-classified entries are appended together) and before
 /// <c>ApplyDialectIdentifierShorteningPass</c> and <c>CanonicalizeOrderingPass</c> (so the new
 /// indexes participate in dialect-aware identifier shortening and canonical ordering).</para>
+/// <para><paramref name="throwOnMissingPaLiteral"/> selects the missing-literal contract:
+/// strict pipeline (production runtime) sets it <see langword="true"/> so a missing PA literal
+/// column raises <see cref="InvalidOperationException"/> and surfaces real schema drift;
+/// default pipeline leaves it <see langword="false"/> so synthetic test fixtures
+/// (<c>small/referential-identity</c>, <c>small/polymorphic</c>) that reuse PA resource names
+/// without carrying the post-key-unification columns continue to build.</para>
 /// </remarks>
-public sealed class DeriveAuthorizationIndexInventoryPass : IRelationalModelSetPass
+/// <param name="throwOnMissingPaLiteral">
+/// When <see langword="true"/>, throw if a PrimaryAssociation resource is present in the model
+/// set but its root table is missing the expected literal key or include column. When
+/// <see langword="false"/> (default), silently skip the PA emission instead.
+/// </param>
+public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaLiteral = false)
+    : IRelationalModelSetPass
 {
     private const string EdFiProjectName = "Ed-Fi";
 
@@ -95,7 +107,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass : IRelationalModelSetP
         EmitSecurableElementIndexes(context, paIndexCovered);
     }
 
-    private static HashSet<(DbTableName Table, DbColumnName Column)> EmitPrimaryAssociationIndexes(
+    private HashSet<(DbTableName Table, DbColumnName Column)> EmitPrimaryAssociationIndexes(
         RelationalModelSetBuilderContext context,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteByName
     )
@@ -110,32 +122,41 @@ public sealed class DeriveAuthorizationIndexInventoryPass : IRelationalModelSetP
             }
 
             var rootTable = concrete.RelationalModel.Root;
+            var canonicalKey = ResolveCanonical(rootTable, entry.KeyColumn);
+            var canonicalInclude = ResolveCanonical(rootTable, entry.IncludeColumn);
 
-            // Synthetic test fixtures may share a PA resource name without carrying the
-            // post-key-unification PA columns; treat a missing literal as a silent skip rather
-            // than fail the build. The authoritative golden manifests catch real schema drift.
-            if (
-                !TryResolveCanonicalColumn(rootTable, entry.KeyColumn, out var canonicalKey)
-                || !TryResolveCanonicalColumn(rootTable, entry.IncludeColumn, out var canonicalInclude)
-            )
+            if (canonicalKey is null || canonicalInclude is null)
             {
+                if (throwOnMissingPaLiteral)
+                {
+                    throw new InvalidOperationException(
+                        $"PrimaryAssociation '{entry.Resource.ProjectName}.{entry.Resource.ResourceName}' "
+                            + $"is present in the model set but root table "
+                            + $"'{rootTable.Table.Schema.Value}.{rootTable.Table.Name}' is missing literal "
+                            + $"column '{(canonicalKey is null ? entry.KeyColumn.Value : entry.IncludeColumn.Value)}'. "
+                            + $"Authorization index emission requires the post-key-unification column to exist."
+                    );
+                }
+
+                // Synthetic test fixtures may share a PA resource name without carrying the
+                // post-key-unification PA columns; treat as silent skip in default mode.
                 continue;
             }
 
             context.IndexInventory.Add(
                 new DbIndexInfo(
                     new DbIndexName(
-                        ConstraintNaming.BuildAuthorizationIndexName(rootTable.Table, [canonicalKey])
+                        ConstraintNaming.BuildAuthorizationIndexName(rootTable.Table, [canonicalKey.Value])
                     ),
                     rootTable.Table,
-                    KeyColumns: [canonicalKey],
+                    KeyColumns: [canonicalKey.Value],
                     IsUnique: false,
                     Kind: DbIndexKind.Authorization,
-                    IncludeColumns: [canonicalInclude]
+                    IncludeColumns: [canonicalInclude.Value]
                 )
             );
 
-            covered.Add((rootTable.Table, canonicalKey));
+            covered.Add((rootTable.Table, canonicalKey.Value));
         }
 
         return covered;
@@ -226,6 +247,15 @@ public sealed class DeriveAuthorizationIndexInventoryPass : IRelationalModelSetP
     /// matches the path (covers root-level scalars such as <c>$.namespace</c>). Throws when no
     /// match is found.
     /// </summary>
+    /// <remarks>
+    /// This duplicates the EdOrg/Namespace branches of
+    /// <c>EdFi.DataManagementService.Backend.Plans.SecurableElementColumnPathResolver</c>.
+    /// The duplication is intentional: <c>Backend.Plans</c> references <c>Backend.RelationalModel</c>,
+    /// so this pass cannot call the resolver directly without inverting the dependency.
+    /// Person-join branches (Student/Contact/Staff) are out of scope here. When DMS-1094 lands
+    /// the person-join indexes, consider extracting the shared resolution into a
+    /// <c>Backend.RelationalModel</c>-side helper that both call sites can consume.
+    /// </remarks>
     private static DbColumnName ResolveRootTableColumn(ConcreteResourceModel concrete, string jsonPath)
     {
         var model = concrete.RelationalModel;
@@ -244,7 +274,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass : IRelationalModelSetP
 
             if (identityBinding is not null)
             {
-                return WalkUnifiedAlias(rootTable, identityBinding.Column);
+                return ResolveCanonical(rootTable, identityBinding.Column) ?? identityBinding.Column;
             }
         }
 
@@ -255,7 +285,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass : IRelationalModelSetP
                 && string.Equals(column.SourceJsonPath.Value.Canonical, jsonPath, StringComparison.Ordinal)
             )
             {
-                return WalkUnifiedAlias(rootTable, column.ColumnName);
+                return ResolveCanonical(rootTable, column.ColumnName) ?? column.ColumnName;
             }
         }
 
@@ -267,50 +297,25 @@ public sealed class DeriveAuthorizationIndexInventoryPass : IRelationalModelSetP
         );
     }
 
-    /// <summary>
-    /// Walks a single <see cref="ColumnStorage.UnifiedAlias"/> step to the canonical column;
-    /// returns <paramref name="column"/> unchanged when the column does not exist or is stored.
-    /// </summary>
-    private static DbColumnName WalkUnifiedAlias(DbTableModel rootTable, DbColumnName column)
-    {
-        foreach (var col in rootTable.Columns)
-        {
-            if (col.ColumnName == column && col.Storage is ColumnStorage.UnifiedAlias alias)
-            {
-                return alias.CanonicalColumn;
-            }
-        }
-
-        return column;
-    }
-
     private static bool IsArrayNestedPath(string jsonPath) =>
         jsonPath.Contains("[*]", StringComparison.Ordinal);
 
     /// <summary>
     /// Resolves a literal column name on a root table to its canonical storage column by
     /// following any <see cref="ColumnStorage.UnifiedAlias.CanonicalColumn"/> indirection.
-    /// Returns <see langword="false"/> when no column with the literal name exists on the
-    /// table (the caller decides whether to skip silently or treat as an error).
+    /// Returns <see langword="null"/> when no column with the literal name exists on the
+    /// table — callers decide whether to treat that as a hard error or a silent skip.
     /// </summary>
-    private static bool TryResolveCanonicalColumn(
-        DbTableModel rootTable,
-        DbColumnName literal,
-        out DbColumnName canonical
-    )
+    private static DbColumnName? ResolveCanonical(DbTableModel rootTable, DbColumnName literal)
     {
         var column = rootTable.Columns.FirstOrDefault(c => c.ColumnName == literal);
 
         if (column is null)
         {
-            canonical = default;
-            return false;
+            return null;
         }
 
-        canonical = column.Storage is ColumnStorage.UnifiedAlias alias
-            ? alias.CanonicalColumn
-            : column.ColumnName;
-        return true;
+        return column.Storage is ColumnStorage.UnifiedAlias alias ? alias.CanonicalColumn : column.ColumnName;
     }
 
     private readonly record struct PrimaryAssociationIndex(
