@@ -1149,54 +1149,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits a type-aware text conversion for an identity column value in PostgreSQL.
-    /// Uses <c>::text</c> for most types (already ISO-stable) but explicit <c>to_char()</c>
-    /// for <see cref="ScalarKind.DateTime"/> where <c>::text</c> omits the ISO 8601 T separator.
+    /// Delegates to <see cref="DialectIdentityTextFormatter.PgsqlColumnToText"/> so the
+    /// trigger and the runtime reference-lookup verification SQL share one source of truth.
     /// </summary>
     private void EmitPgsqlColumnToText(SqlWriter writer, DbColumnName column, RelationalScalarType scalarType)
     {
-        var quoted = Quote(column);
-        switch (scalarType.Kind)
-        {
-            case ScalarKind.DateTime:
-                // PG timestamp::text gives 'YYYY-MM-DD HH:MM:SS' (space, no T).
-                // Use to_char with AT TIME ZONE 'UTC' to produce the ISO 8601 form with T
-                // separator and a literal Z suffix, independent of the session timezone.
-                //
-                // Core normalizes incoming DateTime values to UTC before persistence:
-                // JsonHelpers.TryNormalizeDateTimeString parses with
-                // DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal
-                // and emits yyyy-MM-ddTHH:mm:ssZ. AT TIME ZONE 'UTC' here ensures the
-                // trigger reproduces that canonical UTC form regardless of the session
-                // timezone, so the trigger-computed ReferentialId always matches what
-                // Core's ReferentialIdCalculator hashes.
-                // Precedent: PostgresqlReferenceLookupCommandBuilder uses the same form.
-                writer.Append("to_char(NEW.");
-                writer.Append(quoted);
-                writer.Append(" AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')");
-                break;
-
-            case ScalarKind.Decimal:
-                // Decimal columns carry column-scale trailing zeros (e.g., decimal(9,2) renders
-                // 1.50, 2.00) that Core never hashes — IdentityValueCanonicalizer strips them.
-                // Use two nested regexp_replace calls to strip trailing fractional zeros and then
-                // a trailing decimal point so the trigger output matches the Core canonical form.
-                //   regexp_replace(NEW.col::text, '(\.[0-9]*?)0+$', '\1') strips trailing zeros
-                //   after the decimal: 1.50 → 1.5, 2.00 → 2., 100 → 100 (no decimal, unchanged).
-                //   The outer regexp_replace(..., '\.$', '') then drops any resulting lone decimal
-                //   point: 2. → 2, 100 → 100 (unchanged).
-                // Cases verified: 1.50→1.5, 2.00→2, 100.00→100, 1.5→1.5, 100→100, 0→0, -1.50→-1.5.
-                writer.Append("regexp_replace(regexp_replace(NEW.");
-                writer.Append(quoted);
-                writer.Append("""::text, '(\.[0-9]*?)0+$', '\1'), '\.$', '')""");
-                break;
-
-            default:
-                // String, Int32, Int64, Date, Time, Boolean — ::text is deterministic.
-                writer.Append("NEW.");
-                writer.Append(quoted);
-                writer.Append("::text");
-                break;
-        }
+        var columnExpression = $"NEW.{Quote(column)}";
+        writer.Append(DialectIdentityTextFormatter.PgsqlColumnToText(columnExpression, scalarType));
     }
 
     private void EmitMssqlReferentialIdentityBody(
@@ -1347,8 +1306,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits a type-aware nvarchar conversion for an identity column value in MSSQL.
-    /// Uses deterministic CONVERT styles for temporal types to ensure cross-engine parity
-    /// with PostgreSQL and Core's <c>JsonValue.ToString()</c>.
+    /// Delegates to <see cref="DialectIdentityTextFormatter.MssqlColumnToNvarchar"/> so the
+    /// trigger and the runtime reference-lookup verification SQL share one source of truth.
     /// </summary>
     private void EmitMssqlColumnToNvarchar(
         SqlWriter writer,
@@ -1356,85 +1315,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         RelationalScalarType scalarType
     )
     {
-        var quoted = Quote(column);
-        switch (scalarType.Kind)
-        {
-            case ScalarKind.String:
-                // Already nvarchar — no cast needed.
-                writer.Append("i.");
-                writer.Append(quoted);
-                break;
-
-            case ScalarKind.Date:
-                // ISO 8601: YYYY-MM-DD (CONVERT style 23).
-                writer.Append("CONVERT(nvarchar(10), i.");
-                writer.Append(quoted);
-                writer.Append(", 23)");
-                break;
-
-            case ScalarKind.DateTime:
-                // ISO 8601: YYYY-MM-DDTHH:mm:ssZ (CONVERT style 126, truncated to 19 chars, with UTC Z suffix).
-                // Truncation to whole seconds matches PG to_char() which also omits fractional
-                // seconds, ensuring cross-engine identity hash parity. datetime2 is timezone-naive
-                // because Core normalizes incoming offsets to UTC before persistence, so appending
-                // the literal Z suffix is sufficient.
-                writer.Append("CONVERT(nvarchar(19), i.");
-                writer.Append(quoted);
-                writer.Append(", 126) + N'Z'");
-                break;
-
-            case ScalarKind.Time:
-                // HH:mm:ss (CONVERT style 108).
-                writer.Append("CONVERT(nvarchar(8), i.");
-                writer.Append(quoted);
-                writer.Append(", 108)");
-                break;
-
-            case ScalarKind.Boolean:
-                // CAST(bit AS nvarchar) produces '1'/'0', but Core's JsonValue.ToString()
-                // and PG bool::text both produce 'true'/'false'. Use CASE to match.
-                writer.Append("CASE WHEN i.");
-                writer.Append(quoted);
-                writer.Append(" = 1 THEN N'true' ELSE N'false' END");
-                break;
-
-            case ScalarKind.Decimal:
-                // Trim trailing fractional zeros and a trailing decimal point to match Core's
-                // canonical decimal form (no exponent, no trailing zeros, no trailing decimal
-                // point). Uses deterministic CAST/CHARINDEX/PATINDEX/LEFT/REVERSE — no FORMAT().
-                // Example transformations: 1.50 → 1.5, 2.00 → 2, 100.00 → 100, 1.5 → 1.5.
-                writer.Append("CASE WHEN CHARINDEX(N'.', CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max))) = 0 THEN CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max)) ELSE CASE WHEN RIGHT(LEFT(CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max)), LEN(CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max))) - PATINDEX('%[^0]%', REVERSE(CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max)))) + 1), 1) = N'.' THEN LEFT(CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max)), LEN(CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max))) - PATINDEX('%[^0]%', REVERSE(CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max))))) ELSE LEFT(CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max)), LEN(CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max))) - PATINDEX('%[^0]%', REVERSE(CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max)))) + 1) END END");
-                break;
-
-            default:
-                // Int32, Int64 — CAST is deterministic and matches Core/PG formatting.
-                writer.Append("CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max))");
-                break;
-        }
+        var columnExpression = $"i.{Quote(column)}";
+        writer.Append(DialectIdentityTextFormatter.MssqlColumnToNvarchar(columnExpression, scalarType));
     }
 
     /// <summary>

@@ -188,6 +188,30 @@ public class IdentityValueCanonicalizerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_CanonicalizeDecimal_With_Very_Small_Decimal : IdentityValueCanonicalizerTests
+    {
+        private string _result = string.Empty;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Smallest representable positive System.Decimal — historically risky because
+            // ToString("G29") would render this as "1E-28", diverging from the SQL trigger
+            // and lookup-verification expressions that emit fixed-point text.
+            _result = IdentityValueCanonicalizer.CanonicalizeDecimal("1e-28");
+        }
+
+        [Test]
+        public void It_emits_fixed_point_form_without_scientific_notation()
+        {
+            _result.Should().Be("0.0000000000000000000000000001");
+            _result.Should().NotContain("E");
+            _result.Should().NotContain("e");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_CreateDocumentIdentityElement_With_Descriptor_Path : IdentityValueCanonicalizerTests
     {
         private DocumentIdentityElement _result = null!;

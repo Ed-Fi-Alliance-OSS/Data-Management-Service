@@ -26,6 +26,7 @@ public class Given_ReferenceResolver
         "EducationOrganization"
     );
     private static readonly QualifiedResourceName _meetingResource = new("Ed-Fi", "Meeting");
+    private static readonly QualifiedResourceName _decimalKeyResource = new("Ed-Fi", "DecimalKeyResource");
     private static readonly QualifiedResourceName _schoolTypeDescriptorResource = new(
         "Ed-Fi",
         "SchoolTypeDescriptor"
@@ -268,6 +269,110 @@ public class Given_ReferenceResolver
             .SuccessfulDocumentReferencesByPath[new JsonPath("$.meetingReference")]
             .DocumentId.Should()
             .Be(404L);
+    }
+
+    [Test]
+    public async Task It_does_not_raise_corruption_for_matching_canonical_decimal_identity_verification_keys()
+    {
+        // Core canonicalizes decimal identity values to fixed-point with no trailing
+        // fractional zeros (e.g. "1.50" → "1.5"), and the trigger and lookup verification
+        // SQL must produce the same form. This test exercises the resolver path: when the
+        // adapter returns a canonical "$.decimalKey=1.5" key matching the request's
+        // ExpectedVerificationIdentityKey, EnsureLookupIntegrity must not throw.
+        const string CanonicalDecimalKey = "1.5";
+        var referentialId = new ReferentialId(Guid.NewGuid());
+        var adapter = new RecordingReferenceResolverAdapter([
+            [
+                new ReferenceLookupResult(
+                    ReferentialId: referentialId,
+                    DocumentId: 707,
+                    ResourceKeyId: 16,
+                    ReferentialIdentityResourceKeyId: 16,
+                    IsDescriptor: false,
+                    VerificationIdentityKey: $"$.decimalKey={CanonicalDecimalKey}"
+                ),
+            ],
+        ]);
+
+        var sut = new ReferenceResolver(adapter);
+
+        var result = await sut.ResolveAsync(
+            new ReferenceResolverRequest(
+                MappingSet: CreateMappingSet(),
+                RequestResource: _requestResource,
+                DocumentReferences:
+                [
+                    CreateDecimalKeyDocumentReference(
+                        referentialId,
+                        "$.decimalKeyReference",
+                        CanonicalDecimalKey
+                    ),
+                ],
+                DescriptorReferences: []
+            )
+        );
+
+        adapter.Requests.Should().ContainSingle();
+        adapter
+            .Requests[0]
+            .Lookups.Select(static lookup => lookup.ExpectedVerificationIdentityKey)
+            .Should()
+            .Equal($"$.decimalKey={CanonicalDecimalKey}");
+        result.InvalidDocumentReferences.Should().BeEmpty();
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.decimalKeyReference")]
+            .DocumentId.Should()
+            .Be(707L);
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_a_decimal_reference_lookup_returns_an_un_trimmed_verification_key()
+    {
+        // Regression guard for the verification-key parity contract: if the database side
+        // ever stops trimming trailing fractional zeros, EnsureLookupIntegrity must surface
+        // it as a corruption — silently mapping "$.decimalKey=1.50" onto a resolved
+        // "$.decimalKey=1.5" lookup would let mismatched references through.
+        const string CanonicalDecimalKey = "1.5";
+        const string UnTrimmedDecimalKey = "1.50";
+        var referentialId = new ReferentialId(Guid.NewGuid());
+        var adapter = new RecordingReferenceResolverAdapter([
+            [
+                new ReferenceLookupResult(
+                    ReferentialId: referentialId,
+                    DocumentId: 808,
+                    ResourceKeyId: 16,
+                    ReferentialIdentityResourceKeyId: 16,
+                    IsDescriptor: false,
+                    VerificationIdentityKey: $"$.decimalKey={UnTrimmedDecimalKey}"
+                ),
+            ],
+        ]);
+
+        var sut = new ReferenceResolver(adapter);
+
+        var act = async () =>
+            await sut.ResolveAsync(
+                new ReferenceResolverRequest(
+                    MappingSet: CreateMappingSet(),
+                    RequestResource: _requestResource,
+                    DocumentReferences:
+                    [
+                        CreateDecimalKeyDocumentReference(
+                            referentialId,
+                            "$.decimalKeyReference",
+                            CanonicalDecimalKey
+                        ),
+                    ],
+                    DescriptorReferences: []
+                )
+            );
+
+        var exception = await act.Should().ThrowAsync<ReferenceLookupCorruptionException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception.Which.Message.Should().Contain(referentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.decimalKeyReference");
+        exception.Which.Message.Should().Contain($"$.decimalKey={CanonicalDecimalKey}");
+        exception.Which.Message.Should().Contain($"$.decimalKey={UnTrimmedDecimalKey}");
     }
 
     [Test]
@@ -889,12 +994,13 @@ public class Given_ReferenceResolver
             false
         );
         var meetingKey = new ResourceKeyEntry(15, _meetingResource, "1.0", false);
+        var decimalKeyResourceKey = new ResourceKeyEntry(16, _decimalKeyResource, "1.0", false);
         var educationOrganizationKey = new ResourceKeyEntry(30, _educationOrganizationResource, "1.0", true);
         var effectiveSchema = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: EffectiveSchemaHash,
-            ResourceKeyCount: 7,
+            ResourceKeyCount: 8,
             ResourceKeySeedHash: new byte[32],
             SchemaComponentsInEndpointOrder: [],
             ResourceKeysInIdOrder:
@@ -905,6 +1011,7 @@ public class Given_ReferenceResolver
                 schoolTypeDescriptorKey,
                 academicSubjectDescriptorKey,
                 meetingKey,
+                decimalKeyResourceKey,
                 educationOrganizationKey,
             ]
         );
@@ -952,6 +1059,11 @@ public class Given_ReferenceResolver
                     meetingKey,
                     ResourceStorageKind.RelationalTables,
                     CreateRelationalResourceModel(_meetingResource, "Meeting")
+                ),
+                new ConcreteResourceModel(
+                    decimalKeyResourceKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateRelationalResourceModel(_decimalKeyResource, "DecimalKeyResource")
                 ),
             ],
             AbstractIdentityTablesInNameOrder: [],
@@ -1045,6 +1157,24 @@ public class Given_ReferenceResolver
             ),
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.meetingDateTime"), meetingDateTime),
+            ]),
+            ReferentialId: referentialId,
+            Path: new JsonPath(path)
+        );
+
+    private static DocumentReference CreateDecimalKeyDocumentReference(
+        ReferentialId referentialId,
+        string path,
+        string canonicalDecimalKey
+    ) =>
+        new(
+            ResourceInfo: new BaseResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("DecimalKeyResource"),
+                IsDescriptor: false
+            ),
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.decimalKey"), canonicalDecimalKey),
             ]),
             ReferentialId: referentialId,
             Path: new JsonPath(path)

@@ -40,6 +40,11 @@ internal static class IdentityValueCanonicalizer
     /// then emits: fixed-point, no exponent, no leading '+', single leading '0' before the
     /// decimal point, no trailing fractional zeros, no trailing decimal point,
     /// and signed-zero collapsed to '0'.
+    ///
+    /// Output must match the SQL identity-text formatters in <c>DialectIdentityTextFormatter</c>
+    /// (PG <c>::text</c> + regexp trimming, MSSQL <c>CAST AS nvarchar(max)</c> + trim CASE).
+    /// Both DB engines render <c>numeric</c>/<c>decimal</c> in fixed-point form, so this
+    /// canonicalizer must also stay fixed-point — never scientific notation.
     /// </summary>
     internal static string CanonicalizeDecimal(string identityValue)
     {
@@ -60,8 +65,12 @@ internal static class IdentityValueCanonicalizer
             return "0";
         }
 
-        // G29 produces fixed-point with up to 29 significant digits, no exponent,
-        // no trailing fractional zeros, and no trailing decimal point.
-        return parsed.ToString("G29", CultureInfo.InvariantCulture);
+        // Fixed-point custom format: integer digits always shown, up to 28 fractional
+        // digits with trailing zeros and a lone trailing decimal point trimmed. 28 is the
+        // maximum scale of System.Decimal. The 'G' standard specifier is intentionally
+        // avoided because it can switch to scientific notation for very small decimals
+        // (e.g., 1e-28 → "1E-28" with G29), which would diverge from the trigger and
+        // lookup-verification SQL output.
+        return parsed.ToString("0.############################", CultureInfo.InvariantCulture);
     }
 }
