@@ -31401,6 +31401,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_Assessment_Namespace_Aut
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_AssigningEducationOrgani_740e019634" ON "edfi"."AssessmentAdministration" ("AssigningEducationOrganization_DocumentId", "AssigningEducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_6a08acacdc" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_eb3b6a414e" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_DocumentId", "AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_be9dd67666" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_Namespace");
@@ -31418,6 +31420,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_DocumentId_Asses
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_Namespace_Auth" ON "edfi"."AssessmentBatteryPart" ("Assessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_7aa71ac21f" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_DocumentId", "ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_a3c7942e7c" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentIdentificationCode_AssessmentIdentifica_d001a0cb68" ON "edfi"."AssessmentIdentificationCode" ("AssessmentIdentificationSystemDescriptor_DescriptorId");
 
@@ -31969,6 +31973,8 @@ CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_PerformanceLevel
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_RequiredAssessme_70adae54f9" ON "edfi"."GraduationPlanRequiredAssessment" ("RequiredAssessmentAssessment_DocumentId", "RequiredAssessmentAssessment_AssessmentIdentifier", "RequiredAssessmentAssessment_Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_RequiredAssessme_8a46212213" ON "edfi"."GraduationPlanRequiredAssessment" ("RequiredAssessmentAssessment_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_AssessmentR_a87b789155" ON "edfi"."GraduationPlanRequiredAssessmentScore" ("AssessmentReportingMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_ParentColle_6344b15e70" ON "edfi"."GraduationPlanRequiredAssessmentScore" ("ParentCollectionItemId", "GraduationPlan_DocumentId");
@@ -32168,6 +32174,8 @@ CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Assessment_DocumentId_Assessm
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Namespace_Unified_Auth" ON "edfi"."ObjectiveAssessment" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_ParentObjectiveAssessment_Doc_e13dce6b30" ON "edfi"."ObjectiveAssessment" ("ParentObjectiveAssessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "ParentObjectiveAssessment_IdentificationCode");
+
+CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_2f06e55896" ON "edfi"."ObjectiveAssessmentAssessmentItem" ("AssessmentItemAssessmentItem_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_426e438585" ON "edfi"."ObjectiveAssessmentAssessmentItem" ("AssessmentItemAssessmentItem_DocumentId", "AssessmentItemAssessmentItem_AssessmentIdentifier", "AssessmentItemAssessmentItem_Namespace", "AssessmentItemAssessmentItem_IdentificationCode");
 
@@ -32765,6 +32773,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_AssessmentItemResultDescrip
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_ResponseIndicatorDescriptor_3ed8739479" ON "edfi"."StudentAssessmentItem" ("ResponseIndicatorDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_StudentAssessmentItemAssess_849300e440" ON "edfi"."StudentAssessmentItem" ("StudentAssessmentItemAssessmentItem_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_StudentAssessmentItemAssess_fbd3512e86" ON "edfi"."StudentAssessmentItem" ("StudentAssessmentItemAssessmentItem_DocumentId", "StudentAssessmentItemAssessmentItem_AssessmentIdentifier", "StudentAssessmentItemAssessmentItem_Namespace", "StudentAssessmentItemAssessmentItem_IdentificationCode");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentPerformanceLevel_AssessmentRepor_96f5ad07fb" ON "edfi"."StudentAssessmentPerformanceLevel" ("AssessmentReportingMethodDescriptor_DescriptorId");
@@ -32806,6 +32816,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentScoreResult_AssessmentReportingM_b46ee6ff10" ON "edfi"."StudentAssessmentScoreResult" ("AssessmentReportingMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentScoreResult_ResultDatatypeTypeDe_fe863b08fd" ON "edfi"."StudentAssessmentScoreResult" ("ResultDatatypeTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessment_Stude_1c600fbf33" ON "edfi"."StudentAssessmentStudentObjectiveAssessment" ("StudentObjectiveAssessmentObjectiveAssessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessment_Stude_230d3bb4b4" ON "edfi"."StudentAssessmentStudentObjectiveAssessment" ("StudentObjectiveAssessmentObjectiveAssessment_DocumentId", "StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7", "StudentObjectiveAssessmentObjectiveAssessment_Namespace", "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919");
 

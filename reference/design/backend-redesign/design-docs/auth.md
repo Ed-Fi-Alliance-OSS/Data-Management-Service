@@ -872,7 +872,7 @@ The high-level logic is as follows:
 
 Note that a securableElement might have multiple paths when key unification takes place. In this situation, the function should follow each path and pick the shortest one to minimize the number of joins. Use the canonical column instead of the alias, since the canonical column will be indexed.
 
-When the provided securableElement is a `Namespace` or an `EducationOrganization`, it should extract the column name directly (no need to visit references) because those are always available on the root resource table.
+When the provided securableElement is a `Namespace` or an `EducationOrganization`, it should extract the column name directly (no need to visit references) because those values are denormalized onto whichever table the reference lives on. For non-nested paths the column is on the root resource table; for array-nested paths (e.g. `$.requiredAssessments[*].assessmentReference.namespace` on `GraduationPlan`, or any of the other DS 5.2 resources that expose a nested namespace securable — `AssessmentAdministration`, `AssessmentBatteryPart`, `ObjectiveAssessment`, `StudentAssessment`, `StudentObjectiveAssessment`) the column is on the child collection table that owns the reference (e.g. `edfi.GraduationPlanRequiredAssessment.RequiredAssessmentAssessment_Namespace`). The index is emitted on whichever table the column is on; no traversal back to the root is required.
 
 For example if the `securableElement` is:
 

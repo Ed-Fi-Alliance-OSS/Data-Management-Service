@@ -336,28 +336,73 @@ public class Given_Resource_With_Namespace_Securable_On_Root_Scalar
 }
 
 /// <summary>
-/// Test fixture asserting array-nested securable element paths are silently skipped without
-/// raising an exception.
+/// Test fixture asserting an array-nested Namespace securable element resolves to a column on
+/// the child collection table (e.g. <c>$.requiredAssessments[*].assessmentReference.namespace</c>
+/// on a GraduationPlan-like resource resolves to the child table's namespace identity scalar)
+/// and emits an authorization index there.
 /// </summary>
 [TestFixture]
-public class Given_Securable_Element_With_Array_Nested_Path
+public class Given_Resource_With_Nested_Namespace_Securable
 {
-    private DerivedRelationalModelSet _result = default!;
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
 
     [SetUp]
     public void Setup()
     {
-        _result = AuthorizationIndexTestRunner.Build(ctx =>
-            ctx.ConcreteResourcesInNameOrder.Add(
-                AuthIndexFixtureResources.BuildResourceWithArrayNestedSecurable()
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithNestedNamespaceSecurable()
+                )
             )
-        );
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
     }
 
     [Test]
-    public void It_should_not_emit_any_authorization_indexes()
+    public void It_should_emit_a_single_index_on_the_child_collection_table()
     {
-        _result.IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization).Should().BeEmpty();
+        _authIndexes.Should().ContainSingle();
+        var index = _authIndexes.Single();
+        index.Table.Name.Should().Be("GraduationPlanLikeRequiredAssessment");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("RequiredAssessmentAssessment_Namespace");
+        index.IncludeColumns.Should().BeNull();
+    }
+}
+
+/// <summary>
+/// Test fixture asserting an array-nested EducationOrganization securable element resolves to
+/// a column on the child collection table and emits an authorization index there.
+/// </summary>
+[TestFixture]
+public class Given_Resource_With_Nested_EdOrg_Securable
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithNestedEdOrgSecurable()
+                )
+            )
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_emit_a_single_index_on_the_child_collection_table()
+    {
+        _authIndexes.Should().ContainSingle();
+        var index = _authIndexes.Single();
+        index.Table.Name.Should().Be("AssessmentAdministrationParticipationLikeAdministrationPoint");
+        index
+            .KeyColumns.Select(c => c.Value)
+            .Should()
+            .Equal("AdministeringOrganization_EducationOrganizationId");
+        index.IncludeColumns.Should().BeNull();
     }
 }
 
@@ -888,22 +933,168 @@ internal static class AuthIndexFixtureResources
         );
     }
 
-    public static ConcreteResourceModel BuildResourceWithArrayNestedSecurable()
+    public static ConcreteResourceModel BuildResourceWithNestedNamespaceSecurable()
     {
-        var columns = new[] { BuildScalarColumn(new DbColumnName("DocumentId")) };
+        var rootResourceName = "GraduationPlanLike";
+        var childTableName = new DbTableName(_edfiSchema, "GraduationPlanLikeRequiredAssessment");
+        var nestedNamespacePath = "$.requiredAssessments[*].assessmentReference.namespace";
+        var nestedNamespaceColumn = new DbColumnName("RequiredAssessmentAssessment_Namespace");
 
-        return BuildResource(
-            "ArrayNestedCarrier",
-            columns,
-            [],
-            new ResourceSecurableElements(
-                EducationOrganization: [new EdOrgSecurableElement("$.foo[*].bar", "Bar")],
-                Namespace: ["$.collection[*].namespace"],
+        var rootTable = new DbTableModel(
+            new DbTableName(_edfiSchema, rootResourceName),
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                $"PK_{rootResourceName}",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [BuildScalarColumn(new DbColumnName("DocumentId"))],
+            []
+        );
+
+        var childTable = new DbTableModel(
+            childTableName,
+            JsonPathExpressionCompiler.Compile("$.requiredAssessments[*]"),
+            new TableKey(
+                "PK_GraduationPlanLikeRequiredAssessment",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                BuildScalarColumn(new DbColumnName("CollectionItemId")),
+                BuildScalarColumn(new DbColumnName("RequiredAssessmentAssessment_DocumentId")),
+                BuildScalarColumn(nestedNamespaceColumn),
+            ],
+            []
+        );
+
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile(
+                "$.requiredAssessments[*].assessmentReference"
+            ),
+            Table: childTableName,
+            FkColumn: new DbColumnName("RequiredAssessmentAssessment_DocumentId"),
+            TargetResource: new QualifiedResourceName(EdFi, "Assessment"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.assessmentIdentifier"),
+                    JsonPathExpressionCompiler.Compile(
+                        "$.requiredAssessments[*].assessmentReference.assessmentIdentifier"
+                    ),
+                    new DbColumnName("RequiredAssessmentAssessment_AssessmentIdentifier")
+                ),
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.namespace"),
+                    JsonPathExpressionCompiler.Compile(nestedNamespacePath),
+                    nestedNamespaceColumn
+                ),
+            ]
+        );
+
+        var qualifiedName = new QualifiedResourceName(EdFi, rootResourceName);
+        var resourceKey = new ResourceKeyEntry(1, qualifiedName, "1.0.0", false);
+        var relationalModel = new RelationalResourceModel(
+            qualifiedName,
+            _edfiSchema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable, childTable],
+            [binding],
+            []
+        );
+
+        return new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)
+        {
+            SecurableElements = new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [nestedNamespacePath],
                 Student: [],
                 Contact: [],
                 Staff: []
-            )
+            ),
+        };
+    }
+
+    public static ConcreteResourceModel BuildResourceWithNestedEdOrgSecurable()
+    {
+        var rootResourceName = "AssessmentAdministrationParticipationLike";
+        var childTableName = new DbTableName(
+            _edfiSchema,
+            "AssessmentAdministrationParticipationLikeAdministrationPoint"
         );
+        var nestedEdOrgPath =
+            "$.assessmentAdministrationPoints[*].administeringOrganizationReference.educationOrganizationId";
+        var nestedEdOrgColumn = new DbColumnName("AdministeringOrganization_EducationOrganizationId");
+
+        var rootTable = new DbTableModel(
+            new DbTableName(_edfiSchema, rootResourceName),
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                $"PK_{rootResourceName}",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [BuildScalarColumn(new DbColumnName("DocumentId"))],
+            []
+        );
+
+        var childTable = new DbTableModel(
+            childTableName,
+            JsonPathExpressionCompiler.Compile("$.assessmentAdministrationPoints[*]"),
+            new TableKey(
+                "PK_AssessmentAdministrationParticipationLikeAdministrationPoint",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                BuildScalarColumn(new DbColumnName("CollectionItemId")),
+                BuildScalarColumn(new DbColumnName("AdministeringOrganization_DocumentId")),
+                BuildScalarColumn(nestedEdOrgColumn),
+            ],
+            []
+        );
+
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile(
+                "$.assessmentAdministrationPoints[*].administeringOrganizationReference"
+            ),
+            Table: childTableName,
+            FkColumn: new DbColumnName("AdministeringOrganization_DocumentId"),
+            TargetResource: new QualifiedResourceName(EdFi, "EducationOrganization"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.educationOrganizationId"),
+                    JsonPathExpressionCompiler.Compile(nestedEdOrgPath),
+                    nestedEdOrgColumn
+                ),
+            ]
+        );
+
+        var qualifiedName = new QualifiedResourceName(EdFi, rootResourceName);
+        var resourceKey = new ResourceKeyEntry(1, qualifiedName, "1.0.0", false);
+        var relationalModel = new RelationalResourceModel(
+            qualifiedName,
+            _edfiSchema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable, childTable],
+            [binding],
+            []
+        );
+
+        return new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)
+        {
+            SecurableElements = new ResourceSecurableElements(
+                EducationOrganization:
+                [
+                    new EdOrgSecurableElement(nestedEdOrgPath, "EducationOrganizationId"),
+                ],
+                Namespace: [],
+                Student: [],
+                Contact: [],
+                Staff: []
+            ),
+        };
     }
 
     public static ConcreteResourceModel BuildResourceWithPersonSecurables()

@@ -187,7 +187,12 @@ public sealed record DbIndexInfo(
     DbTableName Table,
     IReadOnlyList<DbColumnName> KeyColumns,
     bool IsUnique,
-    DbIndexKind Kind
+    DbIndexKind Kind,
+    // Optional non-key columns to include in the index leaf pages (SQL `INCLUDE` clause).
+    // Null and empty are treated identically by emitters: no `INCLUDE` clause.
+    // Required by the five `PrimaryAssociation` authorization indexes (see `auth.md`); null elsewhere.
+    // Manifest serialization: omitted when null/empty, otherwise emitted as `"include_columns": [...]`.
+    IReadOnlyList<DbColumnName>? IncludeColumns = null
 );
 
 public enum DbTriggerKind

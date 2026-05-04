@@ -164,7 +164,10 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
     /// <summary>
     /// Emits authorization indexes for EducationOrganization and Namespace securable elements
-    /// declared on each concrete resource. Indexes resolve to a single root-table column.
+    /// declared on each concrete resource. Indexes resolve to a single column on whichever table
+    /// stores the value — root for non-nested paths, child for array-nested paths
+    /// (e.g. <c>$.requiredAssessments[*].assessmentReference.namespace</c> resolves to the
+    /// child collection table that holds the nested namespace identity scalar).
     /// </summary>
     /// <remarks>
     /// Both EdOrg and Namespace paths are skipped when a PrimaryAssociation index already covers
@@ -172,10 +175,9 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     /// — current Ed-Fi schemas don't put Namespace on a PA key column, but symmetric coverage
     /// makes the pass robust to extension schemas that might. Repeat emissions to the same
     /// <c>(table, column)</c> are coalesced globally — this protects index-name uniqueness when
-    /// an EdOrg and Namespace path resolve to the same root column on a single resource, AND
-    /// when multiple concrete resources share the same physical root table (e.g. descriptors
-    /// backed by <c>dms.Descriptor</c>). Array-nested paths (containing <c>[*]</c>) are silently
-    /// skipped (DMS-1094 scope).
+    /// an EdOrg and Namespace path resolve to the same column on a single resource, AND
+    /// when multiple concrete resources share the same physical table (e.g. descriptors
+    /// backed by <c>dms.Descriptor</c>).
     /// </remarks>
     private static void EmitSecurableElementIndexes(
         RelationalModelSetBuilderContext context,
@@ -186,28 +188,16 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
         foreach (var concrete in context.ConcreteResourcesInNameOrder)
         {
-            var rootTable = concrete.RelationalModel.Root;
-
             foreach (var jsonPath in concrete.SecurableElements.EducationOrganization.Select(e => e.JsonPath))
             {
-                if (IsArrayNestedPath(jsonPath))
-                {
-                    continue;
-                }
-
-                var column = ResolveRootTableColumn(concrete, jsonPath);
-                AddSecurableElementIndex(context, rootTable.Table, column, emitted);
+                var (table, column) = ResolveSecurableElementLocation(concrete, jsonPath);
+                AddSecurableElementIndex(context, table, column, emitted);
             }
 
             foreach (var namespacePath in concrete.SecurableElements.Namespace)
             {
-                if (IsArrayNestedPath(namespacePath))
-                {
-                    continue;
-                }
-
-                var column = ResolveRootTableColumn(concrete, namespacePath);
-                AddSecurableElementIndex(context, rootTable.Table, column, emitted);
+                var (table, column) = ResolveSecurableElementLocation(concrete, namespacePath);
+                AddSecurableElementIndex(context, table, column, emitted);
             }
         }
     }
@@ -237,64 +227,88 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     }
 
     /// <summary>
-    /// Resolves a securable element JSON path to a single root-table canonical column.
-    /// First checks <see cref="DocumentReferenceBinding"/>s on the root table for a matching
-    /// <c>ReferenceJsonPath</c>; falls back to a scalar root-column whose <c>SourceJsonPath</c>
-    /// matches the path (covers root-level scalars such as <c>$.namespace</c>). Throws when no
-    /// match is found.
+    /// Resolves a securable element JSON path to its <c>(table, column)</c> location on the
+    /// derived relational model. Walks every <see cref="DocumentReferenceBinding"/> (root or
+    /// child) for an identity binding whose <c>ReferenceJsonPath</c> matches the securable path;
+    /// falls back to scanning every table for a scalar column whose <c>SourceJsonPath</c>
+    /// matches (covers root-level scalars such as <c>$.namespace</c>). Throws when no match is
+    /// found.
     /// </summary>
     /// <remarks>
-    /// This duplicates the EdOrg/Namespace branches of
+    /// <para>Array-nested paths (containing <c>[*]</c>) resolve onto the child collection table
+    /// that owns the nested reference — for example
+    /// <c>$.requiredAssessments[*].assessmentReference.namespace</c> on
+    /// <c>edfi.GraduationPlan</c> resolves to
+    /// <c>edfi.GraduationPlanRequiredAssessment.RequiredAssessmentAssessment_Namespace</c>.
+    /// Non-nested paths still resolve to the root table because their bindings live there.</para>
+    /// <para>This duplicates the EdOrg/Namespace branches of
     /// <c>EdFi.DataManagementService.Backend.Plans.SecurableElementColumnPathResolver</c>.
     /// The duplication is intentional: <c>Backend.Plans</c> references <c>Backend.RelationalModel</c>,
     /// so this pass cannot call the resolver directly without inverting the dependency.
     /// Person-join branches (Student/Contact/Staff) are out of scope here. When DMS-1094 lands
     /// the person-join indexes, consider extracting the shared resolution into a
-    /// <c>Backend.RelationalModel</c>-side helper that both call sites can consume.
+    /// <c>Backend.RelationalModel</c>-side helper that both call sites can consume.</para>
     /// </remarks>
-    private static DbColumnName ResolveRootTableColumn(ConcreteResourceModel concrete, string jsonPath)
+    private static (DbTableName Table, DbColumnName Column) ResolveSecurableElementLocation(
+        ConcreteResourceModel concrete,
+        string jsonPath
+    )
     {
         var model = concrete.RelationalModel;
-        var rootTable = model.Root;
 
         foreach (var binding in model.DocumentReferenceBindings)
         {
-            if (binding.Table != rootTable.Table)
-            {
-                continue;
-            }
-
             var identityBinding = binding.IdentityBindings.FirstOrDefault(ib =>
                 string.Equals(ib.ReferenceJsonPath.Canonical, jsonPath, StringComparison.Ordinal)
             );
 
-            if (identityBinding is not null)
+            if (identityBinding is null)
             {
-                return ResolveCanonical(rootTable, identityBinding.Column) ?? identityBinding.Column;
+                continue;
             }
+
+            var owningTable = FindTableModel(model, binding.Table, concrete);
+            var canonical = ResolveCanonical(owningTable, identityBinding.Column) ?? identityBinding.Column;
+            return (binding.Table, canonical);
         }
 
-        foreach (var column in rootTable.Columns)
+        foreach (var table in model.TablesInDependencyOrder)
         {
-            if (
-                column.SourceJsonPath is not null
-                && string.Equals(column.SourceJsonPath.Value.Canonical, jsonPath, StringComparison.Ordinal)
-            )
+            foreach (var column in table.Columns)
             {
-                return ResolveCanonical(rootTable, column.ColumnName) ?? column.ColumnName;
+                if (
+                    column.SourceJsonPath is not null
+                    && string.Equals(
+                        column.SourceJsonPath.Value.Canonical,
+                        jsonPath,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    var canonical = ResolveCanonical(table, column.ColumnName) ?? column.ColumnName;
+                    return (table.Table, canonical);
+                }
             }
         }
 
         var resource = concrete.ResourceKey.Resource;
         throw new InvalidOperationException(
             $"Authorization index emission for '{resource.ProjectName}.{resource.ResourceName}' "
-                + $"could not resolve securable element JSON path '{jsonPath}' to a column on root table "
-                + $"'{rootTable.Table.Schema.Value}.{rootTable.Table.Name}'."
+                + $"could not resolve securable element JSON path '{jsonPath}' to a column on any table."
         );
     }
 
-    private static bool IsArrayNestedPath(string jsonPath) =>
-        jsonPath.Contains("[*]", StringComparison.Ordinal);
+    private static DbTableModel FindTableModel(
+        RelationalResourceModel model,
+        DbTableName tableName,
+        ConcreteResourceModel concrete
+    ) =>
+        model.TablesInDependencyOrder.FirstOrDefault(t => t.Table == tableName)
+        ?? throw new InvalidOperationException(
+            $"DocumentReferenceBinding for '{concrete.ResourceKey.Resource.ResourceName}' references "
+                + $"table '{tableName.Schema.Value}.{tableName.Name}' which is not present in "
+                + "TablesInDependencyOrder."
+        );
 
     /// <summary>
     /// Resolves a literal column name on a root table to its canonical storage column by

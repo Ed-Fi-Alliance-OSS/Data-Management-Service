@@ -427,3 +427,131 @@ public class Given_A_Model_Set_With_NullOrTrue_Constraint_When_Emitting_Detailed
         );
     }
 }
+
+[TestFixture]
+public class Given_An_Index_With_Include_Columns_When_Emitting_Manifest
+{
+    private string _manifest = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new DbSchemaName("edfi");
+        var table = new DbTableName(schema, "StudentSchoolAssociation");
+
+        var indexWithInclude = new DbIndexInfo(
+            new DbIndexName("IX_StudentSchoolAssociation_SchoolId_Unified_Auth"),
+            table,
+            KeyColumns: [new DbColumnName("SchoolId_Unified")],
+            IsUnique: false,
+            Kind: DbIndexKind.Authorization,
+            IncludeColumns: [new DbColumnName("Student_DocumentId")]
+        );
+
+        var indexWithoutInclude = new DbIndexInfo(
+            new DbIndexName("IX_StudentSchoolAssociation_PlainKey"),
+            table,
+            KeyColumns: [new DbColumnName("PlainKey")],
+            IsUnique: false,
+            Kind: DbIndexKind.ForeignKeySupport,
+            IncludeColumns: null
+        );
+
+        var indexWithEmptyInclude = new DbIndexInfo(
+            new DbIndexName("IX_StudentSchoolAssociation_EmptyInclude"),
+            table,
+            KeyColumns: [new DbColumnName("EmptyIncludeKey")],
+            IsUnique: false,
+            Kind: DbIndexKind.ForeignKeySupport,
+            IncludeColumns: []
+        );
+
+        var derivedSet = BuildEmptyModelSetWithIndexes([
+            indexWithInclude,
+            indexWithoutInclude,
+            indexWithEmptyInclude,
+        ]);
+
+        _manifest = DerivedModelSetManifestEmitter.Emit(derivedSet);
+    }
+
+    [Test]
+    public void It_should_round_trip_include_columns_when_present()
+    {
+        var entry = SingleIndexByName("IX_StudentSchoolAssociation_SchoolId_Unified_Auth");
+
+        var includeColumns =
+            entry["include_columns"] as JsonArray
+            ?? throw new InvalidOperationException("Expected include_columns to be a JSON array.");
+
+        includeColumns.Select(c => c!.GetValue<string>()).Should().Equal("Student_DocumentId");
+    }
+
+    [Test]
+    public void It_should_omit_include_columns_when_null()
+    {
+        var entry = SingleIndexByName("IX_StudentSchoolAssociation_PlainKey");
+        entry.ContainsKey("include_columns").Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_omit_include_columns_when_empty()
+    {
+        var entry = SingleIndexByName("IX_StudentSchoolAssociation_EmptyInclude");
+        entry.ContainsKey("include_columns").Should().BeFalse();
+    }
+
+    private JsonObject SingleIndexByName(string indexName)
+    {
+        var root =
+            JsonNode.Parse(_manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        var indexes =
+            root["indexes"] as JsonArray
+            ?? throw new InvalidOperationException("Expected indexes to be a JSON array.");
+
+        return indexes.OfType<JsonObject>().Single(i => i["name"]!.GetValue<string>() == indexName);
+    }
+
+    private static DerivedRelationalModelSet BuildEmptyModelSetWithIndexes(IReadOnlyList<DbIndexInfo> indexes)
+    {
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "hash",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo(
+                    ProjectEndpointName: "ed-fi",
+                    ProjectName: "Ed-Fi",
+                    ProjectVersion: "1.0.0",
+                    IsExtensionProject: false,
+                    ProjectHash: "hash"
+                ),
+            ],
+            ResourceKeysInIdOrder: []
+        );
+
+        return new DerivedRelationalModelSet(
+            effectiveSchema,
+            SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder:
+            [
+                new ProjectSchemaInfo(
+                    ProjectEndpointName: "ed-fi",
+                    ProjectName: "Ed-Fi",
+                    ProjectVersion: "1.0.0",
+                    IsExtensionProject: false,
+                    PhysicalSchema: new DbSchemaName("edfi")
+                ),
+            ],
+            ConcreteResourcesInNameOrder: [],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: indexes,
+            TriggersInCreateOrder: []
+        );
+    }
+}
