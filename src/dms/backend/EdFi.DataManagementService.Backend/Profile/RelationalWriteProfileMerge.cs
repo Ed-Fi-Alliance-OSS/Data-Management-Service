@@ -177,13 +177,24 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             rootBuilder.AddMergedRow(mergedRow);
         }
 
-        // Parent physical row identity values for top-level collections: the merged root
-        // row's values, used as the parent-key-part source for any top-level collection
-        // candidates.
-        IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues =
+        // Project the merged root row down to physical-row-identity slot order. The walker
+        // forwards these to nested-collection synthesis, where ParentKeyPart.Index is a
+        // physical-identity slot ordinal — not a binding ordinal — so binding-indexed
+        // values would only happen to align when the root identity column is binding 0.
+        // The projection requires every PhysicalRowIdentityColumn to be present in
+        // ColumnBindings; the root will satisfy that whenever any top-level collection
+        // table actually binds a ParentKeyPart, so skip the projection when it cannot run
+        // (synthetic non-collection root plans omit some bindings) and pass an empty
+        // identity slice the walker will not consume.
+        IReadOnlyList<FlattenedWriteValue> rootRowValues =
             rootTableState.MergedRows.Length > 0
                 ? rootTableState.MergedRows[0].Values
                 : request.FlattenedWriteSet.RootRow.Values;
+        IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues = CanProjectPhysicalRowIdentity(
+            rootTable
+        )
+            ? RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(rootTable, rootRowValues)
+            : [];
 
         // 1a. Top-level collection merge — runs unconditionally so that stored-only
         //     "delete-all-visible" scenarios (spec Section 7.7) are driven from the union
@@ -809,6 +820,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 or WriteValueSource.DescriptorReference
                 or WriteValueSource.DocumentReference
                 or WriteValueSource.ReferenceDerived;
+
+    private static bool CanProjectPhysicalRowIdentity(TableWritePlan tablePlan) =>
+        tablePlan.TableModel.IdentityMetadata.PhysicalRowIdentityColumns.All(columnName =>
+            tablePlan.ColumnBindings.Any(binding => binding.Column.ColumnName.Equals(columnName))
+        );
 
     private static ImmutableArray<FlattenedWriteValue> RewriteSeparateScopeParentKeyParts(
         TableWritePlan tablePlan,
