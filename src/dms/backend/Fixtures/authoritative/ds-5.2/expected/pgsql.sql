@@ -31371,9 +31371,15 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_Namespace_Auth" ON "dms"."Descriptor" ("Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_DocumentId_School_SchoolId" ON "edfi"."AcademicWeek" ("School_DocumentId", "School_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_SchoolId_Auth" ON "edfi"."AcademicWeek" ("School_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_EducationOrganization_Docume_948ccf647c" ON "edfi"."AccountabilityRating" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_EducationOrganization_Educat_f537a18855" ON "edfi"."AccountabilityRating" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_SchoolYear_DocumentId_School_18e0450be9" ON "edfi"."AccountabilityRating" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
 
@@ -31385,13 +31391,19 @@ CREATE INDEX IF NOT EXISTS "IX_Assessment_EducationOrganization_DocumentId_Educa
 
 CREATE INDEX IF NOT EXISTS "IX_Assessment_MandatingEducationOrganization_Documen_b1e1c8338e" ON "edfi"."Assessment" ("MandatingEducationOrganization_DocumentId", "MandatingEducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_Assessment_Namespace_Auth" ON "edfi"."Assessment" ("Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAcademicSubject_AcademicSubjectDescript_df1d6c899a" ON "edfi"."AssessmentAcademicSubject" ("AcademicSubjectDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_Assessment_DocumentId_As_4aaa865d9c" ON "edfi"."AssessmentAdministration" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_Assessment_Namespace_Auth" ON "edfi"."AssessmentAdministration" ("Assessment_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_AssigningEducationOrgani_740e019634" ON "edfi"."AssessmentAdministration" ("AssigningEducationOrganization_DocumentId", "AssigningEducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_eb3b6a414e" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_DocumentId", "AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_be9dd67666" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_ebc64f959a" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId");
 
@@ -31403,6 +31415,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentAssessedGradeLevel_GradeLevelDescriptor
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_DocumentId_Asses_8c70afe1cb" ON "edfi"."AssessmentBatteryPart" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_Namespace_Auth" ON "edfi"."AssessmentBatteryPart" ("Assessment_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_7aa71ac21f" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_DocumentId", "ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentIdentificationCode_AssessmentIdentifica_d001a0cb68" ON "edfi"."AssessmentIdentificationCode" ("AssessmentIdentificationSystemDescriptor_DescriptorId");
@@ -31410,6 +31424,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentIdentificationCode_AssessmentIdentifica
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_AssessmentItemCategoryDescriptor_DescriptorId" ON "edfi"."AssessmentItem" ("AssessmentItemCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_Assessment_DocumentId_Assessment_A_842a748556" ON "edfi"."AssessmentItem" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_Assessment_Namespace_Auth" ON "edfi"."AssessmentItem" ("Assessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItemLearningStandard_LearningStandard_D_c452f3d7ad" ON "edfi"."AssessmentItemLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
 
@@ -31437,6 +31453,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_AssessmentRe
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_Assessment_D_6670461100" ON "edfi"."AssessmentScoreRangeLearningStandard" ("Assessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_Namespace_Unified_Auth" ON "edfi"."AssessmentScoreRangeLearningStandard" ("Namespace_Unified");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_ObjectiveAss_7be51e2999" ON "edfi"."AssessmentScoreRangeLearningStandard" ("ObjectiveAssessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "ObjectiveAssessment_IdentificationCode");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandardLearningStand_d563784bff" ON "edfi"."AssessmentScoreRangeLearningStandardLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
@@ -31446,6 +31464,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentSection_SectionOrProgramChoiceSection_D
 CREATE INDEX IF NOT EXISTS "IX_BalanceSheetDimensionReportingTag_ReportingTagDes_4acd49a94e" ON "edfi"."BalanceSheetDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_BellSchedule_School_DocumentId_School_SchoolId" ON "edfi"."BellSchedule" ("School_DocumentId", "School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_BellSchedule_School_SchoolId_Auth" ON "edfi"."BellSchedule" ("School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_BellScheduleClassPeriod_ClassPeriod_DocumentId_Cl_5e988a8315" ON "edfi"."BellScheduleClassPeriod" ("ClassPeriod_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId");
 
@@ -31457,7 +31477,11 @@ CREATE INDEX IF NOT EXISTS "IX_Calendar_SchoolYear_DocumentId_SchoolYear_SchoolY
 
 CREATE INDEX IF NOT EXISTS "IX_Calendar_School_DocumentId_School_SchoolId" ON "edfi"."Calendar" ("School_DocumentId", "School_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_Calendar_School_SchoolId_Auth" ON "edfi"."Calendar" ("School_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_CalendarDate_Calendar_DocumentId_Calendar_Calenda_4c064e49f6" ON "edfi"."CalendarDate" ("Calendar_DocumentId", "Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear");
+
+CREATE INDEX IF NOT EXISTS "IX_CalendarDate_Calendar_SchoolId_Auth" ON "edfi"."CalendarDate" ("Calendar_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_CalendarDateCalendarEvent_CalendarEventDescriptor_af9d32ea95" ON "edfi"."CalendarDateCalendarEvent" ("CalendarEventDescriptor_DescriptorId");
 
@@ -31468,6 +31492,8 @@ CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_AccountTypeDescriptor_DescriptorId
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_BalanceSheetBalanceSheetDimension__77028b2a34" ON "edfi"."ChartOfAccount" ("BalanceSheetBalanceSheetDimension_DocumentId", "BalanceSheetBalanceSheetDimension_Code", "FiscalYear_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_EducationOrganization_DocumentId_E_6fdf282990" ON "edfi"."ChartOfAccount" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_EducationOrganization_EducationOrg_76ed18ffae" ON "edfi"."ChartOfAccount" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_FunctionFunctionDimension_Document_eef47fa2c8" ON "edfi"."ChartOfAccount" ("FunctionFunctionDimension_DocumentId", "FunctionFunctionDimension_Code", "FiscalYear_Unified");
 
@@ -31487,6 +31513,8 @@ CREATE INDEX IF NOT EXISTS "IX_ChartOfAccountReportingTag_ReportingTagDescriptor
 
 CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_School_DocumentId_School_SchoolId" ON "edfi"."ClassPeriod" ("School_DocumentId", "School_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_School_SchoolId_Auth" ON "edfi"."ClassPeriod" ("School_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_Cohort_AcademicSubjectDescriptor_DescriptorId" ON "edfi"."Cohort" ("AcademicSubjectDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Cohort_CohortScopeDescriptor_DescriptorId" ON "edfi"."Cohort" ("CohortScopeDescriptor_DescriptorId");
@@ -31495,9 +31523,13 @@ CREATE INDEX IF NOT EXISTS "IX_Cohort_CohortTypeDescriptor_DescriptorId" ON "edf
 
 CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_DocumentId_Education_ba449af31d" ON "edfi"."Cohort" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Cohort" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_CohortProgram_ProgramProgram_DocumentId_ProgramPr_8646255645" ON "edfi"."CohortProgram" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CohortProgram_ProgramProgram_ProgramTypeDescripto_e0981001db" ON "edfi"."CohortProgram" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_CommunityOrganization_CommunityOrganizationId_Auth" ON "edfi"."CommunityOrganization" ("CommunityOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganization_OperationalStatusDescriptor_38236c5b77" ON "edfi"."CommunityOrganization" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -31528,6 +31560,8 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationInternationalAddress_Address
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationInternationalAddress_Country_2e04d851f0" ON "edfi"."CommunityOrganizationInternationalAddress" ("CountryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_CommunityOrganization_DocumentI_6439e110f4" ON "edfi"."CommunityProvider" ("CommunityOrganization_DocumentId", "CommunityOrganization_CommunityOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_CommunityProviderId_Auth" ON "edfi"."CommunityProvider" ("CommunityProviderId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_OperationalStatusDescriptor_DescriptorId" ON "edfi"."CommunityProvider" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -31563,6 +31597,8 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityProviderInternationalAddress_AddressType
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderInternationalAddress_CountryDesc_251c80d4ea" ON "edfi"."CommunityProviderInternationalAddress" ("CountryDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CommunityProvider_Commun_9423a8e741" ON "edfi"."CommunityProviderLicense" ("CommunityProvider_CommunityProviderId");
+
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CommunityProvider_Docume_951744ac2d" ON "edfi"."CommunityProviderLicense" ("CommunityProvider_DocumentId", "CommunityProvider_CommunityProviderId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_LicenseStatusDescriptor__6e90582275" ON "edfi"."CommunityProviderLicense" ("LicenseStatusDescriptor_DescriptorId");
@@ -31570,6 +31606,8 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_LicenseStatusDescriptor_
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_LicenseTypeDescriptor_DescriptorId" ON "edfi"."CommunityProviderLicense" ("LicenseTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_EducationOrganization_Documen_48a1eb7053" ON "edfi"."CompetencyObjective" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_EducationOrganization_Educati_a28fdc9a3d" ON "edfi"."CompetencyObjective" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_ObjectiveGradeLevelDescriptor_73996cb9eb" ON "edfi"."CompetencyObjective" ("ObjectiveGradeLevelDescriptor_DescriptorId");
 
@@ -31619,6 +31657,8 @@ CREATE INDEX IF NOT EXISTS "IX_Course_CourseGPAApplicabilityDescriptor_Descripto
 
 CREATE INDEX IF NOT EXISTS "IX_Course_EducationOrganization_DocumentId_Education_9577d6193a" ON "edfi"."Course" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_Course_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Course" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_Course_MaximumAvailableCreditTypeDescriptor_DescriptorId" ON "edfi"."Course" ("MaximumAvailableCreditTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Course_MinimumAvailableCreditTypeDescriptor_DescriptorId" ON "edfi"."Course" ("MinimumAvailableCreditTypeDescriptor_DescriptorId");
@@ -31636,6 +31676,8 @@ CREATE INDEX IF NOT EXISTS "IX_CourseLevelCharacteristic_CourseLevelCharacterist
 CREATE INDEX IF NOT EXISTS "IX_CourseOfferedGradeLevel_GradeLevelDescriptor_DescriptorId" ON "edfi"."CourseOfferedGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseOffering_Course_DocumentId_Course_CourseCod_641d77edbe" ON "edfi"."CourseOffering" ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_CourseOffering_SchoolId_Unified_Auth" ON "edfi"."CourseOffering" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseOffering_School_DocumentId_SchoolId_Unified" ON "edfi"."CourseOffering" ("School_DocumentId", "SchoolId_Unified");
 
@@ -31663,6 +31705,8 @@ CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_ResponsibleTeacherStaff_Document
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_StudentAcademicRecord_DocumentId_f9f08f1d40" ON "edfi"."CourseTranscript" ("StudentAcademicRecord_DocumentId", "StudentAcademicRecord_EducationOrganizationId", "StudentAcademicRecord_SchoolYear", "StudentAcademicRecord_StudentUniqueId", "StudentAcademicRecord_TermDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_StudentAcademicRecord_EducationO_c3bb8568d0" ON "edfi"."CourseTranscript" ("StudentAcademicRecord_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_StudentAcademicRecord_TermDescri_ccb743c285" ON "edfi"."CourseTranscript" ("StudentAcademicRecord_TermDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_WhenTakenGradeLevelDescriptor_DescriptorId" ON "edfi"."CourseTranscript" ("WhenTakenGradeLevelDescriptor_DescriptorId");
@@ -31687,6 +31731,8 @@ CREATE INDEX IF NOT EXISTS "IX_Credential_CredentialFieldDescriptor_DescriptorId
 
 CREATE INDEX IF NOT EXISTS "IX_Credential_CredentialTypeDescriptor_DescriptorId" ON "edfi"."Credential" ("CredentialTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Credential_Namespace_Auth" ON "edfi"."Credential" ("Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_Credential_StateOfIssueStateAbbreviationDescripto_b0f8b0d223" ON "edfi"."Credential" ("StateOfIssueStateAbbreviationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Credential_TeachingCredentialBasisDescriptor_DescriptorId" ON "edfi"."Credential" ("TeachingCredentialBasisDescriptor_DescriptorId");
@@ -31699,6 +31745,8 @@ CREATE INDEX IF NOT EXISTS "IX_CredentialGradeLevel_GradeLevelDescriptor_Descrip
 
 CREATE INDEX IF NOT EXISTS "IX_CrisisEvent_CrisisTypeDescriptor_DescriptorId" ON "edfi"."CrisisEvent" ("CrisisTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_DescriptorMapping_Namespace_Auth" ON "edfi"."DescriptorMapping" ("Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_DescriptorMappingModelEntity_ModelEntityDescripto_40c48e26fb" ON "edfi"."DescriptorMappingModelEntity" ("ModelEntityDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_AssignmentSchool_DocumentId_Assi_94d4c1f5f0" ON "edfi"."DisciplineAction" ("AssignmentSchool_DocumentId", "AssignmentSchool_SchoolId");
@@ -31706,6 +31754,8 @@ CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_AssignmentSchool_DocumentId_Assi
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_DisciplineActionLengthDifference_9e7f788653" ON "edfi"."DisciplineAction" ("DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_ResponsibilitySchool_DocumentId__362a469587" ON "edfi"."DisciplineAction" ("ResponsibilitySchool_DocumentId", "ResponsibilitySchool_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_ResponsibilitySchool_SchoolId_Auth" ON "edfi"."DisciplineAction" ("ResponsibilitySchool_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_Student_DocumentId_Student_StudentUniqueId" ON "edfi"."DisciplineAction" ("Student_DocumentId", "Student_StudentUniqueId");
 
@@ -31723,6 +31773,8 @@ CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_ReporterDescriptionDescriptor_
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_School_DocumentId_School_SchoolId" ON "edfi"."DisciplineIncident" ("School_DocumentId", "School_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_School_SchoolId_Auth" ON "edfi"."DisciplineIncident" ("School_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncidentBehavior_BehaviorDescriptor_DescriptorId" ON "edfi"."DisciplineIncidentBehavior" ("BehaviorDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncidentExternalParticipant_DisciplineI_96f5b9f07f" ON "edfi"."DisciplineIncidentExternalParticipant" ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId");
@@ -31737,6 +31789,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationContent_InteractivityStyleDescriptor_Des
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContent_LearningResourceChoiceLearningRe_bf3a14a786" ON "edfi"."EducationContent" ("LearningResourceChoiceLearningResourceLearningStanda_5916be65e2", "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0");
 
+CREATE INDEX IF NOT EXISTS "IX_EducationContent_Namespace_Auth" ON "edfi"."EducationContent" ("Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_EducationContentAppropriateGradeLevel_GradeLevelD_068ec6bf5e" ON "edfi"."EducationContentAppropriateGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContentAppropriateSex_SexDescriptor_DescriptorId" ON "edfi"."EducationContentAppropriateSex" ("SexDescriptor_DescriptorId");
@@ -31748,6 +31802,10 @@ CREATE INDEX IF NOT EXISTS "IX_EducationContentLanguage_LanguageDescriptor_Descr
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_025d47e1a3" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_cb05f8d72c" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_d23e7089b6" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetwork_EducationOrganizatio_b76b6e3f03" ON "edfi"."EducationOrganizationNetwork" ("EducationOrganizationNetworkId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetwork_NetworkPurposeDescri_3bf9370c0c" ON "edfi"."EducationOrganizationNetwork" ("NetworkPurposeDescriptor_DescriptorId");
 
@@ -31762,6 +31820,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddress_StateAbbrevia
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddressPeriod_ParentC_114960f234" ON "edfi"."EducationOrganizationNetworkAddressPeriod" ("ParentCollectionItemId", "EducationOrganizationNetwork_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_Education_2f301c8099" ON "edfi"."EducationOrganizationNetworkAssociation" ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationNetwork_EducationOrganizationNetworkId");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_Education_7a7bfc749d" ON "edfi"."EducationOrganizationNetworkAssociation" ("EducationOrganizationNetwork_EducationOrganizationNetworkId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_MemberEdu_de04a516ed" ON "edfi"."EducationOrganizationNetworkAssociation" ("MemberEducationOrganization_DocumentId", "MemberEducationOrganization_EducationOrganizationId");
 
@@ -31783,9 +31843,13 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkInternationalAddress_
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkInternationalAddress__f55610e972" ON "edfi"."EducationOrganizationNetworkInternationalAddress" ("CountryDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg_3eda9f3368" ON "edfi"."EducationOrganizationPeerAssociation" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg_7fd60fd311" ON "edfi"."EducationOrganizationPeerAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_PeerEducatio_ae8db528b6" ON "edfi"."EducationOrganizationPeerAssociation" ("PeerEducationOrganization_DocumentId", "PeerEducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_EducationServiceCenterId_Auth" ON "edfi"."EducationServiceCenter" ("EducationServiceCenterId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_OperationalStatusDescripto_dc50e6e0cc" ON "edfi"."EducationServiceCenter" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -31821,6 +31885,8 @@ CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_EvaluationRubricRatingL
 
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_6ba2152d07" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706");
 
+CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_797ef3458f" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramEducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_a965d4c4ad" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_DocumentId", "ProgramEvaluationElement_ProgramEvaluationElementTitle", "ProgramEvaluationElement_ProgramEducationOrganizationId", "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706", "ProgramEvaluationElement_ProgramEvaluationTitle", "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71", "ProgramEvaluationElement_ProgramName", "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_cf4094afb0" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId");
@@ -31831,6 +31897,8 @@ CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_FeederSchool_DocumentId_F
 
 CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_School_DocumentId_School_SchoolId" ON "edfi"."FeederSchoolAssociation" ("School_DocumentId", "School_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_School_SchoolId_Auth" ON "edfi"."FeederSchoolAssociation" ("School_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_FunctionDimensionReportingTag_ReportingTagDescrip_8c091e28ad" ON "edfi"."FunctionDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_FundDimensionReportingTag_ReportingTagDescriptor__571cece1e9" ON "edfi"."FundDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
@@ -31840,6 +31908,8 @@ CREATE INDEX IF NOT EXISTS "IX_Grade_GradingPeriodGradingPeriod_DocumentId_Gradi
 CREATE INDEX IF NOT EXISTS "IX_Grade_GradingPeriodGradingPeriod_GradingPeriodDes_e1dff03b07" ON "edfi"."Grade" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Grade_PerformanceBaseConversionDescriptor_DescriptorId" ON "edfi"."Grade" ("PerformanceBaseConversionDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_Grade_SchoolId_Unified_Auth" ON "edfi"."Grade" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_Grade_StudentSectionAssociation_DocumentId_Studen_eb5c081b9d" ON "edfi"."Grade" ("StudentSectionAssociation_DocumentId", "StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId");
 
@@ -31853,6 +31923,8 @@ CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradingPeriod_DocumentId_GradingPe
 
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradingPeriod_GradingPeriodDescrip_e23413549c" ON "edfi"."GradebookEntry" ("GradingPeriod_GradingPeriodDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_Namespace_Auth" ON "edfi"."GradebookEntry" ("Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_Section_DocumentId_Section_LocalCo_134838dd12" ON "edfi"."GradebookEntry" ("Section_DocumentId", "Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier");
 
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntryLearningStandard_LearningStandard_D_c894497c5d" ON "edfi"."GradebookEntryLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
@@ -31861,7 +31933,11 @@ CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_SchoolYear_DocumentId_SchoolYear_Sc
 
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_DocumentId_School_SchoolId" ON "edfi"."GradingPeriod" ("School_DocumentId", "School_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_SchoolId_Auth" ON "edfi"."GradingPeriod" ("School_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_EducationOrganization_DocumentId_E_c2d8f843e2" ON "edfi"."GraduationPlan" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_EducationOrganization_EducationOrg_d48d791679" ON "edfi"."GraduationPlan" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" ON "edfi"."GraduationPlan" ("GraduationPlanTypeDescriptor_DescriptorId");
 
@@ -31903,6 +31979,8 @@ CREATE INDEX IF NOT EXISTS "IX_Intervention_DeliveryMethodDescriptor_DescriptorI
 
 CREATE INDEX IF NOT EXISTS "IX_Intervention_EducationOrganization_DocumentId_Edu_7a3f88dfbc" ON "edfi"."Intervention" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_Intervention_EducationOrganization_EducationOrgan_89fb84a3d9" ON "edfi"."Intervention" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_Intervention_InterventionClassDescriptor_DescriptorId" ON "edfi"."Intervention" ("InterventionClassDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionAppropriateGradeLevel_GradeLevelDescr_94bd28fad4" ON "edfi"."InterventionAppropriateGradeLevel" ("GradeLevelDescriptor_DescriptorId");
@@ -31921,6 +31999,8 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_DeliveryMethodDescriptor
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_EducationOrganization_Do_0fbaa8a390" ON "edfi"."InterventionPrescription" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_EducationOrganization_Ed_b79c5307d5" ON "edfi"."InterventionPrescription" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_InterventionClassDescrip_e229101475" ON "edfi"."InterventionPrescription" ("InterventionClassDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescriptionAppropriateGradeLevel_Gra_640e764785" ON "edfi"."InterventionPrescriptionAppropriateGradeLevel" ("GradeLevelDescriptor_DescriptorId");
@@ -31938,6 +32018,8 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionStaff_Staff_DocumentId_Staff_StaffUni
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_DeliveryMethodDescriptor_DescriptorId" ON "edfi"."InterventionStudy" ("DeliveryMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_EducationOrganization_DocumentI_0e5d2fde48" ON "edfi"."InterventionStudy" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_EducationOrganization_Education_2d419ed6a7" ON "edfi"."InterventionStudy" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_InterventionClassDescriptor_DescriptorId" ON "edfi"."InterventionStudy" ("InterventionClassDescriptor_DescriptorId");
 
@@ -31969,11 +32051,15 @@ CREATE INDEX IF NOT EXISTS "IX_LearningStandard_LearningStandardScopeDescriptor_
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_MandatingEducationOrganization_D_43d05b1f07" ON "edfi"."LearningStandard" ("MandatingEducationOrganization_DocumentId", "MandatingEducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_LearningStandard_Namespace_Auth" ON "edfi"."LearningStandard" ("Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_ParentLearningStandard_DocumentI_f8fe09ee92" ON "edfi"."LearningStandard" ("ParentLearningStandard_DocumentId", "ParentLearningStandard_LearningStandardId");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardAcademicSubject_AcademicSubjectDe_d763d1c41a" ON "edfi"."LearningStandardAcademicSubject" ("AcademicSubjectDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_LearningSt_dfff6c8d02" ON "edfi"."LearningStandardEquivalenceAssociation" ("LearningStandardEquivalenceStrengthDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_Namespace_Auth" ON "edfi"."LearningStandardEquivalenceAssociation" ("Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_SourceLear_2d9d604a28" ON "edfi"."LearningStandardEquivalenceAssociation" ("SourceLearningStandard_DocumentId", "SourceLearningStandard_LearningStandardId");
 
@@ -31985,19 +32071,27 @@ CREATE INDEX IF NOT EXISTS "IX_LocalAccount_ChartOfAccountChartOfAccount_Documen
 
 CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_DocumentId_Edu_7b240f9edd" ON "edfi"."LocalAccount" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_EducationOrgan_8d61178531" ON "edfi"."LocalAccount" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalAccountReportingTag_ReportingTagDescriptor_DescriptorId" ON "edfi"."LocalAccountReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalActual_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalActual" ("FinancialCollectionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalActual_LocalAccount_DocumentId_LocalAccount__6188290e54" ON "edfi"."LocalActual" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalActual_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalActual" ("LocalAccount_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalBudget" ("FinancialCollectionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_DocumentId_LocalAccount__abe7a4425d" ON "edfi"."LocalBudget" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalBudget" ("LocalAccount_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_FinancialCollectionDescripto_76ed6e7e39" ON "edfi"."LocalContractedStaff" ("FinancialCollectionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_LocalAccount_DocumentId_Loca_e91b51bc3c" ON "edfi"."LocalContractedStaff" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_LocalAccount_EducationOrgani_e507d57d78" ON "edfi"."LocalContractedStaff" ("LocalAccount_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."LocalContractedStaff" ("Staff_DocumentId", "Staff_StaffUniqueId");
 
@@ -32006,6 +32100,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_CharterStatusDescriptor_Desc
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_EducationServiceCenter_Docum_7437dee437" ON "edfi"."LocalEducationAgency" ("EducationServiceCenter_DocumentId", "EducationServiceCenter_EducationServiceCenterId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_LocalEducationAgencyCategory_e084f218f5" ON "edfi"."LocalEducationAgency" ("LocalEducationAgencyCategoryDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_LocalEducationAgencyId_Auth" ON "edfi"."LocalEducationAgency" ("LocalEducationAgencyId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_OperationalStatusDescriptor__4905976e1c" ON "edfi"."LocalEducationAgency" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -32049,19 +32145,27 @@ CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_FinancialCollectionDescriptor_De
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_DocumentId_LocalAcc_c1aff8f74e" ON "edfi"."LocalEncumbrance" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalEncumbrance" ("LocalAccount_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalPayroll" ("FinancialCollectionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_LocalAccount_DocumentId_LocalAccount_118a685824" ON "edfi"."LocalPayroll" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalPayroll" ("LocalAccount_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."LocalPayroll" ("Staff_DocumentId", "Staff_StaffUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_Location_School_DocumentId_School_SchoolId" ON "edfi"."Location" ("School_DocumentId", "School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_Location_School_SchoolId_Auth" ON "edfi"."Location" ("School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectDimensionReportingTag_ReportingTagDescripto_0c90e3a14c" ON "edfi"."ObjectDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_AcademicSubjectDescriptor_DescriptorId" ON "edfi"."ObjectiveAssessment" ("AcademicSubjectDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Assessment_DocumentId_Assessm_c6ab434586" ON "edfi"."ObjectiveAssessment" ("Assessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified");
+
+CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Namespace_Unified_Auth" ON "edfi"."ObjectiveAssessment" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_ParentObjectiveAssessment_Doc_e13dce6b30" ON "edfi"."ObjectiveAssessment" ("ParentObjectiveAssessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "ParentObjectiveAssessment_IdentificationCode");
 
@@ -32080,6 +32184,8 @@ CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentScore_AssessmentReportingMetho
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentScore_ResultDatatypeTypeDescri_302aff09d8" ON "edfi"."ObjectiveAssessmentScore" ("ResultDatatypeTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EducationOrganization_DocumentI_8fad36d297" ON "edfi"."OpenStaffPosition" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EducationOrganization_Education_36b4b22ff8" ON "edfi"."OpenStaffPosition" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EmploymentStatusDescriptor_DescriptorId" ON "edfi"."OpenStaffPosition" ("EmploymentStatusDescriptor_DescriptorId");
 
@@ -32100,6 +32206,8 @@ CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_AcademicSubjectDescriptor_
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_OperationalStatusDescripto_d9b294e2d3" ON "edfi"."OrganizationDepartment" ("OperationalStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_ParentEducationOrganizatio_7e7cc3b2f3" ON "edfi"."OrganizationDepartment" ("ParentEducationOrganization_DocumentId", "ParentEducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_ParentEducationOrganizatio_9129ec32b0" ON "edfi"."OrganizationDepartment" ("ParentEducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentAddress_AddressTypeDescript_a21b12aac5" ON "edfi"."OrganizationDepartmentAddress" ("AddressTypeDescriptor_DescriptorId");
 
@@ -32139,6 +32247,8 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_AdministrativeFundingCon
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_OperationalStatusDescrip_d282b12817" ON "edfi"."PostSecondaryInstitution" ("OperationalStatusDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_PostSecondaryInstitutionId_Auth" ON "edfi"."PostSecondaryInstitution" ("PostSecondaryInstitutionId");
+
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_PostSecondaryInstitution_b0786426e0" ON "edfi"."PostSecondaryInstitution" ("PostSecondaryInstitutionLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionAddress_AddressTypeDescri_0e79441fd2" ON "edfi"."PostSecondaryInstitutionAddress" ("AddressTypeDescriptor_DescriptorId");
@@ -32171,6 +32281,8 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionMediumOfInstruction_Mediu
 
 CREATE INDEX IF NOT EXISTS "IX_Program_EducationOrganization_DocumentId_Educatio_38e40120fe" ON "edfi"."Program" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_Program_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Program" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_Program_ProgramTypeDescriptor_DescriptorId" ON "edfi"."Program" ("ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramCharacteristic_ProgramCharacteristicDescri_8ad3536e83" ON "edfi"."ProgramCharacteristic" ("ProgramCharacteristicDescriptor_DescriptorId");
@@ -32181,7 +32293,11 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramEvaluationTypeDescriptor
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_DocumentId_Progr_2365a338bd" ON "edfi"."ProgramEvaluation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_EducationOrganiz_10ea1f2b12" ON "edfi"."ProgramEvaluation" ("ProgramProgram_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_ProgramTypeDescr_16081c538e" ON "edfi"."ProgramEvaluation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEducationOrganiza_4723285757" ON "edfi"."ProgramEvaluationElement" ("ProgramEducationOrganizationId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEvaluationObjecti_ce71a74398" ON "edfi"."ProgramEvaluationElement" ("ProgramEvaluationObjective_DocumentId", "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId");
 
@@ -32203,6 +32319,8 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_8586459e15" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e");
 
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_bbf3d7ab70" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramEducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_ec3bb3af6b" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjectiveProgramEvaluationLevel__fd9999ff79" ON "edfi"."ProgramEvaluationObjectiveProgramEvaluationLevel" ("RatingLevelDescriptor_DescriptorId");
@@ -32214,6 +32332,8 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramSponsor_ProgramSponsorDescriptor_Descripto
 CREATE INDEX IF NOT EXISTS "IX_ProjectDimensionReportingTag_ReportingTagDescript_8001d885c1" ON "edfi"."ProjectDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCard_EducationOrganization_DocumentId_Educa_ab5c49cad0" ON "edfi"."ReportCard" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_ReportCard_EducationOrganization_EducationOrganiz_4385b3212f" ON "edfi"."ReportCard" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCard_GradingPeriodGradingPeriod_DocumentId__8f263cc2a3" ON "edfi"."ReportCard" ("GradingPeriodGradingPeriod_DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear");
 
@@ -32238,6 +32358,8 @@ CREATE INDEX IF NOT EXISTS "IX_ReportCardStudentCompetencyObjective_StudentCompe
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_DisciplineIncident_DocumentId_Disc_efed62b7ac" ON "edfi"."RestraintEvent" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_EducationalEnvironmentDescriptor_DescriptorId" ON "edfi"."RestraintEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_SchoolId_Unified_Auth" ON "edfi"."RestraintEvent" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_School_DocumentId_SchoolId_Unified" ON "edfi"."RestraintEvent" ("School_DocumentId", "SchoolId_Unified");
 
@@ -32264,6 +32386,8 @@ CREATE INDEX IF NOT EXISTS "IX_School_LocalEducationAgency_DocumentId_LocalEduca
 CREATE INDEX IF NOT EXISTS "IX_School_MagnetSpecialProgramEmphasisSchoolDescript_02634d319d" ON "edfi"."School" ("MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_OperationalStatusDescriptor_DescriptorId" ON "edfi"."School" ("OperationalStatusDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_School_SchoolId_Auth" ON "edfi"."School" ("SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_SchoolTypeDescriptor_DescriptorId" ON "edfi"."School" ("SchoolTypeDescriptor_DescriptorId");
 
@@ -32315,9 +32439,13 @@ CREATE INDEX IF NOT EXISTS "IX_Section_MediumOfInstructionDescriptor_DescriptorI
 
 CREATE INDEX IF NOT EXISTS "IX_Section_PopulationServedDescriptor_DescriptorId" ON "edfi"."Section" ("PopulationServedDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Section_SchoolId_Unified_Auth" ON "edfi"."Section" ("SchoolId_Unified");
+
 CREATE INDEX IF NOT EXISTS "IX_Section_SectionTypeDescriptor_DescriptorId" ON "edfi"."Section" ("SectionTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_CalendarDate_Document_d2f3bac1c1" ON "edfi"."SectionAttendanceTakenEvent" ("CalendarDate_DocumentId", "CalendarDate_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "CalendarDate_Date");
+
+CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_SchoolId_Unified_Auth" ON "edfi"."SectionAttendanceTakenEvent" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_Section_DocumentId_Se_4b118d84e8" ON "edfi"."SectionAttendanceTakenEvent" ("Section_DocumentId", "Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier");
 
@@ -32338,6 +32466,8 @@ CREATE INDEX IF NOT EXISTS "IX_SectionProgram_Program_ProgramTypeDescriptor_Desc
 CREATE INDEX IF NOT EXISTS "IX_Session_SchoolYear_DocumentId_SchoolYear_SchoolYear" ON "edfi"."Session" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
 
 CREATE INDEX IF NOT EXISTS "IX_Session_School_DocumentId_School_SchoolId" ON "edfi"."Session" ("School_DocumentId", "School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_Session_School_SchoolId_Auth" ON "edfi"."Session" ("School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_Session_TermDescriptor_DescriptorId" ON "edfi"."Session" ("TermDescriptor_DescriptorId");
 
@@ -32373,11 +32503,15 @@ CREATE INDEX IF NOT EXISTS "IX_StaffAncestryEthnicOrigin_AncestryEthnicOriginDes
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Cohort_DocumentId_Cohort_C_46f1fe651b" ON "edfi"."StaffCohortAssociation" ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Cohort_EducationOrganizationId_Auth" ON "edfi"."StaffCohortAssociation" ("Cohort_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffCohortAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCredential_Credential_DocumentId_Credential__065939da61" ON "edfi"."StaffCredential" ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCredential_Credential_StateOfIssueStateAbbre_f0c3524f11" ON "edfi"."StaffCredential" ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_DisciplineInci_33bd5cd4d2" ON "edfi"."StaffDisciplineIncidentAssociation" ("DisciplineIncident_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_DisciplineInci_b608da0363" ON "edfi"."StaffDisciplineIncidentAssociation" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId");
 
@@ -32395,6 +32529,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_E
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_E_cac11f84c8" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b", "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de", "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56", "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337", "StaffUniqueId_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_E_dc5ebb2136" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("EducationOrganization_EducationOrganizationId") INCLUDE ("Staff_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_S_c293315cea" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("StaffClassificationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_S_da9b0896bd" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("Staff_DocumentId", "StaffUniqueId_Unified");
@@ -32409,6 +32545,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Cont
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Educ_3da2c15194" ON "edfi"."StaffEducationOrganizationContactAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Educ_ac57af64ae" ON "edfi"."StaffEducationOrganizationContactAssociation" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Staf_ab39cd8e0e" ON "edfi"."StaffEducationOrganizationContactAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociationTelep_38c9ca72f5" ON "edfi"."StaffEducationOrganizationContactAssociationTelephone" ("TelephoneNumberTypeDescriptor_DescriptorId");
@@ -32418,6 +32556,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_f6b201891e" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_E_8a848ed5c1" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_E_96136cdc3a" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("EducationOrganization_EducationOrganizationId") INCLUDE ("Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_E_b87dafad72" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("EmploymentStatusDescriptor_DescriptorId");
 
@@ -32473,6 +32613,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffRecognition_RecognitionTypeDescriptor_Descri
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_Calendar_DocumentId_Calend_7eb92b25de" ON "edfi"."StaffSchoolAssociation" ("Calendar_DocumentId", "Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolId_Unified_Auth" ON "edfi"."StaffSchoolAssociation" ("SchoolId_Unified");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolYear_DocumentId_Scho_f08589e459" ON "edfi"."StaffSchoolAssociation" ("SchoolYear_DocumentId", "SchoolYear_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_School_DocumentId_SchoolId_Unified" ON "edfi"."StaffSchoolAssociation" ("School_DocumentId", "SchoolId_Unified");
@@ -32487,6 +32629,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_ClassroomPositionDescript
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Section_DocumentId_Sectio_ff7a9f1383" ON "edfi"."StaffSectionAssociation" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Section_SchoolId_Auth" ON "edfi"."StaffSectionAssociation" ("Section_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffSectionAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffTelephone_TelephoneNumberTypeDescriptor_DescriptorId" ON "edfi"."StaffTelephone" ("TelephoneNumberTypeDescriptor_DescriptorId");
@@ -32496,6 +32640,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffTribalAffiliation_TribalAffiliationDescripto
 CREATE INDEX IF NOT EXISTS "IX_StaffVisa_VisaDescriptor_DescriptorId" ON "edfi"."StaffVisa" ("VisaDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgency_OperationalStatusDescriptor__773cf45140" ON "edfi"."StateEducationAgency" ("OperationalStatusDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StateEducationAgency_StateEducationAgencyId_Auth" ON "edfi"."StateEducationAgency" ("StateEducationAgencyId");
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyAccountability_StateEducation_f25ce2c01d" ON "edfi"."StateEducationAgencyAccountability" ("StateEducationAgencyAccountabilitySchoolYear_DocumentId", "StateEducationAgencyAccountabilitySchoolYear_SchoolYear");
 
@@ -32543,6 +32689,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_CumulativeEarnedCreditTypeD
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_EducationOrganization_Docum_1db885c0bc" ON "edfi"."StudentAcademicRecord" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_EducationOrganization_Educa_525d72c0aa" ON "edfi"."StudentAcademicRecord" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_SchoolYear_DocumentId_Schoo_9101ee872a" ON "edfi"."StudentAcademicRecord" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_SessionAttemptedCreditTypeD_33630c11d3" ON "edfi"."StudentAcademicRecord" ("SessionAttemptedCreditTypeDescriptor_DescriptorId");
@@ -32579,6 +32727,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_AdministrationLanguageDescripto
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Assessment_DocumentId_Assessmen_189366fd1a" ON "edfi"."StudentAssessment" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Assessment_Namespace_Auth" ON "edfi"."StudentAssessment" ("Assessment_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_EventCircumstanceDescriptor_DescriptorId" ON "edfi"."StudentAssessment" ("EventCircumstanceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_PeriodAssessmentPeriodDescripto_f4d2af6ce9" ON "edfi"."StudentAssessment" ("PeriodAssessmentPeriodDescriptor_DescriptorId");
@@ -32588,6 +32738,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_PlatformTypeDescriptor_Descript
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_ReasonNotTestedDescriptor_DescriptorId" ON "edfi"."StudentAssessment" ("ReasonNotTestedDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_ReportedSchool_DocumentId_Repor_f8a5651901" ON "edfi"."StudentAssessment" ("ReportedSchool_DocumentId", "ReportedSchool_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_ReportedSchool_SchoolId_Auth" ON "edfi"."StudentAssessment" ("ReportedSchool_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_RetestIndicatorDescriptor_DescriptorId" ON "edfi"."StudentAssessment" ("RetestIndicatorDescriptor_DescriptorId");
 
@@ -32600,6 +32752,10 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_WhenAssessedGradeLevelDescripto
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentAccommodation_AccommodationDescr_33630d9394" ON "edfi"."StudentAssessmentAccommodation" ("AccommodationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_1eb07f3ff4" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_4de18bac1b" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_9c99996727" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_e3ece8a4e8" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_DocumentId", "StudentAssessment_AssessmentIdentifier", "StudentAssessment_Namespace", "StudentAssessment_StudentAssessmentIdentifier", "StudentAssessment_StudentUniqueId");
 
@@ -32615,6 +32771,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentPerformanceLevel_AssessmentRepor
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentPerformanceLevel_PerformanceLeve_51a29fef35" ON "edfi"."StudentAssessmentPerformanceLevel" ("PerformanceLevelDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentAdministr_4c2e64d9e7" ON "edfi"."StudentAssessmentRegistration" ("AssessmentAdministration_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentAdministr_bfeaf322e9" ON "edfi"."StudentAssessmentRegistration" ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentGradeLeve_1aa8eac80e" ON "edfi"."StudentAssessmentRegistration" ("AssessmentGradeLevelDescriptor_DescriptorId");
@@ -32627,15 +32785,21 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ScheduledStudentEdu
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentEducationOrg_3e71d86255" ON "edfi"."StudentAssessmentRegistration" ("StudentEducationOrganizationAssociation_DocumentId", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentEducationOrg_68c6b3c00f" ON "edfi"."StudentAssessmentRegistration" ("StudentEducationOrganizationAssociation_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentSchoolAssoci_d2b9233f53" ON "edfi"."StudentAssessmentRegistration" ("StudentSchoolAssociation_DocumentId", "StudentSchoolAssociation_EntryDate", "StudentSchoolAssociation_SchoolId", "StudentUniqueId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_TestingEducationOrg_3e3544bd26" ON "edfi"."StudentAssessmentRegistration" ("TestingEducationOrganization_DocumentId", "TestingEducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationAssessmentAccommodat_f949d07c01" ON "edfi"."StudentAssessmentRegistrationAssessmentAccommodation" ("AccommodationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_6b002a2866" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("StudentAssessmentRegistration_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_b3f96da127" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("AssessmentBatteryPart_DocumentId", "AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentIdentifier_Unified", "Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_b5f5cdbceb" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("StudentAssessmentRegistration_DocumentId", "StudentAssessmentRegistration_AdministrationIdentifier", "AssessmentIdentifier_Unified", "StudentAssessmentRegistration_AssigningEducationOrganizationId", "Namespace_Unified", "StudentAssessmentRegistration_EducationOrganizationId", "StudentAssessmentRegistration_StudentUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_dc158ce025" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_706762e59a" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociationA_c87694eb5a" ("AccommodationDescriptor_DescriptorId");
 
@@ -32657,6 +32821,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentScoreR
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentScoreR_cef8b8adde" ON "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult" ("ParentCollectionItemId", "StudentAssessment_DocumentId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_EducationOrganizatio_414d23dc2f" ON "edfi"."StudentCTEProgramAssociation" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_EducationOrganizatio_49d2cfb257" ON "edfi"."StudentCTEProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_ProgramProgram_Docum_1bd0f5fca6" ON "edfi"."StudentCTEProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
@@ -32674,6 +32840,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociationCteProgramService_Cte
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociationProgramParticipationS_8cc94e691b" ON "edfi"."StudentCTEProgramAssociationProgramParticipationStatus" ("ParticipationStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Cohort_DocumentId_Cohort_583209882d" ON "edfi"."StudentCohortAssociation" ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Cohort_EducationOrganizationId_Auth" ON "edfi"."StudentCohortAssociation" ("Cohort_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Student_DocumentId_Stude_ac5657b500" ON "edfi"."StudentCohortAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
 
@@ -32701,7 +32869,11 @@ CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Contact_DocumentId_Cont
 
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_RelationDescriptor_DescriptorId" ON "edfi"."StudentContactAssociation" ("RelationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_DocumentId_Auth" ON "edfi"."StudentContactAssociation" ("Student_DocumentId") INCLUDE ("Contact_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_DocumentId_Stud_838ffe753b" ON "edfi"."StudentContactAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Disc_b4c3146661" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("DisciplineIncident_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Disc_df0294c827" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId");
 
@@ -32713,6 +32885,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociationWeapo
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_D_5daa5ded4d" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_D_d657c697fd" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("DisciplineIncident_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_S_6ad903f070" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociationDi_abe6193ff3" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d" ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId");
@@ -32721,11 +32895,15 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_91f6cca983" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_93f786eb06" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_c631e6ce43" ON "edfi"."StudentEducationOrganizationAssessmentAccommodationG_d1d10af462" ("AccommodationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_BarrierTo_9e67db587a" ON "edfi"."StudentEducationOrganizationAssociation" ("BarrierToInternetAccessInResidenceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Education_00fd67d573" ON "edfi"."StudentEducationOrganizationAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Education_e2967b88a9" ON "edfi"."StudentEducationOrganizationAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_InternetA_ceffe61329" ON "edfi"."StudentEducationOrganizationAssociation" ("InternetAccessTypeInResidenceDescriptor_DescriptorId");
 
@@ -32805,17 +32983,23 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_e68f41f803" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("ResponsibilityDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_e83f6d6aca" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("EducationOrganization_EducationOrganizationId") INCLUDE ("Student_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_AssignmentLateStatusDescrip_bb0713f47c" ON "edfi"."StudentGradebookEntry" ("AssignmentLateStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_CompetencyLevelDescriptor_DescriptorId" ON "edfi"."StudentGradebookEntry" ("CompetencyLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_GradebookEntry_DocumentId_G_58df77578a" ON "edfi"."StudentGradebookEntry" ("GradebookEntry_DocumentId", "GradebookEntry_GradebookEntryIdentifier", "GradebookEntry_Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_GradebookEntry_Namespace_Auth" ON "edfi"."StudentGradebookEntry" ("GradebookEntry_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_Student_DocumentId_Student__0e098f5049" ON "edfi"."StudentGradebookEntry" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_SubmissionStatusDescriptor__1eea51a13a" ON "edfi"."StudentGradebookEntry" ("SubmissionStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_EducationOrganization_DocumentId_Ed_9e64691577" ON "edfi"."StudentHealth" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentHealth_EducationOrganization_EducationOrga_01ecd04719" ON "edfi"."StudentHealth" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_NonMedicalImmunizationExemptionDesc_5b6791cb47" ON "edfi"."StudentHealth" ("NonMedicalImmunizationExemptionDescriptor_DescriptorId");
 
@@ -32826,6 +33010,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentHealthAdditionalImmunizationDate_ParentCol
 CREATE INDEX IF NOT EXISTS "IX_StudentHealthRequiredImmunization_ImmunizationTyp_47ef97afc9" ON "edfi"."StudentHealthRequiredImmunization" ("ImmunizationTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealthRequiredImmunizationDate_ParentColle_ba182f2b4a" ON "edfi"."StudentHealthRequiredImmunizationDate" ("ParentCollectionItemId", "StudentHealth_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_EducationOrgani_7b484c73c2" ON "edfi"."StudentHomelessProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_EducationOrgani_a1a781f908" ON "edfi"."StudentHomelessProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -32853,6 +33039,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_CohortCohort_Docum
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Intervention_Docum_1dff4f206a" ON "edfi"."StudentInterventionAssociation" ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Intervention_Educa_24864c0613" ON "edfi"."StudentInterventionAssociation" ("Intervention_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Student_DocumentId_03933b8db3" ON "edfi"."StudentInterventionAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociationInterventionEffecti_521e3ebcf9" ON "edfi"."StudentInterventionAssociationInterventionEffectiveness" ("InterventionEffectivenessRatingDescriptor_DescriptorId");
@@ -32867,9 +33055,13 @@ CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_EducationalEnv
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Intervention_D_99fe7b332d" ON "edfi"."StudentInterventionAttendanceEvent" ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Intervention_E_f84c5d258a" ON "edfi"."StudentInterventionAttendanceEvent" ("Intervention_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Student_Docume_ddfabea06d" ON "edfi"."StudentInterventionAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Educ_578ee18605" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Educ_bd67e2f5a6" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Prog_7fb9aa5f18" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -32897,6 +33089,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Continu
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Educati_872cca59fd" ON "edfi"."StudentMigrantEducationProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Educati_ad9da3e674" ON "edfi"."StudentMigrantEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Program_c904b1f991" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Program_e1c8e2d37f" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
@@ -32908,6 +33102,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Student
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociationMigrantE_9114a69b02" ON "edfi"."StudentMigrantEducationProgramAssociationMigrantEduc_d9dcd7857a" ("MigrantEducationProgramServiceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociationProgramP_b04d211a15" ON "edfi"."StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2" ("ParticipationStatusDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Ed_5772886723" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Ed_f26f0e6e3b" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -32939,6 +33135,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentPersonalIdentificationDocument_PersonalInf
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_EducationOrganization_D_d08148dfb7" ON "edfi"."StudentProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_EducationOrganization_E_68167ca6f9" ON "edfi"."StudentProgramAssociation" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_ProgramProgram_Document_937d6d2006" ON "edfi"."StudentProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_ProgramProgram_ProgramT_09327c6e35" ON "edfi"."StudentProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
@@ -32952,6 +33150,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociationProgramParticipationStat
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociationService_ServiceDescripto_69eb554afa" ON "edfi"."StudentProgramAssociationService" ("ServiceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationOrganizati_2f244ad2e5" ON "edfi"."StudentProgramAttendanceEvent" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationOrganizati_9b81579ba6" ON "edfi"."StudentProgramAttendanceEvent" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationalEnvironm_d0758c2f91" ON "edfi"."StudentProgramAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
@@ -33023,6 +33223,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ResidencyStatusDescripto
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolChoiceBasisDescrip_d6eb52d583" ON "edfi"."StudentSchoolAssociation" ("SchoolChoiceBasisDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolId_Unified_Auth" ON "edfi"."StudentSchoolAssociation" ("SchoolId_Unified") INCLUDE ("Student_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolYear_DocumentId_Sc_8da6286496" ON "edfi"."StudentSchoolAssociation" ("SchoolYear_DocumentId", "SchoolYear_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_School_DocumentId_SchoolId_Unified" ON "edfi"."StudentSchoolAssociation" ("School_DocumentId", "SchoolId_Unified");
@@ -33037,11 +33239,15 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociationEducationPlan_EducationPl
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_EducationalEnvironme_4b728e9a05" ON "edfi"."StudentSchoolAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_SchoolId_Unified_Auth" ON "edfi"."StudentSchoolAttendanceEvent" ("SchoolId_Unified");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_School_DocumentId_Sc_4eb7cf3d94" ON "edfi"."StudentSchoolAttendanceEvent" ("School_DocumentId", "SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Session_DocumentId_S_f5e0a6d70e" ON "edfi"."StudentSchoolAttendanceEvent" ("Session_DocumentId", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Student_DocumentId_S_9fa22ee653" ON "edfi"."StudentSchoolAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Educat_82136641ed" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Educat_a879581a75" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -33058,6 +33264,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociationProgram
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociationSchoolF_90f931a2b4" ON "edfi"."StudentSchoolFoodServiceProgramAssociationSchoolFood_85a0eb098c" ("SchoolFoodServiceProgramServiceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_EducationOrga_81d39b2484" ON "edfi"."StudentSection504ProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_EducationOrga_dceab2e224" ON "edfi"."StudentSection504ProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_ProgramProgra_aa30c8f9c4" ON "edfi"."StudentSection504ProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -33083,6 +33291,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_RepeatIdentifierDescrip
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_Section_DocumentId_Sect_ca2850b86a" ON "edfi"."StudentSectionAssociation" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_Section_SchoolId_Auth" ON "edfi"."StudentSectionAssociation" ("Section_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_Student_DocumentId_Stud_814a8ced21" ON "edfi"."StudentSectionAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociationProgram_Program_Document_eae7e34fc8" ON "edfi"."StudentSectionAssociationProgram" ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId");
@@ -33093,9 +33303,13 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_EducationalEnvironm
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Section_DocumentId__f1a12b7e67" ON "edfi"."StudentSectionAttendanceEvent" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Section_SchoolId_Auth" ON "edfi"."StudentSectionAttendanceEvent" ("Section_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Student_DocumentId__6aa7c55c2a" ON "edfi"."StudentSectionAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEventClassPeriod_ClassPer_afbf2ce0ff" ON "edfi"."StudentSectionAttendanceEventClassPeriod" ("ClassPeriod_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Educati_1ca44c4444" ON "edfi"."StudentSpecialEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Educati_c4719f9152" ON "edfi"."StudentSpecialEducationProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -33133,6 +33347,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_1a2e99bfde" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EligibilityEvaluationTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_295f59b75d" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_3d0b75dc49" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_738d5c87ea" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EvaluationDelayReasonDescriptor_DescriptorId");
@@ -33144,6 +33360,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_ecdbc6ce85" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_f2af1e91cd" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EligibilityDelayReasonDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_EducationOrg_07a40d1c98" ON "edfi"."StudentTitleIPartAProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_EducationOrg_8870364955" ON "edfi"."StudentTitleIPartAProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -33179,6 +33397,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentVisa_VisaDescriptor_DescriptorId" ON "edfi
 
 CREATE INDEX IF NOT EXISTS "IX_Survey_EducationOrganization_DocumentId_Education_4250a3f2a6" ON "edfi"."Survey" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_Survey_Namespace_Auth" ON "edfi"."Survey" ("Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_Survey_SchoolYear_DocumentId_SchoolYear_Unified" ON "edfi"."Survey" ("SchoolYear_DocumentId", "SchoolYear_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_Survey_Session_DocumentId_Session_SchoolId_School_c370ef80b8" ON "edfi"."Survey" ("Session_DocumentId", "Session_SchoolId", "SchoolYear_Unified", "Session_SessionName");
@@ -33187,19 +33407,31 @@ CREATE INDEX IF NOT EXISTS "IX_Survey_SurveyCategoryDescriptor_DescriptorId" ON 
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_DocumentId_Course__3c5614bf79" ON "edfi"."SurveyCourseAssociation" ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_EducationOrganizationId_Auth" ON "edfi"."SurveyCourseAssociation" ("Course_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Survey_DocumentId_Survey__8e8a2bf8db" ON "edfi"."SurveyCourseAssociation" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Survey_Namespace_Auth" ON "edfi"."SurveyCourseAssociation" ("Survey_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Program_DocumentId_Progr_eab44214ed" ON "edfi"."SurveyProgramAssociation" ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Program_EducationOrganiz_24093b3ee8" ON "edfi"."SurveyProgramAssociation" ("Program_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Program_ProgramTypeDescr_073a0f790d" ON "edfi"."SurveyProgramAssociation" ("Program_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Survey_DocumentId_Survey_735d35a673" ON "edfi"."SurveyProgramAssociation" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Survey_Namespace_Auth" ON "edfi"."SurveyProgramAssociation" ("Survey_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Namespace_Unified_Auth" ON "edfi"."SurveyQuestion" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_QuestionFormDescriptor_DescriptorId" ON "edfi"."SurveyQuestion" ("QuestionFormDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_SurveySection_DocumentId_Namespace_e270e8fabc" ON "edfi"."SurveyQuestion" ("SurveySection_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Survey_DocumentId_Namespace_Unifie_c282b98d87" ON "edfi"."SurveyQuestion" ("Survey_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_Namespace_Unified_Auth" ON "edfi"."SurveyQuestionResponse" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_SurveyQuestion_DocumentId__d59e808f2a" ON "edfi"."SurveyQuestionResponse" ("SurveyQuestion_DocumentId", "SurveyQuestion_QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified");
 
@@ -33213,11 +33445,19 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_SurveyResponderChoiceStudent_Docum
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_Survey_DocumentId_Survey_Namespace_72cbc0a72f" ON "edfi"."SurveyResponse" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_Survey_Namespace_Auth" ON "edfi"."SurveyResponse" ("Survey_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_86d09c2f51" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_89ceea42ad" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("SurveyResponse_DocumentId", "SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_961ac12205" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("SurveyResponse_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_f0bf597951" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_Staff_Docume_b8780a2098" ON "edfi"."SurveyResponseStaffTargetAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_SurveyRespon_640eafdaca" ON "edfi"."SurveyResponseStaffTargetAssociation" ("SurveyResponse_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_SurveyRespon_f015f4bf9f" ON "edfi"."SurveyResponseStaffTargetAssociation" ("SurveyResponse_DocumentId", "SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier");
 
@@ -33225,9 +33465,17 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyResponseSurveyLevel_SurveyLevelDescriptor_D
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySection_Survey_DocumentId_Survey_Namespace__59924cfd5e" ON "edfi"."SurveySection" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveySection_Survey_Namespace_Auth" ON "edfi"."SurveySection" ("Survey_Namespace");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Section_DocumentId_Secti_d38e6a279f" ON "edfi"."SurveySectionAssociation" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Section_SchoolId_Auth" ON "edfi"."SurveySectionAssociation" ("Section_SchoolId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Survey_DocumentId_Survey_d96de0fe97" ON "edfi"."SurveySectionAssociation" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Survey_Namespace_Auth" ON "edfi"."SurveySectionAssociation" ("Survey_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_Namespace_Unified_Auth" ON "edfi"."SurveySectionResponse" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_SurveyResponse_DocumentId_N_9e35c7c3fd" ON "edfi"."SurveySectionResponse" ("SurveyResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier");
 
@@ -33235,7 +33483,13 @@ CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_SurveySection_DocumentId_Na
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_38d6ca658a" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("SurveySectionResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_73a1e7e0d2" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_afaa55b052" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_d589c9b11c" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("Namespace_Unified");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Names_f9c6e98310" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Staff_8ce0d2157f" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
 

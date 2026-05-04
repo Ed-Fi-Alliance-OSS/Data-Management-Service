@@ -41,7 +41,7 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
                 AuthNames.EdOrgIdToEdOrgId,
                 KeyColumns: [AuthNames.TargetEdOrgId],
                 IsUnique: false,
-                Kind: DbIndexKind.Explicit,
+                Kind: DbIndexKind.Authorization,
                 IncludeColumns: [AuthNames.SourceEdOrgId]
             )
         );

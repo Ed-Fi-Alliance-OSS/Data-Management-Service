@@ -212,6 +212,11 @@ public enum DbIndexKind
     /// Explicit non-query indexes defined by the design.
     /// </summary>
     Explicit,
+
+    /// <summary>
+    /// Index required by relationship-based or namespace-based authorization (see auth.md).
+    /// </summary>
+    Authorization,
 }
 
 /// <summary>

@@ -250,7 +250,7 @@
         "schema": "auth",
         "name": "EducationOrganizationIdToEducationOrganizationId"
       },
-      "kind": "Explicit",
+      "kind": "Authorization",
       "is_unique": false,
       "key_columns": [
         "TargetEducationOrganizationId"

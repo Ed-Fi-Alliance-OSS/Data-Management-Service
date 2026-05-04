@@ -145,6 +145,30 @@ internal static class ConstraintNaming
     }
 
     /// <summary>
+    /// Builds an authorization index name following the <c>IX_{TableName}_{Col1}[_Col2…]_Auth</c>
+    /// convention. The trailing <c>_Auth</c> token keeps these distinct from FK-support indexes
+    /// that may target the same key column.
+    /// </summary>
+    internal static string BuildAuthorizationIndexName(
+        DbTableName table,
+        IReadOnlyList<DbColumnName> keyColumns
+    )
+    {
+        ArgumentNullException.ThrowIfNull(keyColumns);
+
+        if (keyColumns.Count == 0)
+        {
+            throw new ArgumentException(
+                "Authorization index must include at least one key column.",
+                nameof(keyColumns)
+            );
+        }
+
+        string[] tokens = [.. keyColumns.Select(c => c.Value), "Auth"];
+        return BuildName("IX", table, tokens);
+    }
+
+    /// <summary>
     /// Applies dialect identifier limits to a constraint name by shortening it with a signature hash.
     /// </summary>
     internal static string ApplyDialectLimit(

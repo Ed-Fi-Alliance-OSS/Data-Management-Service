@@ -3163,7 +3163,7 @@ internal static class AuthEdOrgHierarchyFixture
             AuthNames.EdOrgIdToEdOrgId,
             KeyColumns: [AuthNames.TargetEdOrgId],
             IsUnique: false,
-            Kind: DbIndexKind.Explicit,
+            Kind: DbIndexKind.Authorization,
             IncludeColumns: [AuthNames.SourceEdOrgId]
         );
 
@@ -3504,7 +3504,7 @@ internal static class AuthPeopleViewsFixture
             AuthNames.EdOrgIdToEdOrgId,
             KeyColumns: [AuthNames.TargetEdOrgId],
             IsUnique: false,
-            Kind: DbIndexKind.Explicit,
+            Kind: DbIndexKind.Authorization,
             IncludeColumns: [AuthNames.SourceEdOrgId]
         );
 

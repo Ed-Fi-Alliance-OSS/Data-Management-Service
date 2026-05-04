@@ -546,3 +546,223 @@ internal static class PermutationInputOrderFixture
         );
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Authorization Index DDL Emission Tests
+// ═══════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Verifies that the DDL emitter produces the expected CREATE INDEX statements with INCLUDE
+/// clauses for the five PrimaryAssociation authorization indexes (DMS-1054), in both
+/// PostgreSQL and SQL Server dialects. Index names use the canonical (post-key-unification)
+/// column names.
+/// </summary>
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_PrimaryAssociation_Authorization_Indexes(SqlDialect sqlDialect)
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(sqlDialect);
+        _ddl = new RelationalModelDdlEmitter(dialect).Emit(
+            AuthorizationIndexEmissionFixture.Build(dialect.Rules.Dialect)
+        );
+    }
+
+    [TestCase("StudentSchoolAssociation", "SchoolId_Unified", "Student_DocumentId")]
+    [TestCase("StudentContactAssociation", "Student_DocumentId", "Contact_DocumentId")]
+    [TestCase(
+        "StaffEducationOrganizationAssignmentAssociation",
+        "EducationOrganization_EducationOrganizationId",
+        "Staff_DocumentId"
+    )]
+    [TestCase(
+        "StaffEducationOrganizationEmploymentAssociation",
+        "EducationOrganization_EducationOrganizationId",
+        "Staff_DocumentId"
+    )]
+    [TestCase(
+        "StudentEducationOrganizationResponsibilityAssociation",
+        "EducationOrganization_EducationOrganizationId",
+        "Student_DocumentId"
+    )]
+    public void It_should_emit_create_index_with_include_for_primary_association(
+        string tableName,
+        string keyColumn,
+        string includeColumn
+    )
+    {
+        var indexName = $"IX_{tableName}_{keyColumn}_Auth";
+        var (q1, q2) = QuotePair(sqlDialect);
+        var expected =
+            sqlDialect == SqlDialect.Pgsql
+                ? $"CREATE INDEX IF NOT EXISTS {q1}{indexName}{q2} ON {q1}edfi{q2}.{q1}{tableName}{q2} ({q1}{keyColumn}{q2}) INCLUDE ({q1}{includeColumn}{q2});"
+                : $"CREATE INDEX {q1}{indexName}{q2} ON {q1}edfi{q2}.{q1}{tableName}{q2} ({q1}{keyColumn}{q2}) INCLUDE ({q1}{includeColumn}{q2});";
+
+        _ddl.Should().Contain(expected);
+    }
+
+    [Test]
+    public void It_should_guard_mssql_create_index_with_existence_check()
+    {
+        if (sqlDialect != SqlDialect.Mssql)
+        {
+            Assert.Ignore("MSSQL-only assertion.");
+        }
+
+        // MSSQL has no IF NOT EXISTS for indexes; the emitter wraps each CREATE INDEX in an
+        // IF NOT EXISTS-equivalent guard against sys.indexes.
+        _ddl.Should().Contain("WHERE s.name = N'edfi'");
+        _ddl.Should().Contain("i.name = N'IX_StudentSchoolAssociation_SchoolId_Unified_Auth'");
+    }
+
+    private static (string Open, string Close) QuotePair(SqlDialect dialect) =>
+        dialect == SqlDialect.Pgsql ? ("\"", "\"") : ("[", "]");
+}
+
+/// <summary>
+/// Builds a focused <see cref="DerivedRelationalModelSet"/> for authorization-index DDL
+/// emission tests. Contains the five PrimaryAssociation root tables (with the key + INCLUDE
+/// columns required by each auth index) and the matching authorization-kind index entries.
+/// </summary>
+internal static class AuthorizationIndexEmissionFixture
+{
+    private static readonly DbSchemaName _edfiSchema = new("edfi");
+    private const string EdFi = "Ed-Fi";
+
+    private static readonly (string Resource, string KeyColumn, string IncludeColumn)[] _entries =
+    [
+        ("StudentSchoolAssociation", "SchoolId_Unified", "Student_DocumentId"),
+        ("StudentContactAssociation", "Student_DocumentId", "Contact_DocumentId"),
+        (
+            "StaffEducationOrganizationAssignmentAssociation",
+            "EducationOrganization_EducationOrganizationId",
+            "Staff_DocumentId"
+        ),
+        (
+            "StaffEducationOrganizationEmploymentAssociation",
+            "EducationOrganization_EducationOrganizationId",
+            "Staff_DocumentId"
+        ),
+        (
+            "StudentEducationOrganizationResponsibilityAssociation",
+            "EducationOrganization_EducationOrganizationId",
+            "Student_DocumentId"
+        ),
+    ];
+
+    public static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var resources = new List<ConcreteResourceModel>();
+        var indexes = new List<DbIndexInfo>();
+        var resourceKeys = new List<ResourceKeyEntry>();
+
+        short keyId = 1;
+        foreach (var (resourceName, keyColumn, includeColumn) in _entries)
+        {
+            var resource = new QualifiedResourceName(EdFi, resourceName);
+            var key = new ResourceKeyEntry(keyId++, resource, "1.0.0", false);
+            resourceKeys.Add(key);
+            resources.Add(BuildResource(resource, key, keyColumn, includeColumn));
+
+            var tableName = new DbTableName(_edfiSchema, resourceName);
+            indexes.Add(
+                new DbIndexInfo(
+                    new DbIndexName($"IX_{resourceName}_{keyColumn}_Auth"),
+                    tableName,
+                    [new DbColumnName(keyColumn)],
+                    IsUnique: false,
+                    Kind: DbIndexKind.Authorization,
+                    IncludeColumns: [new DbColumnName(includeColumn)]
+                )
+            );
+        }
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "abc123",
+                (short)resourceKeys.Count,
+                [0xAB, 0xC1],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        EdFi,
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                resourceKeys
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", EdFi, "1.0.0", false, _edfiSchema)],
+            resources,
+            [],
+            [],
+            indexes,
+            []
+        );
+    }
+
+    private static ConcreteResourceModel BuildResource(
+        QualifiedResourceName resource,
+        ResourceKeyEntry key,
+        string keyColumn,
+        string includeColumn
+    )
+    {
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var rootTableName = new DbTableName(_edfiSchema, resource.ResourceName);
+        var rootTable = new DbTableModel(
+            rootTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                $"PK_{resource.ResourceName}",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName(keyColumn),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName(includeColumn),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var model = new RelationalResourceModel(
+            resource,
+            _edfiSchema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            [],
+            []
+        );
+        return new ConcreteResourceModel(key, ResourceStorageKind.RelationalTables, model);
+    }
+}

@@ -66,6 +66,7 @@ public class Given_RelationalModelSet_Passes
                 typeof(DeriveIndexInventoryPass),
                 typeof(DeriveTriggerInventoryPass),
                 typeof(DeriveAuthHierarchyPass),
+                typeof(DeriveAuthorizationIndexInventoryPass),
                 typeof(ApplyDialectIdentifierShorteningPass),
                 typeof(CanonicalizeOrderingPass)
             );
@@ -100,6 +101,7 @@ public class Given_RelationalModelSet_Passes
                 typeof(DeriveIndexInventoryPass),
                 typeof(DeriveTriggerInventoryPass),
                 typeof(DeriveAuthHierarchyPass),
+                typeof(DeriveAuthorizationIndexInventoryPass),
                 typeof(ApplyDialectIdentifierShorteningPass),
                 typeof(CanonicalizeOrderingPass)
             );
