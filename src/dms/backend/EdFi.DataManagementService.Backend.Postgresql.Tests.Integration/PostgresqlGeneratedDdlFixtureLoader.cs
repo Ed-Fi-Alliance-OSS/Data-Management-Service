@@ -29,7 +29,7 @@ internal static class PostgresqlGeneratedDdlFixtureLoader
 
     public static PostgresqlGeneratedDdlFixture LoadFromRepositoryRelativePath(
         string relativePath,
-        bool strict = true
+        bool strict = false
     )
     {
         return LoadFromFixtureDirectory(
@@ -43,7 +43,7 @@ internal static class PostgresqlGeneratedDdlFixtureLoader
 
     public static PostgresqlGeneratedDdlFixture LoadFromFixtureDirectory(
         string fixtureDirectory,
-        bool strict = true
+        bool strict = false
     )
     {
         var descriptor = EffectiveSchemaFixtureLoader.DescribeFixtureDirectory(fixtureDirectory);

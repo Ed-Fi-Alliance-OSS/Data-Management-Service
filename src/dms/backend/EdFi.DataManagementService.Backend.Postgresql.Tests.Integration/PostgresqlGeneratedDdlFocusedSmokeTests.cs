@@ -50,10 +50,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            FixtureRelativePath,
-            strict: false
-        );
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
 
         _schoolTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "edfi", "School");
