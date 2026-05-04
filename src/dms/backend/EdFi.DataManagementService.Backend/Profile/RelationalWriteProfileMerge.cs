@@ -568,7 +568,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         if (
             requestScope is { Visibility: ProfileVisibilityKind.Hidden }
-            && HiddenRequestBufferCarriesProfileData(tablePlan, buffer)
+            && BufferCarriesProfileData(tablePlan, buffer)
         )
         {
             return SeparateScopeSynthesisResult.Reject(
@@ -598,6 +598,28 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         if (!preserveActionable && !visiblePresentActionable && !matchedVisibleStoredActionable)
         {
+            // Fail closed before Skipped: a non-VisiblePresent request scope paired with a
+            // buffer that carries submitted profile data or child collection candidates would
+            // silently drop those writes. Hidden + carries-data rejected above as a profile
+            // creatability rejection; null requestScope + bufferExists already threw the
+            // missing-RequestScopeState invariant. Reaching here with carries-data therefore
+            // means VisibleAbsent disagreed with the flattener-produced buffer — surface as a
+            // typed planner contract mismatch so the executor shapes it as a profile
+            // contract-mismatch result instead of letting nested or extension collection
+            // writes vanish under the Skipped branch.
+            if (BufferCarriesProfileData(tablePlan, buffer))
+            {
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: scope,
+                    invariantName: "non-visible request scope buffer carries profile data",
+                    message: $"Profile separate-table merge for scope '{scope}' on table "
+                        + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}': request scope "
+                        + $"visibility '{requestScope?.Visibility.ToString() ?? "null"}' would skip, but the "
+                        + "flattened buffer carries submitted profile data or collection candidates that "
+                        + "would be silently dropped. Synthesizer invariant violated: non-visible request "
+                        + "scope buffer carries profile data."
+                );
+            }
             return SeparateScopeSynthesisResult.Skipped;
         }
 
@@ -782,10 +804,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         return new RelationalWriteMergedTableState(tablePlan, [projectedCurrentRow], [mergedRow]);
     }
 
-    private static bool HiddenRequestBufferCarriesProfileData(
-        TableWritePlan tablePlan,
-        SeparateScopeBuffer? buffer
-    )
+    private static bool BufferCarriesProfileData(TableWritePlan tablePlan, SeparateScopeBuffer? buffer)
     {
         if (buffer is null)
         {
@@ -805,10 +824,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         // CollectionCandidates are only emitted by the flattener for arrays that have
         // request items (RelationalWriteFlattener.MaterializeCollectionCandidates), so a
-        // non-empty list is itself proof of hidden-scope request data even when every
-        // direct scalar/descriptor/reference binding is null. Without this check, a hidden
-        // aligned/root-extension scope carrying only child-collection data would bypass
-        // the rejection and be silently dropped at the walker's IsSkipped branch.
+        // non-empty list is itself proof of submitted profile data at this scope even when
+        // every direct scalar/descriptor/reference binding is null. Without this check, a
+        // non-visible aligned/root-extension scope carrying only child-collection data would
+        // bypass the guard and be silently dropped at the synthesizer's Skipped branch.
         if (!buffer.Value.CollectionCandidates.IsDefaultOrEmpty)
         {
             return true;

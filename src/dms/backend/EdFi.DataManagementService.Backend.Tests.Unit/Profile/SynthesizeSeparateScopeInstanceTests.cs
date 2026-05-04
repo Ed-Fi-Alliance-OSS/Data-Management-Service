@@ -132,6 +132,49 @@ public class Given_SynthesizeSeparateScopeInstance_when_visible_absent_has_no_cu
 }
 
 [TestFixture]
+public class Given_SynthesizeSeparateScopeInstance_when_visible_absent_buffer_carries_profile_data
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var requestScope = RequestVisibleAbsentScope(SeparateScopeInstanceScenario.Scope);
+        var scenario = SeparateScopeInstanceScenario.Create(
+            requestScope,
+            storedScope: null,
+            buffer: SeparateScopeInstanceScenario.BufferKind.Present,
+            currentRow: SeparateScopeInstanceScenario.CurrentRowKind.Absent
+        );
+
+        _act = () =>
+            scenario.Synthesizer.SynthesizeSeparateScopeInstance(
+                scenario.Request,
+                scenario.ExtensionPlan,
+                scenario.ScopeAddress,
+                scenario.ParentPhysicalIdentityValues,
+                scenario.Buffer,
+                scenario.ScopedRequestNode,
+                requestScope,
+                storedScope: null,
+                scenario.CurrentRowProjection,
+                scenario.ResolvedReferenceLookups
+            );
+    }
+
+    [Test]
+    public void It_fails_closed_with_non_visible_buffer_carries_profile_data_message()
+    {
+        var thrown = _act.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be(SeparateScopeInstanceScenario.Scope);
+        thrown.InvariantName.Should().Be("non-visible request scope buffer carries profile data");
+        thrown.Message.Should().Contain("would be silently dropped");
+        thrown.Message.Should().Contain("VisibleAbsent");
+    }
+}
+
+[TestFixture]
 public class Given_SynthesizeSeparateScopeInstance_when_hidden_request_has_no_current_row
 {
     private SeparateScopeSynthesisResult _result;
@@ -744,6 +787,98 @@ public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_visible
 
     [Test]
     public void It_skips_without_invoking_the_decider() => _result.IsSkipped.Should().BeTrue();
+}
+
+[TestFixture]
+public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_visible_absent_with_submitted_scope_data
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenario = AlignedSeparateScopeInstanceScenario.Create(
+            requestScope: AlignedSeparateScopeInstanceScenario.BuildRequestScope(
+                ProfileVisibilityKind.VisibleAbsent,
+                true
+            ),
+            storedScope: null,
+            buffer: AlignedSeparateScopeInstanceScenario.BufferKind.PresentExplicitNullsOnly,
+            currentRow: AlignedSeparateScopeInstanceScenario.CurrentRowKind.Absent
+        );
+
+        _act = () => scenario.Invoke();
+    }
+
+    [Test]
+    public void It_fails_closed_with_non_visible_buffer_carries_profile_data_message()
+    {
+        var thrown = _act.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be(AlignedExtensionScopeTopologyBuilders.AlignedScope);
+        thrown.InvariantName.Should().Be("non-visible request scope buffer carries profile data");
+        thrown.Message.Should().Contain("would be silently dropped");
+        thrown.Message.Should().Contain("VisibleAbsent");
+    }
+}
+
+[TestFixture]
+public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_visible_absent_with_collection_only_buffer
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenario = AlignedSeparateScopeInstanceScenario.Create(
+            requestScope: AlignedSeparateScopeInstanceScenario.BuildRequestScope(
+                ProfileVisibilityKind.VisibleAbsent,
+                true
+            ),
+            storedScope: null,
+            buffer: AlignedSeparateScopeInstanceScenario.BufferKind.PresentCollectionOnly,
+            currentRow: AlignedSeparateScopeInstanceScenario.CurrentRowKind.Absent
+        );
+
+        _act = () => scenario.Invoke();
+    }
+
+    [Test]
+    public void It_fails_closed_with_non_visible_buffer_carries_profile_data_message()
+    {
+        var thrown = _act.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be(AlignedExtensionScopeTopologyBuilders.AlignedScope);
+        thrown.InvariantName.Should().Be("non-visible request scope buffer carries profile data");
+        thrown.Message.Should().Contain("would be silently dropped");
+        thrown.Message.Should().Contain("VisibleAbsent");
+    }
+}
+
+[TestFixture]
+public class Given_SynthesizeSeparateScopeInstance_for_aligned_extension_visible_absent_with_default_flattened_buffer_only
+{
+    private SeparateScopeSynthesisResult _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenario = AlignedSeparateScopeInstanceScenario.Create(
+            requestScope: AlignedSeparateScopeInstanceScenario.BuildRequestScope(
+                ProfileVisibilityKind.VisibleAbsent,
+                true
+            ),
+            storedScope: null,
+            buffer: AlignedSeparateScopeInstanceScenario.BufferKind.PresentEmptyDefaultFlattened,
+            currentRow: AlignedSeparateScopeInstanceScenario.CurrentRowKind.Absent
+        );
+
+        _result = scenario.Invoke();
+    }
+
+    [Test]
+    public void It_skips_without_invoking_the_decider_for_default_flattened_buffer_with_no_submitted_data() =>
+        _result.IsSkipped.Should().BeTrue();
 }
 
 [TestFixture]
