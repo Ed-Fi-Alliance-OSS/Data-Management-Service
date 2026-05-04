@@ -29,12 +29,6 @@ internal class ProfileWritePipelineMiddleware(
     ILogger<ProfileWritePipelineMiddleware> logger
 ) : IPipelineStep
 {
-    // Used when isCreate is false (the update branch and the stored-state invoker, which always
-    // runs with isCreate: false). CreatabilityAnalyzer short-circuits on !isCreatingNewInstance
-    // before consulting this map, so an empty dictionary is safe for non-create paths.
-    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> EmptySchemaRequiredMembers =
-        new Dictionary<string, IReadOnlyList<string>>();
-
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // Short-circuit: not relational backend
@@ -125,15 +119,18 @@ internal class ProfileWritePipelineMiddleware(
         var inlinedScopes = ContentTypeScopeDiscovery.DiscoverInlinedScopes(writeContentType, tableScopeSet);
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, inlinedScopes);
 
-        // Creatability enforcement only needs the root "$" schema-required entry.
-        // RequiredFieldsForInsert comes from ResourceSchema.jsonSchemaForInsert.required and
-        // is populated by ProvideApiSchemaMiddleware earlier in the pipeline.
-        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope = isCreate
-            ? new Dictionary<string, IReadOnlyList<string>>
-            {
-                ["$"] = requestInfo.ResourceSchema.RequiredFieldsForInsert,
-            }
-            : EmptySchemaRequiredMembers;
+        // Build the per-scope schema-required map by walking jsonSchemaForInsert
+        // for every scope in the catalog. CreatabilityAnalyzer evaluates required
+        // members per jsonScope (not just root), so a root-only entry would let a
+        // hidden required non-identity member at a nested or collection scope slip
+        // through as Creatable=true. The same map is captured for the stored-state
+        // projection rerun below so child-create decisions during POST-as-update
+        // and update flows see the same required-member metadata.
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope =
+            EffectiveSchemaRequiredMembersBuilder.Build(
+                requestInfo.ResourceSchema.JsonSchemaForInsert,
+                scopeCatalog
+            );
 
         // Execute the profile write pipeline (request-side only, no stored document yet).
         // This middleware only runs for POST/PUT with a writable profile (guarded above),
@@ -191,12 +188,16 @@ internal class ProfileWritePipelineMiddleware(
             return;
         }
 
-        // Build the backend profile write context with a captured stored-state projection invoker
+        // Build the backend profile write context with a captured stored-state projection invoker.
+        // The same per-scope required-members map is captured here so the projection rerun
+        // (isCreate: false, but child-create decisions still depend on required members)
+        // sees identical schema metadata to the request-side analysis above.
         var invoker = new CapturedStoredStateProjectionInvoker(
             writeContentType,
             profileName,
             resourceName,
-            method
+            method,
+            effectiveSchemaRequiredMembersByScope
         );
 
         requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
@@ -217,7 +218,8 @@ internal class ProfileWritePipelineMiddleware(
         ContentTypeDefinition writeContentType,
         string profileName,
         string resourceName,
-        string method
+        string method,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
     ) : IStoredStateProjectionInvoker
     {
         public ProfileAppliedWriteContext ProjectStoredState(
@@ -239,7 +241,7 @@ internal class ProfileWritePipelineMiddleware(
                 resourceName: resourceName,
                 method: method,
                 operation: operation,
-                effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers,
+                effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope,
                 deferCreatabilityViolations: true
             );
 
