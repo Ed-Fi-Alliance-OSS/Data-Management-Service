@@ -7368,3 +7368,163 @@ internal static class AlignedExtensionScopeWithChildrenTopologyBuilders
         );
     }
 }
+
+/// <summary>
+/// Regression fixture for the nullable semantic-identity presence mismatch between
+/// the walker's DB-projected <see cref="CurrentCollectionRowProjection"/> and Core's
+/// stored-side <see cref="VisibleStoredCollectionRow"/> projection.
+///
+/// <para>
+/// The Core stored side runs <see cref="DocumentReconstituter.EmitScalars"/>, which
+/// omits SQL <c>NULL</c> columns from the reconstituted JSON, then
+/// <see cref="AddressDerivationEngine.ReadSemanticIdentity"/> walks that JSON and
+/// reports <c>IsPresent=false</c> for any identity path whose property is missing.
+/// The walker only has the DB-row column value, so a SQL <c>NULL</c> identity column
+/// must produce <c>IsPresent=false</c> to keep the walker's identity key consistent
+/// with the Core <see cref="VisibleStoredCollectionRow"/> key under the
+/// presence-aware <see cref="SemanticIdentityKeys.BuildKey"/>.
+/// </para>
+///
+/// <para>
+/// Before the fix the walker hardcoded <c>IsPresent=true</c>; the planner's
+/// <c>SemanticIdentityKeys.BuildKey</c> includes presence, so a stored row with a
+/// <c>NULL</c> identity column would not reverse-map to its corresponding current
+/// row and would fail the reverse stored coverage invariant.
+/// </para>
+/// </summary>
+[TestFixture]
+public class Given_a_walker_with_a_current_row_whose_semantic_identity_column_is_null
+{
+    private ProfileCollectionWalker _walker = null!;
+    private DbTableName _collectionTable;
+    private ImmutableArray<FlattenedWriteValue> _expectedParentValues;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        const long documentId = 345L;
+
+        // Request body has no addresses array — request side is empty for this nullable
+        // identity row. The merge candidate carries a literal null for the identity column,
+        // matching what the flattener produces when the request omits the field.
+        var body = new JsonObject();
+
+        var nullCandidate = new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            values:
+            [
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(documentId),
+                new FlattenedWriteValue.Literal(1),
+                new FlattenedWriteValue.Literal(null),
+            ],
+            semanticIdentityValues: [null],
+            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                collectionPlan,
+                [null]
+            )
+        );
+
+        // No visible request item: the request omits the identity field entirely. The walker
+        // should still index the stored row's NULL identity correctly, which is what the
+        // planner relies on for reverse stored coverage on nullable identity columns.
+        var request = CollectionSynthesizerBuilders.BuildRequest(
+            body,
+            ImmutableArray<VisibleRequestCollectionItem>.Empty
+        );
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(
+            rootPlan,
+            [nullCandidate],
+            documentId
+        );
+
+        // Single current collection row whose identity column is SQL NULL. Layout matches
+        // MinimalCollectionTableWritePlan: [CollectionItemId, ParentDocumentId, Ordinal, IdentityField0].
+        object?[] dbRowNullIdentity = [10L, documentId, 1, null];
+        var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId,
+            [dbRowNullIdentity]
+        );
+
+        var context = CollectionSynthesizerBuilders.BuildContext(
+            request,
+            ImmutableArray<VisibleStoredCollectionRow>.Empty
+        );
+
+        var mergeRequest = new RelationalWriteProfileMergeRequest(
+            writePlan: plan,
+            flattenedWriteSet: flattened,
+            writableRequestBody: body,
+            currentState: currentState,
+            profileRequest: request,
+            profileAppliedContext: context,
+            resolvedReferences: EmptyResolvedReferenceSet()
+        );
+
+        var resolvedReferenceLookups = EmptyResolvedReferenceLookups(plan);
+
+        var tableStateBuilders = new Dictionary<DbTableName, ProfileTableStateBuilder>();
+        foreach (var p in plan.TablePlansInDependencyOrder)
+        {
+            tableStateBuilders[p.TableModel.Table] = new ProfileTableStateBuilder(p);
+        }
+
+        _walker = new ProfileCollectionWalker(mergeRequest, resolvedReferenceLookups, tableStateBuilders);
+
+        _collectionTable = collectionPlan.TableModel.Table;
+        _expectedParentValues = [new FlattenedWriteValue.Literal(documentId)];
+    }
+
+    [Test]
+    public void It_marks_the_db_projected_semantic_identity_part_as_not_present_for_a_null_column()
+    {
+        var key = (_collectionTable, new ParentIdentityKey(_expectedParentValues));
+        var bucket = _walker.CurrentCollectionRowsByTableAndParentIdentity[key];
+
+        bucket[0].SemanticIdentityInOrder[0].IsPresent.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_emits_a_null_value_for_the_db_projected_semantic_identity_part()
+    {
+        var key = (_collectionTable, new ParentIdentityKey(_expectedParentValues));
+        var bucket = _walker.CurrentCollectionRowsByTableAndParentIdentity[key];
+
+        bucket[0].SemanticIdentityInOrder[0].Value.Should().BeNull();
+    }
+
+    [Test]
+    public void It_keys_the_db_row_identity_to_match_a_core_stored_row_built_from_a_reconstituted_document_with_an_omitted_property()
+    {
+        // Core's stored side: DocumentReconstituter.EmitScalars omits SQL NULL columns from
+        // the reconstituted JSON, then AddressDerivationEngine.ReadSemanticIdentity walks
+        // that JSON and reports IsPresent=false for the missing identity property. Build the
+        // equivalent SemanticIdentityPart by hand here — using the walker's emitted
+        // canonical RelativePath so the comparison isolates the IsPresent/Value contract
+        // rather than path normalization — and confirm both sides produce the same
+        // SemanticIdentityKeys.BuildKey output, which is what the planner's
+        // ValidateReverseStoredCoverage relies on.
+        var key = (_collectionTable, new ParentIdentityKey(_expectedParentValues));
+        var bucket = _walker.CurrentCollectionRowsByTableAndParentIdentity[key];
+        var walkerIdentity = bucket[0].SemanticIdentityInOrder;
+        var walkerKey = SemanticIdentityKeys.BuildKey(walkerIdentity);
+
+        ImmutableArray<SemanticIdentityPart> coreStoredIdentity =
+        [
+            new SemanticIdentityPart(
+                walkerIdentity[0].RelativePath,
+                Value: null,
+                IsPresent: false
+            ),
+        ];
+        var coreStoredKey = SemanticIdentityKeys.BuildKey(coreStoredIdentity);
+
+        walkerKey.Should().Be(coreStoredKey);
+    }
+}

@@ -1544,19 +1544,27 @@ internal sealed class ProfileCollectionWalker
                                         binding.RelativePath.Canonical,
                                         tablePlan.TableModel.JsonScope.Canonical
                                     );
-                            // Stored DB-projected rows always count as "present" for the
-                            // identity binding: a row that exists in the table had every
-                            // bound column persisted, even when the persisted value is
-                            // SQL NULL. This mirrors Core's stored-side projection in
-                            // AddressDerivationEngine.ReadSemanticIdentity, which sets
-                            // IsPresent=true for any identity path whose JSON leaf can be
-                            // navigated (including JSON null leaves). Without this
-                            // alignment, the new presence-aware planner key would mismatch
-                            // a Core VisibleStoredCollectionRow whose IsPresent is true
-                            // against a walker CurrentCollectionRowSnapshot whose IsPresent
-                            // is false, breaking reverse stored coverage on nullable
-                            // identity columns.
-                            return new SemanticIdentityPart(identityPath, jsonNode, IsPresent: true);
+                            // Presence mirrors Core's stored-side projection. The Core path
+                            // is: DocumentReconstituter.EmitScalars omits SQL NULL columns
+                            // from the reconstituted JSON document, then
+                            // AddressDerivationEngine.ReadSemanticIdentity walks that
+                            // reconstituted JSON and returns IsPresent=true only when the
+                            // property exists at the canonical relative path (explicit JSON
+                            // null is also IsPresent=true). For DB-projected rows the
+                            // walker has only the column value; a non-null value mirrors a
+                            // present property in the reconstituted JSON, while a SQL NULL
+                            // mirrors an omitted property — so IsPresent must track
+                            // rawValue is not null to keep the walker's
+                            // CurrentCollectionRowSnapshot key consistent with the Core
+                            // VisibleStoredCollectionRow key under presence-aware
+                            // SemanticIdentityKeys.BuildKey. The earlier hardcoded
+                            // IsPresent=true broke reverse stored coverage on nullable
+                            // identity columns whenever the column persisted SQL NULL.
+                            return new SemanticIdentityPart(
+                                identityPath,
+                                jsonNode,
+                                IsPresent: rawValue is not null
+                            );
                         }
                     )
                     .ToImmutableArray();
