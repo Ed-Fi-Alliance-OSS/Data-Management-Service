@@ -1307,8 +1307,7 @@ internal sealed class ProfileCollectionWalker
                 var childScope = tablePlan.TableModel.JsonScope.Canonical;
                 var matches =
                     tableKind is DbTableKind.CollectionExtensionScope
-                        ? IsDirectCollectionExtensionScopeChild(parentScope, childScope)
-                            || IsDirectMirroredCollectionExtensionScopeChild(parentScope, childScope)
+                        ? IsDirectAlignedExtensionScopeChild(parentScope, childScope)
                         : IsTopologicallyOwnedCollectionChild(parentScope, childScope, tableBackedJsonScopes);
                 if (matches)
                 {
@@ -1455,41 +1454,6 @@ internal sealed class ProfileCollectionWalker
     }
 
     /// <summary>
-    /// Returns <c>true</c> when a <see cref="DbTableKind.CollectionExtensionScope"/> is the
-    /// aligned 1:1 extension scope directly attached to a collection-row parent. The
-    /// aligned scope path is a special topological child shape: it appends
-    /// <c>._ext.&lt;extensionName&gt;</c> to the parent collection scope, not another array
-    /// segment.
-    /// </summary>
-    private static bool IsDirectCollectionExtensionScopeChild(string parentScope, string childScope)
-    {
-        if (!parentScope.Contains("[*]", StringComparison.Ordinal))
-        {
-            return false;
-        }
-        if (!childScope.StartsWith(parentScope, StringComparison.Ordinal))
-        {
-            return false;
-        }
-        if (childScope.Length == parentScope.Length)
-        {
-            return false;
-        }
-
-        const string alignedExtensionPrefix = "._ext.";
-        var remainder = childScope[parentScope.Length..];
-        if (!remainder.StartsWith(alignedExtensionPrefix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var extensionName = remainder[alignedExtensionPrefix.Length..];
-        return extensionName.Length > 0
-            && !extensionName.Contains('.', StringComparison.Ordinal)
-            && !extensionName.Contains('[', StringComparison.Ordinal);
-    }
-
-    /// <summary>
     /// Returns <c>true</c> when <paramref name="childScope"/> is a mirrored collection-aligned
     /// extension scope of the form
     /// <c>$._ext.&lt;extensionName&gt;.&lt;parentRemainder&gt;._ext.&lt;extensionName&gt;</c>
@@ -1510,6 +1474,31 @@ internal sealed class ProfileCollectionWalker
         return AlignedExtensionScopeSupport.Classify(childScope)
                 is { IsMirrored: true, ParentCollectionScope: var impliedParentScope }
             && string.Equals(impliedParentScope, parentScope, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="childScope"/> is a direct aligned-extension
+    /// child of the collection-row parent at <paramref name="parentScope"/>, covering both
+    /// the standard <c>"$.&lt;parent&gt;._ext.&lt;name&gt;"</c> shape and the mirrored
+    /// <c>"$._ext.&lt;name&gt;.&lt;parentRemainder&gt;._ext.&lt;name&gt;"</c> shape.
+    /// Routes the classification through <see cref="AlignedExtensionScopeSupport.Classify"/>
+    /// so the walker and the flattener cannot disagree about which collection scope owns
+    /// the aligned extension. In particular this prevents a mirrored shape from also
+    /// matching the extension-prefixed pseudo-parent (e.g. mirrored
+    /// <c>"$._ext.sample.addresses[*]._ext.sample"</c> must only attach to the re-rooted
+    /// base collection <c>"$.addresses[*]"</c>, never to the structurally similar
+    /// <c>"$._ext.sample.addresses[*]"</c>).
+    /// </summary>
+    internal static bool IsDirectAlignedExtensionScopeChild(string parentScope, string childScope)
+    {
+        if (!parentScope.Contains("[*]", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return AlignedExtensionScopeSupport.Classify(childScope)
+                is { ParentCollectionScope: var classifiedParentScope }
+            && string.Equals(classifiedParentScope, parentScope, StringComparison.Ordinal);
     }
 
     /// <summary>

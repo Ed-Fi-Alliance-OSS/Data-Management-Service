@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
 using FluentAssertions;
@@ -167,4 +168,78 @@ public class Given_TryNavigateConcreteNode_for_a_mirrored_aligned_scope_against_
     [Test]
     public void It_returns_the_zone_value_for_the_targeted_address() =>
         _resolved!["zone"]!.GetValue<string>().Should().Be("ZoneB");
+}
+
+/// <summary>
+/// Regression for the walker/flattener disagreement on mirrored aligned-extension scopes:
+/// <c>$._ext.sample.addresses[*]._ext.sample</c> must NOT be classified as a direct
+/// aligned-extension child of the extension-prefixed pseudo-parent
+/// <c>$._ext.sample.addresses[*]</c>. The flattener (via
+/// <see cref="AlignedExtensionScopeSupport.Classify"/>) re-roots that mirrored shape to
+/// <c>$.addresses[*]</c>; the walker must agree, otherwise
+/// <c>BuildDirectChildCollectionPlansByParentScope</c> would attribute the mirrored
+/// scope to two parent scopes simultaneously, producing duplicate, empty, or
+/// wrong-ancestor dispatch when both pseudo-parent shapes happen to be table-backed.
+/// </summary>
+[TestFixture]
+public class Given_IsDirectAlignedExtensionScopeChild_for_a_mirrored_child_scope
+{
+    private const string MirroredChild = "$._ext.sample.addresses[*]._ext.sample";
+
+    [Test]
+    public void It_does_not_match_the_extension_prefixed_pseudo_parent() =>
+        ProfileCollectionWalker
+            .IsDirectAlignedExtensionScopeChild("$._ext.sample.addresses[*]", MirroredChild)
+            .Should()
+            .BeFalse();
+
+    [Test]
+    public void It_matches_the_re_rooted_base_collection_parent() =>
+        ProfileCollectionWalker
+            .IsDirectAlignedExtensionScopeChild("$.addresses[*]", MirroredChild)
+            .Should()
+            .BeTrue();
+
+    [Test]
+    public void It_agrees_with_AlignedExtensionScopeSupport_classification()
+    {
+        var classified = AlignedExtensionScopeSupport.Classify(MirroredChild);
+
+        classified.Should().NotBeNull();
+        classified!.Value.IsMirrored.Should().BeTrue();
+
+        ProfileCollectionWalker
+            .IsDirectAlignedExtensionScopeChild(classified.Value.ParentCollectionScope, MirroredChild)
+            .Should()
+            .BeTrue();
+    }
+}
+
+/// <summary>
+/// Companion regression covering the standard aligned-extension shape
+/// <c>"$.parents[*]._ext.sample"</c>: the unified predicate must continue to accept the
+/// classified parent (the base collection) and reject unrelated collection parents.
+/// </summary>
+[TestFixture]
+public class Given_IsDirectAlignedExtensionScopeChild_for_a_standard_aligned_child_scope
+{
+    private const string StandardChild = "$.parents[*]._ext.sample";
+
+    [Test]
+    public void It_matches_the_direct_collection_parent() =>
+        ProfileCollectionWalker
+            .IsDirectAlignedExtensionScopeChild("$.parents[*]", StandardChild)
+            .Should()
+            .BeTrue();
+
+    [Test]
+    public void It_does_not_match_an_unrelated_collection_parent() =>
+        ProfileCollectionWalker
+            .IsDirectAlignedExtensionScopeChild("$.children[*]", StandardChild)
+            .Should()
+            .BeFalse();
+
+    [Test]
+    public void It_does_not_match_a_root_parent_lacking_collection_segment() =>
+        ProfileCollectionWalker.IsDirectAlignedExtensionScopeChild("$", StandardChild).Should().BeFalse();
 }
