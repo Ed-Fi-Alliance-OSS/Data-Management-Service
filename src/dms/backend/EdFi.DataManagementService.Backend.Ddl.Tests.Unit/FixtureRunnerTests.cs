@@ -18,28 +18,28 @@ internal static class FixtureTestHelper
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_Minimal_Fixture : DdlGoldenFixtureTestBase
+public class Given_FixtureRunner_With_Minimal_Fixture : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "small", "minimal");
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_Nested_Fixture : DdlGoldenFixtureTestBase
+public class Given_FixtureRunner_With_Nested_Fixture : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "small", "nested");
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_Polymorphic_Fixture : DdlGoldenFixtureTestBase
+public class Given_FixtureRunner_With_Polymorphic_Fixture : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "small", "polymorphic");
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_Ext_Fixture : DdlGoldenFixtureTestBase
+public class Given_FixtureRunner_With_Ext_Fixture : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "small", "ext");
@@ -47,7 +47,7 @@ public class Given_FixtureRunner_With_Ext_Fixture : DdlGoldenFixtureTestBase
 
 [TestFixture]
 public class Given_FixtureRunner_With_Focused_Stable_Key_Extension_Child_Collections_Fixture
-    : DdlGoldenFixtureTestBase
+    : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "focused", "stable-key-extension-child-collections");
@@ -55,35 +55,35 @@ public class Given_FixtureRunner_With_Focused_Stable_Key_Extension_Child_Collect
 
 [TestFixture]
 public class Given_FixtureRunner_With_Focused_TopLevel_ReferenceBackedCollection_Fixture
-    : DdlGoldenFixtureTestBase
+    : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "focused", "top-level-reference-backed-collection");
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_NamingStress_Fixture : DdlGoldenFixtureTestBase
+public class Given_FixtureRunner_With_NamingStress_Fixture : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "small", "naming-stress");
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_ReferentialIdentity_Fixture : DdlGoldenFixtureTestBase
+public class Given_FixtureRunner_With_ReferentialIdentity_Fixture : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "small", "referential-identity");
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_ProfileRootOnlyMerge_Fixture : DdlGoldenFixtureTestBase
+public class Given_FixtureRunner_With_ProfileRootOnlyMerge_Fixture : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "small", "profile-root-only-merge");
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_EmitDdlManifest_False : DdlGoldenFixtureTestBase
+public class Given_FixtureRunner_With_EmitDdlManifest_False : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "Fixtures", "small", "no-ddl-manifest");
@@ -105,7 +105,7 @@ public class Given_FixtureComparer_When_UpdateGoldens_Is_Set
         _tempFixtureDirectory = Path.Combine(Path.GetTempPath(), $"ddl-fixture-{Guid.NewGuid():N}");
         GoldenFixtureTestHelpers.CopyDirectory(sourceFixtureDirectory, _tempFixtureDirectory);
 
-        FixtureRunner.Run(_tempFixtureDirectory);
+        FixtureRunner.Run(_tempFixtureDirectory, strict: false);
 
         // Remove expected/ so UpdateGoldens has to create it
         var expectedDir = Path.Combine(_tempFixtureDirectory, "expected");

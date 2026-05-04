@@ -97,7 +97,8 @@ public class Given_DdlPipelineHelpers_With_Small_Ext_Fixture_Without_Semantic_Id
         var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("ext");
         (_modelSet, _combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,
-            SqlDialect.Pgsql
+            SqlDialect.Pgsql,
+            strict: false
         );
     }
 
@@ -156,7 +157,8 @@ public class Given_DdlPipelineHelpers_With_Small_Nested_Fixture_Without_Semantic
         var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("nested");
         (_modelSet, _combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,
-            SqlDialect.Pgsql
+            SqlDialect.Pgsql,
+            strict: false
         );
     }
 
@@ -223,7 +225,11 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Negative_Fixture_W
     public void Setup()
     {
         var effectiveSchemaSet = FocusedStableKeyFixtureEffectiveSchemaSetLoader.Load(FixturePath);
-        (_modelSet, _combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
+        (_modelSet, _combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(
+            effectiveSchemaSet,
+            dialect,
+            strict: false
+        );
     }
 
     [Test]
@@ -253,7 +259,11 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Positive_Fixture(S
     public void Setup()
     {
         var effectiveSchemaSet = FocusedStableKeyFixtureEffectiveSchemaSetLoader.Load(FixturePath);
-        (_modelSet, _combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
+        (_modelSet, _combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(
+            effectiveSchemaSet,
+            dialect,
+            strict: false
+        );
     }
 
     [Test]
@@ -296,5 +306,52 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Positive_Fixture(S
             .Should()
             .Equal(expectedBindingColumns);
         _combinedSql.Should().Contain(uniqueConstraint.Name);
+    }
+}
+
+/// <summary>
+/// Locks in the strict-mode wiring through <see cref="DdlPipelineHelpers.BuildDdlForDialect"/>:
+/// when a fixture exposes a PrimaryAssociation resource whose root table is missing the
+/// post-key-unification column that authorization-index emission needs, the production
+/// (strict) DDL path must fail fast instead of silently dropping the index. The
+/// <c>small/referential-identity</c> fixture is a known synthetic case that defines
+/// <c>StudentSchoolAssociation</c> without the unified column; the permissive (non-strict)
+/// path keeps it building so the rest of the small-fixture goldens still work.
+/// </summary>
+[TestFixture]
+public class Given_DdlPipelineHelpers_With_Pa_Resource_Missing_Unified_Column
+{
+    [Test]
+    public void Strict_mode_throws_a_descriptive_exception()
+    {
+        var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("referential-identity");
+
+        Action build = () =>
+            DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, SqlDialect.Pgsql, strict: true);
+
+        build
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*StudentSchoolAssociation*SchoolId_Unified*");
+    }
+
+    [Test]
+    public void Non_strict_mode_still_builds_with_the_pa_index_silently_skipped()
+    {
+        var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("referential-identity");
+
+        var (modelSet, _) = DdlPipelineHelpers.BuildDdlForDialect(
+            effectiveSchemaSet,
+            SqlDialect.Pgsql,
+            strict: false
+        );
+
+        modelSet
+            .IndexesInCreateOrder.Where(index =>
+                index.Kind == DbIndexKind.Authorization
+                && index.Table.Name.Equals("StudentSchoolAssociation", StringComparison.Ordinal)
+            )
+            .Should()
+            .BeEmpty();
     }
 }

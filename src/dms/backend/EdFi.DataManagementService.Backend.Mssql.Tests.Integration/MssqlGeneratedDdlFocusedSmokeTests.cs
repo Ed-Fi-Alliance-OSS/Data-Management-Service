@@ -46,7 +46,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
             );
         }
 
-        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            FixtureRelativePath,
+            strict: false
+        );
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _addressPeriodForeignKeys = await _database.GetForeignKeyMetadataAsync("edfi", "SchoolAddressPeriod");
         _interventionForeignKeys = await _database.GetForeignKeyMetadataAsync(

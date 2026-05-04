@@ -22,8 +22,10 @@ The DDL generator should emit the indexes required by the Relationship-based and
 
 ### PrimaryAssociation indexes
 
-- The DDL generator emits an index for each of the following (hardcoded) PrimaryAssociations:
-  - edfi.StudentSchoolAssociation on (SchoolId) INCLUDE (Student_DocumentId)
+- The DDL generator emits an index for each of the following (hardcoded) PrimaryAssociations.
+  Column names use the post-key-unification canonical storage column name on the root table —
+  the form that survives `KeyUnificationPass` — not the pre-unification logical column name:
+  - edfi.StudentSchoolAssociation on (SchoolId_Unified) INCLUDE (Student_DocumentId)
   - edfi.StudentContactAssociation on (Student_DocumentId) INCLUDE (Contact_DocumentId)
   - edfi.StaffEducationOrganizationAssignmentAssociation on (EducationOrganization_EducationOrganizationId) INCLUDE (Staff_DocumentId)
   - edfi.StaffEducationOrganizationEmploymentAssociation on (EducationOrganization_EducationOrganizationId) INCLUDE (Staff_DocumentId)

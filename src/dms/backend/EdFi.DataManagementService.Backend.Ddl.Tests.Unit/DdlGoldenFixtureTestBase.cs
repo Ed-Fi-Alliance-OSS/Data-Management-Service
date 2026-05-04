@@ -23,6 +23,13 @@ public abstract class DdlGoldenFixtureTestBase
     protected abstract string ResolveFixtureDirectory(string projectRoot);
 
     /// <summary>
+    /// Whether the fixture runs through the strict pass set (production-equivalent).
+    /// Defaults to <see langword="true"/>; synthetic fixtures that omit collection semantic
+    /// identity or PrimaryAssociation literal columns override to <see langword="false"/>.
+    /// </summary>
+    protected virtual bool Strict => true;
+
+    /// <summary>
     /// Hook for subclasses to massage the FixtureRunner's actual/ output before comparison
     /// (e.g. trim trailing whitespace from generated SQL). Default is a no-op.
     /// </summary>
@@ -35,7 +42,7 @@ public abstract class DdlGoldenFixtureTestBase
         _fixtureDirectory = Path.GetFullPath(ResolveFixtureDirectory(projectRoot));
 
         _config = FixtureConfigReader.Read(_fixtureDirectory);
-        _actualDir = FixtureRunner.Run(_fixtureDirectory);
+        _actualDir = FixtureRunner.Run(_fixtureDirectory, Strict);
         NormalizeActualOutput(_actualDir);
         _result = FixtureComparer.Compare(_fixtureDirectory);
     }
@@ -99,4 +106,14 @@ public abstract class DdlGoldenFixtureTestBase
                 $"expected/ and actual/ should match. Set UPDATE_GOLDENS=1 to regenerate.\n\n{_result.Message}"
             );
     }
+}
+
+/// <summary>
+/// Base for golden-file fixture tests over synthetic small/focused fixtures that intentionally
+/// omit collection semantic identity or PrimaryAssociation literal columns. Runs the permissive
+/// (non-strict) pass set so the synthetic fixtures keep building.
+/// </summary>
+public abstract class SyntheticDdlGoldenFixtureTestBase : DdlGoldenFixtureTestBase
+{
+    protected sealed override bool Strict => false;
 }

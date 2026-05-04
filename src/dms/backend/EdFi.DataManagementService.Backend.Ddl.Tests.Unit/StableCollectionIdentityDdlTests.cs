@@ -263,7 +263,11 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Fixture
     )
     {
         var effectiveSchemaSet = FocusedStableKeyFixtureEffectiveSchemaSetLoader.Load(FixturePath);
-        var (modelSet, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
+        var (modelSet, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(
+            effectiveSchemaSet,
+            dialect,
+            strict: false
+        );
         var sqlDialect = SqlDialectFactory.Create(dialect);
         var defaultExpression = sqlDialect.RenderSequenceDefaultExpression(
             DmsTableNames.DmsSchema,
@@ -374,7 +378,11 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Fixture
     )
     {
         var effectiveSchemaSet = FocusedStableKeyFixtureEffectiveSchemaSetLoader.Load(FixturePath);
-        var (modelSet, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
+        var (modelSet, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(
+            effectiveSchemaSet,
+            dialect,
+            strict: false
+        );
 
         var stableKeyFkSupportIndexes = modelSet
             .IndexesInCreateOrder.Where(index =>

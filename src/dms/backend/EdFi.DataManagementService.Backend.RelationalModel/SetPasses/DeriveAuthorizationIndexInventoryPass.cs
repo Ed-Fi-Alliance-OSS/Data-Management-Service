@@ -167,20 +167,22 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     /// declared on each concrete resource. Indexes resolve to a single root-table column.
     /// </summary>
     /// <remarks>
-    /// EdOrg paths are skipped when a PrimaryAssociation index already covers
-    /// <c>(table, column)</c>. Namespace paths are not PA-deduped (Namespace is never a PA key
-    /// column). Repeat emissions to the same <c>(table, column)</c> are coalesced globally —
-    /// this protects index-name uniqueness when an EdOrg and Namespace path resolve to the
-    /// same root column on a single resource, AND when multiple concrete resources share the
-    /// same physical root table (e.g. descriptors backed by <c>dms.Descriptor</c>). Array-nested
-    /// paths (containing <c>[*]</c>) are silently skipped (DMS-1094 scope).
+    /// Both EdOrg and Namespace paths are skipped when a PrimaryAssociation index already covers
+    /// <c>(table, column)</c>. PA coverage is seeded into <c>emitted</c> so the dedup is uniform
+    /// — current Ed-Fi schemas don't put Namespace on a PA key column, but symmetric coverage
+    /// makes the pass robust to extension schemas that might. Repeat emissions to the same
+    /// <c>(table, column)</c> are coalesced globally — this protects index-name uniqueness when
+    /// an EdOrg and Namespace path resolve to the same root column on a single resource, AND
+    /// when multiple concrete resources share the same physical root table (e.g. descriptors
+    /// backed by <c>dms.Descriptor</c>). Array-nested paths (containing <c>[*]</c>) are silently
+    /// skipped (DMS-1094 scope).
     /// </remarks>
     private static void EmitSecurableElementIndexes(
         RelationalModelSetBuilderContext context,
         HashSet<(DbTableName Table, DbColumnName Column)> paIndexCovered
     )
     {
-        var emitted = new HashSet<(DbTableName Table, DbColumnName Column)>();
+        var emitted = new HashSet<(DbTableName Table, DbColumnName Column)>(paIndexCovered);
 
         foreach (var concrete in context.ConcreteResourcesInNameOrder)
         {
@@ -194,12 +196,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 }
 
                 var column = ResolveRootTableColumn(concrete, jsonPath);
-
-                if (paIndexCovered.Contains((rootTable.Table, column)))
-                {
-                    continue;
-                }
-
                 AddSecurableElementIndex(context, rootTable.Table, column, emitted);
             }
 

@@ -23,8 +23,11 @@ public static class FixtureRunner
     /// Runs a fixture: loads inputs, builds all artifacts, writes them to actual/.
     /// </summary>
     /// <param name="fixtureDirectory">Absolute path to the fixture directory containing fixture.json and inputs/.</param>
+    /// <param name="strict">Forwarded to <see cref="DdlPipelineHelpers.BuildDdlForDialect"/>; defaults to
+    /// <see langword="true"/> so authoritative fixtures use the production-strict pass set, and synthetic
+    /// fixtures opt out via the test base.</param>
     /// <returns>The absolute path to the actual/ output directory.</returns>
-    public static string Run(string fixtureDirectory)
+    public static string Run(string fixtureDirectory, bool strict = true)
     {
         var config = FixtureConfigReader.Read(fixtureDirectory);
         var actualDir = Path.Combine(fixtureDirectory, "actual");
@@ -49,7 +52,11 @@ public static class FixtureRunner
 
         foreach (var dialect in dialects)
         {
-            var (modelSet, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
+            var (modelSet, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(
+                effectiveSchemaSet,
+                dialect,
+                strict
+            );
             ddlManifestEntries.Add(new DdlManifestEntry(dialect, combinedSql));
 
             var dialectLabel = DdlManifestEmitter.DialectLabel(dialect);

@@ -49,7 +49,10 @@ public class Given_MssqlGeneratedDdlFixtureLoader
                 .Range(0, 8)
                 .Select(_ =>
                     Task.Run(() =>
-                        MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(_focusedFixtureDirectory)
+                        MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
+                            _focusedFixtureDirectory,
+                            strict: false
+                        )
                     )
                 )
         );
@@ -127,13 +130,15 @@ public class Given_MssqlGeneratedDdlFixtureLoader
         try
         {
             var initialFixture = MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-                tempFixtureDirectory
+                tempFixtureDirectory,
+                strict: false
             );
             var schemaPath = Path.Combine(tempFixtureDirectory, "inputs", "ApiSchema-Sample.json");
             File.WriteAllText(schemaPath, File.ReadAllText(schemaPath) + Environment.NewLine);
 
             var reloadedFixture = MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-                tempFixtureDirectory
+                tempFixtureDirectory,
+                strict: false
             );
 
             reloadedFixture.Should().NotBeSameAs(initialFixture);
@@ -155,13 +160,15 @@ public class Given_MssqlGeneratedDdlFixtureLoader
         try
         {
             var initialFixture = MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-                tempFixtureDirectory
+                tempFixtureDirectory,
+                strict: false
             );
 
             ReplaceFixtureManifestWithBaseOnlyManifest(tempFixtureDirectory);
 
             var reloadedFixture = MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-                tempFixtureDirectory
+                tempFixtureDirectory,
+                strict: false
             );
 
             reloadedFixture.Should().NotBeSameAs(initialFixture);

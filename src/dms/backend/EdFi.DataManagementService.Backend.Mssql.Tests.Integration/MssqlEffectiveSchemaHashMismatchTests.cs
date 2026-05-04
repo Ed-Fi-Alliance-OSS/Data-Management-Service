@@ -49,7 +49,11 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
         );
 
         _effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
-        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(_effectiveSchemaSet, SqlDialect.Mssql);
+        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(
+            _effectiveSchemaSet,
+            SqlDialect.Mssql,
+            strict: false
+        );
 
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(combinedSql);
 

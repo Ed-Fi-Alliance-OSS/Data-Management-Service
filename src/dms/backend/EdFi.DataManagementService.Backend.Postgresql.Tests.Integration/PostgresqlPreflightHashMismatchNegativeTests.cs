@@ -52,10 +52,18 @@ public class Given_A_Postgresql_Database_Provisioned_With_Hash_A_When_Applying_D
         );
 
         var effectiveSchemaSetA = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureADirectory);
-        var (_, fixtureADdl) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSetA, SqlDialect.Pgsql);
+        var (_, fixtureADdl) = DdlPipelineHelpers.BuildDdlForDialect(
+            effectiveSchemaSetA,
+            SqlDialect.Pgsql,
+            strict: false
+        );
 
         var effectiveSchemaSetB = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureBDirectory);
-        var (_, fixtureBDdl) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSetB, SqlDialect.Pgsql);
+        var (_, fixtureBDdl) = DdlPipelineHelpers.BuildDdlForDialect(
+            effectiveSchemaSetB,
+            SqlDialect.Pgsql,
+            strict: false
+        );
 
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixtureADdl);
 

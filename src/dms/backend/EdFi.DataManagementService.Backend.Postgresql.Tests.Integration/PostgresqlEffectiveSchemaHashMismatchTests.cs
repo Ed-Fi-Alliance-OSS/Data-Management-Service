@@ -42,7 +42,11 @@ public class Given_A_Postgresql_Database_Provisioned_With_Generated_DDL_For_Effe
         );
 
         _effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
-        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(_effectiveSchemaSet, SqlDialect.Pgsql);
+        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(
+            _effectiveSchemaSet,
+            SqlDialect.Pgsql,
+            strict: false
+        );
 
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(combinedSql);
 

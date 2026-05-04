@@ -27,22 +27,30 @@ internal static class MssqlGeneratedDdlFixtureLoader
         StringComparer.Ordinal
     );
 
-    public static MssqlGeneratedDdlFixture LoadFromRepositoryRelativePath(string relativePath)
+    public static MssqlGeneratedDdlFixture LoadFromRepositoryRelativePath(
+        string relativePath,
+        bool strict = true
+    )
     {
         return LoadFromFixtureDirectory(
             FixturePathResolver.ResolveRepositoryRelativePath(
                 TestContext.CurrentContext.TestDirectory,
                 relativePath
-            )
+            ),
+            strict
         );
     }
 
-    public static MssqlGeneratedDdlFixture LoadFromFixtureDirectory(string fixtureDirectory)
+    public static MssqlGeneratedDdlFixture LoadFromFixtureDirectory(
+        string fixtureDirectory,
+        bool strict = true
+    )
     {
         var descriptor = EffectiveSchemaFixtureLoader.DescribeFixtureDirectory(fixtureDirectory);
+        var cacheKey = $"{descriptor.CacheKey}|strict={strict}";
         var lazyFixture = _cache.GetOrAdd(
-            descriptor.CacheKey,
-            _ => new(() => LoadFixture(descriptor), LazyThreadSafetyMode.ExecutionAndPublication)
+            cacheKey,
+            _ => new(() => LoadFixture(descriptor, strict), LazyThreadSafetyMode.ExecutionAndPublication)
         );
 
         try
@@ -51,19 +59,21 @@ internal static class MssqlGeneratedDdlFixtureLoader
         }
         catch
         {
-            _cache.TryRemove(new(descriptor.CacheKey, lazyFixture));
+            _cache.TryRemove(new(cacheKey, lazyFixture));
             throw;
         }
     }
 
     private static MssqlGeneratedDdlFixture LoadFixture(
-        EffectiveSchemaFixtureLoader.FixtureContentDescriptor descriptor
+        EffectiveSchemaFixtureLoader.FixtureContentDescriptor descriptor,
+        bool strict
     )
     {
         var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadEffectiveSchemaSet(descriptor);
         var (modelSet, generatedDdl) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,
-            SqlDialect.Mssql
+            SqlDialect.Mssql,
+            strict
         );
         var mappingSet = new MappingSetCompiler().Compile(modelSet);
 

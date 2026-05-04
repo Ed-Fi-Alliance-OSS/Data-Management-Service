@@ -470,6 +470,7 @@ Mapping-set integration points:
   - per-resource `Namespace` indexes (for namespace-based checks),
   - per-resource EdOrg-id indexes (for relationship-based checks), and
   - join-column indexes used to reach person `DocumentId`s (for people-related relationship checks).
+  Note: the Namespace and EdOrg branches are emitted today by `DeriveAuthorizationIndexInventoryPass` (DMS-1054). The person-join branch (Student/Contact/Staff securable elements) is pending DMS-1094 — `DeriveAuthorizationIndexInventoryPass` currently scopes those out, so consumers should not yet rely on person-join entries appearing under `DbIndexKind.Authorization`.
 
 Example (sketch): resolving the `Student` securable element for `CourseTranscript`
 - ApiSchema marks `$.studentAcademicRecordReference.studentUniqueId` as a `Student` securable element.

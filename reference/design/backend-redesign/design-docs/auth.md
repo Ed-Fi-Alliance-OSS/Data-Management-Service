@@ -1145,9 +1145,10 @@ The `auth.EducationOrganizationIdToEducationOrganizationId` table should have th
 - `SourceEducationOrganizationId`, include `TargetEducationOrganizationId`
 - `TargetEducationOrganizationId`, include `SourceEducationOrganizationId`
 
-PrimaryAssociations should have the following indexes:
+PrimaryAssociations should have the following indexes. Column names are the post-key-unification
+canonical storage columns on the root table (the form that survives `KeyUnificationPass`):
 
-- `edfi.StudentSchoolAssociation` should have an index on the `SchoolId` column, include the `Student_DocumentId`
+- `edfi.StudentSchoolAssociation` should have an index on the `SchoolId_Unified` column, include the `Student_DocumentId`
 - `edfi.StudentContactAssociation` should have an index on the `Student_DocumentId` column, include the `Contact_DocumentId`
 - `edfi.StaffEducationOrganizationAssignmentAssociation` should have an index on the `EducationOrganization_EducationOrganizationId` column, include the `Staff_DocumentId`
 - `edfi.StaffEducationOrganizationEmploymentAssociation` should have an index on the `EducationOrganization_EducationOrganizationId` column, include the `Staff_DocumentId`
