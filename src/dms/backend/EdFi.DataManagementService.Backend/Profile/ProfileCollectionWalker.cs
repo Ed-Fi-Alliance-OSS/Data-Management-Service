@@ -50,7 +50,7 @@ internal sealed class ProfileCollectionWalker
 
     private readonly IReadOnlyDictionary<
         (DbTableName Table, ParentIdentityKey ParentKey),
-        CurrentSeparateScopeRowProjection?
+        CurrentSeparateScopeRowProjection
     > _currentSeparateScopeRowsByTableAndParentIdentity;
 
     private readonly IReadOnlyDictionary<
@@ -1505,7 +1505,7 @@ internal sealed class ProfileCollectionWalker
     /// <summary>For testing only. Exposes the per-merge separate-scope-row index.</summary>
     internal IReadOnlyDictionary<
         (DbTableName Table, ParentIdentityKey ParentKey),
-        CurrentSeparateScopeRowProjection?
+        CurrentSeparateScopeRowProjection
     > CurrentSeparateScopeRowsByTableAndParentIdentity => _currentSeparateScopeRowsByTableAndParentIdentity;
 
     /// <summary>For testing only. Exposes the visible-stored-row index.</summary>
@@ -1776,10 +1776,10 @@ internal sealed class ProfileCollectionWalker
 
     private static IReadOnlyDictionary<
         (DbTableName Table, ParentIdentityKey ParentKey),
-        CurrentSeparateScopeRowProjection?
+        CurrentSeparateScopeRowProjection
     > BuildCurrentSeparateScopeRowsIndex(RelationalWriteProfileMergeRequest request)
     {
-        var result = new Dictionary<(DbTableName, ParentIdentityKey), CurrentSeparateScopeRowProjection?>();
+        var result = new Dictionary<(DbTableName, ParentIdentityKey), CurrentSeparateScopeRowProjection>();
 
         var currentState = request.CurrentState;
         if (currentState is null)
