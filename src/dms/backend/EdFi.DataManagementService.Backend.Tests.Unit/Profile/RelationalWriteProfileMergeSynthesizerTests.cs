@@ -1421,9 +1421,9 @@ public class Given_Synthesizer_SeparateTable_HiddenRequest_With_Visible_Stored_A
 /// per C3 (01a-c3-request-visibility-and-writable-shaping.md), every compiled non-collection
 /// scope must have a <see cref="RequestScopeState"/> entry. A null request-scope entry
 /// paired with a matched visible stored row is a Core contract violation, and the
-/// synthesizer's pre-decider contract check catches this and fails closed with a
-/// synthesizer-level message identifying the offending scope instead of deferring the
-/// throw to the decider's generic "no actionable" message.
+/// synthesizer's pre-decider contract check catches this and fails closed as a typed
+/// <see cref="ProfilePlannerContractMismatchException"/> so the executor can shape it as a
+/// profile contract-mismatch result rather than a generic backend exception.
 /// </summary>
 [TestFixture]
 public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And_Row_FailsClosed
@@ -1483,11 +1483,15 @@ public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And
     }
 
     [Test]
-    public void It_throws_with_synthesizer_contract_violation_message() =>
-        _synthesizeAction
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*$._ext.sample*RequestScopeStates has no entry*");
+    public void It_throws_typed_planner_contract_mismatch_with_offending_scope_and_invariant_name()
+    {
+        var thrown = _synthesizeAction.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be("$._ext.sample");
+        thrown.InvariantName.Should().Be("missing RequestScopeState entry");
+        thrown.Message.Should().Contain("$._ext.sample");
+        thrown.Message.Should().Contain("RequestScopeStates has no entry");
+    }
 }
 
 /// <summary>
@@ -1496,8 +1500,9 @@ public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And
 /// non-collection scope must have a <see cref="StoredScopeState"/> entry when a profile
 /// applies. A current stored separate-table row with no StoredScopeState entry would
 /// otherwise silently preserve the row on a VisibleAbsent request instead of deleting or
-/// failing closed. The synthesizer's pre-decider contract check surfaces this as a
-/// Core contract violation.
+/// failing closed. The synthesizer's pre-decider contract check surfaces this as a typed
+/// <see cref="ProfilePlannerContractMismatchException"/> so the executor can shape it as a
+/// profile contract-mismatch result rather than a generic backend exception.
 /// </summary>
 [TestFixture]
 public class Given_Synthesizer_SeparateTable_StoredRow_Without_StoredScopeState_FailsClosed
@@ -1556,11 +1561,102 @@ public class Given_Synthesizer_SeparateTable_StoredRow_Without_StoredScopeState_
     }
 
     [Test]
-    public void It_throws_with_synthesizer_contract_violation_message() =>
-        _synthesizeAction
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*$._ext.sample*StoredScopeStates has no entry*");
+    public void It_throws_typed_planner_contract_mismatch_with_offending_scope_and_invariant_name()
+    {
+        var thrown = _synthesizeAction.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be("$._ext.sample");
+        thrown.InvariantName.Should().Be("missing StoredScopeState entry");
+        thrown.Message.Should().Contain("$._ext.sample");
+        thrown.Message.Should().Contain("StoredScopeStates has no entry");
+    }
+}
+
+/// <summary>
+/// Regression pin for the fail-closed contract between the projected request and the
+/// separate-table decider: when the decider selects Update for a separate-table scope but
+/// the writable request body does not contain that scope's sub-node, the request side is
+/// inconsistent with the metadata the decider acted on. The synthesizer's Update path
+/// must surface this as a typed
+/// <see cref="ProfilePlannerContractMismatchException"/> so the executor can shape it as
+/// a profile contract-mismatch result rather than letting it escape as a generic backend
+/// exception.
+/// </summary>
+[TestFixture]
+public class Given_Synthesizer_SeparateTable_Update_Without_ScopedRequestNode_FailsClosed
+{
+    private Action _synthesizeAction = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+        // Inconsistency under test: the writable request body omits the $._ext.sample
+        // sub-node, yet the projected RequestScopeState still reports VisiblePresent for
+        // the same scope. The Update path must surface this divergence as a typed
+        // contract-mismatch instead of crashing with a generic exception.
+        var body = new JsonObject { ["firstName"] = "Ada" };
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample", creatable: true)
+        );
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredVisiblePresentScope("$._ext.sample")
+        );
+        // Buffer is still emitted for the extension scope so RequireSeparateScopeBuffer
+        // does not throw before the scoped-request-node check is reached.
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, null]
+        );
+        // Stored extension row exists so the decider selects Update (matched-visible-stored
+        // actionable), routing into BuildUpdateState where the scoped-request-node guard
+        // fires.
+        var currentState = BuildCurrentStateWithRootAndExtensionRow(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [345L, "Red"]
+        );
+
+        var synthesizer = BuildProfileSynthesizer();
+        _synthesizeAction = () =>
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_throws_typed_planner_contract_mismatch_with_offending_scope_and_invariant_name()
+    {
+        var thrown = _synthesizeAction.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be("$._ext.sample");
+        thrown.InvariantName.Should().Be("separate-table Update requires scoped request node");
+        thrown.Message.Should().Contain("$._ext.sample");
+        thrown.Message.Should().Contain("requires a scoped request node");
+    }
 }
 
 /// <summary>

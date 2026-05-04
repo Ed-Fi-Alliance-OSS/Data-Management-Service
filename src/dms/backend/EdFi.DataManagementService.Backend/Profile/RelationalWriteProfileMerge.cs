@@ -530,14 +530,19 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // If the flattener produced a root-extension buffer for this scope but
         // RequestScopeStates has no entry, we cannot classify the scope at all — fail closed
         // rather than silently treating the authoritative metadata absence as a no-op.
+        // Surfaced as a typed planner contract mismatch so the executor shapes it as a
+        // profile contract-mismatch result instead of letting it escape as a generic
+        // backend exception.
         if (bufferExists && requestScope is null)
         {
-            throw new InvalidOperationException(
-                $"Profile separate-table merge for scope '{scope}' on table "
+            throw new ProfilePlannerContractMismatchException(
+                jsonScope: scope,
+                invariantName: "missing RequestScopeState entry",
+                message: $"Profile separate-table merge for scope '{scope}' on table "
                     + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}': a flattened root-extension "
                     + "buffer exists but ProfileAppliedWriteRequest.RequestScopeStates has no entry for this scope. "
                     + "Every compiled non-collection scope must have a RequestScopeState entry — upstream Core "
-                    + "contract violation."
+                    + "contract violation. Synthesizer invariant violated: missing RequestScopeState entry."
             );
         }
 
@@ -546,15 +551,18 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // `01a-c6-stored-state-projection-and-hidden-member-paths.md`). If a current
         // separate-table row exists but StoredScopeStates has no entry, silently skipping
         // would preserve the row on a VisibleAbsent request instead of deleting or failing
-        // closed — stored scope metadata is authoritative, so fail closed here.
+        // closed — stored scope metadata is authoritative, so fail closed here. Typed for
+        // the same reason as the request-side check above.
         if (storedRowExists && storedScope is null)
         {
-            throw new InvalidOperationException(
-                $"Profile separate-table merge for scope '{scope}' on table "
+            throw new ProfilePlannerContractMismatchException(
+                jsonScope: scope,
+                invariantName: "missing StoredScopeState entry",
+                message: $"Profile separate-table merge for scope '{scope}' on table "
                     + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}': a current stored row exists "
                     + "but ProfileAppliedWriteContext.StoredScopeStates has no entry for this scope. "
                     + "Every compiled non-collection scope must have a StoredScopeState entry when a profile "
-                    + "applies — upstream Core contract violation."
+                    + "applies — upstream Core contract violation. Synthesizer invariant violated: missing StoredScopeState entry."
             );
         }
 
@@ -688,11 +696,19 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         if (scopedRequestNode is null)
         {
-            throw new InvalidOperationException(
-                $"Separate-table Update path for scope '{tablePlan.TableModel.JsonScope.Canonical}' on table "
+            // The decider selected Update but the writable request body does not contain
+            // the scope's sub-node. This is a contract mismatch between the projected
+            // request and the decider — surfaced as a typed planner contract mismatch so
+            // the executor shapes it as a profile contract-mismatch result instead of
+            // letting it escape as a generic backend exception.
+            throw new ProfilePlannerContractMismatchException(
+                jsonScope: tablePlan.TableModel.JsonScope.Canonical,
+                invariantName: "separate-table Update requires scoped request node",
+                message: $"Separate-table Update path for scope '{tablePlan.TableModel.JsonScope.Canonical}' on table "
                     + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' requires a scoped request node. "
                     + "The decider selected Update but the request body does not contain the scope — upstream "
-                    + "contract violation between the projected request and the decider."
+                    + "contract violation between the projected request and the decider. "
+                    + "Synthesizer invariant violated: separate-table Update requires scoped request node."
             );
         }
 

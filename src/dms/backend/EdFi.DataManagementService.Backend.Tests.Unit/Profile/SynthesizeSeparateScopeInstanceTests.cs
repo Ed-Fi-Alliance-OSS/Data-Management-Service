@@ -45,8 +45,14 @@ public class Given_SynthesizeSeparateScopeInstance_when_buffer_exists_but_reques
     }
 
     [Test]
-    public void It_fails_closed_with_request_scope_contract_message() =>
-        _act.Should().Throw<InvalidOperationException>().WithMessage("*RequestScopeStates has no entry*");
+    public void It_fails_closed_with_request_scope_contract_message()
+    {
+        var thrown = _act.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be(SeparateScopeInstanceScenario.Scope);
+        thrown.InvariantName.Should().Be("missing RequestScopeState entry");
+        thrown.Message.Should().Contain("RequestScopeStates has no entry");
+    }
 }
 
 [TestFixture]
@@ -81,8 +87,14 @@ public class Given_SynthesizeSeparateScopeInstance_when_current_row_exists_but_s
     }
 
     [Test]
-    public void It_fails_closed_with_stored_scope_contract_message() =>
-        _act.Should().Throw<InvalidOperationException>().WithMessage("*StoredScopeStates has no entry*");
+    public void It_fails_closed_with_stored_scope_contract_message()
+    {
+        var thrown = _act.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be(SeparateScopeInstanceScenario.Scope);
+        thrown.InvariantName.Should().Be("missing StoredScopeState entry");
+        thrown.Message.Should().Contain("StoredScopeStates has no entry");
+    }
 }
 
 [TestFixture]
@@ -388,8 +400,14 @@ public class Given_SynthesizeSeparateScopeInstance_when_update_has_null_scoped_r
     }
 
     [Test]
-    public void It_fails_closed_before_building_the_resolver_context() =>
-        _act.Should().Throw<InvalidOperationException>().WithMessage("*scoped request node*");
+    public void It_fails_closed_before_building_the_resolver_context()
+    {
+        var thrown = _act.Should().Throw<ProfilePlannerContractMismatchException>().Which;
+
+        thrown.JsonScope.Should().Be(SeparateScopeInstanceScenario.Scope);
+        thrown.InvariantName.Should().Be("separate-table Update requires scoped request node");
+        thrown.Message.Should().Contain("scoped request node");
+    }
 }
 
 [TestFixture]
