@@ -433,8 +433,8 @@ public class Given_Planner_with_visible_stored_row_lacking_current_row_counterpa
     }
 
     [Test]
-    public void It_throws_InvalidOperationException() =>
-        _thrown.Should().BeOfType<InvalidOperationException>();
+    public void It_throws_ProfilePlannerContractMismatchException() =>
+        _thrown.Should().BeOfType<ProfilePlannerContractMismatchException>();
 
     [Test]
     public void It_names_the_json_scope_in_the_message() =>
@@ -486,8 +486,8 @@ public class Given_Planner_with_visible_request_item_lacking_request_candidate_c
     }
 
     [Test]
-    public void It_throws_InvalidOperationException() =>
-        _thrown.Should().BeOfType<InvalidOperationException>();
+    public void It_throws_ProfilePlannerContractMismatchException() =>
+        _thrown.Should().BeOfType<ProfilePlannerContractMismatchException>();
 
     [Test]
     public void It_names_request_coverage_violation() =>
@@ -548,7 +548,7 @@ public class Given_Planner_with_duplicate_visible_request_items
     public void It_throws_for_duplicate_visible_request_items() =>
         _thrown
             .Should()
-            .BeOfType<InvalidOperationException>()
+            .BeOfType<ProfilePlannerContractMismatchException>()
             .Which.Message.Should()
             .Contain("duplicate visible request item");
 }
@@ -602,7 +602,7 @@ public class Given_Planner_with_duplicate_visible_stored_rows
     public void It_throws_for_duplicate_visible_stored_rows() =>
         _thrown
             .Should()
-            .BeOfType<InvalidOperationException>()
+            .BeOfType<ProfilePlannerContractMismatchException>()
             .Which.Message.Should()
             .Contain("duplicate visible stored row");
 }
@@ -654,7 +654,7 @@ public class Given_Planner_with_duplicate_current_row_identities
     public void It_throws_for_duplicate_current_row_identities() =>
         _thrown
             .Should()
-            .BeOfType<InvalidOperationException>()
+            .BeOfType<ProfilePlannerContractMismatchException>()
             .Which.Message.Should()
             .Contain("current row identity uniqueness");
 }
@@ -702,7 +702,7 @@ public class Given_Planner_with_candidate_in_wrong_jsonscope
     public void It_throws_for_jsonscope_mismatch() =>
         _thrown
             .Should()
-            .BeOfType<InvalidOperationException>()
+            .BeOfType<ProfilePlannerContractMismatchException>()
             .Which.Message.Should()
             .Contain("pre-scoped input: JsonScope mismatch");
 }
@@ -754,7 +754,7 @@ public class Given_Planner_with_address_under_wrong_parent_scope
     public void It_throws_for_parent_scope_mismatch() =>
         _thrown
             .Should()
-            .BeOfType<InvalidOperationException>()
+            .BeOfType<ProfilePlannerContractMismatchException>()
             .Which.Message.Should()
             .Contain("pre-scoped input: parent scope mismatch");
 }
@@ -819,7 +819,7 @@ public class Given_Planner_with_stored_rows_out_of_ordinal_order
     public void It_throws_for_stored_ordinal_order_violation() =>
         _thrown
             .Should()
-            .BeOfType<InvalidOperationException>()
+            .BeOfType<ProfilePlannerContractMismatchException>()
             .Which.Message.Should()
             .Contain("order consistency: stored");
 }
@@ -889,7 +889,7 @@ public class Given_Planner_with_matched_candidates_out_of_request_order
     public void It_throws_for_request_order_violation() =>
         _thrown
             .Should()
-            .BeOfType<InvalidOperationException>()
+            .BeOfType<ProfilePlannerContractMismatchException>()
             .Which.Message.Should()
             .Contain("order consistency: request");
 }
@@ -943,8 +943,8 @@ public class Given_Planner_with_duplicate_request_candidates
     }
 
     [Test]
-    public void It_throws_InvalidOperationException() =>
-        _thrown.Should().BeOfType<InvalidOperationException>();
+    public void It_throws_ProfilePlannerContractMismatchException() =>
+        _thrown.Should().BeOfType<ProfilePlannerContractMismatchException>();
 
     [Test]
     public void It_names_the_invariant_category() =>
@@ -993,8 +993,8 @@ public class Given_Planner_with_candidate_lacking_matching_visible_request_item
     }
 
     [Test]
-    public void It_throws_InvalidOperationException() =>
-        _thrown.Should().BeOfType<InvalidOperationException>();
+    public void It_throws_ProfilePlannerContractMismatchException() =>
+        _thrown.Should().BeOfType<ProfilePlannerContractMismatchException>();
 
     [Test]
     public void It_names_the_invariant_category() => _thrown!.Message.Should().Contain("orphan candidate");

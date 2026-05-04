@@ -2614,6 +2614,73 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_shapes_planner_contract_mismatch_as_profile_contract_mismatch_result()
+    {
+        // The planner-driven profile merge synthesizer raises a fail-closed
+        // ProfilePlannerContractMismatchException when Core hands the backend planner a
+        // profile/scope combination that the compiled scope catalog cannot satisfy. The
+        // executor must catch that narrowly-typed exception and shape it the same way as
+        // the upfront ProfileWriteContractValidator failure path: an UnknownFailure whose
+        // message starts with "Profile write contract mismatch:". The session must be
+        // rolled back, no persistence may occur, and the failure must NOT propagate as a
+        // generic InvalidOperationException through the executor's outer catch.
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        _profileMergeSynthesizer.ExceptionToThrow = new ProfilePlannerContractMismatchException(
+            jsonScope: "$.addresses[*]",
+            invariantName: "reverse stored coverage",
+            message: "VisibleStoredCollectionRow for scope '$.addresses[*]' with identity "
+                + "$.addressId=\"A1\" has no matching current row. "
+                + "Planner invariant violated: reverse stored coverage."
+        );
+
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody) with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var failureMessage = upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Subject.FailureMessage;
+        failureMessage.Should().StartWith("Profile write contract mismatch:");
+        failureMessage.Should().Contain("$.addresses[*]");
+        failureMessage.Should().Contain("reverse stored coverage");
+        failureMessage.Should().NotContain("not yet supported");
+    }
+
+    [Test]
     public async Task It_does_not_invoke_materializer_for_no_profile_writes()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
@@ -3527,10 +3594,17 @@ public class Given_Default_Relational_Write_Executor
 
         public ProfileCreatabilityRejection? RejectionToReturn { get; set; }
 
+        public Exception? ExceptionToThrow { get; set; }
+
         public ProfileMergeOutcome Synthesize(RelationalWriteProfileMergeRequest request)
         {
             SynthesizeCallCount++;
             CapturedRequest = request;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
 
             if (RejectionToReturn is not null)
             {

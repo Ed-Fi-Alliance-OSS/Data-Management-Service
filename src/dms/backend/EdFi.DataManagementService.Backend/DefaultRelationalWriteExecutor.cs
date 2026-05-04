@@ -370,6 +370,16 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return BuildValidationFailureResult(request.OperationKind, ex.ValidationFailures);
         }
+        catch (ProfilePlannerContractMismatchException ex)
+        {
+            // Planner-driven invariant failure: Core handed the backend planner a profile/scope
+            // combination the compiled scope catalog cannot satisfy. Shape this as a profile
+            // contract-mismatch result, mirroring the upfront ProfileWriteContractValidator
+            // failure path. We do NOT broaden this catch to InvalidOperationException — generic
+            // invariant violations remain fail-fast for true backend bugs.
+            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return BuildPlannerContractMismatchResult(request.OperationKind, ex);
+        }
         catch (DbException ex)
         {
             bool isMappedWriteFailure;
@@ -588,6 +598,31 @@ internal sealed class DefaultRelationalWriteExecutor(
     )
     {
         var message = $"Profile write contract mismatch: {failures[0].Message}";
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UnknownFailure(message)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UnknownFailure(message)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    /// <summary>
+    /// Shapes a planner-emitted <see cref="ProfilePlannerContractMismatchException"/> as a
+    /// profile contract-mismatch result. The leading <c>"Profile write contract mismatch:"</c>
+    /// prefix matches <see cref="BuildProfileContractMismatchResult"/> so callers cannot tell
+    /// upfront-validator failures from planner-driven failures by message shape — both are
+    /// surfaced as Core/backend contract mismatches rather than generic unknown failures.
+    /// </summary>
+    private static RelationalWriteExecutorResult BuildPlannerContractMismatchResult(
+        RelationalWriteOperationKind operationKind,
+        ProfilePlannerContractMismatchException exception
+    )
+    {
+        var message = $"Profile write contract mismatch: {exception.Message}";
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
