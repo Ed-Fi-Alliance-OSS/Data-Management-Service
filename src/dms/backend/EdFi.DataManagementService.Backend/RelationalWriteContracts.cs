@@ -122,7 +122,7 @@ public sealed record FlatteningInput
         ResourceWritePlan writePlan,
         JsonNode selectedBody,
         ResolvedReferenceSet resolvedReferences,
-        bool emitEmptyRootExtensionBuffers = false
+        bool emitEmptyExtensionBuffers = false
     )
     {
         OperationKind = operationKind;
@@ -131,7 +131,7 @@ public sealed record FlatteningInput
         SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
         ResolvedReferences =
             resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
-        EmitEmptyRootExtensionBuffers = emitEmptyRootExtensionBuffers;
+        EmitEmptyExtensionBuffers = emitEmptyExtensionBuffers;
     }
 
     /// <summary>
@@ -170,7 +170,7 @@ public sealed record FlatteningInput
     /// dropped under the default "no bound data" heuristic. Non-profile callers leave it off
     /// to preserve the historical drop-empty behavior.
     /// </summary>
-    public bool EmitEmptyRootExtensionBuffers { get; init; }
+    public bool EmitEmptyExtensionBuffers { get; init; }
 }
 
 /// <summary>
@@ -324,7 +324,7 @@ public sealed record RootExtensionWriteRowBuffer
     /// <summary>
     /// True when the request body actually contained at least one bound property at this scope —
     /// distinguishing "submitted with explicit null fields" from a buffer the flattener
-    /// synthesized for an absent scope under <c>EmitEmptyRootExtensionBuffers</c>. The
+    /// synthesized for an absent scope under <c>EmitEmptyExtensionBuffers</c>. The
     /// profile-aware merge consults this flag as defense-in-depth when guarding hidden scopes,
     /// since a presence-aware signal is the only reliable way to tell explicit-null submission
     /// apart from default-flattened null values.

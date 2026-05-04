@@ -390,7 +390,7 @@ public class Given_RelationalWriteFlattener
             )!,
             targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
             resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
-            emitEmptyRootExtensionBuffers: true
+            emitEmptyExtensionBuffers: true
         );
 
         var result = _sut.Flatten(flatteningInput);
@@ -915,7 +915,7 @@ public class Given_RelationalWriteFlattener
             )!,
             targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
             resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
-            emitEmptyRootExtensionBuffers: true
+            emitEmptyExtensionBuffers: true
         );
 
         var result = _sut.Flatten(flatteningInput);
@@ -3348,7 +3348,7 @@ public class Given_RelationalWriteFlattener
             JsonNode selectedBody,
             RelationalWriteTargetContext targetContext,
             ResolvedReferenceSet? resolvedReferences = null,
-            bool emitEmptyRootExtensionBuffers = false
+            bool emitEmptyExtensionBuffers = false
         )
         {
             return new FlatteningInput(
@@ -3357,7 +3357,7 @@ public class Given_RelationalWriteFlattener
                 WritePlan,
                 selectedBody,
                 resolvedReferences ?? ResolvedReferences,
-                emitEmptyRootExtensionBuffers
+                emitEmptyExtensionBuffers
             );
         }
 

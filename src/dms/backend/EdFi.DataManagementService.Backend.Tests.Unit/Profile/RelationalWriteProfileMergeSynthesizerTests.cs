@@ -728,7 +728,7 @@ public class Given_Synthesizer_SeparateTable_VisiblePresent_Stored_Matched_Updat
     }
 }
 
-// Empty visible scope — the flattener's emitEmptyRootExtensionBuffers contract produces a
+// Empty visible scope — the flattener's emitEmptyExtensionBuffers contract produces a
 // buffer with no scope-bound scalar data (all JSON-bound values default to Literal(null)).
 // The synthesizer must honor the Slice 3 decision-matrix rule that separate-table outcomes
 // derive from scope metadata, not buffer content, and should route Insert / Update
@@ -762,7 +762,7 @@ public class Given_Synthesizer_SeparateTable_VisiblePresent_NoStored_EmptyBuffer
             RequestVisiblePresentScope("$"),
             RequestVisiblePresentScope("$._ext.sample", creatable: true)
         );
-        // Emulates the flattener with EmitEmptyRootExtensionBuffers=true producing a buffer
+        // Emulates the flattener with EmitEmptyExtensionBuffers=true producing a buffer
         // whose scope-bound scalar is null.
         var flattened = BuildFlattenedWriteSetWithExtensionRow(
             plan,
@@ -8013,10 +8013,7 @@ public class Given_extension_child_non_creatable_insert_with_existing_visible_pa
                     Creatable: true
                 ),
                 new RequestScopeState(
-                    new ScopeInstanceAddress(
-                        RootExtensionChildCollectionTopologyBuilders.ExtensionScope,
-                        []
-                    ),
+                    new ScopeInstanceAddress(RootExtensionChildCollectionTopologyBuilders.ExtensionScope, []),
                     ProfileVisibilityKind.VisiblePresent,
                     Creatable: true
                 ),

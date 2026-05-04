@@ -779,7 +779,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // The flattener sets HasSubmittedScopeData when the request body actually contained
         // at least one bound property at this scope — which is the only reliable signal that
         // tells "submitted with explicit null fields" apart from a buffer the flattener
-        // synthesized for an absent scope under EmitEmptyRootExtensionBuffers. Relying on
+        // synthesized for an absent scope under EmitEmptyExtensionBuffers. Relying on
         // FlattenedWriteValue.Literal nullability misses the explicit-null-only case the
         // backend guard is meant to catch as defense-in-depth behind WritableRequestShaper.
         if (buffer.Value.HasSubmittedScopeData)

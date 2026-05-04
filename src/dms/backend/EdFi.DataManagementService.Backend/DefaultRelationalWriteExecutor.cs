@@ -252,7 +252,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                         // are absent under the profile); the synthesizer must still see a
                         // buffer so Insert/Update overlay can run. See
                         // reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor/03-separate-table-profile-merge.md:60.
-                        emitEmptyRootExtensionBuffers: true
+                        emitEmptyExtensionBuffers: true
                     )
                 );
 

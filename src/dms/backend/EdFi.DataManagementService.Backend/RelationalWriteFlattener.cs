@@ -286,7 +286,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             var hasSubmittedScopeData = HasBoundScopeData(scopeObject);
 
             if (
-                !flatteningInput.EmitEmptyRootExtensionBuffers
+                !flatteningInput.EmitEmptyExtensionBuffers
                 && !hasSubmittedScopeData
                 && collectionCandidates.Count == 0
             )
@@ -488,7 +488,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             var hasSubmittedScopeData = HasBoundScopeData(scopeObject);
 
             if (
-                !flatteningInput.EmitEmptyRootExtensionBuffers
+                !flatteningInput.EmitEmptyExtensionBuffers
                 && !hasSubmittedScopeData
                 && childCollectionCandidates.Count == 0
             )
