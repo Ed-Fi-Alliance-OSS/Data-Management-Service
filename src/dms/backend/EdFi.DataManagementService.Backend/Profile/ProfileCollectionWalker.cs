@@ -2720,24 +2720,70 @@ internal sealed class ProfileCollectionWalker
     /// <summary>
     /// For a child collection table, returns the parent-PhysicalRowIdentity slot index for
     /// each <c>ImmediateParentScopeLocatorColumn</c>, in the same order the column appears
-    /// on the child. <c>ParentKeyPart.Index</c> from each binding's source identifies the
-    /// slot directly; bindings with a different source kind fall back to positional order
-    /// (mirroring the now-deleted <c>ProjectCurrentRowsForScope</c> filter's behavior).
+    /// on the child. Two source kinds are supported:
+    /// <see cref="WriteValueSource.ParentKeyPart"/> (declared parent slot via
+    /// <c>parentKeyPart.Index</c>) and <see cref="WriteValueSource.DocumentId"/> only when
+    /// the child is root-anchored — i.e., the table's
+    /// <c>ImmediateParentScopeLocatorColumns</c> matches its <c>RootScopeLocatorColumns</c>
+    /// column-for-column, proving the immediate parent IS the resource root and the
+    /// parent's <c>PhysicalRowIdentity</c> buffer slot at position <c>i</c> carries the
+    /// document id rather than some intermediate collection's identity column.
     /// </summary>
+    /// <remarks>
+    /// <para>The mere "single-slot at position 0" shape is not enough on its own: a nested
+    /// child collection (e.g., one whose <c>ImmediateParentScopeLocatorColumns</c> is
+    /// <c>[ParentItemId]</c>) also has <c>Count == 1</c>. If a nested child's locator
+    /// binding drifted to <see cref="WriteValueSource.DocumentId"/>, returning slot 0 would
+    /// look up rows by the parent's <c>ParentItemId</c> while the child's column actually
+    /// stores the resource root's document id — silently bucketing rows under the wrong
+    /// parent. <see cref="RelationalWriteRowHelpers.RewriteParentKeyPartValues"/> rewrites
+    /// only <see cref="WriteValueSource.ParentKeyPart"/> bindings at insert time, so the
+    /// drift is not corrected later in the pipeline.</para>
+    /// <para>Any other source kind on a parent locator binding —
+    /// <see cref="WriteValueSource.Scalar"/>, <see cref="WriteValueSource.DocumentReference"/>,
+    /// <see cref="WriteValueSource.ReferenceDerived"/>,
+    /// <see cref="WriteValueSource.DescriptorReference"/>,
+    /// <see cref="WriteValueSource.Ordinal"/>,
+    /// <see cref="WriteValueSource.Precomputed"/> — would also mis-align lookups. Fail
+    /// closed so compiled-plan drift surfaces deterministically rather than producing a
+    /// wrong-parent identity match.</para>
+    /// </remarks>
     private static int[] ResolveParentKeyPartSlotsForChild(TableWritePlan tablePlan)
     {
         var immediateParentColumns = tablePlan.TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
+        var rootScopeColumns = tablePlan.TableModel.IdentityMetadata.RootScopeLocatorColumns;
+        // A child is root-anchored when its immediate-parent locator shape matches its
+        // root-scope locator shape column-for-column. When they match, the immediate
+        // parent IS the resource root, and slot i of the parent's PhysicalRowIdentity
+        // buffer carries the column at position i of RootScopeLocatorColumns (typically
+        // the document id at position 0 for the canonical single-slot root). When they
+        // diverge — a deeper nested child whose immediate parent is a non-root collection
+        // — DocumentId-source on a locator binding is structurally invalid because the
+        // parent context's PhysicalRowIdentity buffer holds the parent collection's row
+        // identity, not the document id.
+        var isRootAnchoredLocatorShape =
+            rootScopeColumns.Count == immediateParentColumns.Count
+            && rootScopeColumns.SequenceEqual(immediateParentColumns);
         var slots = new int[immediateParentColumns.Count];
         for (var i = 0; i < immediateParentColumns.Count; i++)
         {
-            var bindingIndex = RelationalWriteMergeSupport.FindBindingIndex(
-                tablePlan,
-                immediateParentColumns[i]
-            );
-            slots[i] = tablePlan.ColumnBindings[bindingIndex].Source
-                is WriteValueSource.ParentKeyPart parentKeyPart
-                ? parentKeyPart.Index
-                : i;
+            var locatorColumn = immediateParentColumns[i];
+            var bindingIndex = RelationalWriteMergeSupport.FindBindingIndex(tablePlan, locatorColumn);
+            var source = tablePlan.ColumnBindings[bindingIndex].Source;
+            slots[i] = source switch
+            {
+                WriteValueSource.ParentKeyPart parentKeyPart => parentKeyPart.Index,
+                WriteValueSource.DocumentId when isRootAnchoredLocatorShape => i,
+                _ => throw new InvalidOperationException(
+                    $"Unsupported parent locator binding source '{source.GetType().Name}' on child table "
+                        + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}' for "
+                        + $"ImmediateParentScopeLocatorColumn '{locatorColumn.Value}' at binding index {bindingIndex}. "
+                        + "Only WriteValueSource.ParentKeyPart, or WriteValueSource.DocumentId on a root-anchored "
+                        + "locator (ImmediateParentScopeLocatorColumns equal to RootScopeLocatorColumns), is "
+                        + "supported. Compiled write plan drift would otherwise silently bucket child rows under "
+                        + "the wrong parent identity."
+                ),
+            };
         }
         return slots;
     }
