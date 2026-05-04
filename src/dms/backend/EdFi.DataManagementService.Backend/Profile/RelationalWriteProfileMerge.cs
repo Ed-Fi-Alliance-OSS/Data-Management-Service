@@ -421,11 +421,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             ? null
             : ProfileMemberGovernanceRules.LookupStoredScope(request.ProfileAppliedContext, scopeAddress);
         var hydratedRows = TryFindHydratedRowsForTable(request.CurrentState, tablePlan);
-        var currentRowProjection = BuildCurrentSeparateScopeRowProjection(
-            tablePlan,
-            hydratedRows,
-            parentPhysicalIdentityValues
-        );
+        var currentRowProjection = BuildCurrentSeparateScopeRowProjection(tablePlan, hydratedRows);
         var extensionRow = TryLocateRootExtensionRow(request, tablePlan);
         var scopedRequestNode = TryResolveScopedRequestNode(request.WritableRequestBody, tablePlan);
 
@@ -3164,8 +3160,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
     private static CurrentSeparateScopeRowProjection? BuildCurrentSeparateScopeRowProjection(
         TableWritePlan tablePlan,
-        IReadOnlyList<object?[]>? hydratedRows,
-        ImmutableArray<FlattenedWriteValue> parentPhysicalIdentityValues
+        IReadOnlyList<object?[]>? hydratedRows
     )
     {
         if (hydratedRows is null || hydratedRows.Count == 0)
@@ -3187,10 +3182,6 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             hydratedRows[0]
         );
 
-        return new CurrentSeparateScopeRowProjection(
-            projectedCurrentRow,
-            currentRowByColumnName,
-            parentPhysicalIdentityValues
-        );
+        return new CurrentSeparateScopeRowProjection(projectedCurrentRow, currentRowByColumnName);
     }
 }

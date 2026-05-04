@@ -307,7 +307,7 @@ public class Given_Synthesizer_SeparateTable_Contract_Allows_CollectionCandidate
                 new FlattenedWriteValue.Literal("Physical"),
             ],
             semanticIdentityValues: ["Physical"],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 ["Physical"]
             )
@@ -1878,7 +1878,7 @@ public class Given_ProfileMergeRequest_with_attached_aligned_scope_data_on_top_l
             ],
             semanticIdentityValues: ["Physical"],
             attachedAlignedScopeData: [attachedAlignedScope],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 ["Physical"]
             )
@@ -1960,7 +1960,7 @@ public class Given_a_RelationalWriteProfileMergeRequest_with_AttachedAlignedScop
             ],
             semanticIdentityValues: ["Mailing"],
             attachedAlignedScopeData: [attachedAlignedScope],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 ["Mailing"]
             )
@@ -1981,7 +1981,7 @@ public class Given_a_RelationalWriteProfileMergeRequest_with_AttachedAlignedScop
             ],
             semanticIdentityValues: ["Physical"],
             collectionCandidates: [nestedCandidate],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 ["Physical"]
             )
@@ -2044,7 +2044,7 @@ public class Given_ProfileMergeRequest_accepts_collection_candidate_under_root_e
                 new FlattenedWriteValue.Literal("Physical"),
             ],
             semanticIdentityValues: ["Physical"],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 ["Physical"]
             )
@@ -2385,7 +2385,7 @@ internal static class RootExtensionChildCollectionTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [identityValue],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 childPlan,
                 [identityValue]
             )
@@ -2629,7 +2629,7 @@ public class Given_ProfileMergeRequest_with_non_collection_root_candidate_still_
                 new FlattenedWriteValue.Literal("Code1"),
             ],
             semanticIdentityValues: ["Code1"],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 extCollectionPlan,
                 ["Code1"]
             )
@@ -2691,7 +2691,7 @@ public class Given_ProfileMergeRequest_with_top_level_base_collection_candidate
                 new FlattenedWriteValue.Literal("Physical"),
             ],
             semanticIdentityValues: ["Physical"],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 ["Physical"]
             )
@@ -2849,7 +2849,7 @@ internal static class CollectionSynthesizerBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [identityValue],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 [identityValue]
             )
@@ -3610,7 +3610,7 @@ internal static class DocumentReferenceCanonicalizeBuilders
             requestOrder: 0,
             values: values,
             semanticIdentityValues: [SchoolDocumentId, SchoolDocumentId],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 [SchoolDocumentId, SchoolDocumentId]
             )
@@ -4241,7 +4241,7 @@ internal static class DescriptorCanonicalizeBuilders
             requestOrder: 0,
             values: values,
             semanticIdentityValues: [descriptorId],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 [descriptorId]
             )
@@ -5056,7 +5056,7 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
             requestOrder: 0,
             values: candidateValues,
             semanticIdentityValues: ["Springfield", DescriptorCanonicalizeBuilders.AddressTypeId],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 ["Springfield", DescriptorCanonicalizeBuilders.AddressTypeId]
             )
@@ -5488,7 +5488,7 @@ internal static class MixedIdentityBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [city, descriptorId],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 [city, descriptorId]
             )
@@ -7949,7 +7949,7 @@ internal static class ThreeLevelTopologyBuilders
             values: values,
             semanticIdentityValues: [identityValue],
             collectionCandidates: nestedGrandchildren,
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 childrenPlan,
                 [identityValue]
             )
@@ -7975,7 +7975,7 @@ internal static class ThreeLevelTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [identityValue],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 grandchildrenPlan,
                 [identityValue]
             )

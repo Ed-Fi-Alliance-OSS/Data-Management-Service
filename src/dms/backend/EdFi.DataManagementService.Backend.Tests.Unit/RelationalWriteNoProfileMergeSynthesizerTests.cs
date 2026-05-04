@@ -349,7 +349,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                             Literal("New City"),
                         ],
                         semanticIdentityValues: [null],
-                        semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                        semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                             fixture.AddressPlan,
                             [null]
                         )
@@ -509,7 +509,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
             ],
             semanticIdentityValues: [addressType],
             collectionCandidates: periods ?? [],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 fixture.AddressPlan,
                 [addressType]
             )
@@ -539,7 +539,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 Literal(room),
             ],
             semanticIdentityValues: [beginDate],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 fixture.PeriodPlan,
                 [beginDate]
             )
@@ -569,7 +569,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 Literal(room),
             ],
             semanticIdentityValues: [sessionDate, startTime],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 fixture.SchedulePlan,
                 [sessionDate, startTime]
             )

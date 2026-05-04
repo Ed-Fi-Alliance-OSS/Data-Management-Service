@@ -579,11 +579,7 @@ public class Given_SynthesizeSeparateScopeInstance_update_with_sibling_scope_sta
     {
         var projected = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, [row])[0];
         var byColumn = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(tablePlan.TableModel, row);
-        return new CurrentSeparateScopeRowProjection(
-            projected,
-            byColumn,
-            [new FlattenedWriteValue.Literal(DocumentId)]
-        );
+        return new CurrentSeparateScopeRowProjection(projected, byColumn);
     }
 }
 
@@ -1176,11 +1172,7 @@ internal sealed record SeparateScopeInstanceScenario(
     {
         var projected = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, [row])[0];
         var byColumn = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(tablePlan.TableModel, row);
-        return new CurrentSeparateScopeRowProjection(
-            projected,
-            byColumn,
-            [new FlattenedWriteValue.Literal(DocumentId)]
-        );
+        return new CurrentSeparateScopeRowProjection(projected, byColumn);
     }
 }
 
@@ -1270,7 +1262,7 @@ internal sealed record AlignedSeparateScopeInstanceScenario(
                         requestOrder: 0,
                         values: BuildValues(candidateChildPlan, [ParentItemId, DocumentId, 1, ParentCode]),
                         semanticIdentityValues: [ParentCode],
-                        semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+                        semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                             candidateChildPlan,
                             [ParentCode]
                         )
@@ -1380,10 +1372,6 @@ internal sealed record AlignedSeparateScopeInstanceScenario(
             tablePlan.TableModel,
             [ParentItemId, "Red"]
         );
-        return new CurrentSeparateScopeRowProjection(
-            projected,
-            byColumn,
-            [new FlattenedWriteValue.Literal(ParentItemId)]
-        );
+        return new CurrentSeparateScopeRowProjection(projected, byColumn);
     }
 }

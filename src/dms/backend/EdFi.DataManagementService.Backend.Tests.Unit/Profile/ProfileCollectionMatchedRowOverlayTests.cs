@@ -146,7 +146,7 @@ internal static class OverlayTestFixtures
             requestOrder: 0,
             values: flatValues,
             semanticIdentityValues: [values[AddressTypeBindingIndex]],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 [values[AddressTypeBindingIndex]]
             )
@@ -211,7 +211,7 @@ internal static class OverlayTestFixtures
             requestOrder: 0,
             values: flatValues,
             semanticIdentityValues: [],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 []
             )

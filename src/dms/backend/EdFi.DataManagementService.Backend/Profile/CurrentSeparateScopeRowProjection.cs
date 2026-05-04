@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Profile;
@@ -18,9 +17,7 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// </summary>
 /// <param name="ProjectedRow">Binding-indexed merged-row representation.</param>
 /// <param name="ColumnNameProjection">Current row keyed by column name; consumed by the resolver.</param>
-/// <param name="ParentPhysicalIdentityValues">Parent FK locator values; matches the index key.</param>
 internal sealed record CurrentSeparateScopeRowProjection(
     RelationalWriteMergedTableRow ProjectedRow,
-    IReadOnlyDictionary<DbColumnName, object?> ColumnNameProjection,
-    ImmutableArray<FlattenedWriteValue> ParentPhysicalIdentityValues
+    IReadOnlyDictionary<DbColumnName, object?> ColumnNameProjection
 );

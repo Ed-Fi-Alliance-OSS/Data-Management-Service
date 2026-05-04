@@ -415,9 +415,7 @@ public sealed record CollectionWriteCandidate
                 nameof(semanticIdentityInOrder),
                 $"{nameof(CollectionWriteCandidate)} requires explicit "
                     + $"{nameof(SemanticIdentityPart)} metadata. Production callers must pass parts built "
-                    + "from JSON-side presence probes; test fixtures that do not exercise presence semantics "
-                    + $"may opt into lossy inference via "
-                    + $"{nameof(InferSemanticIdentityInOrderForTests)}."
+                    + "from JSON-side presence probes."
             );
         }
 
@@ -476,67 +474,6 @@ public sealed record CollectionWriteCandidate
     /// Nested collection candidates that hang directly from this collection scope.
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
-
-    /// <summary>
-    /// Lossy inference helper for tests that do not need to differentiate a missing
-    /// nullable identity property from an explicit JSON null. Treats every non-null
-    /// value as <c>IsPresent: true</c> and every null value as <c>IsPresent: false</c>,
-    /// which collapses the missing-vs-explicit-null distinction the
-    /// <see cref="SemanticIdentityPart"/> contract preserves.
-    /// </summary>
-    /// <remarks>
-    /// Production callers MUST build <see cref="SemanticIdentityPart"/> instances from
-    /// JSON-side presence probes (see
-    /// <c>RelationalWriteFlattener.MaterializeSemanticIdentityParts</c>) and pass them
-    /// to the constructor. This helper exists only so test fixtures whose scenarios do
-    /// not exercise presence semantics can opt into the inference at the call site —
-    /// keeping the fallback visible rather than implicit. New production code paths
-    /// must not call this helper.
-    /// </remarks>
-    internal static ImmutableArray<SemanticIdentityPart> InferSemanticIdentityInOrderForTests(
-        TableWritePlan tableWritePlan,
-        IEnumerable<object?> semanticIdentityValues
-    )
-    {
-        ArgumentNullException.ThrowIfNull(tableWritePlan);
-        ArgumentNullException.ThrowIfNull(semanticIdentityValues);
-
-        var mergePlan =
-            tableWritePlan.CollectionMergePlan
-            ?? throw new ArgumentException(
-                $"{nameof(tableWritePlan)} must have a {nameof(TableWritePlan.CollectionMergePlan)}.",
-                nameof(tableWritePlan)
-            );
-
-        var values = semanticIdentityValues.ToArray();
-
-        if (values.Length != mergePlan.SemanticIdentityBindings.Length)
-        {
-            throw new ArgumentException(
-                $"{nameof(semanticIdentityValues)} must contain one entry per compiled semantic identity binding. "
-                    + $"Expected {mergePlan.SemanticIdentityBindings.Length}, actual {values.Length}.",
-                nameof(semanticIdentityValues)
-            );
-        }
-
-        var builder = ImmutableArray.CreateBuilder<SemanticIdentityPart>(
-            mergePlan.SemanticIdentityBindings.Length
-        );
-
-        for (var i = 0; i < mergePlan.SemanticIdentityBindings.Length; i++)
-        {
-            var value = values[i];
-            builder.Add(
-                new SemanticIdentityPart(
-                    mergePlan.SemanticIdentityBindings[i].RelativePath.Canonical,
-                    value is null ? null : JsonValue.Create(value),
-                    IsPresent: value is not null
-                )
-            );
-        }
-
-        return builder.MoveToImmutable();
-    }
 }
 
 /// <summary>

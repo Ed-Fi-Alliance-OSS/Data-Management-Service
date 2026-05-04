@@ -1806,7 +1806,6 @@ internal sealed class ProfileCollectionWalker
                         ProjectedRow: projectedRow,
                         SemanticIdentityInOrder: identityParts,
                         StoredOrdinal: storedOrdinal,
-                        ParentPhysicalIdentityValues: parentValues,
                         StableRowIdentity: stableRowIdentity,
                         CurrentRowByColumnName: currentRowByColumnName
                     )
@@ -1911,8 +1910,7 @@ internal sealed class ProfileCollectionWalker
 
                 result[(tablePlan.TableModel.Table, parentKey)] = new CurrentSeparateScopeRowProjection(
                     ProjectedRow: projectedRow,
-                    ColumnNameProjection: columnNameProjection,
-                    ParentPhysicalIdentityValues: parentKey.Values
+                    ColumnNameProjection: columnNameProjection
                 );
             }
         }

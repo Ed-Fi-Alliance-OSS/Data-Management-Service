@@ -23,7 +23,6 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// <param name="ProjectedRow">Binding-indexed merged-row representation for overlay consumption.</param>
 /// <param name="SemanticIdentityInOrder">Compiled semantic identity in deterministic binding order.</param>
 /// <param name="StoredOrdinal">Stored ordinal column value.</param>
-/// <param name="ParentPhysicalIdentityValues">Parent FK locator values; matches the index key.</param>
 /// <param name="StableRowIdentity">Stable row identity (long) for by-id update/delete on the persister edge.</param>
 /// <param name="CurrentRowByColumnName">
 /// Column-name-keyed view of the hydrated row covering every column on the table model
@@ -34,7 +33,6 @@ internal sealed record CurrentCollectionRowProjection(
     RelationalWriteMergedTableRow ProjectedRow,
     ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder,
     int StoredOrdinal,
-    ImmutableArray<FlattenedWriteValue> ParentPhysicalIdentityValues,
     long StableRowIdentity,
     IReadOnlyDictionary<DbColumnName, object?> CurrentRowByColumnName
 )

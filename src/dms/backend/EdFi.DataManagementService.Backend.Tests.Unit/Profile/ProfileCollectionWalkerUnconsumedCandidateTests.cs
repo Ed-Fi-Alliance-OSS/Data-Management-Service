@@ -383,7 +383,7 @@ internal static class UnsupportedTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [identityValue],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 orphanPlan,
                 [identityValue]
             )

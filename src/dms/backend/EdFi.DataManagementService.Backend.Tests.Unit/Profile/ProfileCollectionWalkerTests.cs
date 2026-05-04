@@ -120,9 +120,6 @@ public class Given_a_walker_constructed_for_a_top_level_base_collection
         bucket[0].SemanticIdentityInOrder.Length.Should().Be(1);
         bucket[0].SemanticIdentityInOrder[0].Value!.GetValue<string>().Should().Be("V1");
         bucket[1].SemanticIdentityInOrder[0].Value!.GetValue<string>().Should().Be("V2");
-
-        // Parent FK values match the index key — exposed for diagnostic symmetry.
-        bucket[0].ParentPhysicalIdentityValues.SequenceEqual(_expectedParentValues).Should().BeTrue();
     }
 
     [Test]
@@ -564,16 +561,12 @@ public class Given_a_top_level_collection_with_a_collection_aligned_extension_sc
         _calls[0].RequestScope!.Visibility.Should().Be(ProfileVisibilityKind.VisiblePresent);
         _calls[0].StoredScope!.Visibility.Should().Be(ProfileVisibilityKind.VisiblePresent);
         _calls[0].CurrentRowProjection.Should().NotBeNull();
-        _calls[0]
-            .CurrentRowProjection!.ParentPhysicalIdentityValues.Should()
-            .Equal(new FlattenedWriteValue.Literal(ParentAItemId));
+        _calls[0].ParentPhysicalIdentityValues.Should().Equal(new FlattenedWriteValue.Literal(ParentAItemId));
 
         _calls[1].RequestScope!.Visibility.Should().Be(ProfileVisibilityKind.Hidden);
         _calls[1].StoredScope!.Visibility.Should().Be(ProfileVisibilityKind.Hidden);
         _calls[1].CurrentRowProjection.Should().NotBeNull();
-        _calls[1]
-            .CurrentRowProjection!.ParentPhysicalIdentityValues.Should()
-            .Equal(new FlattenedWriteValue.Literal(ParentBItemId));
+        _calls[1].ParentPhysicalIdentityValues.Should().Equal(new FlattenedWriteValue.Literal(ParentBItemId));
     }
 
     [Test]
@@ -2667,7 +2660,7 @@ internal static class NestedTopologyBuilders
             semanticIdentityValues: [identityValue],
             attachedAlignedScopeData: attachedAlignedScopeData,
             collectionCandidates: nestedChildren,
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 parentsPlan,
                 [identityValue]
             )
@@ -2708,7 +2701,7 @@ internal static class NestedTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [identityValue],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 childrenPlan,
                 [identityValue]
             )
@@ -2792,7 +2785,7 @@ internal static class NestedTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [identityValue],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 childrenPlan,
                 [identityValue]
             )
@@ -3719,7 +3712,7 @@ internal static class DescriptorBackedNestedTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [descriptorId],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 parentsPlan,
                 [descriptorId]
             )
@@ -4965,7 +4958,7 @@ internal static class NumericDocumentReferenceBackedNestedTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [referenceDocumentId],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 parentsPlan,
                 [referenceDocumentId]
             )
@@ -5512,7 +5505,7 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [referenceDocumentId],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 parentsPlan,
                 [referenceDocumentId]
             )
@@ -5617,7 +5610,7 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
             requestOrder: childArrayIndex,
             values: values,
             semanticIdentityValues: [childIdentity],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 childrenPlan,
                 [childIdentity]
             )
@@ -5655,7 +5648,7 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
             values: values,
             semanticIdentityValues: [referenceDocumentId],
             collectionCandidates: nestedChildren,
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 parentsPlan,
                 [referenceDocumentId]
             )
@@ -7181,7 +7174,7 @@ internal static class AlignedExtensionScopeWithChildrenTopologyBuilders
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: [identityValue],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 alignedChildrenPlan,
                 [identityValue]
             )
@@ -7423,7 +7416,7 @@ public class Given_a_walker_with_a_current_row_whose_semantic_identity_column_is
                 new FlattenedWriteValue.Literal(null),
             ],
             semanticIdentityValues: [null],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 collectionPlan,
                 [null]
             )
@@ -7517,11 +7510,7 @@ public class Given_a_walker_with_a_current_row_whose_semantic_identity_column_is
 
         ImmutableArray<SemanticIdentityPart> coreStoredIdentity =
         [
-            new SemanticIdentityPart(
-                walkerIdentity[0].RelativePath,
-                Value: null,
-                IsPresent: false
-            ),
+            new SemanticIdentityPart(walkerIdentity[0].RelativePath, Value: null, IsPresent: false),
         ];
         var coreStoredKey = SemanticIdentityKeys.BuildKey(coreStoredIdentity);
 

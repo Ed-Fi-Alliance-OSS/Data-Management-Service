@@ -48,7 +48,7 @@ public class Given_RelationalWriteContracts
                 new FlattenedWriteValue.Literal("Home"),
             ],
             semanticIdentityValues: ["Home"],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 _fixture.CollectionPlan,
                 ["Home"]
             )
@@ -98,7 +98,7 @@ public class Given_RelationalWriteContracts
                 new FlattenedWriteValue.Literal("Home"),
             ],
             semanticIdentityValues: ["Home"],
-            semanticIdentityInOrder: CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+            semanticIdentityInOrder: SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
                 _fixture.CollectionPlan,
                 ["Home"]
             ),
@@ -161,13 +161,13 @@ public class Given_RelationalWriteContracts
 
         act.Should()
             .Throw<ArgumentNullException>()
-            .WithMessage("*InferSemanticIdentityInOrderForTests*semanticIdentityInOrder*");
+            .WithMessage("*JSON-side presence probes*semanticIdentityInOrder*");
     }
 
     [Test]
     public void It_infers_semantic_identity_in_order_with_value_based_presence_for_tests()
     {
-        var inferred = CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+        var inferred = SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
             _fixture.CollectionPlan,
             ["Home"]
         );
@@ -180,7 +180,7 @@ public class Given_RelationalWriteContracts
     [Test]
     public void It_infers_missing_presence_for_null_identity_value_in_test_helper()
     {
-        var inferred = CollectionWriteCandidate.InferSemanticIdentityInOrderForTests(
+        var inferred = SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(
             _fixture.CollectionPlan,
             [(string?)null]
         );
