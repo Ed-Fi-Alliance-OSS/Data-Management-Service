@@ -2234,7 +2234,7 @@ internal static class RootExtensionChildCollectionTopologyBuilders
 {
     private static readonly DbSchemaName _schema = new("sample");
     public const string ExtensionScope = "$._ext.sample";
-    private const string ChildScope = "$._ext.sample.children[*]";
+    public const string ChildScope = "$._ext.sample.children[*]";
 
     public static (ResourceWritePlan Plan, TableWritePlan ExtensionPlan, TableWritePlan ChildPlan) BuildPlan()
     {
@@ -2495,7 +2495,7 @@ internal static class RootExtensionChildCollectionTopologyBuilders
         return [.. values];
     }
 
-    private static ImmutableArray<SemanticIdentityPart> Identity(string value) =>
+    public static ImmutableArray<SemanticIdentityPart> Identity(string value) =>
         [new SemanticIdentityPart("$.identityField0", JsonValue.Create(value), IsPresent: true)];
 }
 
@@ -2514,7 +2514,9 @@ public class Given_ProfileMergeRequest_with_non_collection_root_candidate_still_
         var rootPlan = plan.TablePlansInDependencyOrder[0];
 
         // ExtensionCollection is the non-base-Collection kind that CollectionWriteCandidate
-        // still accepts but the Slice 4 profile merge gate must fence.
+        // still accepts but the profile merge constructor must reject as a structurally
+        // invalid root-attached collection candidate (only DbTableKind.Collection is allowed
+        // for top-level candidates; other kinds belong to their own merge paths).
         var extCollectionTableModel = AdapterFactoryTestFixtures.BuildExtensionCollectionTableModel();
         var extCollectionPlan = AdapterFactoryTestFixtures.BuildExtensionCollectionCandidateTableWritePlan(
             extCollectionTableModel
@@ -2621,7 +2623,8 @@ public class Given_ProfileMergeRequest_with_top_level_base_collection_candidate
     [Test]
     public void It_does_not_throw()
     {
-        // Root-attached base Collection candidate with no nesting or attached-aligned scope passes the Slice 4 gate.
+        // Root-attached base Collection candidate (DbTableKind.Collection) passes the
+        // profile merge constructor's structural validation for top-level candidates.
         _act.Should().NotThrow();
     }
 }
@@ -7949,4 +7952,130 @@ internal static class ThreeLevelTopologyBuilders
             ],
             []
         );
+}
+
+/// <summary>
+/// Slice 5 fixture: extension-child non-creatable insert is rejected even when the
+/// existing visible parent extension scope is allowed for matched-update. Storage already
+/// has the root row plus the root-extension row; the request keeps the extension scope
+/// visible-and-creatable (so the matched extension update path is taken) but emits a NEW
+/// child collection item under the extension with Creatable=false. The planner must
+/// reject at the child collection scope and short-circuit the merge.
+/// </summary>
+[TestFixture]
+public class Given_extension_child_non_creatable_insert_with_existing_visible_parent_update_allowed
+{
+    private const long RootExtensionDocumentId = 345L;
+
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, extensionPlan, childPlan) = RootExtensionChildCollectionTopologyBuilders.BuildPlan();
+
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["favoriteColor"] = "Blue",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "C1" }),
+                },
+            },
+        };
+
+        var childCandidate = RootExtensionChildCollectionTopologyBuilders.BuildChildCandidate(
+            childPlan,
+            "C1",
+            requestOrder: 0
+        );
+        var flattened = RootExtensionChildCollectionTopologyBuilders.BuildFlattenedWriteSet(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [RootExtensionDocumentId, "Blue"],
+            childCandidates: [childCandidate]
+        );
+
+        // Request keeps the parent extension scope visible-and-creatable (so the matched
+        // extension update is allowed), but the child collection item carries
+        // Creatable=false. The planner must reject the child insert.
+        var request = new ProfileAppliedWriteRequest(
+            body,
+            RootResourceCreatable: true,
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    new ScopeInstanceAddress(
+                        RootExtensionChildCollectionTopologyBuilders.ExtensionScope,
+                        []
+                    ),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [
+                new VisibleRequestCollectionItem(
+                    new CollectionRowAddress(
+                        RootExtensionChildCollectionTopologyBuilders.ChildScope,
+                        new ScopeInstanceAddress(
+                            RootExtensionChildCollectionTopologyBuilders.ExtensionScope,
+                            []
+                        ),
+                        RootExtensionChildCollectionTopologyBuilders.Identity("C1")
+                    ),
+                    Creatable: false,
+                    RequestJsonPath: "$._ext.sample.children[0]"
+                ),
+            ]
+        );
+
+        // Stored state: existing visible root and existing visible parent extension row,
+        // no stored children. The visible parent update is therefore allowed (matched
+        // update on the extension scope) — what fails is the unmatched child insert.
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredVisiblePresentScope(RootExtensionChildCollectionTopologyBuilders.ExtensionScope)
+        );
+        var currentState = RootExtensionChildCollectionTopologyBuilders.BuildCurrentState(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [RootExtensionDocumentId, "Red"],
+            childRows: []
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_a_rejection() => _outcome.IsRejection.Should().BeTrue();
+
+    [Test]
+    public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
+
+    [Test]
+    public void It_identifies_the_extension_child_collection_scope_as_the_rejected_scope() =>
+        _outcome
+            .CreatabilityRejection!.ScopeJsonScope.Should()
+            .Be(RootExtensionChildCollectionTopologyBuilders.ChildScope);
 }

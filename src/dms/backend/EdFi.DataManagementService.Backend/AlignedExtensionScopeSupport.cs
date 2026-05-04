@@ -36,11 +36,14 @@ internal static class AlignedExtensionScopeSupport
     /// (<c>"$.&lt;parent&gt;._ext.&lt;name&gt;"</c>) or a mirrored aligned scope
     /// (<c>"$._ext.&lt;name&gt;.&lt;parentRemainder&gt;._ext.&lt;name&gt;"</c> with
     /// matching extension names) and returns the implied parent collection scope.
-    /// Returns <c>null</c> when the scope does not match either aligned-extension
-    /// shape — including the structurally similar
-    /// <c>"$._ext.&lt;X&gt;.&lt;parent&gt;._ext.&lt;Y&gt;"</c> with mismatched names,
-    /// which is treated as a standard (non-mirrored) aligned scope rooted under the
-    /// extension-prefixed parent.
+    /// The structurally similar
+    /// <c>"$._ext.&lt;X&gt;.&lt;parent&gt;._ext.&lt;Y&gt;"</c> shape with mismatched
+    /// leading and trailing extension names does NOT qualify as mirrored; it falls
+    /// through to the standard (non-mirrored) classification with the parent rooted
+    /// under the extension-prefixed scope (i.e. the entire prefix preceding the
+    /// trailing <c>._ext.&lt;Y&gt;</c> marker becomes the parent collection scope).
+    /// Returns <c>null</c> only when the scope has no trailing
+    /// <c>._ext.&lt;singleSegment&gt;</c> marker at all.
     /// </summary>
     public static AlignedExtensionScopeShape? Classify(string alignedScope)
     {

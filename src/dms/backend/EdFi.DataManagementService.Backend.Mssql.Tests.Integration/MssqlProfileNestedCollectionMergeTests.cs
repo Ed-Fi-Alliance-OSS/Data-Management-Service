@@ -847,12 +847,15 @@ internal class Given_a_ProfileNested_put_request_with_hidden_root_extension_scop
 }
 
 /// <summary>
-/// Scenario 5: Three-level update-allowed/create-denied chain. CP2 had synthesizer-level
-/// coverage; this is the HTTP-level companion. The profile keeps parents and their
-/// children visible, but with creatable=false on the children scope. Storage already has
-/// the parent + child; the request updates the child's value (allowed under matched
-/// update). A separate parent with NO stored children is sent with a new child candidate
-/// and must be rejected with a creatability rejection (synthesizer returns rejection).
+/// Scenario 5: Provider-level two-level update-allowed/create-denied companion to the
+/// synthesizer-level three-level chain coverage. Slice 5 intentionally keeps this
+/// provider fixture at parent -> child only; the literal provider-level
+/// parent -> child -> grandchild fixture is deferred to Slice 7 parity/hardening
+/// (see 07-parity-and-hardening.md and 05-nested-and-extension-collection-merge.md
+/// boundary clarification). The profile keeps parents and their children visible, but
+/// with creatable=false on the children scope. The seeded parent has no stored children;
+/// the request adds a new child under that parent, which the planner must reject with a
+/// creatability rejection (synthesizer returns rejection -> profile data policy failure).
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
