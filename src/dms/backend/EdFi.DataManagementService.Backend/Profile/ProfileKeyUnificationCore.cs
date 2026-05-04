@@ -172,6 +172,19 @@ internal static class ProfileKeyUnificationCore
             descendantStates
         );
 
+        // Pre-index descendant scope states by JsonScope so per-member classification does
+        // not perform a linear FirstOrDefault scan for each KeyUnificationMemberWritePlan.
+        // Multiple states under the same JsonScope are uncommon but possible — preserve the
+        // FirstOrDefault semantics by inserting only the first occurrence under each key.
+        var descendantStoredByScope = BuildDescendantScopeIndex(
+            descendantStates.StoredScopes,
+            s => s.Address.JsonScope
+        );
+        var descendantRequestByScope = BuildDescendantScopeIndex(
+            descendantStates.RequestScopes,
+            s => s.Address.JsonScope
+        );
+
         foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
         {
             ResolveOneCore(
@@ -187,7 +200,8 @@ internal static class ProfileKeyUnificationCore
                         candidateScopes,
                         requestScope,
                         storedScope,
-                        descendantStates
+                        descendantStoredByScope,
+                        descendantRequestByScope
                     ),
                 ReadOnlySpan<int>.Empty,
                 mergedRowValuesMutable,
@@ -195,6 +209,24 @@ internal static class ProfileKeyUnificationCore
                 resolverOwnedBindingIndices
             );
         }
+    }
+
+    private static Dictionary<string, T> BuildDescendantScopeIndex<T>(
+        ImmutableArray<T> states,
+        Func<T, string> jsonScopeSelector
+    )
+    {
+        var result = new Dictionary<string, T>(StringComparer.Ordinal);
+        if (states.IsDefaultOrEmpty)
+        {
+            return result;
+        }
+        foreach (var state in states)
+        {
+            // TryAdd preserves the FirstOrDefault semantics of the previous per-call scan.
+            result.TryAdd(jsonScopeSelector(state), state);
+        }
+        return result;
     }
 
     /// <summary>
@@ -381,7 +413,8 @@ internal static class ProfileKeyUnificationCore
         ImmutableArray<string> candidateScopes,
         RequestScopeState? directRequestScope,
         StoredScopeState? directStoredScope,
-        ProfileSeparateScopeDescendantStates descendantStates
+        IReadOnlyDictionary<string, StoredScopeState> descendantStoredByScope,
+        IReadOnlyDictionary<string, RequestScopeState> descendantRequestByScope
     ) =>
         ClassifyMemberVisibilityCore(
             tableWritePlan,
@@ -400,13 +433,7 @@ internal static class ProfileKeyUnificationCore
                 {
                     return directStoredScope;
                 }
-                if (!descendantStates.StoredScopes.IsDefaultOrEmpty)
-                {
-                    return descendantStates.StoredScopes.FirstOrDefault(s =>
-                        string.Equals(s.Address.JsonScope, containingScope, StringComparison.Ordinal)
-                    );
-                }
-                return null;
+                return descendantStoredByScope.TryGetValue(containingScope, out var stored) ? stored : null;
             },
             containingScope =>
             {
@@ -421,13 +448,9 @@ internal static class ProfileKeyUnificationCore
                 {
                     return directRequestScope;
                 }
-                if (!descendantStates.RequestScopes.IsDefaultOrEmpty)
-                {
-                    return descendantStates.RequestScopes.FirstOrDefault(s =>
-                        string.Equals(s.Address.JsonScope, containingScope, StringComparison.Ordinal)
-                    );
-                }
-                return null;
+                return descendantRequestByScope.TryGetValue(containingScope, out var requestState)
+                    ? requestState
+                    : null;
             }
         );
 

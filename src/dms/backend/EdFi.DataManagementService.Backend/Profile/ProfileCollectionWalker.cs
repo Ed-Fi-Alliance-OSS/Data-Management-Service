@@ -63,12 +63,27 @@ internal sealed class ProfileCollectionWalker
         ImmutableArray<VisibleRequestCollectionItem>
     > _visibleRequestItemsByChildScopeAndParent;
 
-    private readonly HashSet<string> _tableBackedJsonScopes;
-
     private readonly IReadOnlyDictionary<
         (string JsonScope, ScopeInstanceAddress ParentAddress),
         ImmutableArray<CurrentCollectionRowSnapshot>
     > _currentRowsByJsonScopeAndParent;
+
+    // Per-merge precomputed caches. EnumerateDirectChildCollectionScopes used to scan
+    // TablePlansInDependencyOrder on every recursive parent walk; caching the direct-child
+    // plan list per parent JsonScope makes each enumeration a dictionary lookup. The other
+    // three dictionaries cache pure-of-TableWritePlan derivations (parent-slot map and
+    // descriptor / document-reference identity metadata) that the hot walk path used to
+    // recompute on every dispatch.
+    private readonly IReadOnlyDictionary<
+        string,
+        ImmutableArray<TableWritePlan>
+    > _directChildCollectionPlansByParentScope;
+    private readonly Dictionary<TableWritePlan, int[]> _parentSlotsByChildPlan = [];
+    private readonly Dictionary<
+        TableWritePlan,
+        IReadOnlyList<RelationalWriteProfileMergeSynthesizer.DocumentReferenceIdentityPart>
+    > _documentIdentityPartsByPlan = [];
+    private readonly Dictionary<TableWritePlan, IReadOnlyList<int>> _descriptorIdentityIndicesByPlan = [];
 
     public ProfileCollectionWalker(
         RelationalWriteProfileMergeRequest request,
@@ -91,15 +106,17 @@ internal sealed class ProfileCollectionWalker
         );
         _currentSeparateScopeRowsByTableAndParentIdentity = BuildCurrentSeparateScopeRowsIndex(_request);
 
-        // Set of table-backed JsonScopes used by EnumerateDirectChildCollectionScopes /
-        // ResolveEffectiveChildParentScopeAddress to detect collection tables whose
-        // immediate JSON parent is an inlined non-collection scope (e.g.
+        // Set of table-backed JsonScopes used to detect collection tables whose immediate
+        // JSON parent is an inlined non-collection scope (e.g.
         // $.parents[*].detail.children[*]). Such children dispatch from the nearest
         // table-backed ancestor (the parent collection row) but their effective parent
         // address carries the inlined JsonScope so the per-(scope, parent-instance)
         // visible-stored / visible-request indexes — which Core keys by the inlined parent
-        // address — match.
-        _tableBackedJsonScopes = new HashSet<string>(
+        // address — match. Used here only to seed
+        // BuildDirectChildCollectionPlansByParentScope, which captures the result; the
+        // walk-time helpers consume the captured per-scope plan lists, so this set does
+        // not need to live on the instance.
+        var tableBackedJsonScopes = new HashSet<string>(
             _request.WritePlan.TablePlansInDependencyOrder.Select(plan =>
                 plan.TableModel.JsonScope.Canonical
             ),
@@ -139,6 +156,11 @@ internal sealed class ProfileCollectionWalker
             _currentRowsByJsonScopeAndParent,
             storedRowsByJsonScope,
             _resolvedReferenceLookups
+        );
+
+        _directChildCollectionPlansByParentScope = BuildDirectChildCollectionPlansByParentScope(
+            _request.WritePlan,
+            tableBackedJsonScopes
         );
     }
 
@@ -282,13 +304,8 @@ internal sealed class ProfileCollectionWalker
             //    as document natural-key values / descriptor URI strings, but the planner
             //    matches against backend-side Int64 ids. Canonicalize the Core-emitted
             //    streams before handing them to the planner.
-            var documentIdentityParts =
-                RelationalWriteProfileMergeSynthesizer.ResolveDocumentReferenceIdentityParts(
-                    resourceWritePlan,
-                    tablePlan
-                );
-            var descriptorIdentityIndices =
-                RelationalWriteProfileMergeSynthesizer.ResolveDescriptorIdentityIndices(tablePlan);
+            var documentIdentityParts = GetCachedDocumentIdentityParts(tablePlan);
+            var descriptorIdentityIndices = GetCachedDescriptorIdentityIndices(tablePlan);
 
             var canonicalizedVisibleRequestItems = visibleRequestItemsForScope;
             if (documentIdentityParts.Count > 0)
@@ -862,12 +879,12 @@ internal sealed class ProfileCollectionWalker
             : null;
     }
 
-    private static ImmutableArray<FlattenedWriteValue> ProjectParentValuesForChildLookup(
+    private ImmutableArray<FlattenedWriteValue> ProjectParentValuesForChildLookup(
         TableWritePlan childTablePlan,
         ProfileCollectionWalkerContext parentContext
     )
     {
-        var parentSlotMap = ResolveParentKeyPartSlotsForChild(childTablePlan);
+        var parentSlotMap = GetCachedParentKeyPartSlots(childTablePlan);
         if (parentSlotMap.Length == 0)
         {
             return ImmutableArray<FlattenedWriteValue>.Empty;
@@ -891,6 +908,62 @@ internal sealed class ProfileCollectionWalker
             projected[i] = parentValues[slot];
         }
         return ImmutableArray.Create(projected);
+    }
+
+    /// <summary>
+    /// Returns the cached parent-PhysicalRowIdentity slot map for
+    /// <paramref name="childTablePlan"/>. The slot list is a pure function of the child's
+    /// compiled bindings and is requested from every <see cref="WalkChildren"/> dispatch
+    /// (and again from each Preserve-mode and aligned-extension lookup), so memoizing it
+    /// across the walker's lifetime turns repeated O(parent-column-count) binding scans
+    /// into a dictionary lookup.
+    /// </summary>
+    private int[] GetCachedParentKeyPartSlots(TableWritePlan childTablePlan)
+    {
+        if (!_parentSlotsByChildPlan.TryGetValue(childTablePlan, out var cached))
+        {
+            cached = ResolveParentKeyPartSlotsForChild(childTablePlan);
+            _parentSlotsByChildPlan[childTablePlan] = cached;
+        }
+        return cached;
+    }
+
+    /// <summary>
+    /// Returns the cached document-reference identity-part list for
+    /// <paramref name="tablePlan"/>. The list depends only on the compiled write plan and
+    /// the table plan, both fixed across a merge, so resolving it once per table plan
+    /// avoids the per-iteration scan over the table model's identity bindings and column
+    /// list that <see cref="WalkChildren"/> previously did on every collection-scope
+    /// dispatch.
+    /// </summary>
+    private IReadOnlyList<RelationalWriteProfileMergeSynthesizer.DocumentReferenceIdentityPart> GetCachedDocumentIdentityParts(
+        TableWritePlan tablePlan
+    )
+    {
+        if (!_documentIdentityPartsByPlan.TryGetValue(tablePlan, out var cached))
+        {
+            cached = RelationalWriteProfileMergeSynthesizer.ResolveDocumentReferenceIdentityParts(
+                _request.WritePlan,
+                tablePlan
+            );
+            _documentIdentityPartsByPlan[tablePlan] = cached;
+        }
+        return cached;
+    }
+
+    /// <summary>
+    /// Returns the cached descriptor identity index list for <paramref name="tablePlan"/>.
+    /// Pure function of the table plan; see <see cref="GetCachedDocumentIdentityParts"/>
+    /// for the cache rationale.
+    /// </summary>
+    private IReadOnlyList<int> GetCachedDescriptorIdentityIndices(TableWritePlan tablePlan)
+    {
+        if (!_descriptorIdentityIndicesByPlan.TryGetValue(tablePlan, out var cached))
+        {
+            cached = RelationalWriteProfileMergeSynthesizer.ResolveDescriptorIdentityIndices(tablePlan);
+            _descriptorIdentityIndicesByPlan[tablePlan] = cached;
+        }
+        return cached;
     }
 
     private static ScopeInstanceAddress BuildAlignedScopeAddress(
@@ -1102,37 +1175,72 @@ internal sealed class ProfileCollectionWalker
     /// <c>$.parents[*]</c>). Iterates in compiled <c>TablePlansInDependencyOrder</c> so the
     /// first-rejection-wins semantics carry over from the root case.
     /// </summary>
-    private IEnumerable<TableWritePlan> EnumerateDirectChildCollectionScopes(
+    private ImmutableArray<TableWritePlan> EnumerateDirectChildCollectionScopes(
         ProfileCollectionWalkerContext parentContext
+    ) =>
+        _directChildCollectionPlansByParentScope.TryGetValue(
+            parentContext.ContainingScopeAddress.JsonScope,
+            out var children
+        )
+            ? children
+            : ImmutableArray<TableWritePlan>.Empty;
+
+    /// <summary>
+    /// Precomputes <see cref="EnumerateDirectChildCollectionScopes"/>'s output for every
+    /// table-backed parent JsonScope encountered at walk time. The compiled write plan is
+    /// fixed across a merge, so each parent scope's direct-child collection plan list is
+    /// a constant; recomputing it on every recursive walk is a deeply nested O(N²) cost
+    /// for O(table-count × walk-depth × parent-instance-count). The map keys cover only
+    /// scopes that can become a parent context's JsonScope: the root scope and every
+    /// table-backed scope (parent contexts are seeded either from the synthetic root
+    /// address or from the JsonScope of a table plan visited mid-walk). The bucket
+    /// preserves <c>TablePlansInDependencyOrder</c>, so the first-rejection-wins semantics
+    /// of the original yield-based scan are unchanged.
+    /// </summary>
+    private static IReadOnlyDictionary<
+        string,
+        ImmutableArray<TableWritePlan>
+    > BuildDirectChildCollectionPlansByParentScope(
+        ResourceWritePlan writePlan,
+        HashSet<string> tableBackedJsonScopes
     )
     {
-        var parentScope = parentContext.ContainingScopeAddress.JsonScope;
-        foreach (var tablePlan in _request.WritePlan.TablePlansInDependencyOrder)
+        var collectionTablePlans = new List<TableWritePlan>();
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
         {
             var tableKind = tablePlan.TableModel.IdentityMetadata.TableKind;
             if (
                 tableKind
-                is not (
-                    DbTableKind.Collection
+                is DbTableKind.Collection
                     or DbTableKind.ExtensionCollection
                     or DbTableKind.CollectionExtensionScope
-                )
             )
             {
-                continue;
-            }
-
-            var childScope = tablePlan.TableModel.JsonScope.Canonical;
-            if (
-                tableKind is DbTableKind.CollectionExtensionScope
-                    ? IsDirectCollectionExtensionScopeChild(parentScope, childScope)
-                        || IsDirectMirroredCollectionExtensionScopeChild(parentScope, childScope)
-                    : IsTopologicallyOwnedCollectionChild(parentScope, childScope)
-            )
-            {
-                yield return tablePlan;
+                collectionTablePlans.Add(tablePlan);
             }
         }
+
+        var result = new Dictionary<string, ImmutableArray<TableWritePlan>>(StringComparer.Ordinal);
+        foreach (var parentScope in tableBackedJsonScopes)
+        {
+            var bucket = ImmutableArray.CreateBuilder<TableWritePlan>();
+            foreach (var tablePlan in collectionTablePlans)
+            {
+                var tableKind = tablePlan.TableModel.IdentityMetadata.TableKind;
+                var childScope = tablePlan.TableModel.JsonScope.Canonical;
+                var matches =
+                    tableKind is DbTableKind.CollectionExtensionScope
+                        ? IsDirectCollectionExtensionScopeChild(parentScope, childScope)
+                            || IsDirectMirroredCollectionExtensionScopeChild(parentScope, childScope)
+                        : IsTopologicallyOwnedCollectionChild(parentScope, childScope, tableBackedJsonScopes);
+                if (matches)
+                {
+                    bucket.Add(tablePlan);
+                }
+            }
+            result[parentScope] = bucket.Count == 0 ? [] : bucket.ToImmutable();
+        }
+        return result;
     }
 
     /// <summary>
@@ -1146,20 +1254,24 @@ internal sealed class ProfileCollectionWalker
     /// from the parent collection row whose JsonScope is its nearest table-backed
     /// ancestor.
     /// </summary>
-    private bool IsTopologicallyOwnedCollectionChild(string parentScope, string childScope)
+    private static bool IsTopologicallyOwnedCollectionChild(
+        string parentScope,
+        string childScope,
+        HashSet<string> tableBackedJsonScopes
+    )
     {
         if (IsDirectTopologicalChild(parentScope, childScope))
         {
             return true;
         }
 
-        if (!_tableBackedJsonScopes.Contains(parentScope))
+        if (!tableBackedJsonScopes.Contains(parentScope))
         {
             return false;
         }
 
         return string.Equals(
-            ResolveNearestTableBackedAncestorScope(childScope),
+            ResolveNearestTableBackedAncestorScope(childScope, tableBackedJsonScopes),
             parentScope,
             StringComparison.Ordinal
         );
@@ -1171,11 +1283,14 @@ internal sealed class ProfileCollectionWalker
     /// property segments until a table-backed scope is reached. The root scope <c>$</c>
     /// is always table-backed, so the walk is guaranteed to terminate.
     /// </summary>
-    private string ResolveNearestTableBackedAncestorScope(string childScope)
+    private static string ResolveNearestTableBackedAncestorScope(
+        string childScope,
+        HashSet<string> tableBackedJsonScopes
+    )
     {
         var ancestor = ComputeParentJsonScope(childScope);
         while (
-            !_tableBackedJsonScopes.Contains(ancestor)
+            !tableBackedJsonScopes.Contains(ancestor)
             && !string.Equals(ancestor, "$", StringComparison.Ordinal)
         )
         {
@@ -1340,6 +1455,27 @@ internal sealed class ProfileCollectionWalker
         return new ScopeInstanceAddress(rowJsonScope, extendedAncestors);
     }
 
+    /// <summary>
+    /// Builds a <see cref="DbTableName"/>-keyed lookup over
+    /// <see cref="RelationalWriteCurrentState.TableRowsInDependencyOrder"/>. The previous
+    /// per-table-plan <c>FirstOrDefault</c> made hydrated-row lookup quadratic across
+    /// large dependency chains; the lookup is invoked once per collection / extension
+    /// table during index construction.
+    /// </summary>
+    private static Dictionary<DbTableName, HydratedTableRows> BuildHydratedRowsByTable(
+        RelationalWriteCurrentState currentState
+    )
+    {
+        var result = new Dictionary<DbTableName, HydratedTableRows>(
+            currentState.TableRowsInDependencyOrder.Count
+        );
+        foreach (var hydrated in currentState.TableRowsInDependencyOrder)
+        {
+            result[hydrated.TableModel.Table] = hydrated;
+        }
+        return result;
+    }
+
     // ── Test-only accessors ────────────────────────────────────────────────
     //
     // These mirror the four private indexes for unit-test verification. The indexes are
@@ -1470,6 +1606,10 @@ internal sealed class ProfileCollectionWalker
             >();
         }
 
+        // Index hydrated rows by table once. The previous FirstOrDefault per table plan was
+        // O(N²) over the table-rows-in-dependency-order list.
+        var hydratedByTable = BuildHydratedRowsByTable(currentState);
+
         foreach (var tablePlan in request.WritePlan.TablePlansInDependencyOrder)
         {
             var kind = tablePlan.TableModel.IdentityMetadata.TableKind;
@@ -1478,10 +1618,10 @@ internal sealed class ProfileCollectionWalker
                 continue;
             }
 
-            var hydrated = currentState.TableRowsInDependencyOrder.FirstOrDefault(h =>
-                h.TableModel.Table.Equals(tablePlan.TableModel.Table)
-            );
-            if (hydrated is null || hydrated.Rows.Count == 0)
+            if (
+                !hydratedByTable.TryGetValue(tablePlan.TableModel.Table, out var hydrated)
+                || hydrated.Rows.Count == 0
+            )
             {
                 continue;
             }
@@ -1632,18 +1772,26 @@ internal sealed class ProfileCollectionWalker
             return result;
         }
 
+        var hydratedByTable = BuildHydratedRowsByTable(currentState);
+
         foreach (var tablePlan in request.WritePlan.TablePlansInDependencyOrder)
         {
+            // Aligned-extension dispatch (DispatchAlignedExtensionScope /
+            // PreserveAlignedExtensionScope) is the only consumer of this index, and both
+            // dispatchers receive only CollectionExtensionScope table plans (filtered by
+            // EnumerateDirectChildCollectionScopes). RootExtension entries were never read
+            // and are excluded so the per-merge index does not allocate dead buckets.
+            // RootExtension current rows are produced separately by RelationalWriteProfileMerge.
             var kind = tablePlan.TableModel.IdentityMetadata.TableKind;
-            if (kind is not (DbTableKind.RootExtension or DbTableKind.CollectionExtensionScope))
+            if (kind is not DbTableKind.CollectionExtensionScope)
             {
                 continue;
             }
 
-            var hydrated = currentState.TableRowsInDependencyOrder.FirstOrDefault(h =>
-                h.TableModel.Table.Equals(tablePlan.TableModel.Table)
-            );
-            if (hydrated is null || hydrated.Rows.Count == 0)
+            if (
+                !hydratedByTable.TryGetValue(tablePlan.TableModel.Table, out var hydrated)
+                || hydrated.Rows.Count == 0
+            )
             {
                 continue;
             }
@@ -1843,6 +1991,29 @@ internal sealed class ProfileCollectionWalker
             StringComparer.Ordinal
         );
 
+        // Group the parent-keyed collection-row buckets by table once. The previous
+        // per-table-model scan over collectionRowsIndex was O(table-count × bucket-count)
+        // even though every bucket's table key matches at most one table model.
+        var bucketsByTable =
+            new Dictionary<
+                DbTableName,
+                List<KeyValuePair<ParentIdentityKey, IReadOnlyList<CurrentCollectionRowProjection>>>
+            >();
+        foreach (var ((bucketTable, parentKey), bucket) in collectionRowsIndex)
+        {
+            if (!bucketsByTable.TryGetValue(bucketTable, out var perTableBuckets))
+            {
+                perTableBuckets = [];
+                bucketsByTable[bucketTable] = perTableBuckets;
+            }
+            perTableBuckets.Add(
+                new KeyValuePair<ParentIdentityKey, IReadOnlyList<CurrentCollectionRowProjection>>(
+                    parentKey,
+                    bucket
+                )
+            );
+        }
+
         // (table, stableRowIdentity) -> the row's containing-scope address. Built incrementally
         // as we walk dependency order, so each row's parent address is already registered
         // when we process the row's children.
@@ -1857,16 +2028,16 @@ internal sealed class ProfileCollectionWalker
                 continue;
             }
 
+            if (!bucketsByTable.TryGetValue(tableModel.Table, out var bucketsForTable))
+            {
+                continue;
+            }
+
             var thisJsonScope = tableModel.JsonScope.Canonical;
             var parentJsonScope = ComputeParentJsonScope(thisJsonScope);
 
-            foreach (var ((bucketTable, parentKey), bucket) in collectionRowsIndex)
+            foreach (var (parentKey, bucket) in bucketsForTable)
             {
-                if (!bucketTable.Equals(tableModel.Table))
-                {
-                    continue;
-                }
-
                 var parentContainingAddress = ResolveParentContainingScopeAddress(
                     parentJsonScope,
                     parentKey,
@@ -2322,6 +2493,46 @@ internal sealed class ProfileCollectionWalker
             return rows;
         }
 
+        // Pre-bucket descendant scope states by their owning collection's JsonScope (the
+        // last entry of the descendant's ancestor-collection-instance chain). The expander
+        // only consumes states whose immediate collection ancestor matches the scope being
+        // expanded; without this index it would re-scan every stored scope state for every
+        // collection scope. Empty-path / empty-ancestor states are filtered up front so
+        // they never enter the cache.
+        var statesByOwningCollectionScope = new Dictionary<string, ImmutableArray<StoredScopeState>>(
+            StringComparer.Ordinal
+        );
+        var statesBuilder = new Dictionary<string, ImmutableArray<StoredScopeState>.Builder>(
+            StringComparer.Ordinal
+        );
+        foreach (var state in storedScopeStates)
+        {
+            if (
+                state.HiddenMemberPaths.IsDefaultOrEmpty
+                || state.Address.AncestorCollectionInstances.IsDefaultOrEmpty
+            )
+            {
+                continue;
+            }
+
+            var owningCollectionScope = state.Address.AncestorCollectionInstances[^1].JsonScope;
+            if (!statesBuilder.TryGetValue(owningCollectionScope, out var bucket))
+            {
+                bucket = ImmutableArray.CreateBuilder<StoredScopeState>();
+                statesBuilder[owningCollectionScope] = bucket;
+            }
+            bucket.Add(state);
+        }
+        foreach (var (scope, builder) in statesBuilder)
+        {
+            statesByOwningCollectionScope[scope] = builder.ToImmutable();
+        }
+
+        if (statesByOwningCollectionScope.Count == 0)
+        {
+            return rows;
+        }
+
         // Group row positions by collection JsonScope so a single Expand call covers all
         // rows in that scope. Tracking the original index lets us write each expanded row
         // back into the result at its original position.
@@ -2344,6 +2555,10 @@ internal sealed class ProfileCollectionWalker
             {
                 continue;
             }
+            if (!statesByOwningCollectionScope.TryGetValue(scope, out var relevantStates))
+            {
+                continue;
+            }
 
             var bucketBuilder = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>(indexes.Count);
             foreach (var idx in indexes)
@@ -2354,7 +2569,7 @@ internal sealed class ProfileCollectionWalker
 
             var expanded = ProfileCollectionRowHiddenPathExpander.Expand(
                 bucket,
-                storedScopeStates,
+                relevantStates,
                 scope,
                 tablePlan,
                 writePlan
