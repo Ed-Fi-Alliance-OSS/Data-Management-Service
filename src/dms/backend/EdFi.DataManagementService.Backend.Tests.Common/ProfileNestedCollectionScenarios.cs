@@ -5,10 +5,12 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
@@ -330,4 +332,147 @@ public static class ProfileNestedCollectionScenarios
         string? RootExtChildCode,
         string? RootExtChildValue
     );
+
+    /// <summary>
+    /// Provider-neutral stored-state projection invoker used by both the MSSQL and
+    /// PostgreSQL nested-collection profile-merge integration suites. The body is
+    /// identical between providers; centralizing it here removes byte-for-byte
+    /// duplication while leaving each provider in control of its own
+    /// <c>CreateProfileContext</c> wrapper signature.
+    /// </summary>
+    public sealed class StoredStateProjectionInvoker(
+        ImmutableArray<StoredParentRow> storedParentRows,
+        ImmutableArray<StoredChildRow> storedChildRows,
+        ImmutableArray<StoredRootExtChildRow> storedRootExtChildRows,
+        StoredRootExtScope? storedRootExtScope
+    ) : IStoredStateProjectionInvoker
+    {
+        public ProfileAppliedWriteContext ProjectStoredState(
+            JsonNode storedDocument,
+            ProfileAppliedWriteRequest request,
+            IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
+        )
+        {
+            var storedScopeStates = ImmutableArray.CreateBuilder<StoredScopeState>();
+            storedScopeStates.Add(
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    []
+                )
+            );
+
+            if (storedRootExtScope is not null)
+            {
+                storedScopeStates.Add(
+                    new StoredScopeState(
+                        new ScopeInstanceAddress(RootExtScope, []),
+                        storedRootExtScope.Visibility,
+                        storedRootExtScope.HiddenMemberPaths
+                    )
+                );
+            }
+
+            var visibleStoredRows = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>();
+            foreach (var parentRow in storedParentRows)
+            {
+                visibleStoredRows.Add(
+                    new VisibleStoredCollectionRow(
+                        ParentRowAddress(parentRow.ParentCode),
+                        parentRow.HiddenMemberPaths
+                    )
+                );
+            }
+
+            foreach (var childRow in storedChildRows)
+            {
+                visibleStoredRows.Add(
+                    new VisibleStoredCollectionRow(
+                        ChildRowAddress(childRow.ParentCode, childRow.ChildCode),
+                        childRow.HiddenMemberPaths
+                    )
+                );
+            }
+
+            foreach (var rootExtChildRow in storedRootExtChildRows)
+            {
+                visibleStoredRows.Add(
+                    new VisibleStoredCollectionRow(
+                        RootExtChildRowAddress(rootExtChildRow.RootExtChildCode),
+                        rootExtChildRow.HiddenMemberPaths
+                    )
+                );
+            }
+
+            return new ProfileAppliedWriteContext(
+                Request: request,
+                VisibleStoredBody: storedDocument,
+                StoredScopeStates: storedScopeStates.ToImmutable(),
+                VisibleStoredCollectionRows: visibleStoredRows.ToImmutable()
+            );
+        }
+    }
+
+    /// <summary>
+    /// Builds the provider-neutral <see cref="StoredStateProjectionInvoker"/> from optional
+    /// stored row/scope inputs. Provided so each provider's <c>CreateProfileContext</c>
+    /// wrapper does not need to repeat the materialization to <see cref="ImmutableArray{T}"/>.
+    /// </summary>
+    public static IStoredStateProjectionInvoker BuildStoredStateProjectionInvoker(
+        IReadOnlyList<StoredParentRow>? storedParentRows = null,
+        IReadOnlyList<StoredChildRow>? storedChildRows = null,
+        IReadOnlyList<StoredRootExtChildRow>? storedRootExtChildRows = null,
+        StoredRootExtScope? storedRootExtScope = null
+    ) =>
+        new StoredStateProjectionInvoker(
+            [.. storedParentRows ?? []],
+            [.. storedChildRows ?? []],
+            [.. storedRootExtChildRows ?? []],
+            storedRootExtScope
+        );
+
+    /// <summary>
+    /// Authorization handler that authorizes every request unconditionally. Used by the
+    /// nested-collection integration suites to keep the focus on profile-merge behavior
+    /// rather than authorization.
+    /// </summary>
+    public sealed class AllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
+    {
+        public Task<ResourceAuthorizationResult> Authorize(
+            DocumentSecurityElements documentSecurityElements,
+            OperationType operationType,
+            TraceId traceId
+        ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
+    }
+
+    /// <summary>
+    /// Identity update-cascade handler that returns the referencing document unchanged. Used
+    /// by the nested-collection integration suites where update-cascade behavior is not under
+    /// test.
+    /// </summary>
+    public sealed class NoOpUpdateCascadeHandler : IUpdateCascadeHandler
+    {
+        public UpdateCascadeResult Cascade(
+            JsonElement originalEdFiDoc,
+            ProjectName originalDocumentProjectName,
+            ResourceName originalDocumentResourceName,
+            JsonNode modifiedEdFiDoc,
+            JsonNode referencingEdFiDoc,
+            long referencingDocumentId,
+            short referencingDocumentPartitionKey,
+            Guid referencingDocumentUuid,
+            ProjectName referencingProjectName,
+            ResourceName referencingResourceName
+        ) =>
+            new(
+                OriginalEdFiDoc: referencingEdFiDoc,
+                ModifiedEdFiDoc: referencingEdFiDoc,
+                Id: referencingDocumentId,
+                DocumentPartitionKey: referencingDocumentPartitionKey,
+                DocumentUuid: referencingDocumentUuid,
+                ProjectName: referencingProjectName,
+                ResourceName: referencingResourceName,
+                isIdentityUpdate: false
+            );
+    }
 }

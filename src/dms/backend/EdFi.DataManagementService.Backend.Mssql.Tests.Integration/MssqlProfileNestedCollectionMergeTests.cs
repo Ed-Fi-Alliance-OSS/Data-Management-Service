@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Immutable;
 using System.Data;
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -25,110 +24,6 @@ using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Tests.Common.ProfileNestedCollectionScenarios;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
-
-file sealed class MssqlProfileNestedAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class MssqlProfileNestedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
-internal sealed class MssqlProfileNestedProjectionInvoker(
-    ImmutableArray<StoredParentRow> storedParentRows,
-    ImmutableArray<StoredChildRow> storedChildRows,
-    ImmutableArray<StoredRootExtChildRow> storedRootExtChildRows,
-    StoredRootExtScope? storedRootExtScope
-) : IStoredStateProjectionInvoker
-{
-    public ProfileAppliedWriteContext ProjectStoredState(
-        JsonNode storedDocument,
-        ProfileAppliedWriteRequest request,
-        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
-    )
-    {
-        var storedScopeStates = ImmutableArray.CreateBuilder<StoredScopeState>();
-        storedScopeStates.Add(
-            new StoredScopeState(new ScopeInstanceAddress("$", []), ProfileVisibilityKind.VisiblePresent, [])
-        );
-
-        if (storedRootExtScope is not null)
-        {
-            storedScopeStates.Add(
-                new StoredScopeState(
-                    new ScopeInstanceAddress(RootExtScope, []),
-                    storedRootExtScope.Visibility,
-                    storedRootExtScope.HiddenMemberPaths
-                )
-            );
-        }
-
-        var visibleStoredRows = ImmutableArray.CreateBuilder<VisibleStoredCollectionRow>();
-        foreach (var parentRow in storedParentRows)
-        {
-            visibleStoredRows.Add(
-                new VisibleStoredCollectionRow(
-                    ParentRowAddress(parentRow.ParentCode),
-                    parentRow.HiddenMemberPaths
-                )
-            );
-        }
-
-        foreach (var childRow in storedChildRows)
-        {
-            visibleStoredRows.Add(
-                new VisibleStoredCollectionRow(
-                    ChildRowAddress(childRow.ParentCode, childRow.ChildCode),
-                    childRow.HiddenMemberPaths
-                )
-            );
-        }
-
-        foreach (var rootExtChildRow in storedRootExtChildRows)
-        {
-            visibleStoredRows.Add(
-                new VisibleStoredCollectionRow(
-                    RootExtChildRowAddress(rootExtChildRow.RootExtChildCode),
-                    rootExtChildRow.HiddenMemberPaths
-                )
-            );
-        }
-
-        return new ProfileAppliedWriteContext(
-            Request: request,
-            VisibleStoredBody: storedDocument,
-            StoredScopeStates: storedScopeStates.ToImmutable(),
-            VisibleStoredCollectionRows: visibleStoredRows.ToImmutable()
-        );
-    }
-}
 
 internal static class MssqlProfileNestedSupport
 {
@@ -165,10 +60,10 @@ internal static class MssqlProfileNestedSupport
             writePlan,
             requestBody,
             requestParentItems,
-            new MssqlProfileNestedProjectionInvoker(
-                [.. storedParentRows ?? []],
-                [.. storedChildRows ?? []],
-                [.. storedRootExtChildRows ?? []],
+            BuildStoredStateProjectionInvoker(
+                storedParentRows,
+                storedChildRows,
+                storedRootExtChildRows,
                 storedRootExtScope
             ),
             requestChildItems,
@@ -210,8 +105,8 @@ internal static class MssqlProfileNestedSupport
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileNestedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileNestedAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new AllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -252,8 +147,8 @@ internal static class MssqlProfileNestedSupport
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileNestedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileNestedAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new AllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
