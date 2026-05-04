@@ -365,11 +365,13 @@ public sealed record CollectionWriteCandidate
         int requestOrder,
         IEnumerable<FlattenedWriteValue> values,
         IEnumerable<object?> semanticIdentityValues,
+        IEnumerable<SemanticIdentityPart> semanticIdentityInOrder,
         IEnumerable<CandidateAttachedAlignedScopeData>? attachedAlignedScopeData = null,
-        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null,
-        IEnumerable<SemanticIdentityPart>? semanticIdentityInOrder = null
+        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
     )
     {
+        ArgumentNullException.ThrowIfNull(semanticIdentityInOrder);
+
         TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
         OrdinalPath = FlattenedWriteContractSupport.ToImmutableArray(ordinalPath, nameof(ordinalPath));
         Values = FlattenedWriteContractSupport.ToImmutableArray(values, nameof(values));
@@ -428,16 +430,6 @@ public sealed record CollectionWriteCandidate
                 $"{nameof(semanticIdentityValues)} must contain one entry per compiled semantic identity binding. "
                     + $"Expected {mergePlan.SemanticIdentityBindings.Length}, actual {SemanticIdentityValues.Length}.",
                 nameof(semanticIdentityValues)
-            );
-        }
-
-        if (semanticIdentityInOrder is null)
-        {
-            throw new ArgumentNullException(
-                nameof(semanticIdentityInOrder),
-                $"{nameof(CollectionWriteCandidate)} requires explicit "
-                    + $"{nameof(SemanticIdentityPart)} metadata. Production callers must pass parts built "
-                    + "from JSON-side presence probes."
             );
         }
 

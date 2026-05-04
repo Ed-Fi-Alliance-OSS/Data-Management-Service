@@ -468,9 +468,9 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                         collectionScopeInstance.RequestOrder,
                         values,
                         semanticIdentityValues,
+                        semanticIdentityInOrder,
                         attachedAlignedScopeData,
-                        collectionCandidates: nestedCollectionCandidates,
-                        semanticIdentityInOrder: semanticIdentityInOrder
+                        collectionCandidates: nestedCollectionCandidates
                     )
                 );
             }
