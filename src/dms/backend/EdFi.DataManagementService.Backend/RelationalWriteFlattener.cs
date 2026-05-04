@@ -378,7 +378,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     : null;
 
             foreach (
-                var collectionScopeInstance in EnumerateCollectionScopeInstances(parentScopeNode, childPlan)
+                var collectionScopeInstance in EnumerateCollectionScopeInstances(
+                    parentScopeNode,
+                    childPlan,
+                    parentOrdinalPath
+                )
             )
             {
                 var ordinalPath = AppendOrdinalPath(parentOrdinalPath, collectionScopeInstance.RequestOrder);
@@ -1158,9 +1162,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return semanticIdentityValues;
     }
 
-    private static IEnumerable<CollectionScopeInstance> EnumerateCollectionScopeInstances(
+    private static List<CollectionScopeInstance> EnumerateCollectionScopeInstances(
         JsonNode parentScopeNode,
-        CollectionChildPlan childPlan
+        CollectionChildPlan childPlan,
+        ReadOnlySpan<int> parentOrdinalPath
     )
     {
         var relativeScopeSegments = childPlan.RelativeScopeSegments;
@@ -1175,6 +1180,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             );
         }
 
+        List<CollectionScopeInstance> collectionScopeInstances = [];
+
         if (
             !TryNavigateRelativeNode(
                 parentScopeNode,
@@ -1183,7 +1190,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             ) || collectionArrayNode is null
         )
         {
-            yield break;
+            return collectionScopeInstances;
         }
 
         if (collectionArrayNode is not JsonArray collectionArray)
@@ -1195,19 +1202,30 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             );
         }
 
+        var wildcardScope = childPlan.TableWritePlan.TableModel.JsonScope.Canonical;
+
         for (var index = 0; index < collectionArray.Count; index++)
         {
             if (collectionArray[index] is not JsonObject collectionItem)
             {
+                // Wildcard scopes for nested collections (e.g. `$.parents[*].detail.children[*]`)
+                // require the full parent ordinal chain plus this item's index — passing only
+                // [index] lets MaterializeConcretePath throw an internal
+                // InvalidOperationException instead of surfacing a request-shape validation
+                // failure with the concrete request path.
+                var itemOrdinalPath = AppendOrdinalPath(parentOrdinalPath, index);
+                var concretePath = MaterializeConcretePath(wildcardScope, itemOrdinalPath);
                 throw CreateRequestShapeValidationException(
-                    MaterializeConcretePath(childPlan.TableWritePlan.TableModel.JsonScope.Canonical, [index]),
+                    concretePath,
                     $"Collection table '{FormatTable(childPlan.TableWritePlan)}' expected object items at path "
-                        + $"'{childPlan.TableWritePlan.TableModel.JsonScope.Canonical}[{index}]'."
+                        + $"'{concretePath}'."
                 );
             }
 
-            yield return new CollectionScopeInstance(index, collectionItem);
+            collectionScopeInstances.Add(new CollectionScopeInstance(index, collectionItem));
         }
+
+        return collectionScopeInstances;
     }
 
     private static bool TryNavigateRelativeNode(

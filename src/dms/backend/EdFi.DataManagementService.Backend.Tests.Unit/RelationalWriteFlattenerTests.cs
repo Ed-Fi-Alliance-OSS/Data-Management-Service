@@ -4612,6 +4612,47 @@ public class Given_RelationalWriteFlattener_with_an_inlined_parent_collection
         act.Should().Throw<RelationalWriteRequestValidationException>();
     }
 
+    [Test]
+    public void It_reports_the_full_concrete_nested_path_when_an_inlined_parent_nested_collection_item_is_not_an_object()
+    {
+        // The nested children scope is wildcard `$.parents[*].detail.children[*]`, so a
+        // shape-violating child (a non-object) at request order 0 under parents[0] must
+        // surface as a RelationalWriteRequestValidationException whose path materializes
+        // both the parent ordinal and the child ordinal — not a leaked
+        // InvalidOperationException from MaterializeConcretePath running out of ordinals.
+        var body = JsonNode.Parse(
+            """
+            {
+              "parents": [
+                {
+                  "identityField0": "A",
+                  "detail": {
+                    "children": [
+                      "not-an-object"
+                    ]
+                  }
+                }
+              ]
+            }
+            """
+        )!;
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(DocumentId, _documentUuid),
+            _writePlan,
+            body,
+            EmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.parents[0].detail.children[0]");
+        exception.ValidationFailures[0].Message.Should().Contain("$.parents[0].detail.children[0]");
+    }
+
     private static ResolvedReferenceSet EmptyResolvedReferences() =>
         new(
             SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
