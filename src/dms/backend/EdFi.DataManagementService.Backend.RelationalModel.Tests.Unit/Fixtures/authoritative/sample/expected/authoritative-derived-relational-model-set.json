@@ -5877,18 +5877,6 @@
       ]
     },
     {
-      "name": "IX_CommunityOrganization_CommunityOrganizationId_Auth",
-      "table": {
-        "schema": "edfi",
-        "name": "CommunityOrganization"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "CommunityOrganizationId"
-      ]
-    },
-    {
       "name": "IX_CommunityOrganization_OperationalStatusDescriptor_38236c5b77",
       "table": {
         "schema": "edfi",
@@ -6440,18 +6428,6 @@
       "key_columns": [
         "CommunityOrganization_DocumentId",
         "CommunityOrganization_CommunityOrganizationId"
-      ]
-    },
-    {
-      "name": "IX_CommunityProvider_CommunityProviderId_Auth",
-      "table": {
-        "schema": "edfi",
-        "name": "CommunityProvider"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "CommunityProviderId"
       ]
     },
     {
@@ -10433,18 +10409,6 @@
       ]
     },
     {
-      "name": "IX_EducationOrganizationNetwork_EducationOrganizatio_b76b6e3f03",
-      "table": {
-        "schema": "edfi",
-        "name": "EducationOrganizationNetwork"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "EducationOrganizationNetworkId"
-      ]
-    },
-    {
       "name": "IX_EducationOrganizationNetwork_NetworkPurposeDescri_3bf9370c0c",
       "table": {
         "schema": "edfi",
@@ -11121,18 +11085,6 @@
       "key_columns": [
         "EducationOrganization_DocumentId",
         "PeerEducationOrganization_DocumentId"
-      ]
-    },
-    {
-      "name": "IX_EducationServiceCenter_EducationServiceCenterId_Auth",
-      "table": {
-        "schema": "edfi",
-        "name": "EducationServiceCenter"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "EducationServiceCenterId"
       ]
     },
     {
@@ -14760,18 +14712,6 @@
       ]
     },
     {
-      "name": "IX_LearningStandardEquivalenceAssociation_Namespace_Auth",
-      "table": {
-        "schema": "edfi",
-        "name": "LearningStandardEquivalenceAssociation"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "Namespace"
-      ]
-    },
-    {
       "name": "IX_LearningStandardEquivalenceAssociation_SourceLear_2d9d604a28",
       "table": {
         "schema": "edfi",
@@ -15284,18 +15224,6 @@
       "is_unique": false,
       "key_columns": [
         "LocalEducationAgencyCategoryDescriptor_DescriptorId"
-      ]
-    },
-    {
-      "name": "IX_LocalEducationAgency_LocalEducationAgencyId_Auth",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalEducationAgency"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "LocalEducationAgencyId"
       ]
     },
     {
@@ -17611,18 +17539,6 @@
       ]
     },
     {
-      "name": "IX_PostSecondaryInstitution_PostSecondaryInstitutionId_Auth",
-      "table": {
-        "schema": "edfi",
-        "name": "PostSecondaryInstitution"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "PostSecondaryInstitutionId"
-      ]
-    },
-    {
       "name": "IX_PostSecondaryInstitution_PostSecondaryInstitution_b0786426e0",
       "table": {
         "schema": "edfi",
@@ -19732,18 +19648,6 @@
       "is_unique": false,
       "key_columns": [
         "OperationalStatusDescriptor_DescriptorId"
-      ]
-    },
-    {
-      "name": "IX_School_SchoolId_Auth",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "SchoolId"
       ]
     },
     {
@@ -23474,18 +23378,6 @@
       "is_unique": false,
       "key_columns": [
         "OperationalStatusDescriptor_DescriptorId"
-      ]
-    },
-    {
-      "name": "IX_StateEducationAgency_StateEducationAgencyId_Auth",
-      "table": {
-        "schema": "edfi",
-        "name": "StateEducationAgency"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "StateEducationAgencyId"
       ]
     },
     {
@@ -33184,18 +33076,6 @@
       "key_columns": [
         "EducationOrganization_DocumentId",
         "EducationOrganization_EducationOrganizationId"
-      ]
-    },
-    {
-      "name": "IX_Survey_Namespace_Auth",
-      "table": {
-        "schema": "edfi",
-        "name": "Survey"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "Namespace"
       ]
     },
     {

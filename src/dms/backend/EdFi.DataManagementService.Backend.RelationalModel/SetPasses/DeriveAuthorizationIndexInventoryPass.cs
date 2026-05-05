@@ -102,9 +102,38 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         ArgumentNullException.ThrowIfNull(context);
 
         var concreteByName = context.ConcreteResourcesInNameOrder.ToDictionary(c => c.ResourceKey.Resource);
+        var pkUkLeadingColumns = BuildPkUkLeadingColumnSet(context.IndexInventory);
 
         var paIndexCovered = EmitPrimaryAssociationIndexes(context, concreteByName);
-        EmitSecurableElementIndexes(context, paIndexCovered);
+        EmitSecurableElementIndexes(context, paIndexCovered, pkUkLeadingColumns);
+    }
+
+    /// <summary>
+    /// Builds the set of <c>(Table, leadingColumn)</c> pairs already covered by a PrimaryKey or
+    /// UniqueConstraint index in the inventory. Single-column securable-element authorization
+    /// indexes whose key column matches such a leading column are redundant — the unique index
+    /// already supports the same equality lookup with no extra storage or write cost.
+    /// PrimaryAssociation indexes are not deduped this way because their <c>INCLUDE</c> column
+    /// (e.g. <c>Student_DocumentId</c>) enables index-only scans that a plain PK/UK doesn't supply.
+    /// </summary>
+    private static HashSet<(DbTableName Table, DbColumnName Column)> BuildPkUkLeadingColumnSet(
+        IReadOnlyList<DbIndexInfo> inventory
+    )
+    {
+        var set = new HashSet<(DbTableName Table, DbColumnName Column)>();
+
+        foreach (var index in inventory)
+        {
+            if (
+                index.Kind is DbIndexKind.PrimaryKey or DbIndexKind.UniqueConstraint
+                && index.KeyColumns.Count > 0
+            )
+            {
+                set.Add((index.Table, index.KeyColumns[0]));
+            }
+        }
+
+        return set;
     }
 
     private HashSet<(DbTableName Table, DbColumnName Column)> EmitPrimaryAssociationIndexes(
@@ -173,15 +202,18 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     /// Both EdOrg and Namespace paths are skipped when a PrimaryAssociation index already covers
     /// <c>(table, column)</c>. PA coverage is seeded into <c>emitted</c> so the dedup is uniform
     /// — current Ed-Fi schemas don't put Namespace on a PA key column, but symmetric coverage
-    /// makes the pass robust to extension schemas that might. Repeat emissions to the same
-    /// <c>(table, column)</c> are coalesced globally — this protects index-name uniqueness when
-    /// an EdOrg and Namespace path resolve to the same column on a single resource, AND
-    /// when multiple concrete resources share the same physical table (e.g. descriptors
-    /// backed by <c>dms.Descriptor</c>).
+    /// makes the pass robust to extension schemas that might. Emissions are also skipped when an
+    /// existing PrimaryKey or UniqueConstraint index already leads on the same column (e.g.
+    /// <c>UX_School_NK</c> on <c>edfi.School(SchoolId)</c> covers any auth equality lookup on
+    /// <c>SchoolId</c>). Repeat emissions to the same <c>(table, column)</c> are coalesced
+    /// globally — this protects index-name uniqueness when an EdOrg and Namespace path resolve
+    /// to the same column on a single resource, AND when multiple concrete resources share the
+    /// same physical table (e.g. descriptors backed by <c>dms.Descriptor</c>).
     /// </remarks>
     private static void EmitSecurableElementIndexes(
         RelationalModelSetBuilderContext context,
-        HashSet<(DbTableName Table, DbColumnName Column)> paIndexCovered
+        HashSet<(DbTableName Table, DbColumnName Column)> paIndexCovered,
+        HashSet<(DbTableName Table, DbColumnName Column)> pkUkLeadingColumns
     )
     {
         var emitted = new HashSet<(DbTableName Table, DbColumnName Column)>(paIndexCovered);
@@ -191,13 +223,13 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
             foreach (var jsonPath in concrete.SecurableElements.EducationOrganization.Select(e => e.JsonPath))
             {
                 var (table, column) = ResolveSecurableElementLocation(concrete, jsonPath);
-                AddSecurableElementIndex(context, table, column, emitted);
+                AddSecurableElementIndex(context, table, column, emitted, pkUkLeadingColumns);
             }
 
             foreach (var namespacePath in concrete.SecurableElements.Namespace)
             {
                 var (table, column) = ResolveSecurableElementLocation(concrete, namespacePath);
-                AddSecurableElementIndex(context, table, column, emitted);
+                AddSecurableElementIndex(context, table, column, emitted, pkUkLeadingColumns);
             }
         }
     }
@@ -206,10 +238,16 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         RelationalModelSetBuilderContext context,
         DbTableName table,
         DbColumnName column,
-        HashSet<(DbTableName Table, DbColumnName Column)> emitted
+        HashSet<(DbTableName Table, DbColumnName Column)> emitted,
+        HashSet<(DbTableName Table, DbColumnName Column)> pkUkLeadingColumns
     )
     {
         if (!emitted.Add((table, column)))
+        {
+            return;
+        }
+
+        if (pkUkLeadingColumns.Contains((table, column)))
         {
             return;
         }

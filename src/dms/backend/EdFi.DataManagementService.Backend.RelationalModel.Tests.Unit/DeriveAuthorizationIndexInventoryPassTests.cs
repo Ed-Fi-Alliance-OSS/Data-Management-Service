@@ -599,6 +599,52 @@ public class Given_FkSupport_And_Authorization_Index_On_Same_Column
 }
 
 /// <summary>
+/// Test fixture asserting a securable-element authorization index is suppressed when an existing
+/// PrimaryKey or UniqueConstraint index already leads on the same <c>(table, column)</c>. The
+/// PK/UK already supports the same equality lookup, so an extra non-unique covering index would
+/// be dead weight on writes and storage.
+/// </summary>
+[TestFixture]
+public class Given_PkUk_Already_Covers_The_Auth_Column
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexesOnCourse = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var courseTable = new DbTableName(new DbSchemaName("edfi"), "Course");
+        var authColumn = new DbColumnName("EducationOrganization_EducationOrganizationId");
+
+        var result = AuthorizationIndexTestRunner.Build(ctx =>
+        {
+            ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildCourseWithEdOrgSecurable());
+
+            // Pre-seed a unique index whose leading column matches the auth pass's target.
+            // The auth pass should detect this and suppress its own emission.
+            ctx.IndexInventory.Add(
+                new DbIndexInfo(
+                    new DbIndexName("UX_Course_NK"),
+                    courseTable,
+                    KeyColumns: [authColumn],
+                    IsUnique: true,
+                    Kind: DbIndexKind.UniqueConstraint
+                )
+            );
+        });
+
+        _authIndexesOnCourse = result
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization && i.Table == courseTable)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_not_emit_a_redundant_authorization_index()
+    {
+        _authIndexesOnCourse.Should().BeEmpty();
+    }
+}
+
+/// <summary>
 /// Test fixture asserting that authorization indexes appear in canonical
 /// <c>(schema, table, name)</c> order in <c>IndexesInCreateOrder</c> after the
 /// <see cref="CanonicalizeOrderingPass"/> runs. Guards against a future refactor to the new
