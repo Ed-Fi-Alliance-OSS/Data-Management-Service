@@ -271,17 +271,6 @@ internal abstract class ProfileGuardedNoOpGeneratedDdlFixtureTestBase
     protected abstract Task<UpdateResult> ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid documentUuid);
 
     /// <summary>
-    /// Issues a profiled POST against the previously-seeded document with an
-    /// identical body and a DIFFERENT incoming <see cref="DocumentUuid"/>. The
-    /// executor must classify the request as POST-as-update by semantic identity
-    /// rather than inserting a new document, and the same VisiblePresent profile
-    /// context as the identical-PUT case must trigger the guarded no-op short-circuit.
-    /// </summary>
-    protected abstract Task<UpsertResult> ExecuteProfiledShapePostAsUpdateAsync(
-        DocumentUuid incomingDocumentUuid
-    );
-
-    /// <summary>
     /// Reads the single root-table row for this shape keyed by the supplied
     /// <paramref name="documentId"/>. Used by
     /// <see cref="ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync"/> to
@@ -485,7 +474,17 @@ internal abstract class RootOnlyShapeProfileGuardedNoOpFixtureBase
         return await repository.UpdateDocumentById(updateRequest);
     }
 
-    protected override async Task<UpsertResult> ExecuteProfiledShapePostAsUpdateAsync(
+    /// <summary>
+    /// Issues a profiled POST against the previously-seeded document with an
+    /// identical body and a DIFFERENT incoming <see cref="DocumentUuid"/>. The
+    /// executor must classify the request as POST-as-update by semantic identity
+    /// rather than inserting a new document, and the same VisiblePresent profile
+    /// context as the identical-PUT case must trigger the guarded no-op short-circuit.
+    /// Defined on this root-only base because POST-as-update guarded no-op
+    /// integration coverage is intentionally root-only per the slice 6 design;
+    /// other shape bases do not need this hook.
+    /// </summary>
+    protected async Task<UpsertResult> ExecuteProfiledShapePostAsUpdateAsync(
         DocumentUuid incomingDocumentUuid
     )
     {
@@ -658,38 +657,6 @@ internal abstract class SeparateTableShapeProfileGuardedNoOpFixtureBase
         );
     }
 
-    protected override Task<UpsertResult> ExecuteProfiledShapePostAsUpdateAsync(
-        DocumentUuid incomingDocumentUuid
-    )
-    {
-        var writeBody = IdenticalRequestBody.DeepClone();
-        var writePlan = _mappingSet.WritePlansByResource[
-            PostgresqlProfileSeparateTableMergeSupport.ItemResource
-        ];
-        var profileContext = PostgresqlProfileSeparateTableMergeSupport.CreateProfileContext(
-            writePlan,
-            writeBody.DeepClone(),
-            rootVisibility: ProfileVisibilityKind.VisiblePresent,
-            rootHiddenMemberPaths: [],
-            emitExtRequestScope: true,
-            extRequestVisibility: ProfileVisibilityKind.VisiblePresent,
-            extCreatable: true,
-            emitExtStoredScope: true,
-            extStoredVisibility: ProfileVisibilityKind.VisiblePresent,
-            extStoredHiddenMemberPaths: []
-        );
-        return PostgresqlProfileSeparateTableMergeSupport.ExecuteProfiledPostAsync(
-            _serviceProvider,
-            _database,
-            _mappingSet,
-            DefaultProfileSeparateTableMergeItemId,
-            writeBody,
-            incomingDocumentUuid,
-            profileContext,
-            "pg-profile-guarded-no-op-separate-table-post-as-update"
-        );
-    }
-
     protected override async Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         long documentId
@@ -813,32 +780,6 @@ internal abstract class CollectionShapeProfileGuardedNoOpFixtureBase
             documentUuid,
             profileContext,
             "pg-profile-guarded-no-op-top-level-collection-put"
-        );
-    }
-
-    protected override Task<UpsertResult> ExecuteProfiledShapePostAsUpdateAsync(
-        DocumentUuid incomingDocumentUuid
-    )
-    {
-        var writeBody = IdenticalRequestBody.DeepClone();
-        var writePlan = _mappingSet.WritePlansByResource[
-            PostgresqlProfileTopLevelCollectionMergeSupport.SchoolResource
-        ];
-        var profileContext = PostgresqlProfileTopLevelCollectionMergeSupport.CreateProfileContext(
-            writePlan,
-            writeBody.DeepClone(),
-            IdenticalRequestItems,
-            IdenticalStoredRows
-        );
-        return PostgresqlProfileTopLevelCollectionMergeSupport.ExecuteProfiledPostAsync(
-            _serviceProvider,
-            _database,
-            _mappingSet,
-            DefaultSchoolId,
-            writeBody,
-            incomingDocumentUuid,
-            profileContext,
-            "pg-profile-guarded-no-op-top-level-collection-post-as-update"
         );
     }
 

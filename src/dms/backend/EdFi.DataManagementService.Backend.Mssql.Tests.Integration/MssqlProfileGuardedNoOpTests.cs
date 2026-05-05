@@ -268,14 +268,6 @@ internal abstract class MssqlProfileGuardedNoOpGeneratedDdlFixtureTestBase
     protected abstract Task<UpdateResult> ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid documentUuid);
 
     /// <summary>
-    /// Issues a profiled POST against the previously-seeded document with an
-    /// identical body and a DIFFERENT incoming <see cref="DocumentUuid"/>.
-    /// </summary>
-    protected abstract Task<UpsertResult> ExecuteProfiledShapePostAsUpdateAsync(
-        DocumentUuid incomingDocumentUuid
-    );
-
-    /// <summary>
     /// Reads the single root-table row for this shape keyed by the supplied
     /// <paramref name="documentId"/>.
     /// </summary>
@@ -478,7 +470,17 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
         return await repository.UpdateDocumentById(updateRequest);
     }
 
-    protected override async Task<UpsertResult> ExecuteProfiledShapePostAsUpdateAsync(
+    /// <summary>
+    /// Issues a profiled POST against the previously-seeded document with an
+    /// identical body and a DIFFERENT incoming <see cref="DocumentUuid"/>. The
+    /// executor must classify the request as POST-as-update by semantic identity
+    /// rather than inserting a new document, and the same VisiblePresent profile
+    /// context as the identical-PUT case must trigger the guarded no-op short-circuit.
+    /// Defined on this root-only base because POST-as-update guarded no-op
+    /// integration coverage is intentionally root-only per the slice 6 design;
+    /// other shape bases do not need this hook.
+    /// </summary>
+    protected async Task<UpsertResult> ExecuteProfiledShapePostAsUpdateAsync(
         DocumentUuid incomingDocumentUuid
     )
     {

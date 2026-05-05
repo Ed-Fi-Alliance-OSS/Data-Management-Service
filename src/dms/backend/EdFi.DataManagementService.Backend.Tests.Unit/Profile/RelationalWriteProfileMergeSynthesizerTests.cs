@@ -8989,3 +8989,204 @@ public class Given_Synthesizer_TopLevelCollection_With_An_Added_Item_Is_Not_NoOp
     public void It_is_not_a_no_op_candidate_when_collection_has_an_added_item() =>
         RelationalWriteGuardedNoOp.IsNoOpCandidate(_result).Should().BeFalse();
 }
+
+[TestFixture]
+public class Given_Synthesizer_RootExtensionChildCollection_All_Matched_With_Identical_Values_Is_NoOp
+{
+    private const long RootExtensionDocumentId = 345L;
+    private RelationalWriteMergeResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Root + root-extension + root-extension child collection (a slice 5 shape).
+        // Body: firstName="Ada", _ext.sample.favoriteColor="Blue", _ext.sample.children=[{identityField0="C1"}].
+        // Stored rows mirror request values in every comparable binding so the merged
+        // and current rowsets pair up identically across all three tables, and the
+        // applied context declares C1 as a visible stored collection row so the planner
+        // classifies it as a matched-update rather than a visible-insert.
+        var (plan, extensionPlan, childPlan) = RootExtensionChildCollectionTopologyBuilders.BuildPlan();
+
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["favoriteColor"] = "Blue",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "C1" }),
+                },
+            },
+        };
+
+        var childCandidate = RootExtensionChildCollectionTopologyBuilders.BuildChildCandidate(
+            childPlan,
+            "C1",
+            requestOrder: 0
+        );
+        var flattened = RootExtensionChildCollectionTopologyBuilders.BuildFlattenedWriteSet(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [RootExtensionDocumentId, "Blue"],
+            childCandidates: [childCandidate]
+        );
+        var request = RootExtensionChildCollectionTopologyBuilders.BuildVisibleRequest(body, "C1");
+        var appliedContext = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            [
+                StoredVisiblePresentScope("$"),
+                StoredVisiblePresentScope(RootExtensionChildCollectionTopologyBuilders.ExtensionScope),
+            ],
+            [
+                new VisibleStoredCollectionRow(
+                    new CollectionRowAddress(
+                        RootExtensionChildCollectionTopologyBuilders.ChildScope,
+                        new ScopeInstanceAddress(
+                            RootExtensionChildCollectionTopologyBuilders.ExtensionScope,
+                            []
+                        ),
+                        RootExtensionChildCollectionTopologyBuilders.Identity("C1")
+                    ),
+                    ImmutableArray<string>.Empty
+                ),
+            ]
+        );
+
+        // Stored child row: [ChildItemId=901, DocumentId=345, Ordinal=1, Identity="C1"].
+        // Final ordinal recomputation pins the matched-update entry's ordinal to 1
+        // (single-item Sequence), so the stored ordinal must already be 1 for the
+        // comparable-binding compare ([identity, ordinal]) to succeed.
+        var currentState = RootExtensionChildCollectionTopologyBuilders.BuildCurrentState(
+            plan,
+            rootRowValues: ["Ada"],
+            extensionRowValues: [RootExtensionDocumentId, "Blue"],
+            childRows:
+            [
+                [901L, RootExtensionDocumentId, 1, "C1"],
+            ]
+        );
+
+        _result = UnwrapMergeResult(
+            BuildProfileSynthesizer()
+                .Synthesize(
+                    new RelationalWriteProfileMergeRequest(
+                        writePlan: plan,
+                        flattenedWriteSet: flattened,
+                        writableRequestBody: body,
+                        currentState: currentState,
+                        profileRequest: request,
+                        profileAppliedContext: appliedContext,
+                        resolvedReferences: EmptyResolvedReferenceSet()
+                    )
+                )
+        );
+    }
+
+    [Test]
+    public void It_supports_guarded_no_op() => _result.SupportsGuardedNoOp.Should().BeTrue();
+
+    [Test]
+    public void It_is_a_no_op_candidate_when_root_extension_and_child_match_stored() =>
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(_result).Should().BeTrue();
+}
+
+[TestFixture]
+public class Given_Synthesizer_RootExtensionChildCollection_With_Differing_Child_Identity_Is_Not_NoOp
+{
+    private const long RootExtensionDocumentId = 345L;
+    private RelationalWriteMergeResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Same shape as the no-op companion above, but the stored child row's identity
+        // is "OLD" while the request candidate is for "C1" (the visible stored row
+        // declared in context is also "OLD"). The planner classifies "OLD" as
+        // omitted-visible (delete-by-absence) and "C1" as a visible insert, so the
+        // merged-row count diverges from the current-row count on the child table —
+        // IsNoOpCandidate trips at the length check.
+        var (plan, extensionPlan, childPlan) = RootExtensionChildCollectionTopologyBuilders.BuildPlan();
+
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["favoriteColor"] = "Blue",
+                    ["children"] = new JsonArray(new JsonObject { ["identityField0"] = "C1" }),
+                },
+            },
+        };
+
+        var childCandidate = RootExtensionChildCollectionTopologyBuilders.BuildChildCandidate(
+            childPlan,
+            "C1",
+            requestOrder: 0
+        );
+        var flattened = RootExtensionChildCollectionTopologyBuilders.BuildFlattenedWriteSet(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [RootExtensionDocumentId, "Blue"],
+            childCandidates: [childCandidate]
+        );
+        var request = RootExtensionChildCollectionTopologyBuilders.BuildVisibleRequest(body, "C1");
+        var appliedContext = new ProfileAppliedWriteContext(
+            request,
+            new JsonObject(),
+            [
+                StoredVisiblePresentScope("$"),
+                StoredVisiblePresentScope(RootExtensionChildCollectionTopologyBuilders.ExtensionScope),
+            ],
+            [
+                new VisibleStoredCollectionRow(
+                    new CollectionRowAddress(
+                        RootExtensionChildCollectionTopologyBuilders.ChildScope,
+                        new ScopeInstanceAddress(
+                            RootExtensionChildCollectionTopologyBuilders.ExtensionScope,
+                            []
+                        ),
+                        RootExtensionChildCollectionTopologyBuilders.Identity("OLD")
+                    ),
+                    ImmutableArray<string>.Empty
+                ),
+            ]
+        );
+        var currentState = RootExtensionChildCollectionTopologyBuilders.BuildCurrentState(
+            plan,
+            rootRowValues: ["Ada"],
+            extensionRowValues: [RootExtensionDocumentId, "Blue"],
+            childRows:
+            [
+                [901L, RootExtensionDocumentId, 1, "OLD"],
+            ]
+        );
+
+        _result = UnwrapMergeResult(
+            BuildProfileSynthesizer()
+                .Synthesize(
+                    new RelationalWriteProfileMergeRequest(
+                        writePlan: plan,
+                        flattenedWriteSet: flattened,
+                        writableRequestBody: body,
+                        currentState: currentState,
+                        profileRequest: request,
+                        profileAppliedContext: appliedContext,
+                        resolvedReferences: EmptyResolvedReferenceSet()
+                    )
+                )
+        );
+    }
+
+    [Test]
+    public void It_supports_guarded_no_op() => _result.SupportsGuardedNoOp.Should().BeTrue();
+
+    [Test]
+    public void It_is_not_a_no_op_candidate_when_child_identity_differs_from_stored() =>
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(_result).Should().BeFalse();
+}
