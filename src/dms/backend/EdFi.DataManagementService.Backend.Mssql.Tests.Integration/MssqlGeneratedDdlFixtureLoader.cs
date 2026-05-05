@@ -21,6 +21,15 @@ internal sealed record MssqlGeneratedDdlFixture(
     string GeneratedDdl
 );
 
+/// <summary>
+/// Loads cached <see cref="MssqlGeneratedDdlFixture"/> instances for integration tests.
+/// </summary>
+/// <remarks>
+/// <c>strict</c> defaults to <see langword="false"/> because the bulk of integration tests use
+/// synthetic fixtures that intentionally omit production invariants. Authoritative integration
+/// tests must opt into the production-equivalent pipeline with <c>strict: true</c> to mirror
+/// what the DDL CLI / provisioning path runs.
+/// </remarks>
 internal static class MssqlGeneratedDdlFixtureLoader
 {
     private static readonly ConcurrentDictionary<string, Lazy<MssqlGeneratedDdlFixture>> _cache = new(

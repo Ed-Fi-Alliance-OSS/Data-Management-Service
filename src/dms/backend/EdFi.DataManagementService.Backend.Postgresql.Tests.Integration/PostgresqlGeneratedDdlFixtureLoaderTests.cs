@@ -40,10 +40,12 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
 
         _authoritativeFixtureFromRelativePath =
             PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-                AuthoritativeFixtureRelativePath
+                AuthoritativeFixtureRelativePath,
+                strict: true
             );
         _authoritativeFixtureFromDirectory = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-            _authoritativeFixtureDirectory
+            _authoritativeFixtureDirectory,
+            strict: true
         );
         _parallelFocusedFixtures = await Task.WhenAll(
             Enumerable

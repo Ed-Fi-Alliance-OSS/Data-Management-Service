@@ -200,7 +200,10 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             );
         }
 
-        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            FixtureRelativePath,
+            strict: true
+        );
         _mappingSet = _fixture.MappingSet;
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = CreateServiceProvider();

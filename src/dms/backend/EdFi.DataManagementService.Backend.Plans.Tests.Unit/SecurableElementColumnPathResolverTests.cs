@@ -815,38 +815,189 @@ public class Given_SecurableElementColumnPathResolver
     [TestFixture]
     public class Given_array_nested_securable_element_paths
     {
-        [Test]
-        public void It_should_throw_when_all_paths_are_array_nested()
+        private static DbTableModel CreateChildTable(
+            DbTableName table,
+            string scopePath,
+            IReadOnlyList<DbColumnModel> columns
+        ) =>
+            new(
+                table,
+                Path(scopePath),
+                new TableKey(
+                    $"PK_{table.Name}",
+                    [new DbKeyColumn(Col("CollectionItemId"), ColumnKind.ParentKeyPart)]
+                ),
+                columns,
+                []
+            );
+
+        private static RelationalResourceModel CreateModelWithTables(
+            string project,
+            string resource,
+            DbTableModel root,
+            IReadOnlyList<DbTableModel> additionalTables,
+            IReadOnlyList<DocumentReferenceBinding> bindings
+        )
         {
-            // Resource has only array-nested securable elements — no root-level paths
-            // to resolve. Should throw indicating unsupported child-table traversal.
-            var rootTable = CreateRootTable(Table("TestResource"));
-            var model = CreateModel("Ed-Fi", "TestResource", rootTable);
+            var allTables = new List<DbTableModel> { root };
+            allTables.AddRange(additionalTables);
+            return new(
+                new QualifiedResourceName(project, resource),
+                _edfiSchema,
+                ResourceStorageKind.RelationalTables,
+                root,
+                allTables,
+                bindings,
+                []
+            );
+        }
+
+        [Test]
+        public void It_should_resolve_array_nested_edorg_to_child_table()
+        {
+            // Resource has an array-nested EdOrg securable element backed by a child collection
+            // table whose binding carries the identity binding for the nested EdOrg column.
+            var rootTable = CreateRootTable(Table("AssessmentAdministrationParticipationLike"));
+            var childTableName = Table("AssessmentAdministrationParticipationLikeAdministrationPoint");
+            var nestedEdOrgColumn = Col("AdministeringOrganization_EducationOrganizationId");
+            const string nestedEdOrgPath =
+                "$.assessmentAdministrationPoints[*].administeringOrganizationReference.educationOrganizationId";
+
+            var childTable = CreateChildTable(
+                childTableName,
+                "$.assessmentAdministrationPoints[*]",
+                [
+                    new DbColumnModel(Col("CollectionItemId"), ColumnKind.Scalar, null, false, null, null),
+                    new DbColumnModel(
+                        Col("AdministeringOrganization_DocumentId"),
+                        ColumnKind.DocumentFk,
+                        null,
+                        false,
+                        null,
+                        new QualifiedResourceName("Ed-Fi", "EducationOrganization")
+                    ),
+                    new DbColumnModel(nestedEdOrgColumn, ColumnKind.Scalar, null, false, null, null),
+                ]
+            );
+
+            var binding = new DocumentReferenceBinding(
+                true,
+                Path("$.assessmentAdministrationPoints[*].administeringOrganizationReference"),
+                childTableName,
+                Col("AdministeringOrganization_DocumentId"),
+                new QualifiedResourceName("Ed-Fi", "EducationOrganization"),
+                [
+                    new ReferenceIdentityBinding(
+                        Path("$.educationOrganizationId"),
+                        Path(nestedEdOrgPath),
+                        nestedEdOrgColumn
+                    ),
+                ]
+            );
+
+            var model = CreateModelWithTables(
+                "Ed-Fi",
+                "AssessmentAdministrationParticipationLike",
+                rootTable,
+                [childTable],
+                [binding]
+            );
 
             var securableElements = new ResourceSecurableElements(
-                [new EdOrgSecurableElement("$.classPeriods[*].classPeriodReference.schoolId", "SchoolId")],
+                [new EdOrgSecurableElement(nestedEdOrgPath, "EducationOrganizationId")],
                 [],
                 [],
                 [],
                 []
             );
 
-            var concrete = CreateConcrete(1, "Ed-Fi", "TestResource", model, securableElements);
+            var concrete = CreateConcrete(
+                1,
+                "Ed-Fi",
+                "AssessmentAdministrationParticipationLike",
+                model,
+                securableElements
+            );
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
-            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
-
-            act.Should()
-                .Throw<InvalidOperationException>()
-                .WithMessage("*Ed-Fi.TestResource*")
-                .WithMessage("*unsupported child-table traversal*")
-                .WithMessage("*$.classPeriods[*].classPeriodReference.schoolId*");
+            results.Should().HaveCount(1);
+            results[0].Kind.Should().Be(SecurableElementKind.EducationOrganization);
+            results[0].Steps.Should().HaveCount(1);
+            results[0].Steps[0].SourceTable.Should().Be(childTableName);
+            results[0].Steps[0].SourceColumnName.Should().Be(nestedEdOrgColumn);
+            results[0].Steps[0].TargetTable.Should().BeNull();
+            results[0].Steps[0].TargetColumnName.Should().BeNull();
         }
 
         [Test]
-        public void It_should_resolve_root_level_and_skip_array_nested()
+        public void It_should_resolve_array_nested_namespace_to_child_table()
         {
-            // Resource has both root-level and array-nested EdOrg paths.
-            // Only the root-level path should resolve; the array-nested one is skipped.
+            // Resource has an array-nested Namespace securable element backed by a child
+            // collection table — mirrors the GraduationPlan/RequiredAssessment shape.
+            var rootTable = CreateRootTable(Table("GraduationPlanLike"));
+            var childTableName = Table("GraduationPlanLikeRequiredAssessment");
+            var nestedNamespaceColumn = Col("RequiredAssessmentAssessment_Namespace");
+            const string nestedNamespacePath = "$.requiredAssessments[*].assessmentReference.namespace";
+
+            var childTable = CreateChildTable(
+                childTableName,
+                "$.requiredAssessments[*]",
+                [
+                    new DbColumnModel(Col("CollectionItemId"), ColumnKind.Scalar, null, false, null, null),
+                    new DbColumnModel(
+                        Col("RequiredAssessmentAssessment_DocumentId"),
+                        ColumnKind.DocumentFk,
+                        null,
+                        false,
+                        null,
+                        new QualifiedResourceName("Ed-Fi", "Assessment")
+                    ),
+                    new DbColumnModel(nestedNamespaceColumn, ColumnKind.Scalar, null, false, null, null),
+                ]
+            );
+
+            var binding = new DocumentReferenceBinding(
+                true,
+                Path("$.requiredAssessments[*].assessmentReference"),
+                childTableName,
+                Col("RequiredAssessmentAssessment_DocumentId"),
+                new QualifiedResourceName("Ed-Fi", "Assessment"),
+                [
+                    new ReferenceIdentityBinding(
+                        Path("$.namespace"),
+                        Path(nestedNamespacePath),
+                        nestedNamespaceColumn
+                    ),
+                ]
+            );
+
+            var model = CreateModelWithTables(
+                "Ed-Fi",
+                "GraduationPlanLike",
+                rootTable,
+                [childTable],
+                [binding]
+            );
+
+            var securableElements = new ResourceSecurableElements([], [nestedNamespacePath], [], [], []);
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "GraduationPlanLike", model, securableElements);
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().HaveCount(1);
+            results[0].Kind.Should().Be(SecurableElementKind.Namespace);
+            results[0].Steps.Should().HaveCount(1);
+            results[0].Steps[0].SourceTable.Should().Be(childTableName);
+            results[0].Steps[0].SourceColumnName.Should().Be(nestedNamespaceColumn);
+            results[0].Steps[0].TargetTable.Should().BeNull();
+            results[0].Steps[0].TargetColumnName.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_resolve_both_root_level_and_array_nested()
+        {
+            // Resource has a root-level EdOrg path AND an array-nested EdOrg path; both
+            // must resolve — the first to the root table, the second to a child table.
             var rootTable = CreateRootTable(
                 Table("TestResource"),
                 [
@@ -861,7 +1012,7 @@ public class Given_SecurableElementColumnPathResolver
                 ]
             );
 
-            var binding = new DocumentReferenceBinding(
+            var rootBinding = new DocumentReferenceBinding(
                 true,
                 Path("$.schoolReference"),
                 rootTable.Table,
@@ -876,12 +1027,54 @@ public class Given_SecurableElementColumnPathResolver
                 ]
             );
 
-            var model = CreateModel("Ed-Fi", "TestResource", rootTable, [binding]);
+            var childTableName = Table("TestResourceClassPeriod");
+            var nestedEdOrgColumn = Col("ClassPeriodClassPeriod_SchoolId");
+            const string nestedEdOrgPath = "$.classPeriods[*].classPeriodReference.schoolId";
+
+            var childTable = CreateChildTable(
+                childTableName,
+                "$.classPeriods[*]",
+                [
+                    new DbColumnModel(Col("CollectionItemId"), ColumnKind.Scalar, null, false, null, null),
+                    new DbColumnModel(
+                        Col("ClassPeriodClassPeriod_DocumentId"),
+                        ColumnKind.DocumentFk,
+                        null,
+                        false,
+                        null,
+                        new QualifiedResourceName("Ed-Fi", "ClassPeriod")
+                    ),
+                    new DbColumnModel(nestedEdOrgColumn, ColumnKind.Scalar, null, false, null, null),
+                ]
+            );
+
+            var childBinding = new DocumentReferenceBinding(
+                true,
+                Path("$.classPeriods[*].classPeriodReference"),
+                childTableName,
+                Col("ClassPeriodClassPeriod_DocumentId"),
+                new QualifiedResourceName("Ed-Fi", "ClassPeriod"),
+                [
+                    new ReferenceIdentityBinding(
+                        Path("$.schoolReference.schoolId"),
+                        Path(nestedEdOrgPath),
+                        nestedEdOrgColumn
+                    ),
+                ]
+            );
+
+            var model = CreateModelWithTables(
+                "Ed-Fi",
+                "TestResource",
+                rootTable,
+                [childTable],
+                [rootBinding, childBinding]
+            );
 
             var securableElements = new ResourceSecurableElements(
                 [
                     new EdOrgSecurableElement("$.schoolReference.schoolId", "SchoolId"),
-                    new EdOrgSecurableElement("$.classPeriods[*].classPeriodReference.schoolId", "SchoolId"),
+                    new EdOrgSecurableElement(nestedEdOrgPath, "SchoolId"),
                 ],
                 [],
                 [],
@@ -892,9 +1085,11 @@ public class Given_SecurableElementColumnPathResolver
             var concrete = CreateConcrete(1, "Ed-Fi", "TestResource", model, securableElements);
             var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
-            results.Should().HaveCount(1);
-            results[0].Kind.Should().Be(SecurableElementKind.EducationOrganization);
-            results[0].Steps[0].SourceColumnName.Should().Be(Col("SchoolReference_SchoolId"));
+            results.Should().HaveCount(2);
+            var rootStep = results.Single(r => r.Steps[0].SourceTable == rootTable.Table).Steps[0];
+            rootStep.SourceColumnName.Should().Be(Col("SchoolReference_SchoolId"));
+            var childStep = results.Single(r => r.Steps[0].SourceTable == childTableName).Steps[0];
+            childStep.SourceColumnName.Should().Be(nestedEdOrgColumn);
         }
 
         [Test]

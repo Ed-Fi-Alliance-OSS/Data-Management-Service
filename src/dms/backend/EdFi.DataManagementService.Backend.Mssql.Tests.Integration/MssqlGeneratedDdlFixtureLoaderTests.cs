@@ -39,10 +39,12 @@ public class Given_MssqlGeneratedDdlFixtureLoader
         );
 
         _authoritativeFixtureFromRelativePath = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            AuthoritativeFixtureRelativePath
+            AuthoritativeFixtureRelativePath,
+            strict: true
         );
         _authoritativeFixtureFromDirectory = MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-            _authoritativeFixtureDirectory
+            _authoritativeFixtureDirectory,
+            strict: true
         );
         _parallelFocusedFixtures = await Task.WhenAll(
             Enumerable

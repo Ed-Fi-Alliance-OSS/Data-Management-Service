@@ -488,7 +488,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         }
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            MssqlStudentSchoolAssociationIntegrationTestSupport.FixtureRelativePath
+            MssqlStudentSchoolAssociationIntegrationTestSupport.FixtureRelativePath,
+            strict: true
         );
         _mappingSet = _fixture.MappingSet;
         _baselineDatabase = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(

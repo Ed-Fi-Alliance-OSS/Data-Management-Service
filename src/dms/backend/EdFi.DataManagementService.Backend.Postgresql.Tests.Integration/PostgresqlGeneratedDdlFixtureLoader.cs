@@ -21,6 +21,15 @@ internal sealed record PostgresqlGeneratedDdlFixture(
     string GeneratedDdl
 );
 
+/// <summary>
+/// Loads cached <see cref="PostgresqlGeneratedDdlFixture"/> instances for integration tests.
+/// </summary>
+/// <remarks>
+/// <c>strict</c> defaults to <see langword="false"/> because the bulk of integration tests use
+/// synthetic fixtures that intentionally omit production invariants. Authoritative integration
+/// tests must opt into the production-equivalent pipeline with <c>strict: true</c> to mirror
+/// what the DDL CLI / provisioning path runs.
+/// </remarks>
 internal static class PostgresqlGeneratedDdlFixtureLoader
 {
     private static readonly ConcurrentDictionary<string, Lazy<PostgresqlGeneratedDdlFixture>> _cache = new(
