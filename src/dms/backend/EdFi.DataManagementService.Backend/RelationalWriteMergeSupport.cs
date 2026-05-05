@@ -207,4 +207,123 @@ internal static class RelationalWriteMergeSupport
 
     private static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
+
+    internal static IReadOnlyList<RelationalWriteMergedTableRow> OrderCollectionRowsForComparisonIfFullyBound(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<RelationalWriteMergedTableRow> rows
+    )
+    {
+        var mergePlan =
+            tableWritePlan.CollectionMergePlan
+            ?? throw new InvalidOperationException(
+                $"Collection table '{FormatTable(tableWritePlan)}' does not have a compiled collection merge plan."
+            );
+
+        var parentBindingIndexes = tableWritePlan
+            .TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(columnName =>
+                FindBindingIndex(tableWritePlan, columnName)
+            )
+            .Append(mergePlan.OrdinalBindingIndex)
+            .ToArray();
+
+        return OrderRowsByBindingIndexesIfFullyBound(rows, parentBindingIndexes);
+    }
+
+    internal static IReadOnlyList<RelationalWriteMergedTableRow> OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<RelationalWriteMergedTableRow> rows
+    )
+    {
+        var parentBindingIndexes = tableWritePlan
+            .TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(columnName =>
+                FindBindingIndex(tableWritePlan, columnName)
+            )
+            .ToArray();
+
+        return OrderRowsByBindingIndexesIfFullyBound(rows, parentBindingIndexes);
+    }
+
+    private static IReadOnlyList<RelationalWriteMergedTableRow> OrderRowsByBindingIndexesIfFullyBound(
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
+        IReadOnlyList<int> bindingIndexes
+    )
+    {
+        if (
+            bindingIndexes.Count == 0
+            || rows.Any(row => !CanProjectLiteralValues(row.Values, bindingIndexes))
+        )
+        {
+            return rows;
+        }
+
+        return rows.OrderBy(static row => row, new BoundRowComparer(bindingIndexes)).ToArray();
+    }
+
+    private static bool CanProjectLiteralValues(
+        IReadOnlyList<FlattenedWriteValue> values,
+        IReadOnlyList<int> bindingIndexes
+    ) => bindingIndexes.All(bindingIndex => values[bindingIndex] is FlattenedWriteValue.Literal);
+
+    internal static bool IsCollectionAlignedExtensionScope(TableWritePlan tableWritePlan) =>
+        tableWritePlan.TableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope;
+
+    internal sealed class BoundRowComparer(IReadOnlyList<int> bindingIndexes)
+        : IComparer<RelationalWriteMergedTableRow>
+    {
+        public int Compare(RelationalWriteMergedTableRow? left, RelationalWriteMergedTableRow? right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return 0;
+            }
+
+            if (left is null)
+            {
+                return -1;
+            }
+
+            if (right is null)
+            {
+                return 1;
+            }
+
+            foreach (var bindingIndex in bindingIndexes)
+            {
+                var leftValue = ((FlattenedWriteValue.Literal)left.Values[bindingIndex]).Value;
+                var rightValue = ((FlattenedWriteValue.Literal)right.Values[bindingIndex]).Value;
+                var compareResult = CompareLiteralValues(leftValue, rightValue);
+
+                if (compareResult != 0)
+                {
+                    return compareResult;
+                }
+            }
+
+            return 0;
+        }
+
+        private static int CompareLiteralValues(object? left, object? right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return 0;
+            }
+
+            if (left is null)
+            {
+                return -1;
+            }
+
+            if (right is null)
+            {
+                return 1;
+            }
+
+            return left switch
+            {
+                IComparable comparable => comparable.CompareTo(right),
+                _ => string.CompareOrdinal(left.ToString(), right.ToString()),
+            };
+        }
+    }
 }

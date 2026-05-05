@@ -3060,6 +3060,46 @@ internal sealed class ProfileTableStateBuilder
     /// Caller is responsible for skipping builders where <see cref="HasContent"/> is
     /// <c>false</c> (no-op tables produce no TableState in the profile-merge path).
     /// </summary>
-    public RelationalWriteMergedTableState Build() =>
-        new(_tableWritePlan, [.. _currentRows], [.. _mergedRows]);
+    public RelationalWriteMergedTableState Build()
+    {
+        IReadOnlyList<RelationalWriteMergedTableRow> currentRowsForComparison;
+        IReadOnlyList<RelationalWriteMergedTableRow> mergedRows;
+
+        if (_tableWritePlan.CollectionMergePlan is not null)
+        {
+            currentRowsForComparison =
+                RelationalWriteMergeSupport.OrderCollectionRowsForComparisonIfFullyBound(
+                    _tableWritePlan,
+                    _currentRows
+                );
+            mergedRows = RelationalWriteMergeSupport.OrderCollectionRowsForComparisonIfFullyBound(
+                _tableWritePlan,
+                _mergedRows
+            );
+        }
+        else if (RelationalWriteMergeSupport.IsCollectionAlignedExtensionScope(_tableWritePlan))
+        {
+            currentRowsForComparison =
+                RelationalWriteMergeSupport.OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound(
+                    _tableWritePlan,
+                    _currentRows
+                );
+            mergedRows =
+                RelationalWriteMergeSupport.OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound(
+                    _tableWritePlan,
+                    _mergedRows
+                );
+        }
+        else
+        {
+            currentRowsForComparison = _currentRows;
+            mergedRows = _mergedRows;
+        }
+
+        return new RelationalWriteMergedTableState(
+            _tableWritePlan,
+            [.. currentRowsForComparison],
+            [.. mergedRows]
+        );
+    }
 }

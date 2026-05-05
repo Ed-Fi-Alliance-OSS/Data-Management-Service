@@ -2827,12 +2827,15 @@ internal static class CollectionSynthesizerBuilders
 
     /// <summary>
     /// Builds a CollectionWriteCandidate at the given array position with the given identity value.
-    /// All values default to Literal(null) except index 3 (the identity field).
+    /// All values default to Literal(null) except index 1 (ParentDocumentId, seeded with the root
+    /// document id so the candidate's parent-locator slot matches what the production flattener
+    /// would materialize from WriteValueSource.DocumentId()) and index 3 (the identity field).
     /// </summary>
     public static CollectionWriteCandidate BuildCandidate(
         TableWritePlan collectionPlan,
         string identityValue,
-        int requestOrder
+        int requestOrder,
+        long parentDocumentId = 345L
     )
     {
         var values = new FlattenedWriteValue[collectionPlan.ColumnBindings.Length];
@@ -2840,6 +2843,9 @@ internal static class CollectionSynthesizerBuilders
         {
             values[i] = new FlattenedWriteValue.Literal(null);
         }
+        // Index 1 is the ParentDocumentId binding for the standard
+        // [CollectionItemId, ParentDocumentId, Ordinal, IdentityField0] collection layout.
+        values[1] = new FlattenedWriteValue.Literal(parentDocumentId);
         // Stamp the identity field value at index 3
         values[3] = new FlattenedWriteValue.Literal(identityValue);
 
