@@ -341,10 +341,139 @@ public class Given_DescriptorReadHandler
         commandExecutor.Commands.Should().BeEmpty();
     }
 
-    [Test]
-    public async Task It_keeps_supported_descriptor_queries_on_the_not_implemented_path_until_row_retrieval_lands()
+    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"", "dms.\"Descriptor\"", "page_document_ids.\"DocumentId\"")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document]", "[dms].[Descriptor]", "page_document_ids.[DocumentId]")]
+    public async Task It_reads_descriptor_query_rows_in_document_id_order_and_honors_total_count(
+        SqlDialect dialect,
+        string expectedDocumentTableFragment,
+        string expectedDescriptorTableFragment,
+        string expectedOrderByFragment
+    )
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var firstDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-111111111111");
+        var secondDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-222222222222");
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(firstDocumentUuid, documentId: 101L, codeValue: "Alternative"),
+                    CreateDescriptorRow(secondDocumentUuid, documentId: 205L, codeValue: "Charter")
+                ),
+            ]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            dialect,
+            queryElements:
+            [
+                CreateQueryElement(
+                    "namespace",
+                    "$.namespace",
+                    "uri://ed-fi.org/SchoolTypeDescriptor",
+                    "string"
+                ),
+            ],
+            totalCount: true
+        );
+
+        var result = await ReadQueryRowsAsync(sut, request);
+
+        result.TotalCount.Should().Be(7);
+        result.Rows.Select(row => row.DocumentId).Should().Equal(101L, 205L);
+        result.Rows.Select(row => row.DocumentUuid).Should().Equal(firstDocumentUuid, secondDocumentUuid);
+        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor.Commands[0].CommandText.Should().Contain("COUNT(1)");
+        commandExecutor.Commands[0].CommandText.Should().Contain(expectedDocumentTableFragment);
+        commandExecutor.Commands[0].CommandText.Should().Contain(expectedDescriptorTableFragment);
+        commandExecutor.Commands[0].CommandText.Should().Contain("LEFT JOIN");
+        commandExecutor.Commands[0].CommandText.Should().Contain(expectedOrderByFragment);
+    }
+
+    [Test]
+    public async Task It_does_not_fail_when_total_count_is_requested_and_a_corrupt_descriptor_document_is_outside_the_selected_page()
+    {
+        var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-333333333333");
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 2))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(documentUuid, documentId: 101L, codeValue: "Alternative")
+                ),
+            ]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(SqlDialect.Pgsql, totalCount: true, limit: 1, offset: 0);
+
+        var result = await ReadQueryRowsAsync(sut, request);
+
+        result.TotalCount.Should().Be(2);
+        result.Rows.Select(row => row.DocumentId).Should().Equal(101L);
+        commandExecutor.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_returns_an_unknown_failure_when_the_selected_descriptor_query_document_has_no_descriptor_row()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-444444444444"),
+                        ns: null,
+                        codeValue: null,
+                        shortDescription: null,
+                        description: null,
+                        effectiveBeginDate: null,
+                        effectiveEndDate: null,
+                        discriminator: null
+                    )
+                ),
+            ]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
+
+        var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain("dms.Descriptor.Namespace must not be null.");
+        failure.FailureMessage.Should().Contain("DocumentId 101");
+        failure.FailureMessage.Should().Contain("ResourceKeyId=13");
+    }
+
+    [Test]
+    public async Task It_returns_an_unknown_failure_when_a_selected_descriptor_query_row_has_a_required_field_null()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-555555555555"),
+                        shortDescription: null
+                    )
+                ),
+            ]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
+
+        var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain("dms.Descriptor.ShortDescription must not be null.");
+        failure.FailureMessage.Should().Contain("DocumentId 101");
+        failure.FailureMessage.Should().Contain("ResourceKeyId=13");
+    }
+
+    [Test]
+    public async Task It_keeps_supported_descriptor_queries_on_the_not_implemented_path_after_row_retrieval_until_materialization_lands()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 1))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(Guid.Parse("aaaaaaaa-1111-2222-3333-666666666666"), documentId: 101L)
+                ),
+            ]),
+        ]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandleQueryAsync(
@@ -370,7 +499,7 @@ public class Given_DescriptorReadHandler
                     "Relational descriptor GET-many is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
                 )
             );
-        commandExecutor.Commands.Should().BeEmpty();
+        commandExecutor.Commands.Should().ContainSingle();
     }
 
     private static DescriptorGetByIdRequest CreateRequest(
@@ -404,7 +533,9 @@ public class Given_DescriptorReadHandler
         QueryElement[]? queryElements = null,
         bool totalCount = false,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
-        DescriptorQueryCapability? descriptorQueryCapability = null
+        DescriptorQueryCapability? descriptorQueryCapability = null,
+        int? limit = 25,
+        int? offset = 0
     )
     {
         var mappingSet = CreateQueryMappingSet(
@@ -421,7 +552,12 @@ public class Given_DescriptorReadHandler
             descriptorResourceModel!,
             _descriptorResource,
             queryElements ?? [],
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500),
+            new PaginationParameters(
+                Limit: limit,
+                Offset: offset,
+                TotalCount: totalCount,
+                MaximumPageSize: 500
+            ),
             authorizationStrategyEvaluators ?? [],
             readableProfileProjectionContext: null,
             new TraceId("descriptor-query-trace")
@@ -536,6 +672,7 @@ public class Given_DescriptorReadHandler
 
     private static IReadOnlyDictionary<string, object?> CreateDescriptorRow(
         Guid documentUuid,
+        long documentId = 101L,
         string? ns = "uri://ed-fi.org/SchoolTypeDescriptor",
         string? codeValue = "Alternative",
         string? shortDescription = "Alternative",
@@ -546,7 +683,7 @@ public class Given_DescriptorReadHandler
     )
     {
         return RelationalAccessTestData.CreateRow(
-            ("DocumentId", 101L),
+            ("DocumentId", documentId),
             ("DocumentUuid", documentUuid),
             ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)),
             ("ResourceKeyId", (short)13),
@@ -562,6 +699,7 @@ public class Given_DescriptorReadHandler
 
     private static DescriptorReadRow CreateDescriptorReadRow(
         Guid documentUuid,
+        long documentId = 101L,
         string? ns = "uri://ed-fi.org/SchoolTypeDescriptor",
         string? codeValue = "Alternative",
         string? shortDescription = "Alternative",
@@ -572,7 +710,7 @@ public class Given_DescriptorReadHandler
     )
     {
         return new DescriptorReadRow(
-            DocumentId: 101L,
+            DocumentId: documentId,
             DocumentUuid: documentUuid,
             ContentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
             ResourceKeyId: 13,
@@ -602,5 +740,20 @@ public class Given_DescriptorReadHandler
     )
     {
         return new SupportedDescriptorQueryField(queryFieldName, target);
+    }
+
+    private static async Task<DescriptorQueryRowsPage> ReadQueryRowsAsync(
+        DescriptorReadHandler sut,
+        DescriptorQueryRequest request
+    )
+    {
+        var preprocessingResult = DescriptorQueryRequestPreprocessor.Preprocess(
+            request.MappingSet,
+            request.Resource,
+            request.QueryElements
+        );
+        preprocessingResult.Outcome.Should().BeOfType<RelationalQueryPreprocessingOutcome.Continue>();
+
+        return await sut.ReadQueryRowsAsync(request, preprocessingResult);
     }
 }

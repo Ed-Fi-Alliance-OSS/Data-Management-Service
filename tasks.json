@@ -146,7 +146,7 @@
       "Add handler unit tests for totalCount, ordered row retrieval, selected-document missing descriptor-row invariant failure, corrupt descriptor document outside the selected page not failing solely because totalCount was requested, required-field null invariant failure, and provider-specific command shape.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
-    "completed": false
+  "completed": true
   },
   {
     "category": "Descriptor Query Page Materialization",
