@@ -126,7 +126,7 @@
       "Add repository/handler unit tests for descriptor query delegation, omitted capability 501, auth fail-closed 501, empty-page preprocessing, and no generic hydrator/materializer invocation.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor 501 Response Mapping",

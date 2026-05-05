@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -271,6 +272,107 @@ public class Given_DescriptorReadHandler
             .MustNotHaveHappened();
     }
 
+    [Test]
+    public async Task It_fails_closed_for_descriptor_query_authorization_without_executing_sql()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                authorizationStrategyEvaluators: [new("RelationshipsWithEdOrgsOnly", [], FilterOperator.And)]
+            )
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.QueryFailureNotImplemented(
+                    "Relational descriptor query authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported."
+                )
+            );
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_returns_descriptor_query_capability_omission_diagnostics_without_executing_sql()
+    {
+        const string omissionReason =
+            "descriptor query support was intentionally omitted for the test fixture.";
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                descriptorQueryCapability: CreateOmittedDescriptorQueryCapability(omissionReason)
+            )
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.QueryFailureNotImplemented(
+                    "Descriptor query capability for resource 'Ed-Fi.SchoolTypeDescriptor' was intentionally omitted: "
+                        + omissionReason
+                )
+            );
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_short_circuits_invalid_descriptor_query_ids_to_an_empty_page_without_executing_sql()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                queryElements: [CreateQueryElement("id", "$.id", "not-a-guid", "string")],
+                totalCount: true
+            )
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().Be(0);
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_keeps_supported_descriptor_queries_on_the_not_implemented_path_until_row_retrieval_lands()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                queryElements:
+                [
+                    CreateQueryElement(
+                        "namespace",
+                        "$.namespace",
+                        "uri://ed-fi.org/SchoolTypeDescriptor",
+                        "string"
+                    ),
+                ],
+                totalCount: true
+            )
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.QueryFailureNotImplemented(
+                    "Relational descriptor GET-many is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
+                )
+            );
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
     private static DescriptorGetByIdRequest CreateRequest(
         SqlDialect dialect,
         DocumentUuid documentUuid,
@@ -294,6 +396,35 @@ public class Given_DescriptorReadHandler
             authorizationStrategyEvaluators ?? [],
             readableProfileProjectionContext,
             new TraceId("descriptor-get-trace")
+        );
+    }
+
+    private static DescriptorQueryRequest CreateQueryRequest(
+        SqlDialect dialect,
+        QueryElement[]? queryElements = null,
+        bool totalCount = false,
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
+        DescriptorQueryCapability? descriptorQueryCapability = null
+    )
+    {
+        var mappingSet = CreateQueryMappingSet(
+            dialect,
+            descriptorQueryCapability ?? CreateSupportedDescriptorQueryCapability()
+        );
+        mappingSet
+            .TryGetDescriptorResourceModel(_descriptorResource, out var descriptorResourceModel)
+            .Should()
+            .BeTrue();
+
+        return new DescriptorQueryRequest(
+            mappingSet,
+            descriptorResourceModel!,
+            _descriptorResource,
+            queryElements ?? [],
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500),
+            authorizationStrategyEvaluators ?? [],
+            readableProfileProjectionContext: null,
+            new TraceId("descriptor-query-trace")
         );
     }
 
@@ -336,6 +467,71 @@ public class Given_DescriptorReadHandler
             ),
             Model = mappingSet.Model with { Dialect = dialect },
         };
+    }
+
+    private static MappingSet CreateQueryMappingSet(
+        SqlDialect dialect,
+        DescriptorQueryCapability descriptorQueryCapability
+    )
+    {
+        return CreateMappingSet(dialect) with
+        {
+            DescriptorQueryCapabilitiesByResource = new Dictionary<
+                QualifiedResourceName,
+                DescriptorQueryCapability
+            >
+            {
+                [_descriptorResource] = descriptorQueryCapability,
+            },
+        };
+    }
+
+    private static DescriptorQueryCapability CreateSupportedDescriptorQueryCapability()
+    {
+        return new DescriptorQueryCapability(
+            new DescriptorQuerySupport.Supported(),
+            new Dictionary<string, SupportedDescriptorQueryField>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["id"] = CreateSupportedField("id", new DescriptorQueryFieldTarget.DocumentUuid()),
+                ["namespace"] = CreateSupportedField(
+                    "namespace",
+                    new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace"))
+                ),
+                ["codeValue"] = CreateSupportedField(
+                    "codeValue",
+                    new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue"))
+                ),
+                ["shortDescription"] = CreateSupportedField(
+                    "shortDescription",
+                    new DescriptorQueryFieldTarget.ShortDescription(new DbColumnName("ShortDescription"))
+                ),
+                ["description"] = CreateSupportedField(
+                    "description",
+                    new DescriptorQueryFieldTarget.Description(new DbColumnName("Description"))
+                ),
+                ["effectiveBeginDate"] = CreateSupportedField(
+                    "effectiveBeginDate",
+                    new DescriptorQueryFieldTarget.EffectiveBeginDate(new DbColumnName("EffectiveBeginDate"))
+                ),
+                ["effectiveEndDate"] = CreateSupportedField(
+                    "effectiveEndDate",
+                    new DescriptorQueryFieldTarget.EffectiveEndDate(new DbColumnName("EffectiveEndDate"))
+                ),
+            }
+        );
+    }
+
+    private static DescriptorQueryCapability CreateOmittedDescriptorQueryCapability(string omissionReason)
+    {
+        return new DescriptorQueryCapability(
+            new DescriptorQuerySupport.Omitted(
+                new DescriptorQueryCapabilityOmission(
+                    DescriptorQueryCapabilityOmissionKind.ApiSchemaMismatch,
+                    omissionReason
+                )
+            ),
+            new Dictionary<string, SupportedDescriptorQueryField>(StringComparer.OrdinalIgnoreCase)
+        );
     }
 
     private static IReadOnlyDictionary<string, object?> CreateDescriptorRow(
@@ -388,5 +584,23 @@ public class Given_DescriptorReadHandler
             EffectiveEndDate: effectiveEndDate,
             Discriminator: discriminator
         );
+    }
+
+    private static QueryElement CreateQueryElement(
+        string queryFieldName,
+        string documentPath,
+        string value,
+        string type
+    )
+    {
+        return new QueryElement(queryFieldName, [new JsonPath(documentPath)], value, type);
+    }
+
+    private static SupportedDescriptorQueryField CreateSupportedField(
+        string queryFieldName,
+        DescriptorQueryFieldTarget target
+    )
+    {
+        return new SupportedDescriptorQueryField(queryFieldName, target);
     }
 }

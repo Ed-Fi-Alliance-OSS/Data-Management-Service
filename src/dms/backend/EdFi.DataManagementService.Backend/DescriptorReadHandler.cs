@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -42,7 +43,7 @@ internal sealed class DescriptorReadHandler(
             request.TraceId.Value
         );
 
-        if (!HasNoOpDescriptorGetAuthorization(request.AuthorizationStrategyEvaluators))
+        if (!HasOnlyNoFurtherAuthorizationRequired(request.AuthorizationStrategyEvaluators))
         {
             return new GetResult.GetFailureNotImplemented(
                 BuildDescriptorGetAuthorizationNotImplementedMessage(
@@ -125,6 +126,74 @@ internal sealed class DescriptorReadHandler(
             request.TraceId.Value
         );
 
+        if (!HasOnlyNoFurtherAuthorizationRequired(request.AuthorizationStrategyEvaluators))
+        {
+            return Task.FromResult<QueryResult>(
+                new QueryResult.QueryFailureNotImplemented(
+                    BuildDescriptorQueryAuthorizationNotImplementedMessage(
+                        request.Resource,
+                        request.AuthorizationStrategyEvaluators
+                    )
+                )
+            );
+        }
+
+        DescriptorQueryPreprocessingResult preprocessingResult;
+
+        try
+        {
+            preprocessingResult = DescriptorQueryRequestPreprocessor.Preprocess(
+                request.MappingSet,
+                request.Resource,
+                request.QueryElements
+            );
+        }
+        catch (NotSupportedException ex)
+        {
+            return Task.FromResult<QueryResult>(new QueryResult.QueryFailureNotImplemented(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ex.Message));
+        }
+
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
+        {
+            return Task.FromResult<QueryResult>(
+                new QueryResult.QuerySuccess([], request.PaginationParameters.TotalCount ? 0 : null)
+            );
+        }
+
+        try
+        {
+            _ = new DescriptorQueryPageKeysetPlanner(request.MappingSet.Key.Dialect).Plan(
+                request.MappingSet,
+                request.Resource,
+                preprocessingResult,
+                request.PaginationParameters
+            );
+        }
+        catch (NotSupportedException ex)
+        {
+            return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ex.Message));
+        }
+
         return Task.FromResult<QueryResult>(
             new QueryResult.QueryFailureNotImplemented(
                 $"Relational descriptor GET-many is not implemented for resource '{RelationalWriteSupport.FormatResource(request.Resource)}'."
@@ -191,7 +260,7 @@ internal sealed class DescriptorReadHandler(
         return projectedDocument;
     }
 
-    private static bool HasNoOpDescriptorGetAuthorization(
+    private static bool HasOnlyNoFurtherAuthorizationRequired(
         IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
     )
     {
@@ -221,6 +290,25 @@ internal sealed class DescriptorReadHandler(
 
         return $"Relational descriptor GET authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
             + "when effective GET authorization requires filtering. Effective strategies: "
+            + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or only "
+            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
+    }
+
+    private static string BuildDescriptorQueryAuthorizationNotImplementedMessage(
+        QualifiedResourceName resource,
+        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    )
+    {
+        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+
+        var strategyNames = authorizationStrategyEvaluators
+            .Select(static evaluator => evaluator.AuthorizationStrategyName)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .Select(static name => $"'{name}'");
+
+        return $"Relational descriptor query authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
+            + "when effective GET-many authorization requires filtering. Effective strategies: "
             + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or only "
             + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
     }
