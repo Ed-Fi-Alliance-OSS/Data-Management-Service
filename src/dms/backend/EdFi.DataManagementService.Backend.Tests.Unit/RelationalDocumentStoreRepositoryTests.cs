@@ -846,6 +846,74 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_propagates_descriptor_query_not_implemented_failures_from_the_descriptor_read_handler()
+    {
+        var descriptorReadHandler = A.Fake<IDescriptorReadHandler>();
+        var descriptorResourceInfo = CreateResourceInfo("SchoolTypeDescriptor");
+        var mappingSet = CreateDescriptorOnlyMappingSet(descriptorResourceInfo);
+        var expectedResult = new QueryResult.QueryFailureNotImplemented(
+            "Descriptor query capability for resource 'Ed-Fi.SchoolTypeDescriptor' was intentionally omitted: "
+                + "descriptor query support was intentionally omitted for the test fixture."
+        );
+
+        A.CallTo(() =>
+                descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+            )
+            .Returns(expectedResult);
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            new DefaultDescriptorWriteHandler(),
+            descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory
+        );
+
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+            ],
+            resourceInfo: descriptorResourceInfo
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeSameAs(expectedResult);
+        A.CallTo(() =>
+                descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_executes_mixed_case_root_column_queries_without_returning_unknown_failure()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("abababab-1111-2222-3333-cdcdcdcdcdcd"));

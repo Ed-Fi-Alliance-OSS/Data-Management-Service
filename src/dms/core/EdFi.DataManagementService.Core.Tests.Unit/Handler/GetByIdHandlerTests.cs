@@ -202,6 +202,94 @@ public class GetByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Descriptor_Relational_Request_That_Returns_Failure_Not_Implemented
+        : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public const string ResponseBody =
+                "Relational descriptor GET authorization is not implemented for resource "
+                + "'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. "
+                + "Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no "
+                + "authorization strategies or only 'NoFurtherAuthorizationRequired' are currently "
+                + "supported.";
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(new GetFailureNotImplemented(ResponseBody));
+            }
+        }
+
+        private static readonly string _traceId = "descriptor-get-501";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("SchoolTypeDescriptor"),
+                IsDescriptor: true,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                new JsonObject
+                {
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["isDescriptor"] = true,
+                    ["identityJsonPaths"] = new JsonArray { "$.uri" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject(),
+                    },
+                }
+            );
+            _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.AuthorizationStrategyEvaluators =
+            [
+                new("RelationshipsWithEdOrgsOnly", [], FilterOperator.And),
+            ];
+
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await getByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_descriptor_not_implemented_failures_to_http_501()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+
+            var expected = Utility.ToJsonError(Repository.ResponseBody, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
