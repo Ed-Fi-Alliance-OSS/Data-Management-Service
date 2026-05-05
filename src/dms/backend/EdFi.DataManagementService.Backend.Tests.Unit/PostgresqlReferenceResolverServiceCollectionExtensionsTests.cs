@@ -7,7 +7,9 @@ using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Old.Postgresql;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -25,6 +27,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var services = new ServiceCollection();
 
         services.AddLogging();
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
         services.AddSingleton<IHostApplicationLifetime, NoOpHostApplicationLifetime>();
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();

@@ -389,4 +389,115 @@ actual: {requestInfo.FrontendResponse.Body}
                 .Be("application/vnd.ed-fi.student.readableprofile.readable+json");
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Descriptor_Request_With_Relational_Read_Metadata : GetByIdHandlerTests
+    {
+        private static ResourceInfo CreateResourceInfo(
+            string projectName = "Ed-Fi",
+            string resourceName = "SchoolTypeDescriptor",
+            bool isDescriptor = true
+        )
+        {
+            return new ResourceInfo(
+                ProjectName: new ProjectName(projectName),
+                ResourceName: new ResourceName(resourceName),
+                IsDescriptor: isDescriptor,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+        }
+
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IRelationalGetRequest? CapturedRequest { get; private set; }
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                CapturedRequest = getRequest as IRelationalGetRequest;
+
+                return Task.FromResult<GetResult>(
+                    new GetSuccess(
+                        No.DocumentUuid,
+                        new JsonObject(),
+                        DateTime.UtcNow,
+                        getRequest.TraceId.Value
+                    )
+                );
+            }
+        }
+
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+        private readonly ContentTypeDefinition _readContentType = new(
+            MemberSelection.IncludeOnly,
+            [new PropertyRule("description")],
+            [],
+            [],
+            []
+        );
+        private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
+        [
+            new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, [], FilterOperator.Or),
+        ];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ResourceInfo = CreateResourceInfo(projectName: "SampleExtension");
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                new JsonObject
+                {
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["isDescriptor"] = true,
+                    ["identityJsonPaths"] = new JsonArray { "$.uri" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject(),
+                    },
+                }
+            );
+            _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "ReadableProfile",
+                ContentType: ProfileContentType.Read,
+                ResourceProfile: new ResourceProfile(
+                    ResourceName: "SchoolTypeDescriptor",
+                    LogicalSchema: null,
+                    ReadContentType: _readContentType,
+                    WriteContentType: null
+                ),
+                WasExplicitlySpecified: true
+            );
+
+            var (getByIdHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await getByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_adds_descriptor_identity_fields_to_the_readable_profile_projection_context()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository.CapturedRequest!.ReadableProfileProjectionContext.Should().NotBeNull();
+            _repository
+                .CapturedRequest.ReadableProfileProjectionContext!.IdentityPropertyNames.Should()
+                .Contain("uri")
+                .And.Contain("namespace")
+                .And.Contain("codeValue");
+        }
+    }
 }

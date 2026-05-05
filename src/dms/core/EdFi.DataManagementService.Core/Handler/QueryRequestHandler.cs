@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -95,25 +94,6 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                 : [],
             ContentType: contentType
-        );
-    }
-
-    private static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(
-        RequestInfo requestInfo
-    )
-    {
-        var readContentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType;
-
-        if (readContentType is null)
-        {
-            return null;
-        }
-
-        return new ReadableProfileProjectionContext(
-            readContentType,
-            IReadableProfileProjector.ExtractIdentityPropertyNames(
-                requestInfo.ResourceSchema.IdentityJsonPaths
-            )
         );
     }
 

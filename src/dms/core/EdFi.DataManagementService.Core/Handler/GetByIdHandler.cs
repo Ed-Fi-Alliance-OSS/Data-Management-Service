@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -116,25 +115,6 @@ internal class GetByIdHandler(
                 : "application/json";
 
         return new FrontendResponse(StatusCode: 200, Body: edfiDoc, Headers: [], ContentType: contentType);
-    }
-
-    private static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(
-        RequestInfo requestInfo
-    )
-    {
-        var readContentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType;
-
-        if (readContentType is null)
-        {
-            return null;
-        }
-
-        return new ReadableProfileProjectionContext(
-            readContentType,
-            IReadableProfileProjector.ExtractIdentityPropertyNames(
-                requestInfo.ResourceSchema.IdentityJsonPaths
-            )
-        );
     }
 
     private static IGetRequest CreateGetRequest(

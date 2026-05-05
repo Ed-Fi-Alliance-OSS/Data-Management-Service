@@ -336,4 +336,102 @@ public class QueryRequestHandlerTests
                 .Be("application/vnd.ed-fi.student.readableprofile.readable+json");
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Descriptor_Request_With_Relational_Query_Metadata : QueryRequestHandlerTests
+    {
+        private static ResourceInfo CreateResourceInfo(
+            string projectName = "Ed-Fi",
+            string resourceName = "SchoolTypeDescriptor",
+            bool isDescriptor = true
+        )
+        {
+            return new ResourceInfo(
+                ProjectName: new ProjectName(projectName),
+                ResourceName: new ResourceName(resourceName),
+                IsDescriptor: isDescriptor,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+        }
+
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IRelationalQueryRequest? CapturedRequest { get; private set; }
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                CapturedRequest = queryRequest as IRelationalQueryRequest;
+
+                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
+            }
+        }
+
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+        private readonly ContentTypeDefinition _readContentType = new(
+            MemberSelection.IncludeOnly,
+            [new PropertyRule("description")],
+            [],
+            [],
+            []
+        );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ResourceInfo = CreateResourceInfo(projectName: "SampleExtension");
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                new JsonObject
+                {
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["isDescriptor"] = true,
+                    ["identityJsonPaths"] = new JsonArray { "$.uri" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject(),
+                    },
+                }
+            );
+            _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "ReadableProfile",
+                ContentType: ProfileContentType.Read,
+                ResourceProfile: new ResourceProfile(
+                    ResourceName: "SchoolTypeDescriptor",
+                    LogicalSchema: null,
+                    ReadContentType: _readContentType,
+                    WriteContentType: null
+                ),
+                WasExplicitlySpecified: true
+            );
+
+            var (queryHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_adds_descriptor_identity_fields_to_the_query_readable_profile_projection_context()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository.CapturedRequest!.ReadableProfileProjectionContext.Should().NotBeNull();
+            _repository
+                .CapturedRequest.ReadableProfileProjectionContext!.IdentityPropertyNames.Should()
+                .Contain("uri")
+                .And.Contain("namespace")
+                .And.Contain("codeValue");
+        }
+    }
 }

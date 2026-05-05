@@ -7,6 +7,8 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.Profile;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -48,6 +50,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
 
         services.AddReferenceResolver<
             ExecutorBackedReferenceResolverAdapterFactory,
@@ -130,6 +133,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
 
         services.AddReferenceResolver<
             ExecutorBackedReferenceResolverAdapterFactory,

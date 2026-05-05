@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
 
@@ -14,6 +15,7 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class DescriptorReadHandler(
     IRelationalCommandExecutor commandExecutor,
+    IReadableProfileProjector readableProfileProjector,
     ILogger<DescriptorReadHandler> logger
 ) : IDescriptorReadHandler
 {
@@ -21,6 +23,8 @@ internal sealed class DescriptorReadHandler(
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
+    private readonly IReadableProfileProjector _readableProfileProjector =
+        readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
     private readonly ILogger<DescriptorReadHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -101,7 +105,7 @@ internal sealed class DescriptorReadHandler(
 
         return new GetResult.GetSuccess(
             new DocumentUuid(descriptorRow.DocumentUuid),
-            MaterializeDescriptorDocument(descriptorRow, request.ReadMode),
+            MaterializeDescriptorDocument(request, descriptorRow),
             descriptorRow.ContentLastModifiedAt.UtcDateTime,
             null
         );
@@ -157,12 +161,34 @@ internal sealed class DescriptorReadHandler(
         );
     }
 
-    private static JsonNode MaterializeDescriptorDocument(
-        DescriptorReadRow descriptorRow,
-        RelationalGetRequestReadMode readMode
+    private JsonNode MaterializeDescriptorDocument(
+        DescriptorGetByIdRequest request,
+        DescriptorReadRow descriptorRow
     )
     {
-        return DescriptorDocumentMaterializer.Materialize(descriptorRow, readMode);
+        var materializedDocument = DescriptorDocumentMaterializer.Materialize(
+            descriptorRow,
+            request.ReadMode
+        );
+
+        if (
+            request.ReadMode != RelationalGetRequestReadMode.ExternalResponse
+            || request.ReadableProfileProjectionContext is null
+        )
+        {
+            return materializedDocument;
+        }
+
+        var projectionContext = request.ReadableProfileProjectionContext;
+        var projectedDocument = _readableProfileProjector.Project(
+            materializedDocument,
+            projectionContext.ContentTypeDefinition,
+            projectionContext.IdentityPropertyNames
+        );
+
+        RelationalApiMetadataFormatter.RefreshEtag(projectedDocument);
+
+        return projectedDocument;
     }
 
     private static bool HasNoOpDescriptorGetAuthorization(
