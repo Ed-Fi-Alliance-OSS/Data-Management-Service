@@ -3157,13 +3157,15 @@ internal static class AuthEdOrgHierarchyFixture
             ),
         ];
 
-        // Auth covering index
+        // Auth covering index — Kind is Explicit (not Authorization) to mirror production
+        // DeriveAuthHierarchyPass: per compiled-mapping-set §2.2, Authorization is reserved
+        // for resource-table indexes derived from securableElements.
         var authIndex = new DbIndexInfo(
             new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Target"),
             AuthNames.EdOrgIdToEdOrgId,
             KeyColumns: [AuthNames.TargetEdOrgId],
             IsUnique: false,
-            Kind: DbIndexKind.Authorization,
+            Kind: DbIndexKind.Explicit,
             IncludeColumns: [AuthNames.SourceEdOrgId]
         );
 
@@ -3498,13 +3500,15 @@ internal static class AuthPeopleViewsFixture
         var seaEntity = new AuthEdOrgEntity("StateEducationAgency", seaTableName, organizationIdColumn, []);
         var authHierarchy = new AuthEdOrgHierarchy([seaEntity]);
 
-        // Auth covering index
+        // Auth covering index — Kind is Explicit (not Authorization) to mirror production
+        // DeriveAuthHierarchyPass: per compiled-mapping-set §2.2, Authorization is reserved
+        // for resource-table indexes derived from securableElements.
         var authIndex = new DbIndexInfo(
             new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Target"),
             AuthNames.EdOrgIdToEdOrgId,
             KeyColumns: [AuthNames.TargetEdOrgId],
             IsUnique: false,
-            Kind: DbIndexKind.Authorization,
+            Kind: DbIndexKind.Explicit,
             IncludeColumns: [AuthNames.SourceEdOrgId]
         );
 

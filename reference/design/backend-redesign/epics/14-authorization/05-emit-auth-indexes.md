@@ -37,7 +37,7 @@ The DDL generator should emit the indexes required by the Relationship-based and
 
 ### Namespace securableElement indexes
 
-- For every resource that has a Namespace securableElement, the DDL generator emits an index on the corresponding DB column (mapped via the Derived Relational Model from the securable element path).
+- For every resource that has a Namespace securableElement, the DDL generator emits an index on the corresponding DB column (mapped via the Derived Relational Model from the securable element path). Skip the index if it is already covered by a PrimaryAssociation index above. This dedup is a no-op for DS 5.2 since Namespace columns do not currently overlap PA key columns, but applying it symmetrically with EdOrg keeps coverage robust to extension schemas that may put a Namespace path on a PA key column.
 
 ### General requirements
 
