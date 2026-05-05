@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -20,10 +19,6 @@ internal sealed class DescriptorReadHandler(
 {
     private const string DocumentUuidParameterName = "@documentUuid";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
-    private const string IdPropertyName = "id";
-    private const string EtagPropertyName = "_etag";
-    private const string LastModifiedDatePropertyName = "_lastModifiedDate";
-    private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly ILogger<DescriptorReadHandler> _logger =
@@ -167,57 +162,7 @@ internal sealed class DescriptorReadHandler(
         RelationalGetRequestReadMode readMode
     )
     {
-        var document = new JsonObject
-        {
-            ["namespace"] = descriptorRow.Namespace,
-            ["codeValue"] = descriptorRow.CodeValue,
-            ["shortDescription"] = descriptorRow.ShortDescription,
-        };
-
-        if (descriptorRow.Description is not null)
-        {
-            document["description"] = descriptorRow.Description;
-        }
-
-        if (descriptorRow.EffectiveBeginDate is DateOnly effectiveBeginDate)
-        {
-            document["effectiveBeginDate"] = effectiveBeginDate.ToString(
-                "yyyy-MM-dd",
-                CultureInfo.InvariantCulture
-            );
-        }
-
-        if (descriptorRow.EffectiveEndDate is DateOnly effectiveEndDate)
-        {
-            document["effectiveEndDate"] = effectiveEndDate.ToString(
-                "yyyy-MM-dd",
-                CultureInfo.InvariantCulture
-            );
-        }
-
-        if (readMode == RelationalGetRequestReadMode.StoredDocument)
-        {
-            return document;
-        }
-
-        var descriptorBody = new ExtractedDescriptorBody(
-            descriptorRow.Namespace,
-            descriptorRow.CodeValue,
-            descriptorRow.ShortDescription,
-            descriptorRow.Description,
-            descriptorRow.EffectiveBeginDate,
-            descriptorRow.EffectiveEndDate,
-            $"{descriptorRow.Namespace}#{descriptorRow.CodeValue}",
-            descriptorRow.Discriminator ?? string.Empty
-        );
-
-        document[IdPropertyName] = descriptorRow.DocumentUuid.ToString();
-        document[EtagPropertyName] = RelationalApiMetadataFormatter.FormatEtag(descriptorBody);
-        document[LastModifiedDatePropertyName] = descriptorRow
-            .ContentLastModifiedAt.ToUniversalTime()
-            .ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
-
-        return document;
+        return DescriptorDocumentMaterializer.Materialize(descriptorRow, readMode);
     }
 
     private static bool HasNoOpDescriptorGetAuthorization(

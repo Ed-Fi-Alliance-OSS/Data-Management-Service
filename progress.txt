@@ -40,3 +40,9 @@ Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descri
 Decisions: implemented descriptor GET-by-id with direct dms.Document LEFT JOIN dms.Descriptor SQL scoped by ResourceKeyId; handler now fail-closes unsupported auth before SQL and treats missing descriptor columns after selection as invariant UnknownFailure; Discriminator mismatch is warning-only and ResourceKeyId remains authoritative.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorReadHandlerTests.cs; tasks.json; progress.txt
 Notes: backend unit suite passed before/after csharpier; next task should separate/expand descriptor base materialization and readable profile behavior from the now-working GET SQL path.
+2026-05-05
+Task completed: Descriptor Base Materialization
+Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descriptor-endpoints.md
+Decisions: extracted reusable DescriptorDocumentMaterializer so GET/query can share identical pre-profile descriptor JSON; external _etag now hashes the actual descriptor body shape rather than reconstructing ExtractedDescriptorBody; StoredDocument/external modes both omit Uri/Discriminator/ChangeVersion and external last-modified formatting normalizes to UTC second precision.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DescriptorDocumentMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorDocumentMaterializerTests.cs; tasks.json; progress.txt
+Notes: ran dotnet csharpier format on touched C# files; backend unit suite passed; next task should wire readable profile projection onto the shared descriptor materializer path.

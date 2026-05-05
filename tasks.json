@@ -75,7 +75,7 @@
       "Add unit tests for null omission, date formatting, metadata injection, StoredDocument mode, exclusion of Uri/Discriminator/ChangeVersion, and base _etag computation before projection, including proof that id, _etag, and _lastModifiedDate are excluded from the hashed canonical JSON.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Profile Projection",
