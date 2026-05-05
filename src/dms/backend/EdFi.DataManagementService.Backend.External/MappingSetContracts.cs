@@ -61,6 +61,17 @@ public sealed record MappingSet(
 #pragma warning restore IDE0055
 
     /// <summary>
+    /// Compiled descriptor-endpoint query capability or omission metadata keyed by qualified descriptor resource name.
+    /// </summary>
+#pragma warning disable IDE0055
+    public IReadOnlyDictionary<
+        QualifiedResourceName,
+        DescriptorQueryCapability
+    > DescriptorQueryCapabilitiesByResource { get; init; } =
+        new Dictionary<QualifiedResourceName, DescriptorQueryCapability>();
+#pragma warning restore IDE0055
+
+    /// <summary>
     /// Creates a mapping set from an AOT mapping-pack payload.
     /// </summary>
     /// <param name="payload">The decoded mapping-pack payload.</param>

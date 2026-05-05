@@ -1,0 +1,6 @@
+2026-05-05
+Task completed: Descriptor Query Capability Contracts
+Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descriptor-endpoints.md
+Decisions: added MappingSet.DescriptorQueryCapabilitiesByResource and descriptor query contracts; kept generic QueryCapabilitiesByResource descriptor omission unchanged; missing SharedDescriptorTable descriptor capability metadata throws dedicated guard-rail exception.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/MappingSetContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/DescriptorQueryCapabilityContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/MappingSetDescriptorQueryLookupExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/MissingDescriptorQueryCapabilityLookupGuardRailException.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs; tasks.json; progress.txt
+Notes: plans/backend unit suites passed; parallel dotnet test runs contended on shared deps output, sequential rerun passed.
