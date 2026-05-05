@@ -67,6 +67,25 @@ public static class ProfileDefinitions
         """;
 
     /// <summary>
+    /// Profile for AbsenceEventCategoryDescriptor with IncludeOnly mode.
+    /// Descriptor identity fields (id, namespace, codeValue) and metadata are expected
+    /// to survive projection even when not explicitly included in the profile.
+    /// </summary>
+    public const string AbsenceEventCategoryDescriptorIncludeOnlyName =
+        "E2E-Test-AbsenceEventCategoryDescriptor-IncludeOnly";
+
+    public const string AbsenceEventCategoryDescriptorIncludeOnlyXml = """
+        <Profile name="E2E-Test-AbsenceEventCategoryDescriptor-IncludeOnly">
+            <Resource name="AbsenceEventCategoryDescriptor">
+                <ReadContentType memberSelection="IncludeOnly">
+                    <Property name="shortDescription"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
     /// Profile for School and Student with IncludeAll mode - includes all fields.
     /// Used for multi-resource profile usage tests.
     /// </summary>
@@ -606,6 +625,7 @@ public static class ProfileDefinitions
                 (SchoolIncludeOnlyName, SchoolIncludeOnlyXml),
                 (SchoolExcludeOnlyName, SchoolExcludeOnlyXml),
                 (SchoolIncludeAllName, SchoolIncludeAllXml),
+                (AbsenceEventCategoryDescriptorIncludeOnlyName, AbsenceEventCategoryDescriptorIncludeOnlyXml),
                 (StudentAndSchoolIncludeAllName, StudentAndSchoolIncludeAllXml),
                 (SchoolGradeLevelFilterName, SchoolGradeLevelFilterXml),
                 (SchoolGradeLevelExcludeFilterName, SchoolGradeLevelExcludeFilterXml),
