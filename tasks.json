@@ -183,7 +183,7 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DescriptorRead",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DescriptorRead"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Provider Integration Query Paging, Count, and Invariant Tests",
@@ -196,7 +196,7 @@
   },
   {
     "category": "Relational Descriptor API E2E",
-    "description": "Enable or add one thin relational-backend E2E scenario that creates a descriptor through POST, reads it by id, queries it by descriptor fields, and exercises readable profile projection through the public API. Prefer tagging existing descriptor GET/query scenarios with relational-backend when their expectations already match the relational design; add a focused scenario only where legacy expectations conflict. The task must identify an existing readable-profile fixture that targets a descriptor resource or add the minimal descriptor-readable-profile fixture needed for the scenario. Acceptance: the scenario proves Core routing, descriptor write/read integration, descriptor query routing, profile projection, _etag recomputation, _lastModifiedDate, and correct public descriptor shape without Uri or Discriminator; namespace, codeValue, id, _etag, and _lastModifiedDate survive readable profile projection; deeper provider/filter/invariant coverage and fail-closed authorization coverage remain in backend/unit tests.",
+    "description": "Switch any legacy E2Es to relational-backend that creates a descriptor through POST, reads it by id, and queries it by descriptor fields. Add one thin relational-backend E2E scenario that creates a descriptor through POST, reads it by id, queries it by descriptor fields, and exercises readable profile projection through the public API. Prefer tagging existing descriptor GET/query scenarios with relational-backend when their expectations already match the relational design; add a focused scenario only where legacy expectations conflict. The task must identify an existing readable-profile fixture that targets a descriptor resource or add the minimal descriptor-readable-profile fixture needed for the scenario. Acceptance: the scenario(s) proves Core routing, descriptor write/read integration, descriptor query routing, profile projection, _etag recomputation, _lastModifiedDate, and correct public descriptor shape without Uri or Discriminator; namespace, codeValue, id, _etag, and _lastModifiedDate survive readable profile projection; deeper provider/filter/invariant coverage and fail-closed authorization coverage remain in backend/unit tests.",
     "steps-to-verify": [
       "From src/dms/tests/EdFi.InstanceManagement.Tests.E2E run: pwsh ./teardown-local-dms.ps1",
       "From src/dms/tests/EdFi.InstanceManagement.Tests.E2E run: pwsh ./setup-local-dms.ps1",
