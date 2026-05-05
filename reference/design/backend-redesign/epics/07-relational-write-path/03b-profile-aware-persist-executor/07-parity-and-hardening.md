@@ -23,6 +23,7 @@ Earlier slices still own parity expectations for any SQL-sensitive behavior they
 - Remaining reverse-coverage or contract-hardening work required for safe merge
 - Explicit follow-up extraction for unresolved but non-blocking risks
 - Explicit handoff to `DMS-1132` / `../07-semantic-identity-presence-fidelity.md` for presence-sensitive semantic identity fidelity unless that work is intentionally absorbed here
+- Decision on profile vs no-profile collection ordinal-base alignment. Slice 6 (`06-profile-guarded-no-op.md`) ships profile-aware guarded no-op while the no-profile flatten path stamps 0-based ordinals (`RelationalWriteFlattener` `RequestOrder`) and the profile collection walker stamps 1-based `finalOrdinal = i + 1`. Documents created via the no-profile path therefore cannot reach the guarded no-op short-circuit on a later identical profiled PUT — the merged ordinals differ from the stored ordinals and the executor falls through to real collection DML. Slice 6's top-level-collection integration fixture acknowledges this by seeding through the profiled POST path (see `PostgresqlProfileGuardedNoOpTests.cs` lines 666-674). This slice owns the decision to either (a) align ordinal bases on one side, (b) document and accept the first-write DML cost on pre-profile data, or (c) plan a backfill/normalization migration.
 
 ## Explicitly Out Of Scope
 
