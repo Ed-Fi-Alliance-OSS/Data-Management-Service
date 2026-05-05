@@ -34,3 +34,9 @@ Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descri
 Decisions: added DescriptorReadRow/DescriptorReadRowReader with single-row and page readers; required namespace/codeValue/shortDescription nulls now throw DescriptorReadInvariantException as corruption; readers normalize provider date/timestamp shapes and treat Discriminator as optional when absent from the projection.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadRowReader.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorReadRowReaderTests.cs; tasks.json; progress.txt
 Notes: ran csharpier on touched files; backend unit suite passed; next task should layer descriptor GET SQL and handler logic onto the new row reader.
+2026-05-05
+Task completed: Descriptor GET Handler
+Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descriptor-endpoints.md
+Decisions: implemented descriptor GET-by-id with direct dms.Document LEFT JOIN dms.Descriptor SQL scoped by ResourceKeyId; handler now fail-closes unsupported auth before SQL and treats missing descriptor columns after selection as invariant UnknownFailure; Discriminator mismatch is warning-only and ResourceKeyId remains authoritative.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorReadHandlerTests.cs; tasks.json; progress.txt
+Notes: backend unit suite passed before/after csharpier; next task should separate/expand descriptor base materialization and readable profile behavior from the now-working GET SQL path.

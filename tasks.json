@@ -66,7 +66,7 @@
       "Add repository/handler unit tests for successful descriptor GET delegation, auth fail-closed 501, wrong-resource 404, missing descriptor-row invariant failure, diagnostic-only Discriminator mismatch, and no generic hydrator/materializer invocation for descriptor resources.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Base Materialization",
