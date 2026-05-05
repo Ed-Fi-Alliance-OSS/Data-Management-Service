@@ -42,6 +42,7 @@ internal sealed record RelationalGetRequest(
     BaseResourceInfo ResourceInfo,
     MappingSet MappingSet,
     IResourceAuthorizationHandler ResourceAuthorizationHandler,
+    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null

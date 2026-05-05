@@ -143,6 +143,18 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (relationalGetRequest.ResourceInfo.IsDescriptor)
         {
+            if (!HasNoOpGetManyAuthorization(relationalGetRequest.AuthorizationStrategyEvaluators))
+            {
+                return Task.FromResult<GetResult>(
+                    new GetResult.GetFailureNotImplemented(
+                        BuildDescriptorGetAuthorizationNotImplementedMessage(
+                            resource,
+                            relationalGetRequest.AuthorizationStrategyEvaluators
+                        )
+                    )
+                );
+            }
+
             return Task.FromResult<GetResult>(BuildDescriptorGetNotImplementedResult(resource));
         }
 
@@ -886,6 +898,25 @@ public sealed class RelationalDocumentStoreRepository(
 
         return $"Relational query authorization is not implemented for resource '{FormatResource(resource)}' "
             + "when effective GET-many authorization requires filtering. Effective strategies: "
+            + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or only "
+            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
+    }
+
+    private static string BuildDescriptorGetAuthorizationNotImplementedMessage(
+        QualifiedResourceName resource,
+        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    )
+    {
+        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+
+        var strategyNames = authorizationStrategyEvaluators
+            .Select(static evaluator => evaluator.AuthorizationStrategyName)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .Select(static name => $"'{name}'");
+
+        return $"Relational descriptor GET authorization is not implemented for resource '{FormatResource(resource)}' "
+            + "when effective GET authorization requires filtering. Effective strategies: "
             + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or only "
             + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
     }

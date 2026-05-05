@@ -148,6 +148,7 @@ internal class GetByIdHandler(
                 ResourceInfo: requestInfo.ResourceInfo,
                 MappingSet: requestInfo.MappingSet,
                 ResourceAuthorizationHandler: resourceAuthorizationHandler,
+                AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
                 TraceId: requestInfo.FrontendRequest.TraceId,
                 ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
             )

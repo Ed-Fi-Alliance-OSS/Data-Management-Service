@@ -175,17 +175,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_a_precise_not_implemented_failure_for_descriptor_get_requests()
     {
-        var getRequest = A.Fake<IRelationalGetRequest>();
-        A.CallTo(() => getRequest.MappingSet)
-            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
-        A.CallTo(() => getRequest.ResourceInfo)
-            .Returns(
-                new BaseResourceInfo(
-                    _descriptorResourceInfo.ProjectName,
-                    _descriptorResourceInfo.ResourceName,
-                    _descriptorResourceInfo.IsDescriptor
-                )
-            );
+        var resourceAuthorizationHandler = new RecordingResourceAuthorizationHandler();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.NewGuid()),
+            CreateDescriptorOnlyMappingSet(_descriptorResourceInfo),
+            _descriptorResourceInfo,
+            resourceAuthorizationHandler
+        );
 
         var result = await _sut.GetDocumentById(getRequest);
 
@@ -196,6 +192,65 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     "Relational descriptor GET by id is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
                 )
             );
+        resourceAuthorizationHandler.CallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_not_implemented_for_descriptor_get_authorization_that_requires_filtering()
+    {
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.NewGuid()),
+            CreateDescriptorOnlyMappingSet(_descriptorResourceInfo),
+            _descriptorResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            authorizationStrategyEvaluators: [new("RelationshipsWithEdOrgsOnly", [], FilterOperator.And)]
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new GetResult.GetFailureNotImplemented(
+                    "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported."
+                )
+            );
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_allows_no_further_authorization_required_for_descriptor_get_requests()
+    {
+        var resourceAuthorizationHandler = new RecordingResourceAuthorizationHandler();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.NewGuid()),
+            CreateDescriptorOnlyMappingSet(_descriptorResourceInfo),
+            _descriptorResourceInfo,
+            resourceAuthorizationHandler,
+            authorizationStrategyEvaluators:
+            [
+                new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, [], FilterOperator.Or),
+            ]
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new GetResult.GetFailureNotImplemented(
+                    "Relational descriptor GET by id is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
+                )
+            );
+        resourceAuthorizationHandler.CallCount.Should().Be(0);
     }
 
     [Test]
@@ -2767,7 +2822,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         ResourceInfo resourceInfo,
         IResourceAuthorizationHandler resourceAuthorizationHandler,
         RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse,
-        ReadableProfileProjectionContext? readableProfileProjectionContext = null
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null,
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null
     )
     {
         var getRequest = A.Fake<IRelationalGetRequest>();
@@ -2785,6 +2841,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => getRequest.TraceId).Returns(new TraceId("get-trace"));
         A.CallTo(() => getRequest.ReadMode).Returns(readMode);
         A.CallTo(() => getRequest.ReadableProfileProjectionContext).Returns(readableProfileProjectionContext);
+        A.CallTo(() => getRequest.AuthorizationStrategyEvaluators)
+            .Returns(authorizationStrategyEvaluators ?? []);
 
         return getRequest;
     }

@@ -53,21 +53,24 @@ public class GetByIdHandlerTests
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly JsonObject ResponseBody = new() { ["value"] = "expected" };
+            public IGetRequest? CapturedRequest { get; private set; }
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
+                CapturedRequest = getRequest;
                 return Task.FromResult<GetResult>(
                     new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, getRequest.TraceId.Value)
                 );
             }
         }
 
+        private readonly Repository _repository = new();
         private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
-            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            var (getByIdHandler, serviceProvider) = Handler(_repository);
             requestInfo.ScopedServiceProvider = serviceProvider;
             await getByIdHandler.Execute(requestInfo, NullNext);
         }
@@ -77,6 +80,13 @@ public class GetByIdHandlerTests
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(200);
             requestInfo.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
+        }
+
+        [Test]
+        public void It_constructs_a_standard_get_request_when_no_mapping_set_is_present()
+        {
+            _repository.CapturedRequest.Should().BeOfType<GetRequest>();
+            _repository.CapturedRequest.Should().NotBeAssignableTo<IRelationalGetRequest>();
         }
     }
 
@@ -297,6 +307,10 @@ actual: {requestInfo.FrontendResponse.Body}
             [],
             []
         );
+        private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
+        [
+            new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, [], FilterOperator.Or),
+        ];
 
         [SetUp]
         public async Task Setup()
@@ -320,6 +334,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 }
             );
             _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
             _requestInfo.ProfileContext = new ProfileContext(
                 ProfileName: "ReadableProfile",
                 ContentType: ProfileContentType.Read,
@@ -353,6 +368,9 @@ actual: {requestInfo.FrontendResponse.Body}
                     )
                 );
             _repository.CapturedRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
+            _repository
+                .CapturedRequest.AuthorizationStrategyEvaluators.Should()
+                .BeSameAs(_authorizationStrategyEvaluators);
             _repository.CapturedRequest.ReadableProfileProjectionContext.Should().NotBeNull();
             _repository
                 .CapturedRequest.ReadableProfileProjectionContext!.ContentTypeDefinition.Should()

@@ -526,6 +526,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
             ResourceAuthorizationHandler: new MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler(),
+            AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId)
         );
 

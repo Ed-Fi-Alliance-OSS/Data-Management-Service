@@ -1033,6 +1033,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
             ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
+            AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),
             ReadableProfileProjectionContext: readableProfileProjectionContext
         );
@@ -2069,6 +2070,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
             ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
+            AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId)
         );
 
