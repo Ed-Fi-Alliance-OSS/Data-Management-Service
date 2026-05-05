@@ -61,7 +61,8 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     /// The five hardcoded PrimaryAssociation covering indexes from
     /// <c>auth.md</c> § "PrimaryAssociations should have the following indexes…".
     /// Each entry maps a resource to its (key column, INCLUDE column) pair on the root table.
-    /// Names use the post-key-unification physical column names (e.g.
+    /// Column names come from <see cref="AuthNames"/> (single source of truth shared with the
+    /// people auth views) and use the post-key-unification physical form (e.g.
     /// <c>SchoolId_Unified</c>), which is what survives on the root table after
     /// <see cref="KeyUnificationPass"/> runs.
     /// </summary>
@@ -69,31 +70,31 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     [
         new(
             new QualifiedResourceName(EdFiProjectName, "StudentSchoolAssociation"),
-            new DbColumnName("SchoolId_Unified"),
-            new DbColumnName("Student_DocumentId")
+            AuthNames.SchoolIdUnified,
+            AuthNames.StudentDocumentId
         ),
         new(
             new QualifiedResourceName(EdFiProjectName, "StudentContactAssociation"),
-            new DbColumnName("Student_DocumentId"),
-            new DbColumnName("Contact_DocumentId")
+            AuthNames.StudentDocumentId,
+            AuthNames.ContactDocumentId
         ),
         new(
             new QualifiedResourceName(EdFiProjectName, "StaffEducationOrganizationAssignmentAssociation"),
-            new DbColumnName("EducationOrganization_EducationOrganizationId"),
-            new DbColumnName("Staff_DocumentId")
+            AuthNames.EdOrgEdOrgId,
+            AuthNames.StaffDocumentId
         ),
         new(
             new QualifiedResourceName(EdFiProjectName, "StaffEducationOrganizationEmploymentAssociation"),
-            new DbColumnName("EducationOrganization_EducationOrganizationId"),
-            new DbColumnName("Staff_DocumentId")
+            AuthNames.EdOrgEdOrgId,
+            AuthNames.StaffDocumentId
         ),
         new(
             new QualifiedResourceName(
                 EdFiProjectName,
                 "StudentEducationOrganizationResponsibilityAssociation"
             ),
-            new DbColumnName("EducationOrganization_EducationOrganizationId"),
-            new DbColumnName("Student_DocumentId")
+            AuthNames.EdOrgEdOrgId,
+            AuthNames.StudentDocumentId
         ),
     ];
 
@@ -158,11 +159,21 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
             {
                 if (throwOnMissingPaLiteral)
                 {
+                    var missing = new List<string>(2);
+                    if (canonicalKey is null)
+                    {
+                        missing.Add(entry.KeyColumn.Value);
+                    }
+                    if (canonicalInclude is null)
+                    {
+                        missing.Add(entry.IncludeColumn.Value);
+                    }
+
                     throw new InvalidOperationException(
                         $"PrimaryAssociation '{entry.Resource.ProjectName}.{entry.Resource.ResourceName}' "
                             + $"is present in the model set but root table "
                             + $"'{rootTable.Table.Schema.Value}.{rootTable.Table.Name}' is missing literal "
-                            + $"column '{(canonicalKey is null ? entry.KeyColumn.Value : entry.IncludeColumn.Value)}'. "
+                            + $"column(s) '{string.Join(", ", missing)}'. "
                             + $"Authorization index emission requires the post-key-unification column to exist."
                     );
                 }
