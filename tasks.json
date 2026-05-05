@@ -214,6 +214,6 @@
       "Run the PostgreSQL and SQL Server descriptor read integration tests from the provider integration tasks.",
       "Run the relational descriptor E2E filter from the Relational Descriptor API E2E task."
     ],
-    "completed": false
+    "completed": true
   }
 ]
