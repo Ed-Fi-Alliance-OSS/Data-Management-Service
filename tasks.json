@@ -57,7 +57,7 @@
       "Add unit tests for row-reader null handling, DateOnly conversion, required-field invariant failures, optional-field null preservation, and provider column ordinal/name stability.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor GET Handler",

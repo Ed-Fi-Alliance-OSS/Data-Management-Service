@@ -28,3 +28,9 @@ Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descri
 Decisions: GET/query descriptor detection now keys off MappingSet.TryGetDescriptorResourceModel instead of ResourceInfo.IsDescriptor; kept auth fail-closed in repository for now and delegated no-op-authorized descriptor reads to IDescriptorReadHandler; left descriptor write/delete routing unchanged.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Profile/ProfileWriteOrchestrationTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamTests.cs; tasks.json; progress.txt
 Notes: ran csharpier on touched C# files; backend unit suite passed before/after formatting; core unit suite passed after constructor updates.
+2026-05-05
+Task completed: Descriptor Read Row Contracts and SQL Readers
+Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descriptor-endpoints.md
+Decisions: added DescriptorReadRow/DescriptorReadRowReader with single-row and page readers; required namespace/codeValue/shortDescription nulls now throw DescriptorReadInvariantException as corruption; readers normalize provider date/timestamp shapes and treat Discriminator as optional when absent from the projection.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadRowReader.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorReadRowReaderTests.cs; tasks.json; progress.txt
+Notes: ran csharpier on touched files; backend unit suite passed; next task should layer descriptor GET SQL and handler logic onto the new row reader.
