@@ -20,7 +20,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
   - resolves `DocumentUuid → DocumentId`,
   - verifies the document is of the expected descriptor resource type,
   - returns JSON reconstituted from `dms.Descriptor` columns plus `id` from `dms.Document.DocumentUuid`,
-  - computes `_etag` from the serialized descriptor JSON representation and serves `_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps.
+  - computes `_etag` from the serialized descriptor JSON representation and serves `_lastModifiedDate` from stored `dms.Document` stamps.
 - Query for a descriptor resource:
   - compiles filters for descriptor fields to `dms.Descriptor` columns (root-only semantics),
   - pages deterministically using `DocumentId` ordering,
@@ -46,8 +46,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
     says “from dms.Descriptor columns”? My default would be: emit namespace, codeValue, shortDescription, description,
     effectiveBeginDate, effectiveEndDate, plus API metadata.
 
-2. Should DMS-994 include ChangeVersion in descriptor GET/query responses now? Existing relational GET materialization
-    currently omits it, but this story explicitly mentions it.
+2. Question removed.
 
 3. For type discrimination, is dms.Document.ResourceKeyId authoritative, with dms.Descriptor.Discriminator diagnostic-only?
     Also, if a dms.Document row exists for the right resource but the dms.Descriptor row is missing, should that be 404 or a 500
@@ -85,7 +84,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
 
 1. Emit only public descriptor fields: namespace, codeValue, shortDescription, description, effectiveBeginDate, effectiveEndDate, plus API metadata. Do not emit internal Uri or Discriminator.
 
-2. Explicitly defer ChangeVersion from descriptor GET/query responses.
+2. Question removed.
 
 3. Treat dms.Document.ResourceKeyId as authoritative. dms.Descriptor.Discriminator is diagnostic. Missing/wrong Document is 404; matching Document with no Descriptor row is a 500 invariant failure.
 
@@ -94,7 +93,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
 
 5. Yes, support ?id= and totalCount=true, matching DMS-993.
 
-6. Yes, use DMS-993 exact-match semantics. Invalid UUID/date values should short-circuit to an empty page, not 400.
+6. Yes, use DMS-993 exact-match semantics. Invalid date values are already handled at the core level.
 
 7. Use case-sensitive/ordinal value matching. Query parameter names can remain case-insensitive, but descriptor string values should behave like the current relational query compiler, not legacy
     case-insensitive value matching.
@@ -114,3 +113,103 @@ This story covers serving descriptor resources themselves (distinct from descrip
 
 Main implementation shape: IDescriptorReadHandler owns GET by id, page selection, total count, and descriptor JSON materialization from dms.Document + dms.Descriptor; the repository just detects
 descriptor resources and delegates.
+
+### Questions 2
+
+  1. Should descriptor GET fail-closed auth require adding AuthorizationStrategyEvaluators to IRelationalGetRequest, like query already has, so we can detect “no strategies /
+     NoFurtherAuthorizationRequired” without invoking the legacy auth handler?
+
+  2. For descriptor query corruption cases: if dms.Document has a matching descriptor ResourceKeyId but no dms.Descriptor row, should the whole query return a 500 invariant failure, or should page
+     selection only join rows that have a descriptor row and leave that invariant to GET-by-id?
+
+  3. Should nullable public descriptor fields be omitted when null, matching existing descriptor responses, or emitted as "description": null, "effectiveBeginDate": null, etc.? My default would be
+     omit nulls.
+
+  4. Should DMS-994 support all public descriptor filters from DescriptorColumnContract now: namespace, codeValue, shortDescription, description, effectiveBeginDate, effectiveEndDate, plus id; or
+     only the acceptance-test minimum?
+
+  5. Do you want the optional startup sanity check against ApiSchema.queryFieldMapping included in this story, or deferred? If included, should mismatch fail the resource’s descriptor query support
+     or fail startup/mapping compilation?
+
+  6. For readable profiles on descriptor endpoints, should namespace and codeValue be preserved as identity fields even if profile rules exclude them? The current generic identity extraction may
+     not naturally preserve them because descriptor identity is synthetic.
+
+  7. Existing descriptor E2E scenarios have some legacy behavior around ?namespace=<namespace>#<codeValue>. Should relational descriptor query strictly match the stored Namespace column, even if
+     that means updating/skipping legacy expectations?
+
+  8. Should descriptor GET/query integration coverage be required for both PostgreSQL and SQL Server in this story, consistent with DMS-990/DMS-993, or is one provider plus shared unit tests
+     acceptable?
+
+  9. For the POST-created acceptance tests, do you want full API/E2E scenarios under UseRelationalBackend, or backend integration tests through RelationalDocumentStoreRepository are enough for DMS-
+     994?
+
+  10. Should descriptor responses participate in dms.DocumentCache if/when that runtime cache is enabled, or should this first descriptor read handler always materialize directly from dms.Document
+     + dms.Descriptor?
+
+### Answers 2
+
+  1. Yes. Add AuthorizationStrategyEvaluators to IRelationalGetRequest, populate it from GetByIdHandler, and use the same fail-closed rule as query: empty strategies or only
+     NoFurtherAuthorizationRequired are allowed; anything else returns 501. Do not invoke the legacy auth handler for relational descriptor GET.
+
+  2. Do not silently inner-join away corruption. Use dms.Document.ResourceKeyId as authoritative. If a selected descriptor document has no dms.Descriptor row, return a 500 invariant failure. I
+     would not add a global corruption scan for every query; fail when the corrupt document enters the selected/returned candidate set.
+
+  3. Omit nullable fields when null. This matches the existing descriptor _etag canonical shape in src/dms/backend/EdFi.DataManagementService.Backend/RelationalApiMetadataFormatter.cs:58. Required
+     fields like namespace, codeValue, and effectively shortDescription should be present; missing required DB values are corruption.
+
+  4. Support all public descriptor filters now. Implement id, namespace, codeValue, shortDescription, description, effectiveBeginDate, and effectiveEndDate, not just the acceptance-test minimum.
+     The data model explicitly names those descriptor query fields in reference/design/backend-redesign/design-docs/data-model.md:344.
+
+  5. Include the sanity check if it is cheap, but make failure resource-scoped. DescriptorMetadata.ColumnContract remains authoritative. If ApiSchema.queryFieldMapping disagrees, omit descriptor
+     query support for that resource with a 501/actionable diagnostic rather than failing the whole mapping set.
+
+  6. Yes, always preserve namespace and codeValue under readable profiles. Descriptor identity is synthetic internally, so the normal identity-property extraction may not protect those fields.
+     Treat them as descriptor identity fields, along with id, _etag, and _lastModifiedDate; recompute _etag after projection per reference/design/backend-redesign/design-docs/update-
+     tracking.md:136. The implementation stance should be: descriptor read handler materializes the public descriptor JSON; profile projection
+     remains generic; Core tells the generic projector that descriptor identity includes namespace and codeValue.
+
+  7. Strictly match the stored Namespace column. ?namespace=<namespace>#<codeValue> should not match unless that full value was actually stored in Namespace. Preserve the legacy E2E
+     expectations that treat namespace as URI, but create new E2E tests tagged for relational backend that use the correct namespace.
+
+  8. Require PostgreSQL and SQL Server integration coverage. Descriptor query has provider-sensitive UUID/date/paging/count SQL, and DMS-990/DMS-993 set the same bar. Keep the matrix small, but
+     cover both providers.
+
+  9. Add a thin API/E2E path tagged for the relational backend if necessary, but the ideal is to simply tag existing E2E tests covering descriptor GET/query as relational backend and have them work with the feature file unmodified. Backend repository integration tests are right for filters,
+     paging, direct seeding, and invariant failures, but one POST-created full API scenario is needed to prove Core routing,
+     descriptor write/read integration, auth guard, and profile projection are wired.
+
+  10. Materialize directly from dms.Document + dms.Descriptor for DMS-994. Do not wire dms.DocumentCache in this story. The cache
+     design is caller-agnostic and optional, but descriptor read support should first be a simple direct read path; cache
+     participation can land with the broader cache/projector work described in reference/design/backend-redesign/design-docs/
+     data-model.md:519.
+
+### Questions 3
+
+  1. Should descriptor query capability metadata become a first-class compiled mapping-set concept, for example
+     DescriptorQueryCapabilitiesByResource, so resource-scoped 501 diagnostics are visible alongside generic query capabilities?
+     Or is it acceptable for DMS-994 to build descriptor query plans directly from ConcreteResourceModel.DescriptorMetadata at
+     request time?
+
+  2. Should descriptor GET support RelationalGetRequestReadMode.StoredDocument, returning the stored descriptor shape without
+     response metadata/profile projection, or is descriptor read support only required for external GET/query endpoints in this
+     story?
+
+### Answers 3
+  
+  1. Make descriptor query capability first-class in the compiled MappingSet, but keeping it separate from the
+     existing generic RelationalQueryCapability.
+
+    Concretely: add something like DescriptorQueryCapabilitiesByResource, with supported/omitted entries per descriptor resource.
+    Build it during mapping-set compilation from ConcreteResourceModel.DescriptorMetadata.ColumnContract, and run the cheap sanity
+    check against ApiSchema query-field mapping there. If a descriptor resource has a mismatch, mark only that descriptor
+    capability as omitted with a clear 501 diagnostic.
+
+  2. I recommend supporting StoredDocument in the descriptor GET handler now.
+
+     The implementation cost should be small because it can reuse the same lookup and invariant checks as external GET. The mode
+     should only change materialization:
+
+    - ExternalResponse: public descriptor fields plus id, _etag, _lastModifiedDate; apply readable profile projection; preserve
+        namespace/codeValue; recompute _etag.
+    - StoredDocument: public descriptor fields only; no id, _etag, _lastModifiedDate, no profile projection, no ChangeVersion.
+    - Neither mode should emit internal Uri or Discriminator.  
