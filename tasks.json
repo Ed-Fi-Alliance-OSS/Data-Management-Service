@@ -48,7 +48,7 @@
       "Add repository unit tests proving non-descriptor GET/query still use the generic relational paths and descriptor writes/deletes still use IDescriptorWriteHandler.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Read Row Contracts and SQL Readers",

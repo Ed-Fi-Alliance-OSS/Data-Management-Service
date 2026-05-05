@@ -23,6 +23,7 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalWriteExecutor writeExecutor,
     IRelationalWriteTargetLookupService targetLookupService,
     IDescriptorWriteHandler descriptorWriteHandler,
+    IDescriptorReadHandler descriptorReadHandler,
     IReferenceResolver referenceResolver,
     IDocumentHydrator documentHydrator,
     IRelationalReadTargetLookupService readTargetLookupService,
@@ -41,6 +42,8 @@ public sealed class RelationalDocumentStoreRepository(
         targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IDescriptorWriteHandler _descriptorWriteHandler =
         descriptorWriteHandler ?? throw new ArgumentNullException(nameof(descriptorWriteHandler));
+    private readonly IDescriptorReadHandler _descriptorReadHandler =
+        descriptorReadHandler ?? throw new ArgumentNullException(nameof(descriptorReadHandler));
     private readonly IReferenceResolver _referenceResolver =
         referenceResolver ?? throw new ArgumentNullException(nameof(referenceResolver));
     private readonly IDocumentHydrator _documentHydrator =
@@ -141,7 +144,7 @@ public sealed class RelationalDocumentStoreRepository(
             relationalGetRequest.TraceId.Value
         );
 
-        if (relationalGetRequest.ResourceInfo.IsDescriptor)
+        if (mappingSet.TryGetDescriptorResourceModel(resource, out var descriptorResourceModel))
         {
             if (!HasNoOpGetManyAuthorization(relationalGetRequest.AuthorizationStrategyEvaluators))
             {
@@ -155,7 +158,18 @@ public sealed class RelationalDocumentStoreRepository(
                 );
             }
 
-            return Task.FromResult<GetResult>(BuildDescriptorGetNotImplementedResult(resource));
+            return _descriptorReadHandler.HandleGetByIdAsync(
+                new DescriptorGetByIdRequest(
+                    mappingSet,
+                    descriptorResourceModel,
+                    resource,
+                    relationalGetRequest.DocumentUuid,
+                    relationalGetRequest.ReadMode,
+                    relationalGetRequest.AuthorizationStrategyEvaluators,
+                    relationalGetRequest.ReadableProfileProjectionContext,
+                    relationalGetRequest.TraceId
+                )
+            );
         }
 
         ResourceReadPlan readPlan;
@@ -467,6 +481,34 @@ public sealed class RelationalDocumentStoreRepository(
             "Entering RelationalDocumentStoreRepository.QueryDocuments - {TraceId}",
             relationalQueryRequest.TraceId.Value
         );
+
+        if (mappingSet.TryGetDescriptorResourceModel(resource, out var descriptorResourceModel))
+        {
+            if (!HasNoOpGetManyAuthorization(relationalQueryRequest.AuthorizationStrategyEvaluators))
+            {
+                return new QueryResult.QueryFailureNotImplemented(
+                    BuildQueryAuthorizationNotImplementedMessage(
+                        resource,
+                        relationalQueryRequest.AuthorizationStrategyEvaluators
+                    )
+                );
+            }
+
+            return await _descriptorReadHandler
+                .HandleQueryAsync(
+                    new DescriptorQueryRequest(
+                        mappingSet,
+                        descriptorResourceModel,
+                        resource,
+                        relationalQueryRequest.QueryElements,
+                        relationalQueryRequest.PaginationParameters,
+                        relationalQueryRequest.AuthorizationStrategyEvaluators,
+                        relationalQueryRequest.ReadableProfileProjectionContext,
+                        relationalQueryRequest.TraceId
+                    )
+                )
+                .ConfigureAwait(false);
+        }
 
         RelationalQueryCapability queryCapability;
 
@@ -860,13 +902,6 @@ public sealed class RelationalDocumentStoreRepository(
 
     private static string FormatResource(QualifiedResourceName resource) =>
         RelationalWriteSupport.FormatResource(resource);
-
-    private static GetResult BuildDescriptorGetNotImplementedResult(QualifiedResourceName resource)
-    {
-        return new GetResult.GetFailureNotImplemented(
-            $"Relational descriptor GET by id is not implemented for resource '{FormatResource(resource)}'."
-        );
-    }
 
     private static bool HasNoOpGetManyAuthorization(
         IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators

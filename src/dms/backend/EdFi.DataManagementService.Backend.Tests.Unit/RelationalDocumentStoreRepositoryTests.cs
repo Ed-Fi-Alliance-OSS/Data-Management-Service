@@ -46,6 +46,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private IRelationalWriteExecutor _writeExecutor = null!;
     private RecordingRelationalWriteTargetLookupService _targetLookupService = null!;
     private IReferenceResolver _referenceResolver = null!;
+    private IDescriptorReadHandler _descriptorReadHandler = null!;
     private IDocumentHydrator _documentHydrator = null!;
     private IRelationalReadTargetLookupService _readTargetLookupService = null!;
     private IRelationalReadMaterializer _readMaterializer = null!;
@@ -64,6 +65,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
         _targetLookupService = new RecordingRelationalWriteTargetLookupService();
         _referenceResolver = A.Fake<IReferenceResolver>();
+        _descriptorReadHandler = A.Fake<IDescriptorReadHandler>();
         _documentHydrator = A.Fake<IDocumentHydrator>();
         _readTargetLookupService = A.Fake<IRelationalReadTargetLookupService>();
         _readMaterializer = A.Fake<IRelationalReadMaterializer>();
@@ -89,12 +91,38 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     )
                 )
             );
+        A.CallTo(() =>
+                _descriptorReadHandler.HandleGetByIdAsync(
+                    A<DescriptorGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (DescriptorGetByIdRequest request, CancellationToken _) =>
+                    Task.FromResult<GetResult>(
+                        new GetResult.GetFailureNotImplemented(
+                            $"Relational descriptor GET by id is not implemented for resource '{request.Resource.ProjectName}.{request.Resource.ResourceName}'."
+                        )
+                    )
+            );
+        A.CallTo(() =>
+                _descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(
+                (DescriptorQueryRequest request, CancellationToken _) =>
+                    Task.FromResult<QueryResult>(
+                        new QueryResult.QueryFailureNotImplemented(
+                            $"Relational descriptor GET-many is not implemented for resource '{request.Resource.ProjectName}.{request.Resource.ResourceName}'."
+                        )
+                    )
+            );
 
         _sut = new RelationalDocumentStoreRepository(
             _logger,
             _writeExecutor,
             _targetLookupService,
             new DefaultDescriptorWriteHandler(),
+            _descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
@@ -170,6 +198,117 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .BeSameAs(hydratedPage.DescriptorRowsInPlanOrder);
         capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
         resourceAuthorizationHandler.CallCount.Should().Be(0);
+        A.CallTo(() =>
+                _descriptorReadHandler.HandleGetByIdAsync(
+                    A<DescriptorGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_routes_descriptor_get_requests_through_the_descriptor_read_handler_based_on_mapping_set_metadata()
+    {
+        var descriptorReadHandler = A.Fake<IDescriptorReadHandler>();
+        var descriptorResourceInfo = CreateResourceInfo("SchoolTypeDescriptor");
+        var mappingSet = CreateDescriptorOnlyMappingSet(descriptorResourceInfo);
+        var resourceAuthorizationHandler = new RecordingResourceAuthorizationHandler();
+        var documentUuid = new DocumentUuid(Guid.Parse("11111111-2222-3333-4444-555555555555"));
+        var projectionContext = new ReadableProfileProjectionContext(
+            new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("description")],
+                [],
+                [],
+                []
+            ),
+            new HashSet<string> { "id", "namespace", "codeValue", "_etag", "_lastModifiedDate" }
+        );
+        AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators =
+        [
+            CreateAuthorizationStrategyEvaluator(
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+            ),
+        ];
+        var expectedResult = new GetResult.GetFailureNotImplemented("delegated descriptor get result");
+        DescriptorGetByIdRequest capturedRequest = null!;
+
+        A.CallTo(() =>
+                descriptorReadHandler.HandleGetByIdAsync(
+                    A<DescriptorGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedRequest = call.GetArgument<DescriptorGetByIdRequest>(0)!)
+            .Returns(expectedResult);
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            new DefaultDescriptorWriteHandler(),
+            descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory
+        );
+
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            descriptorResourceInfo,
+            resourceAuthorizationHandler,
+            RelationalGetRequestReadMode.StoredDocument,
+            projectionContext,
+            authorizationStrategyEvaluators
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeSameAs(expectedResult);
+        capturedRequest.MappingSet.Should().BeSameAs(mappingSet);
+        capturedRequest.Resource.Should().Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
+        capturedRequest
+            .DescriptorResourceModel.ResourceKey.Resource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
+        capturedRequest.DocumentUuid.Should().Be(documentUuid);
+        capturedRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.StoredDocument);
+        capturedRequest.AuthorizationStrategyEvaluators.Should().BeSameAs(authorizationStrategyEvaluators);
+        capturedRequest.ReadableProfileProjectionContext.Should().BeSameAs(projectionContext);
+        capturedRequest.TraceId.Value.Should().Be("get-trace");
+        resourceAuthorizationHandler.CallCount.Should().Be(0);
+        A.CallTo(() =>
+                descriptorReadHandler.HandleGetByIdAsync(
+                    A<DescriptorGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -605,6 +744,103 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
         A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_routes_descriptor_queries_through_the_descriptor_read_handler_based_on_mapping_set_metadata()
+    {
+        var descriptorReadHandler = A.Fake<IDescriptorReadHandler>();
+        var descriptorResourceInfo = CreateResourceInfo("SchoolTypeDescriptor");
+        var mappingSet = CreateDescriptorOnlyMappingSet(descriptorResourceInfo);
+        QueryElement[] queryElements =
+        [
+            CreateQueryElement("namespace", "$.namespace", "uri://ed-fi.org", "string"),
+        ];
+        var projectionContext = new ReadableProfileProjectionContext(
+            new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("description")],
+                [],
+                [],
+                []
+            ),
+            new HashSet<string> { "id", "namespace", "codeValue", "_etag", "_lastModifiedDate" }
+        );
+        AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators =
+        [
+            CreateAuthorizationStrategyEvaluator(
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+            ),
+        ];
+        var expectedResult = new QueryResult.QuerySuccess([], 0);
+        DescriptorQueryRequest capturedRequest = null!;
+
+        A.CallTo(() =>
+                descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call => capturedRequest = call.GetArgument<DescriptorQueryRequest>(0)!)
+            .Returns(expectedResult);
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            new DefaultDescriptorWriteHandler(),
+            descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory
+        );
+
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            queryElements,
+            totalCount: true,
+            authorizationStrategyEvaluators: authorizationStrategyEvaluators,
+            readableProfileProjectionContext: projectionContext,
+            resourceInfo: descriptorResourceInfo
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeSameAs(expectedResult);
+        capturedRequest.MappingSet.Should().BeSameAs(mappingSet);
+        capturedRequest.Resource.Should().Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
+        capturedRequest
+            .DescriptorResourceModel.ResourceKey.Resource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
+        capturedRequest.QueryElements.Should().BeSameAs(queryElements);
+        capturedRequest.PaginationParameters.Should().Be(queryRequest.PaginationParameters);
+        capturedRequest.AuthorizationStrategyEvaluators.Should().BeSameAs(authorizationStrategyEvaluators);
+        capturedRequest.ReadableProfileProjectionContext.Should().BeSameAs(projectionContext);
+        capturedRequest.TraceId.Value.Should().Be("query-trace");
+        A.CallTo(() =>
+                descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustNotHaveHappened();
         A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
             .MustNotHaveHappened();
     }
@@ -1807,6 +2043,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             descriptorHandler,
+            _descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
@@ -1850,6 +2087,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             descriptorHandler,
+            _descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
@@ -1942,6 +2180,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             descriptorHandler,
+            _descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
@@ -2022,6 +2261,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             descriptorHandler,
+            _descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
@@ -3261,13 +3501,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
         QueryElement[] queryElements,
         bool totalCount,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
-        ReadableProfileProjectionContext? readableProfileProjectionContext = null
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null,
+        ResourceInfo? resourceInfo = null
     )
     {
         authorizationStrategyEvaluators ??= [];
+        resourceInfo ??= _schoolResourceInfo;
 
         var queryRequest = A.Fake<IRelationalQueryRequest>();
-        A.CallTo(() => queryRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => queryRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => queryRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);
         A.CallTo(() => queryRequest.AuthorizationSecurableInfo)
