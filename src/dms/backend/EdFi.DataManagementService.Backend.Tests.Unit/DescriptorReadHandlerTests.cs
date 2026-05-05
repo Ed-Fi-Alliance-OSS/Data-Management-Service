@@ -464,13 +464,30 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
-    public async Task It_keeps_supported_descriptor_queries_on_the_not_implemented_path_after_row_retrieval_until_materialization_lands()
+    public async Task It_materializes_descriptor_query_pages_into_external_response_items_with_metadata_and_total_count()
     {
+        var firstDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-666666666666");
+        var secondDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-777777777777");
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 1))),
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
                 InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(Guid.Parse("aaaaaaaa-1111-2222-3333-666666666666"), documentId: 101L)
+                    CreateDescriptorRow(
+                        firstDocumentUuid,
+                        documentId: 101L,
+                        description: null,
+                        effectiveBeginDate: new DateOnly(2025, 1, 15),
+                        effectiveEndDate: null
+                    ),
+                    CreateDescriptorRow(
+                        secondDocumentUuid,
+                        documentId: 205L,
+                        codeValue: "Charter",
+                        shortDescription: "Charter",
+                        description: "Charter school type",
+                        effectiveBeginDate: null,
+                        effectiveEndDate: new DateOnly(2025, 12, 31)
+                    )
                 ),
             ]),
         ]);
@@ -492,14 +509,126 @@ public class Given_DescriptorReadHandler
             )
         );
 
-        result
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(7);
+        success.EdfiDocs.Should().HaveCount(2);
+
+        var firstDocument = success.EdfiDocs[0]!.AsObject();
+        firstDocument["id"]!.GetValue<string>().Should().Be(firstDocumentUuid.ToString());
+        firstDocument["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
+        firstDocument["codeValue"]!.GetValue<string>().Should().Be("Alternative");
+        firstDocument["shortDescription"]!.GetValue<string>().Should().Be("Alternative");
+        firstDocument["description"].Should().BeNull();
+        firstDocument["effectiveBeginDate"]!.GetValue<string>().Should().Be("2025-01-15");
+        firstDocument["effectiveEndDate"].Should().BeNull();
+        firstDocument["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
+        firstDocument["_etag"]!
+            .GetValue<string>()
             .Should()
-            .BeEquivalentTo(
-                new QueryResult.QueryFailureNotImplemented(
-                    "Relational descriptor GET-many is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
-                )
-            );
+            .Be(RelationalApiMetadataFormatter.FormatEtag(firstDocument));
+        firstDocument["Uri"].Should().BeNull();
+        firstDocument["Discriminator"].Should().BeNull();
+        firstDocument["ChangeVersion"].Should().BeNull();
+
+        var secondDocument = success.EdfiDocs[1]!.AsObject();
+        secondDocument["id"]!.GetValue<string>().Should().Be(secondDocumentUuid.ToString());
+        secondDocument["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
+        secondDocument["codeValue"]!.GetValue<string>().Should().Be("Charter");
+        secondDocument["shortDescription"]!.GetValue<string>().Should().Be("Charter");
+        secondDocument["description"]!.GetValue<string>().Should().Be("Charter school type");
+        secondDocument["effectiveBeginDate"].Should().BeNull();
+        secondDocument["effectiveEndDate"]!.GetValue<string>().Should().Be("2025-12-31");
+        secondDocument["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
+        secondDocument["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(RelationalApiMetadataFormatter.FormatEtag(secondDocument));
+        secondDocument["Uri"].Should().BeNull();
+        secondDocument["Discriminator"].Should().BeNull();
+        secondDocument["ChangeVersion"].Should().BeNull();
         commandExecutor.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_applies_readable_profile_projection_to_descriptor_query_items_and_refreshes_each_etag()
+    {
+        var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-888888888888");
+        var projectionContext = CreateReadableProfileProjectionContext();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        documentUuid,
+                        description: "Alternative school type",
+                        effectiveBeginDate: new DateOnly(2025, 1, 15)
+                    )
+                ),
+            ]),
+        ]);
+        var unprojectedDocument = DescriptorDocumentMaterializer.Materialize(
+            CreateDescriptorReadRow(
+                documentUuid,
+                description: "Alternative school type",
+                effectiveBeginDate: new DateOnly(2025, 1, 15)
+            ),
+            RelationalGetRequestReadMode.ExternalResponse
+        );
+        var projectedDocument = JsonNode.Parse(
+            """
+            {
+              "id": "aaaaaaaa-1111-2222-3333-888888888888",
+              "_etag": "stale",
+              "_lastModifiedDate": "2026-05-05T14:30:45Z",
+              "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+              "codeValue": "Alternative",
+              "description": "Alternative school type"
+            }
+            """
+        )!;
+        var readableProfileProjector = A.Fake<IReadableProfileProjector>();
+        A.CallTo(() =>
+                readableProfileProjector.Project(
+                    A<JsonNode>._,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .Returns(projectedDocument);
+        var sut = CreateHandler(commandExecutor, readableProfileProjector);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(SqlDialect.Pgsql, readableProfileProjectionContext: projectionContext)
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().BeNull();
+        success.EdfiDocs.Should().HaveCount(1);
+
+        var projectedItem = success.EdfiDocs[0]!.AsObject();
+        projectedItem["id"]!.GetValue<string>().Should().Be(documentUuid.ToString());
+        projectedItem["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
+        projectedItem["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
+        projectedItem["codeValue"]!.GetValue<string>().Should().Be("Alternative");
+        projectedItem["description"]!.GetValue<string>().Should().Be("Alternative school type");
+        projectedItem["shortDescription"].Should().BeNull();
+        projectedItem["effectiveBeginDate"].Should().BeNull();
+        projectedItem["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(RelationalApiMetadataFormatter.FormatEtag(projectedItem));
+        projectedItem["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(unprojectedDocument["_etag"]!.GetValue<string>());
+
+        A.CallTo(() =>
+                readableProfileProjector.Project(
+                    A<JsonNode>._,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     private static DescriptorGetByIdRequest CreateRequest(
@@ -534,6 +663,7 @@ public class Given_DescriptorReadHandler
         bool totalCount = false,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
         DescriptorQueryCapability? descriptorQueryCapability = null,
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null,
         int? limit = 25,
         int? offset = 0
     )
@@ -559,7 +689,7 @@ public class Given_DescriptorReadHandler
                 MaximumPageSize: 500
             ),
             authorizationStrategyEvaluators ?? [],
-            readableProfileProjectionContext: null,
+            readableProfileProjectionContext,
             new TraceId("descriptor-query-trace")
         );
     }

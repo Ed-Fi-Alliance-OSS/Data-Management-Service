@@ -155,7 +155,7 @@
       "Add handler/materialization unit tests for ordered query items, null optional-field omission, metadata shape, profile-projected query items, post-projection _etag recomputation, and exclusion of Uri/Discriminator/ChangeVersion.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Provider Integration Test Infrastructure",

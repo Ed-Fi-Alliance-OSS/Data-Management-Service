@@ -167,9 +167,11 @@ internal sealed class DescriptorReadHandler(
             return new QueryResult.QuerySuccess([], request.PaginationParameters.TotalCount ? 0 : null);
         }
 
+        DescriptorQueryRowsPage queryRowsPage;
+
         try
         {
-            _ = await ReadQueryRowsAsync(request, preprocessingResult, cancellationToken)
+            queryRowsPage = await ReadQueryRowsAsync(request, preprocessingResult, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (NotSupportedException ex)
@@ -193,8 +195,11 @@ internal sealed class DescriptorReadHandler(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
-        return new QueryResult.QueryFailureNotImplemented(
-            $"Relational descriptor GET-many is not implemented for resource '{RelationalWriteSupport.FormatResource(request.Resource)}'."
+        return new QueryResult.QuerySuccess(
+            MaterializeDescriptorQueryDocuments(request, queryRowsPage.Rows),
+            request.PaginationParameters.TotalCount
+                ? ConvertTotalCountOrThrow(request.Resource, queryRowsPage.TotalCount)
+                : null
         );
     }
 
@@ -259,35 +264,66 @@ internal sealed class DescriptorReadHandler(
         );
     }
 
-    private JsonNode MaterializeDescriptorDocument(
-        DescriptorGetByIdRequest request,
-        DescriptorReadRow descriptorRow
+    private JsonArray MaterializeDescriptorQueryDocuments(
+        DescriptorQueryRequest request,
+        IReadOnlyList<DescriptorReadRow> descriptorRows
     )
     {
-        var materializedDocument = DescriptorDocumentMaterializer.Materialize(
-            descriptorRow,
-            request.ReadMode
-        );
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(descriptorRows);
+
+        JsonArray edfiDocs = [];
+
+        foreach (var descriptorRow in descriptorRows)
+        {
+            edfiDocs.Add(
+                MaterializeDescriptorDocument(
+                    descriptorRow,
+                    RelationalGetRequestReadMode.ExternalResponse,
+                    request.ReadableProfileProjectionContext
+                )
+            );
+        }
+
+        return edfiDocs;
+    }
+
+    private JsonNode MaterializeDescriptorDocument(
+        DescriptorReadRow descriptorRow,
+        RelationalGetRequestReadMode readMode,
+        ReadableProfileProjectionContext? readableProfileProjectionContext
+    )
+    {
+        var materializedDocument = DescriptorDocumentMaterializer.Materialize(descriptorRow, readMode);
 
         if (
-            request.ReadMode != RelationalGetRequestReadMode.ExternalResponse
-            || request.ReadableProfileProjectionContext is null
+            readMode != RelationalGetRequestReadMode.ExternalResponse
+            || readableProfileProjectionContext is null
         )
         {
             return materializedDocument;
         }
 
-        var projectionContext = request.ReadableProfileProjectionContext;
         var projectedDocument = _readableProfileProjector.Project(
             materializedDocument,
-            projectionContext.ContentTypeDefinition,
-            projectionContext.IdentityPropertyNames
+            readableProfileProjectionContext.ContentTypeDefinition,
+            readableProfileProjectionContext.IdentityPropertyNames
         );
 
         RelationalApiMetadataFormatter.RefreshEtag(projectedDocument);
 
         return projectedDocument;
     }
+
+    private JsonNode MaterializeDescriptorDocument(
+        DescriptorGetByIdRequest request,
+        DescriptorReadRow descriptorRow
+    ) =>
+        MaterializeDescriptorDocument(
+            descriptorRow,
+            request.ReadMode,
+            request.ReadableProfileProjectionContext
+        );
 
     private static bool HasOnlyNoFurtherAuthorizationRequired(
         IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
@@ -472,6 +508,27 @@ internal sealed class DescriptorReadHandler(
         }
 
         return Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
+    }
+
+    private static int ConvertTotalCountOrThrow(QualifiedResourceName resource, long? totalCount)
+    {
+        if (totalCount is null)
+        {
+            throw new InvalidOperationException(
+                $"Relational descriptor query for resource '{RelationalWriteSupport.FormatResource(resource)}' "
+                    + "did not return a total count even though the request asked for totalCount=true."
+            );
+        }
+
+        if (totalCount < 0 || totalCount > int.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"Relational descriptor query returned total count {totalCount.Value} for resource "
+                    + $"'{RelationalWriteSupport.FormatResource(resource)}', but only values in the range [0, {int.MaxValue}] are supported."
+            );
+        }
+
+        return (int)totalCount.Value;
     }
 
     private static string BuildPageRowsSql(SqlDialect dialect, string pageDocumentIdSql)

@@ -88,3 +88,9 @@ Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descri
 Decisions: descriptor query now batches optional totalCount SQL with a page-row read over selected DocumentIds; page selection stays on dms.Document/ResourceKeyId while final row retrieval always LEFT JOINs dms.Descriptor so selected corruption fails instead of being inner-joined away; kept public query success materialization on the temporary 501 path so JSON/profile shaping stays isolated to the next task.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorReadHandlerTests.cs; tasks.json; progress.txt
 Notes: ran dotnet csharpier format on touched C# files; dotnet test --no-restore passed for backend unit suite (1216 tests); next task should materialize descriptor query rows into external response items with profile projection and per-item etag refresh.
+2026-05-05
+Task completed: Descriptor Query Page Materialization
+Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descriptor-endpoints.md
+Decisions: descriptor query success now materializes directly from DescriptorReadRow using the shared descriptor materializer; readable profile projection runs per returned item and refreshes each projected _etag; totalCount converts to int with explicit guard rails for missing/out-of-range values instead of silently leaking invalid counts.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorReadHandlerTests.cs; tasks.json; progress.txt
+Notes: ran dotnet csharpier format on touched C# files; dotnet test --no-restore passed for backend unit suite (1217 tests); next task should decide whether provider integration infrastructure or the thin relational descriptor E2E path is the highest-value remaining integration slice.
