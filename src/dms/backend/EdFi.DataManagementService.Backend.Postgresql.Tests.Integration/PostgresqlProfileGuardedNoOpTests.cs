@@ -718,6 +718,157 @@ internal abstract class SeparateTableShapeProfileGuardedNoOpFixtureBase
     }
 }
 
+/// <summary>
+/// Intermediate base for fixtures whose target is the core <c>School</c> resource
+/// with a populated top-level <c>$.addresses[*]</c> collection backed by the
+/// <c>edfi.SchoolAddress</c> table. Wires the abstract shape hooks of
+/// <see cref="ProfileGuardedNoOpGeneratedDdlFixtureTestBase"/> through to
+/// <see cref="PostgresqlProfileTopLevelCollectionMergeSupport"/> with both the
+/// root <c>$</c> scope and the collection <c>$.addresses[*]</c> scope declared
+/// fully VisiblePresent on both the request and stored sides — the guarded no-op
+/// invariant the fixtures in this file assert. The seeded body intentionally
+/// carries at least two address rows in a stable order so the row-count and
+/// row-content invariants exercise a non-trivial collection.
+/// </summary>
+internal abstract class CollectionShapeProfileGuardedNoOpFixtureBase
+    : ProfileGuardedNoOpGeneratedDdlFixtureTestBase
+{
+    protected const long DefaultSchoolId = 255901;
+
+    protected static readonly string[] IdenticalAddressCities = ["Austin", "Dallas"];
+
+    protected static readonly JsonNode IdenticalRequestBody =
+        PostgresqlProfileTopLevelCollectionMergeSupport.CreateSchoolBody(
+            DefaultSchoolId,
+            IdenticalAddressCities
+        );
+
+    protected static readonly IReadOnlyList<PostgresqlProfileTopLevelCollectionRequestItem> IdenticalRequestItems =
+        IdenticalAddressCities
+            .Select(city => new PostgresqlProfileTopLevelCollectionRequestItem(city, Creatable: true))
+            .ToArray();
+
+    protected static readonly IReadOnlyList<PostgresqlProfileTopLevelCollectionStoredRow> IdenticalStoredRows =
+        IdenticalAddressCities
+            .Select(city => new PostgresqlProfileTopLevelCollectionStoredRow(city, []))
+            .ToArray();
+
+    protected override string FixtureRelativePath =>
+        PostgresqlProfileTopLevelCollectionMergeSupport.FixtureRelativePath;
+
+    protected override ServiceProvider CreateServiceProvider() => CreateDefaultServiceProvider();
+
+    protected override async Task ExecuteProfiledShapeCreateAsync(DocumentUuid documentUuid)
+    {
+        // Slice 6 (DMS-1142) Task 8 — seed via the profiled POST path so the seeded rows
+        // land at the same 1-based ordinals the merge synthesizer would produce on the
+        // identical PUT. Seeding through the no-profile UpsertRequest path would produce
+        // 0-based ordinals, which then diverge from the PUT's merged 1-based ordinals
+        // and force the executor to issue collection DML — defeating the no-op invariant
+        // under test. The profile-vs-no-profile ordinal alignment question is itself a
+        // real cross-cutting concern, but it is Slice 7 (parity-and-hardening) scope; for
+        // this task we just need seed and PUT to use the SAME path so the assertion is
+        // genuinely "merge of same content == stored state."
+        var writeBody = IdenticalRequestBody.DeepClone();
+        var writePlan = _mappingSet.WritePlansByResource[
+            PostgresqlProfileTopLevelCollectionMergeSupport.SchoolResource
+        ];
+        var profileContext = PostgresqlProfileTopLevelCollectionMergeSupport.CreateProfileContext(
+            writePlan,
+            writeBody.DeepClone(),
+            IdenticalRequestItems,
+            IdenticalStoredRows
+        );
+        var seedResult = await PostgresqlProfileTopLevelCollectionMergeSupport.ExecuteProfiledPostAsync(
+            _serviceProvider,
+            _database,
+            _mappingSet,
+            DefaultSchoolId,
+            writeBody,
+            documentUuid,
+            profileContext,
+            "pg-profile-guarded-no-op-top-level-collection-create"
+        );
+        seedResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    protected override Task<UpdateResult> ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid documentUuid)
+    {
+        var writeBody = IdenticalRequestBody.DeepClone();
+        var writePlan = _mappingSet.WritePlansByResource[
+            PostgresqlProfileTopLevelCollectionMergeSupport.SchoolResource
+        ];
+        var profileContext = PostgresqlProfileTopLevelCollectionMergeSupport.CreateProfileContext(
+            writePlan,
+            writeBody.DeepClone(),
+            IdenticalRequestItems,
+            IdenticalStoredRows
+        );
+        return PostgresqlProfileTopLevelCollectionMergeSupport.ExecuteProfiledPutAsync(
+            _serviceProvider,
+            _database,
+            _mappingSet,
+            DefaultSchoolId,
+            writeBody,
+            documentUuid,
+            profileContext,
+            "pg-profile-guarded-no-op-top-level-collection-put"
+        );
+    }
+
+    protected override Task<UpsertResult> ExecuteProfiledShapePostAsUpdateAsync(
+        DocumentUuid incomingDocumentUuid
+    )
+    {
+        var writeBody = IdenticalRequestBody.DeepClone();
+        var writePlan = _mappingSet.WritePlansByResource[
+            PostgresqlProfileTopLevelCollectionMergeSupport.SchoolResource
+        ];
+        var profileContext = PostgresqlProfileTopLevelCollectionMergeSupport.CreateProfileContext(
+            writePlan,
+            writeBody.DeepClone(),
+            IdenticalRequestItems,
+            IdenticalStoredRows
+        );
+        return PostgresqlProfileTopLevelCollectionMergeSupport.ExecuteProfiledPostAsync(
+            _serviceProvider,
+            _database,
+            _mappingSet,
+            DefaultSchoolId,
+            writeBody,
+            incomingDocumentUuid,
+            profileContext,
+            "pg-profile-guarded-no-op-top-level-collection-post-as-update"
+        );
+    }
+
+    protected override async Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        long documentId
+    )
+    {
+        var rows = await database.QueryRowsAsync(
+            """
+            SELECT
+                "DocumentId",
+                "SchoolId"
+            FROM "edfi"."School"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        if (rows.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected exactly one School row for document id '{documentId}', but found {rows.Count}."
+            );
+        }
+
+        return rows[0];
+    }
+}
+
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
@@ -1043,5 +1194,140 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Sepa
         );
         row.Should().NotBeNull("the seeded ProfileSeparateTableMergeItem must have an extension row");
         return row!;
+    }
+}
+
+/// <summary>
+/// Slice 6 (DMS-1142) Task 8 — profiled top-level collection PUT guarded no-op.
+/// Seeds a profiled POST for the core <c>School</c> resource with two address rows
+/// (<c>Austin</c>, <c>Dallas</c>) populating the <c>edfi.SchoolAddress</c> collection
+/// table, then issues a profiled PUT carrying a byte-identical body. The seed uses
+/// the profiled path (not the no-profile <c>SeedAsync</c>) so the seeded collection
+/// rows land at the same 1-based ordinals the merge synthesizer produces on the
+/// identical PUT — see <see cref="CollectionShapeProfileGuardedNoOpFixtureBase.ExecuteProfiledShapeCreateAsync"/>
+/// for the rationale. The profile context declares both the root <c>$</c> scope and
+/// the collection <c>$.addresses[*]</c> scope fully VisiblePresent on both the
+/// request and stored sides, with the request item list and stored row list in
+/// identical semantic-identity order, so the merged effective rowset across the root
+/// and collection tables equals the stored rowset and the guarded no-op short-circuit
+/// must fire — neither root row, nor collection row count, nor collection row
+/// contents (including <c>CollectionItemId</c> and <c>Ordinal</c>), nor Document
+/// version/timestamp metadata, nor a <c>DocumentChangeEvent</c> row may be written.
+/// The <c>ContentVersion</c> assertion specifically guards against any DML hitting
+/// the collection table, since insert/update/delete triggers on
+/// <c>edfi.SchoolAddress</c> bump the parent document's <c>ContentVersion</c> and
+/// <c>ContentLastModifiedAt</c>.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level_Collection_Shape
+    : CollectionShapeProfileGuardedNoOpFixtureBase
+{
+    private static readonly DocumentUuid DocumentUuid = new(
+        Guid.Parse("eeeeeeee-0000-0000-0000-000000000005")
+    );
+
+    private ProfileGuardedNoOpPersistedState _stateBeforeUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+    private long _addressCountBefore;
+    private long _addressCountAfter;
+    private IReadOnlyList<PostgresqlProfileTopLevelCollectionAddressRow> _addressesBefore = null!;
+    private IReadOnlyList<PostgresqlProfileTopLevelCollectionAddressRow> _addressesAfter = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        await ExecuteProfiledShapeCreateAsync(DocumentUuid);
+        var documentId = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadDocumentIdAsync(
+            _database,
+            DocumentUuid
+        );
+        _stateBeforeUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+        _addressCountBefore = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
+            _database
+        );
+        _addressesBefore = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressesAsync(
+            _database,
+            documentId
+        );
+
+        _updateResult = await ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid);
+
+        _stateAfterUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+        _addressCountAfter = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
+            _database
+        );
+        _addressesAfter = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressesAsync(
+            _database,
+            documentId
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success()
+    {
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(DocumentUuid);
+    }
+
+    [Test]
+    public void It_does_not_change_root_row()
+    {
+        _stateAfterUpdate.RootRow.Should().BeEquivalentTo(_stateBeforeUpdate.RootRow);
+    }
+
+    [Test]
+    public void It_does_not_change_collection_row_count()
+    {
+        _addressCountAfter.Should().Be(_addressCountBefore);
+    }
+
+    [Test]
+    public void It_does_not_change_collection_rows()
+    {
+        _addressesAfter.Should().BeEquivalentTo(_addressesBefore);
+    }
+
+    [Test]
+    public void It_does_not_change_content_version()
+    {
+        _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion);
+    }
+
+    [Test]
+    public void It_does_not_change_content_last_modified_at()
+    {
+        _stateAfterUpdate
+            .Document.ContentLastModifiedAt.Should()
+            .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_change_identity_version()
+    {
+        _stateAfterUpdate.Document.IdentityVersion.Should().Be(_stateBeforeUpdate.Document.IdentityVersion);
+    }
+
+    [Test]
+    public void It_does_not_change_identity_last_modified_at()
+    {
+        _stateAfterUpdate
+            .Document.IdentityLastModifiedAt.Should()
+            .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_emit_a_document_change_event_row()
+    {
+        _stateAfterUpdate.DocumentChangeEventCount.Should().Be(_stateBeforeUpdate.DocumentChangeEventCount);
     }
 }
