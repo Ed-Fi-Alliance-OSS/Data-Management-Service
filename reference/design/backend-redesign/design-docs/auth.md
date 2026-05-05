@@ -1137,7 +1137,9 @@ NOTE: Index the canonical columns (when available) as alias columns cannot be in
 There should be an index on the `dms.Document.CreatedByOwnershipTokenId` column.
 
 **Namespace-based strategy**
-Resources that have a `Namespace` securableElement should have an index on the corresponding column (use the Derived Relational Model to map from the securable element path to the DB column).
+Resources that have a `Namespace` securableElement should have an index on the corresponding column (use the Derived Relational Model to map from the securable element path to the DB column, on whichever table — root or child collection — the reference lives on).
+
+The auth-index emission also skips creating a `DbIndexKind.Authorization` entry when the resolved `(table, column)` is already the leading column of an existing PrimaryKey or UniqueConstraint index: the unique index already supports the auth equality lookup with no extra storage or write cost. As a consequence, the inventory does not always carry an explicit `DbIndexKind.Authorization` row for every Namespace or EducationOrganization securable element — consumers verifying auth-index coverage must treat PK/UK leading-column membership as equivalent coverage. PrimaryAssociation indexes are not deduped this way because their `INCLUDE` column enables index-only scans that a plain PK/UK doesn't supply.
 
 **Relationship-based strategies**
 The `auth.EducationOrganizationIdToEducationOrganizationId` table should have the following indexes:
@@ -1154,7 +1156,7 @@ canonical storage columns on the root table (the form that survives `KeyUnificat
 - `edfi.StaffEducationOrganizationEmploymentAssociation` should have an index on the `EducationOrganization_EducationOrganizationId` column, include the `Staff_DocumentId`
 - `edfi.StudentEducationOrganizationResponsibilityAssociation` should have an index on the `EducationOrganization_EducationOrganizationId` column, include the `Student_DocumentId`
 
-Resources that have an EducationOrganization securableElement should have an index on the corresponding column (use the Derived Relational Model to map from the securable element path to the DB column). Do not create the index if it is already covered in the list above.
+Resources that have an EducationOrganization securableElement should have an index on the corresponding column (use the Derived Relational Model to map from the securable element path to the DB column, on whichever table — root or child collection — the reference lives on). Do not create the index if it is already covered in the list above. Also skip the index when the resolved `(table, column)` is already the leading column of an existing PrimaryKey or UniqueConstraint index — same rationale as the Namespace-based strategy above (and same manifest-contract caveat: no `DbIndexKind.Authorization` inventory entry is emitted in that case).
 
 There should be an index on all resources that participate in a person join (see the `Resolving the DB columns used for authorization` section above). For example, `CourseTranscript` references `StudentAcademicRecord`, which references `Student` meaning that there should be an index on the following columns:
 

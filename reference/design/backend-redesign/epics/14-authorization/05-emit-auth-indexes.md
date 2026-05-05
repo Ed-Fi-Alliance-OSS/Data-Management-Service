@@ -33,11 +33,15 @@ The DDL generator should emit the indexes required by the Relationship-based and
 
 ### EducationOrganization securableElement indexes
 
-- For every resource that has an EducationOrganization securableElement, the DDL generator emits an index on the corresponding DB column (mapped via the Derived Relational Model from the securable element path). The securable element is expressed as a JSON path under a reference object (e.g. `$.studentAcademicRecordReference.educationOrganizationId`), but the DB column is resolved from the root resource table using `documentPathsMapping`. Skip the index if it is already covered by a PrimaryAssociation index above.
+- For every resource that has an EducationOrganization securableElement, the DDL generator emits an index on the corresponding DB column (mapped via the Derived Relational Model from the securable element path). The securable element is expressed as a JSON path under a reference object (e.g. `$.studentAcademicRecordReference.educationOrganizationId`); the DB column is resolved from whichever table the reference lives on — the root resource table for non-nested paths, or the child collection table for array-nested paths (e.g. `$.requiredAssessments[*].assessmentReference.educationOrganizationId` resolves to a child table column). See `auth.md` § "ResolveSecurableElementColumnPath" for the canonical statement.
+- Skip the index if it is already covered by a PrimaryAssociation index above.
+- Also skip the index when the resolved `(table, column)` is already the leading column of an existing PrimaryKey or UniqueConstraint index — that index already supports the auth equality lookup with no extra storage or write cost. In this case, no `DbIndexKind.Authorization` inventory entry is emitted; consumers verifying auth-index coverage must therefore treat PK/UK leading-column membership as equivalent coverage.
 
 ### Namespace securableElement indexes
 
-- For every resource that has a Namespace securableElement, the DDL generator emits an index on the corresponding DB column (mapped via the Derived Relational Model from the securable element path). Skip the index if it is already covered by a PrimaryAssociation index above. This dedup is a no-op for DS 5.2 since Namespace columns do not currently overlap PA key columns, but applying it symmetrically with EdOrg keeps coverage robust to extension schemas that may put a Namespace path on a PA key column.
+- For every resource that has a Namespace securableElement, the DDL generator emits an index on the corresponding DB column (mapped via the Derived Relational Model from the securable element path, on whichever table — root or child collection — the reference lives on; see `auth.md` for the canonical wording).
+- Skip the index if it is already covered by a PrimaryAssociation index above. This dedup is a no-op for DS 5.2 since Namespace columns do not currently overlap PA key columns, but applying it symmetrically with EdOrg keeps coverage robust to extension schemas that may put a Namespace path on a PA key column.
+- Also skip the index when the resolved `(table, column)` is already the leading column of an existing PrimaryKey or UniqueConstraint index — same rationale and manifest-contract caveat as the EdOrg case above.
 
 ### General requirements
 
