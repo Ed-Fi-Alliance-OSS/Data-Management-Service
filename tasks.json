@@ -38,7 +38,7 @@
       "Add contract tests proving descriptor GET/query requests carry the mapping set, descriptor model, auth evaluators, read/profile context, pagination/query inputs, and trace id.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Read Repository Routing and Resource Detection",

@@ -34,6 +34,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
+        scope.ServiceProvider.GetService<IDescriptorReadHandler>().Should().BeNull();
         scope.ServiceProvider.GetService<IDescriptorWriteHandler>().Should().BeNull();
         scope.ServiceProvider.GetService<IRelationalWriteTargetLookupService>().Should().BeNull();
         scope.ServiceProvider.GetService<IRelationalWriteTargetLookupResolver>().Should().BeNull();
@@ -78,6 +79,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteExceptionClassifier>();
         var deleteConstraintResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteConstraintResolver>();
+        var descriptorReadHandler = scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>();
         var descriptorWriteHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
         var targetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
@@ -108,6 +110,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
         writeExceptionClassifier.Should().BeOfType<NoOpRelationalWriteExceptionClassifier>();
         deleteConstraintResolver.Should().BeOfType<RelationalDeleteConstraintResolver>();
+        descriptorReadHandler.Should().BeOfType<DescriptorReadHandler>();
         descriptorWriteHandler.Should().BeOfType<DescriptorWriteHandler>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
