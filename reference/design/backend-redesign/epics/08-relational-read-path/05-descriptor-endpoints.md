@@ -101,7 +101,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
 8. Fail closed for interim auth. Allow only no strategies or NoFurtherAuthorizationRequired; otherwise return 501/not implemented for descriptor GET/query until SQL-layer auth lands. Descriptor
     namespace auth can later be implemented directly against dms.Descriptor.Namespace.
 
-9. Apply readable profile projection when Core supplies a profile context. Preserve id, _etag, _lastModifiedDate, and ChangeVersion, and recompute _etag after projection.
+9. Apply readable profile projection when Core supplies a profile context. Preserve id, _etag, and _lastModifiedDate, and recompute _etag after projection.
 
 10. Use both test styles: POST-created descriptors for end-to-end acceptance and direct dms.Document/dms.Descriptor seeding for focused read-path, paging, and invariant-failure cases.
 
