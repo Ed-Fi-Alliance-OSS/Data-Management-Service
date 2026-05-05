@@ -219,6 +219,30 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         command.CommandText.Should().Contain("CONVERT(nvarchar(19), source.[MeetingDateTime], 126) + N'Z'");
     }
 
+    [Test]
+    public void It_trims_decimal_identity_verification_keys_to_match_core_canonical_form()
+    {
+        // Without decimal trimming the lookup verification key would be e.g.
+        // "$.decimalKey=1.50", while Core's canonicalizer (and the trigger) emit
+        // "$.decimalKey=1.5". ReferenceResolver.EnsureLookupIntegrity does an
+        // ordinal string compare against the Core-built ExpectedVerificationIdentityKey,
+        // so the lookup SQL must apply the same trim or every decimal-keyed reference
+        // throws ReferenceLookupCorruptionException.
+        var command = MssqlReferenceLookupSmallListStrategy.BuildCommand(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups: [RelationalAccessTestData.CreateDecimalKeyLookup(CreateReferentialId(6))]
+            )
+        );
+
+        command.CommandText.Should().Contain("FROM [edfi].[DecimalKeyResource] source");
+        command.CommandText.Should().Contain("CHARINDEX(N'.', CAST(source.[DecimalKey] AS nvarchar(max)))");
+        command
+            .CommandText.Should()
+            .Contain("PATINDEX('%[^0]%', REVERSE(CAST(source.[DecimalKey] AS nvarchar(max))))");
+    }
+
     private static ReferentialId CreateReferentialId(int seed)
     {
         var bytes = new byte[16];

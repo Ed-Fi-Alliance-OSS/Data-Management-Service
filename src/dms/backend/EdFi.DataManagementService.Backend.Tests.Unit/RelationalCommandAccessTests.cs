@@ -388,6 +388,7 @@ internal static class RelationalAccessTestData
         "EducationOrganization"
     );
     private static readonly QualifiedResourceName _meetingResource = new("Ed-Fi", "Meeting");
+    private static readonly QualifiedResourceName _decimalKeyResource = new("Ed-Fi", "DecimalKeyResource");
     private static readonly QualifiedResourceName _schoolTypeDescriptorResource = new(
         "Ed-Fi",
         "SchoolTypeDescriptor"
@@ -401,13 +402,14 @@ internal static class RelationalAccessTestData
         var localEducationAgencyKey = new ResourceKeyEntry(12, _localEducationAgencyResource, "1.0", false);
         var schoolTypeDescriptorKey = new ResourceKeyEntry(13, _schoolTypeDescriptorResource, "1.0", false);
         var meetingKey = new ResourceKeyEntry(14, _meetingResource, "1.0", false);
+        var decimalKeyKey = new ResourceKeyEntry(15, _decimalKeyResource, "1.0", false);
         var educationOrganizationKey = new ResourceKeyEntry(30, _educationOrganizationResource, "1.0", true);
 
         var effectiveSchema = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: EffectiveSchemaHash,
-            ResourceKeyCount: 6,
+            ResourceKeyCount: 7,
             ResourceKeySeedHash: new byte[32],
             SchemaComponentsInEndpointOrder: [],
             ResourceKeysInIdOrder:
@@ -417,6 +419,7 @@ internal static class RelationalAccessTestData
                 localEducationAgencyKey,
                 schoolTypeDescriptorKey,
                 meetingKey,
+                decimalKeyKey,
                 educationOrganizationKey,
             ]
         );
@@ -446,6 +449,11 @@ internal static class RelationalAccessTestData
                     meetingKey,
                     ResourceStorageKind.RelationalTables,
                     CreateRelationalResourceModel(_meetingResource, "Meeting")
+                ),
+                new ConcreteResourceModel(
+                    decimalKeyKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateRelationalResourceModel(_decimalKeyResource, "DecimalKeyResource")
                 ),
                 new ConcreteResourceModel(
                     schoolTypeDescriptorKey,
@@ -571,6 +579,17 @@ internal static class RelationalAccessTestData
             isDescriptor: false
         );
 
+    public static ReferenceLookupRequestEntry CreateDecimalKeyLookup(
+        ReferentialId referentialId,
+        string decimalKey = "1.5"
+    ) =>
+        CreateLookup(
+            _decimalKeyResource,
+            referentialId,
+            new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.decimalKey"), decimalKey)]),
+            isDescriptor: false
+        );
+
     public static DescriptorReference CreateDescriptorReference(
         ReferentialId referentialId,
         string uri,
@@ -658,6 +677,15 @@ internal static class RelationalAccessTestData
                 CreateIdentityColumn("LocalEducationAgencyId", "$.localEducationAgencyId", ScalarKind.Int32),
             ],
             "Meeting" => [CreateIdentityColumn("MeetingDateTime", "$.meetingDateTime", ScalarKind.DateTime)],
+            "DecimalKeyResource" =>
+            [
+                CreateIdentityColumn(
+                    "DecimalKey",
+                    "$.decimalKey",
+                    ScalarKind.Decimal,
+                    decimalPrecisionScale: (9, 2)
+                ),
+            ],
             _ => [],
         };
     }
@@ -665,12 +693,13 @@ internal static class RelationalAccessTestData
     private static DbColumnModel CreateIdentityColumn(
         string columnName,
         string jsonPath,
-        ScalarKind scalarKind
+        ScalarKind scalarKind,
+        (int Precision, int Scale)? decimalPrecisionScale = null
     ) =>
         new(
             new DbColumnName(columnName),
             ColumnKind.Scalar,
-            new RelationalScalarType(scalarKind),
+            new RelationalScalarType(scalarKind, Decimal: decimalPrecisionScale),
             IsNullable: false,
             SourceJsonPath: new JsonPathExpression(jsonPath, []),
             TargetResource: null

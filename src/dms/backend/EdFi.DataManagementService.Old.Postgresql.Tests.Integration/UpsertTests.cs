@@ -995,6 +995,7 @@ public class UpsertTests : DatabaseTest
                         "$.graduationPlanTypeDescriptor",
                         "$.graduationSchoolYear"
                       ],
+                      "numericJsonPaths": [],
                       "documentPathsMapping": {}
                     }
                     """
@@ -1015,6 +1016,7 @@ public class UpsertTests : DatabaseTest
                       "identityJsonPaths": [
                         "$.studentUniqueId"
                       ],
+                      "numericJsonPaths": [],
                       "documentPathsMapping": {
                         "GraduationPlan": {
                           "isDescriptor": false,

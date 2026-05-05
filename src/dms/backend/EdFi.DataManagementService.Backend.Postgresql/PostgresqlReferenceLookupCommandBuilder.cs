@@ -159,14 +159,8 @@ internal static class PostgresqlReferenceLookupCommandBuilder
         ReferenceLookupVerificationElement identityElement
     )
     {
-        var quotedColumnName = QuoteIdentifier(identityElement.Column.Value);
-
-        return identityElement.ScalarType.Kind switch
-        {
-            ScalarKind.DateTime =>
-                $"""to_char({sourceAlias}.{quotedColumnName} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')""",
-            _ => $"{sourceAlias}.{quotedColumnName}::text",
-        };
+        var columnExpression = $"{sourceAlias}.{QuoteIdentifier(identityElement.Column.Value)}";
+        return DialectIdentityTextFormatter.PgsqlColumnToText(columnExpression, identityElement.ScalarType);
     }
 
     private static string QuoteTableName(DbTableName tableName) =>

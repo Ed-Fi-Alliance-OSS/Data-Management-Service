@@ -51,6 +51,9 @@ internal static class ReferenceExtractor
         List<DocumentReference> documentReferences = [];
         List<DocumentReferenceArray> documentReferenceArrays = [];
         List<WriteValidationFailure> validationFailures = [];
+        HashSet<string> numericJsonPathValues = resourceSchema
+            .NumericJsonPaths.Select(p => p.Value)
+            .ToHashSet(StringComparer.Ordinal);
 
         foreach (DocumentPath documentPath in resourceSchema.DocumentPaths)
         {
@@ -150,7 +153,8 @@ internal static class ReferenceExtractor
                         collectedIdentityElements[identityElementIndex] =
                             IdentityValueCanonicalizer.CreateDocumentIdentityElement(
                                 element.IdentityJsonPath,
-                                identityValue
+                                identityValue,
+                                numericJsonPathValues.Contains(element.ReferenceJsonPath.Value)
                             );
                         continue;
                     }

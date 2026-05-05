@@ -198,18 +198,11 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
         ReferenceLookupVerificationElement identityElement
     )
     {
-        var quotedColumnName = QuoteIdentifier(identityElement.Column.Value);
-
-        return identityElement.ScalarType.Kind switch
-        {
-            ScalarKind.String => $"{sourceAlias}.{quotedColumnName}",
-            ScalarKind.Date => $"CONVERT(nvarchar(10), {sourceAlias}.{quotedColumnName}, 23)",
-            ScalarKind.DateTime => $"CONVERT(nvarchar(19), {sourceAlias}.{quotedColumnName}, 126) + N'Z'",
-            ScalarKind.Time => $"CONVERT(nvarchar(8), {sourceAlias}.{quotedColumnName}, 108)",
-            ScalarKind.Boolean =>
-                $"CASE WHEN {sourceAlias}.{quotedColumnName} = 1 THEN N'true' ELSE N'false' END",
-            _ => $"CAST({sourceAlias}.{quotedColumnName} AS nvarchar(max))",
-        };
+        var columnExpression = $"{sourceAlias}.{QuoteIdentifier(identityElement.Column.Value)}";
+        return DialectIdentityTextFormatter.MssqlColumnToNvarchar(
+            columnExpression,
+            identityElement.ScalarType
+        );
     }
 
     private static string QuoteTableName(DbTableName tableName) =>

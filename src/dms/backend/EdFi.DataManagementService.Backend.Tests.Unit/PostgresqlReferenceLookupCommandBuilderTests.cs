@@ -125,6 +125,32 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
             );
     }
 
+    [Test]
+    public void It_trims_decimal_identity_verification_keys_to_match_core_canonical_form()
+    {
+        // Without decimal trimming the lookup verification key would be e.g.
+        // "$.decimalKey=1.50", while Core's canonicalizer (and the trigger) emit
+        // "$.decimalKey=1.5". ReferenceResolver.EnsureLookupIntegrity does an
+        // ordinal string compare against the Core-built ExpectedVerificationIdentityKey,
+        // so the lookup SQL must apply the same trim or every decimal-keyed reference
+        // throws ReferenceLookupCorruptionException.
+        var command = PostgresqlReferenceLookupCommandBuilder.Build(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups: [RelationalAccessTestData.CreateDecimalKeyLookup(CreateReferentialId(5))]
+            )
+        );
+
+        command.CommandText.Should().Contain("FROM \"edfi\".\"DecimalKeyResource\" source");
+        command
+            .CommandText.Should()
+            .Contain(
+                @"regexp_replace(regexp_replace(source.""DecimalKey""::text, '(\.[0-9]*?)0+$', '\1'), '\.$', '')"
+            );
+        command.CommandText.Should().NotContain("source.\"DecimalKey\"::text |");
+    }
+
     private static ReferentialId CreateReferentialId(int seed)
     {
         var bytes = new byte[16];

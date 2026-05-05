@@ -1149,38 +1149,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits a type-aware text conversion for an identity column value in PostgreSQL.
-    /// Uses <c>::text</c> for most types (already ISO-stable) but explicit <c>to_char()</c>
-    /// for <see cref="ScalarKind.DateTime"/> where <c>::text</c> omits the ISO 8601 T separator.
+    /// Delegates to <see cref="DialectIdentityTextFormatter.PgsqlColumnToText"/> so the
+    /// trigger and the runtime reference-lookup verification SQL share one source of truth.
     /// </summary>
     private void EmitPgsqlColumnToText(SqlWriter writer, DbColumnName column, RelationalScalarType scalarType)
     {
-        var quoted = Quote(column);
-        switch (scalarType.Kind)
-        {
-            case ScalarKind.DateTime:
-                // PG timestamp::text gives 'YYYY-MM-DD HH:MM:SS' (space, no T).
-                // Use to_char for ISO 8601 with T separator.
-                //
-                // No AT TIME ZONE 'UTC' conversion: the PG column type is timestamptz, which
-                // stores UTC internally but displays in the session timezone. The trigger fires
-                // in the same session as the INSERT/UPDATE, so to_char always reproduces the
-                // original literal that was inserted — matching what Core's ReferentialIdCalculator
-                // hashes from the raw JSON string. Adding AT TIME ZONE 'UTC' here would break
-                // parity because the C# path does not normalize to UTC before hashing.
-                // The DMS application must use a consistent session timezone (UTC recommended).
-                // See also EmitMssqlColumnToNvarchar (datetime2 is timezone-naive, no issue).
-                writer.Append("to_char(NEW.");
-                writer.Append(quoted);
-                writer.Append(", 'YYYY-MM-DD\"T\"HH24:MI:SS')");
-                break;
-
-            default:
-                // String, Int32, Int64, Date, Time, Decimal, Boolean — ::text is deterministic.
-                writer.Append("NEW.");
-                writer.Append(quoted);
-                writer.Append("::text");
-                break;
-        }
+        var columnExpression = $"NEW.{Quote(column)}";
+        writer.Append(DialectIdentityTextFormatter.PgsqlColumnToText(columnExpression, scalarType));
     }
 
     private void EmitMssqlReferentialIdentityBody(
@@ -1331,8 +1306,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits a type-aware nvarchar conversion for an identity column value in MSSQL.
-    /// Uses deterministic CONVERT styles for temporal types to ensure cross-engine parity
-    /// with PostgreSQL and Core's <c>JsonValue.ToString()</c>.
+    /// Delegates to <see cref="DialectIdentityTextFormatter.MssqlColumnToNvarchar"/> so the
+    /// trigger and the runtime reference-lookup verification SQL share one source of truth.
     /// </summary>
     private void EmitMssqlColumnToNvarchar(
         SqlWriter writer,
@@ -1340,53 +1315,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         RelationalScalarType scalarType
     )
     {
-        var quoted = Quote(column);
-        switch (scalarType.Kind)
-        {
-            case ScalarKind.String:
-                // Already nvarchar — no cast needed.
-                writer.Append("i.");
-                writer.Append(quoted);
-                break;
-
-            case ScalarKind.Date:
-                // ISO 8601: YYYY-MM-DD (CONVERT style 23).
-                writer.Append("CONVERT(nvarchar(10), i.");
-                writer.Append(quoted);
-                writer.Append(", 23)");
-                break;
-
-            case ScalarKind.DateTime:
-                // ISO 8601: YYYY-MM-DDTHH:mm:ss (CONVERT style 126, truncated to 19 chars).
-                // Truncation to whole seconds matches PG to_char() which also omits fractional
-                // seconds, ensuring cross-engine identity hash parity.
-                writer.Append("CONVERT(nvarchar(19), i.");
-                writer.Append(quoted);
-                writer.Append(", 126)");
-                break;
-
-            case ScalarKind.Time:
-                // HH:mm:ss (CONVERT style 108).
-                writer.Append("CONVERT(nvarchar(8), i.");
-                writer.Append(quoted);
-                writer.Append(", 108)");
-                break;
-
-            case ScalarKind.Boolean:
-                // CAST(bit AS nvarchar) produces '1'/'0', but Core's JsonValue.ToString()
-                // and PG bool::text both produce 'true'/'false'. Use CASE to match.
-                writer.Append("CASE WHEN i.");
-                writer.Append(quoted);
-                writer.Append(" = 1 THEN N'true' ELSE N'false' END");
-                break;
-
-            default:
-                // Int32, Int64, Decimal — CAST is deterministic and matches Core/PG formatting.
-                writer.Append("CAST(i.");
-                writer.Append(quoted);
-                writer.Append(" AS nvarchar(max))");
-                break;
-        }
+        var columnExpression = $"i.{Quote(column)}";
+        writer.Append(DialectIdentityTextFormatter.MssqlColumnToNvarchar(columnExpression, scalarType));
     }
 
     /// <summary>

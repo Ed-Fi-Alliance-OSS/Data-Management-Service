@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> '944f17699511435162631bce81c2e9847f454da6852158449af8f3da6c4a8874' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '944f17699511435162631bce81c2e9847f454da6852158449af8f3da6c4a8874';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> '9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3';
         END IF;
     END IF;
 END $$;
@@ -456,6 +456,34 @@ CREATE TRIGGER "TR_Document_Journal"
 CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE SCHEMA IF NOT EXISTS "auth";
 
+CREATE TABLE IF NOT EXISTS "edfi"."DateTimeKeyResource"
+(
+    "DocumentId" bigint NOT NULL,
+    "EventTimestamp" timestamp with time zone NOT NULL,
+    CONSTRAINT "PK_DateTimeKeyResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_DateTimeKeyResource_NK" UNIQUE ("EventTimestamp")
+);
+
+CREATE TABLE IF NOT EXISTS "edfi"."DecimalKeyResource"
+(
+    "DocumentId" bigint NOT NULL,
+    "DecimalKey" numeric(9,2) NOT NULL,
+    CONSTRAINT "PK_DecimalKeyResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_DecimalKeyResource_NK" UNIQUE ("DecimalKey"),
+    CONSTRAINT "UX_DecimalKeyResource_RefKey" UNIQUE ("DocumentId", "DecimalKey")
+);
+
+CREATE TABLE IF NOT EXISTS "edfi"."DecimalRefResource"
+(
+    "DocumentId" bigint NOT NULL,
+    "DecimalKeyReference_DocumentId" bigint NOT NULL,
+    "DecimalKeyReference_DecimalKey" numeric(9,2) NOT NULL,
+    "RefResourceId" varchar(64) NOT NULL,
+    CONSTRAINT "PK_DecimalRefResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_DecimalRefResource_NK" UNIQUE ("RefResourceId", "DecimalKeyReference_DocumentId"),
+    CONSTRAINT "CK_DecimalRefResource_DecimalKeyReference_AllNone" CHECK (("DecimalKeyReference_DocumentId" IS NULL AND "DecimalKeyReference_DecimalKey" IS NULL) OR ("DecimalKeyReference_DocumentId" IS NOT NULL AND "DecimalKeyReference_DecimalKey" IS NOT NULL))
+);
+
 CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentChildResource"
 (
     "DocumentId" bigint NOT NULL,
@@ -569,6 +597,74 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
     CONSTRAINT "UX_EducationOrganizationIdentity_NK" UNIQUE ("EducationOrganizationId"),
     CONSTRAINT "UX_EducationOrganizationIdentity_RefKey" UNIQUE ("DocumentId", "EducationOrganizationId")
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_DateTimeKeyResource_Document'
+        AND conrelid = to_regclass('"edfi"."DateTimeKeyResource"')
+    )
+    THEN
+        ALTER TABLE "edfi"."DateTimeKeyResource"
+        ADD CONSTRAINT "FK_DateTimeKeyResource_Document"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "dms"."Document" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_DecimalKeyResource_Document'
+        AND conrelid = to_regclass('"edfi"."DecimalKeyResource"')
+    )
+    THEN
+        ALTER TABLE "edfi"."DecimalKeyResource"
+        ADD CONSTRAINT "FK_DecimalKeyResource_Document"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "dms"."Document" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_DecimalRefResource_DecimalKeyReference_RefKey'
+        AND conrelid = to_regclass('"edfi"."DecimalRefResource"')
+    )
+    THEN
+        ALTER TABLE "edfi"."DecimalRefResource"
+        ADD CONSTRAINT "FK_DecimalRefResource_DecimalKeyReference_RefKey"
+        FOREIGN KEY ("DecimalKeyReference_DocumentId", "DecimalKeyReference_DecimalKey")
+        REFERENCES "edfi"."DecimalKeyResource" ("DocumentId", "DecimalKey")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_DecimalRefResource_Document'
+        AND conrelid = to_regclass('"edfi"."DecimalRefResource"')
+    )
+    THEN
+        ALTER TABLE "edfi"."DecimalRefResource"
+        ADD CONSTRAINT "FK_DecimalRefResource_Document"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "dms"."Document" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -844,6 +940,8 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_DecimalKeyReference_DocumentId_1972800496" ON "edfi"."DecimalRefResource" ("DecimalKeyReference_DocumentId", "DecimalKeyReference_DecimalKey");
+
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_EdOrgDependentResourc_42d6c19595" ON "edfi"."EdOrgDependentChildResource" ("EdOrgDependentResourceReference_DocumentId", "EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_EducationOrganization_Docu_abaf527b99" ON "edfi"."EdOrgDependentResource" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
@@ -863,14 +961,167 @@ SELECT "DocumentId" AS "DocumentId", "SchoolId" AS "EducationOrganizationId", 'E
 FROM "edfi"."School"
 ;
 
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DateTimeKeyResource_ReferentialIdentity"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'INSERT' OR (OLD."EventTimestamp" IS DISTINCT FROM NEW."EventTimestamp") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDateTimeKeyResource' || '$.eventTimestamp=' || to_char(NEW."EventTimestamp" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')), NEW."DocumentId", 1);
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_DateTimeKeyResource_ReferentialIdentity" ON "edfi"."DateTimeKeyResource";
+CREATE TRIGGER "TR_DateTimeKeyResource_ReferentialIdentity"
+AFTER INSERT OR UPDATE ON "edfi"."DateTimeKeyResource"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_DateTimeKeyResource_ReferentialIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DateTimeKeyResource_Stamp"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EventTimestamp" IS DISTINCT FROM NEW."EventTimestamp") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    IF TG_OP = 'UPDATE' AND (OLD."EventTimestamp" IS DISTINCT FROM NEW."EventTimestamp") THEN
+        UPDATE "dms"."Document"
+        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_DateTimeKeyResource_Stamp" ON "edfi"."DateTimeKeyResource";
+CREATE TRIGGER "TR_DateTimeKeyResource_Stamp"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."DateTimeKeyResource"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_DateTimeKeyResource_Stamp"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DecimalKeyResource_ReferentialIdentity"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'INSERT' OR (OLD."DecimalKey" IS DISTINCT FROM NEW."DecimalKey") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDecimalKeyResource' || '$.decimalKey=' || regexp_replace(regexp_replace(NEW."DecimalKey"::text, '(\.[0-9]*?)0+$', '\1'), '\.$', '')), NEW."DocumentId", 2);
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_DecimalKeyResource_ReferentialIdentity" ON "edfi"."DecimalKeyResource";
+CREATE TRIGGER "TR_DecimalKeyResource_ReferentialIdentity"
+AFTER INSERT OR UPDATE ON "edfi"."DecimalKeyResource"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_DecimalKeyResource_ReferentialIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DecimalKeyResource_Stamp"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DecimalKey" IS DISTINCT FROM NEW."DecimalKey") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    IF TG_OP = 'UPDATE' AND (OLD."DecimalKey" IS DISTINCT FROM NEW."DecimalKey") THEN
+        UPDATE "dms"."Document"
+        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_DecimalKeyResource_Stamp" ON "edfi"."DecimalKeyResource";
+CREATE TRIGGER "TR_DecimalKeyResource_Stamp"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."DecimalKeyResource"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_DecimalKeyResource_Stamp"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DecimalRefResource_ReferentialIdentity"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'INSERT' OR (OLD."RefResourceId" IS DISTINCT FROM NEW."RefResourceId" OR OLD."DecimalKeyReference_DecimalKey" IS DISTINCT FROM NEW."DecimalKeyReference_DecimalKey") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 3;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDecimalRefResource' || '$.refResourceId=' || NEW."RefResourceId"::text || '#' || '$.decimalKeyReference.decimalKey=' || regexp_replace(regexp_replace(NEW."DecimalKeyReference_DecimalKey"::text, '(\.[0-9]*?)0+$', '\1'), '\.$', '')), NEW."DocumentId", 3);
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_DecimalRefResource_ReferentialIdentity" ON "edfi"."DecimalRefResource";
+CREATE TRIGGER "TR_DecimalRefResource_ReferentialIdentity"
+AFTER INSERT OR UPDATE ON "edfi"."DecimalRefResource"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_DecimalRefResource_ReferentialIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DecimalRefResource_Stamp"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DecimalKeyReference_DocumentId" IS DISTINCT FROM NEW."DecimalKeyReference_DocumentId" OR OLD."DecimalKeyReference_DecimalKey" IS DISTINCT FROM NEW."DecimalKeyReference_DecimalKey" OR OLD."RefResourceId" IS DISTINCT FROM NEW."RefResourceId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    IF TG_OP = 'UPDATE' AND (OLD."RefResourceId" IS DISTINCT FROM NEW."RefResourceId" OR OLD."DecimalKeyReference_DecimalKey" IS DISTINCT FROM NEW."DecimalKeyReference_DecimalKey") THEN
+        UPDATE "dms"."Document"
+        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_DecimalRefResource_Stamp" ON "edfi"."DecimalRefResource";
+CREATE TRIGGER "TR_DecimalRefResource_Stamp"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."DecimalRefResource"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_DecimalRefResource_Stamp"();
+
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EdOrgDependentChildResource_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."EdOrgDependentChildResourceId" IS DISTINCT FROM NEW."EdOrgDependentChildResourceId" OR OLD."EdOrgDependentResourceReference_EdOrgDependentResourceId" IS DISTINCT FROM NEW."EdOrgDependentResourceReference_EdOrgDependentResourceId" OR OLD."EdOrgDependentResourceReference_EducationOrganizationId" IS DISTINCT FROM NEW."EdOrgDependentResourceReference_EducationOrganizationId") THEN
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 4;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEdOrgDependentChildResource' || '$.edOrgDependentChildResourceId=' || NEW."EdOrgDependentChildResourceId"::text || '#' || '$.edOrgDependentResourceReference.edOrgDependentResourceId=' || NEW."EdOrgDependentResourceReference_EdOrgDependentResourceId"::text || '#' || '$.edOrgDependentResourceReference.educationOrganizationId=' || NEW."EdOrgDependentResourceReference_EducationOrganizationId"::text), NEW."DocumentId", 1);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEdOrgDependentChildResource' || '$.edOrgDependentChildResourceId=' || NEW."EdOrgDependentChildResourceId"::text || '#' || '$.edOrgDependentResourceReference.edOrgDependentResourceId=' || NEW."EdOrgDependentResourceReference_EdOrgDependentResourceId"::text || '#' || '$.edOrgDependentResourceReference.educationOrganizationId=' || NEW."EdOrgDependentResourceReference_EducationOrganizationId"::text), NEW."DocumentId", 4);
     END IF;
     RETURN NEW;
 END;
@@ -919,9 +1170,9 @@ RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."EdOrgDependentResourceId" IS DISTINCT FROM NEW."EdOrgDependentResourceId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId") THEN
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 5;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEdOrgDependentResource' || '$.edOrgDependentResourceId=' || NEW."EdOrgDependentResourceId"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 2);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEdOrgDependentResource' || '$.edOrgDependentResourceId=' || NEW."EdOrgDependentResourceId"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 5);
     END IF;
     RETURN NEW;
 END;
@@ -970,9 +1221,9 @@ RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."KeyUnifiedResourceId" IS DISTINCT FROM NEW."KeyUnifiedResourceId" OR OLD."ResourceAReference_ResourceAId" IS DISTINCT FROM NEW."ResourceAReference_ResourceAId" OR OLD."StudentUniqueId_Unified" IS DISTINCT FROM NEW."StudentUniqueId_Unified" OR OLD."ResourceBReference_ResourceBId" IS DISTINCT FROM NEW."ResourceBReference_ResourceBId") THEN
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 4;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 7;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiKeyUnifiedResource' || '$.keyUnifiedResourceId=' || NEW."KeyUnifiedResourceId"::text || '#' || '$.resourceAReference.resourceAId=' || NEW."ResourceAReference_ResourceAId"::text || '#' || '$.resourceAReference.studentUniqueId=' || NEW."ResourceAReference_StudentUniqueId"::text || '#' || '$.resourceBReference.resourceBId=' || NEW."ResourceBReference_ResourceBId"::text || '#' || '$.resourceBReference.studentUniqueId=' || NEW."ResourceBReference_StudentUniqueId"::text), NEW."DocumentId", 4);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiKeyUnifiedResource' || '$.keyUnifiedResourceId=' || NEW."KeyUnifiedResourceId"::text || '#' || '$.resourceAReference.resourceAId=' || NEW."ResourceAReference_ResourceAId"::text || '#' || '$.resourceAReference.studentUniqueId=' || NEW."ResourceAReference_StudentUniqueId"::text || '#' || '$.resourceBReference.resourceBId=' || NEW."ResourceBReference_ResourceBId"::text || '#' || '$.resourceBReference.studentUniqueId=' || NEW."ResourceBReference_StudentUniqueId"::text), NEW."DocumentId", 7);
     END IF;
     RETURN NEW;
 END;
@@ -1021,9 +1272,9 @@ RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."ResourceAId" IS DISTINCT FROM NEW."ResourceAId" OR OLD."StudentReference_StudentUniqueId" IS DISTINCT FROM NEW."StudentReference_StudentUniqueId") THEN
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 5;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 8;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiResourceA' || '$.resourceAId=' || NEW."ResourceAId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."StudentReference_StudentUniqueId"::text), NEW."DocumentId", 5);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiResourceA' || '$.resourceAId=' || NEW."ResourceAId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."StudentReference_StudentUniqueId"::text), NEW."DocumentId", 8);
     END IF;
     RETURN NEW;
 END;
@@ -1072,9 +1323,9 @@ RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."ResourceBId" IS DISTINCT FROM NEW."ResourceBId" OR OLD."StudentReference_StudentUniqueId" IS DISTINCT FROM NEW."StudentReference_StudentUniqueId") THEN
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 6;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 9;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiResourceB' || '$.resourceBId=' || NEW."ResourceBId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."StudentReference_StudentUniqueId"::text), NEW."DocumentId", 6);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiResourceB' || '$.resourceBId=' || NEW."ResourceBId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."StudentReference_StudentUniqueId"::text), NEW."DocumentId", 9);
     END IF;
     RETURN NEW;
 END;
@@ -1172,13 +1423,13 @@ RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 7;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 10;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 7);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 10);
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 3;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 6;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."SchoolId"::text), NEW."DocumentId", 3);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."SchoolId"::text), NEW."DocumentId", 6);
     END IF;
     RETURN NEW;
 END;
@@ -1227,9 +1478,9 @@ RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 8;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 11;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudent' || '$.studentUniqueId=' || NEW."StudentUniqueId"::text), NEW."DocumentId", 8);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudent' || '$.studentUniqueId=' || NEW."StudentUniqueId"::text), NEW."DocumentId", 11);
     END IF;
     RETURN NEW;
 END;
@@ -1278,9 +1529,9 @@ RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."SchoolReference_SchoolId" IS DISTINCT FROM NEW."SchoolReference_SchoolId") THEN
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 9;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 12;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$.studentUniqueId=' || NEW."StudentUniqueId"::text || '#' || '$.schoolReference.schoolId=' || NEW."SchoolReference_SchoolId"::text), NEW."DocumentId", 9);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$.studentUniqueId=' || NEW."StudentUniqueId"::text || '#' || '$.schoolReference.schoolId=' || NEW."SchoolReference_SchoolId"::text), NEW."DocumentId", 12);
     END IF;
     RETURN NEW;
 END;
@@ -1330,31 +1581,40 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_Stamp"();
 
 -- ResourceKey seed inserts (insert-if-missing)
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (1, 'Ed-Fi', 'EdOrgDependentChildResource', '5.0.0')
+VALUES (1, 'Ed-Fi', 'DateTimeKeyResource', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (2, 'Ed-Fi', 'EdOrgDependentResource', '5.0.0')
+VALUES (2, 'Ed-Fi', 'DecimalKeyResource', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (3, 'Ed-Fi', 'EducationOrganization', '5.0.0')
+VALUES (3, 'Ed-Fi', 'DecimalRefResource', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (4, 'Ed-Fi', 'KeyUnifiedResource', '5.0.0')
+VALUES (4, 'Ed-Fi', 'EdOrgDependentChildResource', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (5, 'Ed-Fi', 'ResourceA', '5.0.0')
+VALUES (5, 'Ed-Fi', 'EdOrgDependentResource', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (6, 'Ed-Fi', 'ResourceB', '5.0.0')
+VALUES (6, 'Ed-Fi', 'EducationOrganization', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (7, 'Ed-Fi', 'School', '5.0.0')
+VALUES (7, 'Ed-Fi', 'KeyUnifiedResource', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (8, 'Ed-Fi', 'Student', '5.0.0')
+VALUES (8, 'Ed-Fi', 'ResourceA', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (9, 'Ed-Fi', 'StudentSchoolAssociation', '5.0.0')
+VALUES (9, 'Ed-Fi', 'ResourceB', '5.0.0')
+ON CONFLICT ("ResourceKeyId") DO NOTHING;
+INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
+VALUES (10, 'Ed-Fi', 'School', '5.0.0')
+ON CONFLICT ("ResourceKeyId") DO NOTHING;
+INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
+VALUES (11, 'Ed-Fi', 'Student', '5.0.0')
+ON CONFLICT ("ResourceKeyId") DO NOTHING;
+INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
+VALUES (12, 'Ed-Fi', 'StudentSchoolAssociation', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 
 -- ResourceKey full-table validation (count + content)
@@ -1365,23 +1625,26 @@ DECLARE
     _mismatched_ids text;
 BEGIN
     SELECT COUNT(*) INTO _actual_count FROM "dms"."ResourceKey";
-    IF _actual_count <> 9 THEN
-        RAISE EXCEPTION 'dms.ResourceKey count mismatch: expected 9, found %', _actual_count;
+    IF _actual_count <> 12 THEN
+        RAISE EXCEPTION 'dms.ResourceKey count mismatch: expected 12, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."ResourceKey" rk
     WHERE NOT EXISTS (
         SELECT 1 FROM (VALUES
-            (1::smallint, 'Ed-Fi', 'EdOrgDependentChildResource', '5.0.0'),
-            (2::smallint, 'Ed-Fi', 'EdOrgDependentResource', '5.0.0'),
-            (3::smallint, 'Ed-Fi', 'EducationOrganization', '5.0.0'),
-            (4::smallint, 'Ed-Fi', 'KeyUnifiedResource', '5.0.0'),
-            (5::smallint, 'Ed-Fi', 'ResourceA', '5.0.0'),
-            (6::smallint, 'Ed-Fi', 'ResourceB', '5.0.0'),
-            (7::smallint, 'Ed-Fi', 'School', '5.0.0'),
-            (8::smallint, 'Ed-Fi', 'Student', '5.0.0'),
-            (9::smallint, 'Ed-Fi', 'StudentSchoolAssociation', '5.0.0')
+            (1::smallint, 'Ed-Fi', 'DateTimeKeyResource', '5.0.0'),
+            (2::smallint, 'Ed-Fi', 'DecimalKeyResource', '5.0.0'),
+            (3::smallint, 'Ed-Fi', 'DecimalRefResource', '5.0.0'),
+            (4::smallint, 'Ed-Fi', 'EdOrgDependentChildResource', '5.0.0'),
+            (5::smallint, 'Ed-Fi', 'EdOrgDependentResource', '5.0.0'),
+            (6::smallint, 'Ed-Fi', 'EducationOrganization', '5.0.0'),
+            (7::smallint, 'Ed-Fi', 'KeyUnifiedResource', '5.0.0'),
+            (8::smallint, 'Ed-Fi', 'ResourceA', '5.0.0'),
+            (9::smallint, 'Ed-Fi', 'ResourceB', '5.0.0'),
+            (10::smallint, 'Ed-Fi', 'School', '5.0.0'),
+            (11::smallint, 'Ed-Fi', 'Student', '5.0.0'),
+            (12::smallint, 'Ed-Fi', 'StudentSchoolAssociation', '5.0.0')
         ) AS expected("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
         WHERE expected."ResourceKeyId" = rk."ResourceKeyId"
         AND expected."ProjectName" = rk."ProjectName"
@@ -1395,15 +1658,18 @@ BEGIN
             FROM "dms"."ResourceKey" rk
             WHERE NOT EXISTS (
                 SELECT 1 FROM (VALUES
-                    (1::smallint, 'Ed-Fi', 'EdOrgDependentChildResource', '5.0.0'),
-                    (2::smallint, 'Ed-Fi', 'EdOrgDependentResource', '5.0.0'),
-                    (3::smallint, 'Ed-Fi', 'EducationOrganization', '5.0.0'),
-                    (4::smallint, 'Ed-Fi', 'KeyUnifiedResource', '5.0.0'),
-                    (5::smallint, 'Ed-Fi', 'ResourceA', '5.0.0'),
-                    (6::smallint, 'Ed-Fi', 'ResourceB', '5.0.0'),
-                    (7::smallint, 'Ed-Fi', 'School', '5.0.0'),
-                    (8::smallint, 'Ed-Fi', 'Student', '5.0.0'),
-                    (9::smallint, 'Ed-Fi', 'StudentSchoolAssociation', '5.0.0')
+                    (1::smallint, 'Ed-Fi', 'DateTimeKeyResource', '5.0.0'),
+                    (2::smallint, 'Ed-Fi', 'DecimalKeyResource', '5.0.0'),
+                    (3::smallint, 'Ed-Fi', 'DecimalRefResource', '5.0.0'),
+                    (4::smallint, 'Ed-Fi', 'EdOrgDependentChildResource', '5.0.0'),
+                    (5::smallint, 'Ed-Fi', 'EdOrgDependentResource', '5.0.0'),
+                    (6::smallint, 'Ed-Fi', 'EducationOrganization', '5.0.0'),
+                    (7::smallint, 'Ed-Fi', 'KeyUnifiedResource', '5.0.0'),
+                    (8::smallint, 'Ed-Fi', 'ResourceA', '5.0.0'),
+                    (9::smallint, 'Ed-Fi', 'ResourceB', '5.0.0'),
+                    (10::smallint, 'Ed-Fi', 'School', '5.0.0'),
+                    (11::smallint, 'Ed-Fi', 'Student', '5.0.0'),
+                    (12::smallint, 'Ed-Fi', 'StudentSchoolAssociation', '5.0.0')
                 ) AS expected("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
                 WHERE expected."ResourceKeyId" = rk."ResourceKeyId"
                 AND expected."ProjectName" = rk."ProjectName"
@@ -1419,7 +1685,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', '944f17699511435162631bce81c2e9847f454da6852158449af8f3da6c4a8874', 9, '\xAD599C265D1176CEE04B8ADD1D0E42F19FE7FE9A6F4089154B38B249334BED95'::bytea)
+VALUES (1, '1.0.0', '9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3', 12, '\xCF22BDA16C6555C3F9F4F106F8BA65C2461E58FC300892B4FBB958648BA026D1'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -1436,18 +1702,18 @@ BEGIN
         IF _stored_api_schema_format_version IS NULL OR btrim(_stored_api_schema_format_version) = '' THEN
             RAISE EXCEPTION 'dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.';
         END IF;
-        IF _stored_count <> 9 THEN
-            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeyCount mismatch: expected 9, found %', _stored_count;
+        IF _stored_count <> 12 THEN
+            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeyCount mismatch: expected 12, found %', _stored_count;
         END IF;
-        IF _stored_hash <> '\xAD599C265D1176CEE04B8ADD1D0E42F19FE7FE9A6F4089154B38B249334BED95'::bytea THEN
-            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored % but expected %', encode(_stored_hash, 'hex'), encode('\xAD599C265D1176CEE04B8ADD1D0E42F19FE7FE9A6F4089154B38B249334BED95'::bytea, 'hex');
+        IF _stored_hash <> '\xCF22BDA16C6555C3F9F4F106F8BA65C2461E58FC300892B4FBB958648BA026D1'::bytea THEN
+            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored % but expected %', encode(_stored_hash, 'hex'), encode('\xCF22BDA16C6555C3F9F4F106F8BA65C2461E58FC300892B4FBB958648BA026D1'::bytea, 'hex');
         END IF;
     END IF;
 END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('944f17699511435162631bce81c2e9847f454da6852158449af8f3da6c4a8874', 'ed-fi', 'Ed-Fi', '5.0.0', false)
+VALUES ('9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3', 'ed-fi', 'Ed-Fi', '5.0.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -1457,14 +1723,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '944f17699511435162631bce81c2e9847f454da6852158449af8f3da6c4a8874';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3';
     IF _actual_count <> 1 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 1, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = '944f17699511435162631bce81c2e9847f454da6852158449af8f3da6c4a8874'
+    WHERE sc."EffectiveSchemaHash" = '9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('ed-fi', 'Ed-Fi', '5.0.0', false)
@@ -1479,7 +1745,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = '944f17699511435162631bce81c2e9847f454da6852158449af8f3da6c4a8874'
+            WHERE sc."EffectiveSchemaHash" = '9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('ed-fi', 'Ed-Fi', '5.0.0', false)

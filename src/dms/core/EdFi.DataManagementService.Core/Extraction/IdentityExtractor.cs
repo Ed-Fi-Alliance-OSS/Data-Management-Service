@@ -40,11 +40,16 @@ internal static class IdentityExtractor
         }
 
         // Build up documentIdentity in order
+        HashSet<string> numericJsonPathValues = resourceSchema
+            .NumericJsonPaths.Select(p => p.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
         IEnumerable<DocumentIdentityElement> documentIdentityElements =
             resourceSchema.IdentityJsonPaths.Select(identityJsonPath =>
                 IdentityValueCanonicalizer.CreateDocumentIdentityElement(
                     identityJsonPath,
-                    documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, logger)
+                    documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, logger),
+                    numericJsonPathValues.Contains(identityJsonPath.Value)
                 )
             );
 
