@@ -21,19 +21,21 @@
   },
   {
     "category": "GET Authorization Plumbing",
-    "description": "Carry AuthorizationStrategyEvaluators through IGetRequest, GetRequest, and RelationalGetRequest so relational descriptor GET can fail closed without invoking the legacy ResourceAuthorizationHandler. Populate the evaluators from GetByIdHandler and preserve the stored-document internal read path used by profile write validation. Acceptance: descriptor GET allows empty strategies or only NoFurtherAuthorizationRequired; any other effective strategy returns GetFailureNotImplemented with a diagnostic naming the resource and strategies; relational descriptor GET does not call the legacy authorization handler; existing non-descriptor GET behavior remains unchanged.",
+    "description": "Carry AuthorizationStrategyEvaluators through the backend-local relational GET seam so descriptor GET can fail closed without invoking the legacy ResourceAuthorizationHandler. Populate evaluators from GetByIdHandler on RelationalGetRequest and expose them through IRelationalGetRequest. Do not widen public IGetRequest/GetRequest unless a compile-time seam proves it is necessary. Acceptance: public non-relational GET contracts remain unchanged; relational descriptor GET allows empty strategies or only NoFurtherAuthorizationRequired; any other effective strategy returns GetFailureNotImplemented with a diagnostic naming the resource and strategies; relational descriptor GET does not call the legacy authorization handler; existing non-descriptor GET behavior remains unchanged.",
     "steps-to-verify": [
-      "Add Core/backend unit tests for evaluator propagation from GetByIdHandler and for descriptor GET fail-closed behavior.",
+      "Add Core/backend unit tests for evaluator propagation from GetByIdHandler to IRelationalGetRequest and for descriptor GET fail-closed behavior.",
+      "Add a unit test proving public IGetRequest consumers are not forced to carry AuthorizationStrategyEvaluators unless the implementation intentionally widens that contract.",
       "Run: dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
     "completed": false
   },
   {
-    "category": "Descriptor Read Handler Registration and Resource Detection",
-    "description": "Introduce IDescriptorReadHandler/DescriptorReadHandler as a DI-registered relational read component parallel to IDescriptorWriteHandler, inject it into RelationalDocumentStoreRepository, and make descriptor read routing use MappingSet.TryGetDescriptorResourceModel(resource, out descriptorModel) as the source of truth rather than ResourceInfo.IsDescriptor alone. Delegate descriptor GET-by-id and descriptor QueryDocuments before generic read-plan or generic GetQueryCapabilityOrThrow paths. Acceptance: DI resolves the repository with the descriptor read handler registered; SharedDescriptorTable resources route to IDescriptorReadHandler even when caller metadata is incomplete; non-descriptor resources continue through the existing generic relational read/query paths; descriptor writes and deletes continue to use IDescriptorWriteHandler unchanged.",
+    "category": "Descriptor Read Handler Registration, Requests, and Resource Detection",
+    "description": "Introduce IDescriptorReadHandler/DescriptorReadHandler as a DI-registered relational read component parallel to IDescriptorWriteHandler, with explicit descriptor read request contracts for GET-by-id and GET-many. The GET request contract should carry MappingSet, descriptor ConcreteResourceModel, qualified resource, DocumentUuid, read mode, authorization evaluators, readable-profile context, and trace id. The query request contract should carry MappingSet, descriptor ConcreteResourceModel, qualified resource, query elements, pagination, authorization evaluators, readable-profile context, and trace id. Inject the handler into RelationalDocumentStoreRepository and make descriptor read routing use MappingSet.TryGetDescriptorResourceModel(resource, out descriptorModel) rather than ResourceInfo.IsDescriptor alone. Acceptance: DI resolves the repository with the descriptor read handler registered; SharedDescriptorTable resources route to IDescriptorReadHandler before generic read-plan or generic GetQueryCapabilityOrThrow paths; non-descriptor resources continue through existing generic relational read/query paths; descriptor writes and deletes continue to use IDescriptorWriteHandler unchanged.",
     "steps-to-verify": [
-      "Add service registration tests showing IDescriptorReadHandler is registered with the relational backend services.",
+      "Add service registration tests showing IDescriptorReadHandler is registered with relational backend services.",
+      "Add contract tests proving descriptor GET/query requests carry the mapping set, descriptor model, auth evaluators, read/profile context, pagination/query inputs, and trace id.",
       "Add repository unit tests proving descriptor GET/query delegation is based on MappingSet SharedDescriptorTable metadata and non-descriptor GET/query still use the generic paths.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
@@ -50,25 +52,25 @@
   },
   {
     "category": "Descriptor GET Handler",
-    "description": "Implement descriptor GET-by-id in IDescriptorReadHandler. The handler must read only dms.Document plus dms.Descriptor, resolve DocumentUuid to DocumentId, scope by the expected ResourceKeyId, and treat dms.Document.ResourceKeyId as authoritative while leaving dms.Descriptor.Discriminator diagnostic-only. Acceptance: missing UUID or UUID for the wrong resource returns GetFailureNotExists; matching dms.Document with no dms.Descriptor row returns an UnknownFailure invariant error; a mismatched descriptor Discriminator does not change resource discrimination; no per-descriptor tables, IDocumentHydrator, IRelationalReadMaterializer, or project-schema reconstitution are used; PostgreSQL and SQL Server SQL are parameterized and dialect-quoted consistently.",
+    "description": "Implement descriptor GET-by-id in IDescriptorReadHandler. The handler must read only dms.Document plus dms.Descriptor, resolve DocumentUuid to DocumentId, scope by the expected ResourceKeyId, enforce the relational descriptor GET fail-closed authorization rule, and treat dms.Document.ResourceKeyId as authoritative while leaving dms.Descriptor.Discriminator diagnostic-only. Acceptance: missing UUID or UUID for the wrong resource returns GetFailureNotExists; unsupported authorization returns GetFailureNotImplemented before SQL data is returned; matching dms.Document with no dms.Descriptor row returns an UnknownFailure invariant error; a mismatched descriptor Discriminator does not change resource discrimination; no per-descriptor tables, IDocumentHydrator, IRelationalReadMaterializer, or project-schema reconstitution are used; PostgreSQL and SQL Server SQL are parameterized and dialect-quoted consistently.",
     "steps-to-verify": [
-      "Add repository/handler unit tests for successful descriptor GET delegation, wrong-resource 404, missing descriptor-row invariant failure, diagnostic-only Discriminator mismatch, and no generic hydrator/materializer invocation for descriptor resources.",
+      "Add repository/handler unit tests for successful descriptor GET delegation, auth fail-closed 501, wrong-resource 404, missing descriptor-row invariant failure, diagnostic-only Discriminator mismatch, and no generic hydrator/materializer invocation for descriptor resources.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
     "completed": false
   },
   {
-    "category": "Descriptor Materialization",
-    "description": "Implement descriptor row-to-JSON materialization for both RelationalGetRequestReadMode values. ExternalResponse emits namespace, codeValue, shortDescription, description, effectiveBeginDate, effectiveEndDate plus id, _etag, and _lastModifiedDate; StoredDocument emits only the public descriptor fields. Optional null fields are omitted, required fields are present, dates use yyyy-MM-dd, _lastModifiedDate uses the stored dms.Document ContentLastModifiedAt in UTC second precision, and _etag is base64(SHA-256(canonical served JSON)). Acceptance: Uri, Discriminator, and ChangeVersion are never emitted; _etag changes after readable profile projection; StoredDocument has no metadata and no profile projection.",
+    "category": "Descriptor Base Materialization",
+    "description": "Implement descriptor row-to-JSON materialization before readable-profile projection. ExternalResponse emits namespace, codeValue, shortDescription, description, effectiveBeginDate, effectiveEndDate plus id, _etag, and _lastModifiedDate. StoredDocument emits only the public descriptor fields. Optional null fields are omitted, required fields are present, dates use yyyy-MM-dd, _lastModifiedDate uses stored dms.Document ContentLastModifiedAt in UTC second precision, and _etag is base64(SHA-256(canonical served JSON)) for the unprojected external descriptor shape. Acceptance: Uri, Discriminator, and ChangeVersion are never emitted; StoredDocument has no id, _etag, _lastModifiedDate, ChangeVersion, or profile projection; this task does not own post-profile _etag recomputation.",
     "steps-to-verify": [
-      "Add unit tests for null omission, date formatting, metadata injection, StoredDocument mode, exclusion of Uri/Discriminator/ChangeVersion, and _etag recomputation after projection.",
+      "Add unit tests for null omission, date formatting, metadata injection, StoredDocument mode, exclusion of Uri/Discriminator/ChangeVersion, and base _etag computation before projection.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
     "completed": false
   },
   {
     "category": "Descriptor Profile Projection",
-    "description": "Wire readable profile projection for descriptor GET/query responses while preserving descriptor identity fields. Core should provide descriptor identity property names namespace and codeValue in addition to the existing server-generated fields id, _etag, and _lastModifiedDate; the descriptor read handler should invoke the existing IReadableProfileProjector only for ExternalResponse mode and recompute _etag after projection. Acceptance: namespace and codeValue survive readable profiles even when descriptor identity is synthetic; id, _etag, and _lastModifiedDate survive all readable projections; StoredDocument reads remain unprojected; generic non-descriptor profile projection behavior is unchanged.",
+    "description": "Wire readable profile projection for descriptor GET/query responses while preserving descriptor identity fields. Core should provide descriptor identity property names namespace and codeValue in addition to the existing server-generated fields id, _etag, and _lastModifiedDate; the descriptor read handler should invoke the existing IReadableProfileProjector only for ExternalResponse mode and recompute _etag after projection. Acceptance: namespace and codeValue survive readable profiles even when descriptor identity is synthetic; id, _etag, and _lastModifiedDate survive all readable projections; _etag reflects the projected served descriptor body; StoredDocument reads remain unprojected; generic non-descriptor profile projection behavior is unchanged.",
     "steps-to-verify": [
       "Add unit tests for descriptor readable profile projection preserving namespace/codeValue and API metadata while filtering non-identity descriptor fields.",
       "Add Core seam tests showing descriptor read requests pass namespace/codeValue as identity property names when a readable profile applies.",
@@ -78,10 +80,20 @@
     "completed": false
   },
   {
-    "category": "Descriptor Query Planning",
-    "description": "Implement descriptor-specific query preprocessing and dialect SQL planning from descriptor query capabilities. Support exact-match predicates for id, namespace, codeValue, shortDescription, description, effectiveBeginDate, and effectiveEndDate; parse id as UUID with invalid values returning an empty page; preserve DMS-993 exact-match semantics for date values; use case-sensitive/ordinal matching for string values; page deterministically by dms.Document.DocumentId ascending and optionally compile totalCount SQL. Acceptance: query parameter lookup is case-insensitive, descriptor string values are not normalized, ?namespace=<namespace>#<codeValue> only matches when that full value is stored in Namespace, SQL never targets per-descriptor tables, generated parameter names are stable across PostgreSQL and SQL Server.",
+    "category": "Descriptor Query Preprocessing and Predicate Binding",
+    "description": "Implement descriptor-specific query preprocessing from descriptor query capabilities before SQL planning. Support exact-match predicates for id, namespace, codeValue, shortDescription, description, effectiveBeginDate, and effectiveEndDate. Query parameter lookup is case-insensitive, id parses as UUID with invalid values returning an empty page, date values follow DMS-993 exact-match empty-page semantics for unrepresentable values, and descriptor string values are passed through without normalization. Acceptance: unsupported or omitted descriptor query capability produces a 501-ready diagnostic; invalid id returns an empty QuerySuccess without executing SQL; strict namespace matching is preserved so ?namespace=<namespace>#<codeValue> only matches if that full value is stored in Namespace; preprocessing emits deterministic predicate bindings for the SQL planner.",
     "steps-to-verify": [
-      "Add unit/golden tests for PostgreSQL and SQL Server descriptor query SQL, stable parameter names, id empty-page behavior, all supported public fields, totalCount SQL, strict namespace matching, and no per-descriptor table references.",
+      "Add unit tests for case-insensitive query parameter lookup, all supported descriptor fields, invalid id empty-page behavior, unrepresentable date empty-page behavior, strict namespace value handling, and unsupported/omitted capability diagnostics.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Descriptor Query Page and Count SQL Planning",
+    "description": "Implement descriptor-specific dialect SQL planning from preprocessed descriptor predicates. The page query must select dms.Document.DocumentId scoped by expected ResourceKeyId, join dms.Descriptor only for descriptor field predicates, order by dms.Document.DocumentId ascending, apply deterministic offset/limit paging, and optionally compile matching totalCount SQL. Acceptance: SQL never targets per-descriptor tables; generated parameter names are stable across PostgreSQL and SQL Server; id predicates target dms.Document.DocumentUuid; descriptor field predicates target dms.Descriptor columns from DescriptorMetadata.ColumnContract; string comparisons are case-sensitive/ordinal, including SQL Server where provider default collation may otherwise be case-insensitive; totalCount SQL uses the same filters as page SQL.",
+    "steps-to-verify": [
+      "Add unit/golden tests for PostgreSQL and SQL Server descriptor query SQL, stable parameter names, id predicate SQL, all public descriptor fields, totalCount SQL, no per-descriptor table references, and ResourceKeyId discrimination.",
+      "Add explicit mixed-case string filter tests proving SQL Server and PostgreSQL do not match descriptor string values using case-insensitive/provider-default semantics.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
@@ -97,17 +109,26 @@
     "completed": false
   },
   {
-    "category": "Descriptor Query Row Retrieval and Page Materialization",
-    "description": "Execute descriptor GET-many page and total-count SQL through IDescriptorReadHandler against dms.Document plus dms.Descriptor, then materialize the page directly from descriptor rows. The selected page must be based on dms.Document rows scoped by ResourceKeyId, and descriptor rows must be validated after selection so corruption is not silently inner-joined away. Acceptance: totalCount=true is honored; returned items are ordered by DocumentId; selected descriptor documents missing dms.Descriptor rows return a 500-style invariant failure; materialization applies readable profile projection for ExternalResponse mode and recomputes _etag per served item; no per-descriptor physical tables are used.",
+    "category": "Descriptor Query Row Retrieval and Invariant Validation",
+    "description": "Execute descriptor GET-many page and total-count SQL through IDescriptorReadHandler against dms.Document plus dms.Descriptor, returning descriptor row contracts for the selected page. The selected page must be based on dms.Document rows scoped by ResourceKeyId, and descriptor rows must be validated after selection so corruption is not silently inner-joined away. Acceptance: totalCount=true is honored; row retrieval returns rows ordered by DocumentId; selected descriptor documents missing dms.Descriptor rows return a 500-style invariant failure; required descriptor field nulls return a 500-style invariant failure; no per-descriptor physical tables are used; this task does not own final JSON/profile materialization.",
     "steps-to-verify": [
-      "Add handler unit tests for totalCount, ordered materialization, selected-document missing descriptor-row invariant failure, profile-projected query items, and provider-specific command shape.",
+      "Add handler unit tests for totalCount, ordered row retrieval, selected-document missing descriptor-row invariant failure, required-field null invariant failure, and provider-specific command shape.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Descriptor Query Page Materialization",
+    "description": "Materialize descriptor GET-many rows into response items directly from descriptor row contracts. Apply ExternalResponse descriptor materialization, readable profile projection when present, and post-projection _etag recomputation per served item. Acceptance: returned items are ordered by DocumentId; optional null descriptor fields are omitted; Uri, Discriminator, and ChangeVersion are never emitted; profile-projected query items preserve namespace, codeValue, id, _etag, and _lastModifiedDate; no project-schema hydration or generic reconstitution is used.",
+    "steps-to-verify": [
+      "Add handler/materialization unit tests for ordered query items, null optional-field omission, metadata shape, profile-projected query items, post-projection _etag recomputation, and exclusion of Uri/Discriminator/ChangeVersion.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
     "completed": false
   },
   {
     "category": "Provider Integration Test Infrastructure",
-    "description": "Add shared PostgreSQL and SQL Server integration-test helpers for directly seeding dms.Document and dms.Descriptor rows and for resolving descriptor ResourceKeyId values from the MappingSet. Keep these helpers scoped to descriptor read tests and avoid depending on descriptor POST unless a test explicitly covers write/read integration. Acceptance: both providers can seed valid descriptor rows, wrong-resource document rows, and corrupt missing-descriptor-row cases deterministically; helpers preserve dms schema metadata; tests can request ExternalResponse and StoredDocument modes through RelationalDocumentStoreRepository.",
+    "description": "Add shared PostgreSQL and SQL Server integration-test helpers for directly seeding dms.Document and dms.Descriptor rows and for resolving descriptor ResourceKeyId values from the MappingSet. Keep these helpers scoped to descriptor read tests and avoid depending on descriptor POST unless a test explicitly covers write/read integration. Acceptance: both providers can seed valid descriptor rows, wrong-resource document rows, mixed-case descriptor values, and corrupt missing-descriptor-row cases deterministically; helpers preserve dms schema metadata; tests can request ExternalResponse and StoredDocument modes through RelationalDocumentStoreRepository.",
     "steps-to-verify": [
       "Add provider helper tests or smoke tests proving seeded rows can be read by raw SQL before repository assertions run.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DescriptorRead",
@@ -117,7 +138,7 @@
   },
   {
     "category": "Provider Integration GET and Invariant Tests",
-    "description": "Add PostgreSQL and SQL Server backend integration tests for descriptor GET behavior using direct dms.Document/dms.Descriptor seeding. Cover GET by id, StoredDocument mode, wrong-resource 404, diagnostic-only Discriminator mismatch, selected-document missing descriptor-row invariant failure, null optional-field omission, metadata shape, _lastModifiedDate, and exclusion of Uri/Discriminator/ChangeVersion. Acceptance: both providers pass the same GET/invariant matrix and prove descriptor reads use the shared descriptor table rather than per-descriptor physical tables.",
+    "description": "Add PostgreSQL and SQL Server backend integration tests for descriptor GET behavior using direct dms.Document/dms.Descriptor seeding. Cover GET by id, StoredDocument mode, wrong-resource 404, auth fail-closed 501, diagnostic-only Discriminator mismatch, selected-document missing descriptor-row invariant failure, null optional-field omission, metadata shape, _lastModifiedDate, and exclusion of Uri/Discriminator/ChangeVersion. Acceptance: both providers pass the same GET/invariant matrix and prove descriptor reads use the shared descriptor table rather than per-descriptor physical tables.",
     "steps-to-verify": [
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DescriptorRead",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DescriptorRead"
@@ -125,8 +146,17 @@
     "completed": false
   },
   {
-    "category": "Provider Integration Query Filter and Paging Tests",
-    "description": "Add PostgreSQL and SQL Server backend integration tests for descriptor query behavior using direct dms.Document/dms.Descriptor seeding. Cover query filters for id, namespace, codeValue, shortDescription, description, effectiveBeginDate, and effectiveEndDate; totalCount=true; strict namespace matching; ordered results; and paging across at least two pages. Acceptance: both providers pass the same query matrix; descriptor query SQL is provider-correct for UUID/date/paging/count behavior; tests prove ?namespace=<namespace>#<codeValue> only matches when that full value is stored in Namespace.",
+    "category": "Provider Integration Query Filter Tests",
+    "description": "Add PostgreSQL and SQL Server backend integration tests for descriptor query filters using direct dms.Document/dms.Descriptor seeding. Cover id, namespace, codeValue, shortDescription, description, effectiveBeginDate, and effectiveEndDate. Include invalid id empty-page behavior, strict namespace matching, and mixed-case string values. Acceptance: both providers pass the same filter matrix; descriptor string filters are case-sensitive/ordinal and do not inherit SQL Server default case-insensitive matching; ?namespace=<namespace>#<codeValue> only matches when that full value is stored in Namespace; descriptor query SQL is provider-correct for UUID and date behavior.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DescriptorRead",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DescriptorRead"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Provider Integration Query Paging, Count, and Invariant Tests",
+    "description": "Add PostgreSQL and SQL Server backend integration tests for descriptor query paging, totalCount, and query-time invariant failures using direct dms.Document/dms.Descriptor seeding. Cover deterministic ordering by DocumentId, paging across at least two pages, totalCount=true with and without filters, empty-page preprocessing that avoids SQL execution when observable, and a selected dms.Document descriptor row missing dms.Descriptor. Acceptance: both providers pass the same paging/count matrix; query pages are stable for a fixed committed state; total count matches the unpaged filtered row count; selected corrupt descriptor documents return a 500-style invariant failure rather than being silently skipped.",
     "steps-to-verify": [
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DescriptorRead",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DescriptorRead"
@@ -135,7 +165,7 @@
   },
   {
     "category": "Relational Descriptor API E2E",
-    "description": "Enable or add a thin relational-backend E2E scenario that creates a descriptor through POST, reads it by id, queries it by descriptor fields, and exercises readable profile projection through the public API. Prefer tagging existing descriptor GET/query scenarios with relational-backend when their expectations already match the relational design; add a focused scenario only where legacy expectations conflict. Acceptance: the scenario proves Core routing, descriptor write/read integration, descriptor query routing, fail-closed authorization behavior where applicable, profile projection, _etag recomputation, _lastModifiedDate, and correct public descriptor shape without Uri or Discriminator; deeper provider/filter/invariant coverage remains in backend integration tests.",
+    "description": "Enable or add one thin relational-backend E2E scenario that creates a descriptor through POST, reads it by id, queries it by descriptor fields, and exercises readable profile projection through the public API. Prefer tagging existing descriptor GET/query scenarios with relational-backend when their expectations already match the relational design; add a focused scenario only where legacy expectations conflict. Acceptance: the scenario proves Core routing, descriptor write/read integration, descriptor query routing, profile projection, _etag recomputation, _lastModifiedDate, and correct public descriptor shape without Uri or Discriminator; deeper provider/filter/invariant coverage and fail-closed authorization coverage remain in backend/unit tests.",
     "steps-to-verify": [
       "From src/dms/tests/EdFi.InstanceManagement.Tests.E2E run: pwsh ./teardown-local-dms.ps1",
       "From src/dms/tests/EdFi.InstanceManagement.Tests.E2E run: pwsh ./setup-local-dms.ps1",
@@ -145,7 +175,7 @@
   },
   {
     "category": "Formatting and Regression Sweep",
-    "description": "Run the final formatting and regression sweep for DMS-994 after the implementation tasks land. Acceptance: modified C# files are csharpier-formatted without unrelated directory-wide churn, descriptor read/query unit and integration tests pass, generic relational query/read tests still pass, and any intentional legacy descriptor-query expectation changes are documented in test names or comments.",
+    "description": "Run the final formatting and regression sweep for DMS-994 after the implementation tasks land. Acceptance: modified C# files are csharpier-formatted without unrelated directory-wide churn, descriptor read/query unit and integration tests pass, generic relational query/read tests still pass, descriptor query capability manifest/golden tests pass, and any intentional legacy descriptor-query expectation changes are documented in test names or comments.",
     "steps-to-verify": [
       "Run: dotnet csharpier format <modified C# files or the smallest modified directories>",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj",
