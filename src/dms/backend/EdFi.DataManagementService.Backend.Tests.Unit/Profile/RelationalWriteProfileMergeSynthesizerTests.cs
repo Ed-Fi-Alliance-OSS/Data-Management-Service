@@ -9177,3 +9177,118 @@ public class Given_Synthesizer_RootExtensionChildCollection_With_Differing_Child
     public void It_is_not_a_no_op_candidate_when_child_identity_differs_from_stored() =>
         RelationalWriteGuardedNoOp.IsNoOpCandidate(_result).Should().BeFalse();
 }
+
+[TestFixture]
+public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Hidden_Interleaving_Is_NoOp
+{
+    private RelationalWriteMergeResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Adapted from Given_Synthesize_top_level_collection_with_matched_and_hidden_and_insert.
+        // Stored DB: [V1 ord 1, H ord 2 (hidden), V2 ord 3]. Request: [V1, V2] (no inserts,
+        // no deletes). The planner produces merged sequence [V1_overlay, H_preserve, V2_overlay]
+        // with stamped ordinals 1..3. Both CurrentRows and MergedRows must arrive at the
+        // builder in the same positional order [V1, H, V2] for IsNoOpCandidate's positional
+        // SequenceEqual to fire — this is the property the fixture pins.
+        var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        const long documentId = 345L;
+
+        var body = new JsonObject
+        {
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["identityField0"] = "V1" },
+                new JsonObject { ["identityField0"] = "V2" }
+            ),
+        };
+
+        var candidateV1 = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V1", 0);
+        var candidateV2 = CollectionSynthesizerBuilders.BuildCandidate(collectionPlan, "V2", 1);
+        var requestItems = ImmutableArray.Create(
+            CollectionSynthesizerBuilders.BuildRequestItem("V1", creatable: true, arrayIndex: 0),
+            CollectionSynthesizerBuilders.BuildRequestItem("V2", creatable: true, arrayIndex: 1)
+        );
+
+        var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
+        var storedRowV1 = CollectionSynthesizerBuilders.BuildStoredRow("V1");
+        var storedRowV2 = CollectionSynthesizerBuilders.BuildStoredRow("V2");
+        // H is intentionally absent from VisibleStoredCollectionRows — it's hidden.
+        var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1, storedRowV2]);
+
+        // CollectionItemId, ParentDocumentId, Ordinal, IdentityField0
+        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
+        object?[] dbRowH = [20L, documentId, 2, "H"];
+        object?[] dbRowV2 = [30L, documentId, 3, "V2"];
+
+        var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
+            rootPlan,
+            collectionPlan,
+            documentId,
+            [dbRowV1, dbRowH, dbRowV2]
+        );
+        var flattened = CollectionSynthesizerBuilders.BuildFlattenedWriteSet(
+            rootPlan,
+            [candidateV1, candidateV2],
+            documentId
+        );
+
+        _result = UnwrapMergeResult(
+            BuildProfileSynthesizer()
+                .Synthesize(
+                    new RelationalWriteProfileMergeRequest(
+                        writePlan: plan,
+                        flattenedWriteSet: flattened,
+                        writableRequestBody: body,
+                        currentState: currentState,
+                        profileRequest: request,
+                        profileAppliedContext: context,
+                        resolvedReferences: EmptyResolvedReferenceSet()
+                    )
+                )
+        );
+    }
+
+    [Test]
+    public void It_supports_guarded_no_op() => _result.SupportsGuardedNoOp.Should().BeTrue();
+
+    [Test]
+    public void It_emits_three_current_and_three_merged_collection_rows()
+    {
+        var collectionState = _result.TablesInDependencyOrder[1];
+        collectionState.CurrentRows.Length.Should().Be(3);
+        collectionState.MergedRows.Length.Should().Be(3);
+    }
+
+    [Test]
+    public void It_aligns_current_and_merged_rows_pairwise_by_identity_field()
+    {
+        // The plan-sequence vs DB-hydration alignment property: for every row index, the
+        // identity field on CurrentRows[i] equals the identity field on MergedRows[i].
+        // Identity field is binding index 3 (CollectionItemId, ParentDocumentId, Ordinal,
+        // IdentityField0).
+        var collectionState = _result.TablesInDependencyOrder[1];
+        for (var i = 0; i < collectionState.CurrentRows.Length; i++)
+        {
+            var currentIdentity = (
+                (FlattenedWriteValue.Literal)collectionState.CurrentRows[i].Values[3]
+            ).Value;
+            var mergedIdentity = ((FlattenedWriteValue.Literal)collectionState.MergedRows[i].Values[3]).Value;
+            mergedIdentity
+                .Should()
+                .Be(
+                    currentIdentity,
+                    $"row {i}: merged identity must align with current identity at the same positional index"
+                );
+        }
+    }
+
+    [Test]
+    public void It_is_a_no_op_candidate_when_request_matches_stored_with_hidden_interleaving() =>
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(_result).Should().BeTrue();
+
+    [Test]
+    public void It_projects_comparable_values_from_merged_row_values_via_the_shared_helper() =>
+        ProfileMergeGuardedNoOpAssertionHelpers.AssertMergedRowsUseSharedComparableProjection(_result);
+}
