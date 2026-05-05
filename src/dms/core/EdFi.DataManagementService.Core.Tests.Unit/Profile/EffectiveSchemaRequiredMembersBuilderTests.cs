@@ -139,12 +139,13 @@ public abstract class EffectiveSchemaRequiredMembersBuilderTests
     [Parallelizable]
     public class Given_A_Scope_Not_Locatable_In_The_Schema : EffectiveSchemaRequiredMembersBuilderTests
     {
-        private IReadOnlyDictionary<string, IReadOnlyList<string>> _result = null!;
+        private JsonNode _schema = null!;
+        private IReadOnlyList<CompiledScopeDescriptor> _scopes = null!;
 
         [SetUp]
         public void Setup()
         {
-            JsonNode schema = JsonNode.Parse(
+            _schema = JsonNode.Parse(
                 """
                 {
                   "type": "object",
@@ -156,7 +157,7 @@ public abstract class EffectiveSchemaRequiredMembersBuilderTests
                 """
             )!;
 
-            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            _scopes =
             [
                 new(
                     JsonScope: "$",
@@ -175,20 +176,14 @@ public abstract class EffectiveSchemaRequiredMembersBuilderTests
                     CanonicalScopeRelativeMemberPaths: []
                 ),
             ];
-
-            _result = EffectiveSchemaRequiredMembersBuilder.Build(schema, scopes);
         }
 
         [Test]
-        public void It_includes_the_resolvable_root_scope()
+        public void It_throws_invalid_operation_naming_the_unlocatable_scope()
         {
-            _result.Should().ContainKey("$");
-        }
+            Action act = () => EffectiveSchemaRequiredMembersBuilder.Build(_schema, _scopes);
 
-        [Test]
-        public void It_omits_the_unresolvable_scope()
-        {
-            _result.Should().NotContainKey("$.notInSchema");
+            act.Should().Throw<InvalidOperationException>().WithMessage("*$.notInSchema*");
         }
     }
 

@@ -2799,11 +2799,7 @@ public abstract class CreatabilityAnalyzerTests
                                 Name: "inner",
                                 MemberSelection: MemberSelection.IncludeOnly,
                                 LogicalSchema: null,
-                                Properties:
-                                [
-                                    new PropertyRule("innerId"),
-                                    new PropertyRule("innerField"),
-                                ],
+                                Properties: [new PropertyRule("innerId"), new PropertyRule("innerField")],
                                 NestedObjects: null,
                                 NestedCollections: null,
                                 Extensions: null,
@@ -2829,20 +2825,12 @@ public abstract class CreatabilityAnalyzerTests
 
             // The outer collection item's semantic identity
             var outerIdentity = ImmutableArray.Create(
-                new SemanticIdentityPart(
-                    "outerId",
-                    System.Text.Json.Nodes.JsonValue.Create("Outer1"),
-                    true
-                )
+                new SemanticIdentityPart("outerId", System.Text.Json.Nodes.JsonValue.Create("Outer1"), true)
             );
 
             // The inner collection item's semantic identity
             var innerIdentity = ImmutableArray.Create(
-                new SemanticIdentityPart(
-                    "innerId",
-                    System.Text.Json.Nodes.JsonValue.Create("Inner1"),
-                    true
-                )
+                new SemanticIdentityPart("innerId", System.Text.Json.Nodes.JsonValue.Create("Inner1"), true)
             );
 
             // Ancestor context for the inner item: includes the outer collection item
@@ -2852,11 +2840,7 @@ public abstract class CreatabilityAnalyzerTests
 
             // The outer collection item with root as parent — new (not in stored state)
             var outerItem = new VisibleRequestCollectionItem(
-                new CollectionRowAddress(
-                    "$.outer[*]",
-                    new ScopeInstanceAddress("$", []),
-                    outerIdentity
-                ),
+                new CollectionRowAddress("$.outer[*]", new ScopeInstanceAddress("$", []), outerIdentity),
                 Creatable: false,
                 "$.outer[0]"
             );
@@ -2909,9 +2893,7 @@ public abstract class CreatabilityAnalyzerTests
             // The inner item has a hidden required member -> non-creatable
             _result
                 .EnrichedCollectionItems.Should()
-                .Contain(item =>
-                    item.Address.JsonScope == "$.outer[*].inner[*]" && !item.Creatable
-                );
+                .Contain(item => item.Address.JsonScope == "$.outer[*].inner[*]" && !item.Creatable);
         }
 
         [Test]
@@ -2948,6 +2930,167 @@ public abstract class CreatabilityAnalyzerTests
                         && d.JsonScope == "$.outer[*].inner[*]"
                     )
                 );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  Slice 5 Findings carryover: missing scope metadata must fail closed.
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_A_Creating_Scope_Whose_Required_Members_Metadata_Is_Missing : CreatabilityAnalyzerTests
+    {
+        [Test]
+        public void It_throws_invalid_operation_naming_the_scope()
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes = ProfileTestFixtures.SharedFixtureScopes;
+            var classifier = new ProfileVisibilityClassifier(
+                ProfileTestFixtures.BuildIncludeAllProfile(),
+                scopes
+            );
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "StudentSchoolAssociation",
+                "POST",
+                "Create"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+            ];
+            ImmutableArray<VisibleRequestCollectionItem> items = [];
+
+            // Intentionally missing the "$" entry the analyzer needs for a creating root scope.
+            var emptyMetadata = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+
+            Action act = () =>
+                analyzer.Analyze(
+                    scopeStates,
+                    items,
+                    new TestExistenceLookup(),
+                    isCreate: true,
+                    emptyMetadata
+                );
+
+            act.Should().Throw<InvalidOperationException>().WithMessage("*scope '$'*");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Creating_Collection_Item_Whose_Required_Members_Metadata_Is_Missing
+        : CreatabilityAnalyzerTests
+    {
+        [Test]
+        public void It_throws_invalid_operation_naming_the_collection_item_scope()
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes = ProfileTestFixtures.SharedFixtureScopes;
+            var classifier = new ProfileVisibilityClassifier(
+                ProfileTestFixtures.BuildIncludeAllProfile(),
+                scopes
+            );
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "StudentSchoolAssociation",
+                "POST",
+                "Create"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+            ];
+
+            // A creating collection item drives the AnalyzeCollectionItem path.
+            ImmutableArray<VisibleRequestCollectionItem> items =
+            [
+                new(
+                    MakeCollectionRowAddress("$.classPeriods[*]", "classPeriodName", "Period1"),
+                    Creatable: false,
+                    "$.classPeriods[0]"
+                ),
+            ];
+
+            // Provide root metadata so the root scope passes; intentionally omit
+            // the collection-item scope's JsonScope so the per-item creatability
+            // evaluation has no entry.
+            var partialMetadata = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+            {
+                ["$"] = ["field1"],
+            };
+
+            Action act = () =>
+                analyzer.Analyze(
+                    scopeStates,
+                    items,
+                    new TestExistenceLookup(),
+                    isCreate: true,
+                    partialMetadata
+                );
+
+            act.Should().Throw<InvalidOperationException>().WithMessage("*$.classPeriods[*]*");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Parent_Gated_Creating_Scope_Whose_Required_Members_Metadata_Is_Missing
+        : CreatabilityAnalyzerTests
+    {
+        [Test]
+        public void It_throws_invalid_operation_naming_the_child_scope()
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes = ProfileTestFixtures.SharedFixtureScopes;
+            var classifier = new ProfileVisibilityClassifier(
+                ProfileTestFixtures.BuildIncludeAllProfile(),
+                scopes
+            );
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "StudentSchoolAssociation",
+                "POST",
+                "Create"
+            );
+
+            // Root scope and a non-root NonCollection child scope are both
+            // VisiblePresent and absent from the stored side: the child scope
+            // is the parent-gated creating scope whose metadata is missing.
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(
+                    MakeAddress("$.calendarReference"),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+            ImmutableArray<VisibleRequestCollectionItem> items = [];
+
+            // Provide root and classPeriods metadata so root creatability
+            // succeeds (parent-creatable gate passes); intentionally omit
+            // "$.calendarReference" so the parent-gated child evaluation has
+            // no entry in effectiveSchemaRequiredMembersByScope.
+            var partialMetadata = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+            {
+                ["$"] = ["field1"],
+                ["$.classPeriods[*]"] = ["classPeriodName"],
+            };
+
+            Action act = () =>
+                analyzer.Analyze(
+                    scopeStates,
+                    items,
+                    new TestExistenceLookup(),
+                    isCreate: true,
+                    partialMetadata
+                );
+
+            act.Should().Throw<InvalidOperationException>().WithMessage("*$.calendarReference*");
         }
     }
 }

@@ -142,29 +142,6 @@ public class Given_RelationalWriteContracts
     }
 
     [Test]
-    public void It_rejects_collection_write_candidate_without_explicit_semantic_identity_in_order()
-    {
-        var act = () =>
-            new CollectionWriteCandidate(
-                _fixture.CollectionPlan,
-                ordinalPath: [0],
-                requestOrder: 0,
-                values:
-                [
-                    NewCollectionItemId(),
-                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                    new FlattenedWriteValue.Literal(0),
-                    new FlattenedWriteValue.Literal("Home"),
-                ],
-                semanticIdentityValues: ["Home"]
-            );
-
-        act.Should()
-            .Throw<ArgumentNullException>()
-            .WithMessage("*JSON-side presence probes*semanticIdentityInOrder*");
-    }
-
-    [Test]
     public void It_infers_semantic_identity_in_order_with_value_based_presence_for_tests()
     {
         var inferred = SemanticIdentityTestHelpers.InferSemanticIdentityInOrderForTests(

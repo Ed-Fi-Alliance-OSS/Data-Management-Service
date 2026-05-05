@@ -2890,6 +2890,299 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
     }
 
+    [Test]
+    public async Task It_short_circuits_unchanged_profiled_put_requests_as_guarded_no_ops()
+    {
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody);
+        var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
+        var request = baseRequest with { ProfileWriteContext = profileContext };
+
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var sampleRow = new RelationalWriteMergedTableRow(
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ],
+            comparableValues:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ]
+        );
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
+            supportsGuardedNoOp: true
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>();
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_short_circuits_unchanged_profiled_post_as_update_requests_as_guarded_no_ops()
+    {
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var existingTarget = new RelationalWriteTargetContext.ExistingDocument(
+            345L,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+            44L
+        );
+        var baseRequest = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: existingTarget,
+            selectedBody: writableBody
+        );
+        var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
+        var request = baseRequest with { ProfileWriteContext = profileContext };
+
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var sampleRow = new RelationalWriteMergedTableRow(
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ],
+            comparableValues:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ]
+        );
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
+            supportsGuardedNoOp: true
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>();
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_stale_no_op_write_conflict_for_profiled_put_when_freshness_is_lost()
+    {
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody);
+        var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
+        var request = baseRequest with { ProfileWriteContext = profileContext };
+
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var sampleRow = new RelationalWriteMergedTableRow(
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ],
+            comparableValues:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ]
+        );
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
+            supportsGuardedNoOp: true
+        );
+        _writeFreshnessChecker.IsCurrentEvaluator = static _ => false;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_stale_no_op_write_conflict_for_profiled_post_as_update_when_freshness_is_lost()
+    {
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var existingTarget = new RelationalWriteTargetContext.ExistingDocument(
+            345L,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+            44L
+        );
+        var baseRequest = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: existingTarget,
+            selectedBody: writableBody
+        );
+        var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
+        var request = baseRequest with { ProfileWriteContext = profileContext };
+
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var sampleRow = new RelationalWriteMergedTableRow(
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ],
+            comparableValues:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ]
+        );
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
+            supportsGuardedNoOp: true
+        );
+        _writeFreshnessChecker.IsCurrentEvaluator = static _ => false;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureWriteConflict>();
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_falls_through_to_persister_for_profiled_put_when_merge_is_not_a_no_op_candidate()
+    {
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody);
+        var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
+        var request = baseRequest with { ProfileWriteContext = profileContext };
+
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var currentRow = new RelationalWriteMergedTableRow(
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Old"),
+            ],
+            comparableValues:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Old"),
+            ]
+        );
+        var mergedRow = new RelationalWriteMergedTableRow(
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("New"),
+            ],
+            comparableValues:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("New"),
+            ]
+        );
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [new RelationalWriteMergedTableState(rootPlan, [currentRow], [mergedRow])],
+            supportsGuardedNoOp: true
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+    }
+
+    private static BackendProfileWriteContext BuildVisiblePresentRootProfileWriteContext(
+        JsonNode writableBody,
+        ResourceWritePlan writePlan
+    )
+    {
+        var profileRequest = new ProfileAppliedWriteRequest(
+            WritableRequestBody: writableBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        // For the existing-document profile path, the executor invokes the projection fake.
+        // Configure it to return a structurally-valid stored context so the merge
+        // synthesizer observes both current state and profile-applied context as non-null.
+        var storedAppliedContext = new ProfileAppliedWriteContext(
+            Request: profileRequest,
+            VisibleStoredBody: writableBody.DeepClone(),
+            StoredScopeStates:
+            [
+                new StoredScopeState(
+                    Address: new ScopeInstanceAddress("$", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+            ],
+            VisibleStoredCollectionRows: []
+        );
+
+        var projectionInvoker = A.Fake<IStoredStateProjectionInvoker>();
+        A.CallTo(() =>
+                projectionInvoker.ProjectStoredState(
+                    A<JsonNode>._,
+                    A<ProfileAppliedWriteRequest>._,
+                    A<IReadOnlyList<CompiledScopeDescriptor>>._
+                )
+            )
+            .Returns(storedAppliedContext);
+
+        return new BackendProfileWriteContext(
+            Request: profileRequest,
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan),
+            StoredStateProjectionInvoker: projectionInvoker
+        );
+    }
+
     private static RelationalWriteExecutorRequest CreateRequest(
         RelationalWriteOperationKind operationKind,
         bool allowIdentityUpdates = false,
