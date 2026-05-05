@@ -407,6 +407,83 @@ internal abstract class ProfileGuardedNoOpGeneratedDdlFixtureTestBase
     }
 
     /// <summary>
+    /// Issues a profiled POST against the previously-seeded document with an
+    /// identical body and a DIFFERENT incoming <see cref="DocumentUuid"/>. Per
+    /// Slice 1's final-target resolution, the executor must detect the existing
+    /// document by semantic identity (computed from
+    /// <c>profileRootOnlyMergeItemId</c>) and route the request as POST-as-update
+    /// rather than inserting a new document. The profile context declares
+    /// <c>$</c> and <c>$.profileScope</c> fully VisiblePresent with no hidden
+    /// member paths so the merged effective rowset must equal the stored rowset
+    /// and the guarded no-op short-circuit must fire.
+    /// </summary>
+    protected async Task<UpsertResult> ExecuteProfiledPostAsUpdateAsync(DocumentUuid incomingDocumentUuid)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfileGuardedNoOp",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var writeBody = IdenticalRequestBody.DeepClone();
+        var writePlan = _mappingSet.WritePlansByResource[
+            PostgresqlProfileRootOnlyFixtureSupport.ProfileRootOnlyMergeItemResource
+        ];
+        var profileContext = PostgresqlProfileRootOnlyFixtureSupport.CreateProfileContext(
+            writePlan,
+            writeBody.DeepClone(),
+            rootVisibility: ProfileVisibilityKind.VisiblePresent,
+            rootHiddenMemberPaths: [],
+            profileScopeVisibility: ProfileVisibilityKind.VisiblePresent,
+            profileScopeHiddenMemberPaths: []
+        );
+        var upsertRequest = new UpsertRequest(
+            ResourceInfo: PostgresqlProfileRootOnlyFixtureSupport.ProfileRootOnlyMergeItemResourceInfo,
+            DocumentInfo: PostgresqlProfileRootOnlyFixtureSupport.CreateDocumentInfo(
+                DefaultProfileRootOnlyMergeItemId
+            ),
+            MappingSet: _mappingSet,
+            EdfiDoc: writeBody,
+            Headers: [],
+            TraceId: new TraceId("pg-profile-guarded-no-op-post-as-update"),
+            DocumentUuid: incomingDocumentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new ProfileGuardedNoOpAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: profileContext
+        );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpsertDocument(upsertRequest);
+    }
+
+    /// <summary>
+    /// Counts rows in <c>dms.Document</c> matching the supplied
+    /// <paramref name="documentUuid"/>. Used to assert that a profiled
+    /// POST-as-update did NOT insert a new document under the incoming UUID.
+    /// </summary>
+    protected async Task<long> CountDocumentRowsByUuidAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "RowCount"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+        return Convert.ToInt64(rows[0]["RowCount"], CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
     /// Reads the single <c>edfi.ProfileRootOnlyMergeItem</c> row keyed by the supplied
     /// <paramref name="documentId"/>. Used by
     /// <see cref="ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync"/> to
@@ -523,5 +600,118 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root
     public void It_does_not_emit_a_document_change_event_row()
     {
         _stateAfterUpdate.DocumentChangeEventCount.Should().Be(_stateBeforeUpdate.DocumentChangeEventCount);
+    }
+}
+
+/// <summary>
+/// Slice 6 (DMS-1142) Task 6 — profiled POST-as-update guarded no-op. Seeds a
+/// non-profiled CREATE for the synthetic <c>ProfileRootOnlyMergeItem</c> target,
+/// then issues a profiled <c>POST</c> with the SAME natural-identity body but a
+/// DIFFERENT incoming <see cref="DocumentUuid"/>. Per Slice 1's final-target
+/// resolution, the executor must classify the second POST as POST-as-update by
+/// matching the existing document's semantic identity rather than inserting a
+/// new document. With the profile context declaring the root and inlined
+/// <c>$.profileScope</c> fully VisiblePresent and no hidden members, the
+/// merged effective rowset equals the stored rowset and the guarded no-op
+/// short-circuit must fire — no row content / version / timestamp / change
+/// event mutation is permitted, AND the incoming UUID must NOT be inserted.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape
+    : ProfileGuardedNoOpGeneratedDdlFixtureTestBase
+{
+    private static readonly DocumentUuid ExistingDocumentUuid = new(
+        Guid.Parse("eeeeeeee-0000-0000-0000-000000000002")
+    );
+    private static readonly DocumentUuid IncomingDocumentUuid = new(
+        Guid.Parse("eeeeeeee-0000-0000-0000-000000000003")
+    );
+
+    private ProfileGuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
+    private UpsertResult _postAsUpdateResult = null!;
+    private long _incomingDocumentUuidRowCount;
+
+    protected override async Task SetUpTestAsync()
+    {
+        await ExecuteProfiledCreateAsync(ExistingDocumentUuid);
+        _stateBeforePostAsUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingDocumentUuid.Value,
+            ReadRootRowByDocumentIdAsync
+        );
+
+        _postAsUpdateResult = await ExecuteProfiledPostAsUpdateAsync(IncomingDocumentUuid);
+
+        _stateAfterPostAsUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingDocumentUuid.Value,
+            ReadRootRowByDocumentIdAsync
+        );
+        _incomingDocumentUuidRowCount = await CountDocumentRowsByUuidAsync(IncomingDocumentUuid.Value);
+    }
+
+    [Test]
+    public void It_returns_update_success_with_the_existing_document_uuid()
+    {
+        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        _postAsUpdateResult
+            .As<UpsertResult.UpdateSuccess>()
+            .ExistingDocumentUuid.Should()
+            .Be(ExistingDocumentUuid);
+    }
+
+    [Test]
+    public void It_does_not_insert_the_incoming_document_uuid()
+    {
+        _incomingDocumentUuidRowCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_does_not_change_rowsets()
+    {
+        _stateAfterPostAsUpdate.RootRow.Should().BeEquivalentTo(_stateBeforePostAsUpdate.RootRow);
+    }
+
+    [Test]
+    public void It_does_not_change_content_version()
+    {
+        _stateAfterPostAsUpdate
+            .Document.ContentVersion.Should()
+            .Be(_stateBeforePostAsUpdate.Document.ContentVersion);
+    }
+
+    [Test]
+    public void It_does_not_change_content_last_modified_at()
+    {
+        _stateAfterPostAsUpdate
+            .Document.ContentLastModifiedAt.Should()
+            .Be(_stateBeforePostAsUpdate.Document.ContentLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_change_identity_version()
+    {
+        _stateAfterPostAsUpdate
+            .Document.IdentityVersion.Should()
+            .Be(_stateBeforePostAsUpdate.Document.IdentityVersion);
+    }
+
+    [Test]
+    public void It_does_not_change_identity_last_modified_at()
+    {
+        _stateAfterPostAsUpdate
+            .Document.IdentityLastModifiedAt.Should()
+            .Be(_stateBeforePostAsUpdate.Document.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_emit_a_document_change_event_row()
+    {
+        _stateAfterPostAsUpdate
+            .DocumentChangeEventCount.Should()
+            .Be(_stateBeforePostAsUpdate.DocumentChangeEventCount);
     }
 }
