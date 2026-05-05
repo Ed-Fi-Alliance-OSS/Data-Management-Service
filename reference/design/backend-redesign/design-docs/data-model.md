@@ -319,6 +319,8 @@ CREATE TABLE dms.Descriptor (
     CodeValue varchar(50) NOT NULL,
     ShortDescription varchar(75) NOT NULL,
     Description varchar(1024) NULL,
+    EffectiveBeginDate date NULL,
+    EffectiveEndDate date NULL,
     Discriminator varchar(128) NOT NULL,
     Uri varchar(306) NOT NULL,
     CONSTRAINT PK_Descriptor PRIMARY KEY (DocumentId),
@@ -330,6 +332,8 @@ CREATE TABLE dms.Descriptor (
 CREATE INDEX IX_Descriptor_Uri_Discriminator ON dms.Descriptor (Uri, Discriminator);
 ```
 
+The effective date columns are part of the descriptor field contract. This matches legacy ODS behavior, where `edfi.Descriptor` includes nullable `EffectiveBeginDate` and `EffectiveEndDate` columns. DMS differs from ODS by using a single shared `dms.Descriptor` keyed by `DocumentId` and by not creating per-descriptor marker tables.
+
 Descriptor references (recommended base design):
 
 - Use an FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor” at the DB level.
@@ -337,10 +341,13 @@ Descriptor references (recommended base design):
 
 If DB-level enforcement of “descriptor must be of type X” becomes necessary later we can add checks that the referenced `dms.Descriptor.Discriminator` is the expected type for that FK column (derived from `ApiSchema`).
 
-Descriptor immutability (assumption for this redesign):
+Descriptor update semantics:
 
-- Descriptor documents are treated as **immutable reference data** after creation (no identity/URI updates, and no representation-affecting updates).
-- Because descriptors cannot change, descriptor FK dependencies do **not** participate in any identity propagation cascade and are excluded from representation-change propagation.
+- Descriptor identity is immutable after creation: `Namespace`, `CodeValue`, and the derived `Uri` must not change on PUT.
+- Descriptor representation fields can be updated: `ShortDescription`, `Description`, `EffectiveBeginDate`, and `EffectiveEndDate`.
+- Descriptor endpoint query fields map to shared descriptor columns with root-table-only semantics, including `namespace`, `codeValue`, `shortDescription`, `description`, `effectiveBeginDate`, and `effectiveEndDate`.
+- Descriptor references remain stable because other resources reference the descriptor document by resolved descriptor identity/URI, not by copied descriptor metadata.
+- Therefore descriptor metadata updates do not participate in identity-propagation cascades for referring resources.
 
 ##### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
@@ -642,7 +649,7 @@ Typical structure:
     - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
     - Note: this is intentionally defined over the per-site binding/alias columns (not canonical storage columns) to preserve optional-reference presence semantics.
-  - Descriptor references remain `..._DescriptorId BIGINT` FKs to `dms.Descriptor(DocumentId)` (no propagation; descriptors are treated as immutable).
+  - Descriptor references remain `..._DescriptorId BIGINT` FKs to `dms.Descriptor(DocumentId)`. Descriptor identity is immutable, so descriptor metadata updates require no reference propagation.
 
 #### Child tables for collections
 
