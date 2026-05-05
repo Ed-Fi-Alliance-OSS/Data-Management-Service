@@ -187,7 +187,12 @@ public sealed record DbIndexInfo(
     DbTableName Table,
     IReadOnlyList<DbColumnName> KeyColumns,
     bool IsUnique,
-    DbIndexKind Kind
+    DbIndexKind Kind,
+    // Optional non-key columns to include in the index leaf pages (SQL `INCLUDE` clause).
+    // Null and empty are treated identically by emitters: no `INCLUDE` clause.
+    // Required by the five `PrimaryAssociation` authorization indexes (see `auth.md`); null elsewhere.
+    // Manifest serialization: omitted when null/empty, otherwise emitted as `"include_columns": [...]`.
+    IReadOnlyList<DbColumnName>? IncludeColumns = null
 );
 
 public enum DbTriggerKind
@@ -250,7 +255,7 @@ Notes:
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
 - Index/trigger inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md`.
  - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
-  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission.
+  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission, with one carve-out: authorization indexes for descriptor `Namespace` securable elements land on `dms.Descriptor` (e.g. `IX_Descriptor_Namespace_Auth`) because all descriptor resources share that base table; these are emitted by `DeriveAuthorizationIndexInventoryPass` alongside resource-table auth indexes rather than by core DDL, since their existence is driven by per-resource `securableElements` metadata.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 
 ### 2.3 Mapping set (dialect-specific)
@@ -470,6 +475,7 @@ Mapping-set integration points:
   - per-resource `Namespace` indexes (for namespace-based checks),
   - per-resource EdOrg-id indexes (for relationship-based checks), and
   - join-column indexes used to reach person `DocumentId`s (for people-related relationship checks).
+  Note: the Namespace and EdOrg branches are emitted today by `DeriveAuthorizationIndexInventoryPass` (DMS-1054). The person-join branch (Student/Contact/Staff securable elements) is pending DMS-1094 — `DeriveAuthorizationIndexInventoryPass` currently scopes those out, so consumers should not yet rely on person-join entries appearing under `DbIndexKind.Authorization`.
 
 Example (sketch): resolving the `Student` securable element for `CourseTranscript`
 - ApiSchema marks `$.studentAcademicRecordReference.studentUniqueId` as a `Student` securable element.

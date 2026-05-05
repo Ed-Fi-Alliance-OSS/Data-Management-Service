@@ -367,7 +367,8 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         }
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            MssqlStudentArtProgramAssociationIntegrationTestSupport.FixtureRelativePath
+            MssqlStudentArtProgramAssociationIntegrationTestSupport.FixtureRelativePath,
+            strict: true
         );
         _mappingSet = _fixture.MappingSet;
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);

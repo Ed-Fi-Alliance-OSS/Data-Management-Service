@@ -21,28 +21,45 @@ internal sealed record PostgresqlGeneratedDdlFixture(
     string GeneratedDdl
 );
 
+/// <summary>
+/// Loads cached <see cref="PostgresqlGeneratedDdlFixture"/> instances for integration tests.
+/// </summary>
+/// <remarks>
+/// <c>strict</c> defaults to <see langword="false"/> because the bulk of integration tests use
+/// synthetic fixtures that intentionally omit production invariants. Authoritative integration
+/// tests must opt into the production-equivalent pipeline with <c>strict: true</c> to mirror
+/// what the DDL CLI / provisioning path runs.
+/// </remarks>
 internal static class PostgresqlGeneratedDdlFixtureLoader
 {
     private static readonly ConcurrentDictionary<string, Lazy<PostgresqlGeneratedDdlFixture>> _cache = new(
         StringComparer.Ordinal
     );
 
-    public static PostgresqlGeneratedDdlFixture LoadFromRepositoryRelativePath(string relativePath)
+    public static PostgresqlGeneratedDdlFixture LoadFromRepositoryRelativePath(
+        string relativePath,
+        bool strict = false
+    )
     {
         return LoadFromFixtureDirectory(
             FixturePathResolver.ResolveRepositoryRelativePath(
                 TestContext.CurrentContext.TestDirectory,
                 relativePath
-            )
+            ),
+            strict
         );
     }
 
-    public static PostgresqlGeneratedDdlFixture LoadFromFixtureDirectory(string fixtureDirectory)
+    public static PostgresqlGeneratedDdlFixture LoadFromFixtureDirectory(
+        string fixtureDirectory,
+        bool strict = false
+    )
     {
         var descriptor = EffectiveSchemaFixtureLoader.DescribeFixtureDirectory(fixtureDirectory);
+        var cacheKey = $"{descriptor.CacheKey}|strict={strict}";
         var lazyFixture = _cache.GetOrAdd(
-            descriptor.CacheKey,
-            _ => new(() => LoadFixture(descriptor), LazyThreadSafetyMode.ExecutionAndPublication)
+            cacheKey,
+            _ => new(() => LoadFixture(descriptor, strict), LazyThreadSafetyMode.ExecutionAndPublication)
         );
 
         try
@@ -51,19 +68,21 @@ internal static class PostgresqlGeneratedDdlFixtureLoader
         }
         catch
         {
-            _cache.TryRemove(new(descriptor.CacheKey, lazyFixture));
+            _cache.TryRemove(new(cacheKey, lazyFixture));
             throw;
         }
     }
 
     private static PostgresqlGeneratedDdlFixture LoadFixture(
-        EffectiveSchemaFixtureLoader.FixtureContentDescriptor descriptor
+        EffectiveSchemaFixtureLoader.FixtureContentDescriptor descriptor,
+        bool strict
     )
     {
         var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadEffectiveSchemaSet(descriptor);
         var (modelSet, generatedDdl) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,
-            SqlDialect.Pgsql
+            SqlDialect.Pgsql,
+            strict
         );
         var mappingSet = new MappingSetCompiler().Compile(modelSet);
 

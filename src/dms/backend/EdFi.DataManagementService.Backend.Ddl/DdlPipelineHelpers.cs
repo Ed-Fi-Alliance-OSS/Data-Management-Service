@@ -55,14 +55,25 @@ public static class DdlPipelineHelpers
     /// from a pre-built <see cref="EffectiveSchemaSet"/>. Deep-clones the schema set
     /// to avoid mutating the original tree.
     /// </summary>
+    /// <param name="strict">
+    /// When <see langword="true"/> (default, used by the production CLI / provisioning path),
+    /// the strict pass set runs collection semantic-identity validation and fails fast on a
+    /// PrimaryAssociation root table missing the post-key-unification column required for
+    /// authorization-index emission. When <see langword="false"/>, the default permissive pass
+    /// set runs — reserved for synthetic fixtures that intentionally omit those invariants.
+    /// </param>
     public static (DerivedRelationalModelSet ModelSet, string CombinedSql) BuildDdlForDialect(
         EffectiveSchemaSet effectiveSchemaSet,
-        SqlDialect dialect
+        SqlDialect dialect,
+        bool strict = true
     )
     {
         var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
         var (sqlDialect, dialectRules) = CreateDialect(dialect);
-        var modelSetBuilder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+        var passes = strict
+            ? RelationalModelSetPasses.CreateStrict()
+            : RelationalModelSetPasses.CreateDefault();
+        var modelSetBuilder = new DerivedRelationalModelSetBuilder(passes);
         var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
         var combinedSql = FullDdlEmitter.Emit(sqlDialect, modelSet);
 

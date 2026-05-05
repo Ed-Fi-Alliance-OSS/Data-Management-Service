@@ -55,6 +55,13 @@ public abstract class CompatibilityGateTestsBase
     /// <summary>Path to the fixture directory, relative to the repository root.</summary>
     protected abstract string FixtureRelativePath { get; }
 
+    /// <summary>
+    /// Whether the fixture is built with the strict pass set. Defaults to <see langword="true"/>
+    /// (production-equivalent for authoritative fixtures); synthetic focused fixtures override to
+    /// <see langword="false"/>.
+    /// </summary>
+    protected virtual bool Strict => true;
+
     // -------------------------------------------------------------------------
     // Abstract dialect-specific operations
     // -------------------------------------------------------------------------
@@ -115,7 +122,7 @@ public abstract class CompatibilityGateTestsBase
         _effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
 
         var dialect = GetSqlDialect();
-        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(_effectiveSchemaSet, dialect);
+        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(_effectiveSchemaSet, dialect, Strict);
 
         await ProvisionDatabaseAsync(combinedSql);
 

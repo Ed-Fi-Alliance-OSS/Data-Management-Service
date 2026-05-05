@@ -35,6 +35,10 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
         // Add auth covering index to the index inventory.
         // (Target) INCLUDE (Source) — used by inverted authorization strategies.
         // Note: The PK on (Source, Target) already covers Source-leading queries.
+        // Kind is Explicit (not Authorization): per `compiled-mapping-set.md` §2.2, core
+        // `auth.*` / `dms.*` indexes are owned by core DDL emission, while
+        // `DbIndexKind.Authorization` is reserved for resource-table indexes derived from
+        // `securableElements` (emitted by `DeriveAuthorizationIndexInventoryPass`, DMS-1054).
         context.IndexInventory.Add(
             new DbIndexInfo(
                 new DbIndexName($"IX_{AuthNames.EdOrgIdToEdOrgId.Name}_Target"),

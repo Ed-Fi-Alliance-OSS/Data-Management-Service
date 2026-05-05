@@ -59,10 +59,18 @@ public class Given_A_Mssql_Database_Provisioned_With_Hash_A_When_Applying_DDL_Fo
         );
 
         var effectiveSchemaSetA = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureADirectory);
-        var (_, fixtureADdl) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSetA, SqlDialect.Mssql);
+        var (_, fixtureADdl) = DdlPipelineHelpers.BuildDdlForDialect(
+            effectiveSchemaSetA,
+            SqlDialect.Mssql,
+            strict: false
+        );
 
         var effectiveSchemaSetB = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureBDirectory);
-        var (_, fixtureBDdl) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSetB, SqlDialect.Mssql);
+        var (_, fixtureBDdl) = DdlPipelineHelpers.BuildDdlForDialect(
+            effectiveSchemaSetB,
+            SqlDialect.Mssql,
+            strict: false
+        );
 
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixtureADdl);
 

@@ -40,17 +40,22 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
 
         _authoritativeFixtureFromRelativePath =
             PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-                AuthoritativeFixtureRelativePath
+                AuthoritativeFixtureRelativePath,
+                strict: true
             );
         _authoritativeFixtureFromDirectory = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-            _authoritativeFixtureDirectory
+            _authoritativeFixtureDirectory,
+            strict: true
         );
         _parallelFocusedFixtures = await Task.WhenAll(
             Enumerable
                 .Range(0, 8)
                 .Select(_ =>
                     Task.Run(() =>
-                        PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(_focusedFixtureDirectory)
+                        PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
+                            _focusedFixtureDirectory,
+                            strict: false
+                        )
                     )
                 )
         );
@@ -128,13 +133,15 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
         try
         {
             var initialFixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-                tempFixtureDirectory
+                tempFixtureDirectory,
+                strict: false
             );
             var schemaPath = Path.Combine(tempFixtureDirectory, "inputs", "ApiSchema-Sample.json");
             File.WriteAllText(schemaPath, File.ReadAllText(schemaPath) + Environment.NewLine);
 
             var reloadedFixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-                tempFixtureDirectory
+                tempFixtureDirectory,
+                strict: false
             );
 
             reloadedFixture.Should().NotBeSameAs(initialFixture);
@@ -156,13 +163,15 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
         try
         {
             var initialFixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-                tempFixtureDirectory
+                tempFixtureDirectory,
+                strict: false
             );
 
             ReplaceFixtureManifestWithBaseOnlyManifest(tempFixtureDirectory);
 
             var reloadedFixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
-                tempFixtureDirectory
+                tempFixtureDirectory,
+                strict: false
             );
 
             reloadedFixture.Should().NotBeSameAs(initialFixture);

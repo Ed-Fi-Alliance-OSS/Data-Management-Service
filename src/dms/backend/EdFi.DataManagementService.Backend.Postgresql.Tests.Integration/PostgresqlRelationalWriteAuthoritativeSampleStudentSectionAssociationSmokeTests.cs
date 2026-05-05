@@ -606,7 +606,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.FixtureRelativePath
+            AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.FixtureRelativePath,
+            strict: true
         );
         _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);

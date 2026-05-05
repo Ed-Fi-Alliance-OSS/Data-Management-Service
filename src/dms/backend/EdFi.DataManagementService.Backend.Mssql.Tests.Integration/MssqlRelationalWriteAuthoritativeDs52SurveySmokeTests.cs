@@ -254,7 +254,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         }
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            MssqlSurveyRuntimeIntegrationTestSupport.FixtureRelativePath
+            MssqlSurveyRuntimeIntegrationTestSupport.FixtureRelativePath,
+            strict: true
         );
         _mappingSet = _fixture.MappingSet;
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);

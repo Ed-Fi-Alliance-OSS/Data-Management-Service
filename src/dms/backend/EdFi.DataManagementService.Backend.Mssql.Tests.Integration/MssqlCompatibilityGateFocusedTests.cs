@@ -13,4 +13,6 @@ public class MssqlCompatibilityGateFocusedTests : MssqlCompatibilityGateTestsBas
 {
     protected override string FixtureRelativePath =>
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
+
+    protected override bool Strict => false;
 }

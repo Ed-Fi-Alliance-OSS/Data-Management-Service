@@ -37,14 +37,6 @@ internal static class SecurableElementColumnPathResolver
 
         foreach (var jsonPath in securableElements.EducationOrganization.Select(e => e.JsonPath))
         {
-            // Array-nested paths (containing [*]) require child-table traversal
-            // which is not yet supported; skip them from fail-fast validation.
-            if (IsArrayNestedPath(jsonPath))
-            {
-                skippedArrayNestedPaths.Add(jsonPath);
-                continue;
-            }
-
             var path = ResolveEdOrgOrNamespacePath(subjectResource, jsonPath);
             if (path is not null)
             {
@@ -60,12 +52,6 @@ internal static class SecurableElementColumnPathResolver
 
         foreach (string ns in securableElements.Namespace)
         {
-            if (IsArrayNestedPath(ns))
-            {
-                skippedArrayNestedPaths.Add(ns);
-                continue;
-            }
-
             var path = ResolveEdOrgOrNamespacePath(subjectResource, ns);
             if (path is not null)
             {
@@ -136,7 +122,14 @@ internal static class SecurableElementColumnPathResolver
 
     /// <summary>
     /// Resolves an EdOrg or Namespace securable element to a single column path step
-    /// with null target (the column is directly on the root table).
+    /// (<see cref="ColumnPathStep.TargetTable"/> and <see cref="ColumnPathStep.TargetColumnName"/>
+    /// are <see langword="null"/> — the auth value lives at <c>SourceTable.SourceColumnName</c>).
+    /// Walks every <see cref="DocumentReferenceBinding"/> (root or child) for an identity binding
+    /// whose <c>ReferenceJsonPath</c> matches; falls back to scanning every table for a scalar
+    /// column whose <c>SourceJsonPath</c> matches. Mirrors
+    /// <c>DeriveAuthorizationIndexInventoryPass.ResolveSecurableElementLocation</c> so the
+    /// runtime mapping and the DDL index pass agree on which (table, column) carries the value
+    /// for both root-level and array-nested paths.
     /// </summary>
     private static ColumnPathStep? ResolveEdOrgOrNamespacePath(
         ConcreteResourceModel resource,
@@ -144,42 +137,54 @@ internal static class SecurableElementColumnPathResolver
     )
     {
         var model = resource.RelationalModel;
-        var rootTable = model.Root;
 
-        // Match the securable element path against reference identity bindings
         foreach (var binding in model.DocumentReferenceBindings)
         {
-            // Only consider bindings on the root table
-            if (binding.Table != rootTable.Table)
-            {
-                continue;
-            }
-
             var identityBinding = binding.IdentityBindings.FirstOrDefault(ib =>
                 string.Equals(ib.ReferenceJsonPath.Canonical, securableElementPath, StringComparison.Ordinal)
             );
 
-            if (identityBinding is not null)
+            if (identityBinding is null)
             {
-                var column = ResolveToCanonicalColumn(rootTable, identityBinding.Column);
-                return new ColumnPathStep(rootTable.Table, column, null, null);
+                continue;
+            }
+
+            var owningTable = FindTable(model, binding.Table);
+            var column = owningTable is null
+                ? identityBinding.Column
+                : ResolveToCanonicalColumn(owningTable, identityBinding.Column);
+            return new ColumnPathStep(binding.Table, column, null, null);
+        }
+
+        foreach (var table in model.TablesInDependencyOrder)
+        {
+            foreach (var column in table.Columns)
+            {
+                if (
+                    column.SourceJsonPath is not null
+                    && string.Equals(
+                        column.SourceJsonPath.Value.Canonical,
+                        securableElementPath,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    var resolved = ResolveToCanonicalColumn(table, column.ColumnName);
+                    return new ColumnPathStep(table.Table, resolved, null, null);
+                }
             }
         }
 
-        // Fallback: check for a direct scalar column matching the JSON path (e.g., Namespace on root)
-        foreach (var column in rootTable.Columns)
+        return null;
+    }
+
+    private static DbTableModel? FindTable(RelationalResourceModel model, DbTableName tableName)
+    {
+        foreach (var t in model.TablesInDependencyOrder)
         {
-            if (
-                column.SourceJsonPath is not null
-                && string.Equals(
-                    column.SourceJsonPath.Value.Canonical,
-                    securableElementPath,
-                    StringComparison.Ordinal
-                )
-            )
+            if (t.Table == tableName)
             {
-                var resolved = ResolveToCanonicalColumn(rootTable, column.ColumnName);
-                return new ColumnPathStep(rootTable.Table, resolved, null, null);
+                return t;
             }
         }
 

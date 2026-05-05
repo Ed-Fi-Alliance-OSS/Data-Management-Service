@@ -70,7 +70,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            FixtureRelativePath,
+            strict: true
+        );
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
 
         _schoolTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "edfi", "School");

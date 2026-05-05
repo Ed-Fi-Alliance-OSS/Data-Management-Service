@@ -3266,6 +3266,18 @@
       ]
     },
     {
+      "name": "IX_Descriptor_Namespace_Auth",
+      "table": {
+        "schema": "dms",
+        "name": "Descriptor"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace"
+      ]
+    },
+    {
       "name": "IX_AcademicWeek_School_DocumentId_School_SchoolId",
       "table": {
         "schema": "edfi",
@@ -3275,6 +3287,18 @@
       "is_unique": false,
       "key_columns": [
         "School_DocumentId",
+        "School_SchoolId"
+      ]
+    },
+    {
+      "name": "IX_AcademicWeek_School_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "AcademicWeek"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "School_SchoolId"
       ]
     },
@@ -3327,6 +3351,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_AccountabilityRating_EducationOrganization_Educat_f537a18855",
+      "table": {
+        "schema": "edfi",
+        "name": "AccountabilityRating"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -3417,6 +3453,18 @@
       "key_columns": [
         "MandatingEducationOrganization_DocumentId",
         "MandatingEducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_Assessment_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Assessment"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace"
       ]
     },
     {
@@ -3523,6 +3571,18 @@
       ]
     },
     {
+      "name": "IX_AssessmentAdministration_Assessment_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentAdministration"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Assessment_Namespace"
+      ]
+    },
+    {
       "name": "IX_AssessmentAdministration_AssigningEducationOrgani_740e019634",
       "table": {
         "schema": "edfi",
@@ -3578,6 +3638,18 @@
       ]
     },
     {
+      "name": "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_6a08acacdc",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentAdministrationAssessmentBatteryPart"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "AssessmentBatteryPart_Namespace"
+      ]
+    },
+    {
       "name": "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_eb3b6a414e",
       "table": {
         "schema": "edfi",
@@ -3628,6 +3700,18 @@
       "key_columns": [
         "AssessmentAdministration_DocumentId",
         "Ordinal"
+      ]
+    },
+    {
+      "name": "IX_AssessmentAdministrationParticipation_AssessmentA_be9dd67666",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentAdministrationParticipation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "AssessmentAdministration_Namespace"
       ]
     },
     {
@@ -3877,6 +3961,18 @@
       ]
     },
     {
+      "name": "IX_AssessmentBatteryPart_Assessment_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentBatteryPart"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Assessment_Namespace"
+      ]
+    },
+    {
       "name": "PK_AssessmentBatteryPart",
       "table": {
         "schema": "edfi",
@@ -3929,6 +4025,18 @@
         "ObjectiveAssessment_AssessmentIdentifier",
         "ObjectiveAssessment_Namespace",
         "ObjectiveAssessment_IdentificationCode"
+      ]
+    },
+    {
+      "name": "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_a3c7942e7c",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentBatteryPartObjectiveAssessment"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "ObjectiveAssessment_Namespace"
       ]
     },
     {
@@ -4042,6 +4150,18 @@
       "key_columns": [
         "Assessment_DocumentId",
         "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace"
+      ]
+    },
+    {
+      "name": "IX_AssessmentItem_Assessment_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentItem"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "Assessment_Namespace"
       ]
     },
@@ -4553,6 +4673,18 @@
       ]
     },
     {
+      "name": "IX_AssessmentScoreRangeLearningStandard_Namespace_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentScoreRangeLearningStandard"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace_Unified"
+      ]
+    },
+    {
       "name": "IX_AssessmentScoreRangeLearningStandard_ObjectiveAss_7be51e2999",
       "table": {
         "schema": "edfi",
@@ -4801,6 +4933,18 @@
       ]
     },
     {
+      "name": "IX_BellSchedule_School_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "BellSchedule"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "School_SchoolId"
+      ]
+    },
+    {
       "name": "PK_BellSchedule",
       "table": {
         "schema": "edfi",
@@ -5004,6 +5148,18 @@
       ]
     },
     {
+      "name": "IX_Calendar_School_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Calendar"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "School_SchoolId"
+      ]
+    },
+    {
       "name": "PK_Calendar",
       "table": {
         "schema": "edfi",
@@ -5057,6 +5213,18 @@
         "Calendar_CalendarCode",
         "Calendar_SchoolId",
         "Calendar_SchoolYear"
+      ]
+    },
+    {
+      "name": "IX_CalendarDate_Calendar_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "CalendarDate"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Calendar_SchoolId"
       ]
     },
     {
@@ -5236,6 +5404,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_ChartOfAccount_EducationOrganization_EducationOrg_76ed18ffae",
+      "table": {
+        "schema": "edfi",
+        "name": "ChartOfAccount"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -5442,6 +5622,18 @@
       ]
     },
     {
+      "name": "IX_ClassPeriod_School_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "ClassPeriod"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "School_SchoolId"
+      ]
+    },
+    {
       "name": "PK_ClassPeriod",
       "table": {
         "schema": "edfi",
@@ -5565,6 +5757,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_Cohort_EducationOrganization_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Cohort"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -6804,6 +7008,18 @@
       ]
     },
     {
+      "name": "IX_CommunityProviderLicense_CommunityProvider_Commun_9423a8e741",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityProviderLicense"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "CommunityProvider_CommunityProviderId"
+      ]
+    },
+    {
       "name": "IX_CommunityProviderLicense_CommunityProvider_Docume_951744ac2d",
       "table": {
         "schema": "edfi",
@@ -6876,6 +7092,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_CompetencyObjective_EducationOrganization_Educati_a28fdc9a3d",
+      "table": {
+        "schema": "edfi",
+        "name": "CompetencyObjective"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -7626,6 +7854,18 @@
       ]
     },
     {
+      "name": "IX_Course_EducationOrganization_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Course"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_Course_MaximumAvailableCreditTypeDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -8004,6 +8244,18 @@
       ]
     },
     {
+      "name": "IX_CourseOffering_SchoolId_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "CourseOffering"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SchoolId_Unified"
+      ]
+    },
+    {
       "name": "IX_CourseOffering_School_DocumentId_SchoolId_Unified",
       "table": {
         "schema": "edfi",
@@ -8325,6 +8577,18 @@
         "StudentAcademicRecord_SchoolYear",
         "StudentAcademicRecord_StudentUniqueId",
         "StudentAcademicRecord_TermDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_CourseTranscript_StudentAcademicRecord_EducationO_c3bb8568d0",
+      "table": {
+        "schema": "edfi",
+        "name": "CourseTranscript"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "StudentAcademicRecord_EducationOrganizationId"
       ]
     },
     {
@@ -8772,6 +9036,18 @@
       ]
     },
     {
+      "name": "IX_Credential_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Credential"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace"
+      ]
+    },
+    {
       "name": "IX_Credential_StateOfIssueStateAbbreviationDescripto_b0f8b0d223",
       "table": {
         "schema": "edfi",
@@ -9034,6 +9310,18 @@
       ]
     },
     {
+      "name": "IX_DescriptorMapping_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "DescriptorMapping"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace"
+      ]
+    },
+    {
       "name": "PK_DescriptorMapping",
       "table": {
         "schema": "edfi",
@@ -9145,6 +9433,18 @@
       "is_unique": false,
       "key_columns": [
         "ResponsibilitySchool_DocumentId",
+        "ResponsibilitySchool_SchoolId"
+      ]
+    },
+    {
+      "name": "IX_DisciplineAction_ResponsibilitySchool_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "DisciplineAction"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "ResponsibilitySchool_SchoolId"
       ]
     },
@@ -9392,6 +9692,18 @@
       ]
     },
     {
+      "name": "IX_DisciplineIncident_School_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "DisciplineIncident"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "School_SchoolId"
+      ]
+    },
+    {
       "name": "PK_DisciplineIncident",
       "table": {
         "schema": "edfi",
@@ -9629,6 +9941,18 @@
       "key_columns": [
         "LearningResourceChoiceLearningResourceLearningStanda_5916be65e2",
         "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0"
+      ]
+    },
+    {
+      "name": "IX_EducationContent_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationContent"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace"
       ]
     },
     {
@@ -10048,6 +10372,18 @@
       ]
     },
     {
+      "name": "IX_EducationOrganizationInterventionPrescriptionAsso_d23e7089b6",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationInterventionPrescriptionAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "PK_EducationOrganizationInterventionPrescriptionAssociation",
       "table": {
         "schema": "edfi",
@@ -10285,6 +10621,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganizationNetwork_DocumentId",
+        "EducationOrganizationNetwork_EducationOrganizationNetworkId"
+      ]
+    },
+    {
+      "name": "IX_EducationOrganizationNetworkAssociation_Education_7a7bfc749d",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationNetworkAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganizationNetwork_EducationOrganizationNetworkId"
       ]
     },
@@ -10674,6 +11022,18 @@
       "key_columns": [
         "EducationOrganizationNetwork_DocumentId",
         "Ordinal"
+      ]
+    },
+    {
+      "name": "IX_EducationOrganizationPeerAssociation_EducationOrg_3eda9f3368",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationPeerAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -11306,6 +11666,18 @@
       ]
     },
     {
+      "name": "IX_EvaluationRubricDimension_ProgramEvaluationElemen_797ef3458f",
+      "table": {
+        "schema": "edfi",
+        "name": "EvaluationRubricDimension"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "ProgramEvaluationElement_ProgramEducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_EvaluationRubricDimension_ProgramEvaluationElemen_a965d4c4ad",
       "table": {
         "schema": "edfi",
@@ -11396,6 +11768,18 @@
       "is_unique": false,
       "key_columns": [
         "School_DocumentId",
+        "School_SchoolId"
+      ]
+    },
+    {
+      "name": "IX_FeederSchoolAssociation_School_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "FeederSchoolAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "School_SchoolId"
       ]
     },
@@ -11691,6 +12075,18 @@
       ]
     },
     {
+      "name": "IX_Grade_SchoolId_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Grade"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SchoolId_Unified"
+      ]
+    },
+    {
       "name": "IX_Grade_StudentSectionAssociation_DocumentId_Studen_eb5c081b9d",
       "table": {
         "schema": "edfi",
@@ -11861,6 +12257,18 @@
       ]
     },
     {
+      "name": "IX_GradebookEntry_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "GradebookEntry"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace"
+      ]
+    },
+    {
       "name": "IX_GradebookEntry_Section_DocumentId_Section_LocalCo_134838dd12",
       "table": {
         "schema": "edfi",
@@ -11994,6 +12402,18 @@
       ]
     },
     {
+      "name": "IX_GradingPeriod_School_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "GradingPeriod"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "School_SchoolId"
+      ]
+    },
+    {
       "name": "PK_GradingPeriod",
       "table": {
         "schema": "edfi",
@@ -12046,6 +12466,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_GraduationPlan_EducationOrganization_EducationOrg_d48d791679",
+      "table": {
+        "schema": "edfi",
+        "name": "GraduationPlan"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -12442,6 +12874,18 @@
       ]
     },
     {
+      "name": "IX_GraduationPlanRequiredAssessment_RequiredAssessme_8a46212213",
+      "table": {
+        "schema": "edfi",
+        "name": "GraduationPlanRequiredAssessment"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "RequiredAssessmentAssessment_Namespace"
+      ]
+    },
+    {
       "name": "PK_GraduationPlanRequiredAssessment",
       "table": {
         "schema": "edfi",
@@ -12589,6 +13033,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_Intervention_EducationOrganization_EducationOrgan_89fb84a3d9",
+      "table": {
+        "schema": "edfi",
+        "name": "Intervention"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -13049,6 +13505,18 @@
       ]
     },
     {
+      "name": "IX_InterventionPrescription_EducationOrganization_Ed_b79c5307d5",
+      "table": {
+        "schema": "edfi",
+        "name": "InterventionPrescription"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_InterventionPrescription_InterventionClassDescrip_e229101475",
       "table": {
         "schema": "edfi",
@@ -13499,6 +13967,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_InterventionStudy_EducationOrganization_Education_2d419ed6a7",
+      "table": {
+        "schema": "edfi",
+        "name": "InterventionStudy"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -14070,6 +14550,18 @@
       ]
     },
     {
+      "name": "IX_LearningStandard_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "LearningStandard"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace"
+      ]
+    },
+    {
       "name": "IX_LearningStandard_ParentLearningStandard_DocumentI_f8fe09ee92",
       "table": {
         "schema": "edfi",
@@ -14389,6 +14881,18 @@
       ]
     },
     {
+      "name": "IX_LocalAccount_EducationOrganization_EducationOrgan_8d61178531",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalAccount"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "PK_LocalAccount",
       "table": {
         "schema": "edfi",
@@ -14507,6 +15011,18 @@
       ]
     },
     {
+      "name": "IX_LocalActual_LocalAccount_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalActual"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "LocalAccount_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "PK_LocalActual",
       "table": {
         "schema": "edfi",
@@ -14559,6 +15075,18 @@
       ]
     },
     {
+      "name": "IX_LocalBudget_LocalAccount_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalBudget"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "LocalAccount_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "PK_LocalBudget",
       "table": {
         "schema": "edfi",
@@ -14608,6 +15136,18 @@
         "LocalAccount_AccountIdentifier",
         "LocalAccount_EducationOrganizationId",
         "LocalAccount_FiscalYear"
+      ]
+    },
+    {
+      "name": "IX_LocalContractedStaff_LocalAccount_EducationOrgani_e507d57d78",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalContractedStaff"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "LocalAccount_EducationOrganizationId"
       ]
     },
     {
@@ -15394,6 +15934,18 @@
       ]
     },
     {
+      "name": "IX_LocalEncumbrance_LocalAccount_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEncumbrance"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "LocalAccount_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "PK_LocalEncumbrance",
       "table": {
         "schema": "edfi",
@@ -15446,6 +15998,18 @@
       ]
     },
     {
+      "name": "IX_LocalPayroll_LocalAccount_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalPayroll"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "LocalAccount_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_LocalPayroll_Staff_DocumentId_Staff_StaffUniqueId",
       "table": {
         "schema": "edfi",
@@ -15494,6 +16058,18 @@
       "is_unique": false,
       "key_columns": [
         "School_DocumentId",
+        "School_SchoolId"
+      ]
+    },
+    {
+      "name": "IX_Location_School_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Location"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "School_SchoolId"
       ]
     },
@@ -15652,6 +16228,18 @@
       ]
     },
     {
+      "name": "IX_ObjectiveAssessment_Namespace_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "ObjectiveAssessment"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace_Unified"
+      ]
+    },
+    {
       "name": "IX_ObjectiveAssessment_ParentObjectiveAssessment_Doc_e13dce6b30",
       "table": {
         "schema": "edfi",
@@ -15704,6 +16292,18 @@
         "AssessmentIdentifier_Unified",
         "Namespace_Unified",
         "IdentificationCode"
+      ]
+    },
+    {
+      "name": "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_2f06e55896",
+      "table": {
+        "schema": "edfi",
+        "name": "ObjectiveAssessmentAssessmentItem"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "AssessmentItemAssessmentItem_Namespace"
       ]
     },
     {
@@ -15957,6 +16557,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_OpenStaffPosition_EducationOrganization_Education_36b4b22ff8",
+      "table": {
+        "schema": "edfi",
+        "name": "OpenStaffPosition"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -16256,6 +16868,18 @@
       "is_unique": false,
       "key_columns": [
         "ParentEducationOrganization_DocumentId",
+        "ParentEducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_OrganizationDepartment_ParentEducationOrganizatio_9129ec32b0",
+      "table": {
+        "schema": "edfi",
+        "name": "OrganizationDepartment"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "ParentEducationOrganization_EducationOrganizationId"
       ]
     },
@@ -17519,6 +18143,18 @@
       ]
     },
     {
+      "name": "IX_Program_EducationOrganization_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_Program_ProgramTypeDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -17738,6 +18374,18 @@
       ]
     },
     {
+      "name": "IX_ProgramEvaluation_ProgramProgram_EducationOrganiz_10ea1f2b12",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramEvaluation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "ProgramProgram_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_ProgramEvaluation_ProgramProgram_ProgramTypeDescr_16081c538e",
       "table": {
         "schema": "edfi",
@@ -17792,6 +18440,18 @@
         "ProgramProgram_EducationOrganizationId",
         "ProgramProgram_ProgramName",
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_ProgramEvaluationElement_ProgramEducationOrganiza_4723285757",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramEvaluationElement"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "ProgramEducationOrganizationId_Unified"
       ]
     },
     {
@@ -18051,6 +18711,18 @@
       "is_unique": false,
       "key_columns": [
         "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+      ]
+    },
+    {
+      "name": "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_bbf3d7ab70",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramEvaluationObjective"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "ProgramEvaluation_ProgramEducationOrganizationId"
       ]
     },
     {
@@ -18359,6 +19031,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_ReportCard_EducationOrganization_EducationOrganiz_4385b3212f",
+      "table": {
+        "schema": "edfi",
+        "name": "ReportCard"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -18687,6 +19371,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationalEnvironmentDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_RestraintEvent_SchoolId_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "RestraintEvent"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SchoolId_Unified"
       ]
     },
     {
@@ -19748,6 +20444,18 @@
       ]
     },
     {
+      "name": "IX_Section_SchoolId_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Section"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SchoolId_Unified"
+      ]
+    },
+    {
       "name": "IX_Section_SectionTypeDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -19815,6 +20523,18 @@
         "SchoolId_Unified",
         "SchoolYear_Unified",
         "CalendarDate_Date"
+      ]
+    },
+    {
+      "name": "IX_SectionAttendanceTakenEvent_SchoolId_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SectionAttendanceTakenEvent"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SchoolId_Unified"
       ]
     },
     {
@@ -20162,6 +20882,18 @@
       "is_unique": false,
       "key_columns": [
         "School_DocumentId",
+        "School_SchoolId"
+      ]
+    },
+    {
+      "name": "IX_Session_School_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "Session"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "School_SchoolId"
       ]
     },
@@ -20770,6 +21502,18 @@
       ]
     },
     {
+      "name": "IX_StaffCohortAssociation_Cohort_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffCohortAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Cohort_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_StaffCohortAssociation_Staff_DocumentId_Staff_StaffUniqueId",
       "table": {
         "schema": "edfi",
@@ -20870,6 +21614,18 @@
       "key_columns": [
         "Staff_DocumentId",
         "Ordinal"
+      ]
+    },
+    {
+      "name": "IX_StaffDisciplineIncidentAssociation_DisciplineInci_33bd5cd4d2",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffDisciplineIncidentAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "DisciplineIncident_SchoolId"
       ]
     },
     {
@@ -21042,6 +21798,21 @@
       ]
     },
     {
+      "name": "IX_StaffEducationOrganizationAssignmentAssociation_E_dc5ebb2136",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffEducationOrganizationAssignmentAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ],
+      "include_columns": [
+        "Staff_DocumentId"
+      ]
+    },
+    {
       "name": "IX_StaffEducationOrganizationAssignmentAssociation_S_c293315cea",
       "table": {
         "schema": "edfi",
@@ -21167,6 +21938,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StaffEducationOrganizationContactAssociation_Educ_ac57af64ae",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffEducationOrganizationContactAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -21335,6 +22118,21 @@
       "key_columns": [
         "EducationOrganization_DocumentId",
         "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StaffEducationOrganizationEmploymentAssociation_E_96136cdc3a",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffEducationOrganizationEmploymentAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ],
+      "include_columns": [
+        "Staff_DocumentId"
       ]
     },
     {
@@ -22163,6 +22961,18 @@
       ]
     },
     {
+      "name": "IX_StaffSchoolAssociation_SchoolId_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffSchoolAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SchoolId_Unified"
+      ]
+    },
+    {
       "name": "IX_StaffSchoolAssociation_SchoolYear_DocumentId_Scho_f08589e459",
       "table": {
         "schema": "edfi",
@@ -22354,6 +23164,18 @@
         "Section_SchoolYear",
         "Section_SessionName",
         "Section_SectionIdentifier"
+      ]
+    },
+    {
+      "name": "IX_StaffSectionAssociation_Section_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffSectionAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Section_SchoolId"
       ]
     },
     {
@@ -23325,6 +24147,18 @@
       ]
     },
     {
+      "name": "IX_StudentAcademicRecord_EducationOrganization_Educa_525d72c0aa",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAcademicRecord"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_StudentAcademicRecord_SchoolYear_DocumentId_Schoo_9101ee872a",
       "table": {
         "schema": "edfi",
@@ -23786,6 +24620,18 @@
       ]
     },
     {
+      "name": "IX_StudentAssessment_Assessment_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessment"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Assessment_Namespace"
+      ]
+    },
+    {
       "name": "IX_StudentAssessment_EventCircumstanceDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -23843,6 +24689,18 @@
       "is_unique": false,
       "key_columns": [
         "ReportedSchool_DocumentId",
+        "ReportedSchool_SchoolId"
+      ]
+    },
+    {
+      "name": "IX_StudentAssessment_ReportedSchool_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessment"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "ReportedSchool_SchoolId"
       ]
     },
@@ -24002,6 +24860,30 @@
       ]
     },
     {
+      "name": "IX_StudentAssessmentEducationOrganizationAssociation_4de18bac1b",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentEducationOrganizationAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StudentAssessmentEducationOrganizationAssociation_9c99996727",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentEducationOrganizationAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "StudentAssessment_Namespace"
+      ]
+    },
+    {
       "name": "IX_StudentAssessmentEducationOrganizationAssociation_e3ece8a4e8",
       "table": {
         "schema": "edfi",
@@ -24078,6 +24960,18 @@
       "is_unique": false,
       "key_columns": [
         "ResponseIndicatorDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_StudentAssessmentItem_StudentAssessmentItemAssess_849300e440",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentItem"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "StudentAssessmentItemAssessmentItem_Namespace"
       ]
     },
     {
@@ -24197,6 +25091,18 @@
       ]
     },
     {
+      "name": "IX_StudentAssessmentRegistration_AssessmentAdministr_4c2e64d9e7",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentRegistration"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "AssessmentAdministration_Namespace"
+      ]
+    },
+    {
       "name": "IX_StudentAssessmentRegistration_AssessmentAdministr_bfeaf322e9",
       "table": {
         "schema": "edfi",
@@ -24275,6 +25181,18 @@
         "StudentEducationOrganizationAssociation_DocumentId",
         "StudentEducationOrganizationAssociation_EducationOrganizationId",
         "StudentUniqueId_Unified"
+      ]
+    },
+    {
+      "name": "IX_StudentAssessmentRegistration_StudentEducationOrg_68c6b3c00f",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentRegistration"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "StudentEducationOrganizationAssociation_EducationOrganizationId"
       ]
     },
     {
@@ -24437,6 +25355,18 @@
       ]
     },
     {
+      "name": "IX_StudentAssessmentRegistrationBatteryPartAssociati_6b002a2866",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentRegistrationBatteryPartAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "StudentAssessmentRegistration_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_StudentAssessmentRegistrationBatteryPartAssociati_b3f96da127",
       "table": {
         "schema": "edfi",
@@ -24467,6 +25397,18 @@
         "Namespace_Unified",
         "StudentAssessmentRegistration_EducationOrganizationId",
         "StudentAssessmentRegistration_StudentUniqueId"
+      ]
+    },
+    {
+      "name": "IX_StudentAssessmentRegistrationBatteryPartAssociati_dc158ce025",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentRegistrationBatteryPartAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace_Unified"
       ]
     },
     {
@@ -24604,6 +25546,18 @@
       "key_columns": [
         "StudentAssessment_DocumentId",
         "Ordinal"
+      ]
+    },
+    {
+      "name": "IX_StudentAssessmentStudentObjectiveAssessment_Stude_1c600fbf33",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentStudentObjectiveAssessment"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "StudentObjectiveAssessmentObjectiveAssessment_Namespace"
       ]
     },
     {
@@ -24824,6 +25778,18 @@
       ]
     },
     {
+      "name": "IX_StudentCTEProgramAssociation_EducationOrganizatio_414d23dc2f",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentCTEProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_StudentCTEProgramAssociation_EducationOrganizatio_49d2cfb257",
       "table": {
         "schema": "edfi",
@@ -25039,6 +26005,18 @@
       "key_columns": [
         "Cohort_DocumentId",
         "Cohort_CohortIdentifier",
+        "Cohort_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StudentCohortAssociation_Cohort_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentCohortAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "Cohort_EducationOrganizationId"
       ]
     },
@@ -25413,6 +26391,21 @@
       ]
     },
     {
+      "name": "IX_StudentContactAssociation_Student_DocumentId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentContactAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Student_DocumentId"
+      ],
+      "include_columns": [
+        "Contact_DocumentId"
+      ]
+    },
+    {
       "name": "IX_StudentContactAssociation_Student_DocumentId_Stud_838ffe753b",
       "table": {
         "schema": "edfi",
@@ -25462,6 +26455,18 @@
         "DocumentId",
         "Contact_ContactUniqueId",
         "Student_StudentUniqueId"
+      ]
+    },
+    {
+      "name": "IX_StudentDisciplineIncidentBehaviorAssociation_Disc_b4c3146661",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentDisciplineIncidentBehaviorAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "DisciplineIncident_SchoolId"
       ]
     },
     {
@@ -25648,6 +26653,18 @@
       ]
     },
     {
+      "name": "IX_StudentDisciplineIncidentNonOffenderAssociation_D_d657c697fd",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentDisciplineIncidentNonOffenderAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "DisciplineIncident_SchoolId"
+      ]
+    },
+    {
       "name": "IX_StudentDisciplineIncidentNonOffenderAssociation_S_6ad903f070",
       "table": {
         "schema": "edfi",
@@ -25762,6 +26779,18 @@
       ]
     },
     {
+      "name": "IX_StudentEducationOrganizationAssessmentAccommodati_93f786eb06",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssessmentAccommodation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "PK_StudentEducationOrganizationAssessmentAccommodation",
       "table": {
         "schema": "edfi",
@@ -25872,6 +26901,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StudentEducationOrganizationAssociation_Education_e2967b88a9",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -27188,6 +28229,21 @@
       ]
     },
     {
+      "name": "IX_StudentEducationOrganizationResponsibilityAssocia_e83f6d6aca",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationResponsibilityAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ],
+      "include_columns": [
+        "Student_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentEducationOrganizationResponsibilityAssociation",
       "table": {
         "schema": "edfi",
@@ -27253,6 +28309,18 @@
       ]
     },
     {
+      "name": "IX_StudentGradebookEntry_GradebookEntry_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentGradebookEntry"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "GradebookEntry_Namespace"
+      ]
+    },
+    {
       "name": "IX_StudentGradebookEntry_Student_DocumentId_Student__0e098f5049",
       "table": {
         "schema": "edfi",
@@ -27312,6 +28380,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StudentHealth_EducationOrganization_EducationOrga_01ecd04719",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentHealth"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -27579,6 +28659,18 @@
       "key_columns": [
         "ParentCollectionItemId",
         "Ordinal"
+      ]
+    },
+    {
+      "name": "IX_StudentHomelessProgramAssociation_EducationOrgani_7b484c73c2",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentHomelessProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -27890,6 +28982,18 @@
       ]
     },
     {
+      "name": "IX_StudentInterventionAssociation_Intervention_Educa_24864c0613",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentInterventionAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Intervention_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_StudentInterventionAssociation_Student_DocumentId_03933b8db3",
       "table": {
         "schema": "edfi",
@@ -28042,6 +29146,18 @@
       ]
     },
     {
+      "name": "IX_StudentInterventionAttendanceEvent_Intervention_E_f84c5d258a",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentInterventionAttendanceEvent"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Intervention_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_StudentInterventionAttendanceEvent_Student_Docume_ddfabea06d",
       "table": {
         "schema": "edfi",
@@ -28091,6 +29207,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StudentLanguageInstructionProgramAssociation_Educ_bd67e2f5a6",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentLanguageInstructionProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -28399,6 +29527,18 @@
       ]
     },
     {
+      "name": "IX_StudentMigrantEducationProgramAssociation_Educati_ad9da3e674",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentMigrantEducationProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_StudentMigrantEducationProgramAssociation_Program_c904b1f991",
       "table": {
         "schema": "edfi",
@@ -28576,6 +29716,18 @@
       "key_columns": [
         "StudentMigrantEducationProgramAssociation_DocumentId",
         "Ordinal"
+      ]
+    },
+    {
+      "name": "IX_StudentNeglectedOrDelinquentProgramAssociation_Ed_5772886723",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentNeglectedOrDelinquentProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -28946,6 +30098,18 @@
       ]
     },
     {
+      "name": "IX_StudentProgramAssociation_EducationOrganization_E_68167ca6f9",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_StudentProgramAssociation_ProgramProgram_Document_937d6d2006",
       "table": {
         "schema": "edfi",
@@ -29153,6 +30317,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StudentProgramAttendanceEvent_EducationOrganizati_9b81579ba6",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentProgramAttendanceEvent"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -29780,6 +30956,21 @@
       ]
     },
     {
+      "name": "IX_StudentSchoolAssociation_SchoolId_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SchoolId_Unified"
+      ],
+      "include_columns": [
+        "Student_DocumentId"
+      ]
+    },
+    {
       "name": "IX_StudentSchoolAssociation_SchoolYear_DocumentId_Sc_8da6286496",
       "table": {
         "schema": "edfi",
@@ -29987,6 +31178,18 @@
       ]
     },
     {
+      "name": "IX_StudentSchoolAttendanceEvent_SchoolId_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolAttendanceEvent"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SchoolId_Unified"
+      ]
+    },
+    {
       "name": "IX_StudentSchoolAttendanceEvent_School_DocumentId_Sc_4eb7cf3d94",
       "table": {
         "schema": "edfi",
@@ -30053,6 +31256,18 @@
         "School_DocumentId",
         "Session_DocumentId",
         "Student_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_StudentSchoolFoodServiceProgramAssociation_Educat_82136641ed",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolFoodServiceProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -30258,6 +31473,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StudentSection504ProgramAssociation_EducationOrga_dceab2e224",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSection504ProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -30482,6 +31709,18 @@
       ]
     },
     {
+      "name": "IX_StudentSectionAssociation_Section_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSectionAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Section_SchoolId"
+      ]
+    },
+    {
       "name": "IX_StudentSectionAssociation_Student_DocumentId_Stud_814a8ced21",
       "table": {
         "schema": "edfi",
@@ -30634,6 +31873,18 @@
       ]
     },
     {
+      "name": "IX_StudentSectionAttendanceEvent_Section_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSectionAttendanceEvent"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Section_SchoolId"
+      ]
+    },
+    {
       "name": "IX_StudentSectionAttendanceEvent_Student_DocumentId__6aa7c55c2a",
       "table": {
         "schema": "edfi",
@@ -30723,6 +31974,18 @@
       "key_columns": [
         "StudentSectionAttendanceEvent_DocumentId",
         "Ordinal"
+      ]
+    },
+    {
+      "name": "IX_StudentSpecialEducationProgramAssociation_Educati_1ca44c4444",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSpecialEducationProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -31236,6 +32499,18 @@
       ]
     },
     {
+      "name": "IX_StudentSpecialEducationProgramEligibilityAssociat_295f59b75d",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSpecialEducationProgramEligibilityAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_StudentSpecialEducationProgramEligibilityAssociat_3d0b75dc49",
       "table": {
         "schema": "edfi",
@@ -31334,6 +32609,18 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_StudentTitleIPartAProgramAssociation_EducationOrg_07a40d1c98",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentTitleIPartAProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -31885,6 +33172,18 @@
       ]
     },
     {
+      "name": "IX_SurveyCourseAssociation_Course_EducationOrganizationId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyCourseAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Course_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_SurveyCourseAssociation_Survey_DocumentId_Survey__8e8a2bf8db",
       "table": {
         "schema": "edfi",
@@ -31896,6 +33195,18 @@
         "Survey_DocumentId",
         "Survey_Namespace",
         "Survey_SurveyIdentifier"
+      ]
+    },
+    {
+      "name": "IX_SurveyCourseAssociation_Survey_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyCourseAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Survey_Namespace"
       ]
     },
     {
@@ -31939,6 +33250,18 @@
       ]
     },
     {
+      "name": "IX_SurveyProgramAssociation_Program_EducationOrganiz_24093b3ee8",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Program_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_SurveyProgramAssociation_Program_ProgramTypeDescr_073a0f790d",
       "table": {
         "schema": "edfi",
@@ -31965,6 +33288,18 @@
       ]
     },
     {
+      "name": "IX_SurveyProgramAssociation_Survey_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Survey_Namespace"
+      ]
+    },
+    {
       "name": "PK_SurveyProgramAssociation",
       "table": {
         "schema": "edfi",
@@ -31987,6 +33322,18 @@
       "key_columns": [
         "Program_DocumentId",
         "Survey_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_SurveyQuestion_Namespace_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyQuestion"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace_Unified"
       ]
     },
     {
@@ -32106,6 +33453,18 @@
       "key_columns": [
         "SurveyQuestion_DocumentId",
         "Ordinal"
+      ]
+    },
+    {
+      "name": "IX_SurveyQuestionResponse_Namespace_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyQuestionResponse"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace_Unified"
       ]
     },
     {
@@ -32331,6 +33690,18 @@
       ]
     },
     {
+      "name": "IX_SurveyResponse_Survey_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyResponse"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Survey_Namespace"
+      ]
+    },
+    {
       "name": "PK_SurveyResponse",
       "table": {
         "schema": "edfi",
@@ -32399,6 +33770,30 @@
       ]
     },
     {
+      "name": "IX_SurveyResponseEducationOrganizationTargetAssociat_961ac12205",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyResponseEducationOrganizationTargetAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SurveyResponse_Namespace"
+      ]
+    },
+    {
+      "name": "IX_SurveyResponseEducationOrganizationTargetAssociat_f0bf597951",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyResponseEducationOrganizationTargetAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "PK_SurveyResponseEducationOrganizationTargetAssociation",
       "table": {
         "schema": "edfi",
@@ -32434,6 +33829,18 @@
       "key_columns": [
         "Staff_DocumentId",
         "Staff_StaffUniqueId"
+      ]
+    },
+    {
+      "name": "IX_SurveyResponseStaffTargetAssociation_SurveyRespon_640eafdaca",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyResponseStaffTargetAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "SurveyResponse_Namespace"
       ]
     },
     {
@@ -32541,6 +33948,18 @@
       ]
     },
     {
+      "name": "IX_SurveySection_Survey_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySection"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Survey_Namespace"
+      ]
+    },
+    {
       "name": "PK_SurveySection",
       "table": {
         "schema": "edfi",
@@ -32598,6 +34017,18 @@
       ]
     },
     {
+      "name": "IX_SurveySectionAssociation_Section_SchoolId_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Section_SchoolId"
+      ]
+    },
+    {
       "name": "IX_SurveySectionAssociation_Survey_DocumentId_Survey_d96de0fe97",
       "table": {
         "schema": "edfi",
@@ -32609,6 +34040,18 @@
         "Survey_DocumentId",
         "Survey_Namespace",
         "Survey_SurveyIdentifier"
+      ]
+    },
+    {
+      "name": "IX_SurveySectionAssociation_Survey_Namespace_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Survey_Namespace"
       ]
     },
     {
@@ -32634,6 +34077,18 @@
       "key_columns": [
         "Section_DocumentId",
         "Survey_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_SurveySectionResponse_Namespace_Unified_Auth",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionResponse"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace_Unified"
       ]
     },
     {
@@ -32724,6 +34179,18 @@
       ]
     },
     {
+      "name": "IX_SurveySectionResponseEducationOrganizationTargetA_73a1e7e0d2",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionResponseEducationOrganizationTargetAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_SurveySectionResponseEducationOrganizationTargetA_afaa55b052",
       "table": {
         "schema": "edfi",
@@ -32734,6 +34201,18 @@
       "key_columns": [
         "EducationOrganization_DocumentId",
         "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_SurveySectionResponseEducationOrganizationTargetA_d589c9b11c",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionResponseEducationOrganizationTargetAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace_Unified"
       ]
     },
     {
@@ -32759,6 +34238,18 @@
       "key_columns": [
         "EducationOrganization_DocumentId",
         "SurveySectionResponse_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_SurveySectionResponseStaffTargetAssociation_Names_f9c6e98310",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionResponseStaffTargetAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "Namespace_Unified"
       ]
     },
     {
@@ -33715,6 +35206,18 @@
       "is_unique": false,
       "key_columns": [
         "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_StudentArtProgramAssociation_EducationOrganizatio_6d370e0696",
+      "table": {
+        "schema": "sample",
+        "name": "StudentArtProgramAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
         "EducationOrganization_EducationOrganizationId"
       ]
     },
@@ -34860,6 +36363,18 @@
         "GraduationPlan_EducationOrganizationId",
         "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
         "GraduationPlan_GraduationSchoolYear"
+      ]
+    },
+    {
+      "name": "IX_StudentGraduationPlanAssociation_GraduationPlan_E_cf5e063dc0",
+      "table": {
+        "schema": "sample",
+        "name": "StudentGraduationPlanAssociation"
+      },
+      "kind": "Authorization",
+      "is_unique": false,
+      "key_columns": [
+        "GraduationPlan_EducationOrganizationId"
       ]
     },
     {

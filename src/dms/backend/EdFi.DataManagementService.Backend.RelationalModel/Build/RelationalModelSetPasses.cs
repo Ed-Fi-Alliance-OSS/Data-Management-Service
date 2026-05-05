@@ -57,6 +57,13 @@ public static class RelationalModelSetPasses
             // Auth hierarchy pass must follow trigger inventory so that concrete
             // resources, abstract identity tables, and union views are populated.
             new DeriveAuthHierarchyPass(),
+            // Authorization index pass must run after DeriveAuthHierarchyPass so all
+            // Authorization-classified entries are appended together, and before
+            // ApplyDialectIdentifierShorteningPass / CanonicalizeOrderingPass so the new
+            // indexes participate in dialect-aware shortening and canonical ordering.
+            new DeriveAuthorizationIndexInventoryPass(
+                throwOnMissingPaLiteral: includeCollectionSemanticIdentityValidation
+            ),
             new ApplyDialectIdentifierShorteningPass(),
             new CanonicalizeOrderingPass(),
         ];
