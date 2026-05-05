@@ -46,7 +46,7 @@ internal static class ProfileCollectionMatchedRowOverlay
     /// <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>. Supplied explicitly so
     /// the row-level classifier bypasses stored scope-state derivation.
     /// </param>
-    /// <param name="finalOrdinal">The position-derived ordinal (1-based) to stamp onto the row.</param>
+    /// <param name="finalOrdinal">The position-derived ordinal (0-based storage position) to stamp onto the row. DMS internal collection ordinals are 0-based storage positions, not Ed-Fi semantic sequence values.</param>
     /// <param name="parentPhysicalRowIdentityValues">
     /// The parent collection-row's physical identity values used to rewrite parent-key-part
     /// bindings. For top-level collections the parent is the root row; for nested

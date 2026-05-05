@@ -712,7 +712,7 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdent
         betaRow
             .CollectionItemId.Should()
             .Be(idByProgram[(Beta.ProgramId, Beta.ProgramName)], "Beta matched → same CollectionItemId");
-        betaRow.Ordinal.Should().Be(1);
+        betaRow.Ordinal.Should().Be(0);
 
         var gammaRow = after.Single(r => r.ProgramReferenceProgramId == Gamma.ProgramId);
         gammaRow
@@ -826,10 +826,10 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdent
         after.Should().HaveCount(2, "Alpha updated in-place + Gamma newly inserted");
         var alphaRow = after.Single(r => r.ProgramReferenceProgramId == Alpha.ProgramId);
         alphaRow.CollectionItemId.Should().Be(alphaId, "Alpha matched → same CollectionItemId");
-        alphaRow.Ordinal.Should().Be(1);
+        alphaRow.Ordinal.Should().Be(0);
 
         var gammaRow = after.Single(r => r.ProgramReferenceProgramId == Gamma.ProgramId);
-        gammaRow.Ordinal.Should().Be(2);
+        gammaRow.Ordinal.Should().Be(1);
         gammaRow.CollectionItemId.Should().BeGreaterThan(0);
         gammaRow.CollectionItemId.Should().NotBe(alphaId, "Gamma is a new row");
         gammaRow.ProgramReferenceProgramName.Should().Be(Gamma.ProgramName);

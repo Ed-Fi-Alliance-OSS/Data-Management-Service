@@ -663,15 +663,10 @@ internal abstract class CollectionShapeProfileGuardedNoOpFixtureBase
 
     protected override async Task ExecuteProfiledShapeCreateAsync(DocumentUuid documentUuid)
     {
-        // Slice 6 (DMS-1142) Task 8 — seed via the profiled POST path so the seeded rows
-        // land at the same 1-based ordinals the merge synthesizer would produce on the
-        // identical PUT. Seeding through the no-profile UpsertRequest path would produce
-        // 0-based ordinals, which then diverge from the PUT's merged 1-based ordinals
-        // and force the executor to issue collection DML — defeating the no-op invariant
-        // under test. The profile-vs-no-profile ordinal alignment question is itself a
-        // real cross-cutting concern, but it is Slice 7 (parity-and-hardening) scope; for
-        // this task we just need seed and PUT to use the SAME path so the assertion is
-        // genuinely "merge of same content == stored state."
+        // Seed via the profiled POST path so seed and PUT exercise the same code path.
+        // Cross-path no-op (no-profile create + profiled PUT) is covered separately in
+        // PostgresqlProfileGuardedNoOpOrdinalAlignmentTests; this fixture intentionally
+        // pins the same-path identity case.
         var writeBody = IdenticalRequestBody.DeepClone();
         var writePlan = _mappingSet.WritePlansByResource[
             PostgresqlProfileTopLevelCollectionMergeSupport.SchoolResource

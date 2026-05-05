@@ -412,7 +412,7 @@ internal sealed class ProfileCollectionWalker
 
             for (var i = 0; i < success.Plan.Sequence.Length; i++)
             {
-                var finalOrdinal = i + 1;
+                var finalOrdinal = i;
                 var entry = success.Plan.Sequence[i];
 
                 switch (entry)

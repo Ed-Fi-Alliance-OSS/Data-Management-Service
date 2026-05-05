@@ -3053,19 +3053,19 @@ public class Given_Synthesize_top_level_collection_create_new_with_all_inserts
         _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(2);
 
     [Test]
-    public void It_stamps_ordinal_1_on_first_row()
+    public void It_stamps_ordinal_on_first_row()
     {
         var ordinal = (FlattenedWriteValue.Literal)
             _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[2];
-        ordinal.Value.Should().Be(1);
+        ordinal.Value.Should().Be(0);
     }
 
     [Test]
-    public void It_stamps_ordinal_2_on_second_row()
+    public void It_stamps_ordinal_on_second_row()
     {
         var ordinal = (FlattenedWriteValue.Literal)
             _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[1].Values[2];
-        ordinal.Value.Should().Be(2);
+        ordinal.Value.Should().Be(1);
     }
 
     [Test]
@@ -3245,13 +3245,13 @@ public class Given_Synthesize_top_level_collection_with_matched_and_hidden_and_i
         _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(4);
 
     [Test]
-    public void It_stamps_ordinals_1_through_4()
+    public void It_stamps_ordinals_for_each_row()
     {
         var mergedRows = _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows;
         for (var i = 0; i < 4; i++)
         {
             var ordinal = (FlattenedWriteValue.Literal)mergedRows[i].Values[2];
-            ordinal.Value.Should().Be(i + 1, $"row {i} should have ordinal {i + 1}");
+            ordinal.Value.Should().Be(i, $"row {i} should have ordinal {i}");
         }
     }
 
@@ -6787,12 +6787,12 @@ public class Given_nested_base_collection_visible_row_update_with_hidden_row_pre
             DocumentId,
             parentRows:
             [
-                [ParentAItemId, DocumentId, 1, "A"],
+                [ParentAItemId, DocumentId, 0, "A"],
             ],
             childRows:
             [
-                [ChildA1ItemId, ParentAItemId, 1, "A1"],
-                [ChildA2HiddenItemId, ParentAItemId, 2, "A2"],
+                [ChildA1ItemId, ParentAItemId, 0, "A1"],
+                [ChildA2HiddenItemId, ParentAItemId, 1, "A2"],
             ]
         );
 
@@ -8835,7 +8835,7 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Identical_Val
     {
         // Adapted from Given_Synthesize_top_level_collection_with_matched_and_hidden_and_insert.
         // Reduced to a single visible matched item — V1 — with no inserts and no hidden interleaving.
-        // The single stored DB row has CollectionItemId=10, ParentDocumentId=345, Ordinal=1,
+        // The single stored DB row has CollectionItemId=10, ParentDocumentId=345, Ordinal=0,
         // IdentityField0="V1", which matches what the synthesizer's matched-update overlay
         // would produce on the merged row.
         var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
@@ -8857,7 +8857,7 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Identical_Val
         var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1]);
 
         // CollectionItemId, ParentDocumentId, Ordinal, IdentityField0
-        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
+        object?[] dbRowV1 = [10L, documentId, 0, "V1"];
 
         var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
             rootPlan,
@@ -9042,9 +9042,9 @@ public class Given_Synthesizer_RootExtensionChildCollection_All_Matched_With_Ide
             ]
         );
 
-        // Stored child row: [ChildItemId=901, DocumentId=345, Ordinal=1, Identity="C1"].
-        // Final ordinal recomputation pins the matched-update entry's ordinal to 1
-        // (single-item Sequence), so the stored ordinal must already be 1 for the
+        // Stored child row: [ChildItemId=901, DocumentId=345, Ordinal=0, Identity="C1"].
+        // Final ordinal recomputation pins the matched-update entry's ordinal to 0
+        // (single-item Sequence), so the stored ordinal must already be 0 for the
         // comparable-binding compare ([identity, ordinal]) to succeed.
         var currentState = RootExtensionChildCollectionTopologyBuilders.BuildCurrentState(
             plan,
@@ -9052,7 +9052,7 @@ public class Given_Synthesizer_RootExtensionChildCollection_All_Matched_With_Ide
             extensionRowValues: [RootExtensionDocumentId, "Blue"],
             childRows:
             [
-                [901L, RootExtensionDocumentId, 1, "C1"],
+                [901L, RootExtensionDocumentId, 0, "C1"],
             ]
         );
 
@@ -9187,9 +9187,9 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Hidden_Interl
     public void Setup()
     {
         // Adapted from Given_Synthesize_top_level_collection_with_matched_and_hidden_and_insert.
-        // Stored DB: [V1 ord 1, H ord 2 (hidden), V2 ord 3]. Request: [V1, V2] (no inserts,
+        // Stored DB: [V1 ord 0, H ord 1 (hidden), V2 ord 2]. Request: [V1, V2] (no inserts,
         // no deletes). The planner produces merged sequence [V1_overlay, H_preserve, V2_overlay]
-        // with stamped ordinals 1..3. Both CurrentRows and MergedRows must arrive at the
+        // with stamped ordinals 0..2. Both CurrentRows and MergedRows must arrive at the
         // builder in the same positional order [V1, H, V2] for IsNoOpCandidate's positional
         // SequenceEqual to fire — this is the property the fixture pins.
         var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
@@ -9218,9 +9218,9 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Hidden_Interl
         var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1, storedRowV2]);
 
         // CollectionItemId, ParentDocumentId, Ordinal, IdentityField0
-        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
-        object?[] dbRowH = [20L, documentId, 2, "H"];
-        object?[] dbRowV2 = [30L, documentId, 3, "V2"];
+        object?[] dbRowV1 = [10L, documentId, 0, "V1"];
+        object?[] dbRowH = [20L, documentId, 1, "H"];
+        object?[] dbRowV2 = [30L, documentId, 2, "V2"];
 
         var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
             rootPlan,

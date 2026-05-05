@@ -683,7 +683,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
             .ContainSingle()
             .Which.Should()
             .Match<ParentRow>(row =>
-                row.Ordinal == 1 && row.ParentCode == ParentCode && row.ParentName == "Created Parent"
+                row.Ordinal == 0 && row.ParentCode == ParentCode && row.ParentName == "Created Parent"
             );
 
     [Test]
@@ -1069,7 +1069,7 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_create_reque
     public void It_inserts_aligned_extension_child_rows_in_request_order()
     {
         _childRows.Select(r => r.ChildCode).Should().Equal("ChildA", "ChildB");
-        _childRows.Select(r => r.Ordinal).Should().Equal(1, 2);
+        _childRows.Select(r => r.Ordinal).Should().Equal(0, 1);
         _childRows.Select(r => r.ChildValue).Should().Equal("ValueA", "ValueB");
     }
 
@@ -1179,8 +1179,8 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     [Test]
     public void It_preserves_the_aligned_extension_child_ordinals()
     {
-        _childRowsAfterPut.Single(r => r.ChildCode == "ChildA").Ordinal.Should().Be(1);
-        _childRowsAfterPut.Single(r => r.ChildCode == "ChildB").Ordinal.Should().Be(2);
+        _childRowsAfterPut.Single(r => r.ChildCode == "ChildA").Ordinal.Should().Be(0);
+        _childRowsAfterPut.Single(r => r.ChildCode == "ChildB").Ordinal.Should().Be(1);
     }
 
     [Test]
@@ -1279,8 +1279,8 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     }
 
     [Test]
-    public void It_recomputes_the_surviving_aligned_extension_child_ordinal_to_one() =>
-        _childRowsAfterPut[0].Ordinal.Should().Be(1);
+    public void It_recomputes_the_surviving_aligned_extension_child_ordinal() =>
+        _childRowsAfterPut[0].Ordinal.Should().Be(0);
 }
 
 [TestFixture]
@@ -1377,7 +1377,7 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     public void It_assigns_aligned_extension_child_ordinals_in_new_request_order()
     {
         _childRowsAfterPut.Select(r => r.ChildCode).Should().Equal("ChildB", "ChildA", "ChildC");
-        _childRowsAfterPut.Select(r => r.Ordinal).Should().Equal(1, 2, 3);
+        _childRowsAfterPut.Select(r => r.Ordinal).Should().Equal(0, 1, 2);
     }
 
     [Test]
@@ -1489,7 +1489,7 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_create_reque
     public void It_inserts_nested_extension_child_rows_in_request_order()
     {
         _extensionChildRows.Select(r => r.ExtensionChildCode).Should().Equal("ExtChildAlpha", "ExtChildBeta");
-        _extensionChildRows.Select(r => r.Ordinal).Should().Equal(1, 2);
+        _extensionChildRows.Select(r => r.Ordinal).Should().Equal(0, 1);
         _extensionChildRows.Select(r => r.ExtensionChildValue).Should().Equal("AlphaValue", "BetaValue");
     }
 
@@ -1759,8 +1759,8 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
     }
 
     [Test]
-    public void It_recomputes_the_surviving_nested_extension_child_ordinal_to_one() =>
-        _extensionChildRowsAfterPut[0].Ordinal.Should().Be(1);
+    public void It_recomputes_the_surviving_nested_extension_child_ordinal() =>
+        _extensionChildRowsAfterPut[0].Ordinal.Should().Be(0);
 }
 
 [TestFixture]
@@ -1897,7 +1897,7 @@ internal class Given_a_Postgresql_ProfileCollectionAlignedExtension_update_reque
             .Select(r => r.ExtensionChildCode)
             .Should()
             .Equal("ExtChildBeta", "ExtChildAlpha", "ExtChildGamma");
-        _extensionChildRowsAfterPut.Select(r => r.Ordinal).Should().Equal(1, 2, 3);
+        _extensionChildRowsAfterPut.Select(r => r.Ordinal).Should().Equal(0, 1, 2);
     }
 
     [Test]
