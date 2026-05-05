@@ -1062,6 +1062,226 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Updat
 }
 
 /// <summary>
+/// Slice 6 (DMS-1142) Task 9 — profiled stale-compare retry on PUT. Seeds a
+/// non-profiled CREATE for the synthetic <c>ProfileRootOnlyMergeItem</c> target, then
+/// issues a profiled PUT carrying a byte-identical body so the post-merge effective
+/// rowset would otherwise match the stored rowset and the guarded no-op short-circuit
+/// would fire. The fixture wires a freshness checker that bumps the target document's
+/// <c>ContentVersion</c> on its first invocation only before delegating to the
+/// production checker, simulating a concurrent writer landing between the candidate
+/// detection and the freshness recheck on the executor's first attempt. The executor
+/// observes the stale row and emits a
+/// <see cref="RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare"/> attempt
+/// outcome, which the repository's two-attempt loop swallows and retries within the
+/// same scope. On the second attempt the same scoped checker instance no longer bumps
+/// (its single-shot guard tripped), the merged rowset matches the now-bumped stored
+/// rowset, and the executor returns success — mirroring the no-profile stale-compare
+/// sibling. Asserting <see cref="UpdateResult.UpdateSuccess"/> here pins the
+/// repository-level retry contract for profiled writes; the bumped
+/// <c>ContentVersion</c> persists because the post-success no-op short-circuit
+/// preserves the concurrent writer's bump.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Put
+    : RootOnlyShapeProfileGuardedNoOpFixtureBase
+{
+    private static readonly DocumentUuid DocumentUuid = new(
+        Guid.Parse("eeeeeeee-0000-0000-0000-000000000010")
+    );
+
+    private ProfileGuardedNoOpPersistedState _stateBeforeUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    protected override ServiceProvider CreateServiceProvider() => CreateStaleCompareServiceProvider();
+
+    protected override async Task SetUpTestAsync()
+    {
+        await ExecuteProfiledShapeCreateAsync(DocumentUuid);
+        _stateBeforeUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+
+        _updateResult = await ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid);
+
+        _stateAfterUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+    }
+
+    [Test]
+    public void It_retries_and_returns_update_success_after_the_profiled_no_op_compare_goes_stale()
+    {
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(DocumentUuid);
+    }
+
+    [Test]
+    public void It_preserves_the_persisted_state_aside_from_the_concurrent_content_version_bump()
+    {
+        // The freshness-checker bumper raises the stored Document.ContentVersion by one,
+        // which transitively fires the dms.TR_Document_Journal trigger and inserts a
+        // single DocumentChangeEvent row. Both moves are caused by the simulated
+        // concurrent writer — not by the executor's stale-retry no-op success path,
+        // which neither persists rowset content nor mutates Document metadata. We
+        // substitute the bumper's side-effects back to the before-state so the
+        // deep-equivalence assertion proves the no-op retry preserves every other
+        // field (ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt,
+        // RootRow, ResourceKeyId, DocumentUuid, DocumentId).
+        var adjustedAfterState = _stateAfterUpdate with
+        {
+            Document = _stateAfterUpdate.Document with
+            {
+                ContentVersion = _stateBeforeUpdate.Document.ContentVersion,
+            },
+            DocumentChangeEventCount = _stateBeforeUpdate.DocumentChangeEventCount,
+        };
+
+        adjustedAfterState.Should().BeEquivalentTo(_stateBeforeUpdate);
+    }
+
+    [Test]
+    public void It_bumps_the_content_version_by_exactly_one()
+    {
+        _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion + 1);
+    }
+
+    [Test]
+    public void It_emits_only_the_concurrent_writer_journal_row_and_no_executor_journal_row()
+    {
+        // The Document.ContentVersion bump from the freshness-checker simulated
+        // concurrent writer fires TR_Document_Journal exactly once. The executor's
+        // stale-retry no-op success branch must NOT persist any additional row,
+        // so the post-write journal row count is exactly before + 1.
+        _stateAfterUpdate
+            .DocumentChangeEventCount.Should()
+            .Be(_stateBeforeUpdate.DocumentChangeEventCount + 1);
+    }
+}
+
+/// <summary>
+/// Slice 6 (DMS-1142) Task 9 — profiled stale-compare retry on POST-as-update.
+/// Seeds a non-profiled CREATE for the synthetic <c>ProfileRootOnlyMergeItem</c> target,
+/// then issues a profiled <c>POST</c> with the SAME natural-identity body but a
+/// DIFFERENT incoming <see cref="DocumentUuid"/>, which the executor classifies as
+/// POST-as-update by semantic identity. The body is byte-identical to the seed so the
+/// merged effective rowset would otherwise match the stored rowset and the guarded
+/// no-op short-circuit would fire. The fixture wires the same single-shot bumping
+/// freshness checker as the PUT fixture; the first executor attempt observes the
+/// bumped row, emits <see cref="RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare"/>,
+/// and the repository retries within the same scope. On the second attempt the
+/// scoped checker no longer bumps and the no-op succeeds against the bumped stored
+/// rowset — yielding <see cref="UpsertResult.UpdateSuccess"/> with the EXISTING
+/// document's UUID (the incoming UUID must NOT be inserted) and the bumped
+/// <c>ContentVersion</c> preserved.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Update
+    : RootOnlyShapeProfileGuardedNoOpFixtureBase
+{
+    private static readonly DocumentUuid ExistingDocumentUuid = new(
+        Guid.Parse("eeeeeeee-0000-0000-0000-000000000011")
+    );
+    private static readonly DocumentUuid IncomingDocumentUuid = new(
+        Guid.Parse("eeeeeeee-0000-0000-0000-000000000012")
+    );
+
+    private ProfileGuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
+    private UpsertResult _postAsUpdateResult = null!;
+    private long _incomingDocumentUuidRowCount;
+
+    protected override ServiceProvider CreateServiceProvider() => CreateStaleCompareServiceProvider();
+
+    protected override async Task SetUpTestAsync()
+    {
+        await ExecuteProfiledShapeCreateAsync(ExistingDocumentUuid);
+        _stateBeforePostAsUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingDocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+
+        _postAsUpdateResult = await ExecuteProfiledShapePostAsUpdateAsync(IncomingDocumentUuid);
+
+        _stateAfterPostAsUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingDocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+        _incomingDocumentUuidRowCount = await CountDocumentRowsByUuidAsync(IncomingDocumentUuid.Value);
+    }
+
+    [Test]
+    public void It_retries_and_returns_update_success_after_the_profiled_no_op_compare_goes_stale()
+    {
+        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        _postAsUpdateResult
+            .As<UpsertResult.UpdateSuccess>()
+            .ExistingDocumentUuid.Should()
+            .Be(ExistingDocumentUuid);
+    }
+
+    [Test]
+    public void It_does_not_insert_the_incoming_document_uuid()
+    {
+        _incomingDocumentUuidRowCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_preserves_the_persisted_state_aside_from_the_concurrent_content_version_bump()
+    {
+        // The freshness-checker bumper raises the stored Document.ContentVersion by one,
+        // which transitively fires the dms.TR_Document_Journal trigger and inserts a
+        // single DocumentChangeEvent row. Both moves are caused by the simulated
+        // concurrent writer — not by the executor's stale-retry no-op success path,
+        // which neither persists rowset content nor mutates Document metadata. We
+        // substitute the bumper's side-effects back to the before-state so the
+        // deep-equivalence assertion proves the no-op retry preserves every other
+        // field (ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt,
+        // RootRow, ResourceKeyId, DocumentUuid, DocumentId).
+        var adjustedAfterState = _stateAfterPostAsUpdate with
+        {
+            Document = _stateAfterPostAsUpdate.Document with
+            {
+                ContentVersion = _stateBeforePostAsUpdate.Document.ContentVersion,
+            },
+            DocumentChangeEventCount = _stateBeforePostAsUpdate.DocumentChangeEventCount,
+        };
+
+        adjustedAfterState.Should().BeEquivalentTo(_stateBeforePostAsUpdate);
+    }
+
+    [Test]
+    public void It_bumps_the_content_version_by_exactly_one()
+    {
+        _stateAfterPostAsUpdate
+            .Document.ContentVersion.Should()
+            .Be(_stateBeforePostAsUpdate.Document.ContentVersion + 1);
+    }
+
+    [Test]
+    public void It_emits_only_the_concurrent_writer_journal_row_and_no_executor_journal_row()
+    {
+        // The Document.ContentVersion bump from the freshness-checker simulated
+        // concurrent writer fires TR_Document_Journal exactly once. The executor's
+        // stale-retry no-op success branch must NOT persist any additional row,
+        // so the post-write journal row count is exactly before + 1.
+        _stateAfterPostAsUpdate
+            .DocumentChangeEventCount.Should()
+            .Be(_stateBeforePostAsUpdate.DocumentChangeEventCount + 1);
+    }
+}
+
+/// <summary>
 /// Slice 6 (DMS-1142) Task 7 — profiled separate-table PUT guarded no-op. Seeds a
 /// non-profiled CREATE for the synthetic <c>ProfileSeparateTableMergeItem</c> target
 /// (root row plus a populated <c>sample.ProfileSeparateTableMergeItemExtension</c>
