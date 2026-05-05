@@ -22,6 +22,64 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
+          },
+          "descriptor_query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [
+              {
+                "query_field_name": "codeValue",
+                "target": {
+                  "kind": "code_value",
+                  "column_name": "CodeValue"
+                }
+              },
+              {
+                "query_field_name": "description",
+                "target": {
+                  "kind": "description",
+                  "column_name": "Description"
+                }
+              },
+              {
+                "query_field_name": "effectiveBeginDate",
+                "target": {
+                  "kind": "effective_begin_date",
+                  "column_name": "EffectiveBeginDate"
+                }
+              },
+              {
+                "query_field_name": "effectiveEndDate",
+                "target": {
+                  "kind": "effective_end_date",
+                  "column_name": "EffectiveEndDate"
+                }
+              },
+              {
+                "query_field_name": "id",
+                "target": {
+                  "kind": "document_uuid",
+                  "column_name": null
+                }
+              },
+              {
+                "query_field_name": "namespace",
+                "target": {
+                  "kind": "namespace",
+                  "column_name": "Namespace"
+                }
+              },
+              {
+                "query_field_name": "shortDescription",
+                "target": {
+                  "kind": "short_description",
+                  "column_name": "ShortDescription"
+                }
+              }
+            ]
           }
         },
         {
@@ -155,7 +213,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -245,7 +304,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -421,7 +481,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -600,7 +661,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         }
       ]
     },
@@ -626,6 +688,64 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
+          },
+          "descriptor_query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [
+              {
+                "query_field_name": "codeValue",
+                "target": {
+                  "kind": "code_value",
+                  "column_name": "CodeValue"
+                }
+              },
+              {
+                "query_field_name": "description",
+                "target": {
+                  "kind": "description",
+                  "column_name": "Description"
+                }
+              },
+              {
+                "query_field_name": "effectiveBeginDate",
+                "target": {
+                  "kind": "effective_begin_date",
+                  "column_name": "EffectiveBeginDate"
+                }
+              },
+              {
+                "query_field_name": "effectiveEndDate",
+                "target": {
+                  "kind": "effective_end_date",
+                  "column_name": "EffectiveEndDate"
+                }
+              },
+              {
+                "query_field_name": "id",
+                "target": {
+                  "kind": "document_uuid",
+                  "column_name": null
+                }
+              },
+              {
+                "query_field_name": "namespace",
+                "target": {
+                  "kind": "namespace",
+                  "column_name": "Namespace"
+                }
+              },
+              {
+                "query_field_name": "shortDescription",
+                "target": {
+                  "kind": "short_description",
+                  "column_name": "ShortDescription"
+                }
+              }
+            ]
           }
         },
         {
@@ -759,7 +879,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -849,7 +970,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -1025,7 +1147,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -1204,7 +1327,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         }
       ]
     }

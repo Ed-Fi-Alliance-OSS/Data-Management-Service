@@ -178,7 +178,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -195,6 +196,14 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
+          },
+          "descriptor_query_capability": {
+            "support": {
+              "kind": "omitted",
+              "omission_kind": "api_schema_mismatch",
+              "reason": "ApiSchema queryFieldMapping disagrees with the shared descriptor query contract: missing fields: \u0027id\u0027, \u0027namespace\u0027, \u0027codeValue\u0027, \u0027shortDescription\u0027, \u0027description\u0027, \u0027effectiveBeginDate\u0027, \u0027effectiveEndDate\u0027."
+            },
+            "supported_fields_in_query_field_order": []
           }
         }
       ]
@@ -377,7 +386,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -394,6 +404,14 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
+          },
+          "descriptor_query_capability": {
+            "support": {
+              "kind": "omitted",
+              "omission_kind": "api_schema_mismatch",
+              "reason": "ApiSchema queryFieldMapping disagrees with the shared descriptor query contract: missing fields: \u0027id\u0027, \u0027namespace\u0027, \u0027codeValue\u0027, \u0027shortDescription\u0027, \u0027description\u0027, \u0027effectiveBeginDate\u0027, \u0027effectiveEndDate\u0027."
+            },
+            "supported_fields_in_query_field_order": []
           }
         }
       ]

@@ -91,6 +91,9 @@ internal static class MappingSetManifestJsonEmitter
             writer.WritePropertyName("query_capability");
             WriteQueryCapabilityDiagnosticSummary(writer, GetQueryCapabilityOrThrow(mappingSet, resource));
 
+            writer.WritePropertyName("descriptor_query_capability");
+            WriteDescriptorQueryCapabilityDiagnosticSummaryOrNull(writer, mappingSet, resource);
+
             writer.WriteEndObject();
         }
 
@@ -306,6 +309,41 @@ internal static class MappingSetManifestJsonEmitter
         );
     }
 
+    private static void WriteDescriptorQueryCapabilityDiagnosticSummaryOrNull(
+        Utf8JsonWriter writer,
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        if (!mappingSet.TryGetDescriptorResourceModel(resource, out _))
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        WriteDescriptorQueryCapabilityDiagnosticSummary(
+            writer,
+            GetDescriptorQueryCapabilityOrThrow(mappingSet, resource)
+        );
+    }
+
+    private static DescriptorQueryCapability GetDescriptorQueryCapabilityOrThrow(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        if (mappingSet.DescriptorQueryCapabilitiesByResource.TryGetValue(resource, out var queryCapability))
+        {
+            return queryCapability;
+        }
+
+        throw new InvalidOperationException(
+            $"Mapping set manifest emission failed for resource '{resource.ProjectName}.{resource.ResourceName}' in mapping set "
+                + $"'{FormatMappingSetKey(mappingSet.Key)}': compiled descriptor query capability metadata is required for "
+                + "every SharedDescriptorTable resource, but no entry was found. This indicates an internal compilation/selection bug."
+        );
+    }
+
     private static void WriteQueryCapabilityDiagnosticSummary(
         Utf8JsonWriter writer,
         RelationalQueryCapability queryCapability
@@ -361,6 +399,36 @@ internal static class MappingSetManifestJsonEmitter
             }
 
             writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
+    private static void WriteDescriptorQueryCapabilityDiagnosticSummary(
+        Utf8JsonWriter writer,
+        DescriptorQueryCapability queryCapability
+    )
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("support");
+        WriteDescriptorQuerySupport(writer, queryCapability.Support);
+
+        writer.WritePropertyName("supported_fields_in_query_field_order");
+        writer.WriteStartArray();
+
+        foreach (
+            var supportedField in queryCapability.SupportedFieldsByQueryField.Values.OrderBy(
+                static field => field.QueryFieldName,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            writer.WriteStartObject();
+            writer.WriteString("query_field_name", supportedField.QueryFieldName);
+            writer.WritePropertyName("target");
+            WriteDescriptorQueryFieldTarget(writer, supportedField.Target);
             writer.WriteEndObject();
         }
 
@@ -429,6 +497,38 @@ internal static class MappingSetManifestJsonEmitter
         writer.WriteEndObject();
     }
 
+    private static void WriteDescriptorQuerySupport(Utf8JsonWriter writer, DescriptorQuerySupport support)
+    {
+        writer.WriteStartObject();
+
+        switch (support)
+        {
+            case DescriptorQuerySupport.Supported:
+                writer.WriteString("kind", "supported");
+                writer.WriteNull("omission_kind");
+                writer.WriteNull("reason");
+                break;
+
+            case DescriptorQuerySupport.Omitted omitted:
+                writer.WriteString("kind", "omitted");
+                writer.WriteString(
+                    "omission_kind",
+                    ToDescriptorQueryCapabilityOmissionKindToken(omitted.Omission.Kind)
+                );
+                writer.WriteString("reason", omitted.Omission.Reason);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(support),
+                    support.GetType().Name,
+                    "Unsupported descriptor query support state."
+                );
+        }
+
+        writer.WriteEndObject();
+    }
+
     private static void WriteQueryFieldTarget(Utf8JsonWriter writer, RelationalQueryFieldTarget target)
     {
         writer.WriteStartObject();
@@ -463,6 +563,61 @@ internal static class MappingSetManifestJsonEmitter
         writer.WriteEndObject();
     }
 
+    private static void WriteDescriptorQueryFieldTarget(
+        Utf8JsonWriter writer,
+        DescriptorQueryFieldTarget target
+    )
+    {
+        writer.WriteStartObject();
+
+        switch (target)
+        {
+            case DescriptorQueryFieldTarget.DocumentUuid:
+                writer.WriteString("kind", "document_uuid");
+                writer.WriteNull("column_name");
+                break;
+
+            case DescriptorQueryFieldTarget.Namespace descriptorNamespace:
+                writer.WriteString("kind", "namespace");
+                writer.WriteString("column_name", descriptorNamespace.Column.Value);
+                break;
+
+            case DescriptorQueryFieldTarget.CodeValue codeValue:
+                writer.WriteString("kind", "code_value");
+                writer.WriteString("column_name", codeValue.Column.Value);
+                break;
+
+            case DescriptorQueryFieldTarget.ShortDescription shortDescription:
+                writer.WriteString("kind", "short_description");
+                writer.WriteString("column_name", shortDescription.Column.Value);
+                break;
+
+            case DescriptorQueryFieldTarget.Description description:
+                writer.WriteString("kind", "description");
+                writer.WriteString("column_name", description.Column.Value);
+                break;
+
+            case DescriptorQueryFieldTarget.EffectiveBeginDate effectiveBeginDate:
+                writer.WriteString("kind", "effective_begin_date");
+                writer.WriteString("column_name", effectiveBeginDate.Column.Value);
+                break;
+
+            case DescriptorQueryFieldTarget.EffectiveEndDate effectiveEndDate:
+                writer.WriteString("kind", "effective_end_date");
+                writer.WriteString("column_name", effectiveEndDate.Column.Value);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(target),
+                    target.GetType().Name,
+                    "Unsupported descriptor query field target."
+                );
+        }
+
+        writer.WriteEndObject();
+    }
+
     private static void WriteQualifiedResourceName(Utf8JsonWriter writer, QualifiedResourceName resource)
     {
         writer.WriteStartObject();
@@ -489,6 +644,21 @@ internal static class MappingSetManifestJsonEmitter
                 nameof(omissionKind),
                 omissionKind,
                 "Unsupported relational query omission kind."
+            ),
+        };
+    }
+
+    private static string ToDescriptorQueryCapabilityOmissionKindToken(
+        DescriptorQueryCapabilityOmissionKind omissionKind
+    )
+    {
+        return omissionKind switch
+        {
+            DescriptorQueryCapabilityOmissionKind.ApiSchemaMismatch => "api_schema_mismatch",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(omissionKind),
+                omissionKind,
+                "Unsupported descriptor query omission kind."
             ),
         };
     }

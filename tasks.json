@@ -17,7 +17,7 @@
       "Update mapping-set manifest/golden tests to include descriptor query capability metadata and omission diagnostics.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "GET Authorization Plumbing",

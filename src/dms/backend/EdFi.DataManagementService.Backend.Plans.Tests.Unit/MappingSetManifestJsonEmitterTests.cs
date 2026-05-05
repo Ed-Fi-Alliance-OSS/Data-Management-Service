@@ -311,7 +311,7 @@ public class Given_MappingSetManifestJsonEmitter
     }
 
     [Test]
-    public void It_should_emit_descriptor_query_capability_omission_from_compiled_mapping_sets()
+    public void It_should_emit_relational_query_capability_omission_for_descriptor_resources_from_compiled_mapping_sets()
     {
         var summariesByDialect = ReadManifestQueryCapabilitySummariesByDialect(
             _manifest,
@@ -336,6 +336,128 @@ public class Given_MappingSetManifestJsonEmitter
             summariesByDialect[dialect].SupportedFields.Should().BeEmpty();
             summariesByDialect[dialect].UnsupportedFields.Should().BeEmpty();
         }
+    }
+
+    [Test]
+    public void It_should_emit_descriptor_query_capability_diagnostics_for_supported_descriptor_resources()
+    {
+        var summariesByDialect = ReadManifestDescriptorQueryCapabilitySummariesByDialect(
+            _manifest,
+            "Ed-Fi",
+            "AcademicSubjectDescriptor"
+        );
+
+        summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in summariesByDialect.Keys)
+        {
+            summariesByDialect[dialect]
+                .Should()
+                .BeEquivalentTo(
+                    new DescriptorQueryCapabilityDiagnosticSummary(
+                        new QuerySupportSummary("supported", null, null),
+                        [
+                            new SupportedDescriptorQueryFieldSummary(
+                                "codeValue",
+                                new DescriptorQueryFieldTargetSummary("code_value", "CodeValue")
+                            ),
+                            new SupportedDescriptorQueryFieldSummary(
+                                "description",
+                                new DescriptorQueryFieldTargetSummary("description", "Description")
+                            ),
+                            new SupportedDescriptorQueryFieldSummary(
+                                "effectiveBeginDate",
+                                new DescriptorQueryFieldTargetSummary(
+                                    "effective_begin_date",
+                                    "EffectiveBeginDate"
+                                )
+                            ),
+                            new SupportedDescriptorQueryFieldSummary(
+                                "effectiveEndDate",
+                                new DescriptorQueryFieldTargetSummary(
+                                    "effective_end_date",
+                                    "EffectiveEndDate"
+                                )
+                            ),
+                            new SupportedDescriptorQueryFieldSummary(
+                                "id",
+                                new DescriptorQueryFieldTargetSummary("document_uuid", null)
+                            ),
+                            new SupportedDescriptorQueryFieldSummary(
+                                "namespace",
+                                new DescriptorQueryFieldTargetSummary("namespace", "Namespace")
+                            ),
+                            new SupportedDescriptorQueryFieldSummary(
+                                "shortDescription",
+                                new DescriptorQueryFieldTargetSummary("short_description", "ShortDescription")
+                            ),
+                        ]
+                    ),
+                    options => options.WithStrictOrdering()
+                );
+        }
+    }
+
+    [Test]
+    public void It_should_emit_descriptor_query_capability_omission_diagnostics_for_descriptor_resources()
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
+        var mappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false)
+            .Select(mappingSet =>
+                ReplaceDescriptorQueryCapability(
+                    mappingSet,
+                    descriptorResource,
+                    new DescriptorQueryCapability(
+                        new DescriptorQuerySupport.Omitted(
+                            new DescriptorQueryCapabilityOmission(
+                                DescriptorQueryCapabilityOmissionKind.ApiSchemaMismatch,
+                                "ApiSchema queryFieldMapping disagrees with the shared descriptor query contract: missing fields: 'id'."
+                            )
+                        ),
+                        new Dictionary<string, SupportedDescriptorQueryField>(
+                            StringComparer.OrdinalIgnoreCase
+                        )
+                    )
+                )
+            )
+            .ToArray();
+        var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
+        var summariesByDialect = ReadManifestDescriptorQueryCapabilitySummariesByDialect(
+            manifest,
+            "Ed-Fi",
+            "AcademicSubjectDescriptor"
+        );
+
+        summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in summariesByDialect.Keys)
+        {
+            summariesByDialect[dialect]
+                .Should()
+                .Be(
+                    new DescriptorQueryCapabilityDiagnosticSummary(
+                        new QuerySupportSummary(
+                            "omitted",
+                            "api_schema_mismatch",
+                            "ApiSchema queryFieldMapping disagrees with the shared descriptor query contract: missing fields: 'id'."
+                        ),
+                        []
+                    )
+                );
+        }
+    }
+
+    [Test]
+    public void It_should_emit_null_descriptor_query_capability_for_non_descriptor_resources()
+    {
+        var descriptorQueryCapabilityNullByDialect = ReadDescriptorQueryCapabilityNullByDialect(
+            _manifest,
+            "Ed-Fi",
+            "Student"
+        );
+
+        descriptorQueryCapabilityNullByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+        descriptorQueryCapabilityNullByDialect.Values.Should().OnlyContain(static isNull => isNull);
     }
 
     [Test]
@@ -675,6 +797,25 @@ public class Given_MappingSetManifestJsonEmitter
         return mappingSet with
         {
             QueryCapabilitiesByResource = queryCapabilitiesByResource,
+        };
+    }
+
+    private static MappingSet ReplaceDescriptorQueryCapability(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DescriptorQueryCapability queryCapability
+    )
+    {
+        var descriptorQueryCapabilitiesByResource =
+            mappingSet.DescriptorQueryCapabilitiesByResource.ToDictionary(
+                entry => entry.Key,
+                entry => entry.Value
+            );
+        descriptorQueryCapabilitiesByResource[resource] = queryCapability;
+
+        return mappingSet with
+        {
+            DescriptorQueryCapabilitiesByResource = descriptorQueryCapabilitiesByResource,
         };
     }
 
@@ -1170,6 +1311,86 @@ public class Given_MappingSetManifestJsonEmitter
 
     private static IReadOnlyDictionary<
         string,
+        DescriptorQueryCapabilityDiagnosticSummary
+    > ReadManifestDescriptorQueryCapabilitySummariesByDialect(
+        string manifest,
+        string projectName,
+        string resourceName
+    )
+    {
+        Dictionary<string, DescriptorQueryCapabilityDiagnosticSummary> summariesByDialect = [];
+
+        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
+        {
+            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
+
+            if (dialect is null)
+            {
+                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
+            }
+
+            var resource = FindResource(mappingSetObject, projectName, resourceName);
+            var descriptorQueryCapability = RequireObject(
+                resource["descriptor_query_capability"],
+                "descriptor_query_capability"
+            );
+            var support = ReadQuerySupportSummary(
+                RequireObject(descriptorQueryCapability["support"], "support")
+            );
+            var supportedFields = RequireArray(
+                descriptorQueryCapability["supported_fields_in_query_field_order"],
+                "supported_fields_in_query_field_order"
+            );
+
+            summariesByDialect[dialect] = new DescriptorQueryCapabilityDiagnosticSummary(
+                support,
+                supportedFields
+                    .Select(fieldNode =>
+                        ReadSupportedDescriptorQueryFieldSummary(
+                            RequireObject(fieldNode, "supported_fields_in_query_field_order entry")
+                        )
+                    )
+                    .ToArray()
+            );
+        }
+
+        return summariesByDialect;
+    }
+
+    private static IReadOnlyDictionary<string, bool> ReadDescriptorQueryCapabilityNullByDialect(
+        string manifest,
+        string projectName,
+        string resourceName
+    )
+    {
+        Dictionary<string, bool> descriptorQueryCapabilityNullByDialect = [];
+
+        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
+        {
+            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
+
+            if (dialect is null)
+            {
+                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
+            }
+
+            var resource = FindResource(mappingSetObject, projectName, resourceName);
+
+            if (!resource.ContainsKey("descriptor_query_capability"))
+            {
+                throw new InvalidOperationException(
+                    "Manifest resource entries must contain descriptor_query_capability property."
+                );
+            }
+
+            descriptorQueryCapabilityNullByDialect[dialect] = resource["descriptor_query_capability"] is null;
+        }
+
+        return descriptorQueryCapabilityNullByDialect;
+    }
+
+    private static IReadOnlyDictionary<
+        string,
         IReadOnlyList<string>
     > ReadManifestKeyUnificationMemberPathsByDialect(string manifest, string projectName, string resourceName)
     {
@@ -1646,6 +1867,24 @@ public class Given_MappingSetManifestJsonEmitter
         );
     }
 
+    private static SupportedDescriptorQueryFieldSummary ReadSupportedDescriptorQueryFieldSummary(
+        JsonObject field
+    )
+    {
+        return new SupportedDescriptorQueryFieldSummary(
+            RequireString(field, "query_field_name"),
+            ReadDescriptorQueryFieldTargetSummary(RequireObject(field["target"], "target"))
+        );
+    }
+
+    private static DescriptorQueryFieldTargetSummary ReadDescriptorQueryFieldTargetSummary(JsonObject target)
+    {
+        return new DescriptorQueryFieldTargetSummary(
+            RequireString(target, "kind"),
+            ReadOptionalString(target, "column_name")
+        );
+    }
+
     private static UnsupportedQueryFieldSummary ReadUnsupportedQueryFieldSummary(JsonObject field)
     {
         return new UnsupportedQueryFieldSummary(
@@ -2027,6 +2266,11 @@ public class Given_MappingSetManifestJsonEmitter
         IReadOnlyList<UnsupportedQueryFieldSummary> UnsupportedFields
     );
 
+    private sealed record DescriptorQueryCapabilityDiagnosticSummary(
+        QuerySupportSummary Support,
+        IReadOnlyList<SupportedDescriptorQueryFieldSummary> SupportedFields
+    );
+
     private sealed record QuerySupportSummary(string Kind, string? OmissionKind, string? Reason);
 
     private sealed record SupportedQueryFieldSummary(
@@ -2036,11 +2280,18 @@ public class Given_MappingSetManifestJsonEmitter
         QueryFieldTargetSummary Target
     );
 
+    private sealed record SupportedDescriptorQueryFieldSummary(
+        string QueryFieldName,
+        DescriptorQueryFieldTargetSummary Target
+    );
+
     private sealed record QueryFieldTargetSummary(
         string Kind,
         string? ColumnName,
         QualifiedResourceNameSummary? DescriptorResource
     );
+
+    private sealed record DescriptorQueryFieldTargetSummary(string Kind, string? ColumnName);
 
     private sealed record UnsupportedQueryFieldSummary(
         string QueryFieldName,
