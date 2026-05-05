@@ -16,7 +16,6 @@
 
 using System.Data;
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -45,41 +44,6 @@ file sealed class ProfileGuardedNoOpHostApplicationLifetime : IHostApplicationLi
     public CancellationToken ApplicationStopped => CancellationToken.None;
 
     public void StopApplication() { }
-}
-
-file sealed class ProfileGuardedNoOpAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class ProfileGuardedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
 }
 
 /// <summary>
@@ -140,22 +104,6 @@ file sealed class ProfileGuardedNoOpConcurrentContentVersionBumpFreshnessChecker
     }
 }
 
-internal sealed record ProfileGuardedNoOpDocumentRow(
-    long DocumentId,
-    Guid DocumentUuid,
-    short ResourceKeyId,
-    long ContentVersion,
-    DateTime ContentLastModifiedAt,
-    long IdentityVersion,
-    DateTime IdentityLastModifiedAt
-);
-
-internal sealed record ProfileGuardedNoOpPersistedState(
-    ProfileGuardedNoOpDocumentRow Document,
-    IReadOnlyDictionary<string, object?> RootRow,
-    long DocumentChangeEventCount
-);
-
 file static class ProfileGuardedNoOpIntegrationTestSupport
 {
     public static async Task<ProfileGuardedNoOpPersistedState> ReadPersistedStateAsync(
@@ -166,59 +114,47 @@ file static class ProfileGuardedNoOpIntegrationTestSupport
             long,
             Task<IReadOnlyDictionary<string, object?>>
         > readRootRowByDocumentId
-    )
-    {
-        var documentRows = await database.QueryRowsAsync(
-            """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId",
-                   "ContentVersion", "ContentLastModifiedAt",
-                   "IdentityVersion", "IdentityLastModifiedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid)
-        );
-
-        if (documentRows.Count != 1)
-        {
-            throw new InvalidOperationException(
-                $"Expected exactly one document row for '{documentUuid}', but found {documentRows.Count}."
-            );
-        }
-
-        var documentRow = new ProfileGuardedNoOpDocumentRow(
-            DocumentId: Convert.ToInt64(documentRows[0]["DocumentId"], CultureInfo.InvariantCulture),
-            DocumentUuid: (Guid)documentRows[0]["DocumentUuid"]!,
-            ResourceKeyId: Convert.ToInt16(documentRows[0]["ResourceKeyId"], CultureInfo.InvariantCulture),
-            ContentVersion: Convert.ToInt64(documentRows[0]["ContentVersion"], CultureInfo.InvariantCulture),
-            ContentLastModifiedAt: Convert.ToDateTime(
-                documentRows[0]["ContentLastModifiedAt"],
-                CultureInfo.InvariantCulture
-            ),
-            IdentityVersion: Convert.ToInt64(
-                documentRows[0]["IdentityVersion"],
-                CultureInfo.InvariantCulture
-            ),
-            IdentityLastModifiedAt: Convert.ToDateTime(
-                documentRows[0]["IdentityLastModifiedAt"],
-                CultureInfo.InvariantCulture
+    ) =>
+        await ProfileGuardedNoOpPersistedStateSupport
+            .ReadPersistedStateAsync(
+                database,
+                documentUuid,
+                ReadDocumentRowsAsync,
+                readRootRowByDocumentId,
+                ReadDocumentChangeEventRowsAsync
             )
-        );
+            .ConfigureAwait(false);
 
-        var rootRow = await readRootRowByDocumentId(database, documentRow.DocumentId);
+    private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadDocumentRowsAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        Guid documentUuid
+    ) =>
+        await database
+            .QueryRowsAsync(
+                """
+                SELECT "DocumentId", "DocumentUuid", "ResourceKeyId",
+                       "ContentVersion", "ContentLastModifiedAt",
+                       "IdentityVersion", "IdentityLastModifiedAt"
+                FROM "dms"."Document"
+                WHERE "DocumentUuid" = @documentUuid;
+                """,
+                new NpgsqlParameter("documentUuid", documentUuid)
+            )
+            .ConfigureAwait(false);
 
-        var changeEventRows = await database.QueryRowsAsync(
-            """
-            SELECT COUNT(*) AS "RowCount"
-            FROM "dms"."DocumentChangeEvent"
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", documentRow.DocumentId)
-        );
-        var changeEventCount = Convert.ToInt64(changeEventRows[0]["RowCount"], CultureInfo.InvariantCulture);
-
-        return new ProfileGuardedNoOpPersistedState(documentRow, rootRow, changeEventCount);
-    }
+    private static async Task<
+        IReadOnlyList<IReadOnlyDictionary<string, object?>>
+    > ReadDocumentChangeEventRowsAsync(PostgresqlGeneratedDdlTestDatabase database, long documentId) =>
+        await database
+            .QueryRowsAsync(
+                """
+                SELECT COUNT(*) AS "RowCount"
+                FROM "dms"."DocumentChangeEvent"
+                WHERE "DocumentId" = @documentId;
+                """,
+                new NpgsqlParameter("documentId", documentId)
+            )
+            .ConfigureAwait(false);
 }
 
 /// <summary>

@@ -6856,6 +6856,13 @@ public class Given_nested_base_collection_visible_row_update_with_hidden_row_pre
             .ToList();
         parentItemIdValues.Should().AllBeEquivalentTo(ParentAItemId);
     }
+
+    [Test]
+    public void It_is_a_no_op_candidate_when_nested_current_and_merged_rowsets_match()
+    {
+        _outcome.MergeResult!.SupportsGuardedNoOp.Should().BeTrue();
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(_outcome.MergeResult).Should().BeTrue();
+    }
 }
 
 /// <summary>
@@ -8557,6 +8564,31 @@ public class Given_Synthesizer_TopLevelCollection_VisibleRequestItem_RequestJson
     }
 }
 
+file static class ProfileMergeGuardedNoOpAssertionHelpers
+{
+    public static void AssertMergedRowsUseSharedComparableProjection(RelationalWriteMergeResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        foreach (var state in result.TablesInDependencyOrder)
+        {
+            foreach (var row in state.MergedRows)
+            {
+                var expected = RelationalWriteMergeSupport.ProjectComparableValues(
+                    state.TableWritePlan,
+                    row.Values
+                );
+                row.ComparableValues.Should()
+                    .Equal(
+                        expected,
+                        $"comparable values for table '{state.TableWritePlan.TableModel.Table}' "
+                            + "must be the shared helper's projection of the merged row's values"
+                    );
+            }
+        }
+    }
+}
+
 [TestFixture]
 public class Given_ProfileSynthesizer_for_ExistingDocument_with_unchanged_root_scalar
 {
@@ -8596,22 +8628,7 @@ public class Given_ProfileSynthesizer_for_ExistingDocument_with_unchanged_root_s
     [Test]
     public void It_projects_comparable_values_from_merged_row_values_via_the_shared_helper()
     {
-        foreach (var state in _result.TablesInDependencyOrder)
-        {
-            foreach (var row in state.MergedRows)
-            {
-                var expected = RelationalWriteMergeSupport.ProjectComparableValues(
-                    state.TableWritePlan,
-                    row.Values
-                );
-                row.ComparableValues.Should()
-                    .Equal(
-                        expected,
-                        $"comparable values for table '{state.TableWritePlan.TableModel.Table}' "
-                            + "must be the shared helper's projection of the merged row's values"
-                    );
-            }
-        }
+        ProfileMergeGuardedNoOpAssertionHelpers.AssertMergedRowsUseSharedComparableProjection(_result);
     }
 }
 
@@ -8728,22 +8745,7 @@ public class Given_Synthesizer_SeparateTable_VisiblePresent_Stored_Matched_With_
     [Test]
     public void It_projects_comparable_values_from_merged_row_values_via_the_shared_helper()
     {
-        foreach (var state in _result.TablesInDependencyOrder)
-        {
-            foreach (var row in state.MergedRows)
-            {
-                var expected = RelationalWriteMergeSupport.ProjectComparableValues(
-                    state.TableWritePlan,
-                    row.Values
-                );
-                row.ComparableValues.Should()
-                    .Equal(
-                        expected,
-                        $"comparable values for table '{state.TableWritePlan.TableModel.Table}' "
-                            + "must be the shared helper's projection of the merged row's values"
-                    );
-            }
-        }
+        ProfileMergeGuardedNoOpAssertionHelpers.AssertMergedRowsUseSharedComparableProjection(_result);
     }
 }
 
@@ -8895,22 +8897,7 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Identical_Val
     [Test]
     public void It_projects_comparable_values_from_merged_row_values_via_the_shared_helper()
     {
-        foreach (var state in _result.TablesInDependencyOrder)
-        {
-            foreach (var row in state.MergedRows)
-            {
-                var expected = RelationalWriteMergeSupport.ProjectComparableValues(
-                    state.TableWritePlan,
-                    row.Values
-                );
-                row.ComparableValues.Should()
-                    .Equal(
-                        expected,
-                        $"comparable values for table '{state.TableWritePlan.TableModel.Table}' "
-                            + "must be the shared helper's projection of the merged row's values"
-                    );
-            }
-        }
+        ProfileMergeGuardedNoOpAssertionHelpers.AssertMergedRowsUseSharedComparableProjection(_result);
     }
 }
 

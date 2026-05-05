@@ -51,41 +51,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // raw SqlConnection; the test fixtures hand the connection string to the
 // reference resolver through IDmsInstanceSelection.
 
-file sealed class MssqlProfileGuardedNoOpAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class MssqlProfileGuardedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 /// <summary>
 /// Stale-compare freshness checker for the mssql profiled guarded no-op suite. The
 /// first invocation bumps <c>ContentVersion</c> on the target document before
@@ -144,25 +109,9 @@ file sealed class MssqlProfileGuardedNoOpConcurrentContentVersionBumpFreshnessCh
     }
 }
 
-internal sealed record MssqlProfileGuardedNoOpDocumentRow(
-    long DocumentId,
-    Guid DocumentUuid,
-    short ResourceKeyId,
-    long ContentVersion,
-    DateTime ContentLastModifiedAt,
-    long IdentityVersion,
-    DateTime IdentityLastModifiedAt
-);
-
-internal sealed record MssqlProfileGuardedNoOpPersistedState(
-    MssqlProfileGuardedNoOpDocumentRow Document,
-    IReadOnlyDictionary<string, object?> RootRow,
-    long DocumentChangeEventCount
-);
-
 file static class MssqlProfileGuardedNoOpIntegrationTestSupport
 {
-    public static async Task<MssqlProfileGuardedNoOpPersistedState> ReadPersistedStateAsync(
+    public static async Task<ProfileGuardedNoOpPersistedState> ReadPersistedStateAsync(
         MssqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
         Func<
@@ -170,59 +119,47 @@ file static class MssqlProfileGuardedNoOpIntegrationTestSupport
             long,
             Task<IReadOnlyDictionary<string, object?>>
         > readRootRowByDocumentId
-    )
-    {
-        var documentRows = await database.QueryRowsAsync(
-            """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId],
-                   [ContentVersion], [ContentLastModifiedAt],
-                   [IdentityVersion], [IdentityLastModifiedAt]
-            FROM [dms].[Document]
-            WHERE [DocumentUuid] = @documentUuid;
-            """,
-            new SqlParameter("@documentUuid", documentUuid)
-        );
-
-        if (documentRows.Count != 1)
-        {
-            throw new InvalidOperationException(
-                $"Expected exactly one document row for '{documentUuid}', but found {documentRows.Count}."
-            );
-        }
-
-        var documentRow = new MssqlProfileGuardedNoOpDocumentRow(
-            DocumentId: Convert.ToInt64(documentRows[0]["DocumentId"], CultureInfo.InvariantCulture),
-            DocumentUuid: (Guid)documentRows[0]["DocumentUuid"]!,
-            ResourceKeyId: Convert.ToInt16(documentRows[0]["ResourceKeyId"], CultureInfo.InvariantCulture),
-            ContentVersion: Convert.ToInt64(documentRows[0]["ContentVersion"], CultureInfo.InvariantCulture),
-            ContentLastModifiedAt: Convert.ToDateTime(
-                documentRows[0]["ContentLastModifiedAt"],
-                CultureInfo.InvariantCulture
-            ),
-            IdentityVersion: Convert.ToInt64(
-                documentRows[0]["IdentityVersion"],
-                CultureInfo.InvariantCulture
-            ),
-            IdentityLastModifiedAt: Convert.ToDateTime(
-                documentRows[0]["IdentityLastModifiedAt"],
-                CultureInfo.InvariantCulture
+    ) =>
+        await ProfileGuardedNoOpPersistedStateSupport
+            .ReadPersistedStateAsync(
+                database,
+                documentUuid,
+                ReadDocumentRowsAsync,
+                readRootRowByDocumentId,
+                ReadDocumentChangeEventRowsAsync
             )
-        );
+            .ConfigureAwait(false);
 
-        var rootRow = await readRootRowByDocumentId(database, documentRow.DocumentId);
+    private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadDocumentRowsAsync(
+        MssqlGeneratedDdlTestDatabase database,
+        Guid documentUuid
+    ) =>
+        await database
+            .QueryRowsAsync(
+                """
+                SELECT [DocumentId], [DocumentUuid], [ResourceKeyId],
+                       [ContentVersion], [ContentLastModifiedAt],
+                       [IdentityVersion], [IdentityLastModifiedAt]
+                FROM [dms].[Document]
+                WHERE [DocumentUuid] = @documentUuid;
+                """,
+                new SqlParameter("@documentUuid", documentUuid)
+            )
+            .ConfigureAwait(false);
 
-        var changeEventRows = await database.QueryRowsAsync(
-            """
-            SELECT COUNT_BIG(*) AS [RowCount]
-            FROM [dms].[DocumentChangeEvent]
-            WHERE [DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentRow.DocumentId)
-        );
-        var changeEventCount = Convert.ToInt64(changeEventRows[0]["RowCount"], CultureInfo.InvariantCulture);
-
-        return new MssqlProfileGuardedNoOpPersistedState(documentRow, rootRow, changeEventCount);
-    }
+    private static async Task<
+        IReadOnlyList<IReadOnlyDictionary<string, object?>>
+    > ReadDocumentChangeEventRowsAsync(MssqlGeneratedDdlTestDatabase database, long documentId) =>
+        await database
+            .QueryRowsAsync(
+                """
+                SELECT COUNT_BIG(*) AS [RowCount]
+                FROM [dms].[DocumentChangeEvent]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+            .ConfigureAwait(false);
 }
 
 /// <summary>
@@ -460,8 +397,8 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
             TraceId: new TraceId("mssql-profile-guarded-no-op-put-update"),
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileGuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileGuardedNoOpAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new ProfileGuardedNoOpAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -520,8 +457,8 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
             TraceId: new TraceId("mssql-profile-guarded-no-op-post-as-update"),
             DocumentUuid: incomingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileGuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileGuardedNoOpAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new ProfileGuardedNoOpAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -593,8 +530,8 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only
         Guid.Parse("ffffffff-0000-0000-0000-000000000001")
     );
 
-    private MssqlProfileGuardedNoOpPersistedState _stateBeforeUpdate = null!;
-    private MssqlProfileGuardedNoOpPersistedState _stateAfterUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateBeforeUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterUpdate = null!;
     private UpdateResult _updateResult = null!;
 
     protected override async Task SetUpTestAsync()
@@ -687,8 +624,8 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_Wit
         Guid.Parse("ffffffff-0000-0000-0000-000000000003")
     );
 
-    private MssqlProfileGuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
-    private MssqlProfileGuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
     private UpsertResult _postAsUpdateResult = null!;
     private long _incomingDocumentUuidRowCount;
 
@@ -799,8 +736,8 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Put
         Guid.Parse("ffffffff-0000-0000-0000-000000000010")
     );
 
-    private MssqlProfileGuardedNoOpPersistedState _stateBeforeUpdate = null!;
-    private MssqlProfileGuardedNoOpPersistedState _stateAfterUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateBeforeUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterUpdate = null!;
     private UpdateResult _updateResult = null!;
 
     protected override ServiceProvider CreateServiceProvider() => CreateStaleCompareServiceProvider();
@@ -897,8 +834,8 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Upda
         Guid.Parse("ffffffff-0000-0000-0000-000000000012")
     );
 
-    private MssqlProfileGuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
-    private MssqlProfileGuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
     private UpsertResult _postAsUpdateResult = null!;
     private long _incomingDocumentUuidRowCount;
 
