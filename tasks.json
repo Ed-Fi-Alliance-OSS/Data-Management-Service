@@ -95,7 +95,7 @@
       "Add unit tests for case-insensitive query parameter lookup, all supported descriptor fields, invalid id empty-page behavior, unrepresentable date empty-page behavior, strict namespace value handling, and unsupported/omitted capability diagnostics.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Query Page SQL Planning",
