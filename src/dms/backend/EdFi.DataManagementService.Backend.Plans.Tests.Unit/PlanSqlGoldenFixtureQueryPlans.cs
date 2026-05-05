@@ -121,7 +121,8 @@ internal static class PlanSqlGoldenFixtureQueryPlans
                     ScalarKind.Date
                 ),
             ],
-            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>()
+            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+            IncludeTotalCountSql: true
         );
     }
 }

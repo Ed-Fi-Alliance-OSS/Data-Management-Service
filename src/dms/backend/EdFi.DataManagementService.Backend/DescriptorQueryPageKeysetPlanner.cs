@@ -52,7 +52,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
             OffsetParameterName: OffsetParameterName,
             LimitParameterName: LimitParameterName,
-            IncludeTotalCountSql: false
+            IncludeTotalCountSql: paginationParameters.TotalCount
         );
         var sqlPlan = _sqlCompiler.Compile(pageQuerySpec);
         var parameterValues = BuildParameterValues(

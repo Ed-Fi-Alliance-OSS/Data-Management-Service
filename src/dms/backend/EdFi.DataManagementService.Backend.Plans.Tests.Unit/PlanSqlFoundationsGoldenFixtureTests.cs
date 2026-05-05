@@ -95,6 +95,18 @@ public class Given_PlanSqlFoundations_GoldenFixture
     }
 
     [Test]
+    public void It_should_match_pgsql_descriptor_total_count_sql_golden()
+    {
+        AssertGoldenMatches("pgsql.descriptor-total-count.sql");
+    }
+
+    [Test]
+    public void It_should_match_mssql_descriptor_total_count_sql_golden()
+    {
+        AssertGoldenMatches("mssql.descriptor-total-count.sql");
+    }
+
+    [Test]
     public void It_should_match_pgsql_minimal_insert_sql_golden()
     {
         AssertGoldenMatches("pgsql.insert.sql");
@@ -124,6 +136,8 @@ public class Given_PlanSqlFoundations_GoldenFixture
             ["mssql.page-document-id.sql"] = BuildPageDocumentIdSql(SqlDialect.Mssql),
             ["pgsql.descriptor-page-document-id.sql"] = BuildDescriptorPageDocumentIdSql(SqlDialect.Pgsql),
             ["mssql.descriptor-page-document-id.sql"] = BuildDescriptorPageDocumentIdSql(SqlDialect.Mssql),
+            ["pgsql.descriptor-total-count.sql"] = BuildDescriptorTotalCountSql(SqlDialect.Pgsql),
+            ["mssql.descriptor-total-count.sql"] = BuildDescriptorTotalCountSql(SqlDialect.Mssql),
             ["pgsql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Pgsql),
             ["mssql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Mssql),
         };
@@ -137,6 +151,11 @@ public class Given_PlanSqlFoundations_GoldenFixture
     private static string BuildDescriptorPageDocumentIdSql(SqlDialect dialect)
     {
         return PlanSqlGoldenFixtureQueryPlans.CompileDescriptorPageDocumentIdPlan(dialect).PageDocumentIdSql;
+    }
+
+    private static string BuildDescriptorTotalCountSql(SqlDialect dialect)
+    {
+        return PlanSqlGoldenFixtureQueryPlans.CompileDescriptorPageDocumentIdPlan(dialect).TotalCountSql!;
     }
 
     private static string BuildSimpleInsertSql(SqlDialect dialect)

@@ -677,22 +677,59 @@ public class Given_PageDocumentIdSqlCompiler
     {
         var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
         var plan = compiler.Compile(
-            CreateDescriptorSpec([
-                new QueryValuePredicate(
-                    new DbColumnName("ResourceKeyId"),
-                    QueryComparisonOperator.Equal,
-                    "resourceKeyId"
-                ),
-                new QueryValuePredicate(
-                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName("Namespace")),
-                    QueryComparisonOperator.Equal,
-                    "namespace",
-                    ScalarKind.String
-                ),
-            ])
+            CreateDescriptorSpec(
+                [
+                    new QueryValuePredicate(
+                        new DbColumnName("ResourceKeyId"),
+                        QueryComparisonOperator.Equal,
+                        "resourceKeyId"
+                    ),
+                    new QueryValuePredicate(
+                        new QueryPredicateTarget.DescriptorColumn(new DbColumnName("Namespace")),
+                        QueryComparisonOperator.Equal,
+                        "namespace",
+                        ScalarKind.String
+                    ),
+                ],
+                includeTotalCountSql: true
+            )
         );
 
         plan.PageDocumentIdSql.Should().Contain("d.[Namespace] COLLATE Latin1_General_100_BIN2 = @namespace");
+        plan.TotalCountSql.Should().Contain("d.[Namespace] COLLATE Latin1_General_100_BIN2 = @namespace");
+    }
+
+    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\" r")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document] r")]
+    public void It_should_emit_descriptor_total_count_sql_without_optional_joins_when_only_resource_key_discrimination_is_required(
+        SqlDialect dialect,
+        string expectedDocumentFromFragment
+    )
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateDescriptorSpec(
+                [
+                    new QueryValuePredicate(
+                        new DbColumnName("ResourceKeyId"),
+                        QueryComparisonOperator.Equal,
+                        "resourceKeyId"
+                    ),
+                ],
+                includeTotalCountSql: true
+            )
+        );
+
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain($"FROM {expectedDocumentFromFragment}");
+        plan.TotalCountSql.Should().Contain("ResourceKeyId");
+        plan.TotalCountSql.Should().NotContain("Descriptor");
+        plan.TotalCountSql.Should().NotContain("doc.");
+        plan.TotalCountSql.Should().NotContain("@offset");
+        plan.TotalCountSql.Should().NotContain("@limit");
+        plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("resourceKeyId");
     }
 
     [Test]
