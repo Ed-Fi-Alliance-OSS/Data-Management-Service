@@ -613,6 +613,88 @@ public class Given_PageDocumentIdSqlCompiler
             .Contain("r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2 = @nameOfInstitution");
     }
 
+    [TestCase("Namespace", ScalarKind.String)]
+    [TestCase("CodeValue", ScalarKind.String)]
+    [TestCase("ShortDescription", ScalarKind.String)]
+    [TestCase("Description", ScalarKind.String)]
+    [TestCase("EffectiveBeginDate", ScalarKind.Date)]
+    [TestCase("EffectiveEndDate", ScalarKind.Date)]
+    public void It_should_target_descriptor_query_fields_against_the_shared_descriptor_table(
+        string columnName,
+        ScalarKind scalarKind
+    )
+    {
+        var plan = _compiler.Compile(
+            CreateDescriptorSpec([
+                new QueryValuePredicate(
+                    new DbColumnName("ResourceKeyId"),
+                    QueryComparisonOperator.Equal,
+                    "resourceKeyId"
+                ),
+                new QueryValuePredicate(
+                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName(columnName)),
+                    QueryComparisonOperator.Equal,
+                    "field",
+                    scalarKind
+                ),
+            ])
+        );
+
+        plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Document\" r");
+        plan.PageDocumentIdSql.Should()
+            .Contain("INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"");
+        plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
+        plan.PageDocumentIdSql.Should().Contain($"d.\"{columnName}\" = @field");
+        plan.PageDocumentIdSql.Should().NotContain("SchoolTypeDescriptor");
+    }
+
+    [Test]
+    public void It_should_not_join_the_shared_descriptor_table_when_descriptor_page_filters_only_target_document_columns()
+    {
+        var plan = _compiler.Compile(
+            CreateDescriptorSpec([
+                new QueryValuePredicate(
+                    new DbColumnName("DocumentUuid"),
+                    QueryComparisonOperator.Equal,
+                    "id"
+                ),
+                new QueryValuePredicate(
+                    new DbColumnName("ResourceKeyId"),
+                    QueryComparisonOperator.Equal,
+                    "resourceKeyId"
+                ),
+            ])
+        );
+
+        plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Document\" r");
+        plan.PageDocumentIdSql.Should().Contain("r.\"DocumentUuid\" = @id");
+        plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
+        plan.PageDocumentIdSql.Should().NotContain("\"dms\".\"Descriptor\"");
+    }
+
+    [Test]
+    public void It_should_apply_binary_string_equality_to_mssql_descriptor_string_predicates()
+    {
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+        var plan = compiler.Compile(
+            CreateDescriptorSpec([
+                new QueryValuePredicate(
+                    new DbColumnName("ResourceKeyId"),
+                    QueryComparisonOperator.Equal,
+                    "resourceKeyId"
+                ),
+                new QueryValuePredicate(
+                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName("Namespace")),
+                    QueryComparisonOperator.Equal,
+                    "namespace",
+                    ScalarKind.String
+                ),
+            ])
+        );
+
+        plan.PageDocumentIdSql.Should().Contain("d.[Namespace] COLLATE Latin1_General_100_BIN2 = @namespace");
+    }
+
     [Test]
     public void It_should_emit_pgsql_paging_clause_with_limit_offset()
     {
@@ -835,6 +917,23 @@ public class Given_PageDocumentIdSqlCompiler
             RootTable: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: unifiedAliasMappingsByColumn,
+            OffsetParameterName: offsetParameterName,
+            LimitParameterName: limitParameterName,
+            IncludeTotalCountSql: includeTotalCountSql
+        );
+    }
+
+    private static PageDocumentIdQuerySpec CreateDescriptorSpec(
+        IReadOnlyList<QueryValuePredicate> predicates,
+        string offsetParameterName = "offset",
+        string limitParameterName = "limit",
+        bool includeTotalCountSql = false
+    )
+    {
+        return new PageDocumentIdQuerySpec(
+            RootTable: new DbTableName(new DbSchemaName("dms"), "Document"),
+            Predicates: predicates,
+            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
             OffsetParameterName: offsetParameterName,
             LimitParameterName: limitParameterName,
             IncludeTotalCountSql: includeTotalCountSql

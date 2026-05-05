@@ -21,6 +21,11 @@ internal static class PlanSqlGoldenFixtureQueryPlans
         return Compile(dialect, CreateContractsManifestQuerySpec());
     }
 
+    public static PageDocumentIdSqlPlan CompileDescriptorPageDocumentIdPlan(SqlDialect dialect)
+    {
+        return Compile(dialect, CreateDescriptorQuerySpec());
+    }
+
     private static PageDocumentIdSqlPlan Compile(SqlDialect dialect, PageDocumentIdQuerySpec querySpec)
     {
         return new PageDocumentIdSqlCompiler(dialect).Compile(querySpec);
@@ -84,6 +89,39 @@ internal static class PlanSqlGoldenFixtureQueryPlans
                 ),
             },
             IncludeTotalCountSql: true
+        );
+    }
+
+    private static PageDocumentIdQuerySpec CreateDescriptorQuerySpec()
+    {
+        return new PageDocumentIdQuerySpec(
+            RootTable: new DbTableName(new DbSchemaName("dms"), "Document"),
+            Predicates:
+            [
+                new QueryValuePredicate(
+                    new DbColumnName("ResourceKeyId"),
+                    QueryComparisonOperator.Equal,
+                    "resourceKeyId"
+                ),
+                new QueryValuePredicate(
+                    new DbColumnName("DocumentUuid"),
+                    QueryComparisonOperator.Equal,
+                    "id"
+                ),
+                new QueryValuePredicate(
+                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName("Namespace")),
+                    QueryComparisonOperator.Equal,
+                    "namespace",
+                    ScalarKind.String
+                ),
+                new QueryValuePredicate(
+                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName("EffectiveEndDate")),
+                    QueryComparisonOperator.Equal,
+                    "effectiveEndDate",
+                    ScalarKind.Date
+                ),
+            ],
+            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>()
         );
     }
 }

@@ -83,6 +83,18 @@ public class Given_PlanSqlFoundations_GoldenFixture
     }
 
     [Test]
+    public void It_should_match_pgsql_descriptor_page_document_id_sql_golden()
+    {
+        AssertGoldenMatches("pgsql.descriptor-page-document-id.sql");
+    }
+
+    [Test]
+    public void It_should_match_mssql_descriptor_page_document_id_sql_golden()
+    {
+        AssertGoldenMatches("mssql.descriptor-page-document-id.sql");
+    }
+
+    [Test]
     public void It_should_match_pgsql_minimal_insert_sql_golden()
     {
         AssertGoldenMatches("pgsql.insert.sql");
@@ -110,6 +122,8 @@ public class Given_PlanSqlFoundations_GoldenFixture
         {
             ["pgsql.page-document-id.sql"] = BuildPageDocumentIdSql(SqlDialect.Pgsql),
             ["mssql.page-document-id.sql"] = BuildPageDocumentIdSql(SqlDialect.Mssql),
+            ["pgsql.descriptor-page-document-id.sql"] = BuildDescriptorPageDocumentIdSql(SqlDialect.Pgsql),
+            ["mssql.descriptor-page-document-id.sql"] = BuildDescriptorPageDocumentIdSql(SqlDialect.Mssql),
             ["pgsql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Pgsql),
             ["mssql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Mssql),
         };
@@ -118,6 +132,11 @@ public class Given_PlanSqlFoundations_GoldenFixture
     private static string BuildPageDocumentIdSql(SqlDialect dialect)
     {
         return PlanSqlGoldenFixtureQueryPlans.CompileFoundationsPageDocumentIdPlan(dialect).PageDocumentIdSql;
+    }
+
+    private static string BuildDescriptorPageDocumentIdSql(SqlDialect dialect)
+    {
+        return PlanSqlGoldenFixtureQueryPlans.CompileDescriptorPageDocumentIdPlan(dialect).PageDocumentIdSql;
     }
 
     private static string BuildSimpleInsertSql(SqlDialect dialect)
