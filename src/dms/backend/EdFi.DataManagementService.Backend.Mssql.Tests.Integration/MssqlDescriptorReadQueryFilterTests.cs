@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -28,6 +29,7 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
     private const int MaximumPageSize = 500;
+    private const string SharedPagingDescription = "Shared paging count";
 
     private static readonly QualifiedResourceName SchoolTypeDescriptorResource = new(
         "Ed-Fi",
@@ -69,6 +71,43 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         AlternativeSeed,
         MixedCaseSeed,
         StoredInNamespaceSeed,
+    ];
+
+    private static readonly DescriptorReadSeed PagingFirstSeed = new(
+        DocumentUuid: new DocumentUuid(Guid.Parse("40000000-0000-0000-0000-000000000204")),
+        Namespace: "uri://ed-fi.org/SchoolTypeDescriptor/PagingZulu",
+        CodeValue: "Zulu",
+        ShortDescription: "Zulu",
+        Description: SharedPagingDescription,
+        EffectiveBeginDate: new DateOnly(2028, 1, 2),
+        EffectiveEndDate: new DateOnly(2028, 6, 3)
+    );
+
+    private static readonly DescriptorReadSeed PagingSecondSeed = new(
+        DocumentUuid: new DocumentUuid(Guid.Parse("40000000-0000-0000-0000-000000000205")),
+        Namespace: "uri://ed-fi.org/SchoolTypeDescriptor/PagingAlpha",
+        CodeValue: "Alpha",
+        ShortDescription: "Alpha",
+        Description: SharedPagingDescription,
+        EffectiveBeginDate: new DateOnly(2028, 2, 3),
+        EffectiveEndDate: new DateOnly(2028, 7, 4)
+    );
+
+    private static readonly DescriptorReadSeed PagingThirdSeed = new(
+        DocumentUuid: new DocumentUuid(Guid.Parse("40000000-0000-0000-0000-000000000206")),
+        Namespace: "uri://ed-fi.org/SchoolTypeDescriptor/PagingBeta",
+        CodeValue: "Beta",
+        ShortDescription: "Beta",
+        Description: "Distinct paging count",
+        EffectiveBeginDate: new DateOnly(2028, 3, 4),
+        EffectiveEndDate: new DateOnly(2028, 8, 5)
+    );
+
+    private static readonly DescriptorReadSeed[] PagingDescriptorSeeds =
+    [
+        PagingFirstSeed,
+        PagingSecondSeed,
+        PagingThirdSeed,
     ];
 
     private MssqlGeneratedDdlFixture _fixture = null!;
@@ -189,6 +228,99 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         AssertEmptyPage(result);
     }
 
+    [Test]
+    public async Task It_pages_descriptor_queries_in_document_id_order_across_multiple_pages_and_reports_total_count()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+
+        var firstPage = await ExecuteQueryAsync(
+            [],
+            "mssql-descriptor-query-page-1",
+            totalCount: true,
+            limit: 2,
+            offset: 0
+        );
+        var secondPage = await ExecuteQueryAsync(
+            [],
+            "mssql-descriptor-query-page-2",
+            totalCount: true,
+            limit: 2,
+            offset: 2
+        );
+
+        AssertDescriptorPage(firstPage, [PagingFirstSeed, PagingSecondSeed], expectedTotalCount: 3);
+        AssertDescriptorPage(secondPage, [PagingThirdSeed], expectedTotalCount: 3);
+    }
+
+    [Test]
+    public async Task It_reports_filtered_total_count_as_the_unpaged_filtered_row_count()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+
+        var result = await ExecuteQueryAsync(
+            [CreateQueryElement("description", "$.description", SharedPagingDescription)],
+            "mssql-descriptor-query-filtered-total-count",
+            totalCount: true,
+            limit: 1,
+            offset: 1
+        );
+
+        AssertDescriptorPage(result, [PagingSecondSeed], expectedTotalCount: 2);
+    }
+
+    [Test]
+    public async Task It_does_not_fail_when_total_count_is_requested_and_a_corrupt_descriptor_document_is_outside_the_selected_page()
+    {
+        await SeedDescriptorsAsync([PagingFirstSeed]);
+
+        var resourceKeyId = DescriptorReadIntegrationTestSupport.GetDescriptorResourceKeyIdOrThrow(
+            _mappingSet,
+            SchoolTypeDescriptorResource
+        );
+        await MssqlDescriptorReadTestSupport.InsertDocumentAsync(
+            _database,
+            new DocumentUuid(Guid.Parse("40000000-0000-0000-0000-000000000207")),
+            resourceKeyId
+        );
+
+        var result = await ExecuteQueryAsync(
+            [],
+            "mssql-descriptor-query-corrupt-outside-page",
+            totalCount: true,
+            limit: 1,
+            offset: 0
+        );
+
+        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 2);
+    }
+
+    [Test]
+    public async Task It_returns_an_unknown_failure_when_the_selected_descriptor_query_document_has_no_descriptor_row()
+    {
+        await SeedDescriptorsAsync([PagingFirstSeed]);
+
+        var resourceKeyId = DescriptorReadIntegrationTestSupport.GetDescriptorResourceKeyIdOrThrow(
+            _mappingSet,
+            SchoolTypeDescriptorResource
+        );
+        var corruptDocumentId = await MssqlDescriptorReadTestSupport.InsertDocumentAsync(
+            _database,
+            new DocumentUuid(Guid.Parse("40000000-0000-0000-0000-000000000208")),
+            resourceKeyId
+        );
+
+        var result = await ExecuteQueryAsync(
+            [],
+            "mssql-descriptor-query-corrupt-selected",
+            limit: 1,
+            offset: 1
+        );
+
+        var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain($"DocumentId {corruptDocumentId}");
+        failure.FailureMessage.Should().Contain("dms.Descriptor.Namespace must not be null.");
+    }
+
     private static IEnumerable<TestCaseData> SupportedFilterCases()
     {
         yield return new TestCaseData(
@@ -282,9 +414,9 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         );
     }
 
-    private async Task SeedDescriptorsAsync()
+    private async Task SeedDescriptorsAsync(IEnumerable<DescriptorReadSeed>? seeds = null)
     {
-        foreach (var seed in DescriptorSeeds)
+        foreach (var seed in seeds ?? DescriptorSeeds)
         {
             await MssqlDescriptorReadTestSupport.SeedDescriptorAsync(
                 _database,
@@ -298,7 +430,9 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
     private async Task<QueryResult> ExecuteQueryAsync(
         QueryElement[] queryElements,
         string traceId,
-        bool totalCount = false
+        bool totalCount = false,
+        int limit = 25,
+        int offset = 0
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -311,8 +445,8 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             AuthorizationSecurableInfo: _resourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
-                Limit: 25,
-                Offset: 0,
+                Limit: limit,
+                Offset: offset,
                 TotalCount: totalCount,
                 MaximumPageSize: MaximumPageSize
             ),
@@ -359,11 +493,27 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
 
     private static void AssertSingleDescriptorMatch(QueryResult result, DescriptorReadSeed expectedSeed)
     {
-        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.TotalCount.Should().BeNull();
-        success.EdfiDocs.Should().HaveCount(1);
+        AssertDescriptorPage(result, [expectedSeed]);
+    }
 
-        var document = success.EdfiDocs[0]!.AsObject();
+    private static void AssertDescriptorPage(
+        QueryResult result,
+        IReadOnlyList<DescriptorReadSeed> expectedSeeds,
+        int? expectedTotalCount = null
+    )
+    {
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(expectedTotalCount);
+        success.EdfiDocs.Should().HaveCount(expectedSeeds.Count);
+
+        for (var i = 0; i < expectedSeeds.Count; i++)
+        {
+            AssertDescriptorDocument(success.EdfiDocs[i]!.AsObject(), expectedSeeds[i]);
+        }
+    }
+
+    private static void AssertDescriptorDocument(JsonObject document, DescriptorReadSeed expectedSeed)
+    {
         document["id"]!.GetValue<string>().Should().Be(expectedSeed.DocumentUuid.Value.ToString());
         document["namespace"]!.GetValue<string>().Should().Be(expectedSeed.Namespace);
         document["codeValue"]!.GetValue<string>().Should().Be(expectedSeed.CodeValue);
