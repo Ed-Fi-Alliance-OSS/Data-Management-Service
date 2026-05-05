@@ -3,21 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-// Slice 7 (DMS-1124) Workstream B regression test for cross-path guarded no-op ordinal
-// alignment between the no-profile UpsertRequest seed path (RelationalWriteFlattener,
-// which stamps 0-based ordinals into collection rows from the request item index) and
-// the profile PUT path (ProfileCollectionWalker, which previously stamped 1-based
-// ordinals — `i + 1` at ProfileCollectionWalker.cs:415, now `i`). The Slice 6 sibling
-// fixture at PostgresqlProfileGuardedNoOpTests.cs:1321 seeds via the profiled POST
-// path so seed and PUT exercise the same code path; this fixture inverts the seed
-// path: it seeds via the no-profile UpsertRequest path so the persisted addresses
-// land at 0-based ordinals, then issues a byte-identical profiled PUT carrying the
-// same VisiblePresent profile context. With the post-merge effective rowset matching
-// the stored rowset on row identity and content the guarded no-op short-circuit
-// fires — no DML against edfi.SchoolAddress, no Document version/timestamp metadata
-// mutation, no DocumentChangeEvent row. Before the Workstream B alignment, this
-// fixture failed because the executor fell through to real collection DML and
-// returned UpdateSuccess WITHOUT the no-op short-circuit.
+// Pins the cross-path guarded no-op invariant: a top-level collection document seeded
+// via the no-profile UpsertRequest path (which stamps 0-based ordinals from the
+// request item index) followed by a byte-identical profiled PUT must hit the guarded
+// no-op short-circuit. The merged rowset must match the stored rowset on row identity
+// and content so the executor's positional SequenceEqual succeeds — no DML against
+// edfi.SchoolAddress, no Document version/timestamp mutation, no DocumentChangeEvent
+// row.
 
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -82,21 +74,16 @@ file static class ProfileGuardedNoOpOrdinalAlignmentIntegrationTestSupport
 }
 
 /// <summary>
-/// Slice 7 (DMS-1124) Workstream B1 regression test. Seeds a <c>School</c> document
-/// via the NO-PROFILE <see cref="PostgresqlProfileTopLevelCollectionMergeSupport.SeedAsync"/>
+/// Pins the cross-path guarded no-op invariant for top-level collections. Seeds a
+/// <c>School</c> document via the no-profile <see cref="PostgresqlProfileTopLevelCollectionMergeSupport.SeedAsync"/>
 /// helper so the persisted <c>edfi.SchoolAddress</c> rows land at the 0-based ordinals
-/// the <c>RelationalWriteFlattener</c> stamps from the request item index, then issues
-/// a profiled <c>PUT</c> carrying a byte-identical body and the same fully-VisiblePresent
-/// profile context the Slice 6 top-level-collection sibling uses. With Workstream B2's
-/// fix to <c>ProfileCollectionWalker.cs:415</c> the merge synthesizer stamps the same
-/// 0-based ordinals, the executor's positional <c>SequenceEqual</c> between merged
-/// rows and stored rows succeeds, and the guarded no-op short-circuit fires — neither
-/// root row, nor collection row count, nor collection row contents (including
-/// <c>CollectionItemId</c> and <c>Ordinal</c>), nor Document version/timestamp
-/// metadata, nor a <c>DocumentChangeEvent</c> row may be written. Before B2 lands the
-/// merge synthesizer stamps 1-based ordinals against the 0-based stored rows, the
-/// positional comparison fails, the executor issues real collection DML, and this
-/// fixture's no-op invariants fail — exactly the failure mode the fix resolves.
+/// <c>RelationalWriteFlattener</c> stamps from the request item index, then issues a
+/// profiled <c>PUT</c> with a byte-identical body and a fully-VisiblePresent profile
+/// context. The merged rowset must match the stored rowset on row identity and content
+/// so the executor's positional <c>SequenceEqual</c> succeeds and the guarded no-op
+/// short-circuit fires — neither root row, nor collection row count, nor collection
+/// row contents (including <c>CollectionItemId</c> and <c>Ordinal</c>), nor Document
+/// version/timestamp metadata, nor a <c>DocumentChangeEvent</c> row may be written.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -117,12 +104,12 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_
     private IReadOnlyList<PostgresqlProfileTopLevelCollectionAddressRow> _addressesAfter = null!;
 
     /// <summary>
-    /// Overrides the Slice 6 base's profiled-POST seed path with the no-profile
-    /// UpsertRequest seed path (<see cref="PostgresqlProfileTopLevelCollectionMergeSupport.SeedAsync"/>)
-    /// so the persisted <c>edfi.SchoolAddress</c> rows carry 0-based ordinals stamped
-    /// by <c>RelationalWriteFlattener</c>. This is the cross-path inversion this
-    /// regression test pins: seed via no-profile (0-based), update via profile (which
-    /// must stamp the same 0-base after Workstream B2's fix).
+    /// Overrides the base's profiled-POST seed with the no-profile UpsertRequest seed
+    /// (<see cref="PostgresqlProfileTopLevelCollectionMergeSupport.SeedAsync"/>) so the
+    /// persisted <c>edfi.SchoolAddress</c> rows carry the 0-based ordinals
+    /// <c>RelationalWriteFlattener</c> stamps. This is the cross-path inversion the
+    /// regression pins: seed via no-profile (0-based), update via profile (which must
+    /// stamp the same 0-base for the no-op invariant to hold).
     /// </summary>
     protected override async Task ExecuteProfiledShapeCreateAsync(DocumentUuid documentUuid)
     {
