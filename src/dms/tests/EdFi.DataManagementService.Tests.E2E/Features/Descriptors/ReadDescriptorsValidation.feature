@@ -138,6 +138,7 @@ Feature: Read a Descriptor
         @DMS-994 @relational-backend
         Scenario: 09 Read and query a descriptor through the relational backend with readable profile projection
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             When the response body path "_etag" is stored as variable "fullDescriptorEtag"
              Then it should respond with 200
               And the response body is
                   """
@@ -151,7 +152,6 @@ Feature: Read a Descriptor
                       "shortDescription": "Sick Leave"
                     }
                   """
-             When the response header "etag" is stored as variable "fullDescriptorEtag"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?namespace=uri://ed-fi.org/AbsenceEventCategoryDescriptor&codeValue=Sick%20Leave"
              Then it should respond with 200
               And the response body is

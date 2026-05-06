@@ -702,10 +702,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information(url);
 
-            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
-                url,
-                new() { Headers = GetHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = GetHeaders() })!
+            );
         }
 
         [When("a GET request is made to {string} with header {string} value {string}")]
@@ -723,10 +722,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             headers[header] = value;
 
-            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
-                url,
-                new() { Headers = headers }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = headers })!
+            );
         }
 
         // Alias used in OWASP security scenarios to make their intent explicit in feature files.

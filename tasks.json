@@ -226,7 +226,7 @@
       "From src/dms/tests/EdFi.InstanceManagement.Tests.E2E run: pwsh ./setup-local-dms.ps1",
       "Run: dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=relational-backend&FullyQualifiedName~Descriptor\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Review Follow-up: Descriptor Query Schema Collision Handling",
