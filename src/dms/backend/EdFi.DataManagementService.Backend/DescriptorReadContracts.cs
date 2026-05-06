@@ -17,7 +17,6 @@ public sealed record DescriptorGetByIdRequest
 {
     public DescriptorGetByIdRequest(
         MappingSet mappingSet,
-        ConcreteResourceModel descriptorResourceModel,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
         RelationalGetRequestReadMode readMode,
@@ -27,8 +26,6 @@ public sealed record DescriptorGetByIdRequest
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
-        DescriptorResourceModel =
-            descriptorResourceModel ?? throw new ArgumentNullException(nameof(descriptorResourceModel));
         Resource = resource;
         DocumentUuid = documentUuid;
         ReadMode = readMode;
@@ -43,11 +40,6 @@ public sealed record DescriptorGetByIdRequest
     /// The resolved runtime mapping set for the active request.
     /// </summary>
     public MappingSet MappingSet { get; init; }
-
-    /// <summary>
-    /// The descriptor resource model selected from the active mapping set.
-    /// </summary>
-    public ConcreteResourceModel DescriptorResourceModel { get; init; }
 
     /// <summary>
     /// The qualified descriptor resource being retrieved.
@@ -88,7 +80,6 @@ public sealed record DescriptorQueryRequest
 {
     public DescriptorQueryRequest(
         MappingSet mappingSet,
-        ConcreteResourceModel descriptorResourceModel,
         QualifiedResourceName resource,
         QueryElement[] queryElements,
         PaginationParameters paginationParameters,
@@ -98,8 +89,6 @@ public sealed record DescriptorQueryRequest
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
-        DescriptorResourceModel =
-            descriptorResourceModel ?? throw new ArgumentNullException(nameof(descriptorResourceModel));
         Resource = resource;
         QueryElements = queryElements ?? throw new ArgumentNullException(nameof(queryElements));
         PaginationParameters =
@@ -115,11 +104,6 @@ public sealed record DescriptorQueryRequest
     /// The resolved runtime mapping set for the active request.
     /// </summary>
     public MappingSet MappingSet { get; init; }
-
-    /// <summary>
-    /// The descriptor resource model selected from the active mapping set.
-    /// </summary>
-    public ConcreteResourceModel DescriptorResourceModel { get; init; }
 
     /// <summary>
     /// The qualified descriptor resource being queried.

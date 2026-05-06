@@ -6,7 +6,6 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -640,14 +639,9 @@ public class Given_DescriptorReadHandler
     )
     {
         var mappingSet = CreateMappingSet(dialect);
-        mappingSet
-            .TryGetDescriptorResourceModel(_descriptorResource, out var descriptorResourceModel)
-            .Should()
-            .BeTrue();
 
         return new DescriptorGetByIdRequest(
             mappingSet,
-            descriptorResourceModel!,
             _descriptorResource,
             documentUuid,
             readMode,
@@ -672,14 +666,9 @@ public class Given_DescriptorReadHandler
             dialect,
             descriptorQueryCapability ?? CreateSupportedDescriptorQueryCapability()
         );
-        mappingSet
-            .TryGetDescriptorResourceModel(_descriptorResource, out var descriptorResourceModel)
-            .Should()
-            .BeTrue();
 
         return new DescriptorQueryRequest(
             mappingSet,
-            descriptorResourceModel!,
             _descriptorResource,
             queryElements ?? [],
             new PaginationParameters(

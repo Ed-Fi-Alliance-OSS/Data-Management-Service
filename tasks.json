@@ -260,7 +260,7 @@
       "Search for DescriptorResourceModel request-property usages and confirm no dead pass-through remains.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"DescriptorRead|RelationalDocumentStoreRepository|DescriptorQuery\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Review Follow-up: Descriptor Id Query SQL Simplification",

@@ -274,9 +274,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeSameAs(expectedResult);
         capturedRequest.MappingSet.Should().BeSameAs(mappingSet);
         capturedRequest.Resource.Should().Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
-        capturedRequest
-            .DescriptorResourceModel.ResourceKey.Resource.Should()
-            .Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
         capturedRequest.DocumentUuid.Should().Be(documentUuid);
         capturedRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.StoredDocument);
         capturedRequest.AuthorizationStrategyEvaluators.Should().BeSameAs(authorizationStrategyEvaluators);
@@ -830,9 +827,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeSameAs(expectedResult);
         capturedRequest.MappingSet.Should().BeSameAs(mappingSet);
         capturedRequest.Resource.Should().Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
-        capturedRequest
-            .DescriptorResourceModel.ResourceKey.Resource.Should()
-            .Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
         capturedRequest.QueryElements.Should().BeSameAs(queryElements);
         capturedRequest.PaginationParameters.Should().Be(queryRequest.PaginationParameters);
         capturedRequest.AuthorizationStrategyEvaluators.Should().BeSameAs(authorizationStrategyEvaluators);

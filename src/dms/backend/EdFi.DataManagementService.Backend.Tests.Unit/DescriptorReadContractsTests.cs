@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -26,7 +25,6 @@ public class Given_Descriptor_Read_Contracts
         var mappingSet = RelationalAccessTestData.CreateMappingSet(
             new QualifiedResourceName("Ed-Fi", "Student")
         );
-        var descriptorResourceModel = mappingSet.GetConcreteResourceModelOrThrow(_descriptorResource);
         AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators =
         [
             new AuthorizationStrategyEvaluator(
@@ -41,7 +39,6 @@ public class Given_Descriptor_Read_Contracts
 
         var request = new DescriptorGetByIdRequest(
             mappingSet,
-            descriptorResourceModel,
             _descriptorResource,
             documentUuid,
             RelationalGetRequestReadMode.StoredDocument,
@@ -52,7 +49,6 @@ public class Given_Descriptor_Read_Contracts
 
         request.Should().NotBeAssignableTo<IGetRequest>();
         request.MappingSet.Should().BeSameAs(mappingSet);
-        request.DescriptorResourceModel.Should().BeSameAs(descriptorResourceModel);
         request.Resource.Should().Be(_descriptorResource);
         request.DocumentUuid.Should().Be(documentUuid);
         request.ReadMode.Should().Be(RelationalGetRequestReadMode.StoredDocument);
@@ -67,7 +63,6 @@ public class Given_Descriptor_Read_Contracts
         var mappingSet = RelationalAccessTestData.CreateMappingSet(
             new QualifiedResourceName("Ed-Fi", "Student")
         );
-        var descriptorResourceModel = mappingSet.GetConcreteResourceModelOrThrow(_descriptorResource);
         QueryElement[] queryElements =
         [
             new QueryElement(
@@ -96,7 +91,6 @@ public class Given_Descriptor_Read_Contracts
 
         var request = new DescriptorQueryRequest(
             mappingSet,
-            descriptorResourceModel,
             _descriptorResource,
             queryElements,
             paginationParameters,
@@ -107,7 +101,6 @@ public class Given_Descriptor_Read_Contracts
 
         request.Should().NotBeAssignableTo<IQueryRequest>();
         request.MappingSet.Should().BeSameAs(mappingSet);
-        request.DescriptorResourceModel.Should().BeSameAs(descriptorResourceModel);
         request.Resource.Should().Be(_descriptorResource);
         request.QueryElements.Should().BeSameAs(queryElements);
         request.PaginationParameters.Should().BeSameAs(paginationParameters);

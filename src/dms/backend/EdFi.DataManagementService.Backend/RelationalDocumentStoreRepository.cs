@@ -144,12 +144,11 @@ public sealed class RelationalDocumentStoreRepository(
             relationalGetRequest.TraceId.Value
         );
 
-        if (mappingSet.TryGetDescriptorResourceModel(resource, out var descriptorResourceModel))
+        if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
             return _descriptorReadHandler.HandleGetByIdAsync(
                 new DescriptorGetByIdRequest(
                     mappingSet,
-                    descriptorResourceModel,
                     resource,
                     relationalGetRequest.DocumentUuid,
                     relationalGetRequest.ReadMode,
@@ -470,13 +469,12 @@ public sealed class RelationalDocumentStoreRepository(
             relationalQueryRequest.TraceId.Value
         );
 
-        if (mappingSet.TryGetDescriptorResourceModel(resource, out var descriptorResourceModel))
+        if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
             return await _descriptorReadHandler
                 .HandleQueryAsync(
                     new DescriptorQueryRequest(
                         mappingSet,
-                        descriptorResourceModel,
                         resource,
                         relationalQueryRequest.QueryElements,
                         relationalQueryRequest.PaginationParameters,
