@@ -774,6 +774,26 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     }
 
     [Test]
+    public async Task It_should_not_stamp_same_value_identity_column_root_updates()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "SchoolId" = "SchoolId"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+
+        after.Should().Be(before);
+    }
+
+    [Test]
     public async Task It_should_stamp_indirect_identity_propagation_changes_via_postgresql_cascade()
     {
         var before = await GetDocumentStampStateAsync(
@@ -799,6 +819,30 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
         after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
         after.IdentityLastModifiedAt.Should().BeAfter(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_same_value_cascaded_identity_updates()
+    {
+        var before = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "SchoolId" = "SchoolId"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        after.Should().Be(before);
     }
 
     [Test]

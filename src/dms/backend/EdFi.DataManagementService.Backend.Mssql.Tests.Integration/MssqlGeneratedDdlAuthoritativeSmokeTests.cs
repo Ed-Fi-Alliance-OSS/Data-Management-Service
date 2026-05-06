@@ -589,6 +589,26 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
+    public async Task It_should_not_stamp_same_value_identity_column_root_updates()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[Contact]
+            SET [ContactUniqueId] = [ContactUniqueId]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", _seedData.ContactDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+
+        after.Should().Be(before);
+    }
+
+    [Test]
     public async Task It_should_not_stamp_identity_for_content_only_updates_on_identity_propagation_tables()
     {
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
@@ -693,6 +713,26 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // field, not part of Survey's identity, so IdentityVersion must not change here.
         afterSurvey.IdentityVersion.Should().Be(beforeSurvey.IdentityVersion);
         afterSurvey.IdentityLastModifiedAt.Should().Be(beforeSurvey.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_same_value_cascaded_identity_updates()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[Session]
+            SET [SessionName] = [SessionName]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", _seedData.SessionDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
+
+        after.Should().Be(before);
     }
 
     [Test]

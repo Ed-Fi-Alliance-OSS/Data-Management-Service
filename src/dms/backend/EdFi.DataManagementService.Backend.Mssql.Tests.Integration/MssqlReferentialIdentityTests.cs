@@ -239,6 +239,19 @@ public class MssqlReferentialIdentityTests
         ((Guid)referentialId["ReferentialId"]!).Should().Be(expectedReferentialId);
         ((long)referentialId["DocumentId"]!).Should().Be(documentId);
 
+        var identityStampsBefore = (
+            await _database.QueryRowsAsync(
+                """
+                SELECT [IdentityVersion], [IdentityLastModifiedAt]
+                FROM [dms].[Document]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        await _database.ExecuteNonQueryAsync("""WAITFOR DELAY '00:00:00.050';""");
+
         // Act — update non-identity column only
         await _database.ExecuteNonQueryAsync(
             """
@@ -257,6 +270,22 @@ public class MssqlReferentialIdentityTests
         referentialId = referentialIds.Single();
         ((Guid)referentialId["ReferentialId"]!).Should().Be(expectedReferentialId);
         ((long)referentialId["DocumentId"]!).Should().Be(documentId);
+
+        // Assert — identity stamps unchanged
+        var identityStampsAfter = (
+            await _database.QueryRowsAsync(
+                """
+                SELECT [IdentityVersion], [IdentityLastModifiedAt]
+                FROM [dms].[Document]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+        identityStampsAfter["IdentityVersion"].Should().Be(identityStampsBefore["IdentityVersion"]);
+        identityStampsAfter["IdentityLastModifiedAt"]
+            .Should()
+            .Be(identityStampsBefore["IdentityLastModifiedAt"]);
     }
 
     [Test]
