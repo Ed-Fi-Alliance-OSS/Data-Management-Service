@@ -98,10 +98,10 @@ After the in-slice fixes listed below, all 23 supported-scenario rows resolve to
 `both` (parity demonstrated on PostgreSQL and SQL Server) or `n/a` (this slice itself).
 Counts: 22 scenarios `both` (20 already paired pre-slice plus the 2 ex-`fix-in-slice`
 items resolved by the mssql guarded no-op port), 0 `fix-in-slice` remaining, 1 `n/a`
-(this slice's own deliverable row). The dialect-sensitive gaps the audit surfaced
-beyond the scenario matrix — pre-existing PostgreSQL-only no-profile relational-write
-tests and PostgreSQL-only descriptor tests — are non-blocking for `DMS-1124` and are
-captured as non-blocking follow-ups below.
+(this slice's own deliverable row). The audit also reviewed pre-existing
+PostgreSQL-only no-profile relational-write tests and descriptor tests; these are
+outside `DMS-1124`'s scope and not merge risks (see `## Reviewed Non-Blockers`).
+The only named handoff from this slice is `DMS-1132`.
 
 ## Parity Matrix
 
@@ -163,7 +163,7 @@ captured as non-blocking follow-ups below.
 
 ### Three-level provider fixture
 
-- Decision: follow-up.
+- Decision: not required / no follow-up.
 - Rationale: The persister consumes `mergeResult.TablesInDependencyOrder` as a
   flat `ImmutableArray`, not a recursive tree, so a 3-level chain merely adds one
   more loop iteration over the same provider plumbing. No depth-sensitive code
@@ -195,10 +195,13 @@ captured as non-blocking follow-ups below.
   stale slice references), new `MssqlProfileGuardedNoOpOrdinalAlignmentTests`
   (mssql twin of the cross-path regression). Commit `aa0a4951`.
 
-## Non-Blocking Follow-Ups
+## Reviewed Non-Blockers
 
-- `Proposed follow-up: Add mssql counterparts for no-profile relational-write integration coverage` —
-  seven pre-existing pgsql-only no-profile relational-write test files
+The audit considered several pre-existing parity gaps adjacent to `DMS-1124` and
+confirmed each is outside this story's scope, is not a merge risk, and does not
+require a new follow-up Jira from this slice:
+
+- Legacy PostgreSQL-only no-profile relational-write integration tests
   (`PostgresqlRelationalWriteCollectionReorderTests.cs`,
   `PostgresqlRelationalWriteCreateBaselineTests.cs`,
   `PostgresqlRelationalWriteGuardedNoOpTests.cs`,
@@ -206,24 +209,18 @@ captured as non-blocking follow-ups below.
   `PostgresqlRelationalWritePostAsUpdateSmokeTests.cs`,
   `PostgresqlRelationalWriteRollbackSafetyTests.cs`,
   `PostgresqlRelationalWriteUpdateSemanticsTests.cs`) lack mssql twins. The gap
-  pre-dates `DMS-1124` and the dialect-emission code itself is exercised by the
-  profile-side suite on both dialects, so it is non-blocking.
-- `Proposed follow-up: Add mssql counterparts for descriptor projection alias and descriptor write tests` —
-  `PostgresqlDescriptorProjectionAliasTests.cs` and `PostgresqlDescriptorWriteTests.cs`
-  have no mssql twins. Both pre-date `DMS-1124`; descriptor projection,
-  pipeline, collection projection, and referential identity all already have
-  symmetric pgsql/mssql integration suites, so this is non-blocking.
-- `DMS-1124 follow-up: Three-level provider fixture parity` — defer until a
-  provider-layer change alters the depth-risk calculus. The persister's flat
-  `TablesInDependencyOrder` iteration model exercises identical code at
-  2-level and 3-level, and the synthesizer's depth-sensitive walker is covered
-  by the Slice 5 unit fixture
-  `Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3`.
-- `DMS-1124 doc cleanup: Tighten Slice 1 ownership-map naming` — the Slice 1
-  ownership map row reads `ProfileRootCreateRejectedWhenNonCreatable` while the
-  fixture is `Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable`. The
-  mismatch is benign but a doc-only pass should align the two so future audits
-  do not re-litigate the lookup.
+  pre-dates `DMS-1124`; the dialect-emission code itself is exercised by the
+  profile-side suite on both dialects.
+- Legacy PostgreSQL-only descriptor tests
+  (`PostgresqlDescriptorProjectionAliasTests.cs`,
+  `PostgresqlDescriptorWriteTests.cs`) lack mssql twins. Both pre-date `DMS-1124`;
+  descriptor projection, pipeline, collection projection, and referential
+  identity all already have symmetric pgsql/mssql integration suites.
+
+A literal three-level provider fixture is also reviewed-and-not-required for
+this slice; the rationale is documented under `## Hardening Decisions`.
+
+The only named handoff from this slice is `DMS-1132`, as documented below.
 
 ## DMS-1132 Handoff
 
