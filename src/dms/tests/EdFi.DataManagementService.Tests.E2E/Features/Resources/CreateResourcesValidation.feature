@@ -451,7 +451,7 @@ Feature: Resources "Create" Operation validations
 
         @API-166 @POST
         Scenario: 16 Post a new document (Resource)
-              And a POST request is made to "/ed-fi/educationContents" with
+             When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
                       "contentIdentifier": "Testing",
@@ -461,7 +461,17 @@ Feature: Resources "Create" Operation validations
                       "learningResourceMetadataURI": "Testing"
                   }
                   """
-            # Was already created somewhere above
+             Then it should respond with 201
+             When a POST request is made to "/ed-fi/educationContents" with
+                  """
+                  {
+                      "contentIdentifier": "Testing",
+                      "namespace": "Testing",
+                      "shortDescription": "Testing",
+                      "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                      "learningResourceMetadataURI": "Testing"
+                  }
+                  """
              Then it should respond with 200
 
         @API-167 @POST
