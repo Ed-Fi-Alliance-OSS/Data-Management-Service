@@ -201,88 +201,26 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder
     )
     {
-        HashSet<string> usedNames = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ResourceKeyIdParameterName,
-            OffsetParameterName,
-            LimitParameterName,
-        };
-        Dictionary<string, int> nextSuffixByBaseName = new(StringComparer.OrdinalIgnoreCase)
-        {
-            [ResourceKeyIdParameterName] = 2,
-            [OffsetParameterName] = 2,
-            [LimitParameterName] = 2,
-        };
-        string[] resolvedNames = new string[queryElementsInOrder.Count];
-
-        var orderedSeeds = queryElementsInOrder
+        var seeds = queryElementsInOrder
             .Select(
                 (element, index) =>
-                    new ParameterNameSeed(
+                    new QueryParameterNameSeed(
                         Index: index,
-                        BaseName: PlanNamingConventions.SanitizeBareParameterName(
-                            PlanNamingConventions.CamelCaseFirstCharacter(
-                                element.SupportedField.QueryFieldName
-                            )
+                        BaseName: QueryParameterNameAllocator.CreateBaseName(
+                            element.SupportedField.QueryFieldName
                         ),
                         QueryFieldName: element.SupportedField.QueryFieldName,
-                        PathSet: string.Join(
+                        Disambiguator: string.Join(
                             "|",
                             element.QueryElement.DocumentPaths.Select(static path => path.Value)
                         )
                     )
             )
-            .OrderBy(static seed => seed.BaseName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(static seed => seed.BaseName, StringComparer.Ordinal)
-            .ThenBy(static seed => seed.QueryFieldName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(static seed => seed.QueryFieldName, StringComparer.Ordinal)
-            .ThenBy(static seed => seed.PathSet, StringComparer.Ordinal)
-            .ThenBy(static seed => seed.Index)
             .ToArray();
 
-        foreach (var seed in orderedSeeds)
-        {
-            resolvedNames[seed.Index] = AllocateParameterName(seed.BaseName, usedNames, nextSuffixByBaseName);
-        }
-
-        return resolvedNames;
+        return QueryParameterNameAllocator.Allocate(
+            seeds,
+            [ResourceKeyIdParameterName, OffsetParameterName, LimitParameterName]
+        );
     }
-
-    private static string AllocateParameterName(
-        string baseName,
-        ISet<string> usedNames,
-        IDictionary<string, int> nextSuffixByBaseName
-    )
-    {
-        if (usedNames.Add(baseName))
-        {
-            if (!nextSuffixByBaseName.TryGetValue(baseName, out var nextSuffix) || nextSuffix < 2)
-            {
-                nextSuffixByBaseName[baseName] = 2;
-            }
-
-            return baseName;
-        }
-
-        var suffix = nextSuffixByBaseName.TryGetValue(baseName, out var nextSuffixForBase)
-            ? nextSuffixForBase
-            : 2;
-        var candidate = $"{baseName}_{suffix}";
-
-        while (!usedNames.Add(candidate))
-        {
-            suffix++;
-            candidate = $"{baseName}_{suffix}";
-        }
-
-        nextSuffixByBaseName[baseName] = suffix + 1;
-        return candidate;
-    }
-
-    private sealed record ParameterNameSeed(
-        int Index,
-        string BaseName,
-        string QueryFieldName,
-        string PathSet
-    );
 }

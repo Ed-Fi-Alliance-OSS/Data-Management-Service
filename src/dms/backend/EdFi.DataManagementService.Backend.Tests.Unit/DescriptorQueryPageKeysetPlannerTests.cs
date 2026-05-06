@@ -219,6 +219,78 @@ public class Given_DescriptorQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_assign_collision_free_parameter_names_for_reserved_and_sanitized_query_field_collisions()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "resourceKeyId",
+                        "$.resourceKeyId",
+                        "namespace value",
+                        "string",
+                        new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace")),
+                        new PreprocessedDescriptorQueryValue.Raw("namespace value")
+                    ),
+                    CreateElement(
+                        "offset",
+                        "$.offsetQueryField",
+                        "code value",
+                        "string",
+                        new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue")),
+                        new PreprocessedDescriptorQueryValue.Raw("code value")
+                    ),
+                    CreateElement(
+                        "limit",
+                        "$.limitQueryField",
+                        "short description value",
+                        "string",
+                        new DescriptorQueryFieldTarget.ShortDescription(new DbColumnName("ShortDescription")),
+                        new PreprocessedDescriptorQueryValue.Raw("short description value")
+                    ),
+                    CreateElement(
+                        "school-id",
+                        "$.schoolIdDash",
+                        "2026-01-15",
+                        "date",
+                        new DescriptorQueryFieldTarget.EffectiveBeginDate(
+                            new DbColumnName("EffectiveBeginDate")
+                        ),
+                        new PreprocessedDescriptorQueryValue.DateOnlyValue(new DateOnly(2026, 1, 15))
+                    ),
+                    CreateElement(
+                        "school_id",
+                        "$.schoolIdUnderscore",
+                        "2026-06-30",
+                        "date",
+                        new DescriptorQueryFieldTarget.EffectiveEndDate(new DbColumnName("EffectiveEndDate")),
+                        new PreprocessedDescriptorQueryValue.DateOnlyValue(new DateOnly(2026, 6, 30))
+                    ),
+                ]
+            ),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+        );
+
+        keyset.ParameterValues.Keys.Should().Contain("resourceKeyId");
+        keyset.ParameterValues.Keys.Should().Contain("offset");
+        keyset.ParameterValues.Keys.Should().Contain("limit");
+        keyset.ParameterValues.Keys.Should().Contain("resourceKeyId_2");
+        keyset.ParameterValues.Keys.Should().Contain("offset_2");
+        keyset.ParameterValues.Keys.Should().Contain("limit_2");
+        keyset.ParameterValues.Keys.Should().Contain("school_id");
+        keyset.ParameterValues.Keys.Should().Contain("school_id_2");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("@resourceKeyId_2");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("@offset_2");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("@limit_2");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("@school_id");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("@school_id_2");
+    }
+
+    [Test]
     [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\" r")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document] r")]
     public void It_should_plan_descriptor_total_count_sql_without_optional_joins_when_only_resource_type_discrimination_is_required(
