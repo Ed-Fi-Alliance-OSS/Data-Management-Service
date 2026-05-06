@@ -3061,5 +3061,5 @@ internal sealed class ProfileTableStateBuilder
     /// <c>false</c> (no-op tables produce no TableState in the profile-merge path).
     /// </summary>
     public RelationalWriteMergedTableState Build() =>
-        RelationalWriteMergeSupport.BuildTableStateForComparison(_tableWritePlan, _currentRows, _mergedRows);
+        RelationalWriteMergeSupport.BuildOrderedTableState(_tableWritePlan, _currentRows, _mergedRows);
 }

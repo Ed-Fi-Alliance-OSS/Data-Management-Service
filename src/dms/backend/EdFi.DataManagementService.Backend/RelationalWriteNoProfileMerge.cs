@@ -273,11 +273,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         }
 
         public RelationalWriteMergedTableState Build() =>
-            RelationalWriteMergeSupport.BuildTableStateForComparison(
-                tableWritePlan,
-                currentRows,
-                _mergedRows
-            );
+            RelationalWriteMergeSupport.BuildOrderedTableState(tableWritePlan, currentRows, _mergedRows);
     }
 
     private sealed class CurrentStateProjection

@@ -144,7 +144,7 @@ The only named handoff from this slice is `DMS-1132`.
   inspecting persisted state.
 - Implementation: `Profile/ProfileCollectionWalker.cs` `finalOrdinal = i` (was
   `i + 1`). XML doc on `ProfileCollectionMatchedRowOverlay.StampOrdinal` updated
-  to "0-based storage position". See commit `8928bec3`.
+  to "0-based storage position".
 - Future option: If a product decision later requires 1-based internal ordinals,
   that work must own backfill, compatibility notes, and dialect coverage as a
   separate story.
@@ -154,17 +154,16 @@ The only named handoff from this slice is `DMS-1132`.
 - Decision: Extract `OrderCollectionRowsForComparisonIfFullyBound`,
   `OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound`,
   `IsCollectionAlignedExtensionScope`, and `BoundRowComparer` into
-  `RelationalWriteMergeSupport`. The no-profile `TableStateBuilder.Build()`
-  delegates its existing comparison-ordering calls to the shared helper, while
-  `ProfileTableStateBuilder.Build()` applies the shared helper to both current
-  and merged comparison rowsets.
+  `RelationalWriteMergeSupport`. Both the no-profile `TableStateBuilder.Build()`
+  and `ProfileTableStateBuilder.Build()` delegate to a shared
+  `BuildOrderedTableState` helper that routes both current and merged rowsets
+  through the same ordering step before constructing the
+  `RelationalWriteMergedTableState`.
 - Rationale: Guarded no-op's positional `SequenceEqual` precondition was
   previously satisfied by the profile planner's coincidence-of-implementation
-  emission order. The profile path now enforces that invariant with an explicit
-  sort step; the no-profile path keeps relying on deterministic hydration order
-  for current collection rows and uses the shared helper where it already sorted
-  comparison rows.
-- Implementation: See commit `73085356`.
+  emission order. Both paths now enforce that invariant with an explicit sort
+  step on both sides of the comparison, eliminating the prior reliance on
+  deterministic hydration order for current collection rows.
 
 ### Three-level provider fixture
 
@@ -183,9 +182,8 @@ The only named handoff from this slice is `DMS-1132`.
   `Profile/ProfileCollectionWalker.cs:415`, `Profile/ProfileCollectionMatchedRowOverlay.cs`
   XML doc, profile test ordinal sweep across pgsql + mssql + Backend.Tests.Unit
   (eight files), new pgsql regression `PostgresqlProfileGuardedNoOpOrdinalAlignmentTests`.
-  Commit `8928bec3`.
 - Test-comment policy cleanup on `PostgresqlProfileGuardedNoOpOrdinalAlignmentTests`
-  to drop slice/Jira/workstream refs from header and XML docs. Commit `257e02ee`.
+  to drop slice/Jira/workstream refs from header and XML docs.
 - Shared collection row ordering for guarded no-op —
   `RelationalWriteMergeSupport.cs` (added shared sort + comparer),
   `RelationalWriteNoProfileMerge.cs` (delegated, ~119 LOC removed),
@@ -193,17 +191,16 @@ The only named handoff from this slice is `DMS-1132`.
   unit tests `RelationalWriteMergeSupportRowOrderingTests`,
   `Profile/ProfileTableStateBuilderOrderingTests`, and a synthesizer-test
   fixture-builder fix to seed the parent-locator binding with a real `long`.
-  Commit `73085356`.
 - MSSQL guarded no-op parity for separate-table and top-level collection shapes —
   `MssqlProfileGuardedNoOpTests.cs` (two new fixtures + two intermediate base
   classes mirroring the pgsql side; pre-existing file header rewritten to drop
   stale slice references), new `MssqlProfileGuardedNoOpOrdinalAlignmentTests`
-  (mssql twin of the cross-path regression). Commit `aa0a4951`.
+  (mssql twin of the cross-path regression).
 - MSSQL generated-DDL baseline snapshot path separator preservation —
   `MssqlGeneratedDdlBaselineDatabase.BuildSnapshotPath()` now derives the snapshot
   path using the separator from SQL Server's physical file path instead of the host
   OS path separator, with regression coverage in
-  `MssqlGeneratedDdlBaselineDatabaseTests`. Commit `7cdb030f`.
+  `MssqlGeneratedDdlBaselineDatabaseTests`.
 
 ## Reviewed Non-Blockers
 

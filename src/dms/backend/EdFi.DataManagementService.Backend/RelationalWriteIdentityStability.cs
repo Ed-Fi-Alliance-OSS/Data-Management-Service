@@ -148,16 +148,16 @@ internal static class RelationalWriteIdentityStability
 
     private static int FindBindingIndexOrThrow(TableWritePlan tableWritePlan, DbColumnName columnName)
     {
-        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
+        try
         {
-            if (tableWritePlan.ColumnBindings[bindingIndex].Column.ColumnName.Equals(columnName))
-            {
-                return bindingIndex;
-            }
+            return RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName);
         }
-
-        throw new InvalidOperationException(
-            $"Root table '{tableWritePlan.TableModel.Table}' does not contain a write binding for identity-projection column '{columnName.Value}'."
-        );
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException(
+                $"Root table '{tableWritePlan.TableModel.Table}' does not contain a write binding for identity-projection column '{columnName.Value}'.",
+                ex
+            );
+        }
     }
 }

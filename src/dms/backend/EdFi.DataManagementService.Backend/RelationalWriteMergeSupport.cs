@@ -208,7 +208,7 @@ internal static class RelationalWriteMergeSupport
     private static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 
-    internal static RelationalWriteMergedTableState BuildTableStateForComparison(
+    internal static RelationalWriteMergedTableState BuildOrderedTableState(
         TableWritePlan tableWritePlan,
         IReadOnlyList<RelationalWriteMergedTableRow> currentRows,
         IReadOnlyList<RelationalWriteMergedTableRow> mergedRows
