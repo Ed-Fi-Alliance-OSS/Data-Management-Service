@@ -46,6 +46,8 @@ internal sealed record SurveySessionReferenceState(
     string SessionSessionName
 );
 
+internal sealed record ReferentialIdentityRow(Guid ReferentialId, long DocumentId, short ResourceKeyId);
+
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
@@ -591,7 +593,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     [Test]
     public async Task It_should_not_stamp_same_value_identity_column_root_updates()
     {
-        var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+        var beforeStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -603,9 +606,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@documentId", _seedData.ContactDocumentId)
         );
 
-        var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+        var afterStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
 
-        after.Should().Be(before);
+        afterStamps.Should().Be(beforeStamps);
+        afterRiRows.Should().Equal(beforeRiRows);
     }
 
     [Test]
@@ -721,8 +726,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // CourseOffering's INSTEAD OF UPDATE rewrites every column unconditionally, so the
         // AFTER stamp/RI triggers see UPDATE([Session_SessionName]) = true even though the
         // user-issued UPDATE was a same-value self-assignment. Only the null-safe value diff
-        // in the trigger body should prevent a false content/identity stamp bump.
-        var before = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
+        // in the trigger body should prevent a false content/identity stamp bump and a
+        // redundant RI row rewrite.
+        var beforeStamps = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
+        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
+            _seedData.CourseOfferingDocumentId
+        );
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -734,9 +743,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@documentId", _seedData.CourseOfferingDocumentId)
         );
 
-        var after = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
+        var afterStamps = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
+        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
+            _seedData.CourseOfferingDocumentId
+        );
 
-        after.Should().Be(before);
+        afterStamps.Should().Be(beforeStamps);
+        afterRiRows.Should().Equal(beforeRiRows);
     }
 
     [Test]
@@ -1560,6 +1573,28 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             ReadDateTimeOffset(row["ContentLastModifiedAt"]),
             ReadDateTimeOffset(row["IdentityLastModifiedAt"])
         );
+    }
+
+    private async Task<IReadOnlyList<ReferentialIdentityRow>> GetReferentialIdentityRowsForDocumentAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
+            FROM [dms].[ReferentialIdentity]
+            WHERE [DocumentId] = @documentId
+            ORDER BY [ResourceKeyId], [ReferentialId];
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+
+        return rows.Select(r => new ReferentialIdentityRow(
+                (Guid)r["ReferentialId"]!,
+                Convert.ToInt64(r["DocumentId"], CultureInfo.InvariantCulture),
+                Convert.ToInt16(r["ResourceKeyId"], CultureInfo.InvariantCulture)
+            ))
+            .ToList();
     }
 
     private async Task<CourseOfferingSessionReferenceState> GetCourseOfferingSessionReferenceStateAsync(

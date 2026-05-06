@@ -776,7 +776,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [Test]
     public async Task It_should_not_stamp_same_value_identity_column_root_updates()
     {
-        var before = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var beforeStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -788,9 +789,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
         );
 
-        var after = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var afterStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
 
-        after.Should().Be(before);
+        afterStamps.Should().Be(beforeStamps);
+        afterRiRows.Should().Equal(beforeRiRows);
     }
 
     [Test]
@@ -828,8 +831,13 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         // gates the EducationOrganizationIdentity write on OLD."SchoolId" IS DISTINCT FROM NEW,
         // so the FK ON UPDATE CASCADE never fires. Drive the dependent's stamp trigger directly
         // with a self-assignment on its propagated identity-source reference column to exercise
-        // the trigger's value-diff guard.
-        var before = await GetDocumentStampStateAsync(
+        // the trigger's outer no-op short-circuit (IS DISTINCT FROM over identity-projection
+        // columns) against both stamp bumps and redundant RI rewrites. The inner identity-only
+        // gate is covered by It_should_stamp_indirect_identity_propagation_changes_via_postgresql_cascade.
+        var beforeStamps = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
 
@@ -843,11 +851,15 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             new NpgsqlParameter("documentId", _seedData.StudentEducationOrganizationAssociationDocumentId)
         );
 
-        var after = await GetDocumentStampStateAsync(
+        var afterStamps = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
 
-        after.Should().Be(before);
+        afterStamps.Should().Be(beforeStamps);
+        afterRiRows.Should().Equal(beforeRiRows);
     }
 
     [Test]
@@ -1385,6 +1397,28 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             ReadDateTimeOffset(row["ContentLastModifiedAt"]),
             ReadDateTimeOffset(row["IdentityLastModifiedAt"])
         );
+    }
+
+    private async Task<IReadOnlyList<ReferentialIdentityRow>> GetReferentialIdentityRowsForDocumentAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+            ORDER BY "ResourceKeyId", "ReferentialId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(r => new ReferentialIdentityRow(
+                (Guid)r["ReferentialId"]!,
+                Convert.ToInt64(r["DocumentId"], CultureInfo.InvariantCulture),
+                Convert.ToInt16(r["ResourceKeyId"], CultureInfo.InvariantCulture)
+            ))
+            .ToList();
     }
 
     private async Task DelayForDistinctTimestampsAsync()
