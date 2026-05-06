@@ -16,6 +16,36 @@ internal sealed record MssqlGeneratedDdlBaselineMutableCounts(
 );
 
 [TestFixture]
+public class Given_MssqlGeneratedDdlBaselineSnapshotPath
+{
+    [Test]
+    public void It_preserves_linux_container_path_separators()
+    {
+        var snapshotPath = MssqlGeneratedDdlBaselineDatabase.BuildSnapshotPath(
+            physicalName: "/var/opt/mssql/data/dmsfp123.mdf",
+            databaseName: "dmsfp123",
+            fileId: 1,
+            logicalName: "dmsfp123"
+        );
+
+        snapshotPath.Should().Be("/var/opt/mssql/data/dmsfp123_baseline_1_dmsfp123.ss");
+    }
+
+    [Test]
+    public void It_preserves_windows_path_separators()
+    {
+        var snapshotPath = MssqlGeneratedDdlBaselineDatabase.BuildSnapshotPath(
+            physicalName: @"C:\SqlData\dmsfp123.mdf",
+            databaseName: "dmsfp123",
+            fileId: 1,
+            logicalName: "dmsfp123"
+        );
+
+        snapshotPath.Should().Be(@"C:\SqlData\dmsfp123_baseline_1_dmsfp123.ss");
+    }
+}
+
+[TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 public class Given_MssqlGeneratedDdlBaselineDatabase
