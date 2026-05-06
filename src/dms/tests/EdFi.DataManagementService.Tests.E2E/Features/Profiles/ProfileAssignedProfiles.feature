@@ -12,6 +12,7 @@ Feature: Profile Assigned Profiles
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade               |
 
+        @relational-backend
         Scenario: 01 Covered resource with assigned profile content type succeeds
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
                   """
@@ -39,6 +40,7 @@ Feature: Profile Assigned Profiles
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
+        @relational-backend
         Scenario: 03 Covered resource write with assigned profile content type succeeds
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
                   """
@@ -59,6 +61,7 @@ Feature: Profile Assigned Profiles
                   """
              Then the profile response status is 201
 
+        @relational-backend
         Scenario: 04 Covered resource write with different profile content type fails
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "School" with body
                   """
@@ -108,6 +111,7 @@ Feature: Profile Assigned Profiles
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
+        @relational-backend
         Scenario: 08 Covered resource write with one of several assigned profiles succeeds
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/students" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "Student" with body
@@ -124,6 +128,7 @@ Feature: Profile Assigned Profiles
         # Current DMS behavior follows the implicit-profile design:
         # with no profile header, the request succeeds when exactly one assigned
         # profile applies to the target resource/verb.
+        @relational-backend
         Scenario: 09 Covered resource write with standard content type and one assigned profile succeeds
              When a POST request is made to "/ed-fi/schools" without profile header with body
                   """
@@ -179,6 +184,7 @@ Feature: Profile Assigned Profiles
         # Current DMS behavior follows the implicit-profile design:
         # with no profile header, the request succeeds when exactly one assigned
         # profile applies to the target resource/verb.
+        @relational-backend
         Scenario: 12 Covered resource update with standard content type and one assigned profile succeeds
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
                   """
@@ -269,6 +275,7 @@ Feature: Profile Assigned Profiles
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
+        @relational-backend
         Scenario: 15 Covered resource create with standard content type and multiple applicable assigned profiles returns incorrect-usage
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "E2E-Test-School-IncludeOnly, E2E-Test-School-IncludeOnly-Alt" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/schools" without profile header with body
@@ -319,6 +326,7 @@ Feature: Profile Assigned Profiles
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
+        @relational-backend
         Scenario: 18 Covered resource update with standard content type and multiple applicable assigned profiles returns incorrect-usage
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
                   """

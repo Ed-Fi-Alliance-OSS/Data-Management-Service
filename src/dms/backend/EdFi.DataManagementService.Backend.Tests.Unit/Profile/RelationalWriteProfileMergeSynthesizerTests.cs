@@ -2827,12 +2827,15 @@ internal static class CollectionSynthesizerBuilders
 
     /// <summary>
     /// Builds a CollectionWriteCandidate at the given array position with the given identity value.
-    /// All values default to Literal(null) except index 3 (the identity field).
+    /// All values default to Literal(null) except index 1 (ParentDocumentId, seeded with the root
+    /// document id so the candidate's parent-locator slot matches what the production flattener
+    /// would materialize from WriteValueSource.DocumentId()) and index 3 (the identity field).
     /// </summary>
     public static CollectionWriteCandidate BuildCandidate(
         TableWritePlan collectionPlan,
         string identityValue,
-        int requestOrder
+        int requestOrder,
+        long parentDocumentId = 345L
     )
     {
         var values = new FlattenedWriteValue[collectionPlan.ColumnBindings.Length];
@@ -2840,6 +2843,9 @@ internal static class CollectionSynthesizerBuilders
         {
             values[i] = new FlattenedWriteValue.Literal(null);
         }
+        // Index 1 is the ParentDocumentId binding for the standard
+        // [CollectionItemId, ParentDocumentId, Ordinal, IdentityField0] collection layout.
+        values[1] = new FlattenedWriteValue.Literal(parentDocumentId);
         // Stamp the identity field value at index 3
         values[3] = new FlattenedWriteValue.Literal(identityValue);
 
@@ -2992,7 +2998,7 @@ internal static class CollectionSynthesizerBuilders
 
 /// <summary>
 /// Fixture 5: create-new path (null context + currentState), all-insert scenario.
-/// Two visible request items, both Creatable=true. Expects two merged rows with ordinals 1, 2.
+/// Two visible request items, both Creatable=true. Expects two merged rows with ordinals 0, 1.
 /// </summary>
 [TestFixture]
 public class Given_Synthesize_top_level_collection_create_new_with_all_inserts
@@ -3053,19 +3059,19 @@ public class Given_Synthesize_top_level_collection_create_new_with_all_inserts
         _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(2);
 
     [Test]
-    public void It_stamps_ordinal_1_on_first_row()
+    public void It_stamps_ordinal_on_first_row()
     {
         var ordinal = (FlattenedWriteValue.Literal)
             _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[2];
-        ordinal.Value.Should().Be(1);
+        ordinal.Value.Should().Be(0);
     }
 
     [Test]
-    public void It_stamps_ordinal_2_on_second_row()
+    public void It_stamps_ordinal_on_second_row()
     {
         var ordinal = (FlattenedWriteValue.Literal)
             _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[1].Values[2];
-        ordinal.Value.Should().Be(2);
+        ordinal.Value.Should().Be(1);
     }
 
     [Test]
@@ -3162,7 +3168,7 @@ public class Given_Synthesize_top_level_collection_CreatabilityRejection_propaga
 /// <summary>
 /// Fixture 1: existing document happy path with matched + hidden + insert rows.
 /// Stored state: [V1, H, V2]. Request: [V1', V2', NEW1] all creatable.
-/// Expects Success with merged rows in Section-D order [V1_upd, H, V2_upd, NEW1], ordinals 1..4.
+/// Expects Success with merged rows in Section-D order [V1_upd, H, V2_upd, NEW1], ordinals 0..3.
 /// </summary>
 [TestFixture]
 public class Given_Synthesize_top_level_collection_with_matched_and_hidden_and_insert
@@ -3199,16 +3205,16 @@ public class Given_Synthesize_top_level_collection_with_matched_and_hidden_and_i
 
         var request = CollectionSynthesizerBuilders.BuildRequest(body, requestItems);
 
-        // Stored rows: V1 at ordinal 1 (visible), H at ordinal 2 (hidden), V2 at ordinal 3 (visible).
+        // Stored rows: V1 at ordinal 0 (visible), H at ordinal 1 (hidden), V2 at ordinal 2 (visible).
         // Visible stored rows: V1 and V2 (H is not in VisibleStoredCollectionRows).
         var storedRowV1 = CollectionSynthesizerBuilders.BuildStoredRow("V1");
         var storedRowV2 = CollectionSynthesizerBuilders.BuildStoredRow("V2");
         var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1, storedRowV2]);
 
         // Current DB rows: CollectionItemId, ParentDocumentId, Ordinal, IdentityField0.
-        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
-        object?[] dbRowH = [20L, documentId, 2, "H"];
-        object?[] dbRowV2 = [30L, documentId, 3, "V2"];
+        object?[] dbRowV1 = [10L, documentId, 0, "V1"];
+        object?[] dbRowH = [20L, documentId, 1, "H"];
+        object?[] dbRowV2 = [30L, documentId, 2, "V2"];
 
         var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
             rootPlan,
@@ -3245,13 +3251,13 @@ public class Given_Synthesize_top_level_collection_with_matched_and_hidden_and_i
         _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(4);
 
     [Test]
-    public void It_stamps_ordinals_1_through_4()
+    public void It_stamps_ordinals_for_each_row()
     {
         var mergedRows = _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows;
         for (var i = 0; i < 4; i++)
         {
             var ordinal = (FlattenedWriteValue.Literal)mergedRows[i].Values[2];
-            ordinal.Value.Should().Be(i + 1, $"row {i} should have ordinal {i + 1}");
+            ordinal.Value.Should().Be(i, $"row {i} should have ordinal {i}");
         }
     }
 
@@ -3384,10 +3390,10 @@ public class Given_Synthesize_top_level_collection_omitted_visible_row_appears_i
         var storedRowV2 = CollectionSynthesizerBuilders.BuildStoredRow("V2");
         var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1, storedRowV2]);
 
-        // Current DB rows: V1 at ordinal 1, V2 at ordinal 2.
+        // Current DB rows: V1 at ordinal 0, V2 at ordinal 1.
         // [0]=CollectionItemId, [1]=ParentDocumentId, [2]=Ordinal, [3]=IdentityField0
-        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
-        object?[] dbRowV2 = [20L, documentId, 2, "V2"];
+        object?[] dbRowV1 = [10L, documentId, 0, "V1"];
+        object?[] dbRowV2 = [20L, documentId, 1, "V2"];
 
         var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
             rootPlan,
@@ -3480,11 +3486,11 @@ public class Given_Synthesize_top_level_collection_delete_all_visible_while_hidd
         var storedRowV2 = CollectionSynthesizerBuilders.BuildStoredRow("V2");
         var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1, storedRowV2]);
 
-        // Current DB rows: V1 at ordinal 1, H at ordinal 2 (hidden), V2 at ordinal 3.
+        // Current DB rows: V1 at ordinal 0, H at ordinal 1 (hidden), V2 at ordinal 2.
         // [0]=CollectionItemId, [1]=ParentDocumentId, [2]=Ordinal, [3]=IdentityField0
-        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
-        object?[] dbRowH = [20L, documentId, 2, "H"];
-        object?[] dbRowV2 = [30L, documentId, 3, "V2"];
+        object?[] dbRowV1 = [10L, documentId, 0, "V1"];
+        object?[] dbRowH = [20L, documentId, 1, "H"];
+        object?[] dbRowV2 = [30L, documentId, 2, "V2"];
 
         var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
             rootPlan,
@@ -4762,15 +4768,15 @@ public class Given_top_level_collection_with_descriptor_backed_identity_delete_b
 
         // Current DB state: two rows — one for each address.
         // Layout: [CollectionItemId, ParentDocumentId, Ordinal, DescriptorId]
-        // Row for address A is at ordinal 1; row for address B is at ordinal 2.
+        // Row for address A is at ordinal 0; row for address B is at ordinal 1.
         var currentState = DescriptorCanonicalizeBuilders.BuildCurrentState(
             rootPlan,
             collectionPlan,
             documentId: 345L,
             collectionRows:
             [
-                [1L, 345L, 1, AddressTypeIdA],
-                [2L, 345L, 2, AddressTypeIdB],
+                [1L, 345L, 0, AddressTypeIdA],
+                [2L, 345L, 1, AddressTypeIdB],
             ]
         );
 
@@ -5746,8 +5752,8 @@ public class Given_top_level_collection_with_mixed_identity_and_duplicate_scalar
             [storedRowPhysical, storedRowMailing] // Both stored rows visible, same city.
         );
 
-        // Current DB state: two rows — Dallas/Physical (typeId=42) at ordinal 1 and
-        // Dallas/Mailing (typeId=50) at ordinal 2. Layout matches storedRow ordinal order so
+        // Current DB state: two rows — Dallas/Physical (typeId=42) at ordinal 0 and
+        // Dallas/Mailing (typeId=50) at ordinal 1. Layout matches storedRow ordinal order so
         // positional correspondence holds: currentRows[0] = Physical, currentRows[1] = Mailing.
         // Layout: [CollectionItemId, ParentDocumentId, Ordinal, CityName, DescriptorId]
         var currentState = new RelationalWriteCurrentState(
@@ -5769,8 +5775,8 @@ public class Given_top_level_collection_with_mixed_identity_and_duplicate_scalar
                 new HydratedTableRows(
                     collectionPlan.TableModel,
                     [
-                        [1L, 345L, 1, "Dallas", MixedIdentityBuilders.PhysicalId],
-                        [2L, 345L, 2, "Dallas", MixedIdentityBuilders.MailingId],
+                        [1L, 345L, 0, "Dallas", MixedIdentityBuilders.PhysicalId],
+                        [2L, 345L, 1, "Dallas", MixedIdentityBuilders.MailingId],
                     ]
                 ),
             ],
@@ -6470,9 +6476,9 @@ public class Given_reference_backed_top_level_collection_with_descriptor_in_natu
             [storedRowB] // 1 visible stored row.
         );
 
-        // Current DB state: TWO rows. Row A (programId=42, Athletic, ordinal 1) is hidden
+        // Current DB state: TWO rows. Row A (programId=42, Athletic, ordinal 0) is hidden
         // by the profile (not in visible stored rows). Row B (programId=99, Career,
-        // ordinal 2) is the visible stored row. Counts differ (1 stored vs 2 current).
+        // ordinal 1) is the visible stored row. Counts differ (1 stored vs 2 current).
         // Layout: [CollectionItemId, ParentDocumentId, Ordinal, ProgramReference_DocumentId,
         //          ProgramReference_ProgramId, ProgramReference_ProgramTypeDescriptor_Id]
         var currentState = new RelationalWriteCurrentState(
@@ -6497,7 +6503,7 @@ public class Given_reference_backed_top_level_collection_with_descriptor_in_natu
                         [
                             1L,
                             parentDocumentId,
-                            1,
+                            0,
                             ReferenceWithDescriptorIdentityBuilders.ProgramADocumentId,
                             ReferenceWithDescriptorIdentityBuilders.ProgramAId,
                             ReferenceWithDescriptorIdentityBuilders.AthleticDescriptorId,
@@ -6505,7 +6511,7 @@ public class Given_reference_backed_top_level_collection_with_descriptor_in_natu
                         [
                             2L,
                             parentDocumentId,
-                            2,
+                            1,
                             ReferenceWithDescriptorIdentityBuilders.ProgramBDocumentId,
                             ReferenceWithDescriptorIdentityBuilders.ProgramBId,
                             ReferenceWithDescriptorIdentityBuilders.CareerDescriptorId,
@@ -6787,12 +6793,12 @@ public class Given_nested_base_collection_visible_row_update_with_hidden_row_pre
             DocumentId,
             parentRows:
             [
-                [ParentAItemId, DocumentId, 1, "A"],
+                [ParentAItemId, DocumentId, 0, "A"],
             ],
             childRows:
             [
-                [ChildA1ItemId, ParentAItemId, 1, "A1"],
-                [ChildA2HiddenItemId, ParentAItemId, 2, "A2"],
+                [ChildA1ItemId, ParentAItemId, 0, "A1"],
+                [ChildA2HiddenItemId, ParentAItemId, 1, "A2"],
             ]
         );
 
@@ -8835,7 +8841,7 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Identical_Val
     {
         // Adapted from Given_Synthesize_top_level_collection_with_matched_and_hidden_and_insert.
         // Reduced to a single visible matched item — V1 — with no inserts and no hidden interleaving.
-        // The single stored DB row has CollectionItemId=10, ParentDocumentId=345, Ordinal=1,
+        // The single stored DB row has CollectionItemId=10, ParentDocumentId=345, Ordinal=0,
         // IdentityField0="V1", which matches what the synthesizer's matched-update overlay
         // would produce on the merged row.
         var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
@@ -8857,7 +8863,7 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Identical_Val
         var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1]);
 
         // CollectionItemId, ParentDocumentId, Ordinal, IdentityField0
-        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
+        object?[] dbRowV1 = [10L, documentId, 0, "V1"];
 
         var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
             rootPlan,
@@ -9042,9 +9048,9 @@ public class Given_Synthesizer_RootExtensionChildCollection_All_Matched_With_Ide
             ]
         );
 
-        // Stored child row: [ChildItemId=901, DocumentId=345, Ordinal=1, Identity="C1"].
-        // Final ordinal recomputation pins the matched-update entry's ordinal to 1
-        // (single-item Sequence), so the stored ordinal must already be 1 for the
+        // Stored child row: [ChildItemId=901, DocumentId=345, Ordinal=0, Identity="C1"].
+        // Final ordinal recomputation pins the matched-update entry's ordinal to 0
+        // (single-item Sequence), so the stored ordinal must already be 0 for the
         // comparable-binding compare ([identity, ordinal]) to succeed.
         var currentState = RootExtensionChildCollectionTopologyBuilders.BuildCurrentState(
             plan,
@@ -9052,7 +9058,7 @@ public class Given_Synthesizer_RootExtensionChildCollection_All_Matched_With_Ide
             extensionRowValues: [RootExtensionDocumentId, "Blue"],
             childRows:
             [
-                [901L, RootExtensionDocumentId, 1, "C1"],
+                [901L, RootExtensionDocumentId, 0, "C1"],
             ]
         );
 
@@ -9187,9 +9193,9 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Hidden_Interl
     public void Setup()
     {
         // Adapted from Given_Synthesize_top_level_collection_with_matched_and_hidden_and_insert.
-        // Stored DB: [V1 ord 1, H ord 2 (hidden), V2 ord 3]. Request: [V1, V2] (no inserts,
+        // Stored DB: [V1 ord 0, H ord 1 (hidden), V2 ord 2]. Request: [V1, V2] (no inserts,
         // no deletes). The planner produces merged sequence [V1_overlay, H_preserve, V2_overlay]
-        // with stamped ordinals 1..3. Both CurrentRows and MergedRows must arrive at the
+        // with stamped ordinals 0..2. Both CurrentRows and MergedRows must arrive at the
         // builder in the same positional order [V1, H, V2] for IsNoOpCandidate's positional
         // SequenceEqual to fire — this is the property the fixture pins.
         var (plan, collectionPlan) = CollectionSynthesizerBuilders.BuildRootAndCollectionPlan();
@@ -9218,9 +9224,9 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Hidden_Interl
         var context = CollectionSynthesizerBuilders.BuildContext(request, [storedRowV1, storedRowV2]);
 
         // CollectionItemId, ParentDocumentId, Ordinal, IdentityField0
-        object?[] dbRowV1 = [10L, documentId, 1, "V1"];
-        object?[] dbRowH = [20L, documentId, 2, "H"];
-        object?[] dbRowV2 = [30L, documentId, 3, "V2"];
+        object?[] dbRowV1 = [10L, documentId, 0, "V1"];
+        object?[] dbRowH = [20L, documentId, 1, "H"];
+        object?[] dbRowV2 = [30L, documentId, 2, "V2"];
 
         var currentState = CollectionSynthesizerBuilders.BuildCurrentState(
             rootPlan,

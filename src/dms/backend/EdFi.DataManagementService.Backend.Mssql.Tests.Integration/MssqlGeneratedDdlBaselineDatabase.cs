@@ -344,13 +344,7 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
             var fileId = reader.GetInt32(0);
             var logicalName = reader.GetString(1);
             var physicalName = reader.GetString(2);
-            var snapshotFileName = $"{databaseName}_baseline_{fileId}_{SanitizeFileName(logicalName)}.ss";
-            var directoryPath =
-                Path.GetDirectoryName(physicalName)
-                ?? throw new InvalidOperationException(
-                    $"Could not determine the data file directory for database '{databaseName}'."
-                );
-            var snapshotPath = Path.Combine(directoryPath, snapshotFileName);
+            var snapshotPath = BuildSnapshotPath(physicalName, databaseName, fileId, logicalName);
 
             files.Add(new(LogicalName: logicalName, SnapshotPath: snapshotPath));
         }
@@ -360,6 +354,32 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
             : throw new InvalidOperationException(
                 $"Could not locate data files for SQL Server database '{databaseName}'."
             );
+    }
+
+    internal static string BuildSnapshotPath(
+        string physicalName,
+        string databaseName,
+        int fileId,
+        string logicalName
+    )
+    {
+        var lastForwardSlashIndex = physicalName.LastIndexOf('/');
+        var lastBackslashIndex = physicalName.LastIndexOf('\\');
+        var lastSeparatorIndex = Math.Max(lastForwardSlashIndex, lastBackslashIndex);
+
+        if (lastSeparatorIndex < 0)
+        {
+            throw new InvalidOperationException(
+                $"Could not determine the data file directory for database '{databaseName}'."
+            );
+        }
+
+        var snapshotFileName = $"{databaseName}_baseline_{fileId}_{SanitizeFileName(logicalName)}.ss";
+        var separator = physicalName[lastSeparatorIndex];
+
+        return lastSeparatorIndex == 0
+            ? $"{separator}{snapshotFileName}"
+            : $"{physicalName[..lastSeparatorIndex]}{separator}{snapshotFileName}";
     }
 
     private static async Task ExecuteAdminNonQueryAsync(string sql, int commandTimeoutSeconds)

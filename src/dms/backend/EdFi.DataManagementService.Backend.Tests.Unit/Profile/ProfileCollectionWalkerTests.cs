@@ -806,8 +806,8 @@ public class Given_a_hidden_top_level_parent_with_nested_descendants
     [Test]
     public void It_emits_one_table_state_for_parents_with_two_merged_rows()
     {
-        // Parents scope: A (HiddenPreserve clone with recomputed ordinal 1) + B
-        // (MatchedUpdate with recomputed ordinal 2). Both walk through the parents
+        // Parents scope: A (HiddenPreserve clone with recomputed ordinal 0) + B
+        // (MatchedUpdate with recomputed ordinal 1). Both walk through the parents
         // builder via the Normal-mode planner path.
         var parentsBuilder = _tableStateBuilders[_parentsPlan.TableModel.Table];
         parentsBuilder.HasContent.Should().BeTrue();
@@ -851,12 +851,12 @@ public class Given_a_hidden_top_level_parent_with_nested_descendants
     }
 
     [Test]
-    public void It_emits_Bs_visible_child_with_recomputed_ordinal_one()
+    public void It_emits_Bs_visible_child_with_recomputed_ordinal()
     {
         // B's child reaches the children builder via Normal-mode recursion under B.
         // The planner sees the child as a hidden current row (no visible-stored entry),
         // emits HiddenPreserveEntry, and the walker's existing top-level switch case
-        // recomputes the ordinal to finalOrdinal = 1 (the only entry in the sequence).
+        // recomputes the ordinal to finalOrdinal = 0 (the only entry in the sequence).
         // Stored ordinal was ChildB1StoredOrdinal (5) — recomputation must overwrite it.
         var childrenState = _tableStateBuilders[_childrenPlan.TableModel.Table].Build();
         var ordinalBindingIndex = RelationalWriteMergeSupport.FindBindingIndex(
@@ -876,7 +876,7 @@ public class Given_a_hidden_top_level_parent_with_nested_descendants
         bChildMergedRow.Should().NotBeNull("the children scope under B must emit B's child");
 
         var ordinal = ((FlattenedWriteValue.Literal)bChildMergedRow!.Values[ordinalBindingIndex]).Value;
-        Convert.ToInt32(ordinal).Should().Be(1, "Normal-mode hidden recomputation stamps finalOrdinal=1");
+        Convert.ToInt32(ordinal).Should().Be(0, "Normal-mode hidden recomputation stamps finalOrdinal=0");
     }
 
     [Test]

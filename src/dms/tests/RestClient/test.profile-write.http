@@ -1,0 +1,261 @@
+@configPort=8081
+@dmsPort=8080
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=ValidClientSecret1234567890!Abcd
+@profileName=test-school-gradelevel-filter-preserve
+
+### Step 1: Config admin token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+### Step 2: Create writable profile that filters gradeLevels to Ninth grade only
+# Mirrors E2E-Test-School-Write-GradeLevelFilterPreserve. Collection-item filter
+# IncludeOnly Ninth grade — other gradeLevels are hidden from the profile's view.
+#
+# Profile XML (formatted for readability — sent inline-escaped in the request body below):
+#
+#   <Profile name="test-school-gradelevel-filter-preserve">
+#     <Resource name="School">
+#       <ReadContentType memberSelection="IncludeAll" />
+#       <WriteContentType memberSelection="IncludeAll">
+#         <Collection name="gradeLevels" memberSelection="IncludeAll">
+#           <Filter propertyName="gradeLevelDescriptor" filterMode="IncludeOnly">
+#             <Value>uri://ed-fi.org/GradeLevelDescriptor#Ninth grade</Value>
+#           </Filter>
+#         </Collection>
+#       </WriteContentType>
+#     </Resource>
+#   </Profile>
+#
+# @name createSchoolWriteProfile
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "{{profileName}}",
+  "definition": "<Profile name=\"{{profileName}}\"><Resource name=\"School\"><ReadContentType memberSelection=\"IncludeAll\"/><WriteContentType memberSelection=\"IncludeAll\"><Collection name=\"gradeLevels\" memberSelection=\"IncludeAll\"><Filter propertyName=\"gradeLevelDescriptor\" filterMode=\"IncludeOnly\"><Value>uri://ed-fi.org/GradeLevelDescriptor#Ninth grade</Value></Filter></Collection></WriteContentType></Resource></Profile>"
+}
+
+### Step 3: Read profile back to capture id
+# @name getSchoolWriteProfile
+GET {{createSchoolWriteProfile.response.headers.Location}}
+Accept: application/json
+Authorization: bearer {{configToken}}
+
+###
+@schoolWriteProfileId={{getSchoolWriteProfile.response.body.id}}
+
+### Step 4: Vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Profile Write Demo Vendor",
+    "contactName": "Demo User",
+    "contactEmailAddress": "demo@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@vendorId={{createVendor.response.body.id}}
+
+### Step 5: DMS instance (relational backend)
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "Profile Write Demo Instance",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_relational;"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
+### Step 6: Application WITH profile
+# @name createAppWithProfile
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Write Profile Demo App",
+    "claimSetName": "EdFiSandbox",
+    "dmsInstanceIds": [{{dmsInstanceId}}],
+    "profileIds": [{{schoolWriteProfileId}}]
+}
+
+###
+@profileAppKey={{createAppWithProfile.response.body.key}}
+@profileAppSecret={{createAppWithProfile.response.body.secret}}
+
+### Step 7: Application WITHOUT profile (used to seed data and read unfiltered state)
+# @name createAppNoProfile
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "No Profile Demo App",
+    "claimSetName": "EdFiSandbox",
+    "dmsInstanceIds": [{{dmsInstanceId}}]
+}
+
+###
+@noProfileAppKey={{createAppNoProfile.response.body.key}}
+@noProfileAppSecret={{createAppNoProfile.response.body.secret}}
+
+### Step 8: Restart DMS so the new profile lands in the catalog cache
+# DMS caches the profile catalog for 30 minutes with no reload endpoint.
+# Run this once after step 7 before any DMS-side request:
+#   docker restart dms-local-dms-1
+
+### Step 9: API endpoints
+@dataApi=http://localhost:{{dmsPort}}/data
+@tokenUrl=http://localhost:{{configPort}}/connect/token
+
+### Step 10: DMS token (with profile)
+# @name dmsTokenWithProfile
+POST {{tokenUrl}}
+Authorization: basic {{profileAppKey}}:{{profileAppSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsTokenWithProfileValue={{dmsTokenWithProfile.response.body.access_token}}
+
+### Step 11: DMS token (no profile)
+# @name dmsTokenNoProfile
+POST {{tokenUrl}}
+Authorization: basic {{noProfileAppKey}}:{{noProfileAppSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsTokenNoProfileValue={{dmsTokenNoProfile.response.body.access_token}}
+
+### Step 12: Required descriptors
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+    "codeValue": "School",
+    "shortDescription": "School"
+}
+
+###
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+    "codeValue": "Ninth grade",
+    "shortDescription": "Ninth grade"
+}
+
+###
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+    "codeValue": "Tenth grade",
+    "shortDescription": "Tenth grade"
+}
+
+###
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+    "codeValue": "Eleventh grade",
+    "shortDescription": "Eleventh grade"
+}
+
+### Step 13: Seed — POST a school with three grade levels via the no-profile app
+# @name seedSchool
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "schoolId": 255900100,
+    "nameOfInstitution": "GradeLevel Merge Demo School",
+    "educationOrganizationCategories": [
+        { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+    ],
+    "gradeLevels": [
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade" }
+    ]
+}
+
+###
+@schoolLocation={{seedSchool.response.headers.Location}}
+
+### Step 14: Verify seed — GET via no-profile token, expect all three grade levels.
+# Also captures the resource id (POST 201 returns an empty body, so the id is read here).
+# @name verifySeed
+GET {{schoolLocation}}
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Accept: application/json
+
+###
+@schoolId={{verifySeed.response.body.id}}
+
+### Step 15: PUT through the profile, body contains ONLY Ninth grade
+# The profile's collection-item filter hides Tenth and Eleventh grade from the
+# profile's view. Slice 4 + Slice 6 of DMS-1124 should preserve those hidden
+# stored rows during the merge while applying the visible-side update.
+PUT {{schoolLocation}}
+Authorization: bearer {{dmsTokenWithProfileValue}}
+Content-Type: application/vnd.ed-fi.school.{{profileName}}.writable+json
+
+{
+    "id": "{{schoolId}}",
+    "schoolId": 255900100,
+    "nameOfInstitution": "GradeLevel Merge Demo School (Updated via Profile)",
+    "educationOrganizationCategories": [
+        { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+    ],
+    "gradeLevels": [
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" }
+    ]
+}
+
+### Step 16: Verify merge — GET via no-profile token, expect all three grade levels
+# AND the updated name. Tenth + Eleventh grade preserved from stored state because
+# the profile hid them from the merge; Ninth grade is the visible row that the
+# request "saw" and re-asserted; nameOfInstitution reflects the PUT body.
+GET {{schoolLocation}}
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Accept: application/json
+
+### Cleanup
+DELETE {{schoolLocation}}
+Authorization: bearer {{dmsTokenNoProfileValue}}

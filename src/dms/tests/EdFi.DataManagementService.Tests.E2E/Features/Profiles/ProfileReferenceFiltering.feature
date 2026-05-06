@@ -179,6 +179,7 @@ Feature: Profile Reference Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 03 IncludeOnly reference write profile is currently unsupported on write
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-IncludeOnly" for resource "School" with body
@@ -213,6 +214,7 @@ Feature: Profile Reference Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
         Scenario: 04 ExcludeOnly reference write profile excludes configured reference members
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-ExcludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-ExcludeOnly" for resource "School" with body

@@ -125,6 +125,7 @@ Feature: Profile Embedded Object Filtering
             Then the profile response status is 200
              And the "addresses" collection item at index 0 should have "nameOfCounty" value "Travis"
 
+        @relational-backend
         Scenario: 04 Write profile including nested member persists nested update
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-IncludeAll" for resource "School" with body
@@ -200,6 +201,7 @@ Feature: Profile Embedded Object Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
         Scenario: 07 Write exclude-profile variant is currently unsupported by host
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Excludes-Embedded-Object-Unsupported" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Excludes-Embedded-Object-Unsupported" for resource "Assessment" with body
@@ -224,6 +226,7 @@ Feature: Profile Embedded Object Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
         Scenario: 08 Write profile including embedded object is currently unsupported by host
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Includes-Embedded-Object" for resource "Assessment" with body
@@ -270,6 +273,7 @@ Feature: Profile Embedded Object Filtering
                   """
             Then the profile response status is 400
 
+        @relational-backend
         Scenario: 10 Data validation with invalid embedded object profile is currently unsupported by host
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Includes-Embedded-Object" for resource "Assessment" with body
@@ -294,6 +298,7 @@ Feature: Profile Embedded Object Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
         Scenario: 11 Data validation with invalid embedded object exclude-profile variant is currently unsupported by host
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Excludes-Embedded-Object-Unsupported" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Excludes-Embedded-Object-Unsupported" for resource "Assessment" with body

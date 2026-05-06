@@ -739,16 +739,16 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_Merge
                 new PostgresqlProfileTopLevelCollectionAddressRow(
                     idByCity["Houston"],
                     documentId,
-                    1,
+                    0,
                     "Houston"
                 ),
                 new PostgresqlProfileTopLevelCollectionAddressRow(
                     idByCity["Dallas"],
                     documentId,
-                    2,
+                    1,
                     "Dallas"
                 ),
-                new PostgresqlProfileTopLevelCollectionAddressRow(idByCity["Austin"], documentId, 3, "Austin")
+                new PostgresqlProfileTopLevelCollectionAddressRow(idByCity["Austin"], documentId, 2, "Austin")
             );
     }
 
@@ -866,10 +866,10 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_Merge
                 new PostgresqlProfileTopLevelCollectionAddressRow(
                     idByCity["Austin"],
                     documentId,
-                    1,
+                    0,
                     "Austin"
                 ),
-                new PostgresqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 2, "Dallas")
+                new PostgresqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 1, "Dallas")
             );
     }
 
@@ -924,11 +924,11 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_Merge
 
         after.Should().HaveCount(2);
         after[0].SchoolDocumentId.Should().Be(documentId);
-        after[0].Ordinal.Should().Be(1);
+        after[0].Ordinal.Should().Be(0);
         after[0].City.Should().Be("Austin");
         after[0].CollectionItemId.Should().BeGreaterThan(0);
         after[1].SchoolDocumentId.Should().Be(documentId);
-        after[1].Ordinal.Should().Be(2);
+        after[1].Ordinal.Should().Be(1);
         after[1].City.Should().Be("Dallas");
         after[1].CollectionItemId.Should().BeGreaterThan(0);
         after[1].CollectionItemId.Should().NotBe(after[0].CollectionItemId);
@@ -966,19 +966,19 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_Merge
                 new PostgresqlProfileTopLevelCollectionAddressRow(
                     idByCity["Austin"],
                     documentId,
-                    1,
+                    0,
                     "Austin"
                 ),
                 new PostgresqlProfileTopLevelCollectionAddressRow(
                     idByCity["Dallas"],
                     documentId,
-                    2,
+                    1,
                     "Dallas"
                 ),
                 new PostgresqlProfileTopLevelCollectionAddressRow(
                     idByCity["Houston"],
                     documentId,
-                    3,
+                    2,
                     "Houston"
                 )
             );
@@ -1038,7 +1038,7 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_Merge
         after
             .Should()
             .Equal(
-                new PostgresqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 1, "Dallas")
+                new PostgresqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 0, "Dallas")
             );
     }
 
@@ -1073,12 +1073,12 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_Merge
                 new PostgresqlProfileTopLevelCollectionAddressRow(
                     hiddenCollectionItemId,
                     documentId,
-                    1,
+                    0,
                     "Dallas"
                 )
             );
         after[1].SchoolDocumentId.Should().Be(documentId);
-        after[1].Ordinal.Should().Be(2);
+        after[1].Ordinal.Should().Be(1);
         after[1].City.Should().Be("Austin");
         after[1].CollectionItemId.Should().NotBe(hiddenCollectionItemId);
     }

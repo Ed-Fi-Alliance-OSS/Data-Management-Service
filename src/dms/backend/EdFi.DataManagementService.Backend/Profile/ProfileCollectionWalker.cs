@@ -412,7 +412,7 @@ internal sealed class ProfileCollectionWalker
 
             for (var i = 0; i < success.Plan.Sequence.Length; i++)
             {
-                var finalOrdinal = i + 1;
+                var finalOrdinal = i;
                 var entry = success.Plan.Sequence[i];
 
                 switch (entry)
@@ -3061,5 +3061,5 @@ internal sealed class ProfileTableStateBuilder
     /// <c>false</c> (no-op tables produce no TableState in the profile-merge path).
     /// </summary>
     public RelationalWriteMergedTableState Build() =>
-        new(_tableWritePlan, [.. _currentRows], [.. _mergedRows]);
+        RelationalWriteMergeSupport.BuildOrderedTableState(_tableWritePlan, _currentRows, _mergedRows);
 }

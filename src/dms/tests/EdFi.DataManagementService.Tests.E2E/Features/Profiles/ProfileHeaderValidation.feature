@@ -58,6 +58,7 @@ Feature: Profile Header Validation
               And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
               And the response body errors should match regex "(?i)A profile-based content type that is writable cannot be used with GET requests\."
 
+        @relational-backend
         Scenario: 04 Malformed profile Content-Type header on POST returns 400
              When a POST request is made to "/ed-fi/schools" with Content-Type header "application/vnd.ed-fi.invalid" and body
                  """
@@ -83,6 +84,7 @@ Feature: Profile Header Validation
               And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
               And the response body errors should match regex "(?i)The format of the profile-based content type header was invalid\."
 
+        @relational-backend
         Scenario: 05 Readable profile Content-Type on POST returns 400
              When a POST request is made to "/ed-fi/schools" with Content-Type header "application/vnd.ed-fi.school.e2e-test-school-includeonly.readable+json" and body
                  """
@@ -107,6 +109,7 @@ Feature: Profile Header Validation
               And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
               And the response body errors should match regex "(?i)A profile-based content type that is readable cannot be used with POST requests\."
 
+        @relational-backend
         Scenario: 06 Malformed profile Content-Type header on PUT returns 400
              When a PUT request is made to "/ed-fi/schools/{id}" with Content-Type header "application/vnd.ed-fi.invalid" and body
                  """
@@ -135,6 +138,7 @@ Feature: Profile Header Validation
               And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
               And the response body errors should match regex "(?i)The format of the profile-based content type header was invalid\."
 
+        @relational-backend
         Scenario: 07 Readable profile Content-Type on PUT returns 400
              When a PUT request is made to "/ed-fi/schools/{id}" with Content-Type header "application/vnd.ed-fi.school.e2e-test-school-includeonly.readable+json" and body
                  """
@@ -265,6 +269,7 @@ Feature: Profile Header Validation
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 200
 
+        @relational-backend
         Scenario: 11 Valid profile Content-Type with media-type parameters for POST succeeds
              When a POST request is made to "/ed-fi/schools" with Content-Type header "application/vnd.ed-fi.school.e2e-test-school-includeonly.writable+json; charset=utf-8" and body
                  """
@@ -285,6 +290,7 @@ Feature: Profile Header Validation
                  """
              Then the profile response status is 201
 
+        @relational-backend
         Scenario: 12 Valid profile Content-Type with media-type parameters for PUT succeeds
              When a PUT request is made to "/ed-fi/schools/{id}" with Content-Type header "application/vnd.ed-fi.school.e2e-test-school-includeonly.writable+json; charset=utf-8" and body
                  """

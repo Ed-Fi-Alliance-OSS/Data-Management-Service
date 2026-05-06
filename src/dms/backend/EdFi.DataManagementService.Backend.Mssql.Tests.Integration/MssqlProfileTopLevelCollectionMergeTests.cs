@@ -730,9 +730,9 @@ public class Given_A_Mssql_Profiled_TopLevelCollection_Merge
         after
             .Should()
             .Equal(
-                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Houston"], documentId, 1, "Houston"),
-                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 2, "Dallas"),
-                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Austin"], documentId, 3, "Austin")
+                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Houston"], documentId, 0, "Houston"),
+                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 1, "Dallas"),
+                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Austin"], documentId, 2, "Austin")
             );
     }
 
@@ -847,8 +847,8 @@ public class Given_A_Mssql_Profiled_TopLevelCollection_Merge
         after
             .Should()
             .Equal(
-                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Austin"], documentId, 1, "Austin"),
-                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 2, "Dallas")
+                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Austin"], documentId, 0, "Austin"),
+                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 1, "Dallas")
             );
     }
 
@@ -899,11 +899,11 @@ public class Given_A_Mssql_Profiled_TopLevelCollection_Merge
 
         after.Should().HaveCount(2);
         after[0].SchoolDocumentId.Should().Be(documentId);
-        after[0].Ordinal.Should().Be(1);
+        after[0].Ordinal.Should().Be(0);
         after[0].City.Should().Be("Austin");
         after[0].CollectionItemId.Should().BeGreaterThan(0);
         after[1].SchoolDocumentId.Should().Be(documentId);
-        after[1].Ordinal.Should().Be(2);
+        after[1].Ordinal.Should().Be(1);
         after[1].City.Should().Be("Dallas");
         after[1].CollectionItemId.Should().BeGreaterThan(0);
         after[1].CollectionItemId.Should().NotBe(after[0].CollectionItemId);
@@ -938,9 +938,9 @@ public class Given_A_Mssql_Profiled_TopLevelCollection_Merge
         afterAllowed
             .Should()
             .Equal(
-                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Austin"], documentId, 1, "Austin"),
-                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 2, "Dallas"),
-                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Houston"], documentId, 3, "Houston")
+                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Austin"], documentId, 0, "Austin"),
+                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 1, "Dallas"),
+                new MssqlProfileTopLevelCollectionAddressRow(idByCity["Houston"], documentId, 2, "Houston")
             );
 
         var writeRejectedBody = MssqlProfileTopLevelCollectionMergeSupport.CreateSchoolBody(
@@ -997,7 +997,7 @@ public class Given_A_Mssql_Profiled_TopLevelCollection_Merge
 
         after
             .Should()
-            .Equal(new MssqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 1, "Dallas"));
+            .Equal(new MssqlProfileTopLevelCollectionAddressRow(idByCity["Dallas"], documentId, 0, "Dallas"));
     }
 
     [Test]
@@ -1028,10 +1028,10 @@ public class Given_A_Mssql_Profiled_TopLevelCollection_Merge
         after[0]
             .Should()
             .Be(
-                new MssqlProfileTopLevelCollectionAddressRow(hiddenCollectionItemId, documentId, 1, "Dallas")
+                new MssqlProfileTopLevelCollectionAddressRow(hiddenCollectionItemId, documentId, 0, "Dallas")
             );
         after[1].SchoolDocumentId.Should().Be(documentId);
-        after[1].Ordinal.Should().Be(2);
+        after[1].Ordinal.Should().Be(1);
         after[1].City.Should().Be("Austin");
         after[1].CollectionItemId.Should().NotBe(hiddenCollectionItemId);
     }
