@@ -3187,8 +3187,6 @@ internal sealed record AuthoritativePostAsUpdateDocumentRow(
     long ContentVersion
 );
 
-internal sealed record ReferentialIdentityRow(Guid ReferentialId, long DocumentId, short ResourceKeyId);
-
 internal sealed record AuthoritativeSchoolYearTypeRow(
     long DocumentId,
     int SchoolYear,
