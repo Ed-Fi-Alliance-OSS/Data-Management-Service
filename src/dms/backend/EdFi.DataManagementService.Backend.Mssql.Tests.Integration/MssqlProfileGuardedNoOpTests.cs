@@ -3,25 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-// Slice 6 (DMS-1142) Task 10 — MSSQL parity coverage for profile guarded no-op.
-// Mirrors the root-only-shape happy-path and stale-compare fixtures from the
-// pgsql sibling (PostgresqlProfileGuardedNoOpTests.cs) onto SQL Server. The
-// dialect-sensitive bit being exercised here is the freshness checker's mssql
-// branch in RelationalWriteGuardedNoOp, which uses
-// WITH (UPDLOCK, HOLDLOCK, ROWLOCK) instead of pgsql's FOR UPDATE; the
-// stale-compare fixtures drive that lock semantics implicitly through the
-// production RelationalWriteFreshnessChecker.
+// MSSQL parity coverage for profiled guarded no-op. Mirrors the PostgreSQL
+// guarded no-op fixtures across root-only, stale-compare, separate-table, and
+// top-level collection shapes. The dialect-sensitive path exercised here is the
+// freshness checker's SQL Server branch, which uses
+// WITH (UPDLOCK, HOLDLOCK, ROWLOCK) instead of PostgreSQL's FOR UPDATE.
 //
-// The mssql DocumentChangeEvent trigger (TR_Document_Journal in the generated
-// DDL) fires on UPDATE([ContentVersion]) and inserts one DocumentChangeEvent
-// row, exactly mirroring the pgsql trigger. The stale-compare deep-equivalence
-// pattern from the pgsql fixtures therefore carries over verbatim:
-// substitute ContentVersion AND DocumentChangeEventCount back to the
-// before-state, then assert deep equivalence.
-//
-// Slice 6 mssql parity is intentionally root-only (4 fixtures); separate-table
-// and top-level collection mssql parity coverage is Slice 7 hardening if
-// scoped.
+// The SQL Server DocumentChangeEvent trigger fires on UPDATE([ContentVersion])
+// and inserts one DocumentChangeEvent row, matching the PostgreSQL trigger. The
+// stale-compare fixtures therefore substitute ContentVersion and
+// DocumentChangeEventCount back to the before-state, then assert deep equivalence.
 
 using System.Data;
 using System.Globalization;
@@ -909,5 +900,493 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Upda
         _stateAfterPostAsUpdate
             .DocumentChangeEventCount.Should()
             .Be(_stateBeforePostAsUpdate.DocumentChangeEventCount + 1);
+    }
+}
+
+/// <summary>
+/// Intermediate base for fixtures whose target is the synthetic
+/// <c>ProfileSeparateTableMergeItem</c> resource. Wires the abstract shape hooks of
+/// <see cref="MssqlProfileGuardedNoOpGeneratedDdlFixtureTestBase"/> through to
+/// <see cref="MssqlProfileSeparateTableMergeSupport"/> with both the root and
+/// separate-table <c>$._ext.sample</c> scope declared fully VisiblePresent on
+/// both the request and stored sides — the guarded no-op invariant the
+/// fixtures in this file assert.
+/// </summary>
+internal abstract class MssqlSeparateTableShapeProfileGuardedNoOpFixtureBase
+    : MssqlProfileGuardedNoOpGeneratedDdlFixtureTestBase
+{
+    protected const int DefaultProfileSeparateTableMergeItemId = 9201;
+
+    protected static readonly JsonNode IdenticalRequestBody = new JsonObject
+    {
+        ["profileSeparateTableMergeItemId"] = DefaultProfileSeparateTableMergeItemId,
+        ["displayName"] = "OriginalDisplay",
+        ["_ext"] = new JsonObject
+        {
+            ["sample"] = new JsonObject
+            {
+                ["extVisibleScalar"] = "OriginalVisible",
+                ["extHiddenScalar"] = "OriginalHidden",
+            },
+        },
+    };
+
+    protected override string FixtureRelativePath =>
+        MssqlProfileSeparateTableMergeSupport.FixtureRelativePath;
+
+    protected override ServiceProvider CreateServiceProvider() => CreateDefaultServiceProvider();
+
+    protected override async Task ExecuteProfiledShapeCreateAsync(DocumentUuid documentUuid)
+    {
+        var seedResult = await MssqlProfileSeparateTableMergeSupport.SeedAsync(
+            _serviceProvider,
+            _database,
+            _mappingSet,
+            DefaultProfileSeparateTableMergeItemId,
+            IdenticalRequestBody.DeepClone(),
+            documentUuid,
+            "mssql-profile-guarded-no-op-separate-table-create"
+        );
+        seedResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    protected override Task<UpdateResult> ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid documentUuid)
+    {
+        var writeBody = IdenticalRequestBody.DeepClone();
+        var writePlan = _mappingSet.WritePlansByResource[MssqlProfileSeparateTableMergeSupport.ItemResource];
+        var profileContext = MssqlProfileSeparateTableMergeSupport.CreateProfileContext(
+            writePlan,
+            writeBody.DeepClone(),
+            rootVisibility: ProfileVisibilityKind.VisiblePresent,
+            rootHiddenMemberPaths: [],
+            emitExtRequestScope: true,
+            extRequestVisibility: ProfileVisibilityKind.VisiblePresent,
+            extCreatable: true,
+            emitExtStoredScope: true,
+            extStoredVisibility: ProfileVisibilityKind.VisiblePresent,
+            extStoredHiddenMemberPaths: []
+        );
+        return MssqlProfileSeparateTableMergeSupport.ExecuteProfiledPutAsync(
+            _serviceProvider,
+            _database,
+            _mappingSet,
+            DefaultProfileSeparateTableMergeItemId,
+            writeBody,
+            documentUuid,
+            profileContext,
+            "mssql-profile-guarded-no-op-separate-table-put"
+        );
+    }
+
+    protected override async Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
+        MssqlGeneratedDdlTestDatabase database,
+        long documentId
+    )
+    {
+        var rows = await database.QueryRowsAsync(
+            """
+            SELECT
+                [DocumentId],
+                [ProfileSeparateTableMergeItemId],
+                [DisplayName]
+            FROM [edfi].[ProfileSeparateTableMergeItem]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+
+        if (rows.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected exactly one ProfileSeparateTableMergeItem row for document id '{documentId}', but found {rows.Count}."
+            );
+        }
+
+        return rows[0];
+    }
+}
+
+/// <summary>
+/// Intermediate base for fixtures whose target is the core <c>School</c> resource
+/// with a populated top-level <c>$.addresses[*]</c> collection backed by the
+/// <c>edfi.SchoolAddress</c> table. Wires the abstract shape hooks of
+/// <see cref="MssqlProfileGuardedNoOpGeneratedDdlFixtureTestBase"/> through to
+/// <see cref="MssqlProfileTopLevelCollectionMergeSupport"/> with both the root
+/// <c>$</c> scope and the collection <c>$.addresses[*]</c> scope declared fully
+/// VisiblePresent on both the request and stored sides — the guarded no-op
+/// invariant the fixtures in this file assert. The seeded body intentionally
+/// carries at least two address rows in a stable order so the row-count and
+/// row-content invariants exercise a non-trivial collection.
+/// </summary>
+internal abstract class MssqlCollectionShapeProfileGuardedNoOpFixtureBase
+    : MssqlProfileGuardedNoOpGeneratedDdlFixtureTestBase
+{
+    protected const long DefaultSchoolId = 255901;
+
+    protected static readonly string[] IdenticalAddressCities = ["Austin", "Dallas"];
+
+    protected static readonly JsonNode IdenticalRequestBody =
+        MssqlProfileTopLevelCollectionMergeSupport.CreateSchoolBody(DefaultSchoolId, IdenticalAddressCities);
+
+    protected static readonly IReadOnlyList<MssqlProfileTopLevelCollectionRequestItem> IdenticalRequestItems =
+        IdenticalAddressCities
+            .Select(city => new MssqlProfileTopLevelCollectionRequestItem(city, Creatable: true))
+            .ToArray();
+
+    protected static readonly IReadOnlyList<MssqlProfileTopLevelCollectionStoredRow> IdenticalStoredRows =
+        IdenticalAddressCities
+            .Select(city => new MssqlProfileTopLevelCollectionStoredRow(city, []))
+            .ToArray();
+
+    protected override string FixtureRelativePath =>
+        MssqlProfileTopLevelCollectionMergeSupport.FixtureRelativePath;
+
+    protected override ServiceProvider CreateServiceProvider() => CreateDefaultServiceProvider();
+
+    protected override async Task ExecuteProfiledShapeCreateAsync(DocumentUuid documentUuid)
+    {
+        // Seed via the profiled POST path so seed and PUT exercise the same code path.
+        // Cross-path no-op (no-profile create + profiled PUT) is covered separately in
+        // MssqlProfileGuardedNoOpOrdinalAlignmentTests; this fixture intentionally
+        // pins the same-path identity case.
+        var writeBody = IdenticalRequestBody.DeepClone();
+        var writePlan = _mappingSet.WritePlansByResource[
+            MssqlProfileTopLevelCollectionMergeSupport.SchoolResource
+        ];
+        var profileContext = MssqlProfileTopLevelCollectionMergeSupport.CreateProfileContext(
+            writePlan,
+            writeBody.DeepClone(),
+            IdenticalRequestItems,
+            IdenticalStoredRows
+        );
+        var seedResult = await MssqlProfileTopLevelCollectionMergeSupport.ExecuteProfiledPostAsync(
+            _serviceProvider,
+            _database,
+            _mappingSet,
+            DefaultSchoolId,
+            writeBody,
+            documentUuid,
+            profileContext,
+            "mssql-profile-guarded-no-op-top-level-collection-create"
+        );
+        seedResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    protected override Task<UpdateResult> ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid documentUuid)
+    {
+        var writeBody = IdenticalRequestBody.DeepClone();
+        var writePlan = _mappingSet.WritePlansByResource[
+            MssqlProfileTopLevelCollectionMergeSupport.SchoolResource
+        ];
+        var profileContext = MssqlProfileTopLevelCollectionMergeSupport.CreateProfileContext(
+            writePlan,
+            writeBody.DeepClone(),
+            IdenticalRequestItems,
+            IdenticalStoredRows
+        );
+        return MssqlProfileTopLevelCollectionMergeSupport.ExecuteProfiledPutAsync(
+            _serviceProvider,
+            _database,
+            _mappingSet,
+            DefaultSchoolId,
+            writeBody,
+            documentUuid,
+            profileContext,
+            "mssql-profile-guarded-no-op-top-level-collection-put"
+        );
+    }
+
+    protected override async Task<IReadOnlyDictionary<string, object?>> ReadShapeRootRowByDocumentIdAsync(
+        MssqlGeneratedDdlTestDatabase database,
+        long documentId
+    )
+    {
+        var rows = await database.QueryRowsAsync(
+            """
+            SELECT
+                [DocumentId],
+                [SchoolId]
+            FROM [edfi].[School]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+
+        if (rows.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected exactly one School row for document id '{documentId}', but found {rows.Count}."
+            );
+        }
+
+        return rows[0];
+    }
+}
+
+/// <summary>
+/// Mssql parity for profiled separate-table PUT guarded no-op. Seeds a
+/// non-profiled CREATE for the synthetic <c>ProfileSeparateTableMergeItem</c> target
+/// (root row plus a populated <c>sample.ProfileSeparateTableMergeItemExtension</c>
+/// separate-table row at <c>$._ext.sample</c>), then issues a profiled PUT carrying
+/// a byte-identical body. The profile context declares both the root and the
+/// separate-table <c>$._ext.sample</c> scope fully VisiblePresent (and creatable)
+/// on both the request and stored sides with no hidden member paths, so the
+/// merged effective rowset across both tables equals the stored rowset and the
+/// guarded no-op short-circuit must fire — neither root nor extension row content,
+/// nor Document version/timestamp metadata, nor a DocumentChangeEvent row may be
+/// written.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_Table_Shape
+    : MssqlSeparateTableShapeProfileGuardedNoOpFixtureBase
+{
+    private static readonly DocumentUuid DocumentUuid = new(
+        Guid.Parse("ffffffff-0000-0000-0000-000000000004")
+    );
+
+    private ProfileGuardedNoOpPersistedState _stateBeforeUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+    private int _extRowCountBefore;
+    private int _extRowCountAfter;
+    private IReadOnlyDictionary<string, object?> _extRowBefore = null!;
+    private IReadOnlyDictionary<string, object?> _extRowAfter = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        await ExecuteProfiledShapeCreateAsync(DocumentUuid);
+        _stateBeforeUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+        _extRowCountBefore = await MssqlProfileSeparateTableMergeSupport.CountExtRowsAsync(
+            _database,
+            DocumentUuid
+        );
+        _extRowBefore = await ReadExtRowAsync(DocumentUuid);
+
+        _updateResult = await ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid);
+
+        _stateAfterUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+        _extRowCountAfter = await MssqlProfileSeparateTableMergeSupport.CountExtRowsAsync(
+            _database,
+            DocumentUuid
+        );
+        _extRowAfter = await ReadExtRowAsync(DocumentUuid);
+    }
+
+    [Test]
+    public void It_returns_update_success()
+    {
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(DocumentUuid);
+    }
+
+    [Test]
+    public void It_does_not_change_root_row()
+    {
+        _stateAfterUpdate.RootRow.Should().BeEquivalentTo(_stateBeforeUpdate.RootRow);
+    }
+
+    [Test]
+    public void It_does_not_change_ext_row_count()
+    {
+        _extRowCountAfter.Should().Be(_extRowCountBefore);
+    }
+
+    [Test]
+    public void It_does_not_change_ext_row_contents()
+    {
+        _extRowAfter.Should().BeEquivalentTo(_extRowBefore);
+    }
+
+    [Test]
+    public void It_does_not_change_content_version()
+    {
+        _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion);
+    }
+
+    [Test]
+    public void It_does_not_change_content_last_modified_at()
+    {
+        _stateAfterUpdate
+            .Document.ContentLastModifiedAt.Should()
+            .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_change_identity_version()
+    {
+        _stateAfterUpdate.Document.IdentityVersion.Should().Be(_stateBeforeUpdate.Document.IdentityVersion);
+    }
+
+    [Test]
+    public void It_does_not_change_identity_last_modified_at()
+    {
+        _stateAfterUpdate
+            .Document.IdentityLastModifiedAt.Should()
+            .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_emit_a_document_change_event_row()
+    {
+        _stateAfterUpdate.DocumentChangeEventCount.Should().Be(_stateBeforeUpdate.DocumentChangeEventCount);
+    }
+
+    /// <summary>
+    /// Reads the single <c>sample.ProfileSeparateTableMergeItemExtension</c> row for the
+    /// supplied <paramref name="documentUuid"/>. Wraps
+    /// <see cref="MssqlProfileSeparateTableMergeSupport.TryReadExtRowAsync"/> with a
+    /// non-null assertion so the no-op invariants can compare the row contents
+    /// directly.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, object?>> ReadExtRowAsync(DocumentUuid documentUuid)
+    {
+        var row = await MssqlProfileSeparateTableMergeSupport.TryReadExtRowAsync(_database, documentUuid);
+        row.Should().NotBeNull("the seeded ProfileSeparateTableMergeItem must have an extension row");
+        return row!;
+    }
+}
+
+/// <summary>
+/// Mssql parity for profiled top-level collection PUT guarded no-op. Seeds a
+/// profiled POST for the core <c>School</c> resource with two address rows
+/// (<c>Austin</c>, <c>Dallas</c>) populating the <c>edfi.SchoolAddress</c> collection
+/// table, then issues a profiled PUT carrying a byte-identical body. The seed uses
+/// the profiled path (not the no-profile <c>SeedAsync</c>) so the seeded collection
+/// rows land at the same ordinals the merge synthesizer produces on the identical
+/// PUT — see <see cref="MssqlCollectionShapeProfileGuardedNoOpFixtureBase.ExecuteProfiledShapeCreateAsync"/>
+/// for the rationale. The profile context declares both the root <c>$</c> scope and
+/// the collection <c>$.addresses[*]</c> scope fully VisiblePresent on both the
+/// request and stored sides, with the request item list and stored row list in
+/// identical semantic-identity order, so the merged effective rowset across the root
+/// and collection tables equals the stored rowset and the guarded no-op short-circuit
+/// must fire — neither root row, nor collection row count, nor collection row
+/// contents (including <c>CollectionItemId</c> and <c>Ordinal</c>), nor Document
+/// version/timestamp metadata, nor a <c>DocumentChangeEvent</c> row may be written.
+/// The <c>ContentVersion</c> assertion specifically guards against any DML hitting
+/// the collection table, since insert/update/delete triggers on
+/// <c>edfi.SchoolAddress</c> bump the parent document's <c>ContentVersion</c> and
+/// <c>ContentLastModifiedAt</c>.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level_Collection_Shape
+    : MssqlCollectionShapeProfileGuardedNoOpFixtureBase
+{
+    private static readonly DocumentUuid DocumentUuid = new(
+        Guid.Parse("ffffffff-0000-0000-0000-000000000005")
+    );
+
+    private ProfileGuardedNoOpPersistedState _stateBeforeUpdate = null!;
+    private ProfileGuardedNoOpPersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+    private int _addressCountBefore;
+    private int _addressCountAfter;
+    private IReadOnlyList<MssqlProfileTopLevelCollectionAddressRow> _addressesBefore = null!;
+    private IReadOnlyList<MssqlProfileTopLevelCollectionAddressRow> _addressesAfter = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        await ExecuteProfiledShapeCreateAsync(DocumentUuid);
+        var documentId = await MssqlProfileTopLevelCollectionMergeSupport.ReadDocumentIdAsync(
+            _database,
+            DocumentUuid
+        );
+        _stateBeforeUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+        _addressCountBefore = await MssqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
+            _database
+        );
+        _addressesBefore = await MssqlProfileTopLevelCollectionMergeSupport.ReadAddressesAsync(
+            _database,
+            documentId
+        );
+
+        _updateResult = await ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid);
+
+        _stateAfterUpdate = await MssqlProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
+        _addressCountAfter = await MssqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
+            _database
+        );
+        _addressesAfter = await MssqlProfileTopLevelCollectionMergeSupport.ReadAddressesAsync(
+            _database,
+            documentId
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success()
+    {
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(DocumentUuid);
+    }
+
+    [Test]
+    public void It_does_not_change_root_row()
+    {
+        _stateAfterUpdate.RootRow.Should().BeEquivalentTo(_stateBeforeUpdate.RootRow);
+    }
+
+    [Test]
+    public void It_does_not_change_collection_row_count()
+    {
+        _addressCountAfter.Should().Be(_addressCountBefore);
+    }
+
+    [Test]
+    public void It_does_not_change_collection_rows()
+    {
+        _addressesAfter.Should().BeEquivalentTo(_addressesBefore);
+    }
+
+    [Test]
+    public void It_does_not_change_content_version()
+    {
+        _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion);
+    }
+
+    [Test]
+    public void It_does_not_change_content_last_modified_at()
+    {
+        _stateAfterUpdate
+            .Document.ContentLastModifiedAt.Should()
+            .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_change_identity_version()
+    {
+        _stateAfterUpdate.Document.IdentityVersion.Should().Be(_stateBeforeUpdate.Document.IdentityVersion);
+    }
+
+    [Test]
+    public void It_does_not_change_identity_last_modified_at()
+    {
+        _stateAfterUpdate
+            .Document.IdentityLastModifiedAt.Should()
+            .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_emit_a_document_change_event_row()
+    {
+        _stateAfterUpdate.DocumentChangeEventCount.Should().Be(_stateBeforeUpdate.DocumentChangeEventCount);
     }
 }
