@@ -199,34 +199,62 @@ public class Given_MappingSetCompiler
         ];
 
         descriptorCapability.Support.Should().BeOfType<DescriptorQuerySupport.Supported>();
-        descriptorCapability
-            .SupportedFieldsByQueryField["id"]
-            .Target.Should()
-            .Be(new DescriptorQueryFieldTarget.DocumentUuid());
-        descriptorCapability
-            .SupportedFieldsByQueryField["namespace"]
-            .Target.Should()
-            .Be(new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace")));
-        descriptorCapability
-            .SupportedFieldsByQueryField["codeValue"]
-            .Target.Should()
-            .Be(new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue")));
-        descriptorCapability
-            .SupportedFieldsByQueryField["shortDescription"]
-            .Target.Should()
-            .Be(new DescriptorQueryFieldTarget.ShortDescription(new DbColumnName("ShortDescription")));
-        descriptorCapability
-            .SupportedFieldsByQueryField["description"]
-            .Target.Should()
-            .Be(new DescriptorQueryFieldTarget.Description(new DbColumnName("Description")));
-        descriptorCapability
-            .SupportedFieldsByQueryField["effectiveBeginDate"]
-            .Target.Should()
-            .Be(new DescriptorQueryFieldTarget.EffectiveBeginDate(new DbColumnName("EffectiveBeginDate")));
-        descriptorCapability
-            .SupportedFieldsByQueryField["effectiveEndDate"]
-            .Target.Should()
-            .Be(new DescriptorQueryFieldTarget.EffectiveEndDate(new DbColumnName("EffectiveEndDate")));
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["id"],
+            new DescriptorQueryFieldTarget.DocumentUuid(),
+            DescriptorQueryValueKind.DocumentUuid,
+            "string",
+            null,
+            null
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["namespace"],
+            new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace")),
+            DescriptorQueryValueKind.String,
+            "string",
+            ScalarKind.String,
+            new DbColumnName("Namespace")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["codeValue"],
+            new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue")),
+            DescriptorQueryValueKind.String,
+            "string",
+            ScalarKind.String,
+            new DbColumnName("CodeValue")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["shortDescription"],
+            new DescriptorQueryFieldTarget.ShortDescription(new DbColumnName("ShortDescription")),
+            DescriptorQueryValueKind.String,
+            "string",
+            ScalarKind.String,
+            new DbColumnName("ShortDescription")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["description"],
+            new DescriptorQueryFieldTarget.Description(new DbColumnName("Description")),
+            DescriptorQueryValueKind.String,
+            "string",
+            ScalarKind.String,
+            new DbColumnName("Description")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["effectiveBeginDate"],
+            new DescriptorQueryFieldTarget.EffectiveBeginDate(new DbColumnName("EffectiveBeginDate")),
+            DescriptorQueryValueKind.Date,
+            "date",
+            ScalarKind.Date,
+            new DbColumnName("EffectiveBeginDate")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["effectiveEndDate"],
+            new DescriptorQueryFieldTarget.EffectiveEndDate(new DbColumnName("EffectiveEndDate")),
+            DescriptorQueryValueKind.Date,
+            "date",
+            ScalarKind.Date,
+            new DbColumnName("EffectiveEndDate")
+        );
     }
 
     [Test]
@@ -1334,6 +1362,22 @@ public class Given_MappingSetCompiler
             ),
             StringComparer.Ordinal
         );
+    }
+
+    private static void AssertSupportedDescriptorField(
+        SupportedDescriptorQueryField supportedField,
+        DescriptorQueryFieldTarget expectedTarget,
+        DescriptorQueryValueKind expectedValueKind,
+        string expectedApiSchemaType,
+        ScalarKind? expectedScalarKind,
+        DbColumnName? expectedDescriptorColumn
+    )
+    {
+        supportedField.Target.Should().Be(expectedTarget);
+        supportedField.ValueKind.Should().Be(expectedValueKind);
+        supportedField.ApiSchemaType.Should().Be(expectedApiSchemaType);
+        supportedField.ScalarKind.Should().Be(expectedScalarKind);
+        supportedField.DescriptorColumn.Should().Be(expectedDescriptorColumn);
     }
 
     private static byte[] CreateResourceKeySeedHash()

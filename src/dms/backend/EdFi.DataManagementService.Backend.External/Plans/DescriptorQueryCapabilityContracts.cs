@@ -64,9 +64,158 @@ public enum DescriptorQueryCapabilityOmissionKind
 /// <summary>
 /// A descriptor query field that compiled successfully for descriptor endpoint querying.
 /// </summary>
-/// <param name="QueryFieldName">The public query parameter name.</param>
-/// <param name="Target">The deterministic descriptor query predicate target.</param>
-public sealed record SupportedDescriptorQueryField(string QueryFieldName, DescriptorQueryFieldTarget Target);
+public sealed record SupportedDescriptorQueryField
+{
+    /// <summary>
+    /// Initializes descriptor query field metadata from the target's canonical contract.
+    /// </summary>
+    public SupportedDescriptorQueryField(string queryFieldName, DescriptorQueryFieldTarget target)
+    {
+        var valueKind = GetValueKind(target);
+
+        QueryFieldName = queryFieldName;
+        Target = target;
+        ValueKind = valueKind;
+        ApiSchemaType = GetApiSchemaType(valueKind);
+        ScalarKind = GetScalarKind(valueKind);
+        DescriptorColumn = GetDescriptorColumn(target);
+    }
+
+    public SupportedDescriptorQueryField(
+        string queryFieldName,
+        DescriptorQueryFieldTarget target,
+        DescriptorQueryValueKind valueKind,
+        string apiSchemaType,
+        ScalarKind? scalarKind,
+        DbColumnName? descriptorColumn
+    )
+    {
+        QueryFieldName = queryFieldName;
+        Target = target;
+        ValueKind = valueKind;
+        ApiSchemaType = apiSchemaType;
+        ScalarKind = scalarKind;
+        DescriptorColumn = descriptorColumn;
+    }
+
+    /// <summary>
+    /// The public query parameter name.
+    /// </summary>
+    public string QueryFieldName { get; }
+
+    /// <summary>
+    /// The deterministic descriptor query predicate target.
+    /// </summary>
+    public DescriptorQueryFieldTarget Target { get; }
+
+    /// <summary>
+    /// The request value preprocessing category for this query field.
+    /// </summary>
+    public DescriptorQueryValueKind ValueKind { get; }
+
+    /// <summary>
+    /// The ApiSchema query field type expected for this query field.
+    /// </summary>
+    public string ApiSchemaType { get; }
+
+    /// <summary>
+    /// The relational scalar kind for descriptor-column predicates.
+    /// </summary>
+    public ScalarKind? ScalarKind { get; }
+
+    /// <summary>
+    /// The shared descriptor column used for descriptor-column predicates.
+    /// </summary>
+    public DbColumnName? DescriptorColumn { get; }
+
+    private static DescriptorQueryValueKind GetValueKind(DescriptorQueryFieldTarget target)
+    {
+        return target switch
+        {
+            DescriptorQueryFieldTarget.DocumentUuid => DescriptorQueryValueKind.DocumentUuid,
+            DescriptorQueryFieldTarget.Namespace
+            or DescriptorQueryFieldTarget.CodeValue
+            or DescriptorQueryFieldTarget.ShortDescription
+            or DescriptorQueryFieldTarget.Description => DescriptorQueryValueKind.String,
+            DescriptorQueryFieldTarget.EffectiveBeginDate or DescriptorQueryFieldTarget.EffectiveEndDate =>
+                DescriptorQueryValueKind.Date,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(target),
+                target,
+                "Unsupported descriptor query target."
+            ),
+        };
+    }
+
+    private static string GetApiSchemaType(DescriptorQueryValueKind valueKind)
+    {
+        return valueKind switch
+        {
+            DescriptorQueryValueKind.DocumentUuid or DescriptorQueryValueKind.String => "string",
+            DescriptorQueryValueKind.Date => "date",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(valueKind),
+                valueKind,
+                "Unsupported descriptor query value kind."
+            ),
+        };
+    }
+
+    private static ScalarKind? GetScalarKind(DescriptorQueryValueKind valueKind)
+    {
+        return valueKind switch
+        {
+            DescriptorQueryValueKind.DocumentUuid => null,
+            DescriptorQueryValueKind.String => EdFi.DataManagementService.Backend.External.ScalarKind.String,
+            DescriptorQueryValueKind.Date => EdFi.DataManagementService.Backend.External.ScalarKind.Date,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(valueKind),
+                valueKind,
+                "Unsupported descriptor query value kind."
+            ),
+        };
+    }
+
+    private static DbColumnName? GetDescriptorColumn(DescriptorQueryFieldTarget target)
+    {
+        return target switch
+        {
+            DescriptorQueryFieldTarget.DocumentUuid => null,
+            DescriptorQueryFieldTarget.Namespace descriptorNamespace => descriptorNamespace.Column,
+            DescriptorQueryFieldTarget.CodeValue codeValue => codeValue.Column,
+            DescriptorQueryFieldTarget.ShortDescription shortDescription => shortDescription.Column,
+            DescriptorQueryFieldTarget.Description description => description.Column,
+            DescriptorQueryFieldTarget.EffectiveBeginDate effectiveBeginDate => effectiveBeginDate.Column,
+            DescriptorQueryFieldTarget.EffectiveEndDate effectiveEndDate => effectiveEndDate.Column,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(target),
+                target,
+                "Unsupported descriptor query target."
+            ),
+        };
+    }
+}
+
+/// <summary>
+/// Request value preprocessing categories for compiled descriptor query fields.
+/// </summary>
+public enum DescriptorQueryValueKind
+{
+    /// <summary>
+    /// The query value must parse as <c>dms.Document.DocumentUuid</c>.
+    /// </summary>
+    DocumentUuid,
+
+    /// <summary>
+    /// The query value is used as an exact-match string.
+    /// </summary>
+    String,
+
+    /// <summary>
+    /// The query value must parse as an exact-match date.
+    /// </summary>
+    Date,
+}
 
 /// <summary>
 /// The deterministic predicate target for a compiled descriptor query field.

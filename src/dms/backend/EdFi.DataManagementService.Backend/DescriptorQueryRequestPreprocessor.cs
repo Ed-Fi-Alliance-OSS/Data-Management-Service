@@ -12,8 +12,6 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class DescriptorQueryRequestPreprocessor
 {
-    private static readonly RelationalScalarType DateScalarType = new(ScalarKind.Date);
-
     public static DescriptorQueryPreprocessingResult Preprocess(
         MappingSet mappingSet,
         QualifiedResourceName requestResource,
@@ -83,13 +81,13 @@ internal static class DescriptorQueryRequestPreprocessor
         out string? emptyPageReason
     )
     {
-        switch (supportedField.Target)
+        switch (supportedField.ValueKind)
         {
-            case DescriptorQueryFieldTarget.DocumentUuid:
+            case DescriptorQueryValueKind.DocumentUuid:
                 ValidateCompatibleQueryTypeOrThrow(
                     supportedField.QueryFieldName,
                     queryElement.Type,
-                    expectedType: "string"
+                    supportedField.ApiSchemaType
                 );
 
                 if (!Guid.TryParse(queryElement.Value, out var documentUuid))
@@ -105,32 +103,30 @@ internal static class DescriptorQueryRequestPreprocessor
                 emptyPageReason = null;
                 return true;
 
-            case DescriptorQueryFieldTarget.Namespace:
-            case DescriptorQueryFieldTarget.CodeValue:
-            case DescriptorQueryFieldTarget.ShortDescription:
-            case DescriptorQueryFieldTarget.Description:
+            case DescriptorQueryValueKind.String:
                 ValidateCompatibleQueryTypeOrThrow(
                     supportedField.QueryFieldName,
                     queryElement.Type,
-                    expectedType: "string"
+                    supportedField.ApiSchemaType
                 );
 
                 preprocessedValue = new PreprocessedDescriptorQueryValue.Raw(queryElement.Value);
                 emptyPageReason = null;
                 return true;
 
-            case DescriptorQueryFieldTarget.EffectiveBeginDate:
-            case DescriptorQueryFieldTarget.EffectiveEndDate:
+            case DescriptorQueryValueKind.Date:
                 ValidateCompatibleQueryTypeOrThrow(
                     supportedField.QueryFieldName,
                     queryElement.Type,
-                    expectedType: "date"
+                    supportedField.ApiSchemaType
                 );
+
+                var scalarType = GetRequiredScalarType(supportedField);
 
                 if (
                     !RelationalScalarLiteralParser.TryParse(
                         queryElement.Value,
-                        DateScalarType,
+                        scalarType,
                         out var parsedValue
                     ) || parsedValue is not DateOnly dateOnlyValue
                 )
@@ -138,7 +134,7 @@ internal static class DescriptorQueryRequestPreprocessor
                     preprocessedValue = null;
                     emptyPageReason =
                         $"Descriptor query preprocessing determined query field '{queryElement.QueryFieldName}' value "
-                        + $"'{queryElement.Value}' cannot be represented as relational scalar kind '{DateScalarType.Kind}', "
+                        + $"'{queryElement.Value}' cannot be represented as relational scalar kind '{scalarType.Kind}', "
                         + "so the query has no matches.";
                     return false;
                 }
@@ -149,10 +145,20 @@ internal static class DescriptorQueryRequestPreprocessor
 
             default:
                 throw new InvalidOperationException(
-                    $"Descriptor query preprocessing does not recognize supported target type "
-                        + $"'{supportedField.Target.GetType().Name}' for query field '{supportedField.QueryFieldName}'."
+                    $"Descriptor query preprocessing does not recognize supported value kind "
+                        + $"'{supportedField.ValueKind}' for query field '{supportedField.QueryFieldName}'."
                 );
         }
+    }
+
+    private static RelationalScalarType GetRequiredScalarType(SupportedDescriptorQueryField supportedField)
+    {
+        return supportedField.ScalarKind is { } scalarKind
+            ? new RelationalScalarType(scalarKind)
+            : throw new InvalidOperationException(
+                $"Descriptor query preprocessing requires scalar metadata for field '{supportedField.QueryFieldName}' "
+                    + $"with value kind '{supportedField.ValueKind}'."
+            );
     }
 
     private static void ValidateCompatibleQueryTypeOrThrow(

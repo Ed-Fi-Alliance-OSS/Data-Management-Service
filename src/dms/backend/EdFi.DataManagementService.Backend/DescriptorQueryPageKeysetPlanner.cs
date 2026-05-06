@@ -37,7 +37,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             );
         }
 
-        var queryPredicates = PlanPredicates(preprocessingResult.QueryElementsInOrder);
+        var parameterNamesByIndex = DeriveParameterNames(preprocessingResult.QueryElementsInOrder);
+        var queryPredicates = PlanPredicates(preprocessingResult.QueryElementsInOrder, parameterNamesByIndex);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, requestResource);
         var pageQuerySpec = new PageDocumentIdQuerySpec(
             RootTable: _documentTable,
@@ -59,6 +60,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         var parameterValues = BuildParameterValues(
             resourceKeyId,
             preprocessingResult.QueryElementsInOrder,
+            parameterNamesByIndex,
             paginationParameters
         );
 
@@ -66,10 +68,10 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     }
 
     private static IReadOnlyList<QueryValuePredicate> PlanPredicates(
-        IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder
+        IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder,
+        IReadOnlyList<string> parameterNamesByIndex
     )
     {
-        var parameterNamesByIndex = DeriveParameterNames(queryElementsInOrder);
         var predicates = new QueryValuePredicate[queryElementsInOrder.Count];
 
         for (var index = 0; index < queryElementsInOrder.Count; index++)
@@ -81,94 +83,94 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
                     nameof(queryElementsInOrder)
                 );
 
-            predicates[index] = queryElement.Value switch
-            {
-                PreprocessedDescriptorQueryValue.DocumentUuid => new QueryValuePredicate(
-                    _documentUuidColumn,
-                    QueryComparisonOperator.Equal,
-                    parameterNamesByIndex[index]
-                ),
-                PreprocessedDescriptorQueryValue.Raw => queryElement.SupportedField.Target switch
-                {
-                    DescriptorQueryFieldTarget.Namespace(var column) => CreateDescriptorColumnPredicate(
-                        column,
-                        parameterNamesByIndex[index],
-                        ScalarKind.String
-                    ),
-                    DescriptorQueryFieldTarget.CodeValue(var column) => CreateDescriptorColumnPredicate(
-                        column,
-                        parameterNamesByIndex[index],
-                        ScalarKind.String
-                    ),
-                    DescriptorQueryFieldTarget.ShortDescription(var column) =>
-                        CreateDescriptorColumnPredicate(
-                            column,
-                            parameterNamesByIndex[index],
-                            ScalarKind.String
-                        ),
-                    DescriptorQueryFieldTarget.Description(var column) => CreateDescriptorColumnPredicate(
-                        column,
-                        parameterNamesByIndex[index],
-                        ScalarKind.String
-                    ),
-                    _ => throw new InvalidOperationException(
-                        $"Descriptor query page planning expected a string descriptor target for query field "
-                            + $"'{queryElement.SupportedField.QueryFieldName}', but received "
-                            + $"'{queryElement.SupportedField.Target.GetType().Name}'."
-                    ),
-                },
-                PreprocessedDescriptorQueryValue.DateOnlyValue => queryElement.SupportedField.Target switch
-                {
-                    DescriptorQueryFieldTarget.EffectiveBeginDate(var column) =>
-                        CreateDescriptorColumnPredicate(
-                            column,
-                            parameterNamesByIndex[index],
-                            ScalarKind.Date
-                        ),
-                    DescriptorQueryFieldTarget.EffectiveEndDate(var column) =>
-                        CreateDescriptorColumnPredicate(
-                            column,
-                            parameterNamesByIndex[index],
-                            ScalarKind.Date
-                        ),
-                    _ => throw new InvalidOperationException(
-                        $"Descriptor query page planning expected a date descriptor target for query field "
-                            + $"'{queryElement.SupportedField.QueryFieldName}', but received "
-                            + $"'{queryElement.SupportedField.Target.GetType().Name}'."
-                    ),
-                },
-                _ => throw new InvalidOperationException(
-                    $"Descriptor query page planning does not recognize preprocessed value type "
-                        + $"'{queryElement.Value.GetType().Name}' for query field "
-                        + $"'{queryElement.SupportedField.QueryFieldName}'."
-                ),
-            };
+            predicates[index] = PlanPredicate(queryElement, parameterNamesByIndex[index]);
         }
 
         return predicates;
     }
 
-    private static QueryValuePredicate CreateDescriptorColumnPredicate(
-        DbColumnName column,
-        string parameterName,
-        ScalarKind scalarKind
+    private static QueryValuePredicate PlanPredicate(
+        PreprocessedDescriptorQueryElement queryElement,
+        string parameterName
     )
     {
+        ValidatePreprocessedValueKindOrThrow(queryElement);
+
+        return queryElement.SupportedField.ValueKind switch
+        {
+            DescriptorQueryValueKind.DocumentUuid => new QueryValuePredicate(
+                _documentUuidColumn,
+                QueryComparisonOperator.Equal,
+                parameterName
+            ),
+            DescriptorQueryValueKind.String or DescriptorQueryValueKind.Date =>
+                CreateDescriptorColumnPredicate(queryElement.SupportedField, parameterName),
+            _ => throw new InvalidOperationException(
+                $"Descriptor query page planning does not recognize supported value kind "
+                    + $"'{queryElement.SupportedField.ValueKind}' for query field "
+                    + $"'{queryElement.SupportedField.QueryFieldName}'."
+            ),
+        };
+    }
+
+    private static QueryValuePredicate CreateDescriptorColumnPredicate(
+        SupportedDescriptorQueryField supportedField,
+        string parameterName
+    )
+    {
+        var descriptorColumn =
+            supportedField.DescriptorColumn
+            ?? throw new InvalidOperationException(
+                $"Descriptor query page planning requires descriptor column metadata for query field "
+                    + $"'{supportedField.QueryFieldName}' with value kind '{supportedField.ValueKind}'."
+            );
+        var scalarKind =
+            supportedField.ScalarKind
+            ?? throw new InvalidOperationException(
+                $"Descriptor query page planning requires scalar metadata for query field "
+                    + $"'{supportedField.QueryFieldName}' with value kind '{supportedField.ValueKind}'."
+            );
+
         return new QueryValuePredicate(
-            new QueryPredicateTarget.DescriptorColumn(column),
+            new QueryPredicateTarget.DescriptorColumn(descriptorColumn),
             QueryComparisonOperator.Equal,
             parameterName,
             scalarKind
         );
     }
 
+    private static void ValidatePreprocessedValueKindOrThrow(PreprocessedDescriptorQueryElement queryElement)
+    {
+        var supportedField = queryElement.SupportedField;
+        var isCompatible = supportedField.ValueKind switch
+        {
+            DescriptorQueryValueKind.DocumentUuid => queryElement.Value
+                is PreprocessedDescriptorQueryValue.DocumentUuid,
+            DescriptorQueryValueKind.String => queryElement.Value is PreprocessedDescriptorQueryValue.Raw,
+            DescriptorQueryValueKind.Date => queryElement.Value
+                is PreprocessedDescriptorQueryValue.DateOnlyValue,
+            _ => false,
+        };
+
+        if (isCompatible)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Descriptor query page planning expected preprocessed value kind '{supportedField.ValueKind}' "
+                + $"for query field '{supportedField.QueryFieldName}', but received "
+                + $"'{queryElement.Value.GetType().Name}'."
+        );
+    }
+
     private static IReadOnlyDictionary<string, object?> BuildParameterValues(
         short resourceKeyId,
         IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder,
+        IReadOnlyList<string> parameterNamesByIndex,
         PaginationParameters paginationParameters
     )
     {
-        var parameterNamesByIndex = DeriveParameterNames(queryElementsInOrder);
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal)
         {
             [ResourceKeyIdParameterName] = resourceKeyId,
