@@ -330,8 +330,7 @@ public class Given_MappingSetCompiler
                 new RelationalQuerySupport.Omitted(
                     new RelationalQueryCapabilityOmission(
                         RelationalQueryCapabilityOmissionKind.DescriptorResource,
-                        "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
-                            + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                        "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
                     )
                 )
             );
@@ -398,8 +397,7 @@ public class Given_MappingSetCompiler
                 new RelationalQuerySupport.Omitted(
                     new RelationalQueryCapabilityOmission(
                         RelationalQueryCapabilityOmissionKind.DescriptorResource,
-                        "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
-                            + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                        "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
                     )
                 )
             );
@@ -588,8 +586,7 @@ public class Given_MappingSetCompiler
                 new RelationalQuerySupport.Omitted(
                     new RelationalQueryCapabilityOmission(
                         RelationalQueryCapabilityOmissionKind.DescriptorResource,
-                        "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
-                            + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                        "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
                     )
                 )
             );

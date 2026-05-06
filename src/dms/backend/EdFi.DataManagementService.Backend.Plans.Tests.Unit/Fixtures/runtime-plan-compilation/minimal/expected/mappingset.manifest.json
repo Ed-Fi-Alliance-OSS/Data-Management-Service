@@ -18,7 +18,7 @@
             "support": {
               "kind": "omitted",
               "omission_kind": "descriptor_resource",
-              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses the descriptor endpoint query path instead of compiled relational GET-many support. Next story: E08-S05 (05-descriptor-endpoints.md)."
+              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
@@ -684,7 +684,7 @@
             "support": {
               "kind": "omitted",
               "omission_kind": "descriptor_resource",
-              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses the descriptor endpoint query path instead of compiled relational GET-many support. Next story: E08-S05 (05-descriptor-endpoints.md)."
+              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []

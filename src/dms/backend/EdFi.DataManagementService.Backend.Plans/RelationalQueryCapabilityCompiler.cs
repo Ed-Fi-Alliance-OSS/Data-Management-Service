@@ -14,7 +14,6 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 internal sealed class RelationalQueryCapabilityCompiler
 {
-    private const string DescriptorEndpointQueryStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
     private const string QueryCapabilityPlanKind = "query capability";
     private const string ResourceIdJsonPath = "$.id";
     private static readonly StringComparer QueryFieldNameComparer = StringComparer.OrdinalIgnoreCase;
@@ -29,8 +28,7 @@ internal sealed class RelationalQueryCapabilityCompiler
                 new RelationalQuerySupport.Omitted(
                     new RelationalQueryCapabilityOmission(
                         RelationalQueryCapabilityOmissionKind.DescriptorResource,
-                        $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
-                            + $"Next story: {DescriptorEndpointQueryStoryRef}."
+                        $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
                     )
                 ),
                 FrozenDictionary<string, SupportedRelationalQueryField>.Empty,

@@ -149,8 +149,7 @@ public class Given_MappingSetLookupExtensions
             .Throw<NotSupportedException>()
             .WithMessage(
                 "Read plan for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
-                    + "storage kind 'SharedDescriptorTable' uses the descriptor read path instead of compiled relational-table hydration plans. "
-                    + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                    + "storage kind 'SharedDescriptorTable' uses the descriptor read path instead of compiled relational-table hydration plans."
             );
     }
 
@@ -204,8 +203,7 @@ public class Given_MappingSetLookupExtensions
             .Throw<NotSupportedException>()
             .WithMessage(
                 "Relational query capability for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
-                    + "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
-                    + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                    + "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
             );
     }
 
@@ -805,8 +803,7 @@ public class Given_MappingSetLookupExtensions
             [descriptorResource] = CreateOmittedQueryCapability(
                 new RelationalQueryCapabilityOmission(
                     RelationalQueryCapabilityOmissionKind.DescriptorResource,
-                    "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
-                        + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                    "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
                 )
             ),
             [descriptorEdgeResource] = CreateSupportedQueryCapability([

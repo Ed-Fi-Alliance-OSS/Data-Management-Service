@@ -16,7 +16,6 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public static class MappingSetLookupExtensions
 {
-    private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
     private static readonly ConditionalWeakTable<
         MappingSet,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
@@ -47,8 +46,7 @@ public static class MappingSetLookupExtensions
         {
             throw new NotSupportedException(
                 $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor read path instead of compiled relational-table hydration plans. "
-                    + $"Next story: {DescriptorReadStoryRef}."
+                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor read path instead of compiled relational-table hydration plans."
             );
         }
 

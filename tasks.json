@@ -281,6 +281,6 @@
       "Update affected manifest/golden snapshots or unit test expectations.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationalQueryCapabilityCompiler|MappingSetManifestJsonEmitter|MappingSetCompiler\""
     ],
-    "completed": false
+    "completed": true
   }
 ]
