@@ -92,7 +92,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWritePersis
     {
         foreach (var tableState in mergeResult.TablesInDependencyOrder.Reverse())
         {
-            if (IsCollectionAlignedExtensionScope(tableState.TableWritePlan))
+            if (RelationalWriteMergeSupport.IsCollectionAlignedExtensionScope(tableState.TableWritePlan))
             {
                 await DeleteOmittedCollectionAlignedScopeRowsAsync(
                         dialect,
@@ -165,7 +165,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWritePersis
                     continue;
                 }
 
-                if (IsCollectionAlignedExtensionScope(tableState.TableWritePlan))
+                if (RelationalWriteMergeSupport.IsCollectionAlignedExtensionScope(tableState.TableWritePlan))
                 {
                     await UpsertCollectionAlignedScopeRowsAsync(
                             dialect,
@@ -1405,9 +1405,6 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWritePersis
             $"Table '{FormatTable(tableWritePlan)}' does not contain a binding for column '{columnName.Value}'."
         );
     }
-
-    private static bool IsCollectionAlignedExtensionScope(TableWritePlan tableWritePlan) =>
-        tableWritePlan.TableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope;
 
     private static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";

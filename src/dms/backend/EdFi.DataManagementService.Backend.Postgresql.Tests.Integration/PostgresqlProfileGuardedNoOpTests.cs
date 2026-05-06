@@ -104,7 +104,7 @@ file sealed class ProfileGuardedNoOpConcurrentContentVersionBumpFreshnessChecker
     }
 }
 
-file static class ProfileGuardedNoOpIntegrationTestSupport
+internal static class ProfileGuardedNoOpIntegrationTestSupport
 {
     public static async Task<ProfileGuardedNoOpPersistedState> ReadPersistedStateAsync(
         PostgresqlGeneratedDdlTestDatabase database,

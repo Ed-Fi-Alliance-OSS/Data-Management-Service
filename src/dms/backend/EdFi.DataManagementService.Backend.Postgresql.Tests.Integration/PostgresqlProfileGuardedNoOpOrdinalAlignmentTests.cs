@@ -15,63 +15,9 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
-using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file static class ProfileGuardedNoOpOrdinalAlignmentIntegrationTestSupport
-{
-    public static async Task<ProfileGuardedNoOpPersistedState> ReadPersistedStateAsync(
-        PostgresqlGeneratedDdlTestDatabase database,
-        Guid documentUuid,
-        Func<
-            PostgresqlGeneratedDdlTestDatabase,
-            long,
-            Task<IReadOnlyDictionary<string, object?>>
-        > readRootRowByDocumentId
-    ) =>
-        await ProfileGuardedNoOpPersistedStateSupport
-            .ReadPersistedStateAsync(
-                database,
-                documentUuid,
-                ReadDocumentRowsAsync,
-                readRootRowByDocumentId,
-                ReadDocumentChangeEventRowsAsync
-            )
-            .ConfigureAwait(false);
-
-    private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadDocumentRowsAsync(
-        PostgresqlGeneratedDdlTestDatabase database,
-        Guid documentUuid
-    ) =>
-        await database
-            .QueryRowsAsync(
-                """
-                SELECT "DocumentId", "DocumentUuid", "ResourceKeyId",
-                       "ContentVersion", "ContentLastModifiedAt",
-                       "IdentityVersion", "IdentityLastModifiedAt"
-                FROM "dms"."Document"
-                WHERE "DocumentUuid" = @documentUuid;
-                """,
-                new NpgsqlParameter("documentUuid", documentUuid)
-            )
-            .ConfigureAwait(false);
-
-    private static async Task<
-        IReadOnlyList<IReadOnlyDictionary<string, object?>>
-    > ReadDocumentChangeEventRowsAsync(PostgresqlGeneratedDdlTestDatabase database, long documentId) =>
-        await database
-            .QueryRowsAsync(
-                """
-                SELECT COUNT(*) AS "RowCount"
-                FROM "dms"."DocumentChangeEvent"
-                WHERE "DocumentId" = @documentId;
-                """,
-                new NpgsqlParameter("documentId", documentId)
-            )
-            .ConfigureAwait(false);
-}
 
 /// <summary>
 /// Pins the cross-path guarded no-op invariant for top-level collections. Seeds a
@@ -133,12 +79,11 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_
             _database,
             DocumentUuid
         );
-        _stateBeforeUpdate =
-            await ProfileGuardedNoOpOrdinalAlignmentIntegrationTestSupport.ReadPersistedStateAsync(
-                _database,
-                DocumentUuid.Value,
-                ReadShapeRootRowByDocumentIdAsync
-            );
+        _stateBeforeUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
         _addressCountBefore = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
             _database
         );
@@ -149,12 +94,11 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_
 
         _updateResult = await ExecuteProfiledShapeIdenticalPutAsync(DocumentUuid);
 
-        _stateAfterUpdate =
-            await ProfileGuardedNoOpOrdinalAlignmentIntegrationTestSupport.ReadPersistedStateAsync(
-                _database,
-                DocumentUuid.Value,
-                ReadShapeRootRowByDocumentIdAsync
-            );
+        _stateAfterUpdate = await ProfileGuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            DocumentUuid.Value,
+            ReadShapeRootRowByDocumentIdAsync
+        );
         _addressCountAfter = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressCountAsync(
             _database
         );

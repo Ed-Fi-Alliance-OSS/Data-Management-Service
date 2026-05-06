@@ -100,7 +100,7 @@ file sealed class MssqlProfileGuardedNoOpConcurrentContentVersionBumpFreshnessCh
     }
 }
 
-file static class MssqlProfileGuardedNoOpIntegrationTestSupport
+internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
 {
     public static async Task<ProfileGuardedNoOpPersistedState> ReadPersistedStateAsync(
         MssqlGeneratedDdlTestDatabase database,
