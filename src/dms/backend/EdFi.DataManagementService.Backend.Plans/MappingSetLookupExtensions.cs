@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
-using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -16,10 +15,6 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public static class MappingSetLookupExtensions
 {
-    private static readonly ConditionalWeakTable<
-        MappingSet,
-        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
-    > ConcreteResourceModelsByResource = new();
     private static readonly ConditionalWeakTable<
         MappingSet,
         ConcurrentDictionary<QualifiedResourceName, ResourceReadPlan>
@@ -40,7 +35,7 @@ public static class MappingSetLookupExtensions
             return GetValidatedReadPlanOrThrow(mappingSet, resource, readPlan);
         }
 
-        var concreteResourceModel = GetConcreteResourceModelOrThrow(mappingSet, resource);
+        var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
 
         if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
         {
@@ -64,47 +59,6 @@ public static class MappingSetLookupExtensions
             $"Read plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
                 + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
                 + "is not recognized."
-        );
-    }
-
-    /// <summary>
-    /// Resolves the concrete resource model from the mapping set's canonical resource list or throws a deterministic error.
-    /// </summary>
-    private static ConcreteResourceModel GetConcreteResourceModelOrThrow(
-        MappingSet mappingSet,
-        QualifiedResourceName resource
-    )
-    {
-        var concreteResourcesByResource = ConcreteResourceModelsByResource.GetValue(
-            mappingSet,
-            static staticMappingSet =>
-            {
-                var resourcesByName = new Dictionary<QualifiedResourceName, ConcreteResourceModel>();
-
-                foreach (var concreteResourceModel in staticMappingSet.Model.ConcreteResourcesInNameOrder)
-                {
-                    var candidateResource = concreteResourceModel.RelationalModel.Resource;
-
-                    if (!resourcesByName.TryAdd(candidateResource, concreteResourceModel))
-                    {
-                        throw new InvalidOperationException(
-                            $"Mapping set '{FormatMappingSetKey(staticMappingSet.Key)}' contains duplicate resource "
-                                + $"'{FormatResource(candidateResource)}' in ConcreteResourcesInNameOrder."
-                        );
-                    }
-                }
-
-                return resourcesByName.ToFrozenDictionary();
-            }
-        );
-
-        if (concreteResourcesByResource.TryGetValue(resource, out var concreteResourceModel))
-        {
-            return concreteResourceModel;
-        }
-
-        throw new KeyNotFoundException(
-            $"Mapping set '{FormatMappingSetKey(mappingSet.Key)}' does not contain resource '{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
         );
     }
 

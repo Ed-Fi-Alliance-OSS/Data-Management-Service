@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -46,12 +45,18 @@ internal sealed class DescriptorReadHandler(
             request.TraceId.Value
         );
 
-        if (!HasOnlyNoFurtherAuthorizationRequired(request.AuthorizationStrategyEvaluators))
+        if (
+            !RelationalReadGuardrails.HasOnlyNoFurtherAuthorizationRequired(
+                request.AuthorizationStrategyEvaluators
+            )
+        )
         {
             return new GetResult.GetFailureNotImplemented(
-                BuildDescriptorGetAuthorizationNotImplementedMessage(
+                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
                     request.Resource,
-                    request.AuthorizationStrategyEvaluators
+                    request.AuthorizationStrategyEvaluators,
+                    "descriptor GET",
+                    "GET"
                 )
             );
         }
@@ -129,12 +134,18 @@ internal sealed class DescriptorReadHandler(
             request.TraceId.Value
         );
 
-        if (!HasOnlyNoFurtherAuthorizationRequired(request.AuthorizationStrategyEvaluators))
+        if (
+            !RelationalReadGuardrails.HasOnlyNoFurtherAuthorizationRequired(
+                request.AuthorizationStrategyEvaluators
+            )
+        )
         {
             return new QueryResult.QueryFailureNotImplemented(
-                BuildDescriptorQueryAuthorizationNotImplementedMessage(
+                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
                     request.Resource,
-                    request.AuthorizationStrategyEvaluators
+                    request.AuthorizationStrategyEvaluators,
+                    "descriptor query",
+                    "GET-many"
                 )
             );
         }
@@ -198,7 +209,11 @@ internal sealed class DescriptorReadHandler(
         return new QueryResult.QuerySuccess(
             MaterializeDescriptorQueryDocuments(request, queryRowsPage.Rows),
             request.PaginationParameters.TotalCount
-                ? ConvertTotalCountOrThrow(request.Resource, queryRowsPage.TotalCount)
+                ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
+                    request.Resource,
+                    queryRowsPage.TotalCount,
+                    "descriptor query"
+                )
                 : null
         );
     }
@@ -324,59 +339,6 @@ internal sealed class DescriptorReadHandler(
             request.ReadMode,
             request.ReadableProfileProjectionContext
         );
-
-    private static bool HasOnlyNoFurtherAuthorizationRequired(
-        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
-    )
-    {
-        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
-
-        return authorizationStrategyEvaluators.All(static evaluator =>
-            string.Equals(
-                evaluator.AuthorizationStrategyName,
-                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
-                StringComparison.Ordinal
-            )
-        );
-    }
-
-    private static string BuildDescriptorGetAuthorizationNotImplementedMessage(
-        QualifiedResourceName resource,
-        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
-    )
-    {
-        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
-
-        var strategyNames = authorizationStrategyEvaluators
-            .Select(static evaluator => evaluator.AuthorizationStrategyName)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static name => name, StringComparer.Ordinal)
-            .Select(static name => $"'{name}'");
-
-        return $"Relational descriptor GET authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
-            + "when effective GET authorization requires filtering. Effective strategies: "
-            + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or only "
-            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
-    }
-
-    private static string BuildDescriptorQueryAuthorizationNotImplementedMessage(
-        QualifiedResourceName resource,
-        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
-    )
-    {
-        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
-
-        var strategyNames = authorizationStrategyEvaluators
-            .Select(static evaluator => evaluator.AuthorizationStrategyName)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static name => name, StringComparer.Ordinal)
-            .Select(static name => $"'{name}'");
-
-        return $"Relational descriptor query authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
-            + "when effective GET-many authorization requires filtering. Effective strategies: "
-            + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or only "
-            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
-    }
 
     private static RelationalCommand BuildQueryCommand(SqlDialect dialect, PageKeysetSpec.Query plannedQuery)
     {
@@ -508,27 +470,6 @@ internal sealed class DescriptorReadHandler(
         }
 
         return Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
-    }
-
-    private static int ConvertTotalCountOrThrow(QualifiedResourceName resource, long? totalCount)
-    {
-        if (totalCount is null)
-        {
-            throw new InvalidOperationException(
-                $"Relational descriptor query for resource '{RelationalWriteSupport.FormatResource(resource)}' "
-                    + "did not return a total count even though the request asked for totalCount=true."
-            );
-        }
-
-        if (totalCount < 0 || totalCount > int.MaxValue)
-        {
-            throw new InvalidOperationException(
-                $"Relational descriptor query returned total count {totalCount.Value} for resource "
-                    + $"'{RelationalWriteSupport.FormatResource(resource)}', but only values in the range [0, {int.MaxValue}] are supported."
-            );
-        }
-
-        return (int)totalCount.Value;
     }
 
     private static string BuildPageRowsSql(SqlDialect dialect, string pageDocumentIdSql)
