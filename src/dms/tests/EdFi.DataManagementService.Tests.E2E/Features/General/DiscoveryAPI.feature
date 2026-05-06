@@ -93,6 +93,11 @@ Feature: The Discovery API provides information about the application version, s
                       "prefix": "Profiles"
                     },
                     {
+                      "name": "E2E-Test-AbsenceEventCategoryDescriptor-IncludeOnly",
+                      "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-AbsenceEventCategoryDescriptor-IncludeOnly/resources-spec.json",
+                      "prefix": "Profiles"
+                    },
+                    {
                       "name": "E2E-Test-Student-And-School-IncludeAll",
                       "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-Student-And-School-IncludeAll/resources-spec.json",
                       "prefix": "Profiles"
