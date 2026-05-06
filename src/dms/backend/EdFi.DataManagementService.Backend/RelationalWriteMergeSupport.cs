@@ -208,6 +208,54 @@ internal static class RelationalWriteMergeSupport
     private static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 
+    internal static RelationalWriteMergedTableState BuildTableStateForComparison(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<RelationalWriteMergedTableRow> currentRows,
+        IReadOnlyList<RelationalWriteMergedTableRow> mergedRows
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tableWritePlan);
+        ArgumentNullException.ThrowIfNull(currentRows);
+        ArgumentNullException.ThrowIfNull(mergedRows);
+
+        IReadOnlyList<RelationalWriteMergedTableRow> currentRowsForComparison;
+        IReadOnlyList<RelationalWriteMergedTableRow> mergedRowsForComparison;
+
+        if (tableWritePlan.CollectionMergePlan is not null)
+        {
+            currentRowsForComparison = OrderCollectionRowsForComparisonIfFullyBound(
+                tableWritePlan,
+                currentRows
+            );
+            mergedRowsForComparison = OrderCollectionRowsForComparisonIfFullyBound(
+                tableWritePlan,
+                mergedRows
+            );
+        }
+        else if (IsCollectionAlignedExtensionScope(tableWritePlan))
+        {
+            currentRowsForComparison = OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound(
+                tableWritePlan,
+                currentRows
+            );
+            mergedRowsForComparison = OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound(
+                tableWritePlan,
+                mergedRows
+            );
+        }
+        else
+        {
+            currentRowsForComparison = currentRows;
+            mergedRowsForComparison = mergedRows;
+        }
+
+        return new RelationalWriteMergedTableState(
+            tableWritePlan,
+            currentRowsForComparison,
+            mergedRowsForComparison
+        );
+    }
+
     internal static IReadOnlyList<RelationalWriteMergedTableRow> OrderCollectionRowsForComparisonIfFullyBound(
         TableWritePlan tableWritePlan,
         IReadOnlyList<RelationalWriteMergedTableRow> rows

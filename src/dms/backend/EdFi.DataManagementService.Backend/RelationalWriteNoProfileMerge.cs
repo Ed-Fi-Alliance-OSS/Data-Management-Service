@@ -272,40 +272,12 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             _mergedRows.Add(row);
         }
 
-        public RelationalWriteMergedTableState Build()
-        {
-            var currentRowsForComparison = RelationalWriteMergeSupport.IsCollectionAlignedExtensionScope(
-                tableWritePlan
-            )
-                ? RelationalWriteMergeSupport.OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound(
-                    tableWritePlan,
-                    currentRows
-                )
-                : currentRows;
-            IReadOnlyList<RelationalWriteMergedTableRow> mergedRows;
-
-            if (tableWritePlan.CollectionMergePlan is not null)
-            {
-                mergedRows = RelationalWriteMergeSupport.OrderCollectionRowsForComparisonIfFullyBound(
-                    tableWritePlan,
-                    _mergedRows
-                );
-            }
-            else if (RelationalWriteMergeSupport.IsCollectionAlignedExtensionScope(tableWritePlan))
-            {
-                mergedRows =
-                    RelationalWriteMergeSupport.OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound(
-                        tableWritePlan,
-                        _mergedRows
-                    );
-            }
-            else
-            {
-                mergedRows = _mergedRows;
-            }
-
-            return new RelationalWriteMergedTableState(tableWritePlan, currentRowsForComparison, mergedRows);
-        }
+        public RelationalWriteMergedTableState Build() =>
+            RelationalWriteMergeSupport.BuildTableStateForComparison(
+                tableWritePlan,
+                currentRows,
+                _mergedRows
+            );
     }
 
     private sealed class CurrentStateProjection
