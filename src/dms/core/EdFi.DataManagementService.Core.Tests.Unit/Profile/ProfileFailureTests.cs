@@ -1085,3 +1085,150 @@ public class Given_ProfileFailureFactoryWhenEmitterDoesNotOwnTheCategory : Profi
         act.Should().Throw<ArgumentException>().WithMessage("*does not own category*");
     }
 }
+
+[TestFixture]
+public class Given_An_AmbiguousStorageCollapsedIdentity_C5_Failure
+{
+    [Test]
+    public void It_should_build_with_required_fields_and_inherit_category_5()
+    {
+        var parentAddress = new ScopeInstanceAddress("$.parents[*]", []);
+        var conflictingA = ImmutableArray.Create(new SemanticIdentityPart("a", null, IsPresent: false));
+        var conflictingB = ImmutableArray.Create(new SemanticIdentityPart("a", null, IsPresent: true));
+
+        var failure = ProfileFailures.AmbiguousStorageCollapsedIdentity(
+            profileName: "TestProfile",
+            resourceName: "TestResource",
+            method: "POST",
+            operation: "write",
+            jsonScope: "$.children[*]",
+            parentAddress: parentAddress,
+            kind: AmbiguousStorageCollapsedIdentityKind.InRequest,
+            conflictingIdentities: ImmutableArray.Create(conflictingA, conflictingB)
+        );
+
+        failure.Should().BeOfType<AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure>();
+        failure.Category.Should().Be(ProfileFailureCategory.CoreBackendContractMismatch);
+        failure.Emitter.Should().Be(ProfileFailureEmitter.BackendProfileWriteContext);
+        failure.JsonScope.Should().Be("$.children[*]");
+        failure.ParentAddress.Should().Be(parentAddress);
+        failure.Kind.Should().Be(AmbiguousStorageCollapsedIdentityKind.InRequest);
+        failure.ConflictingIdentities.Should().HaveCount(2);
+        failure.Message.Should().Contain("storage");
+    }
+}
+
+[TestFixture]
+public class Given_AmbiguousStorageCollapsedIdentity_With_Empty_JsonScope
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var parentAddress = new ScopeInstanceAddress("$.parents[*]", []);
+        var conflictingA = ImmutableArray.Create(new SemanticIdentityPart("a", null, IsPresent: false));
+        var conflictingB = ImmutableArray.Create(new SemanticIdentityPart("a", null, IsPresent: true));
+
+        try
+        {
+            ProfileFailures.AmbiguousStorageCollapsedIdentity(
+                profileName: "TestProfile",
+                resourceName: "TestResource",
+                method: "POST",
+                operation: "write",
+                jsonScope: "",
+                parentAddress: parentAddress,
+                kind: AmbiguousStorageCollapsedIdentityKind.InRequest,
+                conflictingIdentities: ImmutableArray.Create(conflictingA, conflictingB)
+            );
+        }
+        catch (Exception e)
+        {
+            _thrown = e;
+        }
+    }
+
+    [Test]
+    public void It_should_throw_an_argument_exception_for_jsonScope()
+    {
+        _thrown.Should().BeOfType<ArgumentException>();
+        ((ArgumentException)_thrown!).ParamName.Should().Be("jsonScope");
+    }
+}
+
+[TestFixture]
+public class Given_AmbiguousStorageCollapsedIdentity_With_Null_ParentAddress
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var conflictingA = ImmutableArray.Create(new SemanticIdentityPart("a", null, IsPresent: false));
+        var conflictingB = ImmutableArray.Create(new SemanticIdentityPart("a", null, IsPresent: true));
+
+        try
+        {
+            ProfileFailures.AmbiguousStorageCollapsedIdentity(
+                profileName: "TestProfile",
+                resourceName: "TestResource",
+                method: "POST",
+                operation: "write",
+                jsonScope: "$.children[*]",
+                parentAddress: null!,
+                kind: AmbiguousStorageCollapsedIdentityKind.InRequest,
+                conflictingIdentities: ImmutableArray.Create(conflictingA, conflictingB)
+            );
+        }
+        catch (Exception e)
+        {
+            _thrown = e;
+        }
+    }
+
+    [Test]
+    public void It_should_throw_an_argument_null_exception_for_parentAddress()
+    {
+        _thrown.Should().BeOfType<ArgumentNullException>();
+        ((ArgumentNullException)_thrown!).ParamName.Should().Be("parentAddress");
+    }
+}
+
+[TestFixture]
+public class Given_AmbiguousStorageCollapsedIdentity_With_Single_Conflicting_Identity
+{
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        var parentAddress = new ScopeInstanceAddress("$.parents[*]", []);
+        var only = ImmutableArray.Create(new SemanticIdentityPart("a", null, IsPresent: false));
+
+        try
+        {
+            ProfileFailures.AmbiguousStorageCollapsedIdentity(
+                profileName: "TestProfile",
+                resourceName: "TestResource",
+                method: "POST",
+                operation: "write",
+                jsonScope: "$.children[*]",
+                parentAddress: parentAddress,
+                kind: AmbiguousStorageCollapsedIdentityKind.InRequest,
+                conflictingIdentities: ImmutableArray.Create(only)
+            );
+        }
+        catch (Exception e)
+        {
+            _thrown = e;
+        }
+    }
+
+    [Test]
+    public void It_should_throw_an_argument_exception_for_conflictingIdentities()
+    {
+        _thrown.Should().BeOfType<ArgumentException>();
+        ((ArgumentException)_thrown!).ParamName.Should().Be("conflictingIdentities");
+    }
+}
