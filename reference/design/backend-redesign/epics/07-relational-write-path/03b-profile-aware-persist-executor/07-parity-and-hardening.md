@@ -154,11 +154,16 @@ The only named handoff from this slice is `DMS-1132`.
 - Decision: Extract `OrderCollectionRowsForComparisonIfFullyBound`,
   `OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound`,
   `IsCollectionAlignedExtensionScope`, and `BoundRowComparer` into
-  `RelationalWriteMergeSupport`. Both no-profile `TableStateBuilder.Build()` and
-  `ProfileTableStateBuilder.Build()` apply the shared sort.
+  `RelationalWriteMergeSupport`. The no-profile `TableStateBuilder.Build()`
+  delegates its existing comparison-ordering calls to the shared helper, while
+  `ProfileTableStateBuilder.Build()` applies the shared helper to both current
+  and merged comparison rowsets.
 - Rationale: Guarded no-op's positional `SequenceEqual` precondition was
   previously satisfied by the profile planner's coincidence-of-implementation
-  emission order. Now enforced by a sort step in both builders.
+  emission order. The profile path now enforces that invariant with an explicit
+  sort step; the no-profile path keeps relying on deterministic hydration order
+  for current collection rows and uses the shared helper where it already sorted
+  comparison rows.
 - Implementation: See commit `73085356`.
 
 ### Three-level provider fixture
