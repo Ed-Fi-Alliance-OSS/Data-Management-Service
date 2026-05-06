@@ -213,6 +213,7 @@ Feature: Profile Extension Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 08 Extension Not Included write profile is currently unsupported for write content type
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Not-Included" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Not-Included" for resource "Staff" with body
@@ -276,6 +277,7 @@ Feature: Profile Extension Filtering
              And the response body path "_ext.sample.petPreference.maximumWeight" should have value "135"
              And the response body path "_ext.sample.pets.0.isFixed" should have value "true"
 
+        @relational-backend
         Scenario: 10 Extension Include-Only-Deeply write profile is currently unsupported for write content type
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Include-Only-Deeply" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Include-Only-Deeply" for resource "Staff" with body
@@ -306,6 +308,7 @@ Feature: Profile Extension Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
         Scenario: 11 Extension Exclude-Only-Deeply write profile is currently unsupported for write content type
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Exclude-Only-Deeply" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Exclude-Only-Deeply" for resource "Staff" with body
@@ -336,6 +339,7 @@ Feature: Profile Extension Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
         Scenario: 12 Extension Exclude-Everything write profile is currently unsupported for write content type
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Exclude-Everything" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Exclude-Everything" for resource "Staff" with body
