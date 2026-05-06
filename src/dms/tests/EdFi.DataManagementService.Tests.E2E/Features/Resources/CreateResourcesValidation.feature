@@ -226,7 +226,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @API-160 @API-233 @POST
+        @API-160 @API-233 @POST @relational-backend
         Scenario: 10 Create a document with an extra property (overpost) (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
@@ -254,7 +254,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @API-161 @POST
+        @API-161 @POST @relational-backend
         Scenario: 11 Create a document with an null optional property (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
@@ -280,7 +280,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @API-162 @POST
+        @API-162 @POST @relational-backend
         Scenario: 12 Post an numeric and boolean fields as strings are coerced (Resource)
             # In this example schoolId is numeric and doNotPublishIndicator are boolean, yet posted in quotes as strings
             # In the GET request you can see they are coerced to their proper types
@@ -596,7 +596,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @API-172 @APIConventions @POST
+        @API-172 @APIConventions @POST @relational-backend
         Scenario: 24 Verify user can send a POST using extra fields
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -676,7 +676,7 @@ Feature: Resources "Create" Operation validations
                   content-type: application/problem+json
                   """
 
-        @API-174 @APIConventions @POST
+        @API-174 @APIConventions @POST @relational-backend
         Scenario: 26 Validate special characters values during POST action
              When a POST request is made to "/ed-fi/students" with
                   """
