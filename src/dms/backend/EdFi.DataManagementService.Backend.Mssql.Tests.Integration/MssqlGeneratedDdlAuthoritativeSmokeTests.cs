@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
@@ -45,8 +46,6 @@ internal sealed record SurveySessionReferenceState(
     int SchoolYearUnified,
     string SessionSessionName
 );
-
-internal sealed record ReferentialIdentityRow(Guid ReferentialId, long DocumentId, short ResourceKeyId);
 
 [TestFixture]
 [Category("DatabaseIntegration")]

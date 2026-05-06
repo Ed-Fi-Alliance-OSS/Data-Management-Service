@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using Npgsql;
 using NpgsqlTypes;
@@ -31,8 +32,6 @@ internal sealed record DocumentStampState(
     DateTimeOffset ContentLastModifiedAt,
     DateTimeOffset IdentityLastModifiedAt
 );
-
-internal sealed record ReferentialIdentityRow(Guid ReferentialId, long DocumentId, short ResourceKeyId);
 
 [TestFixture]
 public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS_Sample_Fixture_For_Smoke_Coverage

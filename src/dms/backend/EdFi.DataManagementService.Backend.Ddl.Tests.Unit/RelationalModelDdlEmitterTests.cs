@@ -871,6 +871,31 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
 }
 
 [TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_MultiColumnReferentialIdentity
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = PgsqlMultiColumnReferentialIdentityFixture.Build();
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_compose_identity_diff_terms_with_or_for_multi_column_identities()
+    {
+        _ddl.Should()
+            .Contain(
+                "IF TG_OP = 'INSERT' OR (OLD.\"PartA\" IS DISTINCT FROM NEW.\"PartA\" OR OLD.\"PartB\" IS DISTINCT FROM NEW.\"PartB\") THEN"
+            );
+    }
+}
+
+[TestFixture]
 public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
 {
     private string _ddl = default!;
@@ -961,22 +986,34 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         triggerBody.Should().Contain("ELSE IF (UPDATE([SchoolId]))");
         triggerBody.Should().Contain("DECLARE @changedDocs TABLE");
 
-        var worksetIndex = triggerBody.IndexOf("INSERT INTO @changedDocs", StringComparison.Ordinal);
-        var valueDiffIndex = triggerBody.IndexOf("i.[SchoolId] <> d.[SchoolId]", StringComparison.Ordinal);
+        var worksetStart = triggerBody.IndexOf("INSERT INTO @changedDocs", StringComparison.Ordinal);
+        worksetStart.Should().BeGreaterOrEqualTo(0);
+
+        var worksetEnd = triggerBody.IndexOf(';', worksetStart);
+        worksetEnd
+            .Should()
+            .BeGreaterThan(
+                worksetStart,
+                "@changedDocs INSERT must terminate before any subsequent statement"
+            );
+
+        var worksetStatement = triggerBody.Substring(worksetStart, worksetEnd - worksetStart);
+        worksetStatement
+            .Should()
+            .Contain(
+                "i.[SchoolId] <> d.[SchoolId]",
+                "value-diff filter must live inside the @changedDocs INSERT WHERE clause"
+            );
+
         var riDeleteIndex = triggerBody.IndexOf(
             "WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs)",
             StringComparison.Ordinal
         );
-
-        worksetIndex.Should().BeGreaterOrEqualTo(0);
-        valueDiffIndex
-            .Should()
-            .BeGreaterThan(worksetIndex, "value-diff filter must populate @changedDocs before the RI DELETE");
         riDeleteIndex
             .Should()
             .BeGreaterThan(
-                valueDiffIndex,
-                "RI DELETE must consume the @changedDocs workset built from the value diff"
+                worksetEnd,
+                "RI DELETE must consume the @changedDocs workset after it is populated"
             );
     }
 }
@@ -2459,6 +2496,127 @@ internal static class MssqlDocumentStampingFixture
                         new IdentityElementMapping(
                             schoolIdColumn,
                             "$.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ]
+                )
+            ),
+        ];
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
+            [],
+            [],
+            triggers
+        );
+    }
+}
+
+internal static class PgsqlMultiColumnReferentialIdentityFixture
+{
+    internal static DerivedRelationalModelSet Build()
+    {
+        var dialect = SqlDialect.Pgsql;
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "Composite");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var partAColumn = new DbColumnName("PartA");
+        var partBColumn = new DbColumnName("PartB");
+        var resource = new QualifiedResourceName("Ed-Fi", "Composite");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var rootTable = new DbTableModel(
+            tableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_Composite", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    partAColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.partA", []),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    partBColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.partB", []),
+                    TargetResource: null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [documentIdColumn],
+                [documentIdColumn],
+                [],
+                []
+            ),
+        };
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            [],
+            []
+        );
+
+        IReadOnlyList<DbTriggerInfo> triggers =
+        [
+            new(
+                new DbTriggerName("TR_Composite_ReferentialIdentity"),
+                tableName,
+                [documentIdColumn],
+                [partAColumn, partBColumn],
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "Composite",
+                    [
+                        new IdentityElementMapping(
+                            partAColumn,
+                            "$.partA",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                        new IdentityElementMapping(
+                            partBColumn,
+                            "$.partB",
                             new RelationalScalarType(ScalarKind.Int32)
                         ),
                     ]
