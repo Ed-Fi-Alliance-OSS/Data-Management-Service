@@ -548,6 +548,7 @@ public class Given_PostgresqlReferenceResolver
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
+        services.AddTestReadableProfileProjector();
         services.AddPostgresqlReferenceResolver();
 
         return services.BuildServiceProvider(
