@@ -130,3 +130,9 @@ Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descri
 Decisions: scoped csharpier to branch-local DMS-994 C# files from merge-base diff; no formatting deltas remained after rerun; used build-dms relational E2E lane because it owns teardown/start/provision/restart guard rails for descriptor API verification.
 Files changed: tasks.json; progress.txt
 Notes: dotnet csharpier format on merge-base C# diff reported 60 files formatted with no content churn; dotnet test --no-restore passed for backend unit (1217), plans unit (788), pgsql DescriptorRead filter (28), mssql DescriptorRead filter (28); started disposable dms-local-mssql on 1434 for sqlserver verification; pwsh ./build-dms.ps1 E2ETest -SkipDockerBuild -EnvironmentFile ./eng/docker-compose/.env.e2e.relational -TestFilter "Category=@relational-backend&FullyQualifiedName~Descriptor" passed (7).
+2026-05-05
+Task completed: Review Follow-up: Descriptor Query Schema Collision Handling
+Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descriptor-endpoints.md
+Decisions: moved generic query-field collision validation behind SharedDescriptorTable omission so descriptor resources keep compiling through descriptor-specific ApiSchemaMismatch handling; kept non-descriptor collision failure unchanged and added regression coverage for descriptor-only case-insensitive collisions.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalQueryCapabilityCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs; tasks.json; progress.txt
+Notes: ran dotnet csharpier format on touched C# files; dotnet test --no-restore passed for plans unit suite (789); remaining review follow-ups are separate cleanup/test tasks.

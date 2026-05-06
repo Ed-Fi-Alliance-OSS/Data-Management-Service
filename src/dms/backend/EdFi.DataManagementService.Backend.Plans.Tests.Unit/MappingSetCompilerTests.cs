@@ -342,6 +342,74 @@ public class Given_MappingSetCompiler
     }
 
     [Test]
+    public void It_should_omit_only_descriptor_query_support_when_descriptor_query_field_names_collide_case_insensitively()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var concreteResources = fixture.ModelSet.ConcreteResourcesInNameOrder.ToArray();
+        var descriptorResourceIndex = Array.FindIndex(
+            concreteResources,
+            concreteResourceModel =>
+                concreteResourceModel.RelationalModel.Resource == fixture.DescriptorResource
+        );
+
+        descriptorResourceIndex.Should().NotBe(-1);
+
+        concreteResources[descriptorResourceIndex] = concreteResources[descriptorResourceIndex] with
+        {
+            QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                ("id", [("$.id", "string")]),
+                ("namespace", [("$.namespace", "string")]),
+                ("Namespace", [("$.namespace", "string")]),
+                ("codeValue", [("$.codeValue", "string")]),
+                ("shortDescription", [("$.shortDescription", "string")]),
+                ("description", [("$.description", "string")]),
+                ("effectiveBeginDate", [("$.effectiveBeginDate", "date")]),
+                ("effectiveEndDate", [("$.effectiveEndDate", "date")])
+            ),
+        };
+
+        var modelSetWithDescriptorCollision = fixture.ModelSet with
+        {
+            ConcreteResourcesInNameOrder = concreteResources,
+        };
+
+        var mappingSet = new MappingSetCompiler().Compile(modelSetWithDescriptorCollision);
+        var descriptorCapability = mappingSet.DescriptorQueryCapabilitiesByResource[
+            fixture.DescriptorResource
+        ];
+
+        descriptorCapability
+            .Support.Should()
+            .Be(
+                new DescriptorQuerySupport.Omitted(
+                    new DescriptorQueryCapabilityOmission(
+                        DescriptorQueryCapabilityOmissionKind.ApiSchemaMismatch,
+                        "ApiSchema queryFieldMapping disagrees with the shared descriptor query contract: "
+                            + "case-insensitive query field name collisions were found: 'Namespace', 'namespace'."
+                    )
+                )
+            );
+        descriptorCapability.SupportedFieldsByQueryField.Should().BeEmpty();
+
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.DescriptorResource]
+            .Support.Should()
+            .Be(
+                new RelationalQuerySupport.Omitted(
+                    new RelationalQueryCapabilityOmission(
+                        RelationalQueryCapabilityOmissionKind.DescriptorResource,
+                        "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
+                            + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                    )
+                )
+            );
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.SupportedResource]
+            .Support.Should()
+            .BeOfType<RelationalQuerySupport.Supported>();
+    }
+
+    [Test]
     public void It_should_materialize_query_field_capability_dictionaries_with_case_insensitive_lookup()
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);

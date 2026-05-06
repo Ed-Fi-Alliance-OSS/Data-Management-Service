@@ -22,7 +22,6 @@ internal sealed class RelationalQueryCapabilityCompiler
     public RelationalQueryCapability Compile(ConcreteResourceModel concreteResourceModel)
     {
         ArgumentNullException.ThrowIfNull(concreteResourceModel);
-        ValidateCaseInsensitiveQueryFieldNameCollisions(concreteResourceModel);
 
         if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
         {
@@ -46,6 +45,8 @@ internal sealed class RelationalQueryCapabilityCompiler
                     + $"has unsupported storage kind '{concreteResourceModel.StorageKind}'."
             );
         }
+
+        ValidateCaseInsensitiveQueryFieldNameCollisions(concreteResourceModel);
 
         var resourceModel = concreteResourceModel.RelationalModel;
         var rootTable = RelationalResourceModelCompileValidator.ResolveRootScopeTableModelOrThrow(
