@@ -215,5 +215,72 @@
       "Run the relational descriptor E2E filter from the Relational Descriptor API E2E task."
     ],
     "completed": true
+  },
+  {
+    "category": "Review Follow-up: Descriptor E2E ETag Assertion",
+    "description": "Fix the relational descriptor readable-profile E2E scenario so it stores the descriptor _etag from the GET response body instead of the etag response header. Acceptance: the scenario no longer depends on a GET response header that GetByIdHandler does not emit; the stored value comes from the JSON body path _etag; the scenario still verifies readable profile projection and descriptor _etag behavior through the public API.",
+    "steps-to-verify": [
+      "Update src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Descriptors/ReadDescriptorsValidation.feature to store the GET response body _etag rather than the etag header.",
+      "Confirm the step helper used by the scenario does not hard-fail on a missing GET etag header.",
+      "From src/dms/tests/EdFi.InstanceManagement.Tests.E2E run: pwsh ./teardown-local-dms.ps1",
+      "From src/dms/tests/EdFi.InstanceManagement.Tests.E2E run: pwsh ./setup-local-dms.ps1",
+      "Run: dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=relational-backend&FullyQualifiedName~Descriptor\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Follow-up: Descriptor Query Schema Collision Handling",
+    "description": "Prevent descriptor query ApiSchema query-field collisions from failing the whole MappingSet through the generic relational query compiler. Acceptance: descriptor resources with queryFieldMapping disagreements are handled by DescriptorQueryCapabilityCompiler as resource-scoped omitted descriptor query capabilities; MappingSet compilation succeeds for unaffected resources; generic RelationalQueryCapability behavior for non-descriptor resources remains unchanged; diagnostics clearly identify the affected descriptor resource and mismatch.",
+    "steps-to-verify": [
+      "Adjust MappingSet compilation so SharedDescriptorTable resources do not run generic query-field collision validation before descriptor-specific omission handling can occur.",
+      "Add or update unit tests where a descriptor resource has a case-insensitive query-field collision or descriptor query schema mismatch and only that descriptor query capability is omitted.",
+      "Add or update unit tests proving the same collision behavior still fails or omits according to the existing generic rules for non-descriptor resources.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Follow-up: Descriptor Authorization Guard Simplification",
+    "description": "Remove duplicated descriptor GET/query authorization fail-closed logic between RelationalDocumentStoreRepository and DescriptorReadHandler. Acceptance: descriptor authorization is checked in one place; descriptor GET and query both return descriptor-specific 501 diagnostics naming the resource and unsupported strategies; repository routing still delegates descriptor reads before generic read/query paths; non-descriptor authorization behavior is unchanged.",
+    "steps-to-verify": [
+      "Centralize descriptor GET/query authorization fail-closed handling in DescriptorReadHandler or another single shared helper.",
+      "Remove the duplicate repository guard or duplicate handler guard, keeping descriptor query diagnostics consistent.",
+      "Add or update unit tests for descriptor GET and descriptor query unsupported authorization to assert the final 501 diagnostic text.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj",
+      "Run: dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"GetByIdHandler|QueryRequestHandler\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Follow-up: Descriptor Read Contract Dead Code",
+    "description": "Remove the unused DescriptorResourceModel payload from descriptor GET/query request contracts, or make the handler use it as the authoritative descriptor metadata source. Acceptance: DescriptorReadHandler request contracts carry only data used by the handler; repository descriptor detection still uses MappingSet.TryGetDescriptorResourceModel; tests no longer assert inert DescriptorResourceModel round-tripping; descriptor GET/query behavior remains unchanged.",
+    "steps-to-verify": [
+      "Remove DescriptorResourceModel from DescriptorGetByIdRequest and DescriptorQueryRequest unless the handler is changed to consume it directly.",
+      "Update repository construction of descriptor read requests and associated contract/unit tests.",
+      "Search for DescriptorResourceModel request-property usages and confirm no dead pass-through remains.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"DescriptorRead|RelationalDocumentStoreRepository|DescriptorQuery\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Follow-up: Descriptor Id Query SQL Simplification",
+    "description": "Simplify descriptor ?id= query SQL so it filters the descriptor page root dms.Document row directly instead of adding a redundant self-join to dms.Document. Acceptance: descriptor page SQL remains scoped by ResourceKeyId and ordered by DocumentId; id predicates filter r.DocumentUuid directly or use an equivalent no-self-join plan; totalCount=true count SQL uses the same no-self-join id filtering; descriptor-column filters still join dms.Descriptor only when needed; PostgreSQL and SQL Server generated SQL remain parameterized and deterministic.",
+    "steps-to-verify": [
+      "Update DescriptorQueryPageKeysetPlanner or PageDocumentIdSqlCompiler so descriptor id predicates do not add an extra dms.Document join when the root table is already dms.Document.",
+      "Add or update PostgreSQL and SQL Server SQL planner tests proving descriptor id query page and totalCount SQL have no redundant dms.Document self-join.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"DescriptorQuery|PageDocumentIdSqlCompiler\"",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"DescriptorQuery\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Follow-up: Descriptor Read/Query Diagnostic Text",
+    "description": "Update stale descriptor read/query omission diagnostics that still refer to E08-S05 as a future story. Acceptance: diagnostics no longer imply descriptor read or query support is unimplemented by this story; generic descriptor root-table query omission still explains that descriptor resources use descriptor-specific query capability metadata; descriptor read-plan omission still explains that descriptor resources use the descriptor read path; manifest/golden outputs are updated consistently.",
+    "steps-to-verify": [
+      "Update RelationalQueryCapabilityCompiler and MappingSetLookupExtensions descriptor omission text to remove stale future-story references.",
+      "Update affected manifest/golden snapshots or unit test expectations.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationalQueryCapabilityCompiler|MappingSetManifestJsonEmitter|MappingSetCompiler\""
+    ],
+    "completed": false
   }
 ]
