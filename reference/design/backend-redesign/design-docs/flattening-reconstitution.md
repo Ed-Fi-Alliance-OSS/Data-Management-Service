@@ -1333,7 +1333,7 @@ public sealed record ReferenceIdentityBinding(
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this descriptor value participates in the parent document's identity (the descriptor URI is part of the parent's <c>identityJsonPaths</c>).
-/// Used when projecting identity values from relational storage for referential-id computation (descriptor rows are treated as immutable in this redesign).
+/// Used when projecting identity values from relational storage for referential-id computation (descriptor identity/URI is immutable in this redesign).
 /// </param>
 public sealed record DescriptorEdgeSource(
     bool IsIdentityComponent,

@@ -195,7 +195,7 @@ descriptor resources and delegates.
      story?
 
 ### Answers 3
-  
+
   1. Make descriptor query capability first-class in the compiled MappingSet, but keeping it separate from the
      existing generic RelationalQueryCapability.
 
@@ -212,4 +212,4 @@ descriptor resources and delegates.
     - ExternalResponse: public descriptor fields plus id, _etag, _lastModifiedDate; apply readable profile projection; preserve
         namespace/codeValue; recompute _etag.
     - StoredDocument: public descriptor fields only; no id, _etag, _lastModifiedDate, no profile projection, no ChangeVersion.
-    - Neither mode should emit internal Uri or Discriminator.  
+    - Neither mode should emit internal Uri or Discriminator.

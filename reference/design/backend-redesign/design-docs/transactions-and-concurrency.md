@@ -129,7 +129,7 @@ optional-reference presence semantics.
 
 #### Descriptor references (`..._DescriptorId`)
 
-Descriptor references are stored as `..._DescriptorId` FKs to `dms.Descriptor` for existence enforcement and URI reconstitution. In this redesign, descriptors are treated as immutable reference data and do not participate in propagation.
+Descriptor references are stored as `..._DescriptorId` FKs to `dms.Descriptor` for existence enforcement and URI reconstitution. Descriptor identity/URI is immutable and does not participate in propagation; descriptor metadata fields are mutable and affect only the descriptor resource's own representation.
 
 #### How polymorphic (abstract) references work end-to-end
 
