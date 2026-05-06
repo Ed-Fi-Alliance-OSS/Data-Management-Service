@@ -190,11 +190,11 @@ internal abstract class ProfileGuardedNoOpGeneratedDdlFixtureTestBase
     protected abstract ServiceProvider CreateServiceProvider();
 
     /// <summary>
-    /// Issues a non-profiled CREATE for the shape's synthetic target resource. The
-    /// CREATE intentionally omits a profile context so the stored document is in a
-    /// known canonical shape; the subsequent profiled PUT carries the profile context
-    /// that activates the guarded no-op path. Implementations must assert the seed
-    /// returned <see cref="UpsertResult.InsertSuccess"/>.
+    /// Seeds the shape's target resource before the profiled write under test. Each
+    /// shape chooses the seed path that matches the invariant it owns: some seed through
+    /// the no-profile path, while collection guarded no-op fixtures may seed through the
+    /// profiled path to keep same-path ordinal behavior explicit. Implementations must
+    /// assert the seed returned <see cref="UpsertResult.InsertSuccess"/>.
     /// </summary>
     protected abstract Task ExecuteProfiledShapeCreateAsync(DocumentUuid documentUuid);
 

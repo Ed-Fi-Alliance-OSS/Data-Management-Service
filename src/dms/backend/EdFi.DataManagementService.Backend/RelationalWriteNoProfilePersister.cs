@@ -1205,7 +1205,10 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWritePersis
                 builder.Append('|');
             }
 
-            var bindingIndex = FindBindingIndex(tableWritePlan, identityColumns[index]);
+            var bindingIndex = RelationalWriteMergeSupport.FindBindingIndex(
+                tableWritePlan,
+                identityColumns[index]
+            );
             builder.Append(identityColumns[index].Value);
             builder.Append('=');
             builder.Append(FormatPhysicalRowIdentityValue(row.Values[bindingIndex]));
@@ -1389,21 +1392,6 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWritePersis
     private static string NormalizeParameterName(string parameterName)
     {
         return parameterName.StartsWith('@') ? parameterName : $"@{parameterName}";
-    }
-
-    private static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)
-    {
-        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
-        {
-            if (tableWritePlan.ColumnBindings[bindingIndex].Column.ColumnName.Equals(columnName))
-            {
-                return bindingIndex;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Table '{FormatTable(tableWritePlan)}' does not contain a binding for column '{columnName.Value}'."
-        );
     }
 
     private static string FormatTable(TableWritePlan tableWritePlan) =>

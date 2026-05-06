@@ -29,6 +29,18 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
+    public void It_uses_the_shared_binding_index_helper()
+    {
+        typeof(RelationalWriteNoProfilePersister)
+            .GetMethod(
+                "FindBindingIndex",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+            )
+            .Should()
+            .BeNull("binding-index lookup should live in RelationalWriteMergeSupport");
+    }
+
+    [Test]
     public async Task It_inserts_document_root_and_root_extension_rows_for_create_requests()
     {
         var rootPlan = CreateRootPlan();
