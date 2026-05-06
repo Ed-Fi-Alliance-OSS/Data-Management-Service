@@ -830,6 +830,44 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         _ddl.Should().Contain("FOR EACH ROW");
         _ddl.Should().Contain("SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
     }
+
+    [Test]
+    public void It_should_short_circuit_referential_identity_maintenance_on_same_value_root_updates()
+    {
+        var functionStart = _ddl.IndexOf(
+            "CREATE OR REPLACE FUNCTION \"edfi\".\"TF_TR_School_ReferentialIdentity\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterOrEqualTo(0);
+
+        var triggerCreateStart = _ddl.IndexOf(
+            "CREATE TRIGGER \"TR_School_ReferentialIdentity\"",
+            functionStart,
+            StringComparison.Ordinal
+        );
+        triggerCreateStart.Should().BeGreaterThan(functionStart);
+
+        var functionBody = _ddl.Substring(functionStart, triggerCreateStart - functionStart);
+
+        var guardIndex = functionBody.IndexOf(
+            "IF TG_OP = 'INSERT' OR (OLD.\"SchoolId\" IS DISTINCT FROM NEW.\"SchoolId\") THEN",
+            StringComparison.Ordinal
+        );
+        var deleteIndex = functionBody.IndexOf(
+            "DELETE FROM \"dms\".\"ReferentialIdentity\"",
+            StringComparison.Ordinal
+        );
+        var insertIndex = functionBody.IndexOf(
+            "INSERT INTO \"dms\".\"ReferentialIdentity\"",
+            StringComparison.Ordinal
+        );
+
+        guardIndex
+            .Should()
+            .BeGreaterOrEqualTo(0, "RI trigger must guard the DELETE/INSERT block on identity diffs");
+        deleteIndex.Should().BeGreaterThan(guardIndex);
+        insertIndex.Should().BeGreaterThan(guardIndex);
+    }
 }
 
 [TestFixture]
@@ -898,6 +936,47 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         _ddl.Should()
             .Contain(
                 "WHERE del.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (CAST(i.[StreetNumberName] AS varbinary(max)) <> CAST(del.[StreetNumberName] AS varbinary(max)) OR (i.[StreetNumberName] IS NULL AND del.[StreetNumberName] IS NOT NULL) OR (i.[StreetNumberName] IS NOT NULL AND del.[StreetNumberName] IS NULL))"
+            );
+    }
+
+    [Test]
+    public void It_should_gate_referential_identity_maintenance_with_changed_docs_value_diff()
+    {
+        var triggerStart = _ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]",
+            StringComparison.Ordinal
+        );
+        triggerStart.Should().BeGreaterOrEqualTo(0);
+
+        var nextTriggerStart = _ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER",
+            triggerStart + 1,
+            StringComparison.Ordinal
+        );
+        var triggerBody =
+            nextTriggerStart >= 0
+                ? _ddl.Substring(triggerStart, nextTriggerStart - triggerStart)
+                : _ddl[triggerStart..];
+
+        triggerBody.Should().Contain("ELSE IF (UPDATE([SchoolId]))");
+        triggerBody.Should().Contain("DECLARE @changedDocs TABLE");
+
+        var worksetIndex = triggerBody.IndexOf("INSERT INTO @changedDocs", StringComparison.Ordinal);
+        var valueDiffIndex = triggerBody.IndexOf("i.[SchoolId] <> d.[SchoolId]", StringComparison.Ordinal);
+        var riDeleteIndex = triggerBody.IndexOf(
+            "WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs)",
+            StringComparison.Ordinal
+        );
+
+        worksetIndex.Should().BeGreaterOrEqualTo(0);
+        valueDiffIndex
+            .Should()
+            .BeGreaterThan(worksetIndex, "value-diff filter must populate @changedDocs before the RI DELETE");
+        riDeleteIndex
+            .Should()
+            .BeGreaterThan(
+                valueDiffIndex,
+                "RI DELETE must consume the @changedDocs workset built from the value diff"
             );
     }
 }
@@ -2215,6 +2294,24 @@ internal static class PgsqlDocumentStampingFixture
                 [],
                 new TriggerKindParameters.DocumentStamping()
             ),
+            new(
+                new DbTriggerName("TR_School_ReferentialIdentity"),
+                tableName,
+                [documentIdColumn],
+                [schoolIdColumn],
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "School",
+                    [
+                        new IdentityElementMapping(
+                            schoolIdColumn,
+                            "$.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ]
+                )
+            ),
         ];
 
         return new DerivedRelationalModelSet(
@@ -2348,6 +2445,24 @@ internal static class MssqlDocumentStampingFixture
                 [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping()
+            ),
+            new(
+                new DbTriggerName("TR_School_ReferentialIdentity"),
+                tableName,
+                [documentIdColumn],
+                [schoolIdColumn],
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "School",
+                    [
+                        new IdentityElementMapping(
+                            schoolIdColumn,
+                            "$.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ]
+                )
             ),
         ];
 
