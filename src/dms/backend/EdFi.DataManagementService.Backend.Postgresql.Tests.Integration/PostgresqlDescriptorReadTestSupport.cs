@@ -54,7 +54,7 @@ internal static class PostgresqlDescriptorReadTestSupport
         DescriptorReadSeed seed
     )
     {
-        var discriminator = seed.Discriminator ?? $"{resource.ProjectName}:{resource.ResourceName}";
+        var discriminator = seed.Discriminator ?? resource.ResourceName;
 
         await database.ExecuteNonQueryAsync(
             """

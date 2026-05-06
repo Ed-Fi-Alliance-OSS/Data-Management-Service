@@ -56,7 +56,7 @@ internal static class MssqlDescriptorReadTestSupport
         DescriptorReadSeed seed
     )
     {
-        var discriminator = seed.Discriminator ?? $"{resource.ProjectName}:{resource.ResourceName}";
+        var discriminator = seed.Discriminator ?? resource.ResourceName;
 
         await database.ExecuteNonQueryAsync(
             """

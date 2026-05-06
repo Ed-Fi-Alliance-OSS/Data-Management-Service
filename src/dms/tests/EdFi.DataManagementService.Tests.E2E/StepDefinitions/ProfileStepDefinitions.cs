@@ -1085,13 +1085,9 @@ public class ProfileStepDefinitions(
         string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
-        JsonObject[] objects = responseJson is JsonArray jsonArray
-            ? jsonArray.Select(item => item!.AsObject()).ToArray()
-            : [responseJson.AsObject()];
-
         string[] pathParts = jsonPath.Split('.');
         bool pathExists = TryResolvePath(
-            objects[0],
+            responseJson,
             pathParts,
             out JsonNode? current,
             out string failedAtPart

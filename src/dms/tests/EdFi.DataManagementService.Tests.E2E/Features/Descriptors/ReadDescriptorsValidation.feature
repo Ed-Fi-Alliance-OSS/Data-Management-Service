@@ -138,8 +138,8 @@ Feature: Read a Descriptor
         @DMS-994 @relational-backend
         Scenario: 09 Read and query a descriptor through the relational backend with readable profile projection
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             When the response body path "_etag" is stored as variable "fullDescriptorEtag"
              Then it should respond with 200
+             When the response body path "_etag" is stored as variable "fullDescriptorEtag"
               And the response body is
                   """
                     {
