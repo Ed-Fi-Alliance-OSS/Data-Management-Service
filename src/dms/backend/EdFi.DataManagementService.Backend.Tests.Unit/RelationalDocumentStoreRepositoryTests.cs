@@ -335,8 +335,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_not_implemented_for_descriptor_get_authorization_that_requires_filtering()
+    public async Task It_delegates_descriptor_get_authorization_that_requires_filtering_to_the_descriptor_read_handler()
     {
+        var expectedResult = new GetResult.GetFailureNotImplemented(
+            "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported."
+        );
+
+        A.CallTo(() =>
+                _descriptorReadHandler.HandleGetByIdAsync(
+                    A<DescriptorGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(expectedResult);
+
         var getRequest = CreateGetRequest(
             new DocumentUuid(Guid.NewGuid()),
             CreateDescriptorOnlyMappingSet(_descriptorResourceInfo),
@@ -347,13 +359,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.GetDocumentById(getRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(
-                new GetResult.GetFailureNotImplemented(
-                    "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported."
+        result.Should().BeSameAs(expectedResult);
+        A.CallTo(() =>
+                _descriptorReadHandler.HandleGetByIdAsync(
+                    A<DescriptorGetByIdRequest>._,
+                    A<CancellationToken>._
                 )
-            );
+            )
+            .MustHaveHappenedOnceExactly();
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
                     A<MappingSet>._,
@@ -885,6 +898,73 @@ public class Given_RelationalDocumentStoreRepositoryTests
             [
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+            ],
+            resourceInfo: descriptorResourceInfo
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeSameAs(expectedResult);
+        A.CallTo(() =>
+                descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_delegates_descriptor_query_authorization_that_requires_filtering_to_the_descriptor_read_handler()
+    {
+        var descriptorReadHandler = A.Fake<IDescriptorReadHandler>();
+        var descriptorResourceInfo = CreateResourceInfo("SchoolTypeDescriptor");
+        var mappingSet = CreateDescriptorOnlyMappingSet(descriptorResourceInfo);
+        var expectedResult = new QueryResult.QueryFailureNotImplemented(
+            "Relational descriptor query authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported."
+        );
+
+        A.CallTo(() =>
+                descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+            )
+            .Returns(expectedResult);
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            new DefaultDescriptorWriteHandler(),
+            descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory
+        );
+
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
             ],
             resourceInfo: descriptorResourceInfo

@@ -136,3 +136,9 @@ Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descri
 Decisions: moved generic query-field collision validation behind SharedDescriptorTable omission so descriptor resources keep compiling through descriptor-specific ApiSchemaMismatch handling; kept non-descriptor collision failure unchanged and added regression coverage for descriptor-only case-insensitive collisions.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalQueryCapabilityCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs; tasks.json; progress.txt
 Notes: ran dotnet csharpier format on touched C# files; dotnet test --no-restore passed for plans unit suite (789); remaining review follow-ups are separate cleanup/test tasks.
+2026-05-05
+Task completed: Review Follow-up: Descriptor Authorization Guard Simplification
+Story: reference/design/backend-redesign/epics/08-relational-read-path/05-descriptor-endpoints.md
+Decisions: removed descriptor GET/query fail-closed auth from RelationalDocumentStoreRepository so descriptor routing always delegates to DescriptorReadHandler; kept descriptor-specific 501 text in DescriptorReadHandler and left generic non-descriptor query auth guard unchanged; added repository regressions proving filtered descriptor auth still bypasses generic read/query infrastructure and returns handler-owned failures.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs; tasks.json; progress.txt
+Notes: started docker-desktop to clear ad-hoc localhost:8081 refusal during feedback-loop check; ran dotnet csharpier format on touched C# files; dotnet test --no-restore passed for backend unit (1218) and core GetByIdHandler|QueryRequestHandler filter (20).
