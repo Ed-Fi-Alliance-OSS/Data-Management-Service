@@ -476,6 +476,8 @@ internal sealed class DescriptorReadHandler(
     {
         var pageDocumentIdSqlBody = StripTrailingSemicolon(pageDocumentIdSql);
 
+        // The shared page compiler intentionally returns only a DocumentId keyset. Descriptor queries
+        // root on dms.Document, so this performs a page-sized PK lookup instead of widening that contract.
         return dialect switch
         {
             SqlDialect.Pgsql => $$"""
