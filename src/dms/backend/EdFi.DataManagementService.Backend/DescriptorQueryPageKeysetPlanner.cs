@@ -15,6 +15,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     private const string OffsetParameterName = "offset";
     private const string LimitParameterName = "limit";
     private const string ResourceKeyIdParameterName = "resourceKeyId";
+    private static readonly DbColumnName _documentUuidColumn = new("DocumentUuid");
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private readonly PageDocumentIdSqlCompiler _sqlCompiler = new(dialect);
 
@@ -83,7 +84,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             predicates[index] = queryElement.Value switch
             {
                 PreprocessedDescriptorQueryValue.DocumentUuid => new QueryValuePredicate(
-                    new DbColumnName("DocumentUuid"),
+                    _documentUuidColumn,
                     QueryComparisonOperator.Equal,
                     parameterNamesByIndex[index]
                 ),

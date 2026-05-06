@@ -22,18 +22,21 @@ public class Given_DescriptorQueryPageKeysetPlanner
     [TestCase(
         SqlDialect.Pgsql,
         "\"dms\".\"Document\" r",
+        "\"dms\".\"Document\" doc",
         "\"dms\".\"Descriptor\" d",
         "LIMIT @limit OFFSET @offset"
     )]
     [TestCase(
         SqlDialect.Mssql,
         "[dms].[Document] r",
+        "[dms].[Document] doc",
         "[dms].[Descriptor] d",
         "OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY"
     )]
     public void It_should_plan_typed_descriptor_page_and_total_count_sql_and_parameter_values(
         SqlDialect dialect,
         string expectedDocumentFromFragment,
+        string unexpectedDocumentJoinFragment,
         string expectedDescriptorJoinFragment,
         string expectedPagingFragment
     )
@@ -79,6 +82,8 @@ public class Given_DescriptorQueryPageKeysetPlanner
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain($"FROM {expectedDocumentFromFragment}");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain($"INNER JOIN {unexpectedDocumentJoinFragment}");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("doc.");
         keyset.Plan.PageDocumentIdSql.Should().Contain($"INNER JOIN {expectedDescriptorJoinFragment} ON d.");
         keyset.Plan.PageDocumentIdSql.Should().Contain("ResourceKeyId");
         keyset.Plan.PageDocumentIdSql.Should().Contain("DocumentUuid");
@@ -88,6 +93,8 @@ public class Given_DescriptorQueryPageKeysetPlanner
 
         keyset.Plan.TotalCountSql.Should().NotBeNull();
         keyset.Plan.TotalCountSql.Should().Contain($"FROM {expectedDocumentFromFragment}");
+        keyset.Plan.TotalCountSql.Should().NotContain($"INNER JOIN {unexpectedDocumentJoinFragment}");
+        keyset.Plan.TotalCountSql.Should().NotContain("doc.");
         keyset.Plan.TotalCountSql.Should().Contain($"INNER JOIN {expectedDescriptorJoinFragment} ON d.");
         keyset.Plan.TotalCountSql.Should().Contain("ResourceKeyId");
         keyset.Plan.TotalCountSql.Should().Contain("DocumentUuid");
@@ -244,6 +251,69 @@ public class Given_DescriptorQueryPageKeysetPlanner
             .Plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("resourceKeyId");
+    }
+
+    [Test]
+    [TestCase(
+        SqlDialect.Pgsql,
+        "\"dms\".\"Document\" r",
+        "\"dms\".\"Document\" doc",
+        "r.\"DocumentUuid\" = @id"
+    )]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document] r", "[dms].[Document] doc", "r.[DocumentUuid] = @id")]
+    public void It_should_plan_descriptor_id_filters_without_redundant_self_join_or_descriptor_join(
+        SqlDialect dialect,
+        string expectedDocumentFromFragment,
+        string unexpectedDocumentJoinFragment,
+        string expectedIdPredicateFragment
+    )
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(dialect);
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "id",
+                        "$.id",
+                        "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+                        "string",
+                        new DescriptorQueryFieldTarget.DocumentUuid(),
+                        new PreprocessedDescriptorQueryValue.DocumentUuid(
+                            Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
+                        )
+                    ),
+                ]
+            ),
+            new PaginationParameters(Limit: 25, Offset: 75, TotalCount: true, MaximumPageSize: 500)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain($"FROM {expectedDocumentFromFragment}");
+        keyset.Plan.PageDocumentIdSql.Should().Contain(expectedIdPredicateFragment);
+        keyset.Plan.PageDocumentIdSql.Should().NotContain($"INNER JOIN {unexpectedDocumentJoinFragment}");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("doc.");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("Descriptor");
+
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.TotalCountSql.Should().Contain($"FROM {expectedDocumentFromFragment}");
+        keyset.Plan.TotalCountSql.Should().Contain(expectedIdPredicateFragment);
+        keyset.Plan.TotalCountSql.Should().NotContain($"INNER JOIN {unexpectedDocumentJoinFragment}");
+        keyset.Plan.TotalCountSql.Should().NotContain("doc.");
+        keyset.Plan.TotalCountSql.Should().NotContain("Descriptor");
+        keyset.Plan.TotalCountSql.Should().NotContain("@offset");
+        keyset.Plan.TotalCountSql.Should().NotContain("@limit");
+
+        keyset
+            .Plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("id", "resourceKeyId", "offset", "limit");
+        keyset.Plan.TotalCountParametersInOrder.Should().NotBeNull();
+        keyset
+            .Plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("id", "resourceKeyId");
     }
 
     [Test]
