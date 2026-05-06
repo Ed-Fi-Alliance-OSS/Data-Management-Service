@@ -716,18 +716,22 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_not_stamp_same_value_cascaded_identity_updates()
+    public async Task It_should_not_stamp_same_value_propagated_identity_reference_updates()
     {
+        // CourseOffering's INSTEAD OF UPDATE rewrites every column unconditionally, so the
+        // AFTER stamp/RI triggers see UPDATE([Session_SessionName]) = true even though the
+        // user-issued UPDATE was a same-value self-assignment. Only the null-safe value diff
+        // in the trigger body should prevent a false content/identity stamp bump.
         var before = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
-            UPDATE [edfi].[Session]
-            SET [SessionName] = [SessionName]
+            UPDATE [edfi].[CourseOffering]
+            SET [Session_SessionName] = [Session_SessionName]
             WHERE [DocumentId] = @documentId;
             """,
-            new SqlParameter("@documentId", _seedData.SessionDocumentId)
+            new SqlParameter("@documentId", _seedData.CourseOfferingDocumentId)
         );
 
         var after = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);

@@ -822,8 +822,13 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     }
 
     [Test]
-    public async Task It_should_not_stamp_same_value_cascaded_identity_updates()
+    public async Task It_should_not_stamp_same_value_propagated_identity_reference_updates()
     {
+        // A same-value parent UPDATE cannot reach the dependent: TF_TR_School_AbstractIdentity
+        // gates the EducationOrganizationIdentity write on OLD."SchoolId" IS DISTINCT FROM NEW,
+        // so the FK ON UPDATE CASCADE never fires. Drive the dependent's stamp trigger directly
+        // with a self-assignment on its propagated identity-source reference column to exercise
+        // the trigger's value-diff guard.
         var before = await GetDocumentStampStateAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
@@ -831,11 +836,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
-            UPDATE "edfi"."School"
-            SET "SchoolId" = "SchoolId"
+            UPDATE "edfi"."StudentEducationOrganizationAssociation"
+            SET "EducationOrganization_EducationOrganizationId" = "EducationOrganization_EducationOrganizationId"
             WHERE "DocumentId" = @documentId;
             """,
-            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+            new NpgsqlParameter("documentId", _seedData.StudentEducationOrganizationAssociationDocumentId)
         );
 
         var after = await GetDocumentStampStateAsync(
