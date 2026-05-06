@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using Be.Vlaanderen.Basisregisters.Generators.Guid;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
@@ -76,6 +77,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             strict: true
         );
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        await InstallReferentialIdentityAuditAsync();
 
         _schoolTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "edfi", "School");
         _schoolExtensionTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
@@ -777,9 +779,36 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [Test]
     public async Task It_should_not_stamp_same_value_identity_column_root_updates()
     {
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "EducationOrganization"
+        );
+        var expectedRiRows = SortReferentialIdentityRows(
+            new[]
+            {
+                new ReferentialIdentityRow(
+                    ComputeReferentialId("Ed-Fi", "School", ("$.schoolId", "100")),
+                    _seedData.SchoolDocumentId,
+                    schoolResourceKeyId
+                ),
+                new ReferentialIdentityRow(
+                    ComputeReferentialId(
+                        "Ed-Fi",
+                        "EducationOrganization",
+                        ("$.educationOrganizationId", "100")
+                    ),
+                    _seedData.SchoolDocumentId,
+                    educationOrganizationResourceKeyId
+                ),
+            }
+        );
+
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
+        beforeRiRows.Should().Equal(expectedRiRows);
 
+        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -792,9 +821,74 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
+        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.SchoolDocumentId);
 
         afterStamps.Should().Be(beforeStamps);
         afterRiRows.Should().Equal(beforeRiRows);
+        auditOps.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_identity_when_scalar_identity_column_is_self_assigned_alongside_content_change()
+    {
+        // The pure same-value test above is filtered out by the trigger's outer no-op
+        // short-circuit before the inner identity-only gate runs. This test sends a
+        // content change AND a same-value self-assignment of the identity column in
+        // one UPDATE — the content change defeats the outer guard, so the inner
+        // IS DISTINCT FROM gate over identity-projection columns is what must keep
+        // IdentityVersion and dms.ReferentialIdentity untouched.
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "EducationOrganization"
+        );
+        var expectedRiRows = SortReferentialIdentityRows(
+            new[]
+            {
+                new ReferentialIdentityRow(
+                    ComputeReferentialId("Ed-Fi", "School", ("$.schoolId", "100")),
+                    _seedData.SchoolDocumentId,
+                    schoolResourceKeyId
+                ),
+                new ReferentialIdentityRow(
+                    ComputeReferentialId(
+                        "Ed-Fi",
+                        "EducationOrganization",
+                        ("$.educationOrganizationId", "100")
+                    ),
+                    _seedData.SchoolDocumentId,
+                    educationOrganizationResourceKeyId
+                ),
+            }
+        );
+
+        var beforeStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
+        beforeRiRows.Should().Equal(expectedRiRows);
+
+        await TruncateReferentialIdentityAuditAsync();
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "NameOfInstitution" = @nameOfInstitution,
+                "SchoolId" = "SchoolId"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("nameOfInstitution", "Alpha Academy Renamed"),
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var afterStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
+        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.SchoolDocumentId);
+
+        afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
+        afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
+        afterStamps.IdentityVersion.Should().Be(beforeStamps.IdentityVersion);
+        afterStamps.IdentityLastModifiedAt.Should().Be(beforeStamps.IdentityLastModifiedAt);
+        afterRiRows.Should().Equal(beforeRiRows);
+        auditOps.Should().Be(0);
     }
 
     [Test]
@@ -835,13 +929,35 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         // the trigger's outer no-op short-circuit (IS DISTINCT FROM over identity-projection
         // columns) against both stamp bumps and redundant RI rewrites. The inner identity-only
         // gate is covered by It_should_stamp_indirect_identity_propagation_changes_via_postgresql_cascade.
+        var seoaResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "StudentEducationOrganizationAssociation"
+        );
+        var expectedRiRows = SortReferentialIdentityRows(
+            new[]
+            {
+                new ReferentialIdentityRow(
+                    ComputeReferentialId(
+                        "Ed-Fi",
+                        "StudentEducationOrganizationAssociation",
+                        ("$.educationOrganizationReference.educationOrganizationId", "100"),
+                        ("$.studentReference.studentUniqueId", "10001")
+                    ),
+                    _seedData.StudentEducationOrganizationAssociationDocumentId,
+                    seoaResourceKeyId
+                ),
+            }
+        );
+
         var beforeStamps = await GetDocumentStampStateAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        beforeRiRows.Should().Equal(expectedRiRows);
 
+        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -858,9 +974,80 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
 
         afterStamps.Should().Be(beforeStamps);
         afterRiRows.Should().Equal(beforeRiRows);
+        auditOps.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_identity_when_propagated_identity_reference_is_self_assigned_alongside_content_change()
+    {
+        // Mixed-write counterpart for the propagated identity-source reference column:
+        // a non-identity content column changes while the propagated identity column is
+        // self-assigned to the same value. The content change defeats the outer no-op
+        // guard, so the IS DISTINCT FROM gate over identity-projection columns is the
+        // sole protection against false IdentityVersion bumps and redundant RI rewrites.
+        var seoaResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "StudentEducationOrganizationAssociation"
+        );
+        var expectedRiRows = SortReferentialIdentityRows(
+            new[]
+            {
+                new ReferentialIdentityRow(
+                    ComputeReferentialId(
+                        "Ed-Fi",
+                        "StudentEducationOrganizationAssociation",
+                        ("$.educationOrganizationReference.educationOrganizationId", "100"),
+                        ("$.studentReference.studentUniqueId", "10001")
+                    ),
+                    _seedData.StudentEducationOrganizationAssociationDocumentId,
+                    seoaResourceKeyId
+                ),
+            }
+        );
+
+        var beforeStamps = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        beforeRiRows.Should().Equal(expectedRiRows);
+
+        await TruncateReferentialIdentityAuditAsync();
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."StudentEducationOrganizationAssociation"
+            SET "LoginId" = @loginId,
+                "EducationOrganization_EducationOrganizationId" = "EducationOrganization_EducationOrganizationId"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("loginId", "student-login-001"),
+            new NpgsqlParameter("documentId", _seedData.StudentEducationOrganizationAssociationDocumentId)
+        );
+
+        var afterStamps = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
+        afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
+        afterStamps.IdentityVersion.Should().Be(beforeStamps.IdentityVersion);
+        afterStamps.IdentityLastModifiedAt.Should().Be(beforeStamps.IdentityLastModifiedAt);
+        afterRiRows.Should().Equal(beforeRiRows);
+        auditOps.Should().Be(0);
     }
 
     [Test]
@@ -1420,6 +1607,87 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 Convert.ToInt16(r["ResourceKeyId"], CultureInfo.InvariantCulture)
             ))
             .ToList();
+    }
+
+    // Test-only audit installed in OneTimeSetUp captures every INSERT/DELETE on
+    // dms.ReferentialIdentity. The same-value identity tests truncate the audit
+    // immediately before the UPDATE under test and assert zero ops afterwards,
+    // so a regression that ran a redundant DELETE+INSERT cycle (which produces
+    // identical deterministic UUIDv5 rows) would still be caught.
+    private async Task InstallReferentialIdentityAuditAsync()
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            CREATE SCHEMA IF NOT EXISTS "dms_test";
+
+            CREATE TABLE IF NOT EXISTS "dms_test"."ReferentialIdentityAudit"
+            (
+                "Op" char(1) NOT NULL,
+                "DocumentId" bigint NOT NULL,
+                "ResourceKeyId" smallint NOT NULL,
+                "ReferentialId" uuid NOT NULL
+            );
+
+            CREATE OR REPLACE FUNCTION "dms_test"."ReferentialIdentityAuditFn"() RETURNS trigger AS $audit$
+            BEGIN
+                IF TG_OP = 'INSERT' THEN
+                    INSERT INTO "dms_test"."ReferentialIdentityAudit" ("Op", "DocumentId", "ResourceKeyId", "ReferentialId")
+                    VALUES ('I', NEW."DocumentId", NEW."ResourceKeyId", NEW."ReferentialId");
+                    RETURN NEW;
+                ELSIF TG_OP = 'DELETE' THEN
+                    INSERT INTO "dms_test"."ReferentialIdentityAudit" ("Op", "DocumentId", "ResourceKeyId", "ReferentialId")
+                    VALUES ('D', OLD."DocumentId", OLD."ResourceKeyId", OLD."ReferentialId");
+                    RETURN OLD;
+                END IF;
+                RETURN NULL;
+            END;
+            $audit$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS "TR_ReferentialIdentity_Audit" ON "dms"."ReferentialIdentity";
+            CREATE TRIGGER "TR_ReferentialIdentity_Audit"
+            AFTER INSERT OR DELETE ON "dms"."ReferentialIdentity"
+            FOR EACH ROW EXECUTE FUNCTION "dms_test"."ReferentialIdentityAuditFn"();
+            """
+        );
+    }
+
+    private async Task<long> CountReferentialIdentityAuditOpsForDocumentAsync(long documentId)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT(*)::bigint
+            FROM "dms_test"."ReferentialIdentityAudit"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+    }
+
+    private async Task TruncateReferentialIdentityAuditAsync()
+    {
+        await _database.ExecuteNonQueryAsync("""TRUNCATE TABLE "dms_test"."ReferentialIdentityAudit";""");
+    }
+
+    // Mirrors ReferentialIdFactory in EdFi.DataManagementService.Core.External: the same
+    // UUIDv5 namespace + "{ProjectName}{ResourceName}{path1=value1#path2=value2}" hashing
+    // used by the generated dms.uuidv5() trigger calls.
+    private static readonly Guid s_edFiUuidv5Namespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
+
+    private static Guid ComputeReferentialId(
+        string projectName,
+        string resourceName,
+        params (string Path, string Value)[] identityElements
+    )
+    {
+        var identityHash = string.Join("#", identityElements.Select(e => $"{e.Path}={e.Value}"));
+        return Deterministic.Create(s_edFiUuidv5Namespace, $"{projectName}{resourceName}{identityHash}");
+    }
+
+    private static IReadOnlyList<ReferentialIdentityRow> SortReferentialIdentityRows(
+        IEnumerable<ReferentialIdentityRow> rows
+    )
+    {
+        return rows.OrderBy(r => r.ResourceKeyId).ThenBy(r => r.ReferentialId).ToList();
     }
 
     private async Task DelayForDistinctTimestampsAsync()
