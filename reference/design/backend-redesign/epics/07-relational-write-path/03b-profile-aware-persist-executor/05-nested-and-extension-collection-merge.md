@@ -128,8 +128,9 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested or extension-child `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`
 - Provider-level nested create-denied companion proving matched parent update
   plus non-creatable child insert rejection. The literal provider-level
-  `parent -> child -> grandchild` variant is explicitly deferred to Slice 7 and
-  is not Slice 5 acceptance criteria.
+  `parent -> child -> grandchild` variant is not Slice 5 acceptance criteria;
+  Slice 7 later reviewed that provider-level variant and recorded why it is not
+  required.
 - One nested delete-all-visible-while-hidden-rows-remain variant
 - One nested or extension-child hidden-binding preservation case covering FK/descriptor or key-unification/synthetic-presence behavior
 - PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths

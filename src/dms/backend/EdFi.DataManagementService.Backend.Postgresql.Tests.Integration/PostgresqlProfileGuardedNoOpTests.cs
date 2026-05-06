@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-// Slice 6 (DMS-1142) integration coverage for profile guarded no-op against PostgreSQL.
+// PostgreSQL integration coverage for profile guarded no-op.
 // The fixtures in this file exercise unchanged profiled writes through the real
 // relational write executor and assert that no DML-visible state changes — neither
 // row contents, nor Document version/timestamp metadata, nor the DocumentChangeEvent
@@ -821,7 +821,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root
 }
 
 /// <summary>
-/// Slice 6 (DMS-1142) Task 6 — profiled POST-as-update guarded no-op. Seeds a
+/// Profiled POST-as-update guarded no-op. Seeds a
 /// non-profiled CREATE for the synthetic <c>ProfileRootOnlyMergeItem</c> target,
 /// then issues a profiled <c>POST</c> with the SAME natural-identity body but a
 /// DIFFERENT incoming <see cref="DocumentUuid"/>. Per Slice 1's final-target
@@ -934,7 +934,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Updat
 }
 
 /// <summary>
-/// Slice 6 (DMS-1142) Task 9 — profiled stale-compare retry on PUT. Seeds a
+/// Profiled stale-compare retry on PUT. Seeds a
 /// non-profiled CREATE for the synthetic <c>ProfileRootOnlyMergeItem</c> target, then
 /// issues a profiled PUT carrying a byte-identical body so the post-merge effective
 /// rowset would otherwise match the stored rowset and the guarded no-op short-circuit
@@ -1038,7 +1038,7 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Put
 }
 
 /// <summary>
-/// Slice 6 (DMS-1142) Task 9 — profiled stale-compare retry on POST-as-update.
+/// Profiled stale-compare retry on POST-as-update.
 /// Seeds a non-profiled CREATE for the synthetic <c>ProfileRootOnlyMergeItem</c> target,
 /// then issues a profiled <c>POST</c> with the SAME natural-identity body but a
 /// DIFFERENT incoming <see cref="DocumentUuid"/>, which the executor classifies as
@@ -1154,7 +1154,7 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As
 }
 
 /// <summary>
-/// Slice 6 (DMS-1142) Task 7 — profiled separate-table PUT guarded no-op. Seeds a
+/// Profiled separate-table PUT guarded no-op. Seeds a
 /// non-profiled CREATE for the synthetic <c>ProfileSeparateTableMergeItem</c> target
 /// (root row plus a populated <c>sample.ProfileSeparateTableMergeItemExtension</c>
 /// separate-table row at <c>$._ext.sample</c>), then issues a profiled PUT carrying
@@ -1290,14 +1290,14 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Sepa
 }
 
 /// <summary>
-/// Slice 6 (DMS-1142) Task 8 — profiled top-level collection PUT guarded no-op.
+/// Profiled top-level collection PUT guarded no-op.
 /// Seeds a profiled POST for the core <c>School</c> resource with two address rows
 /// (<c>Austin</c>, <c>Dallas</c>) populating the <c>edfi.SchoolAddress</c> collection
 /// table, then issues a profiled PUT carrying a byte-identical body. The seed uses
-/// the profiled path (not the no-profile <c>SeedAsync</c>) so the seeded collection
-/// rows land at the same 1-based ordinals the merge synthesizer produces on the
-/// identical PUT — see <see cref="CollectionShapeProfileGuardedNoOpFixtureBase.ExecuteProfiledShapeCreateAsync"/>
-/// for the rationale. The profile context declares both the root <c>$</c> scope and
+/// the profiled path (not the no-profile <c>SeedAsync</c>) so seed and PUT exercise
+/// the same path. Cross-path no-op coverage for no-profile create plus profiled PUT
+/// lives in <c>PostgresqlProfileGuardedNoOpOrdinalAlignmentTests</c>. The profile
+/// context declares both the root <c>$</c> scope and
 /// the collection <c>$.addresses[*]</c> scope fully VisiblePresent on both the
 /// request and stored sides, with the request item list and stored row list in
 /// identical semantic-identity order, so the merged effective rowset across the root

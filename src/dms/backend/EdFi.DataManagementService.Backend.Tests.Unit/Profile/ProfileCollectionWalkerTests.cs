@@ -806,8 +806,8 @@ public class Given_a_hidden_top_level_parent_with_nested_descendants
     [Test]
     public void It_emits_one_table_state_for_parents_with_two_merged_rows()
     {
-        // Parents scope: A (HiddenPreserve clone with recomputed ordinal 1) + B
-        // (MatchedUpdate with recomputed ordinal 2). Both walk through the parents
+        // Parents scope: A (HiddenPreserve clone with recomputed ordinal 0) + B
+        // (MatchedUpdate with recomputed ordinal 1). Both walk through the parents
         // builder via the Normal-mode planner path.
         var parentsBuilder = _tableStateBuilders[_parentsPlan.TableModel.Table];
         parentsBuilder.HasContent.Should().BeTrue();

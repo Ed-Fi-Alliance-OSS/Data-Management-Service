@@ -504,9 +504,8 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
 }
 
 /// <summary>
-/// Slice 6 (DMS-1142) Task 10 — mssql parity for profiled root-only PUT guarded
-/// no-op. Mirrors the pgsql happy-path PUT fixture verbatim with mssql
-/// connectivity. Asserts that an unchanged profiled PUT yields
+/// Profiled root-only PUT guarded no-op. Mirrors the pgsql happy-path PUT fixture
+/// verbatim with mssql connectivity. Asserts that an unchanged profiled PUT yields
 /// <see cref="UpdateResult.UpdateSuccess"/> and persists no DML-visible state
 /// changes — neither root row contents, nor Document version/timestamp metadata,
 /// nor a DocumentChangeEvent audit log row.
@@ -591,8 +590,8 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only
 }
 
 /// <summary>
-/// Slice 6 (DMS-1142) Task 10 — mssql parity for profiled root-only POST-as-update
-/// guarded no-op. Seeds a non-profiled CREATE for the synthetic
+/// Profiled root-only POST-as-update guarded no-op. Seeds a non-profiled CREATE
+/// for the synthetic
 /// <c>ProfileRootOnlyMergeItem</c> target, then issues a profiled <c>POST</c>
 /// with the SAME natural-identity body but a DIFFERENT incoming
 /// <see cref="DocumentUuid"/>. The executor must classify the second POST as
@@ -704,8 +703,8 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_Wit
 }
 
 /// <summary>
-/// Slice 6 (DMS-1142) Task 10 — mssql parity for profiled stale-compare retry on
-/// PUT. Mirrors the pgsql sibling stale-compare PUT fixture; the freshness
+/// Profiled stale-compare retry on PUT. Mirrors the pgsql sibling stale-compare
+/// PUT fixture; the freshness
 /// checker bumps the stored <c>ContentVersion</c> on its first invocation only,
 /// causing the executor's first attempt to observe a stale row and emit
 /// <see cref="RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare"/>. The
@@ -803,8 +802,8 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Put
 }
 
 /// <summary>
-/// Slice 6 (DMS-1142) Task 10 — mssql parity for profiled stale-compare retry on
-/// POST-as-update. Mirrors the pgsql sibling stale-compare POST-as-update fixture;
+/// Profiled stale-compare retry on POST-as-update. Mirrors the pgsql sibling
+/// stale-compare POST-as-update fixture;
 /// seeds a CREATE then issues a profiled POST with a DIFFERENT incoming
 /// <see cref="DocumentUuid"/> against a byte-identical body. The single-shot
 /// bumping freshness checker fires once, the executor retries, and the no-op

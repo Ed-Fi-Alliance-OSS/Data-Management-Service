@@ -267,7 +267,7 @@ internal static class RelationalWriteMergeSupport
     internal static bool IsCollectionAlignedExtensionScope(TableWritePlan tableWritePlan) =>
         tableWritePlan.TableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope;
 
-    internal sealed class BoundRowComparer(IReadOnlyList<int> bindingIndexes)
+    private sealed class BoundRowComparer(IReadOnlyList<int> bindingIndexes)
         : IComparer<RelationalWriteMergedTableRow>
     {
         public int Compare(RelationalWriteMergedTableRow? left, RelationalWriteMergedTableRow? right)

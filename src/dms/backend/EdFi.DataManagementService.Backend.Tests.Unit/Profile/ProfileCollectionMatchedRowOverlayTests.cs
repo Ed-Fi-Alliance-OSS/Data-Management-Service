@@ -155,7 +155,7 @@ internal static class OverlayTestFixtures
 
     /// <summary>
     /// Calls <see cref="ProfileCollectionMatchedRowOverlay.BuildMatchedRowEmission"/>
-    /// with the standard wiring: empty key-unification plans, no hidden paths, ordinal 1.
+    /// with the standard wiring: empty key-unification plans, no hidden paths, ordinal 0.
     /// Callers override only what their specific fixture needs.
     /// </summary>
     public static RelationalWriteMergedTableRow CallOverlay(
@@ -165,7 +165,7 @@ internal static class OverlayTestFixtures
         CurrentCollectionRowSnapshot storedRow,
         CollectionWriteCandidate requestCandidate,
         ImmutableArray<string> hiddenMemberPaths,
-        int finalOrdinal = 1,
+        int finalOrdinal = 0,
         IReadOnlyList<FlattenedWriteValue>? parentKeyValues = null,
         JsonNode? requestItemNode = null
     ) =>

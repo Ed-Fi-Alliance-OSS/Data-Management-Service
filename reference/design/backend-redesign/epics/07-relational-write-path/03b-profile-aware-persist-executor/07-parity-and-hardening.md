@@ -194,6 +194,11 @@ The only named handoff from this slice is `DMS-1132`.
   classes mirroring the pgsql side; pre-existing file header rewritten to drop
   stale slice references), new `MssqlProfileGuardedNoOpOrdinalAlignmentTests`
   (mssql twin of the cross-path regression). Commit `aa0a4951`.
+- MSSQL generated-DDL baseline snapshot path separator preservation —
+  `MssqlGeneratedDdlBaselineDatabase.BuildSnapshotPath()` now derives the snapshot
+  path using the separator from SQL Server's physical file path instead of the host
+  OS path separator, with regression coverage in
+  `MssqlGeneratedDdlBaselineDatabaseTests`. Commit `7cdb030f`.
 
 ## Reviewed Non-Blockers
 
@@ -228,6 +233,6 @@ The only named handoff from this slice is `DMS-1132`, as documented below.
 follow-on for presence-sensitive semantic identity fidelity. Slice 7 did not
 change the executor-facing identity-presence contract; this slice fixed
 already-supported behavior (ordinal-base alignment, shared row ordering for
-guarded no-op, mssql guarded no-op parity) and explicitly did not pull
-`DMS-1132` work into `DMS-1124`. The identity-matching fragility documented in
-`DMS-1132` is unchanged by this slice.
+guarded no-op, mssql guarded no-op parity, and mssql snapshot-path hardening)
+and explicitly did not pull `DMS-1132` work into `DMS-1124`. The
+identity-matching fragility documented in `DMS-1132` is unchanged by this slice.
