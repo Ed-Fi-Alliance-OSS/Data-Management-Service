@@ -182,6 +182,37 @@ public enum ProfileCreatabilityDependencyKind
 }
 
 /// <summary>
+/// Distinguishes which input bucket triggered an
+/// <see cref="AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure"/>.
+/// </summary>
+public enum AmbiguousStorageCollapsedIdentityKind
+{
+    /// <summary>
+    /// Two visible request collection items in the same parent/scope bucket are
+    /// presence-aware-distinct but storage-collapsed-equal.
+    /// </summary>
+    InRequest,
+
+    /// <summary>
+    /// Two visible stored collection rows in the same parent/scope bucket are
+    /// presence-aware-distinct but storage-collapsed-equal.
+    /// </summary>
+    InStored,
+
+    /// <summary>
+    /// A visible request item and a visible stored row in the same parent/scope
+    /// bucket are presence-aware-distinct but storage-collapsed-equal.
+    /// </summary>
+    CrossSide,
+
+    /// <summary>
+    /// Two ancestor collection instances in the same derived-parent/scope bucket
+    /// are presence-aware-distinct but storage-collapsed-equal.
+    /// </summary>
+    InAncestor,
+}
+
+/// <summary>
 /// Shared high-level context carried by all typed profile failures.
 /// Later category-specific payloads add scope, address, and binding detail via
 /// <see cref="ProfileFailureDiagnostic"/> instances rather than redefining the
@@ -713,6 +744,25 @@ public sealed record DuplicateScopeAddressCoreBackendContractMismatchFailure(
     : CoreBackendContractMismatchFailure(
         ProfileFailureEmitter.BackendProfileWriteContext,
         "Core emitted multiple entries with the same address in a single stream.",
+        Context,
+        Diagnostics
+    );
+
+/// <summary>
+/// Category-5 failure for Core-emitted presence-aware identities that would
+/// collapse to the same DB-storable identity within a parent/scope bucket.
+/// </summary>
+public sealed record AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure(
+    ProfileFailureContext Context,
+    string JsonScope,
+    ScopeInstanceAddress ParentAddress,
+    AmbiguousStorageCollapsedIdentityKind Kind,
+    ImmutableArray<ImmutableArray<SemanticIdentityPart>> ConflictingIdentities,
+    ImmutableArray<ProfileFailureDiagnostic> Diagnostics
+)
+    : CoreBackendContractMismatchFailure(
+        ProfileFailureEmitter.BackendProfileWriteContext,
+        "Core emitted presence-aware identities that collapse to the same storage-shape key within a parent/scope bucket.",
         Context,
         Diagnostics
     );
@@ -1482,6 +1532,48 @@ public static class ProfileFailures
             streamName,
             occurrenceCount,
             MergeDiagnostics(diagnostics, new ProfileFailureDiagnostic.CollectionRow(emittedAddress))
+        );
+    }
+
+    public static AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure AmbiguousStorageCollapsedIdentity(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        string jsonScope,
+        ScopeInstanceAddress parentAddress,
+        AmbiguousStorageCollapsedIdentityKind kind,
+        ImmutableArray<ImmutableArray<SemanticIdentityPart>> conflictingIdentities,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jsonScope);
+        ArgumentNullException.ThrowIfNull(parentAddress);
+        if (conflictingIdentities.IsDefaultOrEmpty || conflictingIdentities.Length < 2)
+        {
+            throw new ArgumentException(
+                "At least two conflicting identities are required.",
+                nameof(conflictingIdentities)
+            );
+        }
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+        var structuredDiagnostics = new List<ProfileFailureDiagnostic>
+        {
+            new ProfileFailureDiagnostic.ScopeAddress(parentAddress),
+        };
+        foreach (var identity in conflictingIdentities)
+        {
+            structuredDiagnostics.Add(new ProfileFailureDiagnostic.SemanticIdentity(identity));
+        }
+
+        return new AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure(
+            context,
+            jsonScope,
+            parentAddress,
+            kind,
+            conflictingIdentities,
+            MergeDiagnostics(diagnostics, [.. structuredDiagnostics])
         );
     }
 
