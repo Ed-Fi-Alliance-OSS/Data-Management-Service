@@ -85,3 +85,152 @@ After this slice, `DMS-1124` should have:
 - a complete serial design plan,
 - an explicit merge-blocker vs follow-up boundary, and
 - a named handoff for any unresolved hardening such as `DMS-1132`.
+
+## Audit Results
+
+The Slice 7 audit walked the Scenario Ownership Map at `03b-profile-aware-persist-executor.md`
+lines 67-81 and diff-walked five dialect-sensitive areas of the cumulative `DMS-1124` work
+in `origin/main` (commits `329e9193` through `b62b8342` — Slices 1 through 6). The two passes
+cross-checked each other: scenario-walk caught design-promised behaviors lacking dialect
+coverage; diff-walk caught dialect-sensitive code lacking parity tests.
+
+After the in-slice fixes listed below, all 23 supported-scenario rows resolve to either
+`both` (parity demonstrated on PostgreSQL and SQL Server) or `n/a` (this slice itself).
+Counts: 22 scenarios `both` (20 already paired pre-slice plus the 2 ex-`fix-in-slice`
+items resolved by the mssql guarded no-op port), 0 `fix-in-slice` remaining, 1 `n/a`
+(this slice's own deliverable row). The dialect-sensitive gaps the audit surfaced
+beyond the scenario matrix — pre-existing PostgreSQL-only no-profile relational-write
+tests and PostgreSQL-only descriptor tests — are non-blocking for `DMS-1124` and are
+captured as non-blocking follow-ups below.
+
+## Parity Matrix
+
+| Scenario | Slice | Pgsql Test | Mssql Test | Classification |
+|----------|-------|-----------|-----------|----------------|
+| `ProfileRootCreateRejectedWhenNonCreatable` | 1 | `PostgresqlProfileExecutorRoutingTests.cs` :: `Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable` | `MssqlProfileExecutorRoutingTests.cs` :: `Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable` | both |
+| `ProfileHiddenInlinedColumnPreservation` | 2 | `PostgresqlProfileRootTableOnlyMergeTests.cs` :: `Given_A_Profiled_Put_With_Hidden_Inlined_Column_Preservation` | `MssqlProfileRootTableOnlyMergeTests.cs` :: `Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_Column_Preservation` | both |
+| Inlined `ProfileVisibleButAbsentNonCollectionScope` | 2 | `PostgresqlProfileRootTableOnlyMergeFixtureTests.cs` :: `Given_A_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_Clearable_And_Preserves_Hidden` | `MssqlProfileRootTableOnlyMergeFixtureTests.cs` :: `Given_A_Mssql_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_Clearable_And_Preserves_Hidden` | both |
+| Separate-table `ProfileVisibleButAbsentNonCollectionScope` | 3 | `PostgresqlProfileSeparateTableMergeFixtureTests.cs` :: `Given_A_ProfiledUpdate_With_VisibleAbsent_SeparateTableScope_DeletesIt` | `MssqlProfileSeparateTableMergeFixtureTests.cs` :: `Given_A_Mssql_ProfiledUpdate_With_VisibleAbsent_SeparateTableScope_DeletesIt` | both |
+| `ProfileHiddenExtensionRowPreservation` | 3 | `PostgresqlProfileSeparateTableMergeFixtureTests.cs` :: `Given_A_ProfiledUpdate_With_Hidden_Extension_Row_PreservesIt` | `MssqlProfileSeparateTableMergeFixtureTests.cs` :: `Given_A_Mssql_ProfiledUpdate_With_Hidden_Extension_Row_PreservesIt` | both |
+| Non-collection update-allowed / create-denied pair | 3 | `PostgresqlProfileSeparateTableMergeFixtureTests.cs` :: `Given_A_ProfiledUpsert_With_Creatable_False_ForNewSeparateTableScope_Rejects` + `Given_A_ProfiledUpdate_WithExistingSeparateTableScope_And_Creatable_False_AllowsUpdate` | `MssqlProfileSeparateTableMergeFixtureTests.cs` :: `Given_A_Mssql_ProfiledUpsert_With_Creatable_False_ForNewSeparateTableScope_Rejects` + `Given_A_Mssql_ProfiledUpdate_WithExistingSeparateTableScope_And_Creatable_False_AllowsUpdate` | both |
+| Top-level `ProfileVisibleRowUpdateWithHiddenRowPreservation` | 4 | `PostgresqlProfileTopLevelCollectionMergeTests.cs` :: `Given_A_Postgresql_Profiled_TopLevelCollection_Merge` (test methods within fat fixture) | `MssqlProfileTopLevelCollectionMergeTests.cs` :: `Given_A_Mssql_Profiled_TopLevelCollection_Merge` | both |
+| Top-level `ProfileVisibleRowDeleteWithHiddenRowPreservation` | 4 | `PostgresqlProfileTopLevelCollectionMergeTests.cs` :: `Given_A_Postgresql_Profiled_TopLevelCollection_Merge` | `MssqlProfileTopLevelCollectionMergeTests.cs` :: `Given_A_Mssql_Profiled_TopLevelCollection_Merge` | both |
+| Top-level `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` + update-allowed / create-denied pair | 4 | `PostgresqlProfileTopLevelCollectionMergeTests.cs` :: `Given_A_Postgresql_Profiled_TopLevelCollection_Merge` (`top-level-collection-create-denied-update-put`, `top-level-collection-create-denied-insert-put` cases) | `MssqlProfileTopLevelCollectionMergeTests.cs` :: `Given_A_Mssql_Profiled_TopLevelCollection_Merge` (matching mssql cases) | both |
+| Nested variant of `ProfileVisibleRowUpdateWithHiddenRowPreservation` | 5 | `PostgresqlProfileNestedCollectionMergeTests.cs` :: `Given_a_ProfileNested_put_request_updating_visible_children_with_a_hidden_sibling_in_storage` | `MssqlProfileNestedCollectionMergeTests.cs` :: `Given_a_ProfileNested_put_request_updating_visible_children_with_a_hidden_sibling_in_storage` | both |
+| Root-level extension child variant of `ProfileVisibleRowUpdateWithHiddenRowPreservation` | 5 | `PostgresqlProfileTopLevelCollectionReferenceBackedMergeTests.cs` :: `Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge` + `PostgresqlProfileNestedCollectionMergeTests.cs` :: `Given_a_ProfileNested_put_request_updating_root_extension_child_collection` | `MssqlProfileTopLevelCollectionReferenceBackedMergeTests.cs` :: `Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge` + `MssqlProfileNestedCollectionMergeTests.cs` :: `Given_a_ProfileNested_put_request_updating_root_extension_child_collection` | both |
+| Collection-aligned extension child variant of `ProfileVisibleRowUpdateWithHiddenRowPreservation` | 5 | `PostgresqlProfileCollectionAlignedExtensionMergeTests.cs` :: `Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_modifying_an_aligned_extension_child_value` (+ siblings) | `MssqlProfileCollectionAlignedExtensionMergeTests.cs` :: `Given_a_ProfileCollectionAlignedExtension_update_request_modifying_an_aligned_extension_child_value` (+ siblings) | both |
+| Nested variant of `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` (incl. update-allowed/create-denied chain) | 5 | `PostgresqlProfileNestedCollectionMergeTests.cs` :: `Given_a_ProfileNested_put_request_with_creatable_false_on_children_rejects_new_children` | `MssqlProfileNestedCollectionMergeTests.cs` :: `Given_a_ProfileNested_put_request_with_creatable_false_on_children_rejects_new_children` | both |
+| Root-level extension child variant of `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` | 5 | `PostgresqlProfileTopLevelCollectionReferenceBackedMergeTests.cs` :: `Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge` (insert-rejected cases inside fixture) | `MssqlProfileTopLevelCollectionReferenceBackedMergeTests.cs` :: `Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge` | both |
+| Collection-aligned extension child variant of `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` | 5 | `PostgresqlProfileCollectionAlignedExtensionMergeTests.cs` :: `Given_a_ProfileCollectionAlignedExtension_update_request_for_a_non_creatable_aligned_extension_scope_with_no_matching_stored_row` | `MssqlProfileCollectionAlignedExtensionMergeTests.cs` :: `Given_a_ProfileCollectionAlignedExtension_update_request_for_a_non_creatable_aligned_extension_scope_with_no_matching_stored_row` | both |
+| `ProfileHiddenExtensionChildCollectionPreservation` | 5 | `PostgresqlProfileNestedCollectionMergeTests.cs` :: `Given_a_ProfileNested_put_request_with_hidden_root_extension_scope_preserves_children` | `MssqlProfileNestedCollectionMergeTests.cs` :: `Given_a_ProfileNested_put_request_with_hidden_root_extension_scope_preserves_children` | both |
+| `ProfileUnchangedWriteGuardedNoOp` — root-only PUT | 6 | `PostgresqlProfileGuardedNoOpTests.cs` :: `Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape` | `MssqlProfileGuardedNoOpTests.cs` :: `Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape` | both |
+| `ProfileUnchangedWriteGuardedNoOp` — root-only POST-as-update | 6 | `PostgresqlProfileGuardedNoOpTests.cs` :: `Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape` | `MssqlProfileGuardedNoOpTests.cs` :: `Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape` | both |
+| `ProfileUnchangedWriteGuardedNoOp` — stale PUT | 6 | `PostgresqlProfileGuardedNoOpTests.cs` :: `Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Put` | `MssqlProfileGuardedNoOpTests.cs` :: `Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Put` | both |
+| `ProfileUnchangedWriteGuardedNoOp` — stale POST-as-update | 6 | `PostgresqlProfileGuardedNoOpTests.cs` :: `Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Update` | `MssqlProfileGuardedNoOpTests.cs` :: `Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Update` | both |
+| `ProfileUnchangedWriteGuardedNoOp` — separate-table PUT | 6 | `PostgresqlProfileGuardedNoOpTests.cs` :: `Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Separate_Table_Shape` | `MssqlProfileGuardedNoOpTests.cs` :: `Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_Table_Shape` | both |
+| `ProfileUnchangedWriteGuardedNoOp` — top-level-collection PUT | 6 | `PostgresqlProfileGuardedNoOpTests.cs` :: `Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level_Collection_Shape` | `MssqlProfileGuardedNoOpTests.cs` :: `Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level_Collection_Shape` | both |
+| pgsql/mssql parity closure and explicit `DMS-1132` handoff | 7 | n/a | n/a | n/a |
+
+## Hardening Decisions
+
+### Profile / no-profile collection ordinal-base alignment
+
+- Decision: Align profile path → 0-based.
+- Rationale: DMS internal collection ordinals are 0-based storage positions
+  derived from JSON array position, not Ed-Fi semantic sequence values. The
+  no-profile flatten path and current-state hydration tests already treat the
+  column as 0-based; the profile path was the outlier. Aligning profile avoids
+  a storage-convention migration and avoids latent surprise for reviewers/operators
+  inspecting persisted state.
+- Implementation: `Profile/ProfileCollectionWalker.cs` `finalOrdinal = i` (was
+  `i + 1`). XML doc on `ProfileCollectionMatchedRowOverlay.StampOrdinal` updated
+  to "0-based storage position". See commit `8928bec3`.
+- Future option: If a product decision later requires 1-based internal ordinals,
+  that work must own backfill, compatibility notes, and dialect coverage as a
+  separate story.
+
+### Sort-helper extraction for guarded no-op row ordering
+
+- Decision: Extract `OrderCollectionRowsForComparisonIfFullyBound`,
+  `OrderCollectionAlignedExtensionScopeRowsForComparisonIfFullyBound`,
+  `IsCollectionAlignedExtensionScope`, and `BoundRowComparer` into
+  `RelationalWriteMergeSupport`. Both no-profile `TableStateBuilder.Build()` and
+  `ProfileTableStateBuilder.Build()` apply the shared sort.
+- Rationale: Guarded no-op's positional `SequenceEqual` precondition was
+  previously satisfied by the profile planner's coincidence-of-implementation
+  emission order. Now enforced by a sort step in both builders.
+- Implementation: See commit `73085356`.
+
+### Three-level provider fixture
+
+- Decision: follow-up.
+- Rationale: The persister consumes `mergeResult.TablesInDependencyOrder` as a
+  flat `ImmutableArray`, not a recursive tree, so a 3-level chain merely adds one
+  more loop iteration over the same provider plumbing. No depth-sensitive code
+  fires only at 3-level. The synthesizer's depth-sensitive walker is already
+  covered by the Slice 5 fixture
+  `Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3`.
+  Provider-plumbing risk did not surface in the audit.
+
+## Fixed In This Slice
+
+- Profile collection ordinal-base alignment to 0-based —
+  `Profile/ProfileCollectionWalker.cs:415`, `Profile/ProfileCollectionMatchedRowOverlay.cs`
+  XML doc, profile test ordinal sweep across pgsql + mssql + Backend.Tests.Unit
+  (eight files), new pgsql regression `PostgresqlProfileGuardedNoOpOrdinalAlignmentTests`.
+  Commit `8928bec3`.
+- Test-comment policy cleanup on `PostgresqlProfileGuardedNoOpOrdinalAlignmentTests`
+  to drop slice/Jira/workstream refs from header and XML docs. Commit `257e02ee`.
+- Shared collection row ordering for guarded no-op —
+  `RelationalWriteMergeSupport.cs` (added shared sort + comparer),
+  `RelationalWriteNoProfileMerge.cs` (delegated, ~119 LOC removed),
+  `Profile/ProfileCollectionWalker.cs::ProfileTableStateBuilder.Build()` (applies shared sort),
+  unit tests `RelationalWriteMergeSupportRowOrderingTests`,
+  `Profile/ProfileTableStateBuilderOrderingTests`, and a synthesizer-test
+  fixture-builder fix to seed the parent-locator binding with a real `long`.
+  Commit `73085356`.
+- MSSQL guarded no-op parity for separate-table and top-level collection shapes —
+  `MssqlProfileGuardedNoOpTests.cs` (two new fixtures + two intermediate base
+  classes mirroring the pgsql side; pre-existing file header rewritten to drop
+  stale slice references), new `MssqlProfileGuardedNoOpOrdinalAlignmentTests`
+  (mssql twin of the cross-path regression). Commit `aa0a4951`.
+
+## Non-Blocking Follow-Ups
+
+- `Proposed follow-up: Add mssql counterparts for no-profile relational-write integration coverage` —
+  seven pre-existing pgsql-only no-profile relational-write test files
+  (`PostgresqlRelationalWriteCollectionReorderTests.cs`,
+  `PostgresqlRelationalWriteCreateBaselineTests.cs`,
+  `PostgresqlRelationalWriteGuardedNoOpTests.cs`,
+  `PostgresqlRelationalWriteMultiBatchCollectionTests.cs`,
+  `PostgresqlRelationalWritePostAsUpdateSmokeTests.cs`,
+  `PostgresqlRelationalWriteRollbackSafetyTests.cs`,
+  `PostgresqlRelationalWriteUpdateSemanticsTests.cs`) lack mssql twins. The gap
+  pre-dates `DMS-1124` and the dialect-emission code itself is exercised by the
+  profile-side suite on both dialects, so it is non-blocking.
+- `Proposed follow-up: Add mssql counterparts for descriptor projection alias and descriptor write tests` —
+  `PostgresqlDescriptorProjectionAliasTests.cs` and `PostgresqlDescriptorWriteTests.cs`
+  have no mssql twins. Both pre-date `DMS-1124`; descriptor projection,
+  pipeline, collection projection, and referential identity all already have
+  symmetric pgsql/mssql integration suites, so this is non-blocking.
+- `DMS-1124 follow-up: Three-level provider fixture parity` — defer until a
+  provider-layer change alters the depth-risk calculus. The persister's flat
+  `TablesInDependencyOrder` iteration model exercises identical code at
+  2-level and 3-level, and the synthesizer's depth-sensitive walker is covered
+  by the Slice 5 unit fixture
+  `Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3`.
+- `DMS-1124 doc cleanup: Tighten Slice 1 ownership-map naming` — the Slice 1
+  ownership map row reads `ProfileRootCreateRejectedWhenNonCreatable` while the
+  fixture is `Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable`. The
+  mismatch is benign but a doc-only pass should align the two so future audits
+  do not re-litigate the lookup.
+
+## DMS-1132 Handoff
+
+`DMS-1132` (`../07-semantic-identity-presence-fidelity.md`) remains the named
+follow-on for presence-sensitive semantic identity fidelity. Slice 7 did not
+change the executor-facing identity-presence contract; this slice fixed
+already-supported behavior (ordinal-base alignment, shared row ordering for
+guarded no-op, mssql guarded no-op parity) and explicitly did not pull
+`DMS-1132` work into `DMS-1124`. The identity-matching fragility documented in
+`DMS-1132` is unchanged by this slice.
