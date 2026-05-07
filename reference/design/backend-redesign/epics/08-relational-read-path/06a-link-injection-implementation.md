@@ -30,7 +30,7 @@ Align with:
 - `reference/design/backend-redesign/design-docs/data-model.md` (`dms.Document`, `dms.ResourceKey`,
   abstract identity tables)
 - `reference/design/backend-redesign/design-docs/update-tracking.md` (`_etag` derivation from the
-  served body)
+  canonical resource-state body, excluding response decorations such as `link`)
 - `reference/design/backend-redesign/design-docs/auth.md` (source-resource authorization gate)
 - `reference/design/backend-redesign/design-docs/profiles.md` (readable-profile projection
   boundary)
@@ -119,15 +119,17 @@ Soft dependency:
   `link` subtrees already present. Readable-profile projection runs after cache retrieval; the
   `ResourceLinks:Enabled` strip pass runs on the projected document immediately before
   serialization.
-- `_etag` is the cached materialized value when the served body equals the cached intermediate
-  shape (flag on, no readable-profile reshaping). When readable-profile projection or the
-  `ResourceLinks:Enabled` strip pass changes the served shape, the response serializer recomputes
-  `_etag` from the served body. See `design-docs/update-tracking.md` §Serving API metadata for the
+- `_etag` is a resource-state validator, not a response-decoration validator. It is computed with
+  `link` excluded from canonicalization whether links are present or stripped. Use the cached
+  materialized `_etag` when there is no readable-profile reshaping of resource state. When
+  readable-profile projection changes the resource-state surface, the response serializer
+  recomputes `_etag` from the projected resource-state body using the same link-excluding
+  canonicalization rule. See `design-docs/update-tracking.md` §Serving API metadata for the
   normative derivation.
 - A flag flip does not require cache truncation or plan-shape fingerprinting: flag-off responses
-  recompute `_etag` from the stripped body, flag-on responses use the cached `_etag` for the
-  intermediate shape. No advisory lock, no `dms.DocumentCachePlanFingerprint` table, no etag
-  carve-out.
+  and flag-on responses return the same `_etag` for the same resource-state surface. No advisory
+  lock, no `dms.DocumentCachePlanFingerprint` table, and no `ResourceLinksFlag` column are
+  introduced.
 - When `dms.DocumentCache` is not provisioned, responses are materialized fresh per request and no
   freshness check runs.
 - The cache remains caller-agnostic: callers who can both read the same source document share the
@@ -156,9 +158,10 @@ Soft dependency:
   `link` is emitted on references inside collection, nested-collection, and `_ext` (scope
   and child) elements.
 - Feature-flag tests cover: flag on with fully-defined references (body carries `link`); flag off
-  (body has no `link` on any reference and `_etag` reflects the link-free form); flag flip across
-  a process restart (existing cached rows remain valid for freshness-check purposes, and `_etag`
-  values computed pre-flip do not match post-flip responses — expected).
+  (body has no `link` on any reference and `_etag` matches the flag-on value for the same
+  resource-state surface); flag flip across a process restart (existing cached rows remain valid
+  for freshness-check purposes, and `_etag` values computed pre-flip still match post-flip
+  responses for the same resource-state surface).
 - Fixture tests cover: a concrete reference (e.g., `AcademicWeek` → `School`); an abstract
   reference (any `educationOrganizationReference` site); a nested-collection reference (link
   appears inside collection elements); a reference declared directly on a collection-aligned
@@ -232,17 +235,19 @@ Soft dependency:
 6. Response serializer: apply the `ResourceLinks:Enabled` strip pass to the projected document
    immediately before serialization, after readable-profile projection. The strip removes exactly
    the `link` subtree on reference objects; other server-generated fields (`_etag`,
-   `_lastModifiedDate`) are untouched. Use the cached materialized `_etag` when the served body
-   equals the cached intermediate (flag on, no readable profile reshaping); otherwise recompute
-   `_etag` from the served body per `design-docs/update-tracking.md` §Serving API metadata.
+   `_lastModifiedDate`) are untouched. `link` is excluded from `_etag` canonicalization in both
+   flag states, so the strip pass alone does not cause `_etag` recomputation or mismatch. Use the
+   cached materialized `_etag` when there is no readable profile reshaping of resource state;
+   otherwise recompute `_etag` from the projected resource-state body per
+   `design-docs/update-tracking.md` §Serving API metadata.
 7. When `dms.DocumentCache` is provisioned: extend it to store cached `ContentVersion` alongside
    the materialized `_etag/_lastModifiedDate` so the two-input freshness check
    (`cached ContentVersion == dms.Document.ContentVersion AND cached LastModifiedAt ==
    dms.Document.ContentLastModifiedAt`) is representable in the schema. Cache entries store the
    caller-agnostic intermediate document with `link` subtrees already present. No plan-shape
    fingerprint, no advisory lock, no `dms.DocumentCachePlanFingerprint` table, no cache truncate,
-   and no `ResourceLinksFlag` column are introduced. Flag flips are handled implicitly through
-   `_etag` derivation from the served body.
+   and no `ResourceLinksFlag` column are introduced. Flag flips do not change `_etag` because
+   `link` is a response decoration excluded from the canonical resource-state hash.
 8. Tests: add unit, fixture, integration, contract, and E2E tests per the acceptance criteria.
    Include feature-flag-on and flag-off coverage; a flag-flip-across-restart regression;
    source-readable / target-denied authorization coverage; the caller-agnostic cache test; an ODS

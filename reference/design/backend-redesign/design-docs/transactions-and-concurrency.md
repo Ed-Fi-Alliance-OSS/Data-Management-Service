@@ -317,7 +317,7 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
 
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)
   - Propagation updates canonical/storage identity columns in all direct referrers (identity-component and non-identity references).
-  - Referrers’ `dms.Document.ContentVersion` stamps update because their served representation changes (the embedded reference identity changed).
+  - Referrers’ `dms.Document.ContentVersion` stamps update because their served resource-state representation changes (the embedded reference identity changed).
   - For identity-component referrers, triggers also update `dms.Document.IdentityVersion` and `dms.ReferentialIdentity` for the referrer (and this may cascade further).
 
 - **Outgoing reference changes on a document** (`..._DocumentId` value changes)
@@ -326,7 +326,7 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
   - Composite FK enforcement guarantees the canonical/storage identity-part values match the referenced target.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, `ChangeVersion`)**
-  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`; `_etag` is computed from the deterministic canonical JSON form of the served response document those stamps track.
+  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`; `_etag` is computed from the deterministic canonical JSON form of the served resource-state document those stamps track, excluding response decorations such as `link`.
   - Because identity propagation is materialized as row updates, the same per-table stamping triggers cover indirect changes (no read-time dependency derivation).
 
 ### Concurrency (optimistic `If-Match`)
