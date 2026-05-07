@@ -277,6 +277,15 @@ internal static class ProfileWriteContractValidator
                 operation,
                 failures
             );
+            DetectCrossSideBucketAmbiguity(
+                context.Request.VisibleRequestCollectionItems,
+                context.VisibleStoredCollectionRows,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
         }
 
         return [.. failures];
@@ -817,6 +826,103 @@ internal static class ProfileWriteContractValidator
                 failures
             );
         }
+    }
+
+    private static void DetectCrossSideBucketAmbiguity(
+        ImmutableArray<VisibleRequestCollectionItem> visibleRequestItems,
+        ImmutableArray<VisibleStoredCollectionRow> visibleStoredRows,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        if (visibleRequestItems.IsDefaultOrEmpty || visibleStoredRows.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var requestByBucket = visibleRequestItems
+            .GroupBy(i => (i.Address.JsonScope, i.Address.ParentAddress), ScopeBucketKeyComparer.Instance)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(i => i.Address.SemanticIdentityInOrder).ToList(),
+                ScopeBucketKeyComparer.Instance
+            );
+
+        var storedByBucket = visibleStoredRows
+            .GroupBy(r => (r.Address.JsonScope, r.Address.ParentAddress), ScopeBucketKeyComparer.Instance)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => r.Address.SemanticIdentityInOrder).ToList(),
+                ScopeBucketKeyComparer.Instance
+            );
+
+        foreach (var (bucketKey, requestList) in requestByBucket)
+        {
+            if (!storedByBucket.TryGetValue(bucketKey, out var storedList))
+            {
+                continue;
+            }
+
+            var requestByCollapsedKey = GroupByCollapsedKey(requestList);
+            var storedByCollapsedKey = GroupByCollapsedKey(storedList);
+
+            foreach (var (collapsedKey, requestIdentities) in requestByCollapsedKey)
+            {
+                if (!storedByCollapsedKey.TryGetValue(collapsedKey, out var storedIdentities))
+                {
+                    continue;
+                }
+
+                // At least one request and one stored identity share the collapsed key.
+                // Emit only if the union contains a presence-aware-distinct pair.
+                var combined = new List<ImmutableArray<SemanticIdentityPart>>(
+                    requestIdentities.Count + storedIdentities.Count
+                );
+                combined.AddRange(requestIdentities);
+                combined.AddRange(storedIdentities);
+
+                if (!HasPresenceAwareDistinctPair(combined))
+                {
+                    continue;
+                }
+
+                failures.Add(
+                    ProfileFailures.AmbiguousStorageCollapsedIdentity(
+                        profileName,
+                        resourceName,
+                        method,
+                        operation,
+                        bucketKey.JsonScope,
+                        bucketKey.ParentAddress,
+                        AmbiguousStorageCollapsedIdentityKind.CrossSide,
+                        [.. combined]
+                    )
+                );
+            }
+        }
+    }
+
+    private static Dictionary<string, List<ImmutableArray<SemanticIdentityPart>>> GroupByCollapsedKey(
+        IReadOnlyList<ImmutableArray<SemanticIdentityPart>> identities
+    )
+    {
+        var result = new Dictionary<string, List<ImmutableArray<SemanticIdentityPart>>>(
+            StringComparer.Ordinal
+        );
+        foreach (var identity in identities)
+        {
+            var key = StorageCollapsedIdentityHelpers.BuildKey(identity);
+            if (!result.TryGetValue(key, out var bucket))
+            {
+                bucket = [];
+                result.Add(key, bucket);
+            }
+            bucket.Add(identity);
+        }
+        return result;
     }
 
     private sealed class ScopeBucketKeyComparer

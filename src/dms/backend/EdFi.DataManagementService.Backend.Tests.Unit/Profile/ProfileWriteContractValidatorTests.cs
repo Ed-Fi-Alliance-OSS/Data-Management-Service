@@ -2245,3 +2245,305 @@ public class Given_Two_Visible_Stored_Rows_In_Same_Bucket_With_Storage_Collapsed
         _failures.Should().BeEmpty();
     }
 }
+
+[TestFixture]
+public class Given_A_Request_Item_And_A_Stored_Row_In_Same_Bucket_With_Storage_Collapsed_Equal_Identities
+{
+    private const string ChildScope = "$.children[*]";
+    private static readonly ScopeInstanceAddress ParentAddress = new("$", []);
+    private ProfileFailure[] _failures = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var requestExplicitNull = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", null, isPresent: true)
+        );
+        var storedAbsent = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", null, isPresent: false)
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: JsonNode.Parse("{}")!,
+                RootResourceCreatable: true,
+                RequestScopeStates: [],
+                VisibleRequestCollectionItems:
+                [
+                    new VisibleRequestCollectionItem(
+                        new CollectionRowAddress(ChildScope, ParentAddress, requestExplicitNull),
+                        Creatable: false,
+                        RequestJsonPath: "$.children[0]"
+                    ),
+                ]
+            ),
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates: [],
+            VisibleStoredCollectionRows:
+            [
+                new VisibleStoredCollectionRow(
+                    new CollectionRowAddress(ChildScope, ParentAddress, storedAbsent),
+                    HiddenMemberPaths: []
+                ),
+            ]
+        );
+        var catalog = StorageCollapsedIdentityCatalogHelpers.RootAndOneChildCollectionCatalog(
+            ChildScope,
+            ["k"]
+        );
+
+        _failures = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            catalog,
+            profileName: "TestProfile",
+            resourceName: "TestResource",
+            method: "PUT",
+            operation: "write"
+        );
+    }
+
+    [Test]
+    public void It_emits_one_failure()
+    {
+        _failures.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_emits_a_C5_AmbiguousStorageCollapsedIdentity_failure_with_kind_CrossSide()
+    {
+        _failures[0]
+            .Should()
+            .BeOfType<AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure>()
+            .Which.Kind.Should()
+            .Be(AmbiguousStorageCollapsedIdentityKind.CrossSide);
+    }
+
+    [Test]
+    public void It_carries_the_collection_scope_and_parent_address_of_the_bucket()
+    {
+        var failure = (AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure)_failures[0];
+        failure.JsonScope.Should().Be(ChildScope);
+        failure.ParentAddress.Should().Be(ParentAddress);
+    }
+
+    [Test]
+    public void It_carries_both_conflicting_identities()
+    {
+        var failure = (AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure)_failures[0];
+        failure.ConflictingIdentities.Should().HaveCount(2);
+    }
+}
+
+[TestFixture]
+public class Given_A_Request_Item_And_A_Stored_Row_With_Identical_Presence_Aware_Identities
+{
+    private const string ChildScope = "$.children[*]";
+    private static readonly ScopeInstanceAddress ParentAddress = new("$", []);
+    private ProfileFailure[] _failures = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var requestAbsent = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", null, isPresent: false)
+        );
+        var storedAbsent = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", null, isPresent: false)
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: JsonNode.Parse("{}")!,
+                RootResourceCreatable: true,
+                RequestScopeStates: [],
+                VisibleRequestCollectionItems:
+                [
+                    new VisibleRequestCollectionItem(
+                        new CollectionRowAddress(ChildScope, ParentAddress, requestAbsent),
+                        Creatable: false,
+                        RequestJsonPath: "$.children[0]"
+                    ),
+                ]
+            ),
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates: [],
+            VisibleStoredCollectionRows:
+            [
+                new VisibleStoredCollectionRow(
+                    new CollectionRowAddress(ChildScope, ParentAddress, storedAbsent),
+                    HiddenMemberPaths: []
+                ),
+            ]
+        );
+        var catalog = StorageCollapsedIdentityCatalogHelpers.RootAndOneChildCollectionCatalog(
+            ChildScope,
+            ["k"]
+        );
+
+        _failures = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            catalog,
+            profileName: "TestProfile",
+            resourceName: "TestResource",
+            method: "PUT",
+            operation: "write"
+        );
+    }
+
+    [Test]
+    public void It_returns_no_failures()
+    {
+        _failures.Should().BeEmpty();
+    }
+}
+
+[TestFixture]
+public class Given_An_In_Request_Storage_Collapsed_Pair_Plus_An_Unrelated_Stored_Row_In_Same_Bucket
+{
+    private const string ChildScope = "$.children[*]";
+    private static readonly ScopeInstanceAddress ParentAddress = new("$", []);
+    private ProfileFailure[] _failures = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var requestMissing = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", null, isPresent: false)
+        );
+        var requestExplicitNull = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", null, isPresent: true)
+        );
+        var storedUnrelated = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", JsonValue.Create(1), isPresent: true)
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: JsonNode.Parse("{}")!,
+                RootResourceCreatable: true,
+                RequestScopeStates: [],
+                VisibleRequestCollectionItems:
+                [
+                    new VisibleRequestCollectionItem(
+                        new CollectionRowAddress(ChildScope, ParentAddress, requestMissing),
+                        Creatable: false,
+                        RequestJsonPath: "$.children[0]"
+                    ),
+                    new VisibleRequestCollectionItem(
+                        new CollectionRowAddress(ChildScope, ParentAddress, requestExplicitNull),
+                        Creatable: false,
+                        RequestJsonPath: "$.children[1]"
+                    ),
+                ]
+            ),
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates: [],
+            VisibleStoredCollectionRows:
+            [
+                new VisibleStoredCollectionRow(
+                    new CollectionRowAddress(ChildScope, ParentAddress, storedUnrelated),
+                    HiddenMemberPaths: []
+                ),
+            ]
+        );
+        var catalog = StorageCollapsedIdentityCatalogHelpers.RootAndOneChildCollectionCatalog(
+            ChildScope,
+            ["k"]
+        );
+
+        _failures = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            catalog,
+            profileName: "TestProfile",
+            resourceName: "TestResource",
+            method: "PUT",
+            operation: "write"
+        );
+    }
+
+    [Test]
+    public void It_emits_only_the_in_request_failure_not_a_cross_side_failure()
+    {
+        _failures
+            .OfType<AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure>()
+            .Should()
+            .ContainSingle()
+            .Which.Kind.Should()
+            .Be(AmbiguousStorageCollapsedIdentityKind.InRequest);
+    }
+}
+
+[TestFixture]
+public class Given_An_In_Stored_Storage_Collapsed_Pair_Plus_An_Unrelated_Request_Item_In_Same_Bucket
+{
+    private const string ChildScope = "$.children[*]";
+    private static readonly ScopeInstanceAddress ParentAddress = new("$", []);
+    private ProfileFailure[] _failures = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var storedMissing = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", null, isPresent: false)
+        );
+        var storedExplicitNull = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", null, isPresent: true)
+        );
+        var requestUnrelated = ImmutableArray.Create(
+            StorageCollapsedIdentityCatalogHelpers.Part("k", JsonValue.Create(1), isPresent: true)
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: JsonNode.Parse("{}")!,
+                RootResourceCreatable: true,
+                RequestScopeStates: [],
+                VisibleRequestCollectionItems:
+                [
+                    new VisibleRequestCollectionItem(
+                        new CollectionRowAddress(ChildScope, ParentAddress, requestUnrelated),
+                        Creatable: false,
+                        RequestJsonPath: "$.children[0]"
+                    ),
+                ]
+            ),
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates: [],
+            VisibleStoredCollectionRows:
+            [
+                new VisibleStoredCollectionRow(
+                    new CollectionRowAddress(ChildScope, ParentAddress, storedMissing),
+                    HiddenMemberPaths: []
+                ),
+                new VisibleStoredCollectionRow(
+                    new CollectionRowAddress(ChildScope, ParentAddress, storedExplicitNull),
+                    HiddenMemberPaths: []
+                ),
+            ]
+        );
+        var catalog = StorageCollapsedIdentityCatalogHelpers.RootAndOneChildCollectionCatalog(
+            ChildScope,
+            ["k"]
+        );
+
+        _failures = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            catalog,
+            profileName: "TestProfile",
+            resourceName: "TestResource",
+            method: "PUT",
+            operation: "write"
+        );
+    }
+
+    [Test]
+    public void It_emits_only_the_in_stored_failure_not_a_cross_side_failure()
+    {
+        _failures
+            .OfType<AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure>()
+            .Should()
+            .ContainSingle()
+            .Which.Kind.Should()
+            .Be(AmbiguousStorageCollapsedIdentityKind.InStored);
+    }
+}
