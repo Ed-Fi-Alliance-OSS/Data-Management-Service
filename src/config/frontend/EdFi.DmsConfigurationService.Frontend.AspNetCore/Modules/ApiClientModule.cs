@@ -7,12 +7,12 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
-using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.Options;
@@ -190,11 +190,13 @@ public class ApiClientModule : IEndpointModule
 
     private static async Task<IResult> GetAll(
         IApiClientRepository apiClientRepository,
-        [AsParameters] PagingQuery query,
+        [AsParameters] FrontendApiClientQuery query,
+        ApiClientPagingQueryValidator validator,
         HttpContext httpContext
     )
     {
-        ApiClientQueryResult getResult = await apiClientRepository.QueryApiClient(query);
+        await validator.GuardAsync(query);
+        ApiClientQueryResult getResult = await apiClientRepository.QueryApiClient(query.ToQuery());
         return getResult switch
         {
             ApiClientQueryResult.Success success => Results.Ok(success.ApiClientResponses),

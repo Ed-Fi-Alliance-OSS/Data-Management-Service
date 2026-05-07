@@ -23,8 +23,10 @@ public class ClientSecretValidationOptionsValidatorTests
     public void Validate_WithMaximumLengthExceedingAllowedUpperBound_ShouldFailValidation()
     {
         // Arrange
-        ClientSecretValidationOptions options =
-            new() { MaximumLength = ClientSecretValidationOptions.MaximumAllowedLength + 1 };
+        ClientSecretValidationOptions options = new()
+        {
+            MaximumLength = ClientSecretValidationOptions.MaximumAllowedLength + 1,
+        };
 
         // Act
         var result = _validator.Validate(name: null, options);

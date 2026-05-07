@@ -6,10 +6,10 @@
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
-using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -63,10 +63,12 @@ public class TenantModule : IEndpointModule
 
     private static async Task<IResult> GetAll(
         ITenantRepository repository,
-        [AsParameters] PagingQuery query,
+        [AsParameters] FrontendPagingQuery query,
+        TenantPagingQueryValidator validator,
         HttpContext httpContext
     )
     {
+        await validator.GuardAsync(query);
         TenantQueryResult getResult = await repository.QueryTenant(query);
         return getResult switch
         {

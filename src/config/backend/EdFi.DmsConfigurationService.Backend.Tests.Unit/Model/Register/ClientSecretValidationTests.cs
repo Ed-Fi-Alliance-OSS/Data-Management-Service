@@ -15,11 +15,7 @@ public class ClientSecretValidationTests
     [Test]
     public void It_should_accept_lengths_at_the_configured_minimum_and_maximum()
     {
-        var options = new ClientSecretValidationOptions
-        {
-            MinimumLength = 6,
-            MaximumLength = 10,
-        };
+        var options = new ClientSecretValidationOptions { MinimumLength = 6, MaximumLength = 10 };
 
         ClientSecretValidation.IsWithinLengthRange("123456", options).Should().BeTrue();
         ClientSecretValidation.IsWithinLengthRange("1234567890", options).Should().BeTrue();
@@ -28,11 +24,7 @@ public class ClientSecretValidationTests
     [Test]
     public void It_should_reject_lengths_below_the_configured_minimum()
     {
-        var options = new ClientSecretValidationOptions
-        {
-            MinimumLength = 6,
-            MaximumLength = 10,
-        };
+        var options = new ClientSecretValidationOptions { MinimumLength = 6, MaximumLength = 10 };
 
         ClientSecretValidation.IsWithinLengthRange("12345", options).Should().BeFalse();
     }
@@ -40,11 +32,7 @@ public class ClientSecretValidationTests
     [Test]
     public void It_should_reject_lengths_above_the_configured_maximum()
     {
-        var options = new ClientSecretValidationOptions
-        {
-            MinimumLength = 6,
-            MaximumLength = 10,
-        };
+        var options = new ClientSecretValidationOptions { MinimumLength = 6, MaximumLength = 10 };
 
         ClientSecretValidation.IsWithinLengthRange("12345678901", options).Should().BeFalse();
     }
@@ -52,39 +40,22 @@ public class ClientSecretValidationTests
     [Test]
     public void It_should_include_the_configured_range_in_the_complexity_pattern()
     {
-        var options = new ClientSecretValidationOptions
-        {
-            MinimumLength = 10,
-            MaximumLength = 16,
-        };
+        var options = new ClientSecretValidationOptions { MinimumLength = 10, MaximumLength = 16 };
 
         Regex
-            .IsMatch(
-                "ValidSecret1!",
-                ClientSecretValidation.BuildComplexityPattern(options)
-            )
+            .IsMatch("ValidSecret1!", ClientSecretValidation.BuildComplexityPattern(options))
             .Should()
             .BeTrue();
-        Regex
-            .IsMatch("Valid1!", ClientSecretValidation.BuildComplexityPattern(options))
-            .Should()
-            .BeFalse();
+        Regex.IsMatch("Valid1!", ClientSecretValidation.BuildComplexityPattern(options)).Should().BeFalse();
     }
 
     [Test]
     public void It_should_reject_secrets_that_only_use_whitespace_as_the_special_character()
     {
-        var options = new ClientSecretValidationOptions
-        {
-            MinimumLength = 10,
-            MaximumLength = 16,
-        };
+        var options = new ClientSecretValidationOptions { MinimumLength = 10, MaximumLength = 16 };
 
         Regex
-            .IsMatch(
-                "ValidSecret1 ",
-                ClientSecretValidation.BuildComplexityPattern(options)
-            )
+            .IsMatch("ValidSecret1 ", ClientSecretValidation.BuildComplexityPattern(options))
             .Should()
             .BeFalse();
     }
@@ -92,11 +63,7 @@ public class ClientSecretValidationTests
     [Test]
     public void It_should_generate_a_secret_that_matches_the_complexity_pattern()
     {
-        var options = new ClientSecretValidationOptions
-        {
-            MinimumLength = 32,
-            MaximumLength = 128,
-        };
+        var options = new ClientSecretValidationOptions { MinimumLength = 32, MaximumLength = 128 };
 
         var secret = ClientSecretValidation.GenerateSecretWithMinimumLength(options);
 
@@ -111,11 +78,7 @@ public class ClientSecretValidationTests
 
         var result = validator.Validate(
             null,
-            new ClientSecretValidationOptions
-            {
-                MinimumLength = 3,
-                MaximumLength = 10,
-            }
+            new ClientSecretValidationOptions { MinimumLength = 3, MaximumLength = 10 }
         );
 
         result.Failed.Should().BeTrue();

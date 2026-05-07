@@ -12,7 +12,7 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 public interface IVendorRepository
 {
     Task<VendorInsertResult> InsertVendor(VendorInsertCommand command);
-    Task<VendorQueryResult> QueryVendor(PagingQuery query);
+    Task<VendorQueryResult> QueryVendor(VendorQuery query);
     Task<VendorGetResult> GetVendor(long id);
     Task<VendorUpdateResult> UpdateVendor(VendorUpdateCommand command);
     Task<VendorDeleteResult> DeleteVendor(long id);

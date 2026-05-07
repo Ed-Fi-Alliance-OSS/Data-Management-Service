@@ -95,7 +95,7 @@ public class AuthorizationTests
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Returns(new VendorInsertResult.Success(1, true));
 
-            A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
+            A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(
                     new VendorQueryResult.Success([
                         new VendorResponse()
@@ -192,7 +192,7 @@ public class AuthorizationTests
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Returns(new VendorInsertResult.Success(1, false));
 
-            A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
+            A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(
                     new VendorQueryResult.Success([
                         new VendorResponse()
@@ -315,7 +315,7 @@ public class AuthorizationTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
                 .Returns(
                     new ClaimSetQueryResult.Success([
                         new ClaimSetResponse() { Name = "Test ClaimSet", IsSystemReserved = false },

@@ -158,21 +158,77 @@ public class ApplicationRepository(
         }
     }
 
-    public async Task<ApplicationQueryResult> QueryApplication(PagingQuery query)
+    private static readonly IReadOnlyDictionary<string, string> OrderByColumns = new Dictionary<
+        string,
+        string
+    >(StringComparer.OrdinalIgnoreCase)
+    {
+        ["id"] = "Id",
+        ["applicationName"] = "ApplicationName",
+        ["vendorId"] = "VendorId",
+        ["claimSetName"] = "ClaimSetName",
+    };
+
+    private static string ResolveOrderByColumn(ApplicationQuery query) =>
+        query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col)
+            ? col
+            : "ApplicationName";
+
+    private static string BuildOrderByClause(ApplicationQuery query)
+    {
+        string col = ResolveOrderByColumn(query);
+        return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+    }
+
+    private static string BuildFilterClause(ApplicationQuery query, int[] parsedIds)
+    {
+        var conditions = new List<string>();
+        if (query.Id.HasValue)
+        {
+            conditions.Add("Id = @Id");
+        }
+        if (query.ApplicationName is not null)
+        {
+            conditions.Add("ApplicationName = @ApplicationName");
+        }
+        if (query.ClaimSetName is not null)
+        {
+            conditions.Add("ClaimSetName = @ClaimSetName");
+        }
+        if (parsedIds.Length > 0)
+        {
+            conditions.Add("Id = ANY(@ParsedIds)");
+        }
+        return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
+    }
+
+    public async Task<ApplicationQueryResult> QueryApplication(ApplicationQuery query)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
         try
         {
-            string sql = """
+            int[] parsedIds = !string.IsNullOrEmpty(query.Ids)
+                ? query
+                    .Ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Where(s => int.TryParse(s, out _))
+                    .Select(s => int.Parse(s))
+                    .ToArray()
+                : [];
+            string orderByClause = BuildOrderByClause(query);
+            string filterClause = BuildFilterClause(query, parsedIds);
+            string outerCol = ResolveOrderByColumn(query);
+            // Direction mirrors BuildOrderByClause() — must stay consistent.
+            string direction = query.IsDescending ? "DESC" : "ASC";
+            string sql = $"""
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
                        e.EducationOrganizationId, acd.DmsInstanceId, ap.ProfileId
-                FROM (SELECT * FROM dmscs.Application ORDER BY Id LIMIT @Limit OFFSET @Offset) AS a
+                FROM (SELECT * FROM dmscs.Application {filterClause} {orderByClause} {query.BuildPagingClause()}) AS a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 LEFT OUTER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
                 LEFT OUTER JOIN dmscs.ApplicationProfile ap ON a.Id = ap.ApplicationId
-                ORDER BY a.ApplicationName;
+                ORDER BY a.{outerCol} {direction};
                 """;
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
@@ -198,7 +254,15 @@ public class ApplicationRepository(
                     }
                     return application;
                 },
-                param: query,
+                param: new
+                {
+                    query.Limit,
+                    query.Offset,
+                    query.Id,
+                    query.ApplicationName,
+                    query.ClaimSetName,
+                    ParsedIds = parsedIds,
+                },
                 splitOn: "EducationOrganizationId,DmsInstanceId,ProfileId"
             );
 

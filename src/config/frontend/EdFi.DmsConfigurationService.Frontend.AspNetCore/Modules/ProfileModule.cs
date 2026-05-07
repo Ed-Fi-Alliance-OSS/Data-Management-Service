@@ -7,10 +7,10 @@ using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
-using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Profile;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.Logging;
@@ -51,27 +51,15 @@ public class ProfileModule : IEndpointModule
 
     private static async Task<IResult> GetAll(
         IProfileRepository repository,
-        [AsParameters] PagingQuery query,
-        HttpContext httpContext,
-        ILogger<ProfileModule> logger
+        [AsParameters] FrontendProfileQuery query,
+        ProfilePagingQueryValidator validator,
+        HttpContext httpContext
     )
     {
-        var results = await repository.QueryProfiles(query);
-        var validationCache = new Dictionary<long, bool>();
+        await validator.GuardAsync(query);
+        var results = await repository.QueryProfiles(query.ToQuery());
         var profiles = results
             .OfType<ProfileGetResult.Success>()
-            .Where(r =>
-            {
-                if (!validationCache.ContainsKey(r.Profile.Id))
-                {
-                    validationCache[r.Profile.Id] = IsProfileValid(
-                        r.Profile,
-                        logger,
-                        " and will be excluded from results"
-                    );
-                }
-                return validationCache[r.Profile.Id];
-            })
             .Select(r => new ProfileListResponse { Id = r.Profile.Id, Name = r.Profile.Name })
             .ToList();
         if (profiles.Count > 0)

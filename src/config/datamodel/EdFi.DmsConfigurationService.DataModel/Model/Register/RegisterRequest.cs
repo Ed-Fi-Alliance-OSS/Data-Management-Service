@@ -24,9 +24,7 @@ public class RegisterRequest
             RuleFor(m => m.ClientId).NotEmpty();
             RuleFor(m => m.ClientSecret).NotEmpty();
             RuleFor(m => m.ClientSecret)
-                .Matches(
-                    ClientSecretValidation.BuildComplexityPattern(clientSecretValidationOptions)
-                )
+                .Matches(ClientSecretValidation.BuildComplexityPattern(clientSecretValidationOptions))
                 .When(m => !string.IsNullOrEmpty(m.ClientSecret))
                 .WithMessage(
                     ClientSecretValidation.BuildComplexityErrorMessage(clientSecretValidationOptions)

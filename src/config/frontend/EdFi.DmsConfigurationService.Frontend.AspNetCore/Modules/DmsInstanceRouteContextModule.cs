@@ -5,10 +5,10 @@
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
-using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
 using FluentValidation.Results;
 
@@ -66,10 +66,12 @@ public class DmsInstanceRouteContextModule : IEndpointModule
 
     private static async Task<IResult> GetAll(
         IDmsInstanceRouteContextRepository instanceRouteContextRepository,
-        [AsParameters] PagingQuery query,
+        [AsParameters] FrontendPagingQuery query,
+        DmsInstanceRouteContextPagingQueryValidator validator,
         HttpContext httpContext
     )
     {
+        await validator.GuardAsync(query);
         var getResult = await instanceRouteContextRepository.QueryInstanceRouteContext(query);
         return getResult switch
         {

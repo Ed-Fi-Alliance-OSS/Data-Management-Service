@@ -92,18 +92,51 @@ public class ApiClientRepository(
         }
     }
 
-    public async Task<ApiClientQueryResult> QueryApiClient(PagingQuery query)
+    private static readonly IReadOnlyDictionary<string, string> OrderByColumns = new Dictionary<
+        string,
+        string
+    >(StringComparer.OrdinalIgnoreCase)
+    {
+        ["id"] = "Id",
+        ["applicationId"] = "ApplicationId",
+        ["name"] = "Name",
+    };
+
+    private static string ResolveOrderByColumn(ApiClientQuery query) =>
+        query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col) ? col : "Id";
+
+    private static string BuildOrderByClause(ApiClientQuery query)
+    {
+        string col = ResolveOrderByColumn(query);
+        return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+    }
+
+    private static string BuildFilterClause(ApiClientQuery query)
+    {
+        var conditions = new List<string>();
+        if (query.ApplicationId.HasValue)
+        {
+            conditions.Add("ApplicationId = @ApplicationId");
+        }
+        return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
+    }
+
+    public async Task<ApiClientQueryResult> QueryApiClient(ApiClientQuery query)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
         try
         {
-            string sql = """
+            string orderByClause = BuildOrderByClause(query);
+            string filterClause = BuildFilterClause(query);
+            string outerCol = ResolveOrderByColumn(query);
+            string direction = query.IsDescending ? "DESC" : "ASC";
+            string sql = $"""
                 SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
                        acd.DmsInstanceId
-                FROM (SELECT * FROM dmscs.ApiClient ORDER BY Id LIMIT @Limit OFFSET @Offset) AS ac
+                FROM (SELECT * FROM dmscs.ApiClient {filterClause} {orderByClause} {query.BuildPagingClause()}) AS ac
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
-                ORDER BY ac.Id;
+                ORDER BY ac.{outerCol} {direction};
                 """;
 
             var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
@@ -116,7 +149,12 @@ public class ApiClientRepository(
                     }
                     return apiClient;
                 },
-                param: query,
+                param: new
+                {
+                    query.Limit,
+                    query.Offset,
+                    query.ApplicationId,
+                },
                 splitOn: "DmsInstanceId"
             );
 

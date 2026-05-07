@@ -161,11 +161,45 @@ public class ClaimSetRepository(
         }
     }
 
-    public async Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query)
+    private static readonly IReadOnlyDictionary<string, string> OrderByColumns = new Dictionary<
+        string,
+        string
+    >(StringComparer.OrdinalIgnoreCase)
+    {
+        ["id"] = "c.Id",
+        ["name"] = "c.ClaimSetName",
+    };
+
+    private static string BuildOrderByClause(ClaimSetQuery query)
+    {
+        if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
+        {
+            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+        }
+        return "ORDER BY c.Id";
+    }
+
+    private static string BuildFilterClause(ClaimSetQuery query)
+    {
+        var conditions = new List<string>();
+        if (query.Id.HasValue)
+        {
+            conditions.Add("c.Id = @Id");
+        }
+        if (query.Name is not null)
+        {
+            conditions.Add("c.ClaimSetName = @Name");
+        }
+        return conditions.Count > 0 ? " AND " + string.Join(" AND ", conditions) : string.Empty;
+    }
+
+    public async Task<ClaimSetQueryResult> QueryClaimSet(ClaimSetQuery query)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
+            string orderByClause = BuildOrderByClause(query);
+            string filterClause = BuildFilterClause(query);
             string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
@@ -175,9 +209,9 @@ public class ClaimSetRepository(
                     "v"
                 )}) as applications
                 FROM dmscs.ClaimSet c
-                WHERE {ClaimSetWhereClause("c")}
-                ORDER BY c.Id
-                LIMIT @Limit OFFSET @Offset;
+                WHERE {ClaimSetWhereClause("c")}{filterClause}
+                {orderByClause}
+                {query.BuildPagingClause()};
                 """;
 
             var claimSets = await connection.QueryAsync(
@@ -187,6 +221,8 @@ public class ClaimSetRepository(
                     query.Limit,
                     query.Offset,
                     TenantId,
+                    query.Id,
+                    query.Name,
                 }
             );
 

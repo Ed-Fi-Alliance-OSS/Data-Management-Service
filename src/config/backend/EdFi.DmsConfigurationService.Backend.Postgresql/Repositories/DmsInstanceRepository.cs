@@ -60,17 +60,56 @@ public class DmsInstanceRepository(
         }
     }
 
-    public async Task<DmsInstanceQueryResult> QueryDmsInstance(PagingQuery query)
+    private static readonly IReadOnlyDictionary<string, string> OrderByColumns = new Dictionary<
+        string,
+        string
+    >(StringComparer.OrdinalIgnoreCase)
+    {
+        ["id"] = "Id",
+        ["instanceType"] = "InstanceType",
+        ["instanceName"] = "InstanceName",
+    };
+
+    private static string BuildOrderByClause(DmsInstanceQuery query)
+    {
+        if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
+        {
+            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+        }
+        return "ORDER BY Id";
+    }
+
+    private static string BuildFilterClause(DmsInstanceQuery query)
+    {
+        var conditions = new List<string>();
+        if (query.Id.HasValue)
+        {
+            conditions.Add("Id = @Id");
+        }
+        if (query.InstanceName is not null)
+        {
+            conditions.Add("InstanceName = @InstanceName");
+        }
+        if (query.InstanceType is not null)
+        {
+            conditions.Add("InstanceType = @InstanceType");
+        }
+        return conditions.Count > 0 ? " AND " + string.Join(" AND ", conditions) : string.Empty;
+    }
+
+    public async Task<DmsInstanceQueryResult> QueryDmsInstance(DmsInstanceQuery query)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
+            string orderByClause = BuildOrderByClause(query);
+            string filterClause = BuildFilterClause(query);
             var sql = $"""
                 SELECT Id, InstanceType, InstanceName, ConnectionString, TenantId
                 FROM dmscs.DmsInstance
-                WHERE {TenantContext.TenantWhereClause()}
-                ORDER BY Id
-                LIMIT @Limit OFFSET @Offset;
+                WHERE {TenantContext.TenantWhereClause()}{filterClause}
+                {orderByClause}
+                {query.BuildPagingClause()};
                 """;
 
             var results = await connection.QueryAsync<(
@@ -86,6 +125,9 @@ public class DmsInstanceRepository(
                     query.Limit,
                     query.Offset,
                     TenantId,
+                    query.Id,
+                    query.InstanceName,
+                    query.InstanceType,
                 }
             );
 

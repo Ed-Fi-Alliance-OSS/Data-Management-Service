@@ -109,7 +109,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_test_claimSet_from_get_all()
         {
-            var getResult = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
+            var getResult = await _repository.QueryClaimSet(new ClaimSetQuery() { Limit = 25, Offset = 0 });
             getResult.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             object claimSetFromDb = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses.First();
@@ -264,7 +264,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_updated_and_system_reserved_claimSets_from_get_all()
         {
-            var getResult = await _repository.QueryClaimSet(new PagingQuery() { Limit = 100, Offset = 0 });
+            var getResult = await _repository.QueryClaimSet(new ClaimSetQuery() { Limit = 100, Offset = 0 });
             getResult.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             var claimSets = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses;
@@ -568,7 +568,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_one_test_claimSet_from_get_all()
         {
-            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
+            var result = await _repository.QueryClaimSet(new ClaimSetQuery() { Limit = 25, Offset = 0 });
             result.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Count().Should().Be(1);
@@ -652,7 +652,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_multiple_test_claimSet_from_get_all()
         {
-            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 10, Offset = 0 });
+            var result = await _repository.QueryClaimSet(new ClaimSetQuery() { Limit = 10, Offset = 0 });
             result.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             ((ClaimSetQueryResult.Success)result)
@@ -729,7 +729,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_two_claimSet_from_get_all()
         {
-            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
+            var result = await _repository.QueryClaimSet(new ClaimSetQuery() { Limit = 25, Offset = 0 });
             result.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Count().Should().Be(2);
@@ -755,6 +755,109 @@ public class ClaimSetTests : DatabaseTest
 
             var reducedResponse2 = (ClaimSetResponse)claimSetFromDb2;
             reducedResponse2.Name.Should().Be("Copy-Test-ClaimSet");
+        }
+    }
+
+    [TestFixture]
+    public class QueryPagingTests : ClaimSetTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            await EnsureClaimsDataLoaded();
+
+            for (int i = 1; i <= 12; i++)
+            {
+                ClaimSetInsertCommand claimSetCommand = new() { Name = $"ClaimSet-{i:D2}" };
+                var insertResult = await _repository.InsertClaimSet(claimSetCommand);
+                insertResult
+                    .Should()
+                    .BeOfType<ClaimSetInsertResult.Success>(
+                        $"claim set {i} (ClaimSet-{i:D2}) should insert successfully"
+                    );
+            }
+        }
+
+        [Test]
+        public async Task Should_return_all_results_when_no_paging_params_provided()
+        {
+            var result = await _repository.QueryClaimSet(new ClaimSetQuery());
+            result.Should().BeOfType<ClaimSetQueryResult.Success>();
+            ((ClaimSetQueryResult.Success)result)
+                .ClaimSetResponses.Should()
+                .HaveCountGreaterThanOrEqualTo(12);
+        }
+
+        [Test]
+        public async Task Should_apply_limit_when_limit_is_provided()
+        {
+            var result = await _repository.QueryClaimSet(new ClaimSetQuery { Limit = 5 });
+            result.Should().BeOfType<ClaimSetQueryResult.Success>();
+            ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Should().HaveCount(5);
+        }
+
+        [Test]
+        public async Task Should_apply_offset_when_offset_is_provided()
+        {
+            var result = await _repository.QueryClaimSet(new ClaimSetQuery { Offset = 10 });
+            result.Should().BeOfType<ClaimSetQueryResult.Success>();
+            ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Should().HaveCountGreaterThanOrEqualTo(2);
+        }
+    }
+
+    [TestFixture]
+    public class QuerySortTests : ClaimSetTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            await EnsureClaimsDataLoaded();
+
+            foreach (var name in new[] { "Zebra-ClaimSet", "Apple-ClaimSet", "Mango-ClaimSet" })
+            {
+                ClaimSetInsertCommand claimSetCommand = new() { Name = name };
+                var insertResult = await _repository.InsertClaimSet(claimSetCommand);
+                insertResult
+                    .Should()
+                    .BeOfType<ClaimSetInsertResult.Success>($"claim set '{name}' should insert successfully");
+            }
+        }
+
+        [Test]
+        public async Task Should_return_ascending_order_by_name()
+        {
+            var result = await _repository.QueryClaimSet(
+                new ClaimSetQuery { OrderBy = "name", Direction = "ASC" }
+            );
+            result.Should().BeOfType<ClaimSetQueryResult.Success>();
+            var names = ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Select(c => c.Name).ToList();
+            var testNames = names.Where(n => n.Contains("-ClaimSet")).ToList();
+            testNames.Should().HaveCount(3);
+            testNames.Should().ContainInOrder("Apple-ClaimSet", "Mango-ClaimSet", "Zebra-ClaimSet");
+        }
+
+        [Test]
+        public async Task Should_return_descending_order_by_name()
+        {
+            var result = await _repository.QueryClaimSet(
+                new ClaimSetQuery { OrderBy = "name", Direction = "DESC" }
+            );
+            result.Should().BeOfType<ClaimSetQueryResult.Success>();
+            var names = ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Select(c => c.Name).ToList();
+            var testNames = names.Where(n => n.Contains("-ClaimSet")).ToList();
+            testNames.Should().HaveCount(3);
+            testNames.Should().ContainInOrder("Zebra-ClaimSet", "Mango-ClaimSet", "Apple-ClaimSet");
+        }
+
+        [Test]
+        public async Task Should_default_to_ascending_order_when_direction_is_omitted()
+        {
+            var result = await _repository.QueryClaimSet(new ClaimSetQuery { OrderBy = "name" });
+            result.Should().BeOfType<ClaimSetQueryResult.Success>();
+            var names = ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Select(c => c.Name).ToList();
+            var testNames = names.Where(n => n.Contains("-ClaimSet")).ToList();
+            testNames.Should().HaveCount(3);
+            testNames.Should().ContainInOrder("Apple-ClaimSet", "Mango-ClaimSet", "Zebra-ClaimSet");
         }
     }
 }

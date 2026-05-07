@@ -14,7 +14,7 @@ public interface IApplicationRepository
         ApplicationInsertCommand command,
         ApiClientCommand clientCommand
     );
-    Task<ApplicationQueryResult> QueryApplication(PagingQuery query);
+    Task<ApplicationQueryResult> QueryApplication(ApplicationQuery query);
     Task<ApplicationGetResult> GetApplication(long id);
     Task<ApplicationUpdateResult> UpdateApplication(
         ApplicationUpdateCommand command,

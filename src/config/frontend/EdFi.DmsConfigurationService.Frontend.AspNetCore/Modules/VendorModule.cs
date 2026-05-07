@@ -6,10 +6,10 @@
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
-using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
 using FluentValidation.Results;
 
@@ -75,11 +75,13 @@ public class VendorModule : IEndpointModule
 
     private static async Task<IResult> GetAll(
         IVendorRepository repository,
-        [AsParameters] PagingQuery query,
+        [AsParameters] FrontendVendorQuery query,
+        VendorPagingQueryValidator validator,
         HttpContext httpContext
     )
     {
-        VendorQueryResult getResult = await repository.QueryVendor(query);
+        await validator.GuardAsync(query);
+        VendorQueryResult getResult = await repository.QueryVendor(query.ToQuery());
         return getResult switch
         {
             VendorQueryResult.Success success => Results.Ok(success.VendorResponses),

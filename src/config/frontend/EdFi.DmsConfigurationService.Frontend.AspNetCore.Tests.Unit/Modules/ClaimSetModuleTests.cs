@@ -82,7 +82,7 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
                 .Returns(new ClaimSetInsertResult.Success(1));
 
-            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
                 .Returns(
                     new ClaimSetQueryResult.Success([
                         new ClaimSetResponse() { Name = "Test ClaimSet", IsSystemReserved = false },
@@ -556,7 +556,7 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
                 .Returns(new ClaimSetInsertResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
                 .Returns(new ClaimSetQueryResult.FailureUnknown(""));
 
             A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
@@ -1023,6 +1023,97 @@ public class ClaimSetModuleTests
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(actualResponseJson, expectedResponseJson).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Invalid_PagingQuery : ClaimSetModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
+                .Returns(new ClaimSetQueryResult.Success([]));
+        }
+
+        [Test]
+        public async Task Should_return_400_when_orderBy_is_invalid()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?orderBy=invalidField");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_direction_is_invalid()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?orderBy=id&direction=SIDEWAYS");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_offset_is_negative()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?offset=-1");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_limit_is_zero()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?limit=0");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_200_with_valid_orderBy_and_direction()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?orderBy=name&direction=DESC");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_filter_name_is_provided()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?name=MyClaimSet");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_filter_id_is_provided()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?id=1");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_offset_is_non_numeric()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?offset=abc");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_limit_is_non_numeric()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?limit=xyz");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_orderBy_omitted_with_direction()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/claimSets?direction=asc");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 }

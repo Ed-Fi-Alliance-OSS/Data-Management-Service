@@ -301,4 +301,170 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             contexts.Exists(c => c.ContextKey == "Key2" && c.ContextValue == "Value2").Should().BeTrue();
         }
     }
+
+    [TestFixture]
+    public class QueryPagingTests : DmsInstanceRouteContextTests
+    {
+        private long _instanceId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var derivativeRepository = new DmsInstanceDerivativeRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TestAuditContext()
+            );
+            var instanceRepository = new DmsInstanceRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                _repository,
+                derivativeRepository,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var instanceInsert = new DmsInstanceInsertCommand
+            {
+                InstanceType = "Production",
+                InstanceName = "Paging RouteContext Instance",
+                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
+            };
+            var instanceResult = await instanceRepository.InsertDmsInstance(instanceInsert);
+            instanceResult.Should().BeOfType<DmsInstanceInsertResult.Success>();
+            _instanceId = ((DmsInstanceInsertResult.Success)instanceResult).Id;
+
+            foreach (
+                var (contextKey, contextValue) in new[]
+                {
+                    ("Alpha", "ValueA"),
+                    ("Bravo", "ValueB"),
+                    ("Charlie", "ValueC"),
+                }
+            )
+            {
+                var insertResult = await _repository.InsertDmsInstanceRouteContext(
+                    new DmsInstanceRouteContextInsertCommand
+                    {
+                        InstanceId = _instanceId,
+                        ContextKey = contextKey,
+                        ContextValue = contextValue,
+                    }
+                );
+                insertResult.Should().BeOfType<DmsInstanceRouteContextInsertResult.Success>();
+            }
+        }
+
+        [Test]
+        public async Task Should_return_all_results_when_no_paging_params_provided()
+        {
+            var queryResult = await _repository.QueryInstanceRouteContext(new PagingQuery());
+            queryResult.Should().BeOfType<DmsInstanceRouteContextQueryResult.Success>();
+            ((DmsInstanceRouteContextQueryResult.Success)queryResult)
+                .DmsInstanceRouteContextResponses.Should()
+                .HaveCount(3);
+        }
+
+        [Test]
+        public async Task Should_apply_limit_when_limit_is_provided()
+        {
+            var queryResult = await _repository.QueryInstanceRouteContext(new PagingQuery { Limit = 2 });
+            queryResult.Should().BeOfType<DmsInstanceRouteContextQueryResult.Success>();
+            ((DmsInstanceRouteContextQueryResult.Success)queryResult)
+                .DmsInstanceRouteContextResponses.Should()
+                .HaveCount(2);
+        }
+
+        [Test]
+        public async Task Should_apply_offset_when_offset_is_provided()
+        {
+            var queryResult = await _repository.QueryInstanceRouteContext(new PagingQuery { Offset = 1 });
+            queryResult.Should().BeOfType<DmsInstanceRouteContextQueryResult.Success>();
+            ((DmsInstanceRouteContextQueryResult.Success)queryResult)
+                .DmsInstanceRouteContextResponses.Should()
+                .HaveCount(2);
+        }
+    }
+
+    [TestFixture]
+    public class QuerySortTests : DmsInstanceRouteContextTests
+    {
+        private long _instanceId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var derivativeRepository = new DmsInstanceDerivativeRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TestAuditContext()
+            );
+            var instanceRepository = new DmsInstanceRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                _repository,
+                derivativeRepository,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var instanceInsert = new DmsInstanceInsertCommand
+            {
+                InstanceType = "Production",
+                InstanceName = "Sort RouteContext Instance",
+                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
+            };
+            var instanceResult = await instanceRepository.InsertDmsInstance(instanceInsert);
+            instanceResult.Should().BeOfType<DmsInstanceInsertResult.Success>();
+            _instanceId = ((DmsInstanceInsertResult.Success)instanceResult).Id;
+
+            foreach (
+                var (contextKey, contextValue) in new[]
+                {
+                    ("Charlie", "ValueC"),
+                    ("Alpha", "ValueA"),
+                    ("Bravo", "ValueB"),
+                }
+            )
+            {
+                var insertResult = await _repository.InsertDmsInstanceRouteContext(
+                    new DmsInstanceRouteContextInsertCommand
+                    {
+                        InstanceId = _instanceId,
+                        ContextKey = contextKey,
+                        ContextValue = contextValue,
+                    }
+                );
+                insertResult.Should().BeOfType<DmsInstanceRouteContextInsertResult.Success>();
+            }
+        }
+
+        [Test]
+        public async Task Should_return_ascending_order_by_context_key()
+        {
+            var queryResult = await _repository.QueryInstanceRouteContext(
+                new PagingQuery { OrderBy = "contextKey", Direction = "ASC" }
+            );
+            queryResult.Should().BeOfType<DmsInstanceRouteContextQueryResult.Success>();
+            var contextKeys = ((DmsInstanceRouteContextQueryResult.Success)queryResult)
+                .DmsInstanceRouteContextResponses.Select(c => c.ContextKey)
+                .ToList();
+            contextKeys.Should().ContainInOrder("Alpha", "Bravo", "Charlie");
+        }
+
+        [Test]
+        public async Task Should_return_descending_order_by_context_key()
+        {
+            var queryResult = await _repository.QueryInstanceRouteContext(
+                new PagingQuery { OrderBy = "contextKey", Direction = "DESC" }
+            );
+            queryResult.Should().BeOfType<DmsInstanceRouteContextQueryResult.Success>();
+            var contextKeys = ((DmsInstanceRouteContextQueryResult.Success)queryResult)
+                .DmsInstanceRouteContextResponses.Select(c => c.ContextKey)
+                .ToList();
+            contextKeys.Should().ContainInOrder("Charlie", "Bravo", "Alpha");
+        }
+    }
 }

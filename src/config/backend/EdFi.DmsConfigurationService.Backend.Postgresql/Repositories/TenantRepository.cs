@@ -51,6 +51,25 @@ public class TenantRepository(
         }
     }
 
+    private static readonly IReadOnlyDictionary<string, string> OrderByColumns = new Dictionary<
+        string,
+        string
+    >(StringComparer.OrdinalIgnoreCase)
+    {
+        ["id"] = "Id",
+        ["name"] = "Name",
+    };
+
+    private static string BuildOrderByClause(PagingQuery query)
+    {
+        if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
+        {
+            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+        }
+
+        return "ORDER BY Id";
+    }
+
     public async Task<TenantQueryResult> QueryTenant(PagingQuery query)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -58,11 +77,12 @@ public class TenantRepository(
 
         try
         {
-            var sql = """
+            string orderByClause = BuildOrderByClause(query);
+            var sql = $"""
                 SELECT Id, Name
                 FROM dmscs.Tenant
-                ORDER BY Id
-                LIMIT @Limit OFFSET @Offset;
+                {orderByClause}
+                {query.BuildPagingClause()};
                 """;
 
             var tenants = await connection.QueryAsync<TenantResponse>(sql, query);

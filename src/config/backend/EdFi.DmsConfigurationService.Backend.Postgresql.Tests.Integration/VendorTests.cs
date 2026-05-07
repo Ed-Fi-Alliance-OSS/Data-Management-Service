@@ -47,7 +47,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
             [Test]
             public async Task Should_get_test_vendor_from_get_all()
             {
-                var getResult = await _repository.QueryVendor(new PagingQuery() { Limit = 25, Offset = 0 });
+                var getResult = await _repository.QueryVendor(new VendorQuery() { Limit = 25, Offset = 0 });
                 getResult.Should().BeOfType<VendorQueryResult.Success>();
 
                 var vendorFromDb = ((VendorQueryResult.Success)getResult).VendorResponses.First();
@@ -111,7 +111,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
             [Test]
             public async Task Should_get_update_vendor_from_get_all()
             {
-                var getResult = await _repository.QueryVendor(new PagingQuery() { Limit = 25, Offset = 0 });
+                var getResult = await _repository.QueryVendor(new VendorQuery() { Limit = 25, Offset = 0 });
                 getResult.Should().BeOfType<VendorQueryResult.Success>();
 
                 var vendorFromDb = ((VendorQueryResult.Success)getResult).VendorResponses.First();
@@ -173,7 +173,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
             [Test]
             public async Task Should_not_get_test_vendor_from_get_all()
             {
-                var getResult = await _repository.QueryVendor(new PagingQuery() { Limit = 25, Offset = 0 });
+                var getResult = await _repository.QueryVendor(new VendorQuery() { Limit = 25, Offset = 0 });
                 getResult.Should().BeOfType<VendorQueryResult.Success>();
 
                 ((VendorQueryResult.Success)getResult).VendorResponses.Count().Should().Be(1);
@@ -297,6 +297,108 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
             {
                 var getResult = await _repository.GetVendorApplications(_vendorIdNotExist);
                 getResult.Should().BeOfType<VendorApplicationsResult.FailureNotExists>();
+            }
+        }
+
+        [TestFixture]
+        public class QueryPagingTests : VendorTests
+        {
+            [SetUp]
+            public async Task Setup()
+            {
+                for (int i = 1; i <= 15; i++)
+                {
+                    VendorInsertCommand vendorCommand = new()
+                    {
+                        Company = $"Vendor-{i:D2}",
+                        ContactEmailAddress = $"vendor{i}@test.com",
+                        ContactName = "Paging Tester",
+                        NamespacePrefixes = $"uri://vendor-{i}.example",
+                    };
+                    var insertResult = await _repository.InsertVendor(vendorCommand);
+                    insertResult
+                        .Should()
+                        .BeOfType<VendorInsertResult.Success>(
+                            $"vendor {i} (Vendor-{i:D2}) should insert successfully"
+                        );
+                }
+            }
+
+            [Test]
+            public async Task Should_return_all_results_when_no_paging_params_provided()
+            {
+                var result = await _repository.QueryVendor(new VendorQuery());
+                result.Should().BeOfType<VendorQueryResult.Success>();
+                ((VendorQueryResult.Success)result).VendorResponses.Should().HaveCount(15);
+            }
+
+            [Test]
+            public async Task Should_apply_limit_when_limit_is_provided()
+            {
+                var result = await _repository.QueryVendor(new VendorQuery { Limit = 5 });
+                result.Should().BeOfType<VendorQueryResult.Success>();
+                ((VendorQueryResult.Success)result).VendorResponses.Should().HaveCount(5);
+            }
+
+            [Test]
+            public async Task Should_apply_offset_when_offset_is_provided()
+            {
+                var result = await _repository.QueryVendor(new VendorQuery { Offset = 10 });
+                result.Should().BeOfType<VendorQueryResult.Success>();
+                ((VendorQueryResult.Success)result).VendorResponses.Should().HaveCount(5);
+            }
+        }
+
+        [TestFixture]
+        public class QuerySortTests : VendorTests
+        {
+            [SetUp]
+            public async Task Setup()
+            {
+                foreach (var company in new[] { "Acme Corp", "Beta Inc", "Alpha Systems" })
+                {
+                    VendorInsertCommand vendorCommand = new()
+                    {
+                        Company = company,
+                        ContactEmailAddress = "sort@test.com",
+                        ContactName = "Sort Tester",
+                        NamespacePrefixes = $"uri://{company.ToLower().Replace(" ", "-")}.example",
+                    };
+                    var insertResult = await _repository.InsertVendor(vendorCommand);
+                    insertResult
+                        .Should()
+                        .BeOfType<VendorInsertResult.Success>(
+                            $"vendor '{company}' should insert successfully"
+                        );
+                }
+            }
+
+            [Test]
+            public async Task Should_return_ascending_order_by_company()
+            {
+                var result = await _repository.QueryVendor(
+                    new VendorQuery { OrderBy = "company", Direction = "ASC" }
+                );
+                result.Should().BeOfType<VendorQueryResult.Success>();
+                var companies = ((VendorQueryResult.Success)result)
+                    .VendorResponses.Select(v => v.Company)
+                    .ToList();
+                companies.Should().HaveCount(3);
+                companies.Should().ContainInOrder("Acme Corp", "Alpha Systems", "Beta Inc");
+            }
+
+            [Test]
+            public async Task Should_return_descending_order_by_company()
+            {
+                var result = await _repository.QueryVendor(
+                    new VendorQuery { OrderBy = "company", Direction = "DESC" }
+                );
+                result.Should().BeOfType<VendorQueryResult.Success>();
+                var companies = ((VendorQueryResult.Success)result)
+                    .VendorResponses.Select(v => v.Company)
+                    .ToList();
+                companies.Should().HaveCount(3);
+                companies.Should().ContainInOrder("Beta Inc", "Alpha Systems", "Acme Corp");
             }
         }
     }

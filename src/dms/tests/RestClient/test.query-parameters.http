@@ -1,0 +1,413 @@
+### DMS-1074 - Query parameter validation and relational query smoke tests
+#
+# Prereqs:
+#   1. Start the local DMS stack. For relational backend validation, use the same setup
+#      as the DMS E2E tests.
+#   2. Execute this file from top to bottom with the VS Code REST Client extension.
+#
+# This file follows getting-started.http for authentication:
+#   - mint a Configuration Service token
+#   - create a vendor, DMS instance, and application
+#   - check DMS discovery
+#   - mint a DMS bearer token from the Configuration Service with HTTP Basic auth
+#
+# Seed data is inserted through the DMS endpoints so paging, totalCount, and
+# property filters can be validated against known records.
+#
+# Note: this file intentionally does not call DMS /management/reload-claimsets.
+# That endpoint is optional and returns 404 when management endpoints are disabled
+# or when multitenancy requires a tenant route. Application credential creation
+# does not require a claimset reload.
+
+@dmsPort=8080
+@configPort=8081
+
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=ValidClientSecret1234567890!Abcd
+
+# DB + password match eng/docker-compose/.env by default.
+# If you started with .env.e2e.relational, change this to edfi_datamanagementservice_relational.
+@dmsDatabaseName=edfi_datamanagementservice
+@postgresPassword=abcdefgh1!
+
+# Static IDs make expected query results easy to inspect. If a prior run left data
+# behind, teardown/setup the dms-local stack before rerunning.
+@school1=1074101
+@school2=1074102
+@school3=1074103
+@school4=1074104
+@school5=1074105
+@student1=DMS1074-001
+@student2=DMS1074-002
+
+# -----------------------------------------------------------------------------
+# 1. Bootstrap auth and DMS application
+# -----------------------------------------------------------------------------
+
+### 1.1 Configuration-Service token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+### 1.2 Create a vendor scoped to the ed-fi namespace
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "company": "DMS-1074 Query Parameter Vendor {{$randomInt 0 9999999}}",
+  "contactName": "Query Parameter Tester",
+  "contactEmailAddress": "dms1074@example.com",
+  "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@vendorId={{createVendor.response.body.id}}
+
+### 1.3 Create a DMS instance pointing at the relational database
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "instanceType": "Test",
+  "instanceName": "DMS-1074 Query Parameters",
+  "connectionString": "host=dms-postgresql;port=5432;username=postgres;password={{postgresPassword}};database={{dmsDatabaseName}};NoResetOnClose=true;"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
+### 1.4 Create an application with broad E2E access
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "vendorId": {{vendorId}},
+  "applicationName": "DMS-1074 Query Parameters",
+  "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+  "educationOrganizationIds": [ {{school1}}, {{school2}}, {{school3}}, {{school4}}, {{school5}} ],
+  "dmsInstanceIds": [ {{dmsInstanceId}} ]
+}
+
+###
+@clientId={{createApplication.response.body.key}}
+@clientSecret={{createApplication.response.body.secret}}
+
+### 1.5 DMS discovery / service check
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+
+### 1.6 DMS token
+# Use the Configuration Service token endpoint directly instead of the DMS
+# /oauth/token proxy. The proxy forwards to this upstream, but local stacks can
+# return 502 when AppSettings__AuthenticationService is pointed at an unavailable
+# upstream. The issued token is still valid for DMS because the application was
+# created through CMS and DMS validates the same issuer.
+# @name dmsTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Authorization: basic {{clientId}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken={{dmsTokenRequest.response.body.access_token}}
+
+# -----------------------------------------------------------------------------
+# 2. Seed descriptors and resources through DMS endpoints
+# -----------------------------------------------------------------------------
+
+### 2.1 Grade level descriptor used by all schools
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+  "codeValue": "DMS-1074 Grade",
+  "shortDescription": "DMS-1074 Grade"
+}
+
+### 2.2 Education organization category descriptor used by all schools
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+  "codeValue": "DMS-1074 School",
+  "shortDescription": "DMS-1074 School"
+}
+
+### 2.3 School 1
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "schoolId": {{school1}},
+  "nameOfInstitution": "DMS-1074 School 1",
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#DMS-1074 School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#DMS-1074 Grade" }
+  ]
+}
+
+### 2.4 School 2
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "schoolId": {{school2}},
+  "nameOfInstitution": "DMS-1074 School 2",
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#DMS-1074 School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#DMS-1074 Grade" }
+  ]
+}
+
+### 2.5 School 3
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "schoolId": {{school3}},
+  "nameOfInstitution": "DMS-1074 School 3",
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#DMS-1074 School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#DMS-1074 Grade" }
+  ]
+}
+
+### 2.6 School 4
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "schoolId": {{school4}},
+  "nameOfInstitution": "DMS-1074 School 4",
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#DMS-1074 School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#DMS-1074 Grade" }
+  ]
+}
+
+### 2.7 School 5
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "schoolId": {{school5}},
+  "nameOfInstitution": "DMS-1074 School 5",
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#DMS-1074 School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#DMS-1074 Grade" }
+  ]
+}
+
+### 2.8 Class period with a boolean query field
+POST {{dataApi}}/ed-fi/classPeriods
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "schoolReference": {
+    "schoolId": {{school1}}
+  },
+  "classPeriodName": "DMS-1074 Class Period",
+  "officialAttendancePeriod": true
+}
+
+### 2.9 Student 1 with a date query field
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "studentUniqueId": "{{student1}}",
+  "birthDate": "2010-01-13",
+  "firstName": "DMS1074",
+  "lastSurname": "StudentOne"
+}
+
+### 2.10 Student 2 with a date query field
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "studentUniqueId": "{{student2}}",
+  "birthDate": "2011-02-14",
+  "firstName": "DMS1074",
+  "lastSurname": "StudentTwo"
+}
+
+### 2.11 Student-school association for composite/reference filter coverage
+POST {{dataApi}}/ed-fi/studentSchoolAssociations
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "studentReference": {
+    "studentUniqueId": "{{student1}}"
+  },
+  "schoolReference": {
+    "schoolId": {{school1}}
+  },
+  "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#DMS-1074 Grade",
+  "entryDate": "2024-08-01"
+}
+
+# -----------------------------------------------------------------------------
+# 3. Happy-path collection query checks
+# -----------------------------------------------------------------------------
+
+### 3.1 Baseline schools query - expect 200 and seeded schools in deterministic ID order
+GET {{dataApi}}/ed-fi/schools?schoolId={{school1}}&totalCount=true
+Authorization: bearer {{dmsToken}}
+
+### 3.2 Paging: valid offset and limit - expect schools 4 and 5 in the page
+GET {{dataApi}}/ed-fi/schools?offset=3&limit=2
+Authorization: bearer {{dmsToken}}
+
+### 3.3 Paging: offset greater than total - expect 200 and []
+GET {{dataApi}}/ed-fi/schools?offset=600&limit=5
+Authorization: bearer {{dmsToken}}
+
+### 3.4 Paging: offset without limit - expect 200; skips the first four rows in collection order
+GET {{dataApi}}/ed-fi/schools?offset=4
+Authorization: bearer {{dmsToken}}
+
+### 3.5 Property filter + limit - expect only DMS-1074 School 5
+GET {{dataApi}}/ed-fi/schools?nameOfInstitution=DMS-1074+School+5&limit=2
+Authorization: bearer {{dmsToken}}
+
+### 3.6 Numeric property filter - expect school 3
+GET {{dataApi}}/ed-fi/schools?schoolId={{school3}}
+Authorization: bearer {{dmsToken}}
+
+### 3.7 Descriptor endpoint filter - expect DMS-1074 Grade descriptor
+GET {{dataApi}}/ed-fi/gradeLevelDescriptors?codeValue=DMS-1074+Grade&totalCount=true
+Authorization: bearer {{dmsToken}}
+
+### 3.8 Boolean property filter - expect DMS-1074 Class Period
+GET {{dataApi}}/ed-fi/classPeriods?officialAttendancePeriod=true
+Authorization: bearer {{dmsToken}}
+
+### 3.9 Date property filter - expect Student 1
+GET {{dataApi}}/ed-fi/students?birthDate=2010-01-13
+Authorization: bearer {{dmsToken}}
+
+### 3.10 Reference/composite resource filter with paging - expect association for Student 1
+GET {{dataApi}}/ed-fi/studentSchoolAssociations?studentUniqueId={{student1}}&offset=0&limit=10
+Authorization: bearer {{dmsToken}}
+
+# -----------------------------------------------------------------------------
+# 4. totalCount header checks
+# -----------------------------------------------------------------------------
+
+### 4.1 No matches with totalCount=true - expect Total-Count: 0
+GET {{dataApi}}/ed-fi/schools?totalCount=true&nameOfInstitution=does+not+exist
+Authorization: bearer {{dmsToken}}
+
+### 4.2 totalCount=false - expect no Total-Count header
+GET {{dataApi}}/ed-fi/schools?totalCount=false
+Authorization: bearer {{dmsToken}}
+
+### 4.3 totalCount omitted - expect no Total-Count header
+GET {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+
+### 4.4 totalCount=true with limit - expect page shorter than Total-Count
+GET {{dataApi}}/ed-fi/schools?totalCount=true&limit=2
+Authorization: bearer {{dmsToken}}
+
+# -----------------------------------------------------------------------------
+# 5. Case-insensitive query parameter checks
+# -----------------------------------------------------------------------------
+
+### 5.1 Case-insensitive resource query field name - expect DMS-1074 Class Period
+GET {{dataApi}}/ed-fi/classPeriods?CLaSSperIODName=DMS-1074+Class+Period
+Authorization: bearer {{dmsToken}}
+
+### 5.2 Case-insensitive LIMIT parameter - expect one school
+GET {{dataApi}}/ed-fi/schools?liMIt=1
+Authorization: bearer {{dmsToken}}
+
+### 5.3 Case-insensitive OFFSET parameter - expect 200; skips the first school
+GET {{dataApi}}/ed-fi/schools?OfFSeT=1&limit=1
+Authorization: bearer {{dmsToken}}
+
+### 5.4 Case-insensitive TOTALCOUNT parameter/value - expect Total-Count header
+GET {{dataApi}}/ed-fi/schools?tOtAlCoUnT=trUE&limit=1
+Authorization: bearer {{dmsToken}}
+
+# -----------------------------------------------------------------------------
+# 6. Validation failures
+# -----------------------------------------------------------------------------
+
+### 6.1 Invalid offset: negative - expect 400
+GET {{dataApi}}/ed-fi/schools?offset=-1
+Authorization: bearer {{dmsToken}}
+
+### 6.2 Invalid offset: SQL-style payload - expect 400
+GET {{dataApi}}/ed-fi/schools?offset=5%3B%20select%20*%20from%20users
+Authorization: bearer {{dmsToken}}
+
+### 6.3 Invalid limit: negative - expect 400
+GET {{dataApi}}/ed-fi/schools?offset=0&limit=-1
+Authorization: bearer {{dmsToken}}
+
+### 6.4 Invalid limit: greater than maximum page size - expect 400
+GET {{dataApi}}/ed-fi/schools?offset=0&limit=900
+Authorization: bearer {{dmsToken}}
+
+### 6.5 Invalid totalCount value - expect 400
+GET {{dataApi}}/ed-fi/schools?totalCount=100
+Authorization: bearer {{dmsToken}}
+
+### 6.6 Invalid query field for resource - expect 400
+GET {{dataApi}}/ed-fi/schools?invalidSchoolId={{school1}}
+Authorization: bearer {{dmsToken}}
+
+### 6.7 Invalid numeric query value - expect 400 data validation failure
+GET {{dataApi}}/ed-fi/schools?schoolId=not-a-number
+Authorization: bearer {{dmsToken}}
+
+### 6.8 Invalid boolean query value - expect 400 data validation failure
+GET {{dataApi}}/ed-fi/classPeriods?officialAttendancePeriod=not-a-boolean
+Authorization: bearer {{dmsToken}}
+
+### 6.9 Invalid date query value - expect 400 data validation failure
+GET {{dataApi}}/ed-fi/students?birthDate=not-a-date
+Authorization: bearer {{dmsToken}}

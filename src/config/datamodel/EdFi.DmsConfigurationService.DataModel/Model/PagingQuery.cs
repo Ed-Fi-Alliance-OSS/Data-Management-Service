@@ -6,10 +6,44 @@
 namespace EdFi.DmsConfigurationService.DataModel.Model;
 
 /// <summary>
-/// Used in queries where paging is supported.
+/// Used in queries where paging and sorting are supported.
 /// </summary>
 public class PagingQuery
 {
-    public int? Offset { get; set; } = 0;
-    public int? Limit { get; set; } = 25;
+    public int? Offset { get; set; }
+    public int? Limit { get; set; }
+
+    public string? OrderBy { get; set; }
+
+    public string? Direction { get; set; }
+
+    public bool IsDescending =>
+        Direction is not null
+        && (
+            Direction.Equals("desc", StringComparison.OrdinalIgnoreCase)
+            || Direction.Equals("descending", StringComparison.OrdinalIgnoreCase)
+        );
+
+    /// <summary>
+    /// Returns a SQL LIMIT/OFFSET clause only when values are explicitly provided.
+    /// Returns empty string when both are null, ensuring no implicit row cap is applied.
+    /// When only Offset is provided (no Limit), returns "OFFSET @Offset" — valid in
+    /// PostgreSQL but callers should verify their base SQL handles this correctly.
+    /// </summary>
+    public string BuildPagingClause()
+    {
+        if (!Limit.HasValue && !Offset.HasValue)
+        {
+            return string.Empty;
+        }
+        if (Limit.HasValue && Offset.HasValue)
+        {
+            return "LIMIT @Limit OFFSET @Offset";
+        }
+        if (Limit.HasValue)
+        {
+            return "LIMIT @Limit";
+        }
+        return "OFFSET @Offset";
+    }
 }

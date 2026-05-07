@@ -101,7 +101,7 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationInsertResult.Success(1));
 
-            A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
+            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
                 .Returns(
                     new ApplicationQueryResult.Success([
                         new ApplicationResponse()
@@ -562,7 +562,7 @@ public class ApplicationModuleTests
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
                 .Returns(new ClientResetResult.FailureUnknown(""));
 
-            A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
+            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
                 .Returns(new ApplicationQueryResult.FailureUnknown(""));
 
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
@@ -665,7 +665,7 @@ public class ApplicationModuleTests
                     )
                 );
 
-            A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
+            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
                 .Returns(new ApplicationQueryResult());
 
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
@@ -1480,6 +1480,133 @@ public class ApplicationModuleTests
             var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
 
             resetResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Invalid_PagingQuery : ApplicationModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
+                .Returns(new ApplicationQueryResult.Success([]));
+        }
+
+        [Test]
+        public async Task Should_return_400_when_orderBy_is_invalid()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?orderBy=invalidField");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_direction_is_invalid()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?orderBy=id&direction=SIDEWAYS");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_offset_is_negative()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?offset=-1");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_limit_is_zero()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?limit=0");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_200_with_valid_orderBy_and_direction()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?orderBy=applicationName&direction=ASC");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_ids_is_valid_list()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?ids=1,2,3");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_ids_has_whitespace()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?ids=1%2C+2+%2C+3");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_ids_contains_non_integer()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?ids=1%2Cabc%2C3");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("The 'ids' query parameter must be a comma-separated list of integers.");
+        }
+
+        [Test]
+        public async Task Should_return_200_when_ids_is_single_value()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?ids=42");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_filter_applicationName_is_provided()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?applicationName=MyApp");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_id_and_ids_are_used_together()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?id=5&ids=1,2,3");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("'id' and 'ids' cannot be used together.");
+        }
+
+        [Test]
+        public async Task Should_return_400_when_offset_is_non_numeric()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?offset=abc");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_limit_is_non_numeric()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?limit=xyz");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_orderBy_omitted_with_direction()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/applications?direction=asc");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 

@@ -383,3 +383,24 @@ Feature: DmsInstanceDerivatives endpoints
              When a GET request is made to "/v2/dmsInstanceDerivatives/{dmsInstanceDerivativeId}"
              Then it should respond with 404
 
+        Scenario: 20 Ensure clients can GET dmsInstanceDerivatives list with paging
+             When a POST request is made to "/v2/dmsInstanceDerivatives" with
+                  """
+                    {
+                        "instanceId": {dmsInstanceId},
+                        "derivativeType": "ReadReplica",
+                        "connectionString": "Server=list-a;Database=ListADb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v2/dmsInstanceDerivatives" with
+                  """
+                    {
+                        "instanceId": {dmsInstanceId},
+                        "derivativeType": "Snapshot",
+                        "connectionString": "Server=list-b;Database=ListBDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a GET request is made to "/v2/dmsInstanceDerivatives?offset=0&limit=1"
+             Then it should respond with 200

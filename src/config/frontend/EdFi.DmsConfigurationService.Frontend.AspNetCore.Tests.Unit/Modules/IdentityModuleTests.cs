@@ -32,8 +32,8 @@ public class RegisterEndpointTests
 
     private IIdentityProviderRepository? _clientRepository;
 
-    private static RegisterRequest.Validator CreateRegisterRequestValidator()
-        => new(Options.Create(DefaultClientSecretValidationOptions));
+    private static RegisterRequest.Validator CreateRegisterRequestValidator() =>
+        new(Options.Create(DefaultClientSecretValidationOptions));
 
     [SetUp]
     public void Setup()
@@ -505,8 +505,10 @@ public class TokenEndpointTests
         var encodedCredentials = Convert.ToBase64String(
             System.Text.Encoding.UTF8.GetBytes("client%3Awith%2Breserved:secret%3Awith%25reserved%2Bchars")
         );
-        client.DefaultRequestHeaders.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encodedCredentials);
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encodedCredentials
+        );
 
         // Act
         var requestContent = new FormUrlEncodedContent(
@@ -527,8 +529,7 @@ public class TokenEndpointTests
                             pair.Key == "client_id" && pair.Value == "client:with+reserved"
                         )
                         && credentials.Any(pair =>
-                            pair.Key == "client_secret"
-                            && pair.Value == "secret:with%reserved+chars"
+                            pair.Key == "client_secret" && pair.Value == "secret:with%reserved+chars"
                         )
                     )
                 )

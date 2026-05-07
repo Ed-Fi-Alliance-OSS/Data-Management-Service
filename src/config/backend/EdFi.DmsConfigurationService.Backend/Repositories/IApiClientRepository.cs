@@ -17,7 +17,7 @@ public interface IApiClientRepository
     );
     Task<ApiClientUpdateResult> UpdateApiClient(ApiClientUpdateCommand command);
     Task<ApiClientDeleteResult> DeleteApiClient(long id);
-    Task<ApiClientQueryResult> QueryApiClient(PagingQuery query);
+    Task<ApiClientQueryResult> QueryApiClient(ApiClientQuery query);
     Task<ApiClientGetResult> GetApiClientByClientId(string clientId);
     Task<ApiClientGetResult> GetApiClientById(long id);
 }

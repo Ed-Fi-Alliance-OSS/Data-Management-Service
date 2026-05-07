@@ -416,6 +416,124 @@ public class DmsInstanceDerivativeTests : DatabaseTest
     }
 
     [TestFixture]
+    public class QueryPagingTests : DmsInstanceDerivativeTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            var instanceResult = await _instanceRepository.InsertDmsInstance(
+                new DmsInstanceInsertCommand
+                {
+                    InstanceType = "Production",
+                    InstanceName = "Paging Parent Instance",
+                    ConnectionString = "Server=parent;Database=ParentDb;",
+                }
+            );
+            var instanceId = ((DmsInstanceInsertResult.Success)instanceResult).Id;
+
+            foreach (var derivativeType in new[] { "Alpha", "Bravo", "Charlie" })
+            {
+                var insertResult = await _repository.InsertDmsInstanceDerivative(
+                    new DmsInstanceDerivativeInsertCommand
+                    {
+                        InstanceId = instanceId,
+                        DerivativeType = derivativeType,
+                        ConnectionString = $"Server={derivativeType};Database={derivativeType}Db;",
+                    }
+                );
+                insertResult.Should().BeOfType<DmsInstanceDerivativeInsertResult.Success>();
+            }
+        }
+
+        [Test]
+        public async Task It_should_return_all_results_when_no_paging_params_provided()
+        {
+            var getResult = await _repository.QueryDmsInstanceDerivative(new PagingQuery());
+            getResult.Should().BeOfType<DmsInstanceDerivativeQueryResult.Success>();
+            ((DmsInstanceDerivativeQueryResult.Success)getResult)
+                .DmsInstanceDerivativeResponses.Should()
+                .HaveCount(3);
+        }
+
+        [Test]
+        public async Task It_should_apply_limit_when_limit_is_provided()
+        {
+            var getResult = await _repository.QueryDmsInstanceDerivative(new PagingQuery { Limit = 2 });
+            getResult.Should().BeOfType<DmsInstanceDerivativeQueryResult.Success>();
+            ((DmsInstanceDerivativeQueryResult.Success)getResult)
+                .DmsInstanceDerivativeResponses.Should()
+                .HaveCount(2);
+        }
+
+        [Test]
+        public async Task It_should_apply_offset_when_offset_is_provided()
+        {
+            var getResult = await _repository.QueryDmsInstanceDerivative(new PagingQuery { Offset = 1 });
+            getResult.Should().BeOfType<DmsInstanceDerivativeQueryResult.Success>();
+            ((DmsInstanceDerivativeQueryResult.Success)getResult)
+                .DmsInstanceDerivativeResponses.Should()
+                .HaveCount(2);
+        }
+    }
+
+    [TestFixture]
+    public class QuerySortTests : DmsInstanceDerivativeTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            var instanceResult = await _instanceRepository.InsertDmsInstance(
+                new DmsInstanceInsertCommand
+                {
+                    InstanceType = "Production",
+                    InstanceName = "Sort Parent Instance",
+                    ConnectionString = "Server=parent;Database=ParentDb;",
+                }
+            );
+            var instanceId = ((DmsInstanceInsertResult.Success)instanceResult).Id;
+
+            foreach (var derivativeType in new[] { "Charlie", "Alpha", "Bravo" })
+            {
+                var insertResult = await _repository.InsertDmsInstanceDerivative(
+                    new DmsInstanceDerivativeInsertCommand
+                    {
+                        InstanceId = instanceId,
+                        DerivativeType = derivativeType,
+                        ConnectionString = $"Server={derivativeType};Database={derivativeType}Db;",
+                    }
+                );
+                insertResult.Should().BeOfType<DmsInstanceDerivativeInsertResult.Success>();
+            }
+        }
+
+        [Test]
+        public async Task It_should_return_ascending_order_by_derivative_type()
+        {
+            var getResult = await _repository.QueryDmsInstanceDerivative(
+                new PagingQuery { OrderBy = "derivativeType", Direction = "ASC" }
+            );
+            getResult.Should().BeOfType<DmsInstanceDerivativeQueryResult.Success>();
+            var derivativeTypes = ((DmsInstanceDerivativeQueryResult.Success)getResult)
+                .DmsInstanceDerivativeResponses.Select(d => d.DerivativeType)
+                .ToList();
+            derivativeTypes.Should().ContainInOrder("Alpha", "Bravo", "Charlie");
+        }
+
+        [Test]
+        public async Task It_should_return_descending_order_by_derivative_type()
+        {
+            var getResult = await _repository.QueryDmsInstanceDerivative(
+                new PagingQuery { OrderBy = "derivativeType", Direction = "DESC" }
+            );
+            getResult.Should().BeOfType<DmsInstanceDerivativeQueryResult.Success>();
+            var derivativeTypes = ((DmsInstanceDerivativeQueryResult.Success)getResult)
+                .DmsInstanceDerivativeResponses.Select(d => d.DerivativeType)
+                .ToList();
+            derivativeTypes.Should().ContainInOrder("Charlie", "Bravo", "Alpha");
+        }
+    }
+
+    [TestFixture]
     public class Given_update_derivative_with_invalid_instance_id : DmsInstanceDerivativeTests
     {
         private long _instanceId;
