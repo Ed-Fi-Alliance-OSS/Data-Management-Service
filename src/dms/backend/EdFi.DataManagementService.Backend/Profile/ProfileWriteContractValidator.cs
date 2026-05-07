@@ -269,6 +269,14 @@ internal static class ProfileWriteContractValidator
                 operation,
                 failures
             );
+            DetectInStoredBucketAmbiguity(
+                context.VisibleStoredCollectionRows,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
         }
 
         return [.. failures];
@@ -767,6 +775,41 @@ internal static class ProfileWriteContractValidator
                 jsonScope: bucket.Key.JsonScope,
                 parentAddress: bucket.Key.ParentAddress,
                 kind: AmbiguousStorageCollapsedIdentityKind.InRequest,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+        }
+    }
+
+    private static void DetectInStoredBucketAmbiguity(
+        ImmutableArray<VisibleStoredCollectionRow> visibleStoredRows,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        if (visibleStoredRows.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var bucketed = visibleStoredRows.GroupBy(
+            row => (row.Address.JsonScope, row.Address.ParentAddress),
+            ScopeBucketKeyComparer.Instance
+        );
+
+        foreach (var bucket in bucketed)
+        {
+            AddCollapsedConflicts(
+                bucket.Select(r => r.Address.SemanticIdentityInOrder),
+                jsonScope: bucket.Key.JsonScope,
+                parentAddress: bucket.Key.ParentAddress,
+                kind: AmbiguousStorageCollapsedIdentityKind.InStored,
                 profileName,
                 resourceName,
                 method,
