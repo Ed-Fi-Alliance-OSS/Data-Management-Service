@@ -8,3 +8,8 @@ Task complete: ETag Canonicalization. Story: reference/design/backend-redesign/e
 Decisions: moved `_etag` hashing onto a recursive canonicalization pass that strips server metadata anywhere in the served document, including nested `link` decorations. Kept descriptor hashing on the same formatter path and preserved `RefreshEtag` behavior for projected reads.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalApiMetadataFormatter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalApiMetadataFormatterTests.cs; tasks.json
 Notes: formatter/read-surface unit loops green. Current-ETag lock/read helpers and 412 mapping still open in later tasks. No blockers.
+
+Task complete: Result Mapping. Story: reference/design/backend-redesign/epics/10-update-tracking-change-queries/03-if-match.md
+Decisions: added explicit UpsertFailureETagMisMatch shared contract instead of overloading write-conflict/unknown paths; UpsertHandler now emits the same optimistic-lock 412 body as update/delete; retry loop remains write-conflict-only so stale If-Match is non-retryable.
+Files changed: src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpsertResult.cs; src/dms/core/EdFi.DataManagementService.Core/Handler/UpsertHandler.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/UpsertHandlerTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/DeadlockRetryPolicyTests.cs; tasks.json
+Notes: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "UpsertHandler|DeadlockRetryPolicy"` passed (41/41). Backend producers still need to return the new result in later tasks. No blockers.

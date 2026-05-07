@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
@@ -478,6 +479,50 @@ public class UpsertHandlerTests
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(500);
             requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Etag_Mismatch : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(new UpsertFailureETagMisMatch());
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo("trace-id");
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await upsertHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(412);
+            JsonNode
+                .DeepEquals(
+                    requestInfo.FrontendResponse.Body,
+                    FailureResponse.ForETagMisMatch(
+                        "The item has been modified by another user.",
+                        new TraceId("trace-id"),
+                        [
+                            "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
+                        ]
+                    )
+                )
+                .Should()
+                .BeTrue();
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }

@@ -61,6 +61,11 @@ public record UpsertResult
     public record UpsertFailureWriteConflict() : UpsertResult();
 
     /// <summary>
+    /// A failure because the current ETag does not exactly match the request's If-Match precondition
+    /// </summary>
+    public record UpsertFailureETagMisMatch() : UpsertResult();
+
+    /// <summary>
     /// A failure because the client is not authorized to upsert the document
     /// </summary>
     public record UpsertFailureNotAuthorized(string[] ErrorMessages, string[]? Hints = null) : UpsertResult();
