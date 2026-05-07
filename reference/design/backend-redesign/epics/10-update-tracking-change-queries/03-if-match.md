@@ -38,8 +38,8 @@ Implement optimistic concurrency checks using stored representation stamps for r
 - When `POST` resolves to a new document and the request includes `If-Match`, the request fails with `412`; DMS does
   not ignore the header and does not treat it as an insert precondition success.
 - If the shared guarded no-op executor path introduced by `DMS-984` and extended by `DMS-1124` reports that a no-op
-  decision became stale before the guarded short-circuit step and `If-Match` no longer matches the current `_etag`,
-  the request fails rather than returning success based on stale data.
+  decision became stale before the guarded short-circuit step and `If-Match` was supplied, the request fails rather
+  than returning success based on stale data.
 - The check is resource-state-sensitive and reflects dependency identity changes.
 - Descriptor `PUT`, descriptor `DELETE`, and descriptor `POST` upsert-as-update enforce the same optional exact-match
   `If-Match` semantics as relational document resources.
@@ -82,8 +82,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
   1. For profiled requests, should If-Match compare against the full resource _etag, or the profile-projected representation _etag that a client would have received from a profiled GET? This affects
      both comparison and the ETag returned from successful profiled writes.
-  2. On a stale guarded no-op, should If-Match cause an immediate 412, or should we re-read/recompute the current _etag and only return 412 if the header no longer matches? The story wording says “if
-     If-Match no longer matches,” while the profile design says stale + If-Match returns 412.
+  2. On a stale guarded no-op, should If-Match cause an immediate 412, or should we re-read/recompute the current _etag and only return 412 if the header no longer matches?
   3. Should the If-Match check lock the target dms.Document row through the write/delete transaction for changed writes too? The existing freshness checker locks only guarded no-op rechecks, and
      relational DELETE has the If-Match work explicitly deferred at src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:330.
   4. What error precedence do you want for POST with If-Match that resolves to a new document but also has other request problems, such as invalid references or profile validation failures? Should
@@ -102,8 +101,8 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
   1. Profiled requests: compare against the profile-projected _etag the client would have received from a profiled GET, and return that same profile-surface ETag on successful profiled writes. This
      matches update-tracking.md, which says readable-profile responses recompute _etag from the projected document.
-  2. Stale guarded no-op: follow the profile/concurrency design: stale no-op + present If-Match should return 412 immediately. I would update the story wording from “if If-Match no longer matches” to
-     “if the guarded no-op freshness check is stale and If-Match was supplied.” Without If-Match, abandon the no-op fast path and re-evaluate/retry.
+  2. Stale guarded no-op: follow the profile/concurrency design. Stale no-op + present If-Match should return 412 immediately. The story wording should say “if the guarded no-op freshness check is
+     stale and If-Match was supplied.” Without If-Match, abandon the no-op fast path and re-evaluate/retry.
   3. Locking: yes, for operations that supply If-Match, lock the target dms.Document row through the transaction before comparing and before changed write/delete DML. This is still row-local locking,
      not dependency locking. It prevents a check-then-write race where another write changes the representation after the ETag comparison.
   4. POST create-new with If-Match precedence: once the request is valid enough to resolve the target identity, if POST resolves to create-new and If-Match is present, return 412 before deeper backend
@@ -137,7 +136,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
   1. Use a typed precondition contract. Add something like IfMatchPrecondition / WritePrecondition, built once from request headers with exact opaque-string semantics. Do not have relational or
      descriptor code read Headers["If-Match"] directly. Pass the typed value through RelationalWriteExecutorRequest, DescriptorWriteRequest, and a descriptor delete request shape.
   2. Yes, the authoritative check belongs inside the transaction. Treat the repository’s first target lookup as advisory. For present If-Match, re-resolve or confirm the target in the write/delete
-     transaction, lock dms.Document, compute the current served _etag, compare, then keep the lock through DML/delete/commit. This matches the earlier answer in reference/design/backend-redesign/
+     transaction, lock dms.Document, compute the current resource-state _etag, compare, then keep the lock through DML/delete/commit. This matches the earlier answer in reference/design/backend-redesign/
      epics/10-update-tracking-change-queries/03-if-match.md:95.
   3. Yes, stale guarded no-op plus If-Match should bypass retry and return 412. The current repository retry loop retries stale no-op unconditionally at src/dms/backend/
      EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:700. Change that so retry only applies when the precondition is absent.
