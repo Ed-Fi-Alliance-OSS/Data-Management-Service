@@ -1,5 +1,6 @@
 ---
-design: DMS-916
+jira: DMS-1150
+jira_url: https://edfi.atlassian.net/browse/DMS-1150
 ---
 
 # Story: Bootstrap Schema and Security Selection
@@ -9,11 +10,11 @@ design: DMS-916
 Implement the first schema and security input slice for developer bootstrap over the stable direct filesystem
 contract. This slice covers:
 
-- direct filesystem schema bootstrap through `-ApiSchemaPath` for core-only, core plus recognized mapped
-  extensions, and custom schema/security/seed inputs,
+- direct filesystem schema bootstrap through `-ApiSchemaPath` for core-only, core plus extensions, and custom
+  schema/security/seed inputs,
 - additive security staging through `-ClaimsDirectoryPath`,
-- the shared v1 mapping used to recognize supported extension schemas and stage their base security
-  fragments when those schemas are already present in the direct filesystem input.
+- staging base security fragments available for the selected schema set when those schemas are already present
+  in the direct filesystem input.
 
 This story intentionally does not implement package-backed standard selection through omitted `-Extensions`
 or named `-Extensions`. Those modes remain in the main bootstrap design as the target day-to-day developer
@@ -33,18 +34,15 @@ run:
 - IDE-hosted DMS startup.
 
 The same workspace also carries optional schema-adjacent static content and
-`bootstrap-api-schema-manifest.json` as defined in [`../apischema-container.md`](../apischema-container.md).
+`bootstrap-api-schema-manifest.json` as defined in [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md).
 That manifest indexes normalized schema and content paths, but it is not a second schema authority.
 
 Bootstrap must not invent a second schema fingerprint or a second schema-resolution path.
 In this story, the selected schema set drives the DDL target, the hash-validation path, and the exact
 physical schema footprint for the run. A direct filesystem input containing only the core schema yields only
-core tables. Core plus a recognized mapped extension such as Sample yields the tables required by that
+core tables. Core plus an extension such as Sample yields the tables required by that
 combined schema set. A database provisioned for a different extension selection is incompatible existing
 state for this story's bootstrap run.
-This story also makes the default-profile migration explicit: the current `eng/docker-compose` baseline
-includes TPDM in `SCHEMA_PACKAGES`, but TPDM is not available as of Ed-Fi 6.2 and is therefore outside
-the recognized mapped extension surface for this story.
 
 Within the composable bootstrap design, schema selection and asset-container staging are owned exclusively by the
 `prepare-dms-schema.ps1` phase command (see `command-boundaries.md` Section 3.1). Claims and security staging are
@@ -59,10 +57,10 @@ Story 06 package-backed standard-mode slice but does not replace or deprecate di
 
 **Mode-to-security summary (normative for Story 00):** The effective staged schema set from `-ApiSchemaPath`
 is the single source of truth for the staged ApiSchema files and for the matching base staged claimset
-fragments for core and recognized mapped extension schemas. If `-ApiSchemaPath` stages unmapped non-core
-schemas, `-ClaimsDirectoryPath` is required for caller-supplied fragments. No later phase re-derives or
-replaces that security selection. Story 06 package-backed `-Extensions` mode must feed the same root bootstrap
-manifest schema contract and claims-staging contract rather than introducing a second path.
+fragments available for the run. If `-ApiSchemaPath` stages schemas that need additional security metadata,
+`-ClaimsDirectoryPath` is required for caller-supplied fragments. No later phase re-derives or replaces that
+security selection. Story 06 package-backed `-Extensions` mode must feed the same root bootstrap manifest
+schema contract and claims-staging contract rather than introducing a second path.
 
 ## Acceptance Criteria
 
@@ -71,29 +69,28 @@ manifest schema contract and claims-staging contract rather than introducing a s
 - Direct filesystem `-ApiSchemaPath` loading is the only schema input contract delivered by this story.
   It normalizes developer-supplied `ApiSchema*.json` files and any optional schema-adjacent static content
   through the staged workspace, requires the staged result to be exactly one core schema plus zero or more
-  extensions, and drives automatic base security selection for core and recognized mapped extension schemas.
+  extensions, and drives automatic base security selection from the staged schema and available claims inputs.
 - The staged ApiSchema workspace contains `bootstrap-api-schema-manifest.json` with deterministic
   manifest-relative paths for each selected project's normalized schema file and optional static content. This
   ApiSchema manifest is a runtime asset index only.
 - `prepare-dms-schema.ps1` writes the schema section of
   `eng/docker-compose/.bootstrap/bootstrap-manifest.json` with schema selection mode (`ApiSchemaPath`),
-  selected mapped extension names, expected `EffectiveSchemaHash`, an ApiSchema workspace fingerprint, and the
-  relative ApiSchema manifest path. Extension namespace prefixes come from the same v1 extension catalog used
-  by the phase-owned lookups and are recorded later in the seed section by claims staging.
+  selected extension names, expected `EffectiveSchemaHash`, an ApiSchema workspace fingerprint, and the
+  relative ApiSchema manifest path. Extension namespace prefixes are recorded later in the seed section by
+  claims staging.
 - Bootstrap detects normalized-path collisions before finalizing the staged ApiSchema workspace.
 - Package-backed selection, asset-only NuGet package extraction, package rejection for DLL-only packages,
   no-argument core-only convenience, and named `-Extensions` convenience are not Story 00 acceptance
   criteria; they are Story 06 acceptance criteria.
-- `-ClaimsDirectoryPath` is required with `-ApiSchemaPath` when the staged set contains unmapped non-core
-  schemas, and additive otherwise.
+- `-ClaimsDirectoryPath` is required with `-ApiSchemaPath` when the staged set needs additional non-core
+  security metadata, and additive otherwise.
 - `-ClaimsDirectoryPath` is additive-only: fragments may attach permissions only to effective claim set
   references already declared in the embedded `Claims.json`. Bootstrap fails fast when a staged fragment
   references an unknown effective claim set name.
 - `-ApiSchemaPath` mode satisfies the DMS-916 requirement that claimset loading is automatic from the
-  selected schema for core and recognized mapped extension schemas. It validates staged schema normalization
-  and caller-supplied fragment structure, but it does not infer or guarantee authorization coverage for
-  arbitrary custom non-core resources. Runtime authorization failures for incomplete expert-supplied
-  fragments remain possible.
+  selected schema and available claims inputs. It validates staged schema normalization and caller-supplied
+  fragment structure, but it does not infer or guarantee authorization coverage for arbitrary custom non-core
+  resources. Runtime authorization failures for incomplete expert-supplied fragments remain possible.
 - Same-checkout reruns reuse the existing staged claims workspace only when the intended fragment set is
   identical. If the intended security inputs differ, bootstrap fails fast with teardown guidance rather than
   rewriting a directory that may still be bind-mounted into CMS or attempting in-place replacement of
@@ -114,10 +111,9 @@ manifest schema contract and claims-staging contract rather than introducing a s
   - malformed JSON,
   - filename collisions,
   - unknown effective claim set references in staged fragments.
-- Every bootstrap-managed extension fragment in the supported v1 mapping preserves ordinary developer access
-  by attaching `EdFiSandbox` permissions for the extension resources it contributes. Extension entries that
-  eventually advertise built-in seed support must additionally attach the required `SeedLoader` permissions
-  for those extension seed resources.
+- Every bootstrap-managed extension fragment preserves ordinary developer access by attaching `EdFiSandbox`
+  permissions for the extension resources it contributes. Extension entries that advertise built-in seed
+  packages must additionally attach the required `SeedLoader` permissions for those extension seed resources.
 - CMS consumes that staged workspace through the Config Service `/app/additional-claims` mount. The claims
   section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json` is the source of truth for the CMS claims
   mode, relative claims directory, claims fingerprint, and expected claims-verification checks.
@@ -128,8 +124,8 @@ manifest schema contract and claims-staging contract rather than introducing a s
   seed section records only extension namespace prefixes. The root manifest must not contain built-in
   seed-package entries, resource definitions, claim grants, instance IDs, credentials, URLs, Docker state,
   environment settings, seed file paths, phase progress, or resume checkpoints.
-- Story 00 does not own built-in seed-support advertisement. It stages and validates claims inputs; Story 02
-  decides when built-in seed support is available and enforces the `SeedLoader` requirements for that path.
+- Story 00 does not own built-in seed-package advertisement. It stages and validates claims inputs; Story 02
+  decides when built-in seed packages are available and enforces the `SeedLoader` requirements for that path.
 - The normative DMS-916 bootstrap surface does not preserve standalone `-AddExtensionSecurityMetadata` as a
   security-selection path. ApiSchema-driven staging is the only security-selection mechanism within this
   story's contract.
@@ -141,10 +137,6 @@ manifest schema contract and claims-staging contract rather than introducing a s
 - CMS claims mode is driven from the staged inputs:
   - Embedded mode for core-only bootstrap,
   - Hybrid mode when one or more staged fragments exist.
-- `TPDM` is not part of the recognized mapped extension surface for Story 00. TPDM is not available as of
-  Ed-Fi 6.2 and is not silently substituted by `sample`, `homograph`, or any default.
-- Only extensions backed by current schema and security artifacts appear in the DMS-916 v1 mapping and
-  recognized mapped extension surface. Deferred extensions are not advertised as recognized mapped schemas.
 
 ## Tasks
 
@@ -155,13 +147,11 @@ manifest schema contract and claims-staging contract rather than introducing a s
    (security inputs) per the command boundary contracts in `command-boundaries.md` Section 3.1-3.2.
    `prepare-dms-schema.ps1` should fail fast when `-Extensions` is supplied or when `-ApiSchemaPath` is
    omitted, with a message that package-backed standard mode is deferred to Story 06.
-2. Implement one v1 extension artifact catalog for schema/security ownership: `prepare-dms-schema.ps1` uses
-   schema identity fields to recognize mapped schemas from the direct filesystem input, and
-   `prepare-dms-claims.ps1` uses security-fragment fields. `load-dms-seed-data.ps1` owns the separate seed
-   catalog lookup when seed delivery runs. The same recognized mapped extension set drives those phase-owned
-   lookups, with `EdFiSandbox` coverage required for every supported extension and `SeedLoader` coverage
-   required only where built-in seed support is advertised. Ensure `TPDM` is absent from this recognized
-   mapping.
+2. Implement phase-owned extension artifact resolution for schema/security ownership: `prepare-dms-schema.ps1`
+   uses schema identity fields from the direct filesystem input, and `prepare-dms-claims.ps1` uses
+   security-fragment fields. `load-dms-seed-data.ps1` owns the separate seed catalog lookup when seed delivery
+   runs. `EdFiSandbox` coverage is required for every bootstrap-managed extension fragment and `SeedLoader`
+   coverage is required only where a built-in seed package is advertised.
 3. Implement direct filesystem schema-materialization logic in `prepare-dms-schema.ps1`: normalize
    `-ApiSchemaPath` inputs into the staged workspace, normalize one core schema plus zero or more extension
    schemas into the staged ApiSchema asset workspace, copy optional schema-adjacent static content into
@@ -189,28 +179,27 @@ manifest schema contract and claims-staging contract rather than introducing a s
    `published-dms.yml`. Keep the Config Service mounts in `local-config.yml` and `published-config.yml`;
    DMS reads claimsets from CMS authorization metadata, not from fragment files mounted into the DMS
    container.
-7. Restrict the v1 recognized mapped extension surface and operator-facing validation messages to
-   extensions backed by current schema and security artifacts; keep deferred extensions out of the advertised
-   support surface.
+7. Ensure operator-facing validation messages report missing schema, security, or seed artifacts as artifact
+   resolution/configuration failures.
 8. Remove bootstrap-surface dependence on `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` and
    remove standalone `-AddExtensionSecurityMetadata` from the DMS-916 normative contract. The staged claims
-   workspace is the only security-selection path in this story; bootstrap manages core and mapped extension
-   fragments, while unmapped custom fragments come from `-ClaimsDirectoryPath`.
+   workspace is the only security-selection path in this story; bootstrap manages core and selected extension
+   fragments, while additional custom fragments come from `-ClaimsDirectoryPath`.
 9. Treat changed claims inputs in an existing staged workspace as incompatible rerun state; reuse identical
    staged content as-is, but fail fast with teardown guidance instead of rewriting bind-mounted claims files
    or attempting in-place CMS claims replacement.
 10. Keep Story 00 limited to direct filesystem schema asset-container staging and claims staging. Runtime
    reads of metadata/XSD content from that container stay in Story 04. MetaEd package production changes stay
    in Story 05. Package-backed standard mode waits for Story 06 after asset-only
-   package inputs exist. Built-in seed-support advertisement and `SeedLoader` enforcement stay in Story 02.
+   package inputs exist. Built-in seed-package advertisement and `SeedLoader` enforcement stay in Story 02.
 11. Document the expert-mode boundary explicitly: `-ApiSchemaPath` still validates staged schema
-   normalization, requires `-ClaimsDirectoryPath` for unmapped non-core schemas, and validates fragment
+   normalization, requires `-ClaimsDirectoryPath` when additional non-core security metadata is needed, and validates fragment
    structure, but bootstrap does not certify complete authorization coverage for arbitrary custom non-core
    resources ahead of runtime.
 
 ## Out of Scope
 
-- A generalized plugin system beyond the documented extension-selection surface.
+- A generalized plugin system beyond selecting schema artifacts for the run.
 - Per-extension version-override features beyond the design's current defaults.
 - Full `Claims.json` replacement or arbitrary new top-level claim set creation through
   `-ClaimsDirectoryPath`.
@@ -222,6 +211,6 @@ manifest schema contract and claims-staging contract rather than introducing a s
 
 ## Design References
 
-- [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3, 4, 8, 9.3, and 11
-- [`../apischema-container.md`](../apischema-container.md)
-- [`../command-boundaries.md`](../command-boundaries.md), Section 3.1 (`prepare-dms-schema.ps1`) and Section 3.2 (`prepare-dms-claims.ps1`)
+- [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md), Sections 3, 4, 8, 9.3, and 11
+- [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md)
+- [`../../design-docs/bootstrap/command-boundaries.md`](../../design-docs/bootstrap/command-boundaries.md), Section 3.1 (`prepare-dms-schema.ps1`) and Section 3.2 (`prepare-dms-claims.ps1`)

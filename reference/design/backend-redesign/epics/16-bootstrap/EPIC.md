@@ -1,25 +1,30 @@
 ---
-design: DMS-916
+jira: DMS-1149
+jira_url: https://edfi.atlassian.net/browse/DMS-1149
 ---
 
-# Bootstrap Ticket Definitions
+# Epic: Bootstrap DMS Developer Environment Initialization
 
-These companion ticket-definition docs translate
-[`../bootstrap-design.md`](../bootstrap-design.md) into implementation-sized stories without expanding scope
-beyond DMS-916. They follow the same small `Description / Acceptance Criteria / Tasks` structure used by the
-backend-redesign story docs.
+## Description
+
+Implement the developer bootstrap workflow designed by DMS-916 at
+[`reference/design/backend-redesign/design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md).
+This epic translates the spike design into implementation-sized stories without expanding scope beyond the
+DMS-916 developer-environment initialization contract.
+
+The work covers schema selection and staging, schema deployment safety, API-based seed delivery, local
+entry-point and IDE workflow support, file-based ApiSchema runtime content loading, MetaEd ApiSchema asset
+packaging, and package-backed standard schema selection.
 
 ## Stories
 
-- `00-schema-and-security-selection.md`
-- `01-schema-deployment-safety.md`
-- `02-api-seed-delivery.md`
-- `03-entry-point-and-ide-workflow.md`
-- `04-apischema-runtime-content-loading.md` - replace DMS ApiSchema DLL resource loading with file-based
-  workspace loading
-- `05-metaed-apischema-asset-packaging.md` - publish asset-only ApiSchema NuGet packages from MetaEd
-- `06-package-backed-standard-schema-selection.md` - implement omitted `-Extensions` core-only mode and
-  named `-Extensions` package-backed standard mode
+- `DMS-1150` — `00-schema-and-security-selection.md` — Bootstrap schema and security selection
+- `DMS-1151` — `01-schema-deployment-safety.md` — Bootstrap schema deployment safety
+- `DMS-1152` — `02-api-seed-delivery.md` — API-based seed delivery for bootstrap
+- `DMS-1153` — `03-entry-point-and-ide-workflow.md` — Bootstrap entry point and IDE workflow
+- `DMS-1154` — `04-apischema-runtime-content-loading.md` — Replace DMS ApiSchema DLL resource loading
+- `DMS-1155` — `05-metaed-apischema-asset-packaging.md` — MetaEd ApiSchema asset packaging
+- `DMS-1156` — `06-package-backed-standard-schema-selection.md` — Package-backed standard schema selection
 
 ## Cross-Story Dependency Notes
 
@@ -33,7 +38,7 @@ backend-redesign story docs.
   that already-selected staged file set. The expected hash from Story 00 is diagnostic metadata for logging
   or comparison, not a required SchemaTools provisioning input.
 - Story 02 depends on Story 00's root bootstrap manifest over the staged schema and security inputs,
-  and it is the gate for advertising any built-in extension seed support because it owns the `SeedLoader`
+  and it is the gate for advertising any built-in extension seed packages because it owns the `SeedLoader`
   contract for that path.
   **Story 02 has one DMS-internal prerequisite that must be its first deliverable:** add the top-level
   `SeedLoader` claim set definition and required core permissions to
@@ -61,8 +66,8 @@ backend-redesign story docs.
 
 ## Scope Guardrails
 
-- Use these docs together with [`../bootstrap-design.md`](../bootstrap-design.md) for rationale and
-  [`../command-boundaries.md`](../command-boundaries.md) for the authoritative phase contract.
+- Use these docs together with [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md) for rationale and
+  [`../../design-docs/bootstrap/command-boundaries.md`](../../design-docs/bootstrap/command-boundaries.md) for the authoritative phase contract.
 - If a story, example, or summary here conflicts with `command-boundaries.md`, `command-boundaries.md`
   wins.
 - Each story should keep its own acceptance criteria focused on the behavior it delivers and reference

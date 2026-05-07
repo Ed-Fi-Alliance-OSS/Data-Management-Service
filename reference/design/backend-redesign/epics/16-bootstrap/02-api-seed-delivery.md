@@ -1,5 +1,6 @@
 ---
-design: DMS-916
+jira: DMS-1152
+jira_url: https://edfi.atlassian.net/browse/DMS-1152
 ---
 
 # Story: API-Based Seed Delivery for Bootstrap
@@ -18,8 +19,8 @@ seed-delivery phase, per-year loading for the existing `-SchoolYearRange` workfl
 bootstrap-side guardrails needed to keep the seed path deterministic and rerun-tolerant once the required
 BulkLoadClient contract is delivered. The authorization
 contract for built-in seed delivery is also part of this slice: the design fixes one authoritative
-`SeedLoader` inventory for core templates and requires extension seed support to travel with extension
-security metadata rather than ad hoc grant derivation. CMS-only smoke-test credential creation is a separate
+`SeedLoader` inventory for core templates and requires built-in extension seed-package loading to travel with
+extension security metadata rather than ad hoc grant derivation. CMS-only smoke-test credential creation is a separate
 workflow concern: it may run earlier against the target instances selected by
 `configure-local-dms-instance.ps1`, but it is not part of this story's dependency chain and its credentials
 are never reused for seed delivery. Custom `-SeedDataPath`
@@ -28,8 +29,8 @@ schema/security inputs are intended to cover them, and `-AdditionalNamespacePref
 agency or custom namespace prefixes for SeedLoader vendor authorization. Bootstrap does not
 preflight-certify arbitrary JSONL content.
 
-This slice is the single owner of built-in seed-support advertisement. An extension may advertise built-in
-seed support only when this story's `SeedLoader` contract is delivered end to end.
+This slice is the single owner of built-in seed-package advertisement. An extension may advertise a built-in
+seed package only when this story's `SeedLoader` contract is delivered end to end.
 This story defines only the DMS bootstrap consumer boundary for BulkLoadClient: the pinned-resolution path,
 the invocation shape DMS depends on, and the pass-through result handling. It also owns the repo-local
 `Minimal` and `Populated` JSONL developer seed assets used by `-SeedTemplate`. It does not broaden DMS-916
@@ -86,7 +87,7 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
   explicit `-BootstrapManifestPath` override, before resolving seed sources. It fails fast when the manifest
   is missing, malformed, unsupported, incomplete, or incompatible with the requested seed-source flags.
 - The root bootstrap manifest remains intentionally small: version, schema selection mode (`Standard` or
-  `ApiSchemaPath`), selected mapped extensions, `EffectiveSchemaHash`, ApiSchema and claims fingerprints,
+  `ApiSchemaPath`), selected extensions, `EffectiveSchemaHash`, ApiSchema and claims fingerprints,
   relative ApiSchema manifest path, relative claims directory, expected claims-verification checks, and
   extension namespace prefixes. It must not carry built-in seed-package entries, resource definitions, claim
   grants, instance IDs, credentials, URLs, Docker state, environment settings, seed file paths, phase progress,
@@ -99,8 +100,8 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
   de-duplicated before vendor creation. This parameter does not replace baseline prefixes, infer extensions,
   or synthesize claims.
 - When selected extensions are present in the bootstrap manifest and `-SeedDataPath` is not supplied,
-  bootstrap resolves the required extension seed packages and fails fast if an expected extension package is
-  missing.
+  bootstrap resolves any built-in extension seed packages advertised by the seed catalog and fails fast if an
+  advertised package is missing.
 - Extensions without a built-in seed package in the seed catalog remain schema/security-only unless the
   developer supplies `-SeedDataPath`.
 - When seed delivery runs with an extension that has no built-in seed package in the seed catalog, bootstrap
@@ -118,7 +119,7 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
   via in-memory forwarding within a single wrapper invocation, or via explicit `-InstanceId`/`-SchoolYear`
   selectors in a manual phase flow; they must not perform their own CMS instance creation, broad
   target-selection policy, or non-selector-driven discovery pass.
-  See [`INDEX.md`](INDEX.md) Scope Guardrails for the selector resolution rules.
+  See [`EPIC.md`](EPIC.md) Scope Guardrails for the selector resolution rules.
 - BulkLoadClient invocation uses:
   - the DMS base URL supplied to `load-dms-seed-data.ps1 -DmsBaseUrl` for the current flow,
   - the token URL derived from `load-dms-seed-data.ps1 -IdentityProvider`,
@@ -159,14 +160,14 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
    validation that rejects `-SeedTemplate` when the bootstrap manifest came from `-ApiSchemaPath`,
    mutual-exclusion validation between `-SeedTemplate` and `-SeedDataPath`, extension-package resolution for
    standard extension mode using the seed catalog and manifest-selected extension names, and fail-fast
-   handling when required repo-local seed assets or future built-in extension seed artifacts are unavailable.
+   handling when required repo-local seed assets or catalog-advertised built-in extension seed artifacts are unavailable.
 3. Implement the deterministic `SeedLoader` contract for built-in seed sources, including the core
    permissions in embedded claims metadata, the required extension `SeedLoader` coverage in staged
    extension security fragments for built-in extension seed sources, the bootstrap-side preflight failure
    when the embedded claims metadata is missing the top-level `SeedLoader` claim set, and the staged-input
    compatibility boundary for custom `-SeedDataPath` directories, including explicit
    `-AdditionalNamespacePrefix` values used only for SeedLoader vendor authorization.
-   This task is what allows built-in extension seed support to be advertised at all.
+   This task is what allows built-in extension seed packages to be advertised at all.
 4. Implement seed-workspace creation, JSONL extraction/copying for both built-in artifacts and
    `-SeedDataPath`, collision detection, and deterministic cleanup behavior. Ordering of directory
    consumption, if required, remains part of the external BulkLoadClient JSONL contract rather than a
@@ -202,4 +203,4 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
 
 ## Design References
 
-- [`../bootstrap-design.md`](../bootstrap-design.md), Sections 5, 6, 7.2-7.3, 9.2, 10, and 14.3
+- [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md), Sections 5, 6, 7.2-7.3, 9.2, 10, and 14.3

@@ -274,7 +274,7 @@ packaging tool, is the contract.
 
 ## Implementation Stories
 
-[`tickets/00-schema-and-security-selection.md`](tickets/00-schema-and-security-selection.md) should explicitly
+[`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md) should explicitly
 include the direct filesystem asset-container staging contract:
 
 - stage schema files and schema-adjacent content into the normalized workspace,
@@ -283,13 +283,13 @@ include the direct filesystem asset-container staging contract:
 - write the manifest,
 - point Docker-hosted and IDE-hosted DMS at the normalized workspace.
 
-[`tickets/04-apischema-runtime-content-loading.md`](tickets/04-apischema-runtime-content-loading.md) should
+[`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md) should
 update `ContentProvider` to read the normalized workspace and ApiSchema asset manifest instead of requiring
 `*.ApiSchema.dll` assemblies. This story depends on the filesystem workspace and asset manifest contract, not
 on published asset-only packages. It can proceed in parallel with MetaEd package replacement. Staging DLLs as a
 runtime bridge is not part of this design.
 
-[`tickets/05-metaed-apischema-asset-packaging.md`](tickets/05-metaed-apischema-asset-packaging.md) should own
+[`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md) should own
 the MetaEd packaging replacement required to publish asset-only ApiSchema NuGet packages. DMS bootstrap
 consumes those packages in Story 06 by materializing them into the same filesystem
 workspace. Direct filesystem loading does not wait for those packages and remains a supported contract after

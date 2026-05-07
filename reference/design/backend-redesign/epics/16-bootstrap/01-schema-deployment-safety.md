@@ -1,5 +1,6 @@
 ---
-design: DMS-916
+jira: DMS-1151
+jira_url: https://edfi.atlassian.net/browse/DMS-1151
 ---
 
 # Story: Bootstrap Schema Deployment Safety
@@ -96,5 +97,5 @@ be provisioned or validated.
 
 ## Design References
 
-- [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3.2, 5, 11.3, 11.5, and 14.3
-- [`../command-boundaries.md`](../command-boundaries.md), Section 3.5 (`provision-dms-schema.ps1` - normative ownership contract)
+- [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md), Sections 3.2, 5, 11.3, 11.5, and 14.3
+- [`../../design-docs/bootstrap/command-boundaries.md`](../../design-docs/bootstrap/command-boundaries.md), Section 3.5 (`provision-dms-schema.ps1` - normative ownership contract)

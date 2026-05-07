@@ -1,5 +1,6 @@
 ---
-design: DMS-916
+jira: DMS-1153
+jira_url: https://edfi.atlassian.net/browse/DMS-1153
 ---
 
 # Story: Bootstrap Entry Point and IDE Workflow
@@ -103,7 +104,7 @@ across separate invocations.
     target-selection subsystem.
 - The narrowed DMS-916 definition of `-NoDmsInstance` is documented as a deliberate breaking change for
   existing fresh-stack scripts; migration guidance tells users to rerun without the flag or pre-create the
-  intended single target instance. See [`bootstrap-design.md` Section 15](../bootstrap-design.md#15-breaking-changes-and-migration-notes)
+  intended single target instance. See [`bootstrap-design.md` Section 15](../../design-docs/bootstrap/bootstrap-design.md#15-breaking-changes-and-migration-notes)
   for the consolidated migration reference.
 - Story 03 keeps CMS-only smoke credentials separate from DMS-dependent `SeedLoader` credentials and seed
   loading; no acceptance criterion describes one blended post-start credential-bootstrap phase.
@@ -295,5 +296,5 @@ pwsh eng/docker-compose/provision-dms-schema.ps1 -SchoolYear 2025,2026          
 
 ## Design References
 
-- [`../bootstrap-design.md`](../bootstrap-design.md), Sections 1, 5, 7, 9, 12, 13, and 14.1
-- [`../command-boundaries.md`](../command-boundaries.md), Section 3.3 (infrastructure-lifecycle phase contract)
+- [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md), Sections 1, 5, 7, 9, 12, 13, and 14.1
+- [`../../design-docs/bootstrap/command-boundaries.md`](../../design-docs/bootstrap/command-boundaries.md), Section 3.3 (infrastructure-lifecycle phase contract)

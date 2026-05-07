@@ -1,5 +1,6 @@
 ---
-design: DMS-916
+jira: DMS-1155
+jira_url: https://edfi.atlassian.net/browse/DMS-1155
 ---
 
 # Story: MetaEd ApiSchema Asset Packaging
@@ -87,7 +88,7 @@ same workspace.
 
 ## Design References
 
-- [`../apischema-container.md`](../apischema-container.md), Sections "Published NuGet Shape" and "MetaEd Packaging Replacement"
-- [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3, 13, and 14
+- [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md), Sections "Published NuGet Shape" and "MetaEd Packaging Replacement"
+- [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md), Sections 3, 13, and 14
 - [`00-schema-and-security-selection.md`](00-schema-and-security-selection.md)
 - [`04-apischema-runtime-content-loading.md`](04-apischema-runtime-content-loading.md)
