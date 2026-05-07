@@ -60,6 +60,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private IRelationalReadTargetLookupService _readTargetLookupService = null!;
     private IRelationalReadMaterializer _readMaterializer = null!;
     private IReadableProfileProjector _readableProfileProjector = null!;
+    private RecordingRelationalCurrentEtagPreconditionChecker _currentEtagPreconditionChecker = null!;
     private IRelationalCommandExecutor _commandExecutor = null!;
     private ConfigurableRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
     private IRelationalDeleteConstraintResolver _deleteConstraintResolver = null!;
@@ -79,6 +80,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _readTargetLookupService = A.Fake<IRelationalReadTargetLookupService>();
         _readMaterializer = A.Fake<IRelationalReadMaterializer>();
         _readableProfileProjector = A.Fake<IReadableProfileProjector>();
+        _currentEtagPreconditionChecker = new RecordingRelationalCurrentEtagPreconditionChecker();
         _commandExecutor = A.Fake<IRelationalCommandExecutor>();
         _writeExceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier();
         _deleteConstraintResolver = A.Fake<IRelationalDeleteConstraintResolver>();
@@ -130,6 +132,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _logger,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             new DefaultDescriptorWriteHandler(),
             _descriptorReadHandler,
             _referenceResolver,
@@ -256,6 +259,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             new DefaultDescriptorWriteHandler(),
             descriptorReadHandler,
             _referenceResolver,
@@ -810,6 +814,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             new DefaultDescriptorWriteHandler(),
             descriptorReadHandler,
             _referenceResolver,
@@ -881,6 +886,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             new DefaultDescriptorWriteHandler(),
             descriptorReadHandler,
             _referenceResolver,
@@ -948,6 +954,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             new DefaultDescriptorWriteHandler(),
             descriptorReadHandler,
             _referenceResolver,
@@ -2193,6 +2200,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             descriptorHandler,
             _descriptorReadHandler,
             _referenceResolver,
@@ -2246,6 +2254,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             descriptorHandler,
             _descriptorReadHandler,
             _referenceResolver,
@@ -2282,6 +2291,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             descriptorHandler,
             _descriptorReadHandler,
             _referenceResolver,
@@ -2335,6 +2345,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             descriptorHandler,
             _descriptorReadHandler,
             _referenceResolver,
@@ -2420,6 +2431,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             descriptorHandler,
             _descriptorReadHandler,
             _referenceResolver,
@@ -2501,6 +2513,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
+            _currentEtagPreconditionChecker,
             descriptorHandler,
             _descriptorReadHandler,
             _referenceResolver,
@@ -2961,6 +2974,178 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(0);
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_skips_the_current_etag_check_for_relational_delete_requests_without_if_match_precondition(
+        SqlDialect dialect
+    )
+    {
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteOutcome(deleted: true);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_allows_relational_delete_when_if_match_precondition_exactly_matches_the_current_representation(
+        SqlDialect dialect
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo, dialect);
+        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteOutcome(deleted: true);
+        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
+            documentUuid,
+            123L,
+            writePrecondition.Value,
+            isMatch: true
+        );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, writePrecondition, documentUuid);
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
+        _currentEtagPreconditionChecker.CapturedRequest.Should().NotBeNull();
+        _currentEtagPreconditionChecker.CapturedRequest!.MappingSet.Should().BeSameAs(mappingSet);
+        _currentEtagPreconditionChecker
+            .CapturedRequest.ReadPlan.Should()
+            .BeSameAs(mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")]);
+        _currentEtagPreconditionChecker.CapturedRequest.TargetContext.DocumentId.Should().Be(123L);
+        _currentEtagPreconditionChecker.CapturedRequest.TargetContext.DocumentUuid.Should().Be(documentUuid);
+        _currentEtagPreconditionChecker.CapturedRequest.Precondition.Should().Be(writePrecondition);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_relational_delete_failure_etag_mismatch_and_does_not_issue_the_delete_when_if_match_precondition_does_not_match(
+        SqlDialect dialect
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on ETag mismatch."));
+        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
+            documentUuid,
+            123L,
+            "\"current-etag\"",
+            isMatch: false
+        );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
+            writePrecondition,
+            documentUuid
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_relational_delete_failure_not_exists_when_if_match_precondition_recheck_cannot_relock_the_target(
+        SqlDialect dialect
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteThrows(
+            new InvalidOperationException("DELETE should not execute when the target disappears.")
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = null;
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
+            writePrecondition,
+            documentUuid
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_preserves_foreign_key_conflict_mapping_when_relational_delete_if_match_precondition_succeeds(
+        SqlDialect dialect
+    )
+    {
+        const string constraintName = "FK_Calendar_SchoolRef";
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
+        var referencingResource = new QualifiedResourceName("Ed-Fi", "Calendar");
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo, dialect);
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteThrows(new StubDbException("constraint violation"));
+        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
+            documentUuid,
+            123L,
+            writePrecondition.Value,
+            isMatch: true
+        );
+        _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(constraintName);
+        A.CallTo(() =>
+                _deleteConstraintResolver.TryResolveReferencingResource(mappingSet.Model, constraintName)
+            )
+            .Returns(referencingResource);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, writePrecondition, documentUuid);
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
+        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_the_missing_read_plan_guard_rail_for_relational_delete_if_match_precondition_requests()
+    {
+        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
+        const string expectedFailureMessage =
+            "Read plan lookup failed for resource 'Ed-Fi.School' in mapping set "
+            + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
+            + "but no entry was found. This indicates an internal compilation/selection bug.";
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateMissingReadPlanMappingSet(_schoolResourceInfo),
+            writePrecondition
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeEquivalentTo(new DeleteResult.UnknownFailure(expectedFailureMessage));
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+    }
+
     [Test]
     public async Task It_returns_the_missing_write_plan_guard_rail_for_non_descriptor_post_requests()
     {
@@ -3177,14 +3362,32 @@ public class Given_RelationalDocumentStoreRepositoryTests
         }
     }
 
-    private static IRelationalDeleteRequest CreateNonDescriptorDeleteRequest(MappingSet? mappingSet)
+    private static IRelationalDeleteRequest CreateNonDescriptorDeleteRequest(
+        MappingSet? mappingSet,
+        WritePrecondition? writePrecondition = null,
+        DocumentUuid? documentUuid = null
+    )
     {
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
         A.CallTo(() => deleteRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => deleteRequest.DocumentUuid).Returns(documentUuid ?? new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("delete-trace"));
         A.CallTo(() => deleteRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => deleteRequest.WritePrecondition)
+            .Returns(writePrecondition ?? new WritePrecondition.None());
         return deleteRequest;
+    }
+
+    private static RelationalDeleteEtagPreconditionCheckResult CreateDeletePreconditionCheckResult(
+        DocumentUuid documentUuid,
+        long documentId,
+        string currentEtag,
+        bool isMatch
+    )
+    {
+        var targetContext = new RelationalWriteTargetContext.ExistingDocument(documentId, documentUuid, 42L);
+
+        return new RelationalDeleteEtagPreconditionCheckResult(targetContext, currentEtag, isMatch);
     }
 
     private void ConfigureResolvedDocument(long documentId, DocumentUuid documentUuid)
@@ -3208,7 +3411,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(_commandExecutor).WithReturnType<Task<bool>>().Returns(Task.FromResult(deleted));
     }
 
-    private void ConfigureDeleteThrows(DbException exception)
+    private void ConfigureDeleteThrows(Exception exception)
     {
         A.CallTo(_commandExecutor).WithReturnType<Task<bool>>().Throws(exception);
     }
@@ -3220,7 +3423,51 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Throws(exception);
     }
 
+    private sealed record CapturedDeleteEtagPreconditionRequest(
+        MappingSet MappingSet,
+        ResourceReadPlan ReadPlan,
+        RelationalWriteTargetContext.ExistingDocument TargetContext,
+        WritePrecondition.IfMatch Precondition
+    );
+
     private sealed class StubDbException(string message) : DbException(message);
+
+    private sealed class RecordingRelationalCurrentEtagPreconditionChecker
+        : IRelationalDeleteEtagPreconditionChecker
+    {
+        public int CallCount { get; private set; }
+
+        public CapturedDeleteEtagPreconditionRequest? CapturedRequest { get; private set; }
+
+        public RelationalDeleteEtagPreconditionCheckResult? ResultToReturn { get; set; }
+
+        public Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
+            MappingSet mappingSet,
+            ResourceReadPlan readPlan,
+            RelationalWriteTargetContext.ExistingDocument targetContext,
+            WritePrecondition.IfMatch precondition,
+            IRelationalWriteSession writeSession,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ArgumentNullException.ThrowIfNull(mappingSet);
+            ArgumentNullException.ThrowIfNull(readPlan);
+            ArgumentNullException.ThrowIfNull(targetContext);
+            ArgumentNullException.ThrowIfNull(precondition);
+            ArgumentNullException.ThrowIfNull(writeSession);
+
+            CallCount++;
+            CapturedRequest = new CapturedDeleteEtagPreconditionRequest(
+                mappingSet,
+                readPlan,
+                targetContext,
+                precondition
+            );
+
+            return Task.FromResult(ResultToReturn);
+        }
+    }
 
     private sealed class RecordingWriteSessionFactory(IRelationalCommandExecutor commandExecutor)
         : IRelationalWriteSessionFactory
