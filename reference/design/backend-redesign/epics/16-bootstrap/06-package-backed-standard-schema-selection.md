@@ -11,7 +11,7 @@ Implement the package-backed standard schema-selection path for DMS developer bo
 the target day-to-day modes from the design into an owned implementation slice:
 
 - omitted `-Extensions` for the core-only developer default,
-- named `-Extensions` for supported mapped development extensions,
+- named `-Extensions` for package-backed extension selection,
 - package-backed ApiSchema asset resolution after Story 05 publishes asset-only packages,
 - convergence on the same staged ApiSchema workspace, claims staging, and seed-input handoff contracts
   delivered by Story 00.
@@ -32,17 +32,16 @@ filesystem inputs.
 - `prepare-dms-schema.ps1` supports standard mode without `-ApiSchemaPath` after the Story 05 package
   prerequisite is available:
   - omitting `-Extensions` resolves and stages the core Data Standard ApiSchema package only,
-  - supplying `-Extensions` resolves and stages the core package plus each named supported mapped extension.
+  - supplying `-Extensions` resolves and stages the core package plus each named extension package.
 - `-Extensions` is a `String[]` parameter using normal PowerShell array binding. Multi-extension usage uses
-  syntax such as `-Extensions "sample","homograph"`; the implementation does not rely on comma-splitting a
+  syntax such as `-Extensions "sample","extension2"`; the implementation does not rely on comma-splitting a
   single string.
-- `-Extensions` accepts only names in the DMS-916 v1 mapped extension catalog. TPDM is not part of the v1
-  standard-mode surface and fails fast with the same unsupported-extension behavior as any other
-  unrecognized name.
+- Extension artifact availability is determined by package and companion artifact resolution; missing artifacts
+  fail fast before Docker operations start.
 - `-Extensions` and `-ApiSchemaPath` are mutually exclusive. Supplying both fails fast with guidance to use
-  standard mode for well-known extensions or expert mode for a custom schema directory.
-- Package-backed resolution uses the configured NuGet feed and package/version defaults for the v1
-  supported catalog. The exact core package ID, extension package IDs, and version defaults are documented
+  standard mode for package-backed extensions or expert mode for a custom schema directory.
+- Package-backed resolution uses the configured NuGet feed and package/version defaults. The exact core
+  package ID, extension package identity convention or metadata source, and version defaults are documented
   and validated against the feed during implementation.
 - Package materialization rejects invalid package payloads before finalizing the staged workspace:
   - missing asset-only ApiSchema payload,
@@ -53,7 +52,7 @@ filesystem inputs.
 - Package-backed standard mode writes the same `bootstrap-api-schema-manifest.json` runtime asset index as
   Story 00. That ApiSchema manifest records selected project identity, normalized schema paths, and optional
   static content paths only. The root bootstrap manifest records standard-mode schema selection, selected
-  mapped extension names, expected `EffectiveSchemaHash`, the ApiSchema workspace fingerprint, and the
+  extension names, expected `EffectiveSchemaHash`, the ApiSchema workspace fingerprint, and the
   relative ApiSchema manifest path.
 - The staged schema files from package-backed standard mode are the only files used for
   `EffectiveSchemaHash` calculation, Docker-hosted DMS startup, and IDE-hosted DMS startup.
@@ -61,7 +60,7 @@ filesystem inputs.
   the same mode-to-security contract used for Story 00:
   - core-only standard mode stays Embedded mode unless additive claims are supplied by another supported
     path,
-  - mapped extensions automatically stage their bootstrap-managed claimset fragments,
+  - selected extensions automatically stage their bootstrap-managed claimset fragments when available,
   - no later phase re-derives extension security from command-line parameters.
 - Standard-mode selected extensions recorded in the root bootstrap manifest are the source used by
   Story 02 seed delivery for built-in extension seed lookup. Story 06 does not load seed data directly and
@@ -73,11 +72,11 @@ filesystem inputs.
 
 ## Tasks
 
-1. Define the v1 package-backed schema catalog for standard mode: core package identity/version defaults,
-   supported mapped extension names, extension package identities, namespace prefixes, and the security
-   fragment lookup keys shared with claims staging. Keep TPDM out of this catalog.
+1. Define package-backed schema resolution for standard mode: core package identity/version defaults,
+   extension package identity convention or metadata source, namespace prefixes, and the security fragment
+   lookup keys shared with claims staging.
 2. Update `prepare-dms-schema.ps1` so standard mode is valid when `-ApiSchemaPath` is omitted:
-   core-only when `-Extensions` is omitted, and core plus selected mapped extensions when it is supplied.
+   core-only when `-Extensions` is omitted, and core plus selected extensions when it is supplied.
 3. Preserve `-ApiSchemaPath` as the expert direct-filesystem path from Story 00 and enforce mutual
    exclusivity between `-ApiSchemaPath` and `-Extensions`.
 4. Implement NuGet package resolution and isolated extraction for the configured package feed, with clear
@@ -88,13 +87,13 @@ filesystem inputs.
    schemas, optional static content, deterministic manifest-relative paths, normalized-path collision
    detection, and `EffectiveSchemaHash` calculation.
 7. Write package-backed standard-mode schema facts into the root bootstrap manifest schema section and ensure
-   `prepare-dms-claims.ps1` writes selected mapped extension namespace prefixes into the root bootstrap
+   `prepare-dms-claims.ps1` writes selected extension namespace prefixes into the root bootstrap
    manifest seed section.
 8. Update wrapper parameter forwarding and validation so `bootstrap-local-dms.ps1 -Extensions ...` reaches
    `prepare-dms-schema.ps1` without the wrapper owning schema resolution.
-9. Add tests for core-only standard mode, single and multiple mapped extensions, unsupported extensions,
-   TPDM rejection, mutual exclusivity with `-ApiSchemaPath`, invalid package payload rejection, and reuse of
-   identical staged package-backed workspaces.
+9. Add tests for core-only standard mode, single and multiple extensions, artifact resolution failures,
+   mutual exclusivity with `-ApiSchemaPath`, invalid package payload rejection, and reuse of identical staged
+   package-backed workspaces.
 10. Update developer-facing examples and failure messages so Story 00 direct-filesystem examples and Story
     06 package-backed standard-mode examples are clearly distinguished.
 
@@ -106,7 +105,6 @@ filesystem inputs.
 - API-based seed loading, BulkLoadClient invocation, and built-in seed package loading; those belong to
   Story 02.
 - Published agency/sysadmin seed distribution; that belongs to DMS-1119.
-- TPDM support in the v1 `-Extensions` surface.
 - A generalized plugin system, arbitrary package IDs supplied by developers, or per-extension version
   override features beyond the documented DMS-916 defaults.
 

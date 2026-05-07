@@ -38,7 +38,7 @@ packaging, and package-backed standard schema selection.
   that already-selected staged file set. The expected hash from Story 00 is diagnostic metadata for logging
   or comparison, not a required SchemaTools provisioning input.
 - Story 02 depends on Story 00's root bootstrap manifest over the staged schema and security inputs,
-  and it is the gate for advertising any built-in extension seed support because it owns the `SeedLoader`
+  and it is the gate for advertising any built-in extension seed packages because it owns the `SeedLoader`
   contract for that path.
   **Story 02 has one DMS-internal prerequisite that must be its first deliverable:** add the top-level
   `SeedLoader` claim set definition and required core permissions to

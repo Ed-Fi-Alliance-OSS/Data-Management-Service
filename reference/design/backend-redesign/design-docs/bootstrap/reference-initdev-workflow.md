@@ -384,24 +384,19 @@ The entire pipeline abstracts over two engines. The `-Engine` parameter propagat
 
 ## Plugin System
 
-Plugins extend the ODS with additional data models (for example, Sample, Homograph, and the historical ODS
-TPDM plugin). TPDM in this section is ODS reference context only and is not part of the DMS-916 v1
-bootstrap support surface.
+Plugins extend the ODS with additional data models. This section is ODS reference context only.
 
 **File:** `logistics/scripts/modules/plugin/plugin-source.psm1`
 
 Flow:
 
-1. Plugin scripts live in `Plugin/` directory (for example, the historical ODS plugin script
-   `Plugin/tpdm.ps1`)
+1. Plugin scripts live in `Plugin/` directory
 2. Each script returns a hashtable with NuGet package names and versions
 3. `Get-Plugins` downloads plugin NuGet packages
 4. `Install-Plugins` extracts them to `Plugin/` folder
 5. The WebApi discovers plugins at runtime via `Plugin.Folder` in `appsettings.json`
 
-Default plugins (from `Get-EdFiDeveloperPluginSettings`): `sample`, `homograph`, `tpdm` (excluded for
-Standard >= 6.0.0), `profiles.sample`, `studentTranscript.sample`. This list is historical ODS reference
-context, not a DMS-916 support list.
+Default plugins from `Get-EdFiDeveloperPluginSettings` are historical ODS reference context.
 
 ---
 
