@@ -21,6 +21,7 @@ internal sealed class DescriptorWriteHandler(
     IRelationalCommandExecutor commandExecutor,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
+    IRelationalWriteSessionFactory writeSessionFactory,
     ILogger<DescriptorWriteHandler> logger
 ) : IDescriptorWriteHandler
 {
@@ -32,6 +33,8 @@ internal sealed class DescriptorWriteHandler(
         writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
     private readonly IRelationalDeleteConstraintResolver _deleteConstraintResolver =
         deleteConstraintResolver ?? throw new ArgumentNullException(nameof(deleteConstraintResolver));
+    private readonly IRelationalWriteSessionFactory _writeSessionFactory =
+        writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
     private readonly ILogger<DescriptorWriteHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -78,37 +81,152 @@ internal sealed class DescriptorWriteHandler(
                 $"Unexpected target lookup result type '{targetLookupResult.GetType().Name}' for descriptor POST."
             );
 
+        IRelationalWriteSession? writeSession = null;
+
         try
         {
-            return targetContext switch
+            if (request.WritePrecondition is not WritePrecondition.IfMatch ifMatch)
             {
-                RelationalWriteTargetContext.CreateNew(var documentUuid) => await InsertDescriptorAsync(
-                        request,
-                        body,
-                        documentUuid,
-                        resourceKeyId,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false),
-
-                RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) =>
-                    await UpdateDescriptorForUpsertAsync(
+                return targetContext switch
+                {
+                    RelationalWriteTargetContext.CreateNew(var documentUuid) => await InsertDescriptorAsync(
                             request,
                             body,
-                            documentId,
                             documentUuid,
                             resourceKeyId,
+                            _commandExecutor,
                             cancellationToken
                         )
                         .ConfigureAwait(false),
 
-                _ => throw new InvalidOperationException(
-                    $"Unexpected target context type '{targetContext.GetType().Name}' for descriptor POST."
-                ),
-            };
+                    RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) =>
+                        await UpdateDescriptorForUpsertAsync(
+                                request,
+                                body,
+                                documentId,
+                                documentUuid,
+                                resourceKeyId,
+                                _commandExecutor,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false),
+
+                    _ => throw new InvalidOperationException(
+                        $"Unexpected target context type '{targetContext.GetType().Name}' for descriptor POST."
+                    ),
+                };
+            }
+
+            if (targetContext is RelationalWriteTargetContext.CreateNew)
+            {
+                return new UpsertResult.UpsertFailureETagMisMatch();
+            }
+
+            writeSession = await _writeSessionFactory.CreateAsync(cancellationToken).ConfigureAwait(false);
+            var sessionCommandExecutor = writeSession.CreateCommandExecutor();
+
+            var sessionTargetLookupResult = await RelationalWriteTargetLookupSupport
+                .ResolveForPostAsync(
+                    sessionCommandExecutor,
+                    request.MappingSet,
+                    request.Resource,
+                    request.ReferentialId.Value,
+                    request.DocumentUuid,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            var sessionTargetContext =
+                RelationalWriteSupport.TryTranslateTargetContext(sessionTargetLookupResult)
+                ?? throw new InvalidOperationException(
+                    $"Unexpected target lookup result type '{sessionTargetLookupResult.GetType().Name}' for descriptor POST."
+                );
+
+            if (sessionTargetContext is RelationalWriteTargetContext.CreateNew)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new UpsertResult.UpsertFailureETagMisMatch();
+            }
+
+            if (
+                sessionTargetContext
+                is not RelationalWriteTargetContext.ExistingDocument
+                (var sessionDocumentId, var sessionDocumentUuid, _)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Unexpected target context type '{sessionTargetContext.GetType().Name}' for descriptor POST."
+                );
+            }
+
+            var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
+                    request.MappingSet.Key.Dialect,
+                    request.Resource,
+                    sessionDocumentId,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            switch (lockedCurrentState)
+            {
+                case DescriptorCurrentStateLoadResult.MissingDocument:
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UpsertFailureWriteConflict();
+
+                case DescriptorCurrentStateLoadResult.MissingDescriptor:
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UnknownFailure(
+                        BuildMissingDescriptorMessage(request.Resource, sessionDocumentId)
+                    );
+
+                case DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag):
+                    if (!string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal))
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpsertResult.UpsertFailureETagMisMatch();
+                    }
+
+                    if (IsDescriptorUnchanged(body, persisted))
+                    {
+                        _logger.LogDebug(
+                            "Descriptor POST upsert is a no-op for {Resource} (DocumentId={DocumentId}) - {TraceId}",
+                            RelationalWriteSupport.FormatResource(request.Resource),
+                            sessionDocumentId,
+                            request.TraceId.Value
+                        );
+
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpsertResult.UpdateSuccess(sessionDocumentUuid, currentEtag);
+                    }
+
+                    var upsertResult = await UpdateDescriptorForUpsertAsync(
+                            request,
+                            body,
+                            sessionDocumentId,
+                            sessionDocumentUuid,
+                            resourceKeyId,
+                            sessionCommandExecutor,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    return upsertResult;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
+                    );
+            }
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsUniqueConstraintViolation(ex))
         {
+            if (writeSession is not null)
+            {
+                await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
+            }
+
             _logger.LogDebug(
                 ex,
                 "Unique constraint violation on descriptor POST for {Resource} - {TraceId}",
@@ -120,6 +238,11 @@ internal sealed class DescriptorWriteHandler(
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
         {
+            if (writeSession is not null)
+            {
+                await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
+            }
+
             _logger.LogDebug(
                 ex,
                 "Transient conflict on descriptor POST for {Resource} - {TraceId}",
@@ -131,6 +254,11 @@ internal sealed class DescriptorWriteHandler(
         }
         catch (DbException ex)
         {
+            if (writeSession is not null)
+            {
+                await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
+            }
+
             _logger.LogError(
                 ex,
                 "Database error on descriptor POST for {Resource} - {TraceId}",
@@ -186,53 +314,186 @@ internal sealed class DescriptorWriteHandler(
             );
         }
 
-        var persisted = await ReadPersistedDescriptorAsync(
-                request.MappingSet.Key.Dialect,
-                documentId,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (persisted is null)
+        if (request.WritePrecondition is not WritePrecondition.IfMatch)
         {
-            return new UpdateResult.UnknownFailure(
-                $"Descriptor row not found for DocumentId {documentId} on resource "
-                    + $"'{RelationalWriteSupport.FormatResource(request.Resource)}'."
-            );
+            var persisted = await ReadPersistedDescriptorAsync(
+                    _commandExecutor,
+                    documentId,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (persisted is null)
+            {
+                return new UpdateResult.UnknownFailure(
+                    BuildMissingDescriptorMessage(request.Resource, documentId)
+                );
+            }
+
+            if (!string.Equals(body.Uri, persisted.Uri, StringComparison.Ordinal))
+            {
+                return new UpdateResult.UpdateFailureImmutableIdentity(
+                    $"Identity of resource '{RelationalWriteSupport.FormatResource(request.Resource)}' "
+                        + "cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
+                );
+            }
+
+            if (IsDescriptorUnchanged(body, persisted))
+            {
+                _logger.LogDebug(
+                    "Descriptor PUT is a no-op for {Resource} (DocumentId={DocumentId}) - {TraceId}",
+                    RelationalWriteSupport.FormatResource(request.Resource),
+                    documentId,
+                    request.TraceId.Value
+                );
+
+                return new UpdateResult.UpdateSuccess(
+                    documentUuid,
+                    RelationalApiMetadataFormatter.FormatEtag(body)
+                );
+            }
         }
 
-        if (!string.Equals(body.Uri, persisted.Uri, StringComparison.Ordinal))
-        {
-            return new UpdateResult.UpdateFailureImmutableIdentity(
-                $"Identity of resource '{RelationalWriteSupport.FormatResource(request.Resource)}' "
-                    + "cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
-            );
-        }
+        IRelationalWriteSession? writeSession = null;
 
-        if (IsDescriptorUnchanged(body, persisted))
+        try
         {
+            if (request.WritePrecondition is WritePrecondition.IfMatch ifMatch)
+            {
+                writeSession = await _writeSessionFactory
+                    .CreateAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                var sessionCommandExecutor = writeSession.CreateCommandExecutor();
+
+                var sessionTargetLookupResult = await RelationalWriteTargetLookupSupport
+                    .ResolveForPutAsync(
+                        sessionCommandExecutor,
+                        request.MappingSet,
+                        request.Resource,
+                        request.DocumentUuid,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (sessionTargetLookupResult is RelationalWriteTargetLookupResult.NotFound)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpdateResult.UpdateFailureNotExists();
+                }
+
+                var sessionTargetContext =
+                    RelationalWriteSupport.TryTranslateTargetContext(sessionTargetLookupResult)
+                    ?? throw new InvalidOperationException(
+                        $"Unexpected target lookup result type '{sessionTargetLookupResult.GetType().Name}' for descriptor PUT."
+                    );
+
+                if (
+                    sessionTargetContext
+                    is not RelationalWriteTargetContext.ExistingDocument
+                    (var sessionDocumentId, var sessionDocumentUuid, _)
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Unexpected target context type '{sessionTargetContext.GetType().Name}' for descriptor PUT."
+                    );
+                }
+
+                var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
+                        request.MappingSet.Key.Dialect,
+                        request.Resource,
+                        sessionDocumentId,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                switch (lockedCurrentState)
+                {
+                    case DescriptorCurrentStateLoadResult.MissingDocument:
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpdateResult.UpdateFailureNotExists();
+
+                    case DescriptorCurrentStateLoadResult.MissingDescriptor:
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpdateResult.UnknownFailure(
+                            BuildMissingDescriptorMessage(request.Resource, sessionDocumentId)
+                        );
+
+                    case DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag):
+                        if (!string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal))
+                        {
+                            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                            return new UpdateResult.UpdateFailureETagMisMatch();
+                        }
+
+                        if (!string.Equals(body.Uri, persisted.Uri, StringComparison.Ordinal))
+                        {
+                            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                            return new UpdateResult.UpdateFailureImmutableIdentity(
+                                $"Identity of resource '{RelationalWriteSupport.FormatResource(request.Resource)}' "
+                                    + "cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
+                            );
+                        }
+
+                        if (IsDescriptorUnchanged(body, persisted))
+                        {
+                            _logger.LogDebug(
+                                "Descriptor PUT is a no-op for {Resource} (DocumentId={DocumentId}) - {TraceId}",
+                                RelationalWriteSupport.FormatResource(request.Resource),
+                                sessionDocumentId,
+                                request.TraceId.Value
+                            );
+
+                            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+                            return new UpdateResult.UpdateSuccess(sessionDocumentUuid, currentEtag);
+                        }
+
+                        _logger.LogDebug(
+                            "Updating descriptor {Resource} (DocumentId={DocumentId}) via PUT - {TraceId}",
+                            RelationalWriteSupport.FormatResource(request.Resource),
+                            sessionDocumentId,
+                            request.TraceId.Value
+                        );
+
+                        var lockedCommand = request.MappingSet.Key.Dialect switch
+                        {
+                            SqlDialect.Pgsql => BuildPostgresqlUpdateCommand(body, sessionDocumentId),
+                            SqlDialect.Mssql => BuildMssqlUpdateCommand(body, sessionDocumentId),
+                            _ => throw new NotSupportedException(
+                                $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
+                            ),
+                        };
+
+                        await ExecuteWriteCommandAsync(
+                                sessionCommandExecutor,
+                                lockedCommand,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                        return new UpdateResult.UpdateSuccess(
+                            sessionDocumentUuid,
+                            RelationalApiMetadataFormatter.FormatEtag(body)
+                        );
+
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
+                        );
+                }
+            }
+
             _logger.LogDebug(
-                "Descriptor PUT is a no-op for {Resource} (DocumentId={DocumentId}) - {TraceId}",
+                "Updating descriptor {Resource} (DocumentId={DocumentId}) via PUT - {TraceId}",
                 RelationalWriteSupport.FormatResource(request.Resource),
                 documentId,
                 request.TraceId.Value
             );
 
-            return new UpdateResult.UpdateSuccess(
-                documentUuid,
-                RelationalApiMetadataFormatter.FormatEtag(body)
-            );
-        }
-
-        _logger.LogDebug(
-            "Updating descriptor {Resource} (DocumentId={DocumentId}) via PUT - {TraceId}",
-            RelationalWriteSupport.FormatResource(request.Resource),
-            documentId,
-            request.TraceId.Value
-        );
-
-        try
-        {
             var command = request.MappingSet.Key.Dialect switch
             {
                 SqlDialect.Pgsql => BuildPostgresqlUpdateCommand(body, documentId),
@@ -242,7 +503,8 @@ internal sealed class DescriptorWriteHandler(
                 ),
             };
 
-            await ExecuteWriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
+            await ExecuteWriteCommandAsync(_commandExecutor, command, cancellationToken)
+                .ConfigureAwait(false);
 
             return new UpdateResult.UpdateSuccess(
                 documentUuid,
@@ -251,6 +513,11 @@ internal sealed class DescriptorWriteHandler(
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
         {
+            if (writeSession is not null)
+            {
+                await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
+            }
+
             _logger.LogDebug(
                 ex,
                 "Transient conflict on descriptor PUT for {Resource} - {TraceId}",
@@ -262,6 +529,11 @@ internal sealed class DescriptorWriteHandler(
         }
         catch (DbException ex)
         {
+            if (writeSession is not null)
+            {
+                await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
+            }
+
             _logger.LogError(
                 ex,
                 "Database error on descriptor PUT for {Resource} - {TraceId}",
@@ -358,6 +630,7 @@ internal sealed class DescriptorWriteHandler(
         ExtractedDescriptorBody body,
         DocumentUuid documentUuid,
         short resourceKeyId,
+        IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken
     )
     {
@@ -387,7 +660,7 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await ExecuteWriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
+        await ExecuteWriteCommandAsync(commandExecutor, command, cancellationToken).ConfigureAwait(false);
 
         return new UpsertResult.InsertSuccess(documentUuid, RelationalApiMetadataFormatter.FormatEtag(body));
     }
@@ -398,6 +671,7 @@ internal sealed class DescriptorWriteHandler(
         long documentId,
         DocumentUuid existingDocumentUuid,
         short resourceKeyId,
+        IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken
     )
     {
@@ -427,7 +701,7 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await ExecuteWriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
+        await ExecuteWriteCommandAsync(commandExecutor, command, cancellationToken).ConfigureAwait(false);
 
         return new UpsertResult.UpdateSuccess(
             existingDocumentUuid,
@@ -435,12 +709,13 @@ internal sealed class DescriptorWriteHandler(
         );
     }
 
-    private async Task ExecuteWriteCommandAsync(
+    private static async Task ExecuteWriteCommandAsync(
+        IRelationalCommandExecutor commandExecutor,
         RelationalCommand command,
         CancellationToken cancellationToken
     )
     {
-        _ = await _commandExecutor
+        _ = await commandExecutor
             .ExecuteReaderAsync(
                 command,
                 static (_, ct) =>
@@ -662,22 +937,22 @@ internal sealed class DescriptorWriteHandler(
 
     // ── Persisted descriptor read ──────────────────────────────────────────
 
-    private async Task<PersistedDescriptorState?> ReadPersistedDescriptorAsync(
-        SqlDialect dialect,
+    private static async Task<PersistedDescriptorState?> ReadPersistedDescriptorAsync(
+        IRelationalCommandExecutor commandExecutor,
         long documentId,
         CancellationToken cancellationToken
     )
     {
-        var command = dialect switch
+        var command = commandExecutor.Dialect switch
         {
             SqlDialect.Pgsql => BuildPostgresqlReadCommand(documentId),
             SqlDialect.Mssql => BuildMssqlReadCommand(documentId),
             _ => throw new NotSupportedException(
-                $"Descriptor read does not support SQL dialect '{dialect}'."
+                $"Descriptor read does not support SQL dialect '{commandExecutor.Dialect}'."
             ),
         };
 
-        return await _commandExecutor
+        return await commandExecutor
             .ExecuteReaderAsync(
                 command,
                 static async (reader, ct) =>
@@ -688,6 +963,8 @@ internal sealed class DescriptorWriteHandler(
                     }
 
                     return new PersistedDescriptorState(
+                        Namespace: reader.GetRequiredFieldValue<string>("Namespace"),
+                        CodeValue: reader.GetRequiredFieldValue<string>("CodeValue"),
                         Uri: reader.GetRequiredFieldValue<string>("Uri"),
                         ShortDescription: reader.GetNullableFieldValue<string>("ShortDescription"),
                         Description: reader.GetNullableFieldValue<string>("Description"),
@@ -703,7 +980,7 @@ internal sealed class DescriptorWriteHandler(
     private static RelationalCommand BuildPostgresqlReadCommand(long documentId)
     {
         const string Sql = """
-            SELECT "Uri", "ShortDescription", "Description", "EffectiveBeginDate", "EffectiveEndDate"
+            SELECT "Namespace", "CodeValue", "Uri", "ShortDescription", "Description", "EffectiveBeginDate", "EffectiveEndDate"
             FROM dms."Descriptor"
             WHERE "DocumentId" = @documentId;
             """;
@@ -714,7 +991,7 @@ internal sealed class DescriptorWriteHandler(
     private static RelationalCommand BuildMssqlReadCommand(long documentId)
     {
         const string Sql = """
-            SELECT [Uri], [ShortDescription], [Description], [EffectiveBeginDate], [EffectiveEndDate]
+            SELECT [Namespace], [CodeValue], [Uri], [ShortDescription], [Description], [EffectiveBeginDate], [EffectiveEndDate]
             FROM [dms].[Descriptor]
             WHERE [DocumentId] = @documentId;
             """;
@@ -729,19 +1006,126 @@ internal sealed class DescriptorWriteHandler(
         PersistedDescriptorState persisted
     )
     {
-        return string.Equals(body.ShortDescription, persisted.ShortDescription, StringComparison.Ordinal)
+        return string.Equals(body.Namespace, persisted.Namespace, StringComparison.Ordinal)
+            && string.Equals(body.CodeValue, persisted.CodeValue, StringComparison.Ordinal)
+            && string.Equals(body.ShortDescription, persisted.ShortDescription, StringComparison.Ordinal)
             && string.Equals(body.Description, persisted.Description, StringComparison.Ordinal)
             && body.EffectiveBeginDate == persisted.EffectiveBeginDate
             && body.EffectiveEndDate == persisted.EffectiveEndDate;
     }
 
     private sealed record PersistedDescriptorState(
+        string Namespace,
+        string CodeValue,
         string Uri,
         string? ShortDescription,
         string? Description,
         DateOnly? EffectiveBeginDate,
         DateOnly? EffectiveEndDate
-    );
+    )
+    {
+        public ExtractedDescriptorBody ToExtractedDescriptorBody(QualifiedResourceName resource) =>
+            new(
+                Namespace,
+                CodeValue,
+                ShortDescription,
+                Description,
+                EffectiveBeginDate,
+                EffectiveEndDate,
+                Uri,
+                resource.ResourceName
+            );
+    }
+
+    private abstract record DescriptorCurrentStateLoadResult
+    {
+        private DescriptorCurrentStateLoadResult() { }
+
+        public sealed record MissingDocument : DescriptorCurrentStateLoadResult
+        {
+            private MissingDocument() { }
+
+            public static MissingDocument Instance { get; } = new();
+        }
+
+        public sealed record MissingDescriptor : DescriptorCurrentStateLoadResult
+        {
+            private MissingDescriptor() { }
+
+            public static MissingDescriptor Instance { get; } = new();
+        }
+
+        public sealed record Loaded(PersistedDescriptorState State, string Etag)
+            : DescriptorCurrentStateLoadResult;
+    }
+
+    private static async Task<DescriptorCurrentStateLoadResult> LoadLockedDescriptorCurrentStateAsync(
+        SqlDialect dialect,
+        QualifiedResourceName resource,
+        long documentId,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !await TryLockDocumentAsync(dialect, documentId, writeSession, cancellationToken)
+                .ConfigureAwait(false)
+        )
+        {
+            return DescriptorCurrentStateLoadResult.MissingDocument.Instance;
+        }
+
+        var persistedDescriptor = await ReadPersistedDescriptorAsync(
+                writeSession.CreateCommandExecutor(),
+                documentId,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (persistedDescriptor is null)
+        {
+            return DescriptorCurrentStateLoadResult.MissingDescriptor.Instance;
+        }
+
+        return new DescriptorCurrentStateLoadResult.Loaded(
+            persistedDescriptor,
+            RelationalApiMetadataFormatter.FormatEtag(persistedDescriptor.ToExtractedDescriptorBody(resource))
+        );
+    }
+
+    private static async Task<bool> TryLockDocumentAsync(
+        SqlDialect dialect,
+        long documentId,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = writeSession.CreateCommand(
+            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, documentId)
+        );
+
+        var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return scalarResult is not null and not DBNull;
+    }
+
+    private static string BuildMissingDescriptorMessage(QualifiedResourceName resource, long documentId) =>
+        $"Descriptor row not found for DocumentId {documentId} on resource "
+        + $"'{RelationalWriteSupport.FormatResource(resource)}'.";
+
+    private static async Task TryRollbackAsync(
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            // Best-effort rollback in exception handlers: ignore sessions already completed.
+        }
+    }
 
     // ── Parameter builders ───────────────────────────────────────────────
 

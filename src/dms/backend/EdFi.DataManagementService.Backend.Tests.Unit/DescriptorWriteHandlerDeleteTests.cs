@@ -159,6 +159,7 @@ public class Given_Descriptor_Write_Handler_Delete
                 commandExecutor,
                 Classifier,
                 Resolver,
+                A.Fake<IRelationalWriteSessionFactory>(),
                 Logger
             );
         }

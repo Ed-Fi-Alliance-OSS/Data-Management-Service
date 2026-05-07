@@ -84,7 +84,7 @@
       "Review `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorWriteHandlerDeleteTests.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorWriteHandlerNoOpTests.cs`, and any added descriptor write tests to confirm absent precondition, exact match, mismatch short-circuit after authorization but before deeper validation, POST create-new-with-If-Match, POST-as-update exact/mismatch and unchanged-existing overlap short-circuit, immutable URI changes, and unsupported profiled descriptor writes are all covered.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DescriptorWriteHandler`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor DELETE",

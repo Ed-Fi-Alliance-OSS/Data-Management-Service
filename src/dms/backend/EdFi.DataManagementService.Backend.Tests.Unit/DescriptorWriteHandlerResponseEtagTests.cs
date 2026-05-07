@@ -129,6 +129,8 @@ public class Given_Descriptor_Write_Response_Etags
             InMemoryRelationalResultSet.Create(
                 new Dictionary<string, object?>
                 {
+                    ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+                    ["CodeValue"] = "Charter",
                     ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
                     ["ShortDescription"] = "Charter",
                     ["Description"] = "Charter",
@@ -167,6 +169,8 @@ public class Given_Descriptor_Write_Response_Etags
             InMemoryRelationalResultSet.Create(
                 new Dictionary<string, object?>
                 {
+                    ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+                    ["CodeValue"] = "Charter",
                     ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
                     ["ShortDescription"] = "Charter",
                     ["Description"] = "Previous Description",
@@ -212,6 +216,7 @@ public class Given_Descriptor_Write_Response_Etags
             commandExecutor,
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
+            A.Fake<IRelationalWriteSessionFactory>(),
             NullLogger<DescriptorWriteHandler>.Instance
         );
     }
