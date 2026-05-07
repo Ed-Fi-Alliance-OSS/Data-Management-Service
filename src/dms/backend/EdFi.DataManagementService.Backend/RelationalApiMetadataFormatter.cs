@@ -12,24 +12,19 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalApiMetadataFormatter
 {
+    private static readonly string[] ServerGeneratedPropertyNames =
+    [
+        "id",
+        "link",
+        "_etag",
+        "_lastModifiedDate",
+    ];
+
     public static string FormatEtag(JsonNode document)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        var canonicalDocument = BuildCanonicalDocument(document);
 
-        var canonicalDocument = document.DeepClone();
-
-        if (canonicalDocument is not JsonObject documentObject)
-        {
-            throw new InvalidOperationException(
-                "Relational API metadata formatting requires a root JSON object."
-            );
-        }
-
-        documentObject.Remove("_etag");
-        documentObject.Remove("_lastModifiedDate");
-        documentObject.Remove("id");
-
-        var hash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(documentObject));
+        var hash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(canonicalDocument));
 
         return Convert.ToBase64String(hash);
     }
@@ -53,6 +48,59 @@ internal static class RelationalApiMetadataFormatter
         }
 
         documentObject["_etag"] = FormatEtag(documentObject);
+    }
+
+    private static JsonObject BuildCanonicalDocument(JsonNode document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        var canonicalDocument = document.DeepClone();
+
+        if (canonicalDocument is not JsonObject documentObject)
+        {
+            throw new InvalidOperationException(
+                "Relational API metadata formatting requires a root JSON object."
+            );
+        }
+
+        RemoveServerGeneratedFields(documentObject);
+
+        return documentObject;
+    }
+
+    private static void RemoveServerGeneratedFields(JsonNode node)
+    {
+        switch (node)
+        {
+            case JsonObject objectNode:
+                foreach (var propertyName in ServerGeneratedPropertyNames)
+                {
+                    objectNode.Remove(propertyName);
+                }
+
+                foreach (var (_, childNode) in objectNode)
+                {
+                    if (childNode is not null)
+                    {
+                        RemoveServerGeneratedFields(childNode);
+                    }
+                }
+
+                break;
+
+            case JsonArray arrayNode:
+                for (var index = 0; index < arrayNode.Count; index++)
+                {
+                    var childNode = arrayNode[index];
+
+                    if (childNode is not null)
+                    {
+                        RemoveServerGeneratedFields(childNode);
+                    }
+                }
+
+                break;
+        }
     }
 
     private static JsonObject BuildCanonicalDescriptorDocument(ExtractedDescriptorBody descriptorBody)
