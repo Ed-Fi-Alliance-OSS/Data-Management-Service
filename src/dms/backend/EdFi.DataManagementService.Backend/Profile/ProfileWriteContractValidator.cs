@@ -66,6 +66,19 @@ internal static class ProfileWriteContractValidator
             operation,
             failures
         );
+
+        if (failures.Count == 0)
+        {
+            DetectInRequestBucketAmbiguity(
+                request.VisibleRequestCollectionItems,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+        }
+
         return [.. failures];
     }
 
@@ -244,6 +257,18 @@ internal static class ProfileWriteContractValidator
                     )
                 );
             }
+        }
+
+        if (failures.Count == 0)
+        {
+            DetectInRequestBucketAmbiguity(
+                context.Request.VisibleRequestCollectionItems,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
         }
 
         return [.. failures];
@@ -714,5 +739,124 @@ internal static class ProfileWriteContractValidator
                 )
             );
         }
+    }
+
+    private static void DetectInRequestBucketAmbiguity(
+        ImmutableArray<VisibleRequestCollectionItem> visibleRequestItems,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        if (visibleRequestItems.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var bucketed = visibleRequestItems.GroupBy(
+            item => (item.Address.JsonScope, item.Address.ParentAddress),
+            ScopeBucketKeyComparer.Instance
+        );
+
+        foreach (var bucket in bucketed)
+        {
+            AddCollapsedConflicts(
+                bucket.Select(i => i.Address.SemanticIdentityInOrder),
+                jsonScope: bucket.Key.JsonScope,
+                parentAddress: bucket.Key.ParentAddress,
+                kind: AmbiguousStorageCollapsedIdentityKind.InRequest,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+        }
+    }
+
+    private sealed class ScopeBucketKeyComparer
+        : IEqualityComparer<(string JsonScope, ScopeInstanceAddress ParentAddress)>
+    {
+        public static readonly ScopeBucketKeyComparer Instance = new();
+
+        public bool Equals(
+            (string JsonScope, ScopeInstanceAddress ParentAddress) x,
+            (string JsonScope, ScopeInstanceAddress ParentAddress) y
+        ) =>
+            string.Equals(x.JsonScope, y.JsonScope, StringComparison.Ordinal)
+            && ScopeInstanceAddressComparer.Instance.Equals(x.ParentAddress, y.ParentAddress);
+
+        public int GetHashCode((string JsonScope, ScopeInstanceAddress ParentAddress) obj) =>
+            HashCode.Combine(
+                StringComparer.Ordinal.GetHashCode(obj.JsonScope),
+                ScopeInstanceAddressComparer.Instance.GetHashCode(obj.ParentAddress)
+            );
+    }
+
+    private static void AddCollapsedConflicts(
+        IEnumerable<ImmutableArray<SemanticIdentityPart>> identities,
+        string jsonScope,
+        ScopeInstanceAddress parentAddress,
+        AmbiguousStorageCollapsedIdentityKind kind,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        var byCollapsedKey = new Dictionary<string, List<ImmutableArray<SemanticIdentityPart>>>(
+            StringComparer.Ordinal
+        );
+
+        foreach (var identity in identities)
+        {
+            var key = StorageCollapsedIdentityHelpers.BuildKey(identity);
+            if (!byCollapsedKey.TryGetValue(key, out var bucket))
+            {
+                bucket = [];
+                byCollapsedKey.Add(key, bucket);
+            }
+            bucket.Add(identity);
+        }
+
+        foreach (var (_, conflicting) in byCollapsedKey)
+        {
+            if (conflicting.Count < 2)
+            {
+                continue;
+            }
+
+            if (!HasPresenceAwareDistinctPair(conflicting))
+            {
+                continue;
+            }
+
+            failures.Add(
+                ProfileFailures.AmbiguousStorageCollapsedIdentity(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    jsonScope,
+                    parentAddress,
+                    kind,
+                    [.. conflicting]
+                )
+            );
+        }
+    }
+
+    private static bool HasPresenceAwareDistinctPair(List<ImmutableArray<SemanticIdentityPart>> identities)
+    {
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var identity in identities)
+        {
+            var presenceAwareKey = SemanticIdentityKeys.BuildKey(identity);
+            seenKeys.Add(presenceAwareKey);
+        }
+        return seenKeys.Count >= 2;
     }
 }
