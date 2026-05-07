@@ -1027,6 +1027,42 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_if_match_failure_with_a_stale_no_op_compare_outcome_when_guarded_freshness_is_lost()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfMatch("\"current-etag\"")
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: true,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+        _writeFreshnessChecker.IsCurrentResult = false;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureETagMisMatch(),
+                    RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                )
+            );
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_insert_success_when_non_collection_create_dml_is_applied()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
@@ -3221,6 +3257,69 @@ public class Given_Default_Relational_Write_Executor
             .Which.Result.Should()
             .BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_if_match_failure_for_profiled_stale_post_as_update_no_op_compares()
+    {
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var existingTarget = new RelationalWriteTargetContext.ExistingDocument(
+            345L,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+            44L
+        );
+        var baseRequest = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: existingTarget,
+            selectedBody: writableBody,
+            writePrecondition: new WritePrecondition.IfMatch("\"current-etag\"")
+        );
+        var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
+        var request = baseRequest with { ProfileWriteContext = profileContext };
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: true,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var sampleRow = new RelationalWriteMergedTableRow(
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ],
+            comparableValues:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ]
+        );
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
+            supportsGuardedNoOp: true
+        );
+        _writeFreshnessChecker.IsCurrentEvaluator = static _ => false;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureETagMisMatch(),
+                    RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                )
+            );
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
