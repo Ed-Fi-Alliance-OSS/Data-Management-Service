@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -530,6 +531,187 @@ public class MssqlReferentialIdentityTests
             .Contain(r =>
                 (Guid)r["ReferentialId"]! == newEdOrgDepChildRI
                 && (long)r["DocumentId"]! == edOrgDepChildDocumentId
+            );
+    }
+
+    [Test]
+    public async Task Cascaded_identity_update_bumps_stamps_and_is_visible_in_same_transaction()
+    {
+        // Arrange — Student → ResourceA/B → KeyUnifiedResource chain
+        const string oldStudentUniqueId = "STU-XACT-OLD";
+        const string newStudentUniqueId = "STU-XACT-NEW";
+
+        var studentDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        await InsertStudentAsync(studentDocumentId, oldStudentUniqueId);
+
+        var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[ResourceA] ([DocumentId], [ResourceAId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            VALUES (@documentId, @resourceAId, @studentDocumentId, @studentUniqueId);
+            """,
+            new SqlParameter("@documentId", resourceADocumentId),
+            new SqlParameter("@resourceAId", "resA-1"),
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", oldStudentUniqueId)
+        );
+
+        var resourceBDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceB");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[ResourceB] ([DocumentId], [ResourceBId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            VALUES (@documentId, @resourceBId, @studentDocumentId, @studentUniqueId);
+            """,
+            new SqlParameter("@documentId", resourceBDocumentId),
+            new SqlParameter("@resourceBId", "resB-1"),
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", oldStudentUniqueId)
+        );
+
+        var keyUnifiedDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "KeyUnifiedResource");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[KeyUnifiedResource] ([DocumentId], [KeyUnifiedResourceId], [ResourceAReference_DocumentId], [ResourceAReference_ResourceAId], [ResourceBReference_DocumentId], [ResourceBReference_ResourceBId], [StudentUniqueId_Unified])
+            VALUES (@documentId, @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId);
+            """,
+            new SqlParameter("@documentId", keyUnifiedDocumentId),
+            new SqlParameter("@keyUnifiedResourceId", "unified-1"),
+            new SqlParameter("@resourceADocumentId", resourceADocumentId),
+            new SqlParameter("@resourceAId", "resA-1"),
+            new SqlParameter("@resourceBDocumentId", resourceBDocumentId),
+            new SqlParameter("@resourceBId", "resB-1"),
+            new SqlParameter("@studentUniqueId", oldStudentUniqueId)
+        );
+
+        var (expectedStudentOld, expectedResAOld, expectedResBOld, expectedUnifiedOld) =
+            ComputeExpectedReferentialIds(oldStudentUniqueId, "resA-1", "resB-1", "unified-1");
+        var (expectedStudentNew, expectedResANew, expectedResBNew, expectedUnifiedNew) =
+            ComputeExpectedReferentialIds(newStudentUniqueId, "resA-1", "resB-1", "unified-1");
+
+        // Capture before-snapshots of identity stamps for all four documents
+        DocumentStampState beforeStudent;
+        DocumentStampState beforeResourceA;
+        DocumentStampState beforeResourceB;
+        DocumentStampState beforeKeyUnified;
+        await using (var snapshotConnection = new SqlConnection(_database.ConnectionString))
+        {
+            await snapshotConnection.OpenAsync();
+            beforeStudent = await GetDocumentStampStateAsync(
+                snapshotConnection,
+                transaction: null,
+                studentDocumentId
+            );
+            beforeResourceA = await GetDocumentStampStateAsync(
+                snapshotConnection,
+                transaction: null,
+                resourceADocumentId
+            );
+            beforeResourceB = await GetDocumentStampStateAsync(
+                snapshotConnection,
+                transaction: null,
+                resourceBDocumentId
+            );
+            beforeKeyUnified = await GetDocumentStampStateAsync(
+                snapshotConnection,
+                transaction: null,
+                keyUnifiedDocumentId
+            );
+        }
+
+        // sysutcdatetime() resolution is high but not guaranteed monotonic across
+        // sub-millisecond calls; advance the wall clock so BeAfter comparisons hold.
+        await DelayForDistinctTimestampsAsync();
+
+        // Act — open an explicit transaction, UPDATE the parent identity, then
+        // observe the cascade (driven by the IdentityPropagationFallback trigger
+        // on SQL Server) through the same connection BEFORE COMMIT.
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        await using (var updateCmd = connection.CreateCommand())
+        {
+            updateCmd.Transaction = transaction;
+            updateCmd.CommandText = """
+                UPDATE [edfi].[Student]
+                SET [StudentUniqueId] = @newId
+                WHERE [DocumentId] = @documentId;
+                """;
+            updateCmd.Parameters.Add(new SqlParameter("@newId", newStudentUniqueId));
+            updateCmd.Parameters.Add(new SqlParameter("@documentId", studentDocumentId));
+            await updateCmd.ExecuteNonQueryAsync();
+        }
+
+        // Assert (pre-commit) — RI rows recomputed for every document on the chain.
+        var inTxnReferentialIds = await QueryReferentialIdentityRowsAsync(connection, transaction);
+        inTxnReferentialIds.Should().HaveCount(4);
+        inTxnReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == expectedStudentOld);
+        inTxnReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == expectedResAOld);
+        inTxnReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == expectedResBOld);
+        inTxnReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == expectedUnifiedOld);
+        inTxnReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedStudentNew && (long)r["DocumentId"]! == studentDocumentId
+            );
+        inTxnReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedResANew && (long)r["DocumentId"]! == resourceADocumentId
+            );
+        inTxnReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedResBNew && (long)r["DocumentId"]! == resourceBDocumentId
+            );
+        inTxnReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedUnifiedNew
+                && (long)r["DocumentId"]! == keyUnifiedDocumentId
+            );
+
+        // Assert (pre-commit) — IdentityVersion / IdentityLastModifiedAt strictly bumped
+        // on the parent and on every cascaded dependent.
+        var inTxnStudent = await GetDocumentStampStateAsync(connection, transaction, studentDocumentId);
+        var inTxnResourceA = await GetDocumentStampStateAsync(connection, transaction, resourceADocumentId);
+        var inTxnResourceB = await GetDocumentStampStateAsync(connection, transaction, resourceBDocumentId);
+        var inTxnKeyUnified = await GetDocumentStampStateAsync(connection, transaction, keyUnifiedDocumentId);
+
+        inTxnStudent.IdentityVersion.Should().BeGreaterThan(beforeStudent.IdentityVersion);
+        inTxnStudent.IdentityLastModifiedAt.Should().BeAfter(beforeStudent.IdentityLastModifiedAt);
+        inTxnResourceA.IdentityVersion.Should().BeGreaterThan(beforeResourceA.IdentityVersion);
+        inTxnResourceA.IdentityLastModifiedAt.Should().BeAfter(beforeResourceA.IdentityLastModifiedAt);
+        inTxnResourceB.IdentityVersion.Should().BeGreaterThan(beforeResourceB.IdentityVersion);
+        inTxnResourceB.IdentityLastModifiedAt.Should().BeAfter(beforeResourceB.IdentityLastModifiedAt);
+        inTxnKeyUnified.IdentityVersion.Should().BeGreaterThan(beforeKeyUnified.IdentityVersion);
+        inTxnKeyUnified.IdentityLastModifiedAt.Should().BeAfter(beforeKeyUnified.IdentityLastModifiedAt);
+
+        await transaction.CommitAsync();
+
+        // Post-commit — end state on a fresh connection matches the pre-commit observation.
+        var postCommitReferentialIds = await QueryReferentialIdentityRowsAsync();
+        postCommitReferentialIds.Should().HaveCount(4);
+        postCommitReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedStudentNew && (long)r["DocumentId"]! == studentDocumentId
+            );
+        postCommitReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedResANew && (long)r["DocumentId"]! == resourceADocumentId
+            );
+        postCommitReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedResBNew && (long)r["DocumentId"]! == resourceBDocumentId
+            );
+        postCommitReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedUnifiedNew
+                && (long)r["DocumentId"]! == keyUnifiedDocumentId
             );
     }
 
@@ -1118,5 +1300,84 @@ public class MssqlReferentialIdentityTests
             resourceBReferentialId,
             keyUnifiedReferentialId
         );
+    }
+
+    private sealed record DocumentStampState(long IdentityVersion, DateTimeOffset IdentityLastModifiedAt);
+
+    private static async Task<DocumentStampState> GetDocumentStampStateAsync(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        long documentId
+    )
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = """
+            SELECT [IdentityVersion], [IdentityLastModifiedAt]
+            FROM [dms].[Document]
+            WHERE [DocumentId] = @documentId;
+            """;
+        cmd.Parameters.Add(new SqlParameter("@documentId", documentId));
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            throw new InvalidOperationException($"No dms.Document row for DocumentId={documentId}.");
+        }
+
+        return new DocumentStampState(
+            Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
+            ReadDateTimeOffset(reader.GetValue(1))
+        );
+    }
+
+    private static async Task<
+        IReadOnlyList<IReadOnlyDictionary<string, object?>>
+    > QueryReferentialIdentityRowsAsync(SqlConnection connection, SqlTransaction? transaction)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = """
+            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
+            FROM [dms].[ReferentialIdentity]
+            ORDER BY [ResourceKeyId];
+            """;
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var rows = new List<IReadOnlyDictionary<string, object?>>();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["ReferentialId"] = reader.GetValue(0),
+                    ["DocumentId"] = reader.GetValue(1),
+                    ["ResourceKeyId"] = reader.GetValue(2),
+                }
+            );
+        }
+        return rows;
+    }
+
+    private async Task DelayForDistinctTimestampsAsync()
+    {
+        await _database.ExecuteNonQueryAsync("""WAITFOR DELAY '00:00:00.050';""");
+    }
+
+    private static DateTimeOffset ReadDateTimeOffset(object? value)
+    {
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime
+            ),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"Unsupported timestamp value type '{value?.GetType().FullName ?? "<null>"}'."
+            ),
+        };
     }
 }
