@@ -43,6 +43,24 @@ internal sealed record RelationalCurrentEtagPreconditionCheckResult(
     bool IsMatch
 );
 
+public sealed record RelationalDeleteEtagPreconditionCheckResult(
+    RelationalWriteTargetContext.ExistingDocument TargetContext,
+    string CurrentEtag,
+    bool IsMatch
+);
+
+public interface IRelationalDeleteEtagPreconditionChecker
+{
+    Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
+        MappingSet mappingSet,
+        ResourceReadPlan readPlan,
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        WritePrecondition.IfMatch precondition,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken = default
+    );
+}
+
 internal interface IRelationalCurrentEtagPreconditionChecker
 {
     Task<RelationalCurrentEtagPreconditionCheckResult?> CheckAsync(
@@ -56,7 +74,7 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalReadMaterializer readMaterializer,
     IReadableProfileProjector readableProfileProjector
-) : IRelationalCurrentEtagPreconditionChecker
+) : IRelationalCurrentEtagPreconditionChecker, IRelationalDeleteEtagPreconditionChecker
 {
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
         currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
@@ -66,6 +84,36 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
 
     private readonly IReadableProfileProjector _readableProfileProjector =
         readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
+
+    public async Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
+        MappingSet mappingSet,
+        ResourceReadPlan readPlan,
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        WritePrecondition.IfMatch precondition,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var result = await CheckAsync(
+                new RelationalCurrentEtagPreconditionCheckRequest(
+                    mappingSet,
+                    readPlan,
+                    targetContext,
+                    precondition
+                ),
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return result is null
+            ? null
+            : new RelationalDeleteEtagPreconditionCheckResult(
+                result.TargetContext,
+                result.CurrentEtag,
+                result.IsMatch
+            );
+    }
 
     public async Task<RelationalCurrentEtagPreconditionCheckResult?> CheckAsync(
         RelationalCurrentEtagPreconditionCheckRequest request,

@@ -720,6 +720,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 NullLogger<RelationalDocumentStoreRepository>.Instance,
                 writeExecutor,
                 targetLookupService,
+                A.Fake<IRelationalDeleteEtagPreconditionChecker>(),
                 new DefaultDescriptorWriteHandler(),
                 A.Fake<IDescriptorReadHandler>(),
                 A.Fake<IReferenceResolver>(),

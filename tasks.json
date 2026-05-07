@@ -64,7 +64,7 @@
       "Review the added delete-path unit tests to confirm PostgreSQL and SQL Server lock SQL, exact success, mismatch 412 result, 404 precedence, authorization precedence, and FK conflict preservation are all covered.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDelete|Precondition\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Guarded No-Op",
