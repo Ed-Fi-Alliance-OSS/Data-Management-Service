@@ -713,6 +713,47 @@ public class MssqlReferentialIdentityTests
                 (Guid)r["ReferentialId"]! == expectedUnifiedNew
                 && (long)r["DocumentId"]! == keyUnifiedDocumentId
             );
+
+        // Post-commit — stamp values survive commit on a connection that never saw the in-flight transaction.
+        await using (var postCommitConnection = new SqlConnection(_database.ConnectionString))
+        {
+            await postCommitConnection.OpenAsync();
+            var postCommitStudent = await GetDocumentStampStateAsync(
+                postCommitConnection,
+                transaction: null,
+                studentDocumentId
+            );
+            var postCommitResourceA = await GetDocumentStampStateAsync(
+                postCommitConnection,
+                transaction: null,
+                resourceADocumentId
+            );
+            var postCommitResourceB = await GetDocumentStampStateAsync(
+                postCommitConnection,
+                transaction: null,
+                resourceBDocumentId
+            );
+            var postCommitKeyUnified = await GetDocumentStampStateAsync(
+                postCommitConnection,
+                transaction: null,
+                keyUnifiedDocumentId
+            );
+
+            postCommitStudent.IdentityVersion.Should().BeGreaterThan(beforeStudent.IdentityVersion);
+            postCommitStudent.IdentityLastModifiedAt.Should().BeAfter(beforeStudent.IdentityLastModifiedAt);
+            postCommitResourceA.IdentityVersion.Should().BeGreaterThan(beforeResourceA.IdentityVersion);
+            postCommitResourceA
+                .IdentityLastModifiedAt.Should()
+                .BeAfter(beforeResourceA.IdentityLastModifiedAt);
+            postCommitResourceB.IdentityVersion.Should().BeGreaterThan(beforeResourceB.IdentityVersion);
+            postCommitResourceB
+                .IdentityLastModifiedAt.Should()
+                .BeAfter(beforeResourceB.IdentityLastModifiedAt);
+            postCommitKeyUnified.IdentityVersion.Should().BeGreaterThan(beforeKeyUnified.IdentityVersion);
+            postCommitKeyUnified
+                .IdentityLastModifiedAt.Should()
+                .BeAfter(beforeKeyUnified.IdentityLastModifiedAt);
+        }
     }
 
     [Test]
@@ -906,6 +947,38 @@ public class MssqlReferentialIdentityTests
                 (Guid)r["ReferentialId"]! == newEdOrgDepChildRI
                 && (long)r["DocumentId"]! == edOrgDepChildDocumentId
             );
+
+        // Post-commit — stamp values survive commit on a connection that never saw the in-flight transaction.
+        await using (var postCommitConnection = new SqlConnection(_database.ConnectionString))
+        {
+            await postCommitConnection.OpenAsync();
+            var postCommitSchool = await GetDocumentStampStateAsync(
+                postCommitConnection,
+                transaction: null,
+                schoolDocumentId
+            );
+            var postCommitEdOrgDep = await GetDocumentStampStateAsync(
+                postCommitConnection,
+                transaction: null,
+                edOrgDepDocumentId
+            );
+            var postCommitEdOrgDepChild = await GetDocumentStampStateAsync(
+                postCommitConnection,
+                transaction: null,
+                edOrgDepChildDocumentId
+            );
+
+            postCommitSchool.IdentityVersion.Should().BeGreaterThan(beforeSchool.IdentityVersion);
+            postCommitSchool.IdentityLastModifiedAt.Should().BeAfter(beforeSchool.IdentityLastModifiedAt);
+            postCommitEdOrgDep.IdentityVersion.Should().BeGreaterThan(beforeEdOrgDep.IdentityVersion);
+            postCommitEdOrgDep.IdentityLastModifiedAt.Should().BeAfter(beforeEdOrgDep.IdentityLastModifiedAt);
+            postCommitEdOrgDepChild
+                .IdentityVersion.Should()
+                .BeGreaterThan(beforeEdOrgDepChild.IdentityVersion);
+            postCommitEdOrgDepChild
+                .IdentityLastModifiedAt.Should()
+                .BeAfter(beforeEdOrgDepChild.IdentityLastModifiedAt);
+        }
     }
 
     [Test]
