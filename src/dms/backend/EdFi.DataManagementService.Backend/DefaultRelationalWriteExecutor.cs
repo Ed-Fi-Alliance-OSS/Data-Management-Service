@@ -289,14 +289,16 @@ internal sealed class DefaultRelationalWriteExecutor(
                         executionRequest.SelectedBody,
                         resolvedReferences,
                         // The no-profile merge matches collection rows by raw object?[] semantic
-                        // identity values with no presence flag, so two siblings whose identity
-                        // differs only in missing-vs-explicit-null would otherwise survive
-                        // flattening and later collide on the same collapsed merge key. Collapse
-                        // the duplicate-detection key here to fail closed before persistence.
-                        // Profile flattening at line 241 leaves this off to preserve
-                        // SemanticIdentityKeys.BuildKey presence-aware identity for
-                        // ProfileCollectionPlanner.
-                        collapseMissingAndExplicitNullForDuplicateDetection: true
+                        // identity values via ObjectValueArrayComparer, which maps a missing
+                        // identity property and an explicit JSON null to the same key. The
+                        // relational storage model collapses them the same way (both persist as
+                        // SQL NULL), so two request siblings that differ only by
+                        // absent-vs-explicit-null on an identity slot cannot be persisted
+                        // distinctly. Enforce that invariant at flatten time so persistence never
+                        // sees an ambiguous pair. The profile path enforces the equivalent
+                        // invariant on Core-emitted address streams in
+                        // ProfileWriteContractValidator's ambiguity-detection phase.
+                        validateStorageCollapsedCollectionIdentityUniqueness: true
                     )
                 );
 

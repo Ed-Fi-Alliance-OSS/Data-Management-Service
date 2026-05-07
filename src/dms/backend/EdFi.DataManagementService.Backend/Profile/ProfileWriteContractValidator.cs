@@ -66,6 +66,28 @@ internal static class ProfileWriteContractValidator
             operation,
             failures
         );
+
+        if (failures.Count == 0)
+        {
+            DetectInRequestBucketAmbiguity(
+                request.VisibleRequestCollectionItems,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+            DetectInAncestorBucketAmbiguity(
+                request,
+                context: null,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+        }
+
         return [.. failures];
     }
 
@@ -244,6 +266,44 @@ internal static class ProfileWriteContractValidator
                     )
                 );
             }
+        }
+
+        if (failures.Count == 0)
+        {
+            DetectInRequestBucketAmbiguity(
+                context.Request.VisibleRequestCollectionItems,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+            DetectInStoredBucketAmbiguity(
+                context.VisibleStoredCollectionRows,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+            DetectCrossSideBucketAmbiguity(
+                context.Request.VisibleRequestCollectionItems,
+                context.VisibleStoredCollectionRows,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+            DetectInAncestorBucketAmbiguity(
+                context.Request,
+                context,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
         }
 
         return [.. failures];
@@ -714,5 +774,326 @@ internal static class ProfileWriteContractValidator
                 )
             );
         }
+    }
+
+    private static void DetectInRequestBucketAmbiguity(
+        ImmutableArray<VisibleRequestCollectionItem> visibleRequestItems,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        if (visibleRequestItems.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var bucketed = visibleRequestItems.GroupBy(
+            item => (item.Address.JsonScope, item.Address.ParentAddress),
+            ScopeBucketKeyComparer.Instance
+        );
+
+        foreach (var bucket in bucketed)
+        {
+            AddCollapsedConflicts(
+                bucket.Select(i => i.Address.SemanticIdentityInOrder),
+                jsonScope: bucket.Key.JsonScope,
+                parentAddress: bucket.Key.ParentAddress,
+                kind: AmbiguousStorageCollapsedIdentityKind.InRequest,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+        }
+    }
+
+    private static void DetectInStoredBucketAmbiguity(
+        ImmutableArray<VisibleStoredCollectionRow> visibleStoredRows,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        if (visibleStoredRows.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var bucketed = visibleStoredRows.GroupBy(
+            row => (row.Address.JsonScope, row.Address.ParentAddress),
+            ScopeBucketKeyComparer.Instance
+        );
+
+        foreach (var bucket in bucketed)
+        {
+            AddCollapsedConflicts(
+                bucket.Select(r => r.Address.SemanticIdentityInOrder),
+                jsonScope: bucket.Key.JsonScope,
+                parentAddress: bucket.Key.ParentAddress,
+                kind: AmbiguousStorageCollapsedIdentityKind.InStored,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+        }
+    }
+
+    private static void DetectCrossSideBucketAmbiguity(
+        ImmutableArray<VisibleRequestCollectionItem> visibleRequestItems,
+        ImmutableArray<VisibleStoredCollectionRow> visibleStoredRows,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        if (visibleRequestItems.IsDefaultOrEmpty || visibleStoredRows.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var requestByBucket = visibleRequestItems
+            .GroupBy(i => (i.Address.JsonScope, i.Address.ParentAddress), ScopeBucketKeyComparer.Instance)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(i => i.Address.SemanticIdentityInOrder).ToList(),
+                ScopeBucketKeyComparer.Instance
+            );
+
+        var storedByBucket = visibleStoredRows
+            .GroupBy(r => (r.Address.JsonScope, r.Address.ParentAddress), ScopeBucketKeyComparer.Instance)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => r.Address.SemanticIdentityInOrder).ToList(),
+                ScopeBucketKeyComparer.Instance
+            );
+
+        foreach (var (bucketKey, requestList) in requestByBucket)
+        {
+            if (!storedByBucket.TryGetValue(bucketKey, out var storedList))
+            {
+                continue;
+            }
+
+            var requestByCollapsedKey = GroupByCollapsedKey(requestList);
+            var storedByCollapsedKey = GroupByCollapsedKey(storedList);
+
+            foreach (var (collapsedKey, requestIdentities) in requestByCollapsedKey)
+            {
+                if (!storedByCollapsedKey.TryGetValue(collapsedKey, out var storedIdentities))
+                {
+                    continue;
+                }
+
+                // At least one request and one stored identity share the collapsed key.
+                // Emit only if the union contains a presence-aware-distinct pair.
+                var combined = new List<ImmutableArray<SemanticIdentityPart>>(
+                    requestIdentities.Count + storedIdentities.Count
+                );
+                combined.AddRange(requestIdentities);
+                combined.AddRange(storedIdentities);
+
+                if (!HasPresenceAwareDistinctPair(combined))
+                {
+                    continue;
+                }
+
+                failures.Add(
+                    ProfileFailures.AmbiguousStorageCollapsedIdentity(
+                        profileName,
+                        resourceName,
+                        method,
+                        operation,
+                        bucketKey.JsonScope,
+                        bucketKey.ParentAddress,
+                        AmbiguousStorageCollapsedIdentityKind.CrossSide,
+                        [.. combined]
+                    )
+                );
+            }
+        }
+    }
+
+    private static void DetectInAncestorBucketAmbiguity(
+        ProfileAppliedWriteRequest request,
+        ProfileAppliedWriteContext? context,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        // Collect all ancestor chains from all four metadata streams (two when context is null).
+        var chains = new List<ImmutableArray<AncestorCollectionInstance>>();
+        foreach (var s in request.RequestScopeStates)
+        {
+            chains.Add(s.Address.AncestorCollectionInstances);
+        }
+        foreach (var i in request.VisibleRequestCollectionItems)
+        {
+            chains.Add(i.Address.ParentAddress.AncestorCollectionInstances);
+        }
+        if (context is not null)
+        {
+            foreach (var s in context.StoredScopeStates)
+            {
+                chains.Add(s.Address.AncestorCollectionInstances);
+            }
+            foreach (var r in context.VisibleStoredCollectionRows)
+            {
+                chains.Add(r.Address.ParentAddress.AncestorCollectionInstances);
+            }
+        }
+
+        // Bucket key = (ancestor.JsonScope, derived parent ScopeInstanceAddress).
+        // Within each bucket, dedupe by exact presence-aware identity, then run
+        // storage-collapsed detection on the deduplicated set. The bucket comparer
+        // MUST use ScopeBucketKeyComparer for structural ScopeInstanceAddress equality.
+        var buckets = new Dictionary<
+            (string JsonScope, ScopeInstanceAddress Parent),
+            Dictionary<string, ImmutableArray<SemanticIdentityPart>>
+        >(ScopeBucketKeyComparer.Instance);
+
+        foreach (var chain in chains)
+        {
+            for (var k = 0; k < chain.Length; k++)
+            {
+                var ancestor = chain[k];
+                var parentJsonScope = ProfileCollectionWalker.ComputeParentJsonScope(ancestor.JsonScope);
+                var derivedParentAncestors =
+                    k == 0 ? ImmutableArray<AncestorCollectionInstance>.Empty : [.. chain.Take(k)];
+                var derivedParent = new ScopeInstanceAddress(parentJsonScope, derivedParentAncestors);
+                var bucketKey = (ancestor.JsonScope, derivedParent);
+                if (!buckets.TryGetValue(bucketKey, out var dedup))
+                {
+                    dedup = new Dictionary<string, ImmutableArray<SemanticIdentityPart>>(
+                        StringComparer.Ordinal
+                    );
+                    buckets.Add(bucketKey, dedup);
+                }
+                var presenceAwareKey = SemanticIdentityKeys.BuildKey(ancestor.SemanticIdentityInOrder);
+                if (!dedup.ContainsKey(presenceAwareKey))
+                {
+                    dedup.Add(presenceAwareKey, ancestor.SemanticIdentityInOrder);
+                }
+            }
+        }
+
+        foreach (var (bucketKey, dedup) in buckets)
+        {
+            var distinctIdentities = dedup.Values.ToList();
+            AddCollapsedConflicts(
+                distinctIdentities,
+                jsonScope: bucketKey.JsonScope,
+                parentAddress: bucketKey.Parent,
+                kind: AmbiguousStorageCollapsedIdentityKind.InAncestor,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                failures
+            );
+        }
+    }
+
+    private static Dictionary<string, List<ImmutableArray<SemanticIdentityPart>>> GroupByCollapsedKey(
+        IEnumerable<ImmutableArray<SemanticIdentityPart>> identities
+    )
+    {
+        var result = new Dictionary<string, List<ImmutableArray<SemanticIdentityPart>>>(
+            StringComparer.Ordinal
+        );
+        foreach (var identity in identities)
+        {
+            var key = StorageCollapsedIdentityHelpers.BuildKey(identity);
+            if (!result.TryGetValue(key, out var bucket))
+            {
+                bucket = [];
+                result.Add(key, bucket);
+            }
+            bucket.Add(identity);
+        }
+        return result;
+    }
+
+    private sealed class ScopeBucketKeyComparer
+        : IEqualityComparer<(string JsonScope, ScopeInstanceAddress ParentAddress)>
+    {
+        public static readonly ScopeBucketKeyComparer Instance = new();
+
+        public bool Equals(
+            (string JsonScope, ScopeInstanceAddress ParentAddress) x,
+            (string JsonScope, ScopeInstanceAddress ParentAddress) y
+        ) =>
+            string.Equals(x.JsonScope, y.JsonScope, StringComparison.Ordinal)
+            && ScopeInstanceAddressComparer.Instance.Equals(x.ParentAddress, y.ParentAddress);
+
+        public int GetHashCode((string JsonScope, ScopeInstanceAddress ParentAddress) obj) =>
+            HashCode.Combine(
+                StringComparer.Ordinal.GetHashCode(obj.JsonScope),
+                ScopeInstanceAddressComparer.Instance.GetHashCode(obj.ParentAddress)
+            );
+    }
+
+    private static void AddCollapsedConflicts(
+        IEnumerable<ImmutableArray<SemanticIdentityPart>> identities,
+        string jsonScope,
+        ScopeInstanceAddress parentAddress,
+        AmbiguousStorageCollapsedIdentityKind kind,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        var byCollapsedKey = GroupByCollapsedKey(identities);
+
+        foreach (var (_, conflicting) in byCollapsedKey)
+        {
+            if (conflicting.Count < 2)
+            {
+                continue;
+            }
+
+            if (!HasPresenceAwareDistinctPair(conflicting))
+            {
+                continue;
+            }
+
+            failures.Add(
+                ProfileFailures.AmbiguousStorageCollapsedIdentity(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    jsonScope,
+                    parentAddress,
+                    kind,
+                    [.. conflicting]
+                )
+            );
+        }
+    }
+
+    private static bool HasPresenceAwareDistinctPair(List<ImmutableArray<SemanticIdentityPart>> identities)
+    {
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var identity in identities)
+        {
+            var presenceAwareKey = SemanticIdentityKeys.BuildKey(identity);
+            seenKeys.Add(presenceAwareKey);
+        }
+        return seenKeys.Count >= 2;
     }
 }
