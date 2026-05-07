@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -20,6 +21,7 @@ public class WritePreconditionFactoryTests
         var result = WritePreconditionFactory.Create(new Dictionary<string, string>());
 
         result.Should().BeOfType<WritePrecondition.None>();
+        result.EtagProjectionContext.Should().BeNull();
     }
 
     [TestCase("plain-opaque-value")]
@@ -36,5 +38,44 @@ public class WritePreconditionFactoryTests
         var result = WritePreconditionFactory.Create(headers);
 
         result.Should().Be(new WritePrecondition.IfMatch(ifMatchValue));
+        result.EtagProjectionContext.Should().BeNull();
     }
+
+    [Test]
+    public void It_threads_the_readable_etag_projection_context_when_if_match_is_absent()
+    {
+        var etagProjectionContext = CreateReadableEtagProjectionContext();
+
+        var result = WritePreconditionFactory.Create(new Dictionary<string, string>(), etagProjectionContext);
+
+        result.Should().BeOfType<WritePrecondition.None>();
+        result.EtagProjectionContext.Should().BeSameAs(etagProjectionContext);
+    }
+
+    [Test]
+    public void It_threads_the_readable_etag_projection_context_when_if_match_is_present()
+    {
+        var etagProjectionContext = CreateReadableEtagProjectionContext();
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-Match"] = "\"72\"",
+        };
+
+        var result = WritePreconditionFactory.Create(headers, etagProjectionContext);
+
+        result.Should().Be(new WritePrecondition.IfMatch("\"72\"", etagProjectionContext));
+        result.EtagProjectionContext.Should().BeSameAs(etagProjectionContext);
+    }
+
+    private static ReadableEtagProjectionContext CreateReadableEtagProjectionContext() =>
+        new(
+            new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("studentUniqueId")],
+                [],
+                [],
+                []
+            ),
+            new HashSet<string>(["studentUniqueId", "schoolReference"], StringComparer.Ordinal)
+        );
 }

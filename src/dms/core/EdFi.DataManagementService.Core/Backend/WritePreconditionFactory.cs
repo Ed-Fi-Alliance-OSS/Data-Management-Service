@@ -11,12 +11,15 @@ internal static class WritePreconditionFactory
 {
     private const string IfMatchHeaderName = "If-Match";
 
-    public static WritePrecondition Create(IReadOnlyDictionary<string, string> headers)
+    public static WritePrecondition Create(
+        IReadOnlyDictionary<string, string> headers,
+        ReadableEtagProjectionContext? etagProjectionContext = null
+    )
     {
         ArgumentNullException.ThrowIfNull(headers);
 
         return headers.TryGetValue(IfMatchHeaderName, out var ifMatchValue)
-            ? new WritePrecondition.IfMatch(ifMatchValue ?? string.Empty)
-            : new WritePrecondition.None();
+            ? new WritePrecondition.IfMatch(ifMatchValue ?? string.Empty, etagProjectionContext)
+            : new WritePrecondition.None(etagProjectionContext);
     }
 }

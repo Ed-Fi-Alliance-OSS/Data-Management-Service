@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -11,6 +13,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
@@ -186,6 +189,135 @@ public class UpsertHandlerTests
             body["errors"]!.AsArray().Count.Should().Be(0);
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Profiled_Request : UpsertHandlerTests
+    {
+        internal sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IRelationalUpsertRequest CapturedRequest { get; private set; } = null!;
+
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                CapturedRequest =
+                    upsertRequest as IRelationalUpsertRequest
+                    ?? throw new AssertionException($"Expected {nameof(IRelationalUpsertRequest)} request.");
+
+                return Task.FromResult<UpsertResult>(
+                    new InsertSuccess(CapturedRequest.DocumentUuid, "\"71\"")
+                );
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly Repository _repository = new();
+        private ContentTypeDefinition _readContentType = null!;
+        private JsonNode _writableRequestBody = null!;
+
+        private static ResourceInfo CreateResourceInfo() =>
+            new(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("Student"),
+                IsDescriptor: false,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+
+        private static ResourceSchema CreateResourceSchema() =>
+            new(
+                JsonNode.Parse(
+                    """
+                    {
+                      "identityJsonPaths": [
+                        "$.studentUniqueId",
+                        "$.schoolReference.schoolId"
+                      ]
+                    }
+                    """
+                )!
+            );
+
+        private static ProfileContext CreateWriteProfileContext(ContentTypeDefinition readContentType) =>
+            new(
+                ProfileName: "ReadableProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: new ResourceProfile(
+                    ResourceName: "Student",
+                    LogicalSchema: null,
+                    ReadContentType: readContentType,
+                    WriteContentType: new ContentTypeDefinition(
+                        MemberSelection.IncludeOnly,
+                        [new PropertyRule("studentUniqueId")],
+                        [],
+                        [],
+                        []
+                    )
+                ),
+                WasExplicitlySpecified: true
+            );
+
+        private static BackendProfileWriteContext CreateBackendProfileWriteContext(
+            JsonNode writableRequestBody
+        ) =>
+            new(
+                Request: new ProfileAppliedWriteRequest(
+                    WritableRequestBody: writableRequestBody,
+                    RootResourceCreatable: true,
+                    RequestScopeStates: [],
+                    VisibleRequestCollectionItems: []
+                ),
+                ProfileName: "ReadableProfile",
+                CompiledScopeCatalog: [],
+                StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+            );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _readContentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("firstName")],
+                [],
+                [],
+                []
+            );
+            _writableRequestBody = JsonNode.Parse("""{"studentUniqueId":"1000"}""")!;
+            _requestInfo.ResourceInfo = CreateResourceInfo();
+            _requestInfo.ResourceSchema = CreateResourceSchema();
+            _requestInfo.ProfileContext = CreateWriteProfileContext(_readContentType);
+            _requestInfo.BackendProfileWriteContext = CreateBackendProfileWriteContext(_writableRequestBody);
+            _requestInfo.ParsedBody = JsonNode.Parse("""{"studentUniqueId":"1000","firstName":"Lincoln"}""")!;
+
+            var (upsertHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await upsertHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_threads_the_readable_etag_projection_surface_separately_from_the_writable_body()
+        {
+            _repository.CapturedRequest.WritePrecondition.Should().BeOfType<WritePrecondition.None>();
+            _repository.CapturedRequest.WritePrecondition.EtagProjectionContext.Should().NotBeNull();
+            _repository
+                .CapturedRequest.WritePrecondition.EtagProjectionContext!.ContentTypeDefinition.Should()
+                .BeSameAs(_readContentType);
+            _repository
+                .CapturedRequest.WritePrecondition.EtagProjectionContext.IdentityPropertyNames.Should()
+                .Equal("studentUniqueId", "schoolReference");
+            _repository.CapturedRequest.BackendProfileWriteContext.Should().NotBeNull();
+            _repository
+                .CapturedRequest.BackendProfileWriteContext!.Request.WritableRequestBody.Should()
+                .BeSameAs(_writableRequestBody);
         }
     }
 
