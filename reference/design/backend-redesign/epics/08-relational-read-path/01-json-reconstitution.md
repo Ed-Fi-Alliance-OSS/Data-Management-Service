@@ -146,7 +146,7 @@ Implement JSON reconstitution from hydrated relational rows:
   1. Should readable profile projection always preserve id, _etag, and _lastModifiedDate regardless of profile member rules? src/dms/core/EdFi.DataManagementService.Core/Profile/
      ReadableProfileProjector.cs:18 currently only special-cases id plus identity fields, while src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs:20 says
      readable schemas always include those metadata fields. If yes, should DMS-990 own that Core fix?
-  2. What exact format do you want for relational read metadata? We know _etag should come from the canonical JSON form of the response document, but I still need the concrete string form, and whether _lastModifiedDate should
+  2. What exact format do you want for relational read metadata? We know _etag should come from the canonical JSON form of the resource-state document, excluding server-generated response decorations, but I still need the concrete string form, and whether _lastModifiedDate should
      match the current write-side yyyy-MM-ddTHH:mm:ssZ format or preserve higher precision from stored ContentLastModifiedAt.
   3. While GET-many and descriptor endpoints remain deferred, what external behavior do you want under UseRelationalBackend=true for those unsupported reads? src/dms/backend/
      EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:95 currently returns UnknownFailure, which Core maps to HTTP 500. If you want an explicit 501/503 style response

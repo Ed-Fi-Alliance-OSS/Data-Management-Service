@@ -30,7 +30,7 @@ Align with:
 - `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` §4.3 step 6 —
   descriptor URI auxiliary-result-set pattern this design reuses
 - `reference/design/backend-redesign/design-docs/update-tracking.md` — `_etag` derivation from the
-  served body
+  canonical resource-state body, excluding response decorations such as `link`
 - `reference/design/backend-redesign/design-docs/auth.md` — authorization strategy families
 
 Blocks:

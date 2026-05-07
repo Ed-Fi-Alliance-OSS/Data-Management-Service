@@ -142,9 +142,9 @@ Notes:
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
 - `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth.md](auth.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
-  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s served representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
+  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's served resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
-  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the served response document that these stamps track.
+  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the served resource-state document, excluding server-generated response decorations such as `link`.
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization is addressed separately in [auth.md](auth.md).
 
@@ -199,7 +199,7 @@ Why this table exists (vs. scanning resource tables / `dms.Document`):
 
 Columns:
 
-- `ChangeVersion`: the document’s served representation change stamp (recommended: `ContentVersion`).
+- `ChangeVersion`: the document's served resource-state representation change stamp (recommended: `ContentVersion`).
 - `DocumentId`: changed document.
 - `ResourceKeyId`: resource key for filtering change queries.
 - `CreatedAt`: journal insert time (operational/auditing).
