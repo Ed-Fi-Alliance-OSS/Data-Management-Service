@@ -707,6 +707,199 @@ public class PostgresqlReferentialIdentityTests
     }
 
     [Test]
+    public async Task Cascaded_identity_update_via_abstract_reference_bumps_stamps_and_is_visible_in_same_transaction()
+    {
+        // Arrange — School (concrete + EducationOrganization alias) → EdOrgDependentResource → EdOrgDependentChildResource.
+        // The cascade traverses the abstract reference and the alias-row maintenance must fire in-statement.
+        var schoolDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "School");
+        await InsertSchoolAsync(schoolDocumentId, 100);
+
+        var edOrgDepDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "EdOrgDependentResource");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."EdOrgDependentResource" ("DocumentId", "EdOrgDependentResourceId", "EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
+            VALUES (@documentId, @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId);
+            """,
+            new NpgsqlParameter("documentId", edOrgDepDocumentId),
+            new NpgsqlParameter("edOrgDependentResourceId", "dep-1"),
+            new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
+            new NpgsqlParameter("educationOrganizationId", 100)
+        );
+
+        var edOrgDepChildDocumentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            "Ed-Fi",
+            "EdOrgDependentChildResource"
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."EdOrgDependentChildResource" ("DocumentId", "EdOrgDependentChildResourceId", "EdOrgDependentResourceReference_DocumentId", "EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId")
+            VALUES (@documentId, @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId);
+            """,
+            new NpgsqlParameter("documentId", edOrgDepChildDocumentId),
+            new NpgsqlParameter("childResourceId", "child-1"),
+            new NpgsqlParameter("edOrgDepDocumentId", edOrgDepDocumentId),
+            new NpgsqlParameter("edOrgDependentResourceId", "dep-1"),
+            new NpgsqlParameter("educationOrganizationId", 100)
+        );
+
+        var oldSchoolRI = ComputeReferentialId("Ed-Fi", "School", ("$.schoolId", "100"));
+        var oldEdOrgRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EducationOrganization",
+            ("$.educationOrganizationId", "100")
+        );
+        var oldEdOrgDepRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EdOrgDependentResource",
+            ("$.edOrgDependentResourceId", "dep-1"),
+            ("$.educationOrganizationReference.educationOrganizationId", "100")
+        );
+        var oldEdOrgDepChildRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EdOrgDependentChildResource",
+            ("$.edOrgDependentChildResourceId", "child-1"),
+            ("$.edOrgDependentResourceReference.edOrgDependentResourceId", "dep-1"),
+            ("$.edOrgDependentResourceReference.educationOrganizationId", "100")
+        );
+        var newSchoolRI = ComputeReferentialId("Ed-Fi", "School", ("$.schoolId", "200"));
+        var newEdOrgRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EducationOrganization",
+            ("$.educationOrganizationId", "200")
+        );
+        var newEdOrgDepRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EdOrgDependentResource",
+            ("$.edOrgDependentResourceId", "dep-1"),
+            ("$.educationOrganizationReference.educationOrganizationId", "200")
+        );
+        var newEdOrgDepChildRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EdOrgDependentChildResource",
+            ("$.edOrgDependentChildResourceId", "child-1"),
+            ("$.edOrgDependentResourceReference.edOrgDependentResourceId", "dep-1"),
+            ("$.edOrgDependentResourceReference.educationOrganizationId", "200")
+        );
+
+        DocumentStampState beforeSchool;
+        DocumentStampState beforeEdOrgDep;
+        DocumentStampState beforeEdOrgDepChild;
+        await using (var snapshotConnection = new NpgsqlConnection(_database.ConnectionString))
+        {
+            await snapshotConnection.OpenAsync();
+            beforeSchool = await GetDocumentStampStateAsync(
+                snapshotConnection,
+                transaction: null,
+                schoolDocumentId
+            );
+            beforeEdOrgDep = await GetDocumentStampStateAsync(
+                snapshotConnection,
+                transaction: null,
+                edOrgDepDocumentId
+            );
+            beforeEdOrgDepChild = await GetDocumentStampStateAsync(
+                snapshotConnection,
+                transaction: null,
+                edOrgDepChildDocumentId
+            );
+        }
+
+        await DelayForDistinctTimestampsAsync();
+
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        await using (var updateCmd = connection.CreateCommand())
+        {
+            updateCmd.Transaction = transaction;
+            updateCmd.CommandText = """
+                UPDATE "edfi"."School"
+                SET "SchoolId" = @newSchoolId, "EducationOrganizationId" = @newEdOrgId
+                WHERE "DocumentId" = @documentId;
+                """;
+            updateCmd.Parameters.Add(new NpgsqlParameter("newSchoolId", 200));
+            updateCmd.Parameters.Add(new NpgsqlParameter("newEdOrgId", 200));
+            updateCmd.Parameters.Add(new NpgsqlParameter("documentId", schoolDocumentId));
+            await updateCmd.ExecuteNonQueryAsync();
+        }
+
+        // Assert (pre-commit) — concrete + alias + dependent + grand-dependent RI rows all recomputed.
+        var inTxnReferentialIds = await QueryReferentialIdentityRowsAsync(connection, transaction);
+        inTxnReferentialIds.Should().HaveCount(4);
+        inTxnReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == oldSchoolRI);
+        inTxnReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == oldEdOrgRI);
+        inTxnReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == oldEdOrgDepRI);
+        inTxnReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == oldEdOrgDepChildRI);
+        inTxnReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newSchoolRI && (long)r["DocumentId"]! == schoolDocumentId
+            );
+        inTxnReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newEdOrgRI && (long)r["DocumentId"]! == schoolDocumentId
+            );
+        inTxnReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newEdOrgDepRI && (long)r["DocumentId"]! == edOrgDepDocumentId
+            );
+        inTxnReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newEdOrgDepChildRI
+                && (long)r["DocumentId"]! == edOrgDepChildDocumentId
+            );
+
+        // Assert (pre-commit) — IdentityVersion / IdentityLastModifiedAt strictly bumped on every impacted document.
+        var inTxnSchool = await GetDocumentStampStateAsync(connection, transaction, schoolDocumentId);
+        var inTxnEdOrgDep = await GetDocumentStampStateAsync(connection, transaction, edOrgDepDocumentId);
+        var inTxnEdOrgDepChild = await GetDocumentStampStateAsync(
+            connection,
+            transaction,
+            edOrgDepChildDocumentId
+        );
+
+        inTxnSchool.IdentityVersion.Should().BeGreaterThan(beforeSchool.IdentityVersion);
+        inTxnSchool.IdentityLastModifiedAt.Should().BeAfter(beforeSchool.IdentityLastModifiedAt);
+        inTxnEdOrgDep.IdentityVersion.Should().BeGreaterThan(beforeEdOrgDep.IdentityVersion);
+        inTxnEdOrgDep.IdentityLastModifiedAt.Should().BeAfter(beforeEdOrgDep.IdentityLastModifiedAt);
+        inTxnEdOrgDepChild.IdentityVersion.Should().BeGreaterThan(beforeEdOrgDepChild.IdentityVersion);
+        inTxnEdOrgDepChild
+            .IdentityLastModifiedAt.Should()
+            .BeAfter(beforeEdOrgDepChild.IdentityLastModifiedAt);
+
+        await transaction.CommitAsync();
+
+        var postCommitReferentialIds = await QueryReferentialIdentityRowsAsync();
+        postCommitReferentialIds.Should().HaveCount(4);
+        postCommitReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newSchoolRI && (long)r["DocumentId"]! == schoolDocumentId
+            );
+        postCommitReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newEdOrgRI && (long)r["DocumentId"]! == schoolDocumentId
+            );
+        postCommitReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newEdOrgDepRI && (long)r["DocumentId"]! == edOrgDepDocumentId
+            );
+        postCommitReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newEdOrgDepChildRI
+                && (long)r["DocumentId"]! == edOrgDepChildDocumentId
+            );
+    }
+
+    [Test]
     public async Task Direct_insert_duplicate_referential_id_is_rejected()
     {
         // Arrange — two documents so (DocumentId, ResourceKeyId) pairs differ
@@ -1301,10 +1494,24 @@ public class PostgresqlReferentialIdentityTests
             throw new InvalidOperationException($"No dms.Document row for DocumentId={documentId}.");
         }
 
-        return new DocumentStampState(
-            Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
-            ReadDateTimeOffset(reader.GetValue(1))
-        );
+        return new DocumentStampState(reader.GetInt64(0), ReadDateTimeOffset(reader.GetValue(1)));
+    }
+
+    private static DateTimeOffset ReadDateTimeOffset(object? value)
+    {
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime
+            ),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"Unsupported timestamp value type '{value?.GetType().FullName ?? "<null>"}'."
+            ),
+        };
     }
 
     private static async Task<
@@ -1338,22 +1545,5 @@ public class PostgresqlReferentialIdentityTests
     private async Task DelayForDistinctTimestampsAsync()
     {
         await _database.ExecuteNonQueryAsync("""SELECT pg_sleep(0.02);""");
-    }
-
-    private static DateTimeOffset ReadDateTimeOffset(object? value)
-    {
-        return value switch
-        {
-            DateTimeOffset dateTimeOffset => dateTimeOffset,
-            DateTime dateTime => new DateTimeOffset(
-                dateTime.Kind == DateTimeKind.Unspecified
-                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
-                    : dateTime
-            ),
-            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
-            _ => throw new InvalidOperationException(
-                $"Unsupported timestamp value type '{value?.GetType().FullName ?? "<null>"}'."
-            ),
-        };
     }
 }
