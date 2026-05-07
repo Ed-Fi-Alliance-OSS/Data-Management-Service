@@ -352,29 +352,31 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             //   keys under the SemanticIdentityPart contract, so two siblings with the same null
             //   value are duplicates only when both are present-null or both are missing — never
             //   across the boundary. ProfileCollectionPlanner relies on this to pair stored rows
-            //   and request candidates by presence-aware identity.
+            //   and request candidates by presence-aware identity. The complementary
+            //   storage-collapsed identity uniqueness rule for profile mode is enforced by the
+            //   profile-side ambiguity-detection phase in ProfileWriteContractValidator before
+            //   flatten.
             //
-            // - No-profile mode (CollapseMissingAndExplicitNullForDuplicateDetection): keyed on
+            // - No-profile mode (ValidateStorageCollapsedCollectionIdentityUniqueness): keyed on
             //   the raw object?[] semantic identity values via ObjectValueArrayComparer, the
             //   exact same comparer used by
-            //   RelationalWriteNoProfileMerge.ProjectedCollectionTableState. That ensures every
-            //   pair of values that the no-profile merge would collapse — including missing vs
-            //   explicit null, and decimals like 1.0m vs 1.00m which are .Equals but stringify
-            //   differently — is rejected here as a duplicate before reaching the merge stage.
-            //   A string-encoded key would diverge from the comparer's runtime Equals semantics
-            //   and either miss those duplicates or false-flag legitimate values containing the
-            //   chosen separator characters. DMS-1132 owns full missing-vs-explicit-null
-            //   identity fidelity for the no-profile path.
+            //   RelationalWriteNoProfileMerge.ProjectedCollectionTableState. The relational
+            //   storage model maps both missing and explicit-null identity slots to SQL NULL,
+            //   so two request siblings differing only by absent-vs-explicit-null on an identity
+            //   slot would persist indistinguishably. Rejecting such pairs here keeps the merge
+            //   from binding ambiguous request candidates to a stored row. The same comparer
+            //   also catches scalar values that .Equals but stringify differently (e.g. 1.0m
+            //   vs 1.00m), keeping flatten-time rejection aligned with merge-time matching.
             //
             // SemanticIdentityInOrder is built unconditionally because the profile merge
             // pipeline still consumes it on every candidate downstream of this method.
             Dictionary<string, (int[] OrdinalPath, object?[] Values)>? presenceAwareTracker =
-                flatteningInput.CollapseMissingAndExplicitNullForDuplicateDetection
+                flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
                     ? null
                     : new(StringComparer.Ordinal);
             Dictionary<object?[], (int[] OrdinalPath, object?[] Values)>? collapsedTracker =
-                flatteningInput.CollapseMissingAndExplicitNullForDuplicateDetection
-                    ? new(ObjectValueArrayComparer.Instance)
+                flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
+                    ? new(StorageCollapsedIdentityHelpers.ObjectArrayComparer)
                     : null;
 
             foreach (
@@ -1039,12 +1041,14 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     /// <remarks>
     /// Used by the profile-aware merge path, where candidate keys must align with
     /// visible-request-item keys reconstructed from <see cref="CollectionRowAddress"/>.
-    /// The no-profile merge path intentionally does not consume these parts and matches
-    /// current rows on raw <see cref="CollectionWriteCandidate.SemanticIdentityValues"/>
-    /// instead — absent-vs-explicit-null identity fidelity for the no-profile path is
-    /// out of scope here and tracked separately under DMS-1132. The companion DB-row
-    /// projection lives inline in <c>ProfileCollectionWalker</c>; the shared scope-relative
-    /// path normalization is centralized in
+    /// The no-profile merge path matches current rows on raw
+    /// <see cref="CollectionWriteCandidate.SemanticIdentityValues"/> via
+    /// <see cref="ObjectValueArrayComparer"/>; profile-aware callers leave the no-profile
+    /// path's storage-collapsed-uniqueness flag off because
+    /// <see cref="EdFi.DataManagementService.Backend.Profile.ProfileWriteContractValidator"/>
+    /// enforces the same invariant on Core-emitted address streams before flatten. The
+    /// companion DB-row projection lives inline in <c>ProfileCollectionWalker</c>; the
+    /// shared scope-relative path normalization is centralized in
     /// <see cref="RelationalWriteMergeSupport.ToScopeRelativePath"/>.
     /// </remarks>
     private static ImmutableArray<SemanticIdentityPart> MaterializeSemanticIdentityParts(
