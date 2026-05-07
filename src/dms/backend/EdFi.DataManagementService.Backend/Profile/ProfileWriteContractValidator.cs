@@ -1007,7 +1007,7 @@ internal static class ProfileWriteContractValidator
     }
 
     private static Dictionary<string, List<ImmutableArray<SemanticIdentityPart>>> GroupByCollapsedKey(
-        IReadOnlyList<ImmutableArray<SemanticIdentityPart>> identities
+        IEnumerable<ImmutableArray<SemanticIdentityPart>> identities
     )
     {
         var result = new Dictionary<string, List<ImmutableArray<SemanticIdentityPart>>>(
@@ -1057,20 +1057,7 @@ internal static class ProfileWriteContractValidator
         List<ProfileFailure> failures
     )
     {
-        var byCollapsedKey = new Dictionary<string, List<ImmutableArray<SemanticIdentityPart>>>(
-            StringComparer.Ordinal
-        );
-
-        foreach (var identity in identities)
-        {
-            var key = StorageCollapsedIdentityHelpers.BuildKey(identity);
-            if (!byCollapsedKey.TryGetValue(key, out var bucket))
-            {
-                bucket = [];
-                byCollapsedKey.Add(key, bucket);
-            }
-            bucket.Add(identity);
-        }
+        var byCollapsedKey = GroupByCollapsedKey(identities);
 
         foreach (var (_, conflicting) in byCollapsedKey)
         {
