@@ -126,8 +126,6 @@ internal interface IRelationalWriteFreshnessChecker
 
 internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnessChecker
 {
-    private const string DocumentIdParameterName = "@documentId";
-
     public async Task<bool> IsCurrentAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteTargetContext.ExistingDocument targetContext,
@@ -140,7 +138,10 @@ internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnes
         ArgumentNullException.ThrowIfNull(writeSession);
 
         await using var command = writeSession.CreateCommand(
-            BuildCommand(request.MappingSet.Key.Dialect, targetContext.DocumentId)
+            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(
+                request.MappingSet.Key.Dialect,
+                targetContext.DocumentId
+            )
         );
 
         var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -153,32 +154,5 @@ internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnes
         var currentContentVersion = Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
 
         return currentContentVersion == targetContext.ObservedContentVersion;
-    }
-
-    private static RelationalCommand BuildCommand(SqlDialect dialect, long documentId)
-    {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
-                SELECT
-                    document."ContentVersion" AS "ContentVersion"
-                FROM dms."Document" document
-                WHERE document."DocumentId" = @documentId
-                FOR UPDATE
-                """,
-                [new RelationalParameter(DocumentIdParameterName, documentId)]
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
-                SELECT
-                    document.[ContentVersion] AS [ContentVersion]
-                FROM [dms].[Document] document WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
-                WHERE document.[DocumentId] = @documentId
-                """,
-                [new RelationalParameter(DocumentIdParameterName, documentId)]
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
-        };
     }
 }
