@@ -46,7 +46,7 @@
       "Review the added backend unit tests to confirm PostgreSQL and SQL Server lock SQL, exact comparison success/failure, and profile-projected comparison are all covered.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"CurrentEtag|Precondition\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Relational POST/PUT",

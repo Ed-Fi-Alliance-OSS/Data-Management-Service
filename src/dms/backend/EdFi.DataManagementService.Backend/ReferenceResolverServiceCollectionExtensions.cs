@@ -64,6 +64,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<
+                IRelationalCurrentEtagPreconditionChecker,
+                RelationalCurrentEtagPreconditionChecker
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
                 IRelationalCommittedRepresentationReader,
                 RelationalCommittedRepresentationReader
             >()
