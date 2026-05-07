@@ -711,14 +711,13 @@ public class Given_RelationalWriteFlattener
     [Test]
     public void It_rejects_collection_siblings_that_collapse_to_the_same_no_profile_semantic_identity_when_one_omits_and_one_explicit_nulls_the_identity_property()
     {
-        // The shared no-profile flattener path matches collection rows by raw semantic identity
-        // values (object?[]) with no presence flag. With the no-profile mode flag set, a sibling
-        // that omits an identity property and one that sends it as JSON null must be treated as
-        // a duplicate at the shared duplicate-detection stage; otherwise both rows would survive
-        // flattening and later collide in RelationalWriteNoProfileMerge under the same collapsed
-        // key. Profile-aware presence fidelity is covered by the companion profile-mode test
-        // below; DMS-1132 owns missing-vs-explicit-null identity semantics for the no-profile
-        // path.
+        // flatten-time rejection of two siblings whose semantic identities differ only by
+        // missing-vs-explicit-null on an identity slot. The relational storage model would
+        // persist both as SQL NULL, so the request shape is not representable — rejecting
+        // here prevents the no-profile merge from later binding ambiguous candidates to a
+        // stored row. The complementary profile-mode test below covers the presence-aware
+        // identity case. The profile-mode validator enforces the same invariant on
+        // Core-emitted streams before flatten.
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
                 """
@@ -737,7 +736,7 @@ public class Given_RelationalWriteFlattener
             )!,
             targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
             resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
-            collapseMissingAndExplicitNullForDuplicateDetection: true
+            validateStorageCollapsedCollectionIdentityUniqueness: true
         );
 
         var act = () => _sut.Flatten(flatteningInput);
@@ -758,12 +757,12 @@ public class Given_RelationalWriteFlattener
     public void It_keeps_collection_siblings_distinct_in_profile_mode_when_one_omits_and_one_explicit_nulls_the_identity_property()
     {
         // Counter-test for the no-profile rejection above: with the default profile-mode flag,
-        // duplicate detection uses presence-aware SemanticIdentityKeys.BuildKey output so a
-        // missing identity property and an explicit JSON null produce distinct keys. The two
-        // siblings must therefore both survive flattening and reach the profile merge planner,
-        // which pairs them by presence-aware identity. This guards against the no-profile fix
-        // collapsing identities universally and rejecting legitimate profile requests where
-        // SemanticIdentityPart.IsPresent intentionally distinguishes the two siblings.
+        // the shared flattener's duplicate detection uses presence-aware
+        // SemanticIdentityKeys.BuildKey output so a missing identity property and an explicit
+        // JSON null produce distinct keys, and both siblings survive flattening with their
+        // presence-aware SemanticIdentityPart.IsPresent values intact. This pins the flattener's
+        // per-mode behavior; the equivalent storage-collapsed ambiguity check on the profile
+        // path is enforced upstream in ProfileWriteContractValidator before flatten runs.
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
                 """
@@ -3439,7 +3438,7 @@ public class Given_RelationalWriteFlattener
             RelationalWriteTargetContext targetContext,
             ResolvedReferenceSet? resolvedReferences = null,
             bool emitEmptyExtensionBuffers = false,
-            bool collapseMissingAndExplicitNullForDuplicateDetection = false
+            bool validateStorageCollapsedCollectionIdentityUniqueness = false
         )
         {
             return new FlatteningInput(
@@ -3449,7 +3448,7 @@ public class Given_RelationalWriteFlattener
                 selectedBody,
                 resolvedReferences ?? ResolvedReferences,
                 emitEmptyExtensionBuffers,
-                collapseMissingAndExplicitNullForDuplicateDetection
+                validateStorageCollapsedCollectionIdentityUniqueness
             );
         }
 
