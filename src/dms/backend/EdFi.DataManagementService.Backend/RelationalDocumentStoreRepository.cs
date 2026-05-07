@@ -778,6 +778,7 @@ public sealed class RelationalDocumentStoreRepository(
             if (
                 executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
                 && attemptIndex == 0
+                && writePrecondition is not WritePrecondition.IfMatch
             )
             {
                 continue;

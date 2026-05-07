@@ -1949,6 +1949,99 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_does_not_retry_stale_put_guarded_no_op_attempts_when_if_match_is_present()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateFailureETagMisMatch(),
+                        RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                    )
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Retry mismatch"));
+        A.CallTo(() => updateRequest.WritePrecondition).Returns(writePrecondition);
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequests[0].WritePrecondition.Should().Be(writePrecondition);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_does_not_retry_stale_post_as_update_guarded_no_op_attempts_when_if_match_is_present()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
+        var documentInfo = CreateDocumentInfo();
+        _targetLookupService.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpsertFailureETagMisMatch(),
+                        RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                    )
+                )
+            );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Retry mismatch"));
+        A.CallTo(() => upsertRequest.WritePrecondition).Returns(writePrecondition);
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequests[0].WritePrecondition.Should().Be(writePrecondition);
+        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task It_returns_write_conflict_when_the_single_stale_no_op_retry_is_also_stale()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());

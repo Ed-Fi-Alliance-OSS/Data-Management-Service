@@ -341,7 +341,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 if (!isCurrent)
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return BuildStaleNoOpCompareResult(request.OperationKind);
+                    return BuildStaleNoOpCompareResult(request.OperationKind, request.WritePrecondition);
                 }
 
                 var guardedNoOpCommittedResponse = await _committedRepresentationReader
@@ -537,15 +537,29 @@ internal sealed class DefaultRelationalWriteExecutor(
     }
 
     private static RelationalWriteExecutorResult BuildStaleNoOpCompareResult(
-        RelationalWriteOperationKind operationKind
+        RelationalWriteOperationKind operationKind,
+        WritePrecondition writePrecondition
     )
     {
+        ArgumentNullException.ThrowIfNull(writePrecondition);
+        var hasIfMatchPrecondition = writePrecondition is WritePrecondition.IfMatch;
+
         return operationKind switch
         {
+            RelationalWriteOperationKind.Post when hasIfMatchPrecondition =>
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureETagMisMatch(),
+                    RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                ),
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
                 new UpsertResult.UpsertFailureWriteConflict(),
                 RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
             ),
+            RelationalWriteOperationKind.Put when hasIfMatchPrecondition =>
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureETagMisMatch(),
+                    RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
                 new UpdateResult.UpdateFailureWriteConflict(),
                 RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
