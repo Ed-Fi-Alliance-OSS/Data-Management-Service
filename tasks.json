@@ -1,0 +1,138 @@
+[
+  {
+    "category": "ETag Canonicalization",
+    "description": "Update the shared relational API metadata formatter so `_etag` derivation recursively removes every server-generated field named `id`, `link`, `_etag`, or `_lastModifiedDate` before canonical JSON serialization. Acceptance: relational resources and descriptors use the same canonicalization path; `link` subtrees at root, reference, collection, nested collection, and `_ext` locations never affect the hash; real resource-state value changes still produce a different hash; existing metadata injection and readable-profile `RefreshEtag` behavior continue to work.",
+    "steps-to-verify": [
+      "Add unit tests in `RelationalApiMetadataFormatterTests` covering nested `link`, root metadata, descriptor bodies, and a real reference identity value change.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalApiMetadataFormatter`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Precondition Contract",
+    "description": "Add a typed `If-Match`/write-precondition contract and use it instead of direct backend header reads. Acceptance: Core constructs the contract once from request headers using exact opaque-string semantics; absent means the header key is not present after frontend filtering; any non-dropped blank/whitespace value is treated as present and mismatched; no quote normalization, entity-tag list parsing, splitting, trimming, or malformed-header rejection is performed; relational and descriptor backend code consume only the typed contract, not `Headers[\"If-Match\"]`.",
+    "steps-to-verify": [
+      "Add unit tests for absent, exact value, quoted value, whitespace value, and collapsed multi-value strings.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter Precondition`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Result Mapping",
+    "description": "Add `UpsertResult.UpsertFailureETagMisMatch` and wire all HTTP mappings to the existing 412 optimistic-lock response shape. Acceptance: POST upsert-as-update and POST create-new-with-If-Match can return the new result; `UpsertHandler` maps it to the same `urn:ed-fi:api:optimistic-lock-failed` body used by `UpdateFailureETagMisMatch` and `DeleteFailureETagMisMatch`; retry policy does not treat ETag mismatch as retryable; existing update/delete 412 behavior remains unchanged.",
+    "steps-to-verify": [
+      "Add Core handler unit tests for `UpsertFailureETagMisMatch` response status/body and retry classification.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"UpsertHandler|DeadlockRetryPolicy\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Profile Surface",
+    "description": "Plumb the readable comparison surface needed for `If-Match` through Core/backend relational write contracts. Acceptance: profiled PUT and profiled POST-as-update compare against the readable-profile projected representation the client would have received from a profiled GET and return that same profile-surface ETag on successful profiled writes; no-profile writes compare against the full resource-state representation; DELETE ignores profile media-type headers for precondition purposes and uses the full-resource ETag; writable descriptor profiles either fail before precondition logic if unsupported or explicitly carry the same readable surface if they are supported.",
+    "steps-to-verify": [
+      "Add unit tests proving request construction carries precondition plus readable projection context independently from the writable profile body.",
+      "Add backend unit tests proving profiled committed write responses return the projected ETag while DELETE uses the full-resource ETag.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter Profile`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter Profile`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational Current ETag",
+    "description": "Implement a relational current-representation precondition helper for existing relational-table resources. Acceptance: inside the write transaction, the helper re-resolves or confirms the target, locks the target `dms.Document` row (`FOR UPDATE` for PostgreSQL, `UPDLOCK, HOLDLOCK, ROWLOCK` for SQL Server), hydrates/materializes the current representation, applies the readable profile projection when supplied, computes the link-excluding `_etag`, and compares it exactly to the typed precondition value while holding the row lock through subsequent DML or delete.",
+    "steps-to-verify": [
+      "Add unit tests for PostgreSQL and SQL Server lock SQL, exact comparison success/failure, and profile-projected comparison.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"CurrentEtag|Precondition\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational POST/PUT",
+    "description": "Enforce optional `If-Match` for relational-table PUT and POST upsert flows in the authoritative in-transaction path. Acceptance: absent `If-Match` preserves existing behavior; exact match allows changed writes and guarded no-op success; mismatch returns `UpdateFailureETagMisMatch` or `UpsertFailureETagMisMatch` before reference resolution, profile creatability validation, merge validation, or DML after target existence and authorization are satisfied; POST resolving to create-new with present `If-Match` returns `UpsertFailureETagMisMatch` before deeper backend validation; PUT missing target remains 404.",
+    "steps-to-verify": [
+      "Add executor/repository unit tests for absent header, exact match, mismatch, PUT missing target, POST-as-update mismatch, and POST create-new-with-If-Match.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDocumentStoreRepository|DefaultRelationalWriteExecutor|Precondition\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational DELETE",
+    "description": "Enforce optional `If-Match` for relational-table DELETE by id. Acceptance: missing target still returns 404; absent `If-Match` preserves existing delete behavior; present exact match locks and compares the current full-resource representation before deleting; present mismatch returns `DeleteFailureETagMisMatch` without issuing the delete; the lock is held through delete/commit; existing FK conflict mapping to 409 remains unchanged.",
+    "steps-to-verify": [
+      "Add unit tests for PostgreSQL and SQL Server delete precondition lock SQL, exact success, mismatch 412 result, 404 precedence, and FK conflict preservation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDelete|Precondition\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Guarded No-Op",
+    "description": "Change stale guarded no-op handling to honor present `If-Match`. Acceptance: when the shared guarded no-op freshness recheck reports stale and the precondition is present, PUT returns `UpdateFailureETagMisMatch` and POST-as-update returns `UpsertFailureETagMisMatch` immediately with no stale retry; when the precondition is absent, the existing single stale-no-op retry remains unchanged; behavior applies to both no-profile and profiled guarded no-op paths.",
+    "steps-to-verify": [
+      "Update unit tests for `DefaultRelationalWriteExecutor` and repository retry behavior for stale no-op with and without a precondition.",
+      "Update existing PostgreSQL/MSSQL guarded no-op integration fixtures or add focused tests using the existing stale freshness checker doubles.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"GuardedNoOp|Stale\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Descriptor Writes",
+    "description": "Refactor descriptor POST and PUT to enforce the same typed optional `If-Match` semantics as relational-table resources. Acceptance: `DescriptorWriteRequest` carries the typed precondition; descriptor POST resolving to create-new with present `If-Match` returns `UpsertFailureETagMisMatch`; descriptor POST-as-update and PUT compare exactly against the current descriptor resource-state ETag while holding the owning `dms.Document` row lock; absent `If-Match` preserves existing behavior; descriptor PUT no-op success does not stamp or journal; identity/URI immutability behavior remains unchanged.",
+    "steps-to-verify": [
+      "Add descriptor write unit tests for absent precondition, exact match, mismatch, POST create-new-with-If-Match, POST-as-update exact/mismatch, PUT no-op, and immutable URI changes.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DescriptorWriteHandler`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Descriptor DELETE",
+    "description": "Enforce optional `If-Match` for descriptor DELETE. Acceptance: descriptor delete carries a typed precondition rather than raw headers; missing descriptor target still returns 404; absent `If-Match` preserves existing descriptor delete behavior; exact match locks the owning `dms.Document` row and allows delete; mismatch returns `DeleteFailureETagMisMatch` without issuing delete; descriptor FK conflict mapping remains unchanged.",
+    "steps-to-verify": [
+      "Add descriptor delete unit tests for absent precondition, exact match, mismatch, missing target precedence, and FK conflict preservation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DescriptorWriteHandlerDelete`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Link-Insensitive Preconditions",
+    "description": "Add coverage proving resource links do not affect `If-Match`. Acceptance: a client ETag obtained with `DataManagement:ResourceLinks:Enabled=true` succeeds when the write precondition check runs against a link-stripped representation; a client ETag obtained with links disabled succeeds when the backend has a link-bearing intermediate document; flag-on and flag-off responses for the same resource-state surface produce identical `_etag` values; any failures are fixed in the shared canonicalization or response strip path, not by special-casing `If-Match`.",
+    "steps-to-verify": [
+      "Add unit tests around link-bearing/link-stripped canonicalization and focused relational integration or E2E tests for both ResourceLinks flag states.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalApiMetadataFormatter`",
+      "Run the focused relational integration tests added for ResourceLinks flag-on/flag-off If-Match behavior."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Cascade Integration",
+    "description": "Add cross-dialect relational integration tests proving dependency identity changes make stale `If-Match` fail. Acceptance: using the small referential-identity fixture, create Student and dependent ResourceA, capture ResourceA `_etag`, update Student.studentUniqueId with `allowIdentityUpdates=true`, verify ResourceA's served `_etag` changed due to propagated reference identity values, then assert a stale `If-Match` on ResourceA PUT returns 412 for both PostgreSQL and SQL Server.",
+    "steps-to-verify": [
+      "Add PostgreSQL and SQL Server integration tests using Student -> ResourceA from the small/referential-identity fixtures.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter IfMatch`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter IfMatch`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational E2E",
+    "description": "Move or retag the existing resource `If-Match` E2E scenarios so they execute against the relational backend without reducing scenario coverage. Acceptance: the scenarios in `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Resources/etag.feature` still cover retrieving ETag, PUT exact match, request-body `_etag` ignored, PUT mismatch 412, DELETE mismatch 412, and DELETE exact match; the relational backend is enabled for this lane; setup/teardown uses the DMS E2E local stack instructions.",
+    "steps-to-verify": [
+      "Run from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`: `pwsh ./teardown-local-dms.ps1; pwsh ./setup-local-dms.ps1`",
+      "Run the E2E test filter for `Features/Resources/etag.feature` with `UseRelationalBackend=true`.",
+      "Confirm the generated scenario coverage remains equivalent to the pre-relational feature coverage."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Regression Suite",
+    "description": "Run and fix the focused regression suite for DMS-1005 after the implementation slices land. Acceptance: Core handler tests, backend unit tests, PostgreSQL relational integration tests, SQL Server relational integration tests, descriptor tests, and the relational E2E ETag scenarios all pass; no backend code path performs raw `If-Match` header parsing; no tests rely on quote normalization or parsed entity-tag semantics.",
+    "steps-to-verify": [
+      "Run: `rg \"If-Match|Headers\\[|TryGetValue\\(\\\"If-Match\" src/dms/backend src/dms/core -g '*.cs'` and verify only the Core precondition factory or tests read the raw header.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run the focused PostgreSQL and SQL Server relational integration filters added for this story.",
+      "Run the relational E2E ETag feature after local DMS setup."
+    ],
+    "completed": false
+  }
+]
