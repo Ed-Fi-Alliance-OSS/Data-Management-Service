@@ -64,10 +64,16 @@ Implement optimistic concurrency checks using stored representation stamps for r
    6. mismatch caused by dependency identity change,
    7. at least one PostgreSQL and one SQL Server relational integration test proving a cascaded referenced identity
       change changes the dependent `_etag` and causes stale `If-Match` to return `412`,
-   8. existing `If-Match` E2E scenarios switched to the relational backend without changing the scenario coverage, and
+   8. existing `If-Match` E2E scenarios switched to the relational backend without changing the scenario coverage,
    9. canonical metadata removal excludes `link` so the same resource-state surface produces the same `_etag` whether
-      links are present or stripped, and
-   10. stale no-op compare reported by the shared guarded no-op executor path (`DMS-984`, reused by `DMS-1124`) that
+      links are present or stripped,
+   10. `If-Match` succeeds when the client-supplied `_etag` was obtained with
+       `DataManagement:ResourceLinks:Enabled=true` and the write check runs with links stripped,
+   11. `If-Match` succeeds when the client-supplied `_etag` was obtained with
+       `DataManagement:ResourceLinks:Enabled=false` and the write check runs against a link-bearing
+       intermediate document, proving link inclusion/exclusion does not affect the precondition for
+       the same resource-state surface, and
+   12. stale no-op compare reported by the shared guarded no-op executor path (`DMS-984`, reused by `DMS-1124`) that
       is rejected by the guarded `If-Match` recheck.
 
 ## Clarifying Questions and Answers
@@ -168,7 +174,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
 ## Answers 3
 
   1. ResourceLinks flag should not affect If-Match. `_etag` is a resource-state validator, not a response-decoration
-     validator, and reference `link` objects are derived from the link-free resource body. Compare against the same
+     validator, and reference `link` objects are derived from persisted reference state. Compare against the same
      link-excluding `_etag` in both flag states. This aligns with reference/design/backend-redesign/design-docs/
      update-tracking.md and reference/design/backend-redesign/design-docs/link-injection.md.
   2. Yes, Core should pass the readable comparison surface explicitly. Backend should receive a typed precondition contract like IfMatchPrecondition plus a representation surface/context, not infer

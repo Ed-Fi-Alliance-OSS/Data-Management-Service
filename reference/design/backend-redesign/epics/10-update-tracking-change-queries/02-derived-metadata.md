@@ -35,3 +35,7 @@ This design performs no dependency enumeration at read time; indirect impacts ar
    `_lastModifiedDate` served from `ContentLastModifiedAt`, `ChangeVersion` sourced from `ContentVersion`,
    and `_etag` recomputed from the served resource-state representation.
 2. Add integration tests covering indirect representation changes (a referenced identity change cascades into a referrer and bumps the referrer's stamps).
+3. Add canonicalization tests proving reference `link` subtrees are ignored by the `_etag` hash:
+   the same resource-state document with no `link`, with one or more `link` subtrees, and with those
+   `link` subtrees stripped again must produce the same `_etag`, while a real reference identity
+   value change still produces a different `_etag`.

@@ -339,7 +339,7 @@ the next process restart, consistent with the flag-flip-across-restart case in
 The flag governs GET response serialization only — write endpoints (POST/PUT/DELETE) do not emit
 `link` and are unaffected. The strip pass removes exactly the `link` subtree on reference objects;
 other server-generated fields (`_etag`, `_lastModifiedDate`) are untouched. Because `link` is a
-server-generated response decoration derived from the link-free resource body, the flag does not
+server-generated response decoration derived from persisted reference state, the flag does not
 participate in `_etag` derivation.
 
 ---
