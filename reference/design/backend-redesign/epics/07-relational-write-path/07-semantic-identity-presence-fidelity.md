@@ -91,10 +91,8 @@ Do not weaken `build-dms.ps1` E2E lane guardrails. The script should continue re
 
 ### CI/workflow validation
 
-- A workflow or guardrail test verifies `.github/workflows/on-dms-pullrequest.yml` no longer invokes `build-dms.ps1 E2ETest` with `Category!=@relational-backend`.
-- A workflow or guardrail test verifies `.github/workflows/on-dms-pullrequest.yml` still invokes `build-dms.ps1 E2ETest` with `Category=@relational-backend`.
-- A workflow or guardrail test verifies the normal DMS PR/push workflow still invokes `build-dms.ps1 InstanceE2ETest`.
-- Existing `build-dms.ps1` lane guardrail tests remain valid and are not relaxed.
+- The diff to `.github/workflows/on-dms-pullrequest.yml` is reviewed to confirm the normal DMS PR/push workflow no longer invokes `build-dms.ps1 E2ETest` with `Category!=@relational-backend`, still invokes `build-dms.ps1 E2ETest` with `Category=@relational-backend`, and still invokes `build-dms.ps1 InstanceE2ETest`.
+- Existing `build-dms.ps1` runtime lane guardrail tests (`Given_Build_Dms_E2E_Guardrails`) remain valid and are not relaxed.
 
 ## Tasks
 
