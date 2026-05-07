@@ -538,11 +538,11 @@ public class MssqlReferentialIdentityTests
     public async Task Cascaded_identity_update_bumps_stamps_and_is_visible_in_same_transaction()
     {
         // Arrange — Student → ResourceA/B → KeyUnifiedResource chain
-        const string oldStudentUniqueId = "STU-XACT-OLD";
-        const string newStudentUniqueId = "STU-XACT-NEW";
+        const string OldStudentUniqueId = "STU-XACT-OLD";
+        const string NewStudentUniqueId = "STU-XACT-NEW";
 
         var studentDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
-        await InsertStudentAsync(studentDocumentId, oldStudentUniqueId);
+        await InsertStudentAsync(studentDocumentId, OldStudentUniqueId);
 
         var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
         await _database.ExecuteNonQueryAsync(
@@ -553,7 +553,7 @@ public class MssqlReferentialIdentityTests
             new SqlParameter("@documentId", resourceADocumentId),
             new SqlParameter("@resourceAId", "resA-1"),
             new SqlParameter("@studentDocumentId", studentDocumentId),
-            new SqlParameter("@studentUniqueId", oldStudentUniqueId)
+            new SqlParameter("@studentUniqueId", OldStudentUniqueId)
         );
 
         var resourceBDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceB");
@@ -565,7 +565,7 @@ public class MssqlReferentialIdentityTests
             new SqlParameter("@documentId", resourceBDocumentId),
             new SqlParameter("@resourceBId", "resB-1"),
             new SqlParameter("@studentDocumentId", studentDocumentId),
-            new SqlParameter("@studentUniqueId", oldStudentUniqueId)
+            new SqlParameter("@studentUniqueId", OldStudentUniqueId)
         );
 
         var keyUnifiedDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "KeyUnifiedResource");
@@ -580,13 +580,13 @@ public class MssqlReferentialIdentityTests
             new SqlParameter("@resourceAId", "resA-1"),
             new SqlParameter("@resourceBDocumentId", resourceBDocumentId),
             new SqlParameter("@resourceBId", "resB-1"),
-            new SqlParameter("@studentUniqueId", oldStudentUniqueId)
+            new SqlParameter("@studentUniqueId", OldStudentUniqueId)
         );
 
         var (expectedStudentOld, expectedResAOld, expectedResBOld, expectedUnifiedOld) =
-            ComputeExpectedReferentialIds(oldStudentUniqueId, "resA-1", "resB-1", "unified-1");
+            ComputeExpectedReferentialIds(OldStudentUniqueId, "resA-1", "resB-1", "unified-1");
         var (expectedStudentNew, expectedResANew, expectedResBNew, expectedUnifiedNew) =
-            ComputeExpectedReferentialIds(newStudentUniqueId, "resA-1", "resB-1", "unified-1");
+            ComputeExpectedReferentialIds(NewStudentUniqueId, "resA-1", "resB-1", "unified-1");
 
         // Capture before-snapshots of identity stamps for all four documents
         DocumentStampState beforeStudent;
@@ -637,7 +637,7 @@ public class MssqlReferentialIdentityTests
                 SET [StudentUniqueId] = @newId
                 WHERE [DocumentId] = @documentId;
                 """;
-            updateCmd.Parameters.Add(new SqlParameter("@newId", newStudentUniqueId));
+            updateCmd.Parameters.Add(new SqlParameter("@newId", NewStudentUniqueId));
             updateCmd.Parameters.Add(new SqlParameter("@documentId", studentDocumentId));
             await updateCmd.ExecuteNonQueryAsync();
         }
@@ -739,20 +739,132 @@ public class MssqlReferentialIdentityTests
                 keyUnifiedDocumentId
             );
 
-            postCommitStudent.IdentityVersion.Should().BeGreaterThan(beforeStudent.IdentityVersion);
-            postCommitStudent.IdentityLastModifiedAt.Should().BeAfter(beforeStudent.IdentityLastModifiedAt);
-            postCommitResourceA.IdentityVersion.Should().BeGreaterThan(beforeResourceA.IdentityVersion);
-            postCommitResourceA
-                .IdentityLastModifiedAt.Should()
-                .BeAfter(beforeResourceA.IdentityLastModifiedAt);
-            postCommitResourceB.IdentityVersion.Should().BeGreaterThan(beforeResourceB.IdentityVersion);
-            postCommitResourceB
-                .IdentityLastModifiedAt.Should()
-                .BeAfter(beforeResourceB.IdentityLastModifiedAt);
-            postCommitKeyUnified.IdentityVersion.Should().BeGreaterThan(beforeKeyUnified.IdentityVersion);
-            postCommitKeyUnified
-                .IdentityLastModifiedAt.Should()
-                .BeAfter(beforeKeyUnified.IdentityLastModifiedAt);
+            postCommitStudent.IdentityVersion.Should().Be(inTxnStudent.IdentityVersion);
+            postCommitStudent.IdentityLastModifiedAt.Should().Be(inTxnStudent.IdentityLastModifiedAt);
+            postCommitResourceA.IdentityVersion.Should().Be(inTxnResourceA.IdentityVersion);
+            postCommitResourceA.IdentityLastModifiedAt.Should().Be(inTxnResourceA.IdentityLastModifiedAt);
+            postCommitResourceB.IdentityVersion.Should().Be(inTxnResourceB.IdentityVersion);
+            postCommitResourceB.IdentityLastModifiedAt.Should().Be(inTxnResourceB.IdentityLastModifiedAt);
+            postCommitKeyUnified.IdentityVersion.Should().Be(inTxnKeyUnified.IdentityVersion);
+            postCommitKeyUnified.IdentityLastModifiedAt.Should().Be(inTxnKeyUnified.IdentityLastModifiedAt);
+        }
+    }
+
+    [Test]
+    public async Task Cascaded_identity_update_rolls_back_with_parent_transaction()
+    {
+        // SQL Server cascade is driven by the IdentityPropagationFallback trigger rather than an FK
+        // cascade, so explicitly assert the trigger-side recompute reverts on parent rollback.
+        const string OldStudentUniqueId = "STU-RBK-OLD";
+        const string NewStudentUniqueId = "STU-RBK-NEW";
+
+        var studentDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        await InsertStudentAsync(studentDocumentId, OldStudentUniqueId);
+
+        var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[ResourceA] ([DocumentId], [ResourceAId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            VALUES (@documentId, @resourceAId, @studentDocumentId, @studentUniqueId);
+            """,
+            new SqlParameter("@documentId", resourceADocumentId),
+            new SqlParameter("@resourceAId", "resA-1"),
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", OldStudentUniqueId)
+        );
+
+        var (expectedStudentOld, expectedResAOld, _, _) = ComputeExpectedReferentialIds(
+            OldStudentUniqueId,
+            "resA-1",
+            "resB-1",
+            "unified-1"
+        );
+        var (expectedStudentNew, expectedResANew, _, _) = ComputeExpectedReferentialIds(
+            NewStudentUniqueId,
+            "resA-1",
+            "resB-1",
+            "unified-1"
+        );
+
+        DocumentStampState beforeStudent;
+        DocumentStampState beforeResourceA;
+        await using (var snapshotConnection = new SqlConnection(_database.ConnectionString))
+        {
+            await snapshotConnection.OpenAsync();
+            beforeStudent = await GetDocumentStampStateAsync(
+                snapshotConnection,
+                transaction: null,
+                studentDocumentId
+            );
+            beforeResourceA = await GetDocumentStampStateAsync(
+                snapshotConnection,
+                transaction: null,
+                resourceADocumentId
+            );
+        }
+
+        await DelayForDistinctTimestampsAsync();
+
+        await using (var connection = new SqlConnection(_database.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+            await using (var updateCmd = connection.CreateCommand())
+            {
+                updateCmd.Transaction = transaction;
+                updateCmd.CommandText = """
+                    UPDATE [edfi].[Student]
+                    SET [StudentUniqueId] = @newId
+                    WHERE [DocumentId] = @documentId;
+                    """;
+                updateCmd.Parameters.Add(new SqlParameter("@newId", NewStudentUniqueId));
+                updateCmd.Parameters.Add(new SqlParameter("@documentId", studentDocumentId));
+                await updateCmd.ExecuteNonQueryAsync();
+            }
+
+            // Confirm the cascade fired pre-rollback so the rollback assertion is meaningful.
+            var inTxnReferentialIds = await QueryReferentialIdentityRowsAsync(connection, transaction);
+            inTxnReferentialIds.Should().Contain(r => (Guid)r["ReferentialId"]! == expectedStudentNew);
+            inTxnReferentialIds.Should().Contain(r => (Guid)r["ReferentialId"]! == expectedResANew);
+
+            await transaction.RollbackAsync();
+        }
+
+        // Post-rollback — RI rows and stamps reflect the original (pre-update) state on a fresh connection.
+        var postRollbackReferentialIds = await QueryReferentialIdentityRowsAsync();
+        postRollbackReferentialIds.Should().HaveCount(2);
+        postRollbackReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == expectedStudentNew);
+        postRollbackReferentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == expectedResANew);
+        postRollbackReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedStudentOld && (long)r["DocumentId"]! == studentDocumentId
+            );
+        postRollbackReferentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == expectedResAOld && (long)r["DocumentId"]! == resourceADocumentId
+            );
+
+        await using (var postRollbackConnection = new SqlConnection(_database.ConnectionString))
+        {
+            await postRollbackConnection.OpenAsync();
+            var postRollbackStudent = await GetDocumentStampStateAsync(
+                postRollbackConnection,
+                transaction: null,
+                studentDocumentId
+            );
+            var postRollbackResourceA = await GetDocumentStampStateAsync(
+                postRollbackConnection,
+                transaction: null,
+                resourceADocumentId
+            );
+
+            postRollbackStudent.IdentityVersion.Should().Be(beforeStudent.IdentityVersion);
+            postRollbackStudent.IdentityLastModifiedAt.Should().Be(beforeStudent.IdentityLastModifiedAt);
+            postRollbackResourceA.IdentityVersion.Should().Be(beforeResourceA.IdentityVersion);
+            postRollbackResourceA.IdentityLastModifiedAt.Should().Be(beforeResourceA.IdentityLastModifiedAt);
         }
     }
 
@@ -968,16 +1080,14 @@ public class MssqlReferentialIdentityTests
                 edOrgDepChildDocumentId
             );
 
-            postCommitSchool.IdentityVersion.Should().BeGreaterThan(beforeSchool.IdentityVersion);
-            postCommitSchool.IdentityLastModifiedAt.Should().BeAfter(beforeSchool.IdentityLastModifiedAt);
-            postCommitEdOrgDep.IdentityVersion.Should().BeGreaterThan(beforeEdOrgDep.IdentityVersion);
-            postCommitEdOrgDep.IdentityLastModifiedAt.Should().BeAfter(beforeEdOrgDep.IdentityLastModifiedAt);
-            postCommitEdOrgDepChild
-                .IdentityVersion.Should()
-                .BeGreaterThan(beforeEdOrgDepChild.IdentityVersion);
+            postCommitSchool.IdentityVersion.Should().Be(inTxnSchool.IdentityVersion);
+            postCommitSchool.IdentityLastModifiedAt.Should().Be(inTxnSchool.IdentityLastModifiedAt);
+            postCommitEdOrgDep.IdentityVersion.Should().Be(inTxnEdOrgDep.IdentityVersion);
+            postCommitEdOrgDep.IdentityLastModifiedAt.Should().Be(inTxnEdOrgDep.IdentityLastModifiedAt);
+            postCommitEdOrgDepChild.IdentityVersion.Should().Be(inTxnEdOrgDepChild.IdentityVersion);
             postCommitEdOrgDepChild
                 .IdentityLastModifiedAt.Should()
-                .BeAfter(beforeEdOrgDepChild.IdentityLastModifiedAt);
+                .Be(inTxnEdOrgDepChild.IdentityLastModifiedAt);
         }
     }
 
