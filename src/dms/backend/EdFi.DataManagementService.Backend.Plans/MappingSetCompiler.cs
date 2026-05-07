@@ -34,6 +34,8 @@ public sealed class MappingSetCompiler
         var writePlansByResource = new Dictionary<QualifiedResourceName, ResourceWritePlan>();
         var readPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>();
         var queryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>();
+        var descriptorQueryCapabilitiesByResource =
+            new Dictionary<QualifiedResourceName, DescriptorQueryCapability>();
 
         foreach (var concreteResourceModel in modelSet.ConcreteResourcesInNameOrder)
         {
@@ -66,6 +68,19 @@ public sealed class MappingSetCompiler
             {
                 throw new InvalidOperationException(
                     $"Cannot compile mapping set: duplicate query capability for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}'."
+                );
+            }
+
+            if (
+                resourceStorageKind is ResourceStorageKind.SharedDescriptorTable
+                && !descriptorQueryCapabilitiesByResource.TryAdd(
+                    resourceModel.Resource,
+                    DescriptorQueryCapabilityCompiler.Compile(concreteResourceModel)
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile mapping set: duplicate descriptor query capability for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}'."
                 );
             }
 
@@ -131,6 +146,8 @@ public sealed class MappingSetCompiler
         )
         {
             QueryCapabilitiesByResource = queryCapabilitiesByResource.ToFrozenDictionary(),
+            DescriptorQueryCapabilitiesByResource =
+                descriptorQueryCapabilitiesByResource.ToFrozenDictionary(),
         };
     }
 }

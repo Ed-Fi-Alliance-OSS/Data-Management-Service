@@ -1009,6 +1009,7 @@ internal class ProfileWriteValidationMiddleware(
                     ),
                     MappingSet: requestInfo.MappingSet,
                     ResourceAuthorizationHandler: bypassAuthHandler,
+                    AuthorizationStrategyEvaluators: [],
                     TraceId: requestInfo.FrontendRequest.TraceId,
                     ReadMode: RelationalGetRequestReadMode.StoredDocument
                 )

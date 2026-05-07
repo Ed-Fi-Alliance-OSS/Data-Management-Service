@@ -6,6 +6,8 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Profile;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -22,6 +24,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var services = new ServiceCollection();
 
         services.AddLogging();
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddMssqlReferenceResolver();
 

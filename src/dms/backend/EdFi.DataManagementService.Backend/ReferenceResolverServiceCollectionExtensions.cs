@@ -113,6 +113,7 @@ public static class ReferenceResolverServiceCollectionExtensions
                 NoOpRelationalWriteExceptionClassifier
             >()
         );
+        services.TryAdd(ServiceDescriptor.Scoped<IDescriptorReadHandler, DescriptorReadHandler>());
         services.TryAdd(ServiceDescriptor.Scoped<IDescriptorWriteHandler, DescriptorWriteHandler>());
         services.TryAdd(
             ServiceDescriptor.Scoped<

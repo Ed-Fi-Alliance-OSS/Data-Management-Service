@@ -296,77 +296,21 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         IReadOnlyList<PreprocessedRelationalQueryElement> queryElementsInOrder
     )
     {
-        HashSet<string> usedNames = new(StringComparer.OrdinalIgnoreCase)
-        {
-            OffsetParameterName,
-            LimitParameterName,
-        };
-        Dictionary<string, int> nextSuffixByBaseName = new(StringComparer.OrdinalIgnoreCase)
-        {
-            [OffsetParameterName] = 2,
-            [LimitParameterName] = 2,
-        };
-        string[] resolvedNames = new string[queryElementsInOrder.Count];
-
-        var orderedSeeds = queryElementsInOrder
+        var seeds = queryElementsInOrder
             .Select(
                 (element, index) =>
-                    new ParameterNameSeed(
+                    new QueryParameterNameSeed(
                         Index: index,
-                        BaseName: PlanNamingConventions.SanitizeBareParameterName(
-                            PlanNamingConventions.CamelCaseFirstCharacter(
-                                element.SupportedField.QueryFieldName
-                            )
+                        BaseName: QueryParameterNameAllocator.CreateBaseName(
+                            element.SupportedField.QueryFieldName
                         ),
                         QueryFieldName: element.SupportedField.QueryFieldName,
-                        Path: element.SupportedField.Path.Path.Canonical
+                        Disambiguator: element.SupportedField.Path.Path.Canonical
                     )
             )
-            .OrderBy(static seed => seed.BaseName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(static seed => seed.BaseName, StringComparer.Ordinal)
-            .ThenBy(static seed => seed.QueryFieldName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(static seed => seed.QueryFieldName, StringComparer.Ordinal)
-            .ThenBy(static seed => seed.Path, StringComparer.Ordinal)
-            .ThenBy(static seed => seed.Index)
             .ToArray();
 
-        foreach (var seed in orderedSeeds)
-        {
-            resolvedNames[seed.Index] = AllocateParameterName(seed.BaseName, usedNames, nextSuffixByBaseName);
-        }
-
-        return resolvedNames;
-    }
-
-    private static string AllocateParameterName(
-        string baseName,
-        ISet<string> usedNames,
-        IDictionary<string, int> nextSuffixByBaseName
-    )
-    {
-        if (usedNames.Add(baseName))
-        {
-            if (!nextSuffixByBaseName.TryGetValue(baseName, out var nextSuffix) || nextSuffix < 2)
-            {
-                nextSuffixByBaseName[baseName] = 2;
-            }
-
-            return baseName;
-        }
-
-        var suffix = nextSuffixByBaseName.TryGetValue(baseName, out var nextSuffixForBase)
-            ? nextSuffixForBase
-            : 2;
-        var candidate = $"{baseName}_{suffix}";
-
-        while (!usedNames.Add(candidate))
-        {
-            suffix++;
-            candidate = $"{baseName}_{suffix}";
-        }
-
-        nextSuffixByBaseName[baseName] = suffix + 1;
-        return candidate;
+        return QueryParameterNameAllocator.Allocate(seeds, [OffsetParameterName, LimitParameterName]);
     }
 
     private static IReadOnlyDictionary<
@@ -480,6 +424,4 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
     }
 
     private sealed record PlannedPredicate(QueryValuePredicate Predicate, object ParameterValue);
-
-    private sealed record ParameterNameSeed(int Index, string BaseName, string QueryFieldName, string Path);
 }

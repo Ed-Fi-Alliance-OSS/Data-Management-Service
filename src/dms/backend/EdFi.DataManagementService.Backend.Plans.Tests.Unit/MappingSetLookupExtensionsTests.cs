@@ -149,8 +149,7 @@ public class Given_MappingSetLookupExtensions
             .Throw<NotSupportedException>()
             .WithMessage(
                 "Read plan for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
-                    + "storage kind 'SharedDescriptorTable' uses the descriptor read path instead of compiled relational-table hydration plans. "
-                    + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                    + "storage kind 'SharedDescriptorTable' uses the descriptor read path instead of compiled relational-table hydration plans."
             );
     }
 
@@ -171,6 +170,31 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
+    public void It_should_return_descriptor_query_capability_when_present_and_supported()
+    {
+        var actualCapability = _mappingSet.GetDescriptorQueryCapabilityOrThrow(_descriptorResource);
+
+        actualCapability.Support.Should().BeOfType<DescriptorQuerySupport.Supported>();
+        actualCapability.SupportedFieldsByQueryField.Should().HaveCount(7);
+        actualCapability
+            .SupportedFieldsByQueryField["ID"]
+            .Target.Should()
+            .Be(new DescriptorQueryFieldTarget.DocumentUuid());
+        actualCapability
+            .SupportedFieldsByQueryField["namespace"]
+            .Target.Should()
+            .Be(new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace")));
+        actualCapability
+            .SupportedFieldsByQueryField["codeValue"]
+            .Target.Should()
+            .Be(new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue")));
+        actualCapability
+            .SupportedFieldsByQueryField["effectiveEndDate"]
+            .Target.Should()
+            .Be(new DescriptorQueryFieldTarget.EffectiveEndDate(new DbColumnName("EffectiveEndDate")));
+    }
+
+    [Test]
     public void It_should_throw_actionable_descriptor_message_for_omitted_query_capability()
     {
         var act = () => _mappingSet.GetQueryCapabilityOrThrow(_descriptorResource);
@@ -179,8 +203,31 @@ public class Given_MappingSetLookupExtensions
             .Throw<NotSupportedException>()
             .WithMessage(
                 "Relational query capability for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
-                    + "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
-                    + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                    + "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
+            );
+    }
+
+    [Test]
+    public void It_should_throw_actionable_descriptor_message_for_omitted_descriptor_query_capability()
+    {
+        var mappingSet = ReplaceDescriptorQueryCapability(
+            _mappingSet,
+            _descriptorResource,
+            CreateOmittedDescriptorQueryCapability(
+                new DescriptorQueryCapabilityOmission(
+                    DescriptorQueryCapabilityOmissionKind.ApiSchemaMismatch,
+                    "ApiSchema queryFieldMapping does not match the shared descriptor column contract for this descriptor resource."
+                )
+            )
+        );
+
+        var act = () => mappingSet.GetDescriptorQueryCapabilityOrThrow(_descriptorResource);
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "Descriptor query capability for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
+                    + "ApiSchema queryFieldMapping does not match the shared descriptor column contract for this descriptor resource."
             );
     }
 
@@ -195,6 +242,48 @@ public class Given_MappingSetLookupExtensions
                 "Relational query capability for resource 'Ed-Fi.StudentAddress' was intentionally omitted: "
                     + "queryFieldMapping contains unsupported relational GET-many fields: "
                     + "streetNumberName: crosses an array scope and cannot compile to a root-table predicate."
+            );
+    }
+
+    [Test]
+    public void It_should_treat_missing_descriptor_endpoint_query_capability_metadata_as_internal_bug()
+    {
+        var mappingSet = ReplaceDescriptorQueryCapability(
+            _mappingSet,
+            _descriptorResource,
+            queryCapability: null
+        );
+
+        var act = () => mappingSet.GetDescriptorQueryCapabilityOrThrow(_descriptorResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Descriptor query capability lookup failed for resource '{FormatResource(_descriptorResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
+                    + $"'{ResourceStorageKind.SharedDescriptorTable}' should always have compiled descriptor query capability metadata, "
+                    + "including intentional omission state when applicable, but no entry was found. This indicates an internal compilation/selection bug."
+            );
+    }
+
+    [Test]
+    public void It_should_throw_a_catchable_missing_descriptor_query_capability_guard_rail_exception()
+    {
+        var mappingSet = ReplaceDescriptorQueryCapability(
+            _mappingSet,
+            _descriptorResource,
+            queryCapability: null
+        );
+
+        var act = () => mappingSet.GetDescriptorQueryCapabilityOrThrow(_descriptorResource);
+
+        act.Should()
+            .Throw<MissingDescriptorQueryCapabilityLookupGuardRailException>()
+            .WithMessage(
+                $"Descriptor query capability lookup failed for resource '{FormatResource(_descriptorResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
+                    + $"'{ResourceStorageKind.SharedDescriptorTable}' should always have compiled descriptor query capability metadata, "
+                    + "including intentional omission state when applicable, but no entry was found. This indicates an internal compilation/selection bug."
             );
     }
 
@@ -640,6 +729,9 @@ public class Given_MappingSetLookupExtensions
                     keyUnificationResource,
                     projectionMetadataResource
                 ),
+                DescriptorQueryCapabilitiesByResource = CreateDescriptorQueryCapabilitiesByResource(
+                    descriptorResource
+                ),
             },
             SupportedResource: supportedResource,
             DescriptorResource: descriptorResource,
@@ -711,8 +803,7 @@ public class Given_MappingSetLookupExtensions
             [descriptorResource] = CreateOmittedQueryCapability(
                 new RelationalQueryCapabilityOmission(
                     RelationalQueryCapabilityOmissionKind.DescriptorResource,
-                    "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
-                        + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                    "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
                 )
             ),
             [descriptorEdgeResource] = CreateSupportedQueryCapability([
@@ -783,6 +874,43 @@ public class Given_MappingSetLookupExtensions
         }.ToFrozenDictionary();
     }
 
+    private static IReadOnlyDictionary<
+        QualifiedResourceName,
+        DescriptorQueryCapability
+    > CreateDescriptorQueryCapabilitiesByResource(QualifiedResourceName descriptorResource)
+    {
+        return new Dictionary<QualifiedResourceName, DescriptorQueryCapability>
+        {
+            [descriptorResource] = CreateSupportedDescriptorQueryCapability([
+                CreateSupportedDescriptorQueryField("id", new DescriptorQueryFieldTarget.DocumentUuid()),
+                CreateSupportedDescriptorQueryField(
+                    "namespace",
+                    new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace"))
+                ),
+                CreateSupportedDescriptorQueryField(
+                    "codeValue",
+                    new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue"))
+                ),
+                CreateSupportedDescriptorQueryField(
+                    "shortDescription",
+                    new DescriptorQueryFieldTarget.ShortDescription(new DbColumnName("ShortDescription"))
+                ),
+                CreateSupportedDescriptorQueryField(
+                    "description",
+                    new DescriptorQueryFieldTarget.Description(new DbColumnName("Description"))
+                ),
+                CreateSupportedDescriptorQueryField(
+                    "effectiveBeginDate",
+                    new DescriptorQueryFieldTarget.EffectiveBeginDate(new DbColumnName("EffectiveBeginDate"))
+                ),
+                CreateSupportedDescriptorQueryField(
+                    "effectiveEndDate",
+                    new DescriptorQueryFieldTarget.EffectiveEndDate(new DbColumnName("EffectiveEndDate"))
+                ),
+            ]),
+        }.ToFrozenDictionary();
+    }
+
     private static RelationalQueryCapability CreateSupportedQueryCapability(
         IReadOnlyList<SupportedRelationalQueryField> supportedFields
     )
@@ -810,6 +938,31 @@ public class Given_MappingSetLookupExtensions
         );
     }
 
+    private static DescriptorQueryCapability CreateSupportedDescriptorQueryCapability(
+        IReadOnlyList<SupportedDescriptorQueryField> supportedFields
+    )
+    {
+        return new DescriptorQueryCapability(
+            new DescriptorQuerySupport.Supported(),
+            supportedFields.ToFrozenDictionary(
+                static field => field.QueryFieldName,
+                StringComparer.OrdinalIgnoreCase
+            )
+        );
+    }
+
+    private static DescriptorQueryCapability CreateOmittedDescriptorQueryCapability(
+        DescriptorQueryCapabilityOmission omission
+    )
+    {
+        return new DescriptorQueryCapability(
+            new DescriptorQuerySupport.Omitted(omission),
+            new Dictionary<string, SupportedDescriptorQueryField>(
+                StringComparer.OrdinalIgnoreCase
+            ).ToFrozenDictionary(StringComparer.OrdinalIgnoreCase)
+        );
+    }
+
     private static SupportedRelationalQueryField CreateSupportedQueryField(
         string queryFieldName,
         string path,
@@ -818,6 +971,14 @@ public class Given_MappingSetLookupExtensions
     )
     {
         return new SupportedRelationalQueryField(queryFieldName, CreateQueryFieldPath(path, type), target);
+    }
+
+    private static SupportedDescriptorQueryField CreateSupportedDescriptorQueryField(
+        string queryFieldName,
+        DescriptorQueryFieldTarget target
+    )
+    {
+        return new SupportedDescriptorQueryField(queryFieldName, target);
     }
 
     private static UnsupportedRelationalQueryField CreateUnsupportedQueryField(
@@ -900,6 +1061,32 @@ public class Given_MappingSetLookupExtensions
         return mappingSet with
         {
             QueryCapabilitiesByResource = queryCapabilitiesByResource.ToFrozenDictionary(),
+        };
+    }
+
+    private static MappingSet ReplaceDescriptorQueryCapability(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DescriptorQueryCapability? queryCapability
+    )
+    {
+        var queryCapabilitiesByResource = mappingSet.DescriptorQueryCapabilitiesByResource.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value
+        );
+
+        if (queryCapability is null)
+        {
+            queryCapabilitiesByResource.Remove(resource);
+        }
+        else
+        {
+            queryCapabilitiesByResource[resource] = queryCapability;
+        }
+
+        return mappingSet with
+        {
+            DescriptorQueryCapabilitiesByResource = queryCapabilitiesByResource.ToFrozenDictionary(),
         };
     }
 

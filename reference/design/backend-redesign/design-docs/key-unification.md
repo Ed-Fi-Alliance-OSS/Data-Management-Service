@@ -1164,7 +1164,7 @@ Implications when descriptor identity parts participate in key unification:
   descriptor resolution results (the same resolved descriptor-id map used to populate normal descriptor FK columns).
 - Descriptor FK unification MUST be resource-type safe: a unification class must not mix descriptor FK members that
   target different descriptor resource types.
-- Descriptor resources are treated as immutable in this redesign, so descriptor FK columns generally do not
+- Descriptor identity/URI is immutable in this redesign, so descriptor FK columns generally do not
   participate in `ON UPDATE CASCADE` identity propagation. Key unification still matters to prevent drift between
   duplicated writable `..._DescriptorId` columns on the same row.
 

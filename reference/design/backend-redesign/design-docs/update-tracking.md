@@ -11,7 +11,7 @@ Draft. This document is the normative design for:
 
 The backend redesign needs representation-sensitive metadata:
 
-- `_etag` and `_lastModifiedDate` MUST change when the returned resource representation changes, including when referenced identity values change (descriptors are treated as immutable in this redesign).
+- `_etag` and `_lastModifiedDate` MUST change when the returned resource representation changes, including when referenced identity values change. Descriptor identity/URI is immutable, while descriptor metadata fields are mutable and affect only the descriptor resource's own representation.
 - Ed-Fi Change Query APIs depend on a global monotonic `ChangeVersion`.
 
 This redesign accomplishes indirect-update semantics without a reverse-edge table by:

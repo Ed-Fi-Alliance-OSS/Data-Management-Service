@@ -29,12 +29,68 @@
             "shortDescription": {
               "type": "string",
               "maxLength": 75
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "effectiveBeginDate": {
+              "type": "string",
+              "format": "date"
+            },
+            "effectiveEndDate": {
+              "type": "string",
+              "format": "date"
             }
           },
           "required": [
             "namespace",
             "codeValue",
             "shortDescription"
+          ]
+        },
+        "queryFieldMapping": {
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "namespace": [
+            {
+              "path": "$.namespace",
+              "type": "string"
+            }
+          ],
+          "codeValue": [
+            {
+              "path": "$.codeValue",
+              "type": "string"
+            }
+          ],
+          "shortDescription": [
+            {
+              "path": "$.shortDescription",
+              "type": "string"
+            }
+          ],
+          "description": [
+            {
+              "path": "$.description",
+              "type": "string"
+            }
+          ],
+          "effectiveBeginDate": [
+            {
+              "path": "$.effectiveBeginDate",
+              "type": "date"
+            }
+          ],
+          "effectiveEndDate": [
+            {
+              "path": "$.effectiveEndDate",
+              "type": "date"
+            }
           ]
         }
       },

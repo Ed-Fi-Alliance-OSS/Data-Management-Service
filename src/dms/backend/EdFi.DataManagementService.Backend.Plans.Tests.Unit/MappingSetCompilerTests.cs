@@ -187,6 +187,255 @@ public class Given_MappingSetCompiler
     }
 
     [Test]
+    public void It_should_compile_descriptor_query_capabilities_for_shared_descriptor_resources()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var mappingSet = new MappingSetCompiler().Compile(fixture.ModelSet);
+
+        mappingSet.DescriptorQueryCapabilitiesByResource.Keys.Should().Equal(fixture.DescriptorResource);
+
+        var descriptorCapability = mappingSet.DescriptorQueryCapabilitiesByResource[
+            fixture.DescriptorResource
+        ];
+
+        descriptorCapability.Support.Should().BeOfType<DescriptorQuerySupport.Supported>();
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["id"],
+            new DescriptorQueryFieldTarget.DocumentUuid(),
+            DescriptorQueryValueKind.DocumentUuid,
+            "string",
+            null,
+            null
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["namespace"],
+            new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace")),
+            DescriptorQueryValueKind.String,
+            "string",
+            ScalarKind.String,
+            new DbColumnName("Namespace")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["codeValue"],
+            new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue")),
+            DescriptorQueryValueKind.String,
+            "string",
+            ScalarKind.String,
+            new DbColumnName("CodeValue")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["shortDescription"],
+            new DescriptorQueryFieldTarget.ShortDescription(new DbColumnName("ShortDescription")),
+            DescriptorQueryValueKind.String,
+            "string",
+            ScalarKind.String,
+            new DbColumnName("ShortDescription")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["description"],
+            new DescriptorQueryFieldTarget.Description(new DbColumnName("Description")),
+            DescriptorQueryValueKind.String,
+            "string",
+            ScalarKind.String,
+            new DbColumnName("Description")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["effectiveBeginDate"],
+            new DescriptorQueryFieldTarget.EffectiveBeginDate(new DbColumnName("EffectiveBeginDate")),
+            DescriptorQueryValueKind.Date,
+            "date",
+            ScalarKind.Date,
+            new DbColumnName("EffectiveBeginDate")
+        );
+        AssertSupportedDescriptorField(
+            descriptorCapability.SupportedFieldsByQueryField["effectiveEndDate"],
+            new DescriptorQueryFieldTarget.EffectiveEndDate(new DbColumnName("EffectiveEndDate")),
+            DescriptorQueryValueKind.Date,
+            "date",
+            ScalarKind.Date,
+            new DbColumnName("EffectiveEndDate")
+        );
+    }
+
+    [Test]
+    public void It_should_materialize_descriptor_query_field_capability_dictionaries_with_case_insensitive_lookup()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var concreteResources = fixture.ModelSet.ConcreteResourcesInNameOrder.ToArray();
+        var descriptorResourceIndex = Array.FindIndex(
+            concreteResources,
+            concreteResourceModel =>
+                concreteResourceModel.RelationalModel.Resource == fixture.DescriptorResource
+        );
+
+        descriptorResourceIndex.Should().NotBe(-1);
+
+        concreteResources[descriptorResourceIndex] = concreteResources[descriptorResourceIndex] with
+        {
+            QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                ("ID", [("$.id", "string")]),
+                ("Namespace", [("$.namespace", "string")]),
+                ("CodeValue", [("$.codeValue", "string")]),
+                ("ShortDescription", [("$.shortDescription", "string")]),
+                ("Description", [("$.description", "string")]),
+                ("EffectiveBeginDate", [("$.effectiveBeginDate", "date")]),
+                ("EffectiveEndDate", [("$.effectiveEndDate", "date")])
+            ),
+        };
+
+        var modelSetWithDescriptorCaseDrift = fixture.ModelSet with
+        {
+            ConcreteResourcesInNameOrder = concreteResources,
+        };
+
+        var mappingSet = new MappingSetCompiler().Compile(modelSetWithDescriptorCaseDrift);
+        var supportedFields = mappingSet
+            .DescriptorQueryCapabilitiesByResource[fixture.DescriptorResource]
+            .SupportedFieldsByQueryField.Should()
+            .BeAssignableTo<FrozenDictionary<string, SupportedDescriptorQueryField>>()
+            .Subject;
+
+        supportedFields["id"].QueryFieldName.Should().Be("id");
+        supportedFields["ID"].QueryFieldName.Should().Be("id");
+        supportedFields["namespace"].QueryFieldName.Should().Be("namespace");
+        supportedFields["NAMESPACE"].QueryFieldName.Should().Be("namespace");
+    }
+
+    [Test]
+    public void It_should_omit_only_descriptor_query_support_when_descriptor_api_schema_disagrees()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var concreteResources = fixture.ModelSet.ConcreteResourcesInNameOrder.ToArray();
+        var descriptorResourceIndex = Array.FindIndex(
+            concreteResources,
+            concreteResourceModel =>
+                concreteResourceModel.RelationalModel.Resource == fixture.DescriptorResource
+        );
+
+        descriptorResourceIndex.Should().NotBe(-1);
+
+        concreteResources[descriptorResourceIndex] = concreteResources[descriptorResourceIndex] with
+        {
+            QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                ("id", [("$.id", "string")]),
+                ("namespace", [("$.namespace", "string")]),
+                ("codeValue", [("$.codeValue", "string")]),
+                ("shortDescription", [("$.shortDescription", "string")]),
+                ("description", [("$.description", "string")]),
+                ("effectiveBeginDate", [("$.effectiveBeginDate", "string")]),
+                ("effectiveEndDate", [("$.effectiveEndDate", "date")])
+            ),
+        };
+
+        var modelSetWithDescriptorMismatch = fixture.ModelSet with
+        {
+            ConcreteResourcesInNameOrder = concreteResources,
+        };
+
+        var mappingSet = new MappingSetCompiler().Compile(modelSetWithDescriptorMismatch);
+        var descriptorCapability = mappingSet.DescriptorQueryCapabilitiesByResource[
+            fixture.DescriptorResource
+        ];
+
+        descriptorCapability
+            .Support.Should()
+            .Be(
+                new DescriptorQuerySupport.Omitted(
+                    new DescriptorQueryCapabilityOmission(
+                        DescriptorQueryCapabilityOmissionKind.ApiSchemaMismatch,
+                        "ApiSchema queryFieldMapping disagrees with the shared descriptor query contract: "
+                            + "field 'effectiveBeginDate' must map to exactly one path '$.effectiveBeginDate' "
+                            + "with type 'date' (found: '$.effectiveBeginDate' (string))."
+                    )
+                )
+            );
+        descriptorCapability.SupportedFieldsByQueryField.Should().BeEmpty();
+
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.DescriptorResource]
+            .Support.Should()
+            .Be(
+                new RelationalQuerySupport.Omitted(
+                    new RelationalQueryCapabilityOmission(
+                        RelationalQueryCapabilityOmissionKind.DescriptorResource,
+                        "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
+                    )
+                )
+            );
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.SupportedResource]
+            .Support.Should()
+            .BeOfType<RelationalQuerySupport.Supported>();
+    }
+
+    [Test]
+    public void It_should_omit_only_descriptor_query_support_when_descriptor_query_field_names_collide_case_insensitively()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var concreteResources = fixture.ModelSet.ConcreteResourcesInNameOrder.ToArray();
+        var descriptorResourceIndex = Array.FindIndex(
+            concreteResources,
+            concreteResourceModel =>
+                concreteResourceModel.RelationalModel.Resource == fixture.DescriptorResource
+        );
+
+        descriptorResourceIndex.Should().NotBe(-1);
+
+        concreteResources[descriptorResourceIndex] = concreteResources[descriptorResourceIndex] with
+        {
+            QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                ("id", [("$.id", "string")]),
+                ("namespace", [("$.namespace", "string")]),
+                ("Namespace", [("$.namespace", "string")]),
+                ("codeValue", [("$.codeValue", "string")]),
+                ("shortDescription", [("$.shortDescription", "string")]),
+                ("description", [("$.description", "string")]),
+                ("effectiveBeginDate", [("$.effectiveBeginDate", "date")]),
+                ("effectiveEndDate", [("$.effectiveEndDate", "date")])
+            ),
+        };
+
+        var modelSetWithDescriptorCollision = fixture.ModelSet with
+        {
+            ConcreteResourcesInNameOrder = concreteResources,
+        };
+
+        var mappingSet = new MappingSetCompiler().Compile(modelSetWithDescriptorCollision);
+        var descriptorCapability = mappingSet.DescriptorQueryCapabilitiesByResource[
+            fixture.DescriptorResource
+        ];
+
+        descriptorCapability
+            .Support.Should()
+            .Be(
+                new DescriptorQuerySupport.Omitted(
+                    new DescriptorQueryCapabilityOmission(
+                        DescriptorQueryCapabilityOmissionKind.ApiSchemaMismatch,
+                        "ApiSchema queryFieldMapping disagrees with the shared descriptor query contract: "
+                            + "case-insensitive query field name collisions were found: 'Namespace', 'namespace'."
+                    )
+                )
+            );
+        descriptorCapability.SupportedFieldsByQueryField.Should().BeEmpty();
+
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.DescriptorResource]
+            .Support.Should()
+            .Be(
+                new RelationalQuerySupport.Omitted(
+                    new RelationalQueryCapabilityOmission(
+                        RelationalQueryCapabilityOmissionKind.DescriptorResource,
+                        "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
+                    )
+                )
+            );
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.SupportedResource]
+            .Support.Should()
+            .BeOfType<RelationalQuerySupport.Supported>();
+    }
+
+    [Test]
     public void It_should_materialize_query_field_capability_dictionaries_with_case_insensitive_lookup()
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
@@ -365,8 +614,7 @@ public class Given_MappingSetCompiler
                 new RelationalQuerySupport.Omitted(
                     new RelationalQueryCapabilityOmission(
                         RelationalQueryCapabilityOmissionKind.DescriptorResource,
-                        "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
-                            + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                        "storage kind 'SharedDescriptorTable' uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
                     )
                 )
             );
@@ -391,6 +639,9 @@ public class Given_MappingSetCompiler
         mappingSet
             .QueryCapabilitiesByResource.Should()
             .BeAssignableTo<FrozenDictionary<QualifiedResourceName, RelationalQueryCapability>>();
+        mappingSet
+            .DescriptorQueryCapabilitiesByResource.Should()
+            .BeAssignableTo<FrozenDictionary<QualifiedResourceName, DescriptorQueryCapability>>();
 
         mappingSet
             .WritePlansByResource.Should()
@@ -405,6 +656,9 @@ public class Given_MappingSetCompiler
         mappingSet
             .QueryCapabilitiesByResource.Should()
             .NotBeAssignableTo<Dictionary<QualifiedResourceName, RelationalQueryCapability>>();
+        mappingSet
+            .DescriptorQueryCapabilitiesByResource.Should()
+            .NotBeAssignableTo<Dictionary<QualifiedResourceName, DescriptorQueryCapability>>();
 
         var writePlans =
             (IDictionary<QualifiedResourceName, ResourceWritePlan>)mappingSet.WritePlansByResource;
@@ -414,6 +668,9 @@ public class Given_MappingSetCompiler
         var queryCapabilities =
             (IDictionary<QualifiedResourceName, RelationalQueryCapability>)
                 mappingSet.QueryCapabilitiesByResource;
+        var descriptorQueryCapabilities =
+            (IDictionary<QualifiedResourceName, DescriptorQueryCapability>)
+                mappingSet.DescriptorQueryCapabilitiesByResource;
 
         var supportedResource = fixture.SupportedResource;
         var nonRootOnlyResource = fixture.NonRootOnlyResource;
@@ -422,6 +679,9 @@ public class Given_MappingSetCompiler
         var supportedResourceKeyId = mappingSet.ResourceKeyIdByResource[supportedResource];
         var supportedResourceKey = mappingSet.ResourceKeyById[supportedResourceKeyId];
         var supportedQueryCapability = mappingSet.QueryCapabilitiesByResource[supportedResource];
+        var supportedDescriptorQueryCapability = mappingSet.DescriptorQueryCapabilitiesByResource[
+            fixture.DescriptorResource
+        ];
 
         var actAddWritePlan = () => writePlans.Add(nonRootOnlyResource, supportedWritePlan);
         var actAddReadPlan = () => readPlans.Add(nonRootOnlyResource, supportedReadPlan);
@@ -429,12 +689,15 @@ public class Given_MappingSetCompiler
         var actAddResourceKey = () => resourceKeys.Add(short.MaxValue, supportedResourceKey);
         var actAddQueryCapability = () =>
             queryCapabilities.Add(nonRootOnlyResource, supportedQueryCapability);
+        var actAddDescriptorQueryCapability = () =>
+            descriptorQueryCapabilities.Add(nonRootOnlyResource, supportedDescriptorQueryCapability);
 
         actAddWritePlan.Should().Throw<NotSupportedException>();
         actAddReadPlan.Should().Throw<NotSupportedException>();
         actAddResourceKeyId.Should().Throw<NotSupportedException>();
         actAddResourceKey.Should().Throw<NotSupportedException>();
         actAddQueryCapability.Should().Throw<NotSupportedException>();
+        actAddDescriptorQueryCapability.Should().Throw<NotSupportedException>();
     }
 
     private static MappingSetCompilerFixture CreateMixedResourceFixture(SqlDialect dialect)
@@ -529,8 +792,20 @@ public class Given_MappingSetCompiler
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[0],
                     ResourceStorageKind.SharedDescriptorTable,
-                    descriptorModel
-                ),
+                    descriptorModel,
+                    CreateDescriptorMetadata()
+                )
+                {
+                    QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                        ("id", [("$.id", "string")]),
+                        ("namespace", [("$.namespace", "string")]),
+                        ("codeValue", [("$.codeValue", "string")]),
+                        ("shortDescription", [("$.shortDescription", "string")]),
+                        ("description", [("$.description", "string")]),
+                        ("effectiveBeginDate", [("$.effectiveBeginDate", "date")]),
+                        ("effectiveEndDate", [("$.effectiveEndDate", "date")])
+                    ),
+                },
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[1],
                     ResourceStorageKind.RelationalTables,
@@ -910,6 +1185,22 @@ public class Given_MappingSetCompiler
         );
     }
 
+    private static DescriptorMetadata CreateDescriptorMetadata()
+    {
+        return new DescriptorMetadata(
+            new DescriptorColumnContract(
+                Namespace: new DbColumnName("Namespace"),
+                CodeValue: new DbColumnName("CodeValue"),
+                ShortDescription: new DbColumnName("ShortDescription"),
+                Description: new DbColumnName("Description"),
+                EffectiveBeginDate: new DbColumnName("EffectiveBeginDate"),
+                EffectiveEndDate: new DbColumnName("EffectiveEndDate"),
+                Discriminator: null
+            ),
+            DiscriminatorStrategy.ResourceKeyId
+        );
+    }
+
     private static DbTableModel CreateRootTable(
         DbSchemaName schemaName,
         string tableName,
@@ -1071,6 +1362,22 @@ public class Given_MappingSetCompiler
             ),
             StringComparer.Ordinal
         );
+    }
+
+    private static void AssertSupportedDescriptorField(
+        SupportedDescriptorQueryField supportedField,
+        DescriptorQueryFieldTarget expectedTarget,
+        DescriptorQueryValueKind expectedValueKind,
+        string expectedApiSchemaType,
+        ScalarKind? expectedScalarKind,
+        DbColumnName? expectedDescriptorColumn
+    )
+    {
+        supportedField.Target.Should().Be(expectedTarget);
+        supportedField.ValueKind.Should().Be(expectedValueKind);
+        supportedField.ApiSchemaType.Should().Be(expectedApiSchemaType);
+        supportedField.ScalarKind.Should().Be(expectedScalarKind);
+        supportedField.DescriptorColumn.Should().Be(expectedDescriptorColumn);
     }
 
     private static byte[] CreateResourceKeySeedHash()

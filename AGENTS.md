@@ -27,19 +27,23 @@ You must teardown and setup when you switch branches or change debugging code in
 
 Data Management Service E2E tests do not always clean up after themselves. Teardown and setup between test runs if you see inconsistent behavior.
 
+If local E2E tests fail before issuing API requests, check for environment/runtime issues such as unsupported `NODE_OPTIONS` values or container health checks failing because required shell tools are missing.
+
 ### Setup Data Management Service E2E test Docker environment
 
-1. Navigate to `src/dms/tests/EdFi.InstanceManagement.Tests.E2E`
+1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
 2. Run: `pwsh ./setup-local-dms.ps1`
 
 ### Teardown Data Management Service E2E test Docker environment
 
-1. Navigate to `src/dms/tests/EdFi.InstanceManagement.Tests.E2E`
+1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
 2. Run: `pwsh ./teardown-local-dms.ps1`
 3. This will:
    - Stop all containers in the dms-local stack
    - Remove all associated volumes
    - Remove locally-built images (dms-local-dms and dms-local-config)
+
+Use `src/dms/tests/EdFi.InstanceManagement.Tests.E2E` only for the Instance Management E2E suite; it uses route-context settings and a different instance setup.
 
 ## Working with DMS Configuration Management Service E2E Tests
 

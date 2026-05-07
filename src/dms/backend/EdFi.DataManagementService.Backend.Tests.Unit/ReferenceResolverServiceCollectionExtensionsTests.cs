@@ -7,6 +7,8 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.Profile;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -34,6 +36,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
+        scope.ServiceProvider.GetService<IDescriptorReadHandler>().Should().BeNull();
         scope.ServiceProvider.GetService<IDescriptorWriteHandler>().Should().BeNull();
         scope.ServiceProvider.GetService<IRelationalWriteTargetLookupService>().Should().BeNull();
         scope.ServiceProvider.GetService<IRelationalWriteTargetLookupResolver>().Should().BeNull();
@@ -47,6 +50,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
 
         services.AddReferenceResolver<
             ExecutorBackedReferenceResolverAdapterFactory,
@@ -78,6 +82,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteExceptionClassifier>();
         var deleteConstraintResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteConstraintResolver>();
+        var descriptorReadHandler = scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>();
         var descriptorWriteHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
         var targetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
@@ -108,6 +113,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
         writeExceptionClassifier.Should().BeOfType<NoOpRelationalWriteExceptionClassifier>();
         deleteConstraintResolver.Should().BeOfType<RelationalDeleteConstraintResolver>();
+        descriptorReadHandler.Should().BeOfType<DescriptorReadHandler>();
         descriptorWriteHandler.Should().BeOfType<DescriptorWriteHandler>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
@@ -127,6 +133,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
 
         services.AddReferenceResolver<
             ExecutorBackedReferenceResolverAdapterFactory,

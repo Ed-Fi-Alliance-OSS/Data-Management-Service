@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
@@ -76,6 +78,35 @@ public static class Utility
     public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
     {
         return new JsonObject { ["error"] = errorInfo, ["correlationId"] = traceId.Value };
+    }
+
+    internal static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(
+        RequestInfo requestInfo
+    )
+    {
+        ArgumentNullException.ThrowIfNull(requestInfo);
+
+        var readContentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType;
+
+        if (readContentType is null)
+        {
+            return null;
+        }
+
+        var identityPropertyNames = new HashSet<string>(
+            IReadableProfileProjector.ExtractIdentityPropertyNames(
+                requestInfo.ResourceSchema.IdentityJsonPaths
+            ),
+            StringComparer.Ordinal
+        );
+
+        if (requestInfo.ResourceInfo.IsDescriptor)
+        {
+            identityPropertyNames.Add("namespace");
+            identityPropertyNames.Add("codeValue");
+        }
+
+        return new ReadableProfileProjectionContext(readContentType, identityPropertyNames);
     }
 
     /// <summary>

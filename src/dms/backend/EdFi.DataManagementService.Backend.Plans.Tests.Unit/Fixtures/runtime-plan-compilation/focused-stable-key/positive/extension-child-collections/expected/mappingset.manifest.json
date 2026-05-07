@@ -84,7 +84,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -786,7 +787,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         }
       ]
     },
@@ -874,7 +876,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -1576,7 +1579,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         }
       ]
     }

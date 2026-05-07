@@ -246,7 +246,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -259,10 +260,18 @@
             "support": {
               "kind": "omitted",
               "omission_kind": "descriptor_resource",
-              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses the descriptor endpoint query path instead of compiled relational GET-many support. Next story: E08-S05 (05-descriptor-endpoints.md)."
+              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
+          },
+          "descriptor_query_capability": {
+            "support": {
+              "kind": "omitted",
+              "omission_kind": "api_schema_mismatch",
+              "reason": "ApiSchema queryFieldMapping disagrees with the shared descriptor query contract: missing fields: \u0027id\u0027, \u0027namespace\u0027, \u0027codeValue\u0027, \u0027shortDescription\u0027, \u0027description\u0027, \u0027effectiveBeginDate\u0027, \u0027effectiveEndDate\u0027."
+            },
+            "supported_fields_in_query_field_order": []
           }
         },
         {
@@ -364,7 +373,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         }
       ]
     },
@@ -614,7 +624,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         },
         {
           "resource": {
@@ -627,10 +638,18 @@
             "support": {
               "kind": "omitted",
               "omission_kind": "descriptor_resource",
-              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses the descriptor endpoint query path instead of compiled relational GET-many support. Next story: E08-S05 (05-descriptor-endpoints.md)."
+              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses descriptor-specific query capability metadata instead of compiled relational GET-many support."
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
+          },
+          "descriptor_query_capability": {
+            "support": {
+              "kind": "omitted",
+              "omission_kind": "api_schema_mismatch",
+              "reason": "ApiSchema queryFieldMapping disagrees with the shared descriptor query contract: missing fields: \u0027id\u0027, \u0027namespace\u0027, \u0027codeValue\u0027, \u0027shortDescription\u0027, \u0027description\u0027, \u0027effectiveBeginDate\u0027, \u0027effectiveEndDate\u0027."
+            },
+            "supported_fields_in_query_field_order": []
           }
         },
         {
@@ -732,7 +751,8 @@
             },
             "supported_fields_in_query_field_order": [],
             "unsupported_fields_in_query_field_order": []
-          }
+          },
+          "descriptor_query_capability": null
         }
       ]
     }

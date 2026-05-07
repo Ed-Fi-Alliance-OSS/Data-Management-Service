@@ -24,6 +24,12 @@ public abstract record QueryPredicateTarget
     /// Predicate targets <c>dms.Document.DocumentUuid</c> and therefore requires the special-case document join.
     /// </summary>
     public sealed record DocumentUuid : QueryPredicateTarget;
+
+    /// <summary>
+    /// Predicate targets a shared <c>dms.Descriptor</c> table column and therefore requires the descriptor join.
+    /// </summary>
+    /// <param name="Column">The shared descriptor-table column.</param>
+    public sealed record DescriptorColumn(DbColumnName Column) : QueryPredicateTarget;
 }
 
 /// <summary>

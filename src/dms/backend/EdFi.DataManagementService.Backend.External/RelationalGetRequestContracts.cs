@@ -55,6 +55,12 @@ public interface IRelationalGetRequest : IGetRequest
     BaseResourceInfo ResourceInfo { get; }
 
     /// <summary>
+    /// The effective GET authorization strategies already resolved by Core.
+    /// Descriptor GET uses these to fail closed without invoking the legacy authorization handler.
+    /// </summary>
+    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
+
+    /// <summary>
     /// Controls whether the repository should materialize an external response or a stored document.
     /// </summary>
     RelationalGetRequestReadMode ReadMode { get; }

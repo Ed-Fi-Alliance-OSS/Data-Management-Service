@@ -3,9 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -17,10 +15,6 @@ namespace EdFi.DataManagementService.Backend.Plans;
 public static class MappingSetWriteLookupExtensions
 {
     private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
-    private static readonly ConditionalWeakTable<
-        MappingSet,
-        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
-    > ConcreteResourceModelsByResource = new();
 
     /// <summary>
     /// Returns <c>true</c> when <paramref name="resource" /> is stored in the shared
@@ -36,7 +30,7 @@ public static class MappingSetWriteLookupExtensions
         ArgumentNullException.ThrowIfNull(mappingSet);
 
         if (
-            TryGetConcreteResourceModel(mappingSet, resource, out var model)
+            mappingSet.TryGetConcreteResourceModel(resource, out var model)
             && model.StorageKind == ResourceStorageKind.SharedDescriptorTable
         )
         {
@@ -63,7 +57,7 @@ public static class MappingSetWriteLookupExtensions
             return writePlan;
         }
 
-        var concreteResourceModel = GetConcreteResourceModelOrThrow(mappingSet, resource);
+        var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
 
         if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
         {
@@ -88,59 +82,6 @@ public static class MappingSetWriteLookupExtensions
             $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
                 + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
                 + "is not recognized."
-        );
-    }
-
-    /// <summary>
-    /// Attempts to resolve the concrete resource model from the mapping set's canonical resource list.
-    /// </summary>
-    private static bool TryGetConcreteResourceModel(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        [NotNullWhen(true)] out ConcreteResourceModel? model
-    )
-    {
-        var concreteResourcesByResource = ConcreteResourceModelsByResource.GetValue(
-            mappingSet,
-            static staticMappingSet =>
-            {
-                var resourcesByName = new Dictionary<QualifiedResourceName, ConcreteResourceModel>();
-
-                foreach (var concreteResourceModel in staticMappingSet.Model.ConcreteResourcesInNameOrder)
-                {
-                    var resource = concreteResourceModel.RelationalModel.Resource;
-
-                    if (!resourcesByName.TryAdd(resource, concreteResourceModel))
-                    {
-                        throw new InvalidOperationException(
-                            $"Mapping set '{FormatMappingSetKey(staticMappingSet.Key)}' contains duplicate resource "
-                                + $"'{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
-                        );
-                    }
-                }
-
-                return resourcesByName.ToFrozenDictionary();
-            }
-        );
-
-        return concreteResourcesByResource.TryGetValue(resource, out model);
-    }
-
-    /// <summary>
-    /// Resolves the concrete resource model from the mapping set's canonical resource list or throws a deterministic error.
-    /// </summary>
-    public static ConcreteResourceModel GetConcreteResourceModelOrThrow(
-        this MappingSet mappingSet,
-        QualifiedResourceName resource
-    )
-    {
-        if (TryGetConcreteResourceModel(mappingSet, resource, out var model))
-        {
-            return model;
-        }
-
-        throw new KeyNotFoundException(
-            $"Mapping set '{FormatMappingSetKey(mappingSet.Key)}' does not contain resource '{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
         );
     }
 

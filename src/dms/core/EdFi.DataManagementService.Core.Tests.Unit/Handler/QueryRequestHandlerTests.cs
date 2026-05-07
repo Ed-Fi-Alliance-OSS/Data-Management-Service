@@ -209,6 +209,173 @@ public class QueryRequestHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Descriptor_Relational_Query_That_Returns_Failure_Not_Implemented_For_Authorization
+        : QueryRequestHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public const string ResponseBody =
+                "Relational query authorization is not implemented for resource "
+                + "'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires "
+                + "filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests "
+                + "with no authorization strategies or only 'NoFurtherAuthorizationRequired' are "
+                + "currently supported.";
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                return Task.FromResult<QueryResult>(new QueryResult.QueryFailureNotImplemented(ResponseBody));
+            }
+        }
+
+        private static readonly string _traceId = "descriptor-query-auth-501";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("SchoolTypeDescriptor"),
+                IsDescriptor: true,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                new JsonObject
+                {
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["isDescriptor"] = true,
+                    ["identityJsonPaths"] = new JsonArray { "$.uri" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject(),
+                    },
+                }
+            );
+            _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.AuthorizationStrategyEvaluators =
+            [
+                new("RelationshipsWithEdOrgsOnly", [], FilterOperator.And),
+            ];
+
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_descriptor_query_authorization_failures_to_http_501()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+
+            var expected = ToJsonError(Repository.ResponseBody, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Descriptor_Relational_Query_That_Returns_Failure_Not_Implemented_For_Omitted_Capability
+        : QueryRequestHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public const string ResponseBody =
+                "Descriptor query capability for resource 'Ed-Fi.SchoolTypeDescriptor' was intentionally "
+                + "omitted: descriptor query support was intentionally omitted for the test fixture.";
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                return Task.FromResult<QueryResult>(new QueryResult.QueryFailureNotImplemented(ResponseBody));
+            }
+        }
+
+        private static readonly string _traceId = "descriptor-query-omission-501";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("SchoolTypeDescriptor"),
+                IsDescriptor: true,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                new JsonObject
+                {
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["isDescriptor"] = true,
+                    ["identityJsonPaths"] = new JsonArray { "$.uri" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject(),
+                    },
+                }
+            );
+            _requestInfo.MappingSet = _mappingSet;
+
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_descriptor_query_capability_omissions_to_http_501()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+
+            var expected = ToJsonError(Repository.ResponseBody, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Request_With_Relational_Query_Metadata : QueryRequestHandlerTests
     {
         private static ResourceInfo CreateResourceInfo(
@@ -334,6 +501,104 @@ public class QueryRequestHandlerTests
             _requestInfo
                 .FrontendResponse.ContentType.Should()
                 .Be("application/vnd.ed-fi.student.readableprofile.readable+json");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Descriptor_Request_With_Relational_Query_Metadata : QueryRequestHandlerTests
+    {
+        private static ResourceInfo CreateResourceInfo(
+            string projectName = "Ed-Fi",
+            string resourceName = "SchoolTypeDescriptor",
+            bool isDescriptor = true
+        )
+        {
+            return new ResourceInfo(
+                ProjectName: new ProjectName(projectName),
+                ResourceName: new ResourceName(resourceName),
+                IsDescriptor: isDescriptor,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+        }
+
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IRelationalQueryRequest? CapturedRequest { get; private set; }
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                CapturedRequest = queryRequest as IRelationalQueryRequest;
+
+                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
+            }
+        }
+
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+        private readonly ContentTypeDefinition _readContentType = new(
+            MemberSelection.IncludeOnly,
+            [new PropertyRule("description")],
+            [],
+            [],
+            []
+        );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ResourceInfo = CreateResourceInfo(projectName: "SampleExtension");
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                new JsonObject
+                {
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["isDescriptor"] = true,
+                    ["identityJsonPaths"] = new JsonArray { "$.uri" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject(),
+                    },
+                }
+            );
+            _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "ReadableProfile",
+                ContentType: ProfileContentType.Read,
+                ResourceProfile: new ResourceProfile(
+                    ResourceName: "SchoolTypeDescriptor",
+                    LogicalSchema: null,
+                    ReadContentType: _readContentType,
+                    WriteContentType: null
+                ),
+                WasExplicitlySpecified: true
+            );
+
+            var (queryHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_adds_descriptor_identity_fields_to_the_query_readable_profile_projection_context()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository.CapturedRequest!.ReadableProfileProjectionContext.Should().NotBeNull();
+            _repository
+                .CapturedRequest.ReadableProfileProjectionContext!.IdentityPropertyNames.Should()
+                .Contain("uri")
+                .And.Contain("namespace")
+                .And.Contain("codeValue");
         }
     }
 }

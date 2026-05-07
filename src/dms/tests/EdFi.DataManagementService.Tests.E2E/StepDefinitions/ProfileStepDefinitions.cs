@@ -1079,6 +1079,89 @@ public class ProfileStepDefinitions(
         }
     }
 
+    [When(@"the response body path ""([^""]*)"" is stored as variable ""([^""]*)""")]
+    public async Task WhenTheResponseBodyPathIsStoredAsVariable(string jsonPath, string variableName)
+    {
+        string responseBody = await GetCurrentApiResponse().TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        string[] pathParts = jsonPath.Split('.');
+        bool pathExists = TryResolvePath(
+            responseJson,
+            pathParts,
+            out JsonNode? current,
+            out string failedAtPart
+        );
+
+        pathExists
+            .Should()
+            .BeTrue(
+                $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {responseBody}"
+            );
+
+        current
+            .Should()
+            .NotBeNull($"Path '{jsonPath}' should resolve to a non-null value. Response: {responseBody}");
+
+        _scenarioVariables.Add(variableName, current!.ToString());
+    }
+
+    [Then(@"the response body path ""([^""]*)"" should not equal variable ""([^""]*)""")]
+    public async Task ThenTheResponseBodyPathShouldNotEqualVariable(string jsonPath, string variableName)
+    {
+        string responseBody = await GetCurrentApiResponse().TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        JsonObject[] objects = responseJson is JsonArray jsonArray
+            ? jsonArray.Select(item => item!.AsObject()).ToArray()
+            : [responseJson.AsObject()];
+
+        string[] pathParts = jsonPath.Split('.');
+
+        foreach (JsonObject obj in objects)
+        {
+            bool pathExists = TryResolvePath(obj, pathParts, out JsonNode? current, out string failedAtPart);
+
+            pathExists
+                .Should()
+                .BeTrue(
+                    $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {responseBody}"
+                );
+
+            current
+                .Should()
+                .NotBeNull($"Path '{jsonPath}' should resolve to a non-null value. Response: {responseBody}");
+
+            current!
+                .ToString()
+                .Should()
+                .NotBe(
+                    _scenarioVariables.GetValueByName(variableName),
+                    $"Path '{jsonPath}' should not match the stored value in variable '{variableName}'."
+                );
+        }
+    }
+
+    [When(@"the response header ""([^""]*)"" is stored as variable ""([^""]*)""")]
+    public void WhenTheResponseHeaderIsStoredAsVariable(string headerName, string variableName)
+    {
+        string headerValue = GetResponseHeaderValue(headerName);
+        _scenarioVariables.Add(variableName, headerValue);
+    }
+
+    [Then(@"the response header ""([^""]*)"" should not equal variable ""([^""]*)""")]
+    public void ThenTheResponseHeaderShouldNotEqualVariable(string headerName, string variableName)
+    {
+        string headerValue = GetResponseHeaderValue(headerName);
+
+        headerValue
+            .Should()
+            .NotBe(
+                _scenarioVariables.GetValueByName(variableName),
+                $"Header '{headerName}' should not match the stored value in variable '{variableName}'."
+            );
+    }
+
     private static bool TryResolvePath(
         JsonNode? root,
         IReadOnlyList<string> pathParts,
@@ -1543,6 +1626,19 @@ public class ProfileStepDefinitions(
     {
         _apiResponse = apiResponse;
         _scenarioContext[ApiResponseContextKey] = apiResponse;
+    }
+
+    private string GetResponseHeaderValue(string headerName)
+    {
+        IAPIResponse apiResponse = GetCurrentApiResponse();
+
+        string? actualHeaderKey = apiResponse.Headers.Keys.FirstOrDefault(k =>
+            k.Equals(headerName, StringComparison.OrdinalIgnoreCase)
+        );
+
+        actualHeaderKey.Should().NotBeNull($"Response should include header '{headerName}'");
+
+        return apiResponse.Headers[actualHeaderKey!];
     }
 
     /// <summary>

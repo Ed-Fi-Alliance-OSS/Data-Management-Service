@@ -53,21 +53,24 @@ public class GetByIdHandlerTests
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly JsonObject ResponseBody = new() { ["value"] = "expected" };
+            public IGetRequest? CapturedRequest { get; private set; }
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
+                CapturedRequest = getRequest;
                 return Task.FromResult<GetResult>(
                     new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, getRequest.TraceId.Value)
                 );
             }
         }
 
+        private readonly Repository _repository = new();
         private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
-            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            var (getByIdHandler, serviceProvider) = Handler(_repository);
             requestInfo.ScopedServiceProvider = serviceProvider;
             await getByIdHandler.Execute(requestInfo, NullNext);
         }
@@ -77,6 +80,13 @@ public class GetByIdHandlerTests
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(200);
             requestInfo.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
+        }
+
+        [Test]
+        public void It_constructs_a_standard_get_request_when_no_mapping_set_is_present()
+        {
+            _repository.CapturedRequest.Should().BeOfType<GetRequest>();
+            _repository.CapturedRequest.Should().NotBeAssignableTo<IRelationalGetRequest>();
         }
     }
 
@@ -192,6 +202,94 @@ public class GetByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Descriptor_Relational_Request_That_Returns_Failure_Not_Implemented
+        : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public const string ResponseBody =
+                "Relational descriptor GET authorization is not implemented for resource "
+                + "'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. "
+                + "Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no "
+                + "authorization strategies or only 'NoFurtherAuthorizationRequired' are currently "
+                + "supported.";
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(new GetFailureNotImplemented(ResponseBody));
+            }
+        }
+
+        private static readonly string _traceId = "descriptor-get-501";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("SchoolTypeDescriptor"),
+                IsDescriptor: true,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                new JsonObject
+                {
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["isDescriptor"] = true,
+                    ["identityJsonPaths"] = new JsonArray { "$.uri" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject(),
+                    },
+                }
+            );
+            _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.AuthorizationStrategyEvaluators =
+            [
+                new("RelationshipsWithEdOrgsOnly", [], FilterOperator.And),
+            ];
+
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await getByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_descriptor_not_implemented_failures_to_http_501()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+
+            var expected = Utility.ToJsonError(Repository.ResponseBody, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -297,6 +395,10 @@ actual: {requestInfo.FrontendResponse.Body}
             [],
             []
         );
+        private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
+        [
+            new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, [], FilterOperator.Or),
+        ];
 
         [SetUp]
         public async Task Setup()
@@ -320,6 +422,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 }
             );
             _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
             _requestInfo.ProfileContext = new ProfileContext(
                 ProfileName: "ReadableProfile",
                 ContentType: ProfileContentType.Read,
@@ -353,6 +456,9 @@ actual: {requestInfo.FrontendResponse.Body}
                     )
                 );
             _repository.CapturedRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
+            _repository
+                .CapturedRequest.AuthorizationStrategyEvaluators.Should()
+                .BeSameAs(_authorizationStrategyEvaluators);
             _repository.CapturedRequest.ReadableProfileProjectionContext.Should().NotBeNull();
             _repository
                 .CapturedRequest.ReadableProfileProjectionContext!.ContentTypeDefinition.Should()
@@ -369,6 +475,117 @@ actual: {requestInfo.FrontendResponse.Body}
             _requestInfo
                 .FrontendResponse.ContentType.Should()
                 .Be("application/vnd.ed-fi.student.readableprofile.readable+json");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Descriptor_Request_With_Relational_Read_Metadata : GetByIdHandlerTests
+    {
+        private static ResourceInfo CreateResourceInfo(
+            string projectName = "Ed-Fi",
+            string resourceName = "SchoolTypeDescriptor",
+            bool isDescriptor = true
+        )
+        {
+            return new ResourceInfo(
+                ProjectName: new ProjectName(projectName),
+                ResourceName: new ResourceName(resourceName),
+                IsDescriptor: isDescriptor,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+        }
+
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IRelationalGetRequest? CapturedRequest { get; private set; }
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                CapturedRequest = getRequest as IRelationalGetRequest;
+
+                return Task.FromResult<GetResult>(
+                    new GetSuccess(
+                        No.DocumentUuid,
+                        new JsonObject(),
+                        DateTime.UtcNow,
+                        getRequest.TraceId.Value
+                    )
+                );
+            }
+        }
+
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+        private readonly ContentTypeDefinition _readContentType = new(
+            MemberSelection.IncludeOnly,
+            [new PropertyRule("description")],
+            [],
+            [],
+            []
+        );
+        private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
+        [
+            new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, [], FilterOperator.Or),
+        ];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ResourceInfo = CreateResourceInfo(projectName: "SampleExtension");
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                new JsonObject
+                {
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["isDescriptor"] = true,
+                    ["identityJsonPaths"] = new JsonArray { "$.uri" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject(),
+                    },
+                }
+            );
+            _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "ReadableProfile",
+                ContentType: ProfileContentType.Read,
+                ResourceProfile: new ResourceProfile(
+                    ResourceName: "SchoolTypeDescriptor",
+                    LogicalSchema: null,
+                    ReadContentType: _readContentType,
+                    WriteContentType: null
+                ),
+                WasExplicitlySpecified: true
+            );
+
+            var (getByIdHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await getByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_adds_descriptor_identity_fields_to_the_readable_profile_projection_context()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository.CapturedRequest!.ReadableProfileProjectionContext.Should().NotBeNull();
+            _repository
+                .CapturedRequest.ReadableProfileProjectionContext!.IdentityPropertyNames.Should()
+                .Contain("uri")
+                .And.Contain("namespace")
+                .And.Contain("codeValue");
         }
     }
 }
