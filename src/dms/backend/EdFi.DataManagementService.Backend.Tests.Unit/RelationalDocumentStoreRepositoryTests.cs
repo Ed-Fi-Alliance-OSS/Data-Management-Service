@@ -25,6 +25,15 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_RelationalDocumentStoreRepositoryTests
 {
+    private static IEnumerable<TestCaseData> DescriptorWritePreconditions()
+    {
+        yield return new TestCaseData(new WritePrecondition.None());
+        yield return new TestCaseData(new WritePrecondition.IfMatch("plain-opaque-value"));
+        yield return new TestCaseData(new WritePrecondition.IfMatch("\"72\""));
+        yield return new TestCaseData(new WritePrecondition.IfMatch("   "));
+        yield return new TestCaseData(new WritePrecondition.IfMatch("\"72\", W/\"73\""));
+    }
+
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
     private const string StampStyleEtagPattern = "^\"\\d+\"$";
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
@@ -2220,6 +2229,51 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustHaveHappenedOnceExactly();
     }
 
+    [TestCaseSource(nameof(DescriptorWritePreconditions))]
+    public async Task It_forwards_write_preconditions_to_the_descriptor_post_handler(
+        WritePrecondition expectedWritePrecondition
+    )
+    {
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        DescriptorWriteRequest capturedRequest = null!;
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+
+        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .Invokes(call => capturedRequest = call.GetArgument<DescriptorWriteRequest>(0)!)
+            .Returns(new UpsertResult.InsertSuccess(documentUuid, "\"descriptor-etag\""));
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            descriptorHandler,
+            _descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory
+        );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateDescriptorRequestBody());
+        A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("descriptor-post-precondition"));
+        A.CallTo(() => upsertRequest.WritePrecondition).Returns(expectedWritePrecondition);
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        capturedRequest.WritePrecondition.Should().Be(expectedWritePrecondition);
+    }
+
     [Test]
     public async Task It_preserves_descriptor_put_etags_returned_by_the_handler_without_a_follow_up_lookup()
     {
@@ -2262,6 +2316,51 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
         A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
+    }
+
+    [TestCaseSource(nameof(DescriptorWritePreconditions))]
+    public async Task It_forwards_write_preconditions_to_the_descriptor_put_handler(
+        WritePrecondition expectedWritePrecondition
+    )
+    {
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        DescriptorWriteRequest capturedRequest = null!;
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+
+        A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .Invokes(call => capturedRequest = call.GetArgument<DescriptorWriteRequest>(0)!)
+            .Returns(new UpdateResult.UpdateSuccess(documentUuid, "\"descriptor-etag\""));
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            descriptorHandler,
+            _descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory
+        );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateDescriptorRequestBody("Updated Charter"));
+        A.CallTo(() => updateRequest.TraceId).Returns(new TraceId("descriptor-put-precondition"));
+        A.CallTo(() => updateRequest.WritePrecondition).Returns(expectedWritePrecondition);
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        capturedRequest.WritePrecondition.Should().Be(expectedWritePrecondition);
     }
 
     [Test]
