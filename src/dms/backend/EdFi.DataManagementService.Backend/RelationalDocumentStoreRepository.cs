@@ -76,6 +76,7 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
+        var writePrecondition = NormalizeWritePrecondition(relationalUpsertRequest.WritePrecondition);
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
@@ -90,9 +91,7 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalUpsertRequest.TraceId
                     )
                     {
-                        WritePrecondition = NormalizeWritePrecondition(
-                            relationalUpsertRequest.WritePrecondition
-                        ),
+                        WritePrecondition = writePrecondition,
                     }
                 )
                 .ConfigureAwait(false);
@@ -104,6 +103,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         var result = await ExecuteWriteGuardRails<UpsertResult>(
                 requestBody: selectedBody,
+                writePrecondition: writePrecondition,
                 traceId: relationalUpsertRequest.TraceId,
                 mappingSet,
                 relationalUpsertRequest.ResourceInfo,
@@ -197,6 +197,7 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
+        var writePrecondition = NormalizeWritePrecondition(relationalUpdateRequest.WritePrecondition);
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
@@ -211,9 +212,7 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalUpdateRequest.TraceId
                     )
                     {
-                        WritePrecondition = NormalizeWritePrecondition(
-                            relationalUpdateRequest.WritePrecondition
-                        ),
+                        WritePrecondition = writePrecondition,
                     }
                 )
                 .ConfigureAwait(false);
@@ -225,6 +224,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         var result = await ExecuteWriteGuardRails<UpdateResult>(
                 requestBody: selectedBody,
+                writePrecondition: writePrecondition,
                 traceId: relationalUpdateRequest.TraceId,
                 mappingSet,
                 relationalUpdateRequest.ResourceInfo,
@@ -624,6 +624,7 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
         System.Text.Json.Nodes.JsonNode requestBody,
+        WritePrecondition writePrecondition,
         TraceId traceId,
         MappingSet mappingSet,
         ResourceInfo resourceInfo,
@@ -637,6 +638,7 @@ public sealed class RelationalDocumentStoreRepository(
     )
     {
         ArgumentNullException.ThrowIfNull(requestBody);
+        ArgumentNullException.ThrowIfNull(writePrecondition);
         ArgumentNullException.ThrowIfNull(resourceInfo);
         ArgumentNullException.ThrowIfNull(documentReferences);
         ArgumentNullException.ThrowIfNull(descriptorReferences);
@@ -702,7 +704,8 @@ public sealed class RelationalDocumentStoreRepository(
                             DescriptorReferences: descriptorReferences
                         ),
                         targetContext: targetResolution.TargetContext!,
-                        profileWriteContext: profileWriteContext
+                        profileWriteContext: profileWriteContext,
+                        writePrecondition: writePrecondition
                     )
                 )
                 .ConfigureAwait(false);

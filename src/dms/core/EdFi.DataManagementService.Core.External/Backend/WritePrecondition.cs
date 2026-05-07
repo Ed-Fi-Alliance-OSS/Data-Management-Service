@@ -10,14 +10,27 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 /// </summary>
 public abstract record WritePrecondition
 {
+    protected WritePrecondition(ReadableEtagProjectionContext? etagProjectionContext)
+    {
+        EtagProjectionContext = etagProjectionContext;
+    }
+
+    /// <summary>
+    /// Optional readable projection inputs used to compute the <c>_etag</c> surface for
+    /// profiled write comparisons and success-response ETags.
+    /// </summary>
+    public ReadableEtagProjectionContext? EtagProjectionContext { get; init; }
+
     /// <summary>
     /// No HTTP write precondition is present on the request.
     /// </summary>
-    public sealed record None : WritePrecondition;
+    public sealed record None(ReadableEtagProjectionContext? EtagProjectionContext = null)
+        : WritePrecondition(EtagProjectionContext);
 
     /// <summary>
     /// The request carries an opaque <c>If-Match</c> value that must be compared exactly.
     /// </summary>
     /// <param name="Value">The exact frontend-supplied value after frontend header filtering.</param>
-    public sealed record IfMatch(string Value) : WritePrecondition;
+    public sealed record IfMatch(string Value, ReadableEtagProjectionContext? EtagProjectionContext = null)
+        : WritePrecondition(EtagProjectionContext);
 }

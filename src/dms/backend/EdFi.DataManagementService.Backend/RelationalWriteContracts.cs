@@ -556,7 +556,8 @@ public sealed record RelationalWriteExecutorRequest
         TraceId traceId,
         ReferenceResolverRequest referenceResolutionRequest,
         RelationalWriteTargetContext targetContext,
-        BackendProfileWriteContext? profileWriteContext = null
+        BackendProfileWriteContext? profileWriteContext = null,
+        WritePrecondition? writePrecondition = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -624,6 +625,7 @@ public sealed record RelationalWriteExecutorRequest
         }
 
         ProfileWriteContext = profileWriteContext;
+        WritePrecondition = writePrecondition ?? new WritePrecondition.None();
     }
 
     /// <summary>
@@ -682,6 +684,12 @@ public sealed record RelationalWriteExecutorRequest
     /// profile-constrained flatten/merge path or the no-profile merge/persist path.
     /// </summary>
     public BackendProfileWriteContext? ProfileWriteContext { get; init; }
+
+    /// <summary>
+    /// Typed HTTP write precondition plus any readable projection inputs needed to compute
+    /// authoritative profiled-write <c>_etag</c> surfaces.
+    /// </summary>
+    public WritePrecondition WritePrecondition { get; init; }
 }
 
 /// <summary>
