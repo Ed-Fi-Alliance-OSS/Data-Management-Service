@@ -164,7 +164,7 @@ Implement JSON reconstitution from hydrated relational rows:
      This should be true regardless of profile member rules. src/dms/core/EdFi.DataManagementService.Core/Profile/ReadableProfileProjector.cs:16 and src/dms/core/EdFi.DataManagementService.Core/
      OpenApi/ProfileOpenApiSpecificationFilter.cs:20 should agree. I would let DMS-990 own that fix because relational GET will bypass the legacy filter path.
   2. Use `_etag = base64(SHA-256(canonical JSON))` and `_lastModifiedDate` in UTC second precision.
-     Remove `id`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object members while preserving array order, then hash the minified UTF-8 bytes. That keeps read/write behavior aligned without coupling `_etag` to exact frontend serializer bytes and preserves
+     Remove `id`, `link`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object members while preserving array order, then hash the minified UTF-8 bytes. That keeps read/write behavior aligned without coupling `_etag` to exact frontend serializer bytes and preserves
      `_lastModifiedDate` formatting as yyyy-MM-ddTHH:mm:ssZ for now, even if the stored DB stamp has higher precision.
   3. Return an explicit “not implemented yet” result for unsupported relational reads.
      I would not leave intentional gaps as UnknownFailure/HTTP 500 from src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:95. Add a NotImplemented-style read
