@@ -45,7 +45,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 ### Stored update tracking (stamps + journal)
 
-- Serves `_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps and computes `_etag` from deterministic canonical JSON for the served response shape (no read-time dependency derivation).
+- Serves `_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps and computes `_etag` from deterministic canonical JSON for the served resource-state document, excluding response decorations such as `link` (no read-time dependency derivation).
 - Uses a narrow, append-only journal (`dms.DocumentChangeEvent`) for scalable Change Query candidate selection.
 
 ### Stable collection identities + merge semantics for collections

@@ -332,7 +332,7 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
 ### Concurrency (optimistic `If-Match`)
 
 With stored representation stamps:
-- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical JSON representation.
+- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical resource-state JSON representation, excluding response decorations such as `link`.
 - PUT/DELETE `If-Match` validation is row-local:
   - compare the request `_etag` to the current deterministic hash for that `DocumentId`;
   - if mismatched, return `412 Precondition Failed`.
