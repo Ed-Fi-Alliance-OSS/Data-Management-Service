@@ -6,7 +6,7 @@
       "Review `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalApiMetadataFormatterTests.cs` to confirm coverage for nested `link`, root metadata, descriptor bodies, and a real reference identity value change.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalApiMetadataFormatter`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Precondition Contract",
