@@ -444,6 +444,14 @@ Runtime validation and fail-fast diagnostics:
 - If backend cannot line up a Core-emitted visible stored row or visible stored scope with the compiled current-state shape expected for that resource scope, backend MUST fail deterministically rather than guessing from array order, filtered JSON, or delete+insert fallback behavior.
 - These diagnostics are internal contract failures. They MUST short-circuit before DML or readable response shaping continues, and they MUST NOT be downgraded to silent omission handling.
 
+### Storage-Collapsed Semantic Identity Uniqueness
+
+Presence-aware semantic identities may differ by `IsPresent` only when their storage-collapsed keys remain unique within the parent collection/scope matching bucket. Storage-collapsed equality folds `IsPresent=false` and `IsPresent=true && Value=null` into a single "absent-or-null" bucket per slot; the equality rule has two shape-specific forms: the profile path keys identities as `RelativePath` + collapsed presence + `Value.ToJsonString()` for present non-null values, while the no-profile path matches raw `object?[]` materialized scalars via `ObjectValueArrayComparer` (where `null` already covers both absent and explicit-null because materialized values normalize identically).
+
+The backend enforces this rule before the merge stage on every merge-bound identity bucket — visible request collection items, visible stored collection rows, the cross-product of the two, and ancestor collection instances harvested from request and stored scope/collection-row addresses. Violations surface as a category-5 `AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure` emitted by `ProfileWriteContractValidator` (with `ProfileFailureEmitter.BackendProfileWriteContext`). The corresponding no-profile rule is enforced at flatten time and surfaces as a request-validation failure.
+
+The rule is required because the relational storage model maps both absent and explicit-null identity slots to SQL NULL. Two identities that differ only by presence on a null-valued identity slot cannot be persisted distinctly; matching them silently would produce first-wins/misbind behavior at merge time. This validation removes the need to rely on upstream null-pruning side effects to keep collection matching correct.
+
 ## Creatability Decision Model
 
 Creatability is the Core-owned answer to a narrow question:
