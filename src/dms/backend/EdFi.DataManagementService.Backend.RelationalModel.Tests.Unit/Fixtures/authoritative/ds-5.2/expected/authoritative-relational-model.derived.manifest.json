@@ -58993,6 +58993,25 @@
               }
             },
             {
+              "endpoint_a_path": "$.grades[*].gradeReference.schoolId",
+              "endpoint_b_path": "$.gradingPeriodReference.schoolId",
+              "reason": "cross_table",
+              "endpoint_a_binding": {
+                "table": {
+                  "schema": "edfi",
+                  "name": "ReportCardGrade"
+                },
+                "column": "Grade_GradingPeriodReferenceSchoolId"
+              },
+              "endpoint_b_binding": {
+                "table": {
+                  "schema": "edfi",
+                  "name": "ReportCard"
+                },
+                "column": "GradingPeriodGradingPeriod_SchoolId"
+              }
+            },
+            {
               "endpoint_a_path": "$.grades[*].gradeReference.studentUniqueId",
               "endpoint_b_path": "$.studentReference.studentUniqueId",
               "reason": "cross_table",
@@ -59108,15 +59127,9 @@
             }
           ],
           "ignored_by_reason": {
-            "cross_table": 9
+            "cross_table": 10
           },
-          "skipped": [
-            {
-              "source_path": "$.grades[*].gradeReference.gradingPeriodSchoolId",
-              "target_path": "$.gradingPeriodReference.schoolId",
-              "unresolved_endpoint": "source"
-            }
-          ]
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
