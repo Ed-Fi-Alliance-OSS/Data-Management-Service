@@ -3,6 +3,8 @@ jira: DMS-1132
 jira_url: https://edfi.atlassian.net/browse/DMS-1132
 ---
 
+> **Status:** Closed. Implemented as deterministic pre-merge ambiguity detection; the validation rule is documented in `../../design-docs/profiles.md` § "Storage-Collapsed Semantic Identity Uniqueness". Profile path emits `AmbiguousStorageCollapsedIdentityCoreBackendContractMismatchFailure` from `ProfileWriteContractValidator`; no-profile path emits `RelationalWriteRequestValidationException` from the flattener.
+
 # Story: Preserve Presence-Sensitive Semantic Identity Fidelity
 
 ## Description
