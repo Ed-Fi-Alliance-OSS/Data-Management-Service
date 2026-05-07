@@ -29,6 +29,7 @@ public class Given_Default_Relational_Write_Executor
     private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
     private RecordingRelationalWriteFlattener _writeFlattener = null!;
     private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
+    private RecordingRelationalCurrentEtagPreconditionChecker _currentEtagPreconditionChecker = null!;
     private RecordingRelationalCommittedRepresentationReader _committedRepresentationReader = null!;
     private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
     private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
@@ -47,6 +48,7 @@ public class Given_Default_Relational_Write_Executor
         _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
         _writeFlattener = new RecordingRelationalWriteFlattener();
         _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
+        _currentEtagPreconditionChecker = new RecordingRelationalCurrentEtagPreconditionChecker();
         _committedRepresentationReader = new RecordingRelationalCommittedRepresentationReader();
         _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
         _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
@@ -61,6 +63,7 @@ public class Given_Default_Relational_Write_Executor
             _referenceResolverAdapterFactory,
             _writeFlattener,
             _currentStateLoader,
+            _currentEtagPreconditionChecker,
             _committedRepresentationReader,
             _targetLookupResolver,
             _writeFreshnessChecker,
@@ -650,6 +653,7 @@ public class Given_Default_Relational_Write_Executor
             _referenceResolverAdapterFactory,
             _writeFlattener,
             _currentStateLoader,
+            _currentEtagPreconditionChecker,
             _committedRepresentationReader,
             _targetLookupResolver,
             _writeFreshnessChecker,
@@ -700,6 +704,149 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_if_match_failure_for_put_before_reference_resolution_when_the_current_etag_mismatches()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            documentReferences: [documentReference],
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: false,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+            );
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_if_match_failure_for_post_as_update_before_reference_resolution_when_the_current_etag_mismatches()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference],
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: false,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_if_match_failure_for_post_when_authoritative_target_resolution_proves_a_new_insert()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_applies_a_changed_put_when_if_match_exactly_matches_the_current_etag()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!,
+            writePrecondition: new WritePrecondition.IfMatch("\"current-etag\"")
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: true,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateSuccess(
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        ExpectedEtag(request)
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                )
+            );
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _noProfileMergeSynthesizer
+            .CapturedRequest!.CurrentState.Should()
+            .BeSameAs(_currentEtagPreconditionChecker.ResultToReturn!.CurrentState);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
 
     [Test]
@@ -3191,7 +3338,8 @@ public class Given_Default_Relational_Write_Executor
         RelationalWriteTargetContext? targetContext = null,
         TableWritePlan? rootWritePlan = null,
         JsonNode? selectedBody = null,
-        SqlDialect dialect = SqlDialect.Pgsql
+        SqlDialect dialect = SqlDialect.Pgsql,
+        WritePrecondition? writePrecondition = null
     )
     {
         var resolvedRootWritePlan = rootWritePlan ?? CreateRootPlan();
@@ -3228,7 +3376,8 @@ public class Given_Default_Relational_Write_Executor
                 documentReferences ?? [],
                 descriptorReferences ?? []
             ),
-            targetContext: resolvedTargetContext
+            targetContext: resolvedTargetContext,
+            writePrecondition: writePrecondition
         );
     }
 
@@ -3633,6 +3782,34 @@ public class Given_Default_Relational_Write_Executor
         }
     }
 
+    private sealed class RecordingRelationalCurrentEtagPreconditionChecker
+        : IRelationalCurrentEtagPreconditionChecker
+    {
+        public int CheckCallCount { get; private set; }
+
+        public RelationalCurrentEtagPreconditionCheckRequest? CapturedRequest { get; private set; }
+
+        public IRelationalWriteSession? CapturedWriteSession { get; private set; }
+
+        public RelationalCurrentEtagPreconditionCheckResult? ResultToReturn { get; set; }
+
+        public Queue<RelationalCurrentEtagPreconditionCheckResult?> QueuedResults { get; } = [];
+
+        public Task<RelationalCurrentEtagPreconditionCheckResult?> CheckAsync(
+            RelationalCurrentEtagPreconditionCheckRequest request,
+            IRelationalWriteSession writeSession,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CheckCallCount++;
+            CapturedRequest = request;
+            CapturedWriteSession = writeSession;
+
+            return Task.FromResult(QueuedResults.Count > 0 ? QueuedResults.Dequeue() : ResultToReturn);
+        }
+    }
+
     private sealed class RecordingReferenceResolverAdapter : IReferenceResolverAdapter
     {
         public List<ReferenceLookupRequest> Requests { get; } = [];
@@ -4020,6 +4197,30 @@ public class Given_Default_Relational_Write_Executor
                 ),
             ],
             []
+        );
+    }
+
+    private static RelationalCurrentEtagPreconditionCheckResult CreatePreconditionCheckResult(
+        RelationalWriteExecutorRequest request,
+        bool isMatch,
+        string currentEtag,
+        long contentVersion,
+        string schoolName = "Lincoln High"
+    )
+    {
+        var currentState = CreateCurrentState(request, contentVersion, schoolName);
+        var targetContext =
+            request.TargetContext as RelationalWriteTargetContext.ExistingDocument
+            ?? throw new InvalidOperationException("Expected an existing-document target context.");
+
+        return new RelationalCurrentEtagPreconditionCheckResult(
+            currentState,
+            targetContext with
+            {
+                ObservedContentVersion = contentVersion,
+            },
+            currentEtag,
+            isMatch
         );
     }
 

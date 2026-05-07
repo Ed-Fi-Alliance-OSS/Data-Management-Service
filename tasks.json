@@ -55,7 +55,7 @@
       "Review the added executor/repository unit tests to confirm absent-header behavior, exact match, mismatch short-circuit after authorization but before deeper backend validation, authorization-failure precedence, PUT missing-target 404, POST-as-update mismatch, and POST create-new-with-If-Match are all covered.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDocumentStoreRepository|DefaultRelationalWriteExecutor|Precondition\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Relational DELETE",
