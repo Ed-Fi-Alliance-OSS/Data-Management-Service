@@ -1,5 +1,6 @@
 ---
-design: DMS-916
+jira: DMS-1150
+jira_url: https://edfi.atlassian.net/browse/DMS-1150
 ---
 
 # Story: Bootstrap Schema and Security Selection
@@ -33,7 +34,7 @@ run:
 - IDE-hosted DMS startup.
 
 The same workspace also carries optional schema-adjacent static content and
-`bootstrap-api-schema-manifest.json` as defined in [`../apischema-container.md`](../apischema-container.md).
+`bootstrap-api-schema-manifest.json` as defined in [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md).
 That manifest indexes normalized schema and content paths, but it is not a second schema authority.
 
 Bootstrap must not invent a second schema fingerprint or a second schema-resolution path.
@@ -222,6 +223,6 @@ manifest schema contract and claims-staging contract rather than introducing a s
 
 ## Design References
 
-- [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3, 4, 8, 9.3, and 11
-- [`../apischema-container.md`](../apischema-container.md)
-- [`../command-boundaries.md`](../command-boundaries.md), Section 3.1 (`prepare-dms-schema.ps1`) and Section 3.2 (`prepare-dms-claims.ps1`)
+- [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md), Sections 3, 4, 8, 9.3, and 11
+- [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md)
+- [`../../design-docs/bootstrap/command-boundaries.md`](../../design-docs/bootstrap/command-boundaries.md), Section 3.1 (`prepare-dms-schema.ps1`) and Section 3.2 (`prepare-dms-claims.ps1`)

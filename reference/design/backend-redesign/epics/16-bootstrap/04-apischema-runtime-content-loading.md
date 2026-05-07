@@ -1,5 +1,6 @@
 ---
-design: DMS-916
+jira: DMS-1154
+jira_url: https://edfi.atlassian.net/browse/DMS-1154
 ---
 
 # Story: Replace DMS ApiSchema DLL Resource Loading
@@ -50,7 +51,7 @@ materialize to the same workspace before runtime starts.
 ## Tasks
 
 1. Add a small manifest reader for `bootstrap-api-schema-manifest.json`, or extend an existing ApiSchema
-   workspace reader, using the shape defined in `../apischema-container.md`.
+   workspace reader, using the shape defined in `../../design-docs/bootstrap/apischema-container.md`.
 2. Update `ContentProvider` so the `UseApiSchemaPath=true` path reads JSON and XSD content from
    manifest-relative file paths under the configured workspace.
 3. Preserve current endpoint behavior for missing optional static content without falling back to stale
@@ -78,6 +79,6 @@ materialize to the same workspace before runtime starts.
 
 ## Design References
 
-- [`../apischema-container.md`](../apischema-container.md)
-- [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3, 12, 13, and 14
+- [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md)
+- [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md), Sections 3, 12, 13, and 14
 - [`00-schema-and-security-selection.md`](00-schema-and-security-selection.md)

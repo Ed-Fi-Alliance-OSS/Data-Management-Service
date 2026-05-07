@@ -153,3 +153,12 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1046` — Compile Hydration Read Plans (`SelectByKeysetSql`) for All Tables — `reference/design/backend-redesign/epics/15-plan-compilation/05-read-plan-compiler-hydration.md`
   - `DMS-1047` — Compile Projection Plans (Reference Identity + Descriptor URI) — `reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md`
   - `DMS-1109` — Startup Failure Status Surfacing — `reference/design/backend-redesign/epics/15-plan-compilation/startup-failure-status-surfacing.md`
+
+- `DMS-1149` — Bootstrap DMS Developer Environment Initialization — `reference/design/backend-redesign/epics/16-bootstrap/EPIC.md`
+  - `DMS-1150` — Bootstrap Schema and Security Selection — `reference/design/backend-redesign/epics/16-bootstrap/00-schema-and-security-selection.md`
+  - `DMS-1151` — Bootstrap Schema Deployment Safety — `reference/design/backend-redesign/epics/16-bootstrap/01-schema-deployment-safety.md`
+  - `DMS-1152` — API-Based Seed Delivery for Bootstrap — `reference/design/backend-redesign/epics/16-bootstrap/02-api-seed-delivery.md`
+  - `DMS-1153` — Bootstrap Entry Point and IDE Workflow — `reference/design/backend-redesign/epics/16-bootstrap/03-entry-point-and-ide-workflow.md`
+  - `DMS-1154` — Replace DMS ApiSchema DLL Resource Loading — `reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md`
+  - `DMS-1155` — MetaEd ApiSchema Asset Packaging — `reference/design/backend-redesign/epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`
+  - `DMS-1156` — Package-Backed Standard Schema Selection — `reference/design/backend-redesign/epics/16-bootstrap/06-package-backed-standard-schema-selection.md`

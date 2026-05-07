@@ -1,5 +1,6 @@
 ---
-design: DMS-916
+jira: DMS-1156
+jira_url: https://edfi.atlassian.net/browse/DMS-1156
 ---
 
 # Story: Package-Backed Standard Schema Selection
@@ -111,9 +112,9 @@ filesystem inputs.
 
 ## Design References
 
-- [`../bootstrap-design.md`](../bootstrap-design.md), Sections 3, 8, 13, and 14
-- [`../command-boundaries.md`](../command-boundaries.md), Sections 3.1, 3.2, and 3.7
-- [`../apischema-container.md`](../apischema-container.md)
+- [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md), Sections 3, 8, 13, and 14
+- [`../../design-docs/bootstrap/command-boundaries.md`](../../design-docs/bootstrap/command-boundaries.md), Sections 3.1, 3.2, and 3.7
+- [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md)
 - [`00-schema-and-security-selection.md`](00-schema-and-security-selection.md)
 - [`02-api-seed-delivery.md`](02-api-seed-delivery.md)
 - [`04-apischema-runtime-content-loading.md`](04-apischema-runtime-content-loading.md)

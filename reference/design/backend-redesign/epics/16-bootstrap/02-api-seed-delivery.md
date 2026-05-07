@@ -1,5 +1,6 @@
 ---
-design: DMS-916
+jira: DMS-1152
+jira_url: https://edfi.atlassian.net/browse/DMS-1152
 ---
 
 # Story: API-Based Seed Delivery for Bootstrap
@@ -118,7 +119,7 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
   via in-memory forwarding within a single wrapper invocation, or via explicit `-InstanceId`/`-SchoolYear`
   selectors in a manual phase flow; they must not perform their own CMS instance creation, broad
   target-selection policy, or non-selector-driven discovery pass.
-  See [`INDEX.md`](INDEX.md) Scope Guardrails for the selector resolution rules.
+  See [`EPIC.md`](EPIC.md) Scope Guardrails for the selector resolution rules.
 - BulkLoadClient invocation uses:
   - the DMS base URL supplied to `load-dms-seed-data.ps1 -DmsBaseUrl` for the current flow,
   - the token URL derived from `load-dms-seed-data.ps1 -IdentityProvider`,
@@ -202,4 +203,4 @@ normalizes the legacy direct-SQL path as an ongoing or permanent alternative.
 
 ## Design References
 
-- [`../bootstrap-design.md`](../bootstrap-design.md), Sections 5, 6, 7.2-7.3, 9.2, 10, and 14.3
+- [`../../design-docs/bootstrap/bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md), Sections 5, 6, 7.2-7.3, 9.2, 10, and 14.3
