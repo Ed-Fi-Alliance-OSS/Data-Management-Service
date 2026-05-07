@@ -89,6 +89,11 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalUpsertRequest.DocumentInfo.ReferentialId,
                         relationalUpsertRequest.TraceId
                     )
+                    {
+                        WritePrecondition = NormalizeWritePrecondition(
+                            relationalUpsertRequest.WritePrecondition
+                        ),
+                    }
                 )
                 .ConfigureAwait(false);
         }
@@ -205,6 +210,11 @@ public sealed class RelationalDocumentStoreRepository(
                         referentialId: null,
                         relationalUpdateRequest.TraceId
                     )
+                    {
+                        WritePrecondition = NormalizeWritePrecondition(
+                            relationalUpdateRequest.WritePrecondition
+                        ),
+                    }
                 )
                 .ConfigureAwait(false);
         }
@@ -951,4 +961,7 @@ public sealed class RelationalDocumentStoreRepository(
                 paramName
             );
     }
+
+    private static WritePrecondition NormalizeWritePrecondition(WritePrecondition? writePrecondition) =>
+        writePrecondition ?? new WritePrecondition.None();
 }

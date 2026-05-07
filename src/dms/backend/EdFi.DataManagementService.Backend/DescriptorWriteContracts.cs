@@ -61,6 +61,17 @@ public sealed record DescriptorWriteRequest
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// Typed write precondition forwarded from Core for descriptor write flows.
+    /// </summary>
+    public WritePrecondition WritePrecondition
+    {
+        get => _writePrecondition;
+        init => _writePrecondition = value ?? new WritePrecondition.None();
+    }
+
+    private WritePrecondition _writePrecondition = new WritePrecondition.None();
 }
 
 /// <summary>
