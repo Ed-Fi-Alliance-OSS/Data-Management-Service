@@ -578,6 +578,17 @@ internal static class ProfileWriteContractValidator
                 return;
             }
         }
+
+        ValidateSemanticIdentityPresenceValueConsistency(
+            emittedIdentity,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            new ProfileFailureDiagnostic.CompiledScope(compiledScope),
+            new ProfileFailureDiagnostic.CollectionRow(address),
+            failures
+        );
     }
 
     /// <summary>
@@ -621,10 +632,12 @@ internal static class ProfileWriteContractValidator
                 continue;
             }
 
+            var pathsMatch = true;
             for (int i = 0; i < expectedPaths.Length; i++)
             {
                 if (ancestor.SemanticIdentityInOrder[i].RelativePath != expectedPaths[i])
                 {
+                    pathsMatch = false;
                     failures.Add(
                         ProfileFailures.AncestorSemanticIdentityMismatch(
                             profileName,
@@ -639,6 +652,54 @@ internal static class ProfileWriteContractValidator
                     break;
                 }
             }
+
+            if (!pathsMatch)
+            {
+                continue;
+            }
+
+            ValidateSemanticIdentityPresenceValueConsistency(
+                ancestor.SemanticIdentityInOrder,
+                profileName,
+                resourceName,
+                method,
+                operation,
+                new ProfileFailureDiagnostic.CompiledScope(ancestorScope),
+                addressDiagnostic,
+                failures
+            );
+        }
+    }
+
+    private static void ValidateSemanticIdentityPresenceValueConsistency(
+        ImmutableArray<SemanticIdentityPart> emittedIdentity,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        ProfileFailureDiagnostic compiledScopeDiagnostic,
+        ProfileFailureDiagnostic addressDiagnostic,
+        List<ProfileFailure> failures
+    )
+    {
+        foreach (var part in emittedIdentity)
+        {
+            if (part.IsPresent || part.Value is null)
+            {
+                continue;
+            }
+
+            failures.Add(
+                ProfileFailures.CoreBackendContractMismatch(
+                    ProfileFailureEmitter.BackendProfileWriteContext,
+                    "Core emitted semantic identity presence metadata inconsistent with the value contract.",
+                    new ProfileFailureContext(profileName, resourceName, method, operation),
+                    compiledScopeDiagnostic,
+                    addressDiagnostic,
+                    new ProfileFailureDiagnostic.SemanticIdentity(emittedIdentity)
+                )
+            );
+            return;
         }
     }
 

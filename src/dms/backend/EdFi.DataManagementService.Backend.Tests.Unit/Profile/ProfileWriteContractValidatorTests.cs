@@ -776,6 +776,138 @@ public class Given_CollectionRow_with_wrong_semantic_identity_path_When_Validati
 }
 
 [TestFixture]
+public class Given_CollectionRow_with_absent_semantic_identity_part_that_has_a_value_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = StorageCollapsedIdentityCatalogHelpers.RootAndOneChildCollectionCatalog(
+            "$.addresses[*]",
+            ["addressType"]
+        );
+
+        var collectionRowAddress = new CollectionRowAddress(
+            JsonScope: "$.addresses[*]",
+            ParentAddress: new ScopeInstanceAddress("$", []),
+            SemanticIdentityInOrder:
+            [
+                new SemanticIdentityPart("addressType", JsonValue.Create("Home"), IsPresent: false),
+            ]
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates: [],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    collectionRowAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.addresses[0]"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "POST",
+            operation: "upsert"
+        );
+    }
+
+    [Test]
+    public void It_emits_a_C5_contract_mismatch_failure()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Category.Should().Be(ProfileFailureCategory.CoreBackendContractMismatch);
+    }
+
+    [Test]
+    public void It_reports_presence_value_consistency()
+    {
+        _result.Should().ContainSingle().Which.Message.Should().Contain("presence");
+    }
+}
+
+[TestFixture]
+public class Given_Ancestor_with_absent_semantic_identity_part_that_has_a_value_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        const string parentScope = "$.classPeriods[*]";
+        const string childScope = "$.classPeriods[*].meetingTimes";
+
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new("$", ScopeKind.Root, null, [], [], []),
+            new(
+                JsonScope: parentScope,
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
+                CanonicalScopeRelativeMemberPaths: ["classPeriodName"]
+            ),
+            new(
+                JsonScope: childScope,
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: parentScope,
+                CollectionAncestorsInOrder: [parentScope],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+        };
+
+        var ancestor = new AncestorCollectionInstance(
+            parentScope,
+            [new SemanticIdentityPart("classPeriodName", JsonValue.Create("First Period"), IsPresent: false)]
+        );
+        var scopeAddress = new ScopeInstanceAddress(childScope, [ancestor]);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(scopeAddress, ProfileVisibilityKind.VisiblePresent, Creatable: false),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_emits_a_C5_contract_mismatch_failure()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Category.Should().Be(ProfileFailureCategory.CoreBackendContractMismatch);
+    }
+
+    [Test]
+    public void It_reports_presence_value_consistency()
+    {
+        _result.Should().ContainSingle().Which.Message.Should().Contain("presence");
+    }
+}
+
+[TestFixture]
 public class Given_valid_CollectionRow_with_correct_semantic_identity_When_Validating
 {
     private ProfileFailure[] _result = null!;
