@@ -548,43 +548,213 @@ internal sealed class DescriptorWriteHandler(
     }
 
     public async Task<DeleteResult> HandleDeleteAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        TraceId traceId,
+        DescriptorDeleteRequest request,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
         _logger.LogDebug(
             "Deleting descriptor document {DocumentUuid} for {Resource} - {TraceId}",
-            documentUuid.Value,
-            RelationalWriteSupport.FormatResource(resource),
-            LoggingSanitizer.SanitizeForLogging(traceId.Value)
+            request.DocumentUuid.Value,
+            RelationalWriteSupport.FormatResource(request.Resource),
+            LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
         );
 
         // Scope the DELETE by ResourceKeyId so a UUID belonging to a different descriptor
         // (or a non-descriptor document) cannot be deleted through this resource endpoint.
-        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(
+            request.MappingSet,
+            request.Resource
+        );
 
-        var command = BuildDescriptorDeleteCommand(_commandExecutor.Dialect, documentUuid, resourceKeyId);
+        if (request.WritePrecondition is not WritePrecondition.IfMatch ifMatch)
+        {
+            var command = BuildDescriptorDeleteCommand(
+                _commandExecutor.Dialect,
+                request.DocumentUuid,
+                resourceKeyId
+            );
 
-        return await RelationalDeleteExecution
-            .TryExecuteAsync(
-                _commandExecutor,
-                command,
-                _writeExceptionClassifier,
-                _deleteConstraintResolver,
-                mappingSet.Model,
-                _logger,
-                documentUuid,
-                traceId,
-                DeleteTargetKind.Descriptor,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+            return await RelationalDeleteExecution
+                .TryExecuteAsync(
+                    _commandExecutor,
+                    command,
+                    _writeExceptionClassifier,
+                    _deleteConstraintResolver,
+                    request.MappingSet.Model,
+                    _logger,
+                    request.DocumentUuid,
+                    request.TraceId,
+                    DeleteTargetKind.Descriptor,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        IRelationalWriteSession writeSession;
+
+        try
+        {
+            writeSession = await _writeSessionFactory.CreateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+        {
+            _logger.LogDebug(
+                ex,
+                "Transient conflict creating write session for descriptor DELETE on {DocumentUuid} - {TraceId}",
+                request.DocumentUuid.Value,
+                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+            );
+
+            return new DeleteResult.DeleteFailureWriteConflict();
+        }
+        catch (DbException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Database error creating write session for descriptor DELETE on {DocumentUuid} - {TraceId}",
+                request.DocumentUuid.Value,
+                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+            );
+
+            return new DeleteResult.UnknownFailure(
+                "An unexpected error occurred while processing the delete request."
+            );
+        }
+
+        await using (writeSession)
+        {
+            var sessionCommandExecutor = writeSession.CreateCommandExecutor();
+            DeleteResult outcome;
+
+            try
+            {
+                var resolved = await RelationalDocumentUuidLookupSupport
+                    .TryResolveDeleteTargetAsync(
+                        sessionCommandExecutor,
+                        request.MappingSet,
+                        request.Resource,
+                        request.DocumentUuid,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (resolved is null)
+                {
+                    outcome = new DeleteResult.DeleteFailureNotExists();
+                }
+                else
+                {
+                    var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
+                            request.MappingSet.Key.Dialect,
+                            request.Resource,
+                            resolved.DocumentId,
+                            writeSession,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    outcome = lockedCurrentState switch
+                    {
+                        DescriptorCurrentStateLoadResult.MissingDocument =>
+                            new DeleteResult.DeleteFailureNotExists(),
+                        DescriptorCurrentStateLoadResult.MissingDescriptor => new DeleteResult.UnknownFailure(
+                            BuildMissingDescriptorMessage(request.Resource, resolved.DocumentId)
+                        ),
+                        DescriptorCurrentStateLoadResult.Loaded(_, var currentEtag)
+                            when !string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal) =>
+                            new DeleteResult.DeleteFailureETagMisMatch(),
+                        DescriptorCurrentStateLoadResult.Loaded => await RelationalDeleteExecution
+                            .TryExecuteAsync(
+                                sessionCommandExecutor,
+                                BuildDescriptorDeleteCommand(
+                                    sessionCommandExecutor.Dialect,
+                                    request.DocumentUuid,
+                                    resourceKeyId
+                                ),
+                                _writeExceptionClassifier,
+                                _deleteConstraintResolver,
+                                request.MappingSet.Model,
+                                _logger,
+                                request.DocumentUuid,
+                                request.TraceId,
+                                DeleteTargetKind.Descriptor,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false),
+                        _ => throw new InvalidOperationException(
+                            $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
+                        ),
+                    };
+                }
+            }
+            catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Transient conflict resolving descriptor DELETE target for {DocumentUuid} - {TraceId}",
+                    request.DocumentUuid.Value,
+                    LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                );
+
+                await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
+                return new DeleteResult.DeleteFailureWriteConflict();
+            }
+            catch (DbException ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Database error resolving descriptor DELETE target for {DocumentUuid} - {TraceId}",
+                    request.DocumentUuid.Value,
+                    LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                );
+
+                await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
+                return new DeleteResult.UnknownFailure(
+                    "An unexpected error occurred while processing the delete request."
+                );
+            }
+
+            if (outcome is DeleteResult.DeleteSuccess)
+            {
+                try
+                {
+                    await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+                {
+                    _logger.LogDebug(
+                        ex,
+                        "Transient conflict committing descriptor DELETE for {DocumentUuid} - {TraceId}",
+                        request.DocumentUuid.Value,
+                        LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                    );
+
+                    return new DeleteResult.DeleteFailureWriteConflict();
+                }
+                catch (DbException ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Database error committing descriptor DELETE for {DocumentUuid} - {TraceId}",
+                        request.DocumentUuid.Value,
+                        LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                    );
+
+                    return new DeleteResult.UnknownFailure(
+                        "An unexpected error occurred while processing the delete request."
+                    );
+                }
+            }
+            else
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return outcome;
+        }
     }
 
     private static RelationalCommand BuildDescriptorDeleteCommand(

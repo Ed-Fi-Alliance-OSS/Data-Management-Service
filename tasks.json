@@ -93,7 +93,7 @@
       "Review `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorWriteHandlerDeleteTests.cs` and any added delete-path tests to confirm absent precondition, exact match, mismatch, missing-target precedence, authorization precedence, DELETE full-resource ETag behavior, and FK conflict preservation are all covered.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DescriptorWriteHandler`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Link-Insensitive Preconditions",

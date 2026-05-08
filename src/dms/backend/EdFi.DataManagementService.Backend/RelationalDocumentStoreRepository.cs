@@ -277,10 +277,15 @@ public sealed class RelationalDocumentStoreRepository(
         if (relationalDeleteRequest.ResourceInfo.IsDescriptor)
         {
             return _descriptorWriteHandler.HandleDeleteAsync(
-                mappingSet,
-                resource,
-                relationalDeleteRequest.DocumentUuid,
-                relationalDeleteRequest.TraceId
+                new DescriptorDeleteRequest(
+                    mappingSet,
+                    resource,
+                    relationalDeleteRequest.DocumentUuid,
+                    relationalDeleteRequest.TraceId
+                )
+                {
+                    WritePrecondition = writePrecondition,
+                }
             );
         }
 

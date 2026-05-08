@@ -2476,6 +2476,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
         A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("test-trace"));
+        A.CallTo(() => deleteRequest.WritePrecondition).Returns(new WritePrecondition.None());
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
@@ -2497,27 +2498,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _descriptorResourceInfo.ProjectName.Value,
             _descriptorResourceInfo.ResourceName.Value
         );
-        MappingSet? capturedMappingSet = null;
-        QualifiedResourceName capturedResource = default;
-        DocumentUuid capturedUuid = default;
-        TraceId capturedTraceId = default!;
+        DescriptorDeleteRequest capturedRequest = null!;
 
         A.CallTo(() =>
-                descriptorHandler.HandleDeleteAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<DocumentUuid>._,
-                    A<TraceId>._,
-                    A<CancellationToken>._
-                )
+                descriptorHandler.HandleDeleteAsync(A<DescriptorDeleteRequest>._, A<CancellationToken>._)
             )
-            .Invokes(call =>
-            {
-                capturedMappingSet = call.GetArgument<MappingSet>(0);
-                capturedResource = call.GetArgument<QualifiedResourceName>(1);
-                capturedUuid = call.GetArgument<DocumentUuid>(2);
-                capturedTraceId = call.GetArgument<TraceId>(3)!;
-            })
+            .Invokes(call => capturedRequest = call.GetArgument<DescriptorDeleteRequest>(0)!)
             .Returns(Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess()));
 
         _sut = new RelationalDocumentStoreRepository(
@@ -2542,25 +2528,66 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => deleteRequest.MappingSet).Returns(expectedMappingSet);
         A.CallTo(() => deleteRequest.DocumentUuid).Returns(expectedDocumentUuid);
         A.CallTo(() => deleteRequest.TraceId).Returns(expectedTraceId);
+        A.CallTo(() => deleteRequest.WritePrecondition).Returns(new WritePrecondition.None());
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        capturedMappingSet.Should().BeSameAs(expectedMappingSet);
-        capturedResource.Should().Be(expectedResource);
-        capturedUuid.Should().Be(expectedDocumentUuid);
-        capturedTraceId.Value.Should().Be(expectedTraceId.Value);
+        capturedRequest.MappingSet.Should().BeSameAs(expectedMappingSet);
+        capturedRequest.Resource.Should().Be(expectedResource);
+        capturedRequest.DocumentUuid.Should().Be(expectedDocumentUuid);
+        capturedRequest.TraceId.Value.Should().Be(expectedTraceId.Value);
+        capturedRequest.WritePrecondition.Should().BeOfType<WritePrecondition.None>();
         A.CallTo(() =>
-                descriptorHandler.HandleDeleteAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<DocumentUuid>._,
-                    A<TraceId>._,
-                    A<CancellationToken>._
-                )
+                descriptorHandler.HandleDeleteAsync(A<DescriptorDeleteRequest>._, A<CancellationToken>._)
             )
             .MustHaveHappenedOnceExactly();
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [TestCaseSource(nameof(DescriptorWritePreconditions))]
+    public async Task It_forwards_write_preconditions_to_the_descriptor_delete_handler(
+        WritePrecondition expectedWritePrecondition
+    )
+    {
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        DescriptorDeleteRequest capturedRequest = null!;
+
+        A.CallTo(() =>
+                descriptorHandler.HandleDeleteAsync(A<DescriptorDeleteRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call => capturedRequest = call.GetArgument<DescriptorDeleteRequest>(0)!)
+            .Returns(Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess()));
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            _currentEtagPreconditionChecker,
+            descriptorHandler,
+            _descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory
+        );
+
+        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
+        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => deleteRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("descriptor-delete-precondition"));
+        A.CallTo(() => deleteRequest.WritePrecondition).Returns(expectedWritePrecondition);
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        capturedRequest.WritePrecondition.Should().Be(expectedWritePrecondition);
     }
 
     [Test]
@@ -2571,6 +2598,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => deleteRequest.MappingSet).Returns(null);
         A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("descriptor-delete-no-mapping"));
+        A.CallTo(() => deleteRequest.WritePrecondition).Returns(new WritePrecondition.None());
 
         Func<Task> act = async () => _ = await _sut.DeleteDocumentById(deleteRequest);
 
@@ -2627,13 +2655,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
         A.CallTo(() =>
-                descriptorHandler.HandleDeleteAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<DocumentUuid>._,
-                    A<TraceId>._,
-                    A<CancellationToken>._
-                )
+                descriptorHandler.HandleDeleteAsync(A<DescriptorDeleteRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
     }
