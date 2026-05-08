@@ -147,7 +147,9 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
                 new RelationalWriteCurrentStateLoadRequest(
                     request.ReadPlan,
                     lockConfirmedTargetContext,
-                    includeDescriptorProjection: request.Precondition.EtagProjectionContext is not null
+                    // External-response ETag comparison always needs descriptor URI hydration when
+                    // the read plan serves descriptor-valued members, regardless of profile use.
+                    includeDescriptorProjection: true
                 ),
                 writeSession,
                 cancellationToken

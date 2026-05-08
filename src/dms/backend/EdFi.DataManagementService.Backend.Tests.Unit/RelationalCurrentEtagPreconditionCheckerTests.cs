@@ -94,7 +94,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _capturedCurrentStateLoadRequest
             .TargetContext.ObservedContentVersion.Should()
             .Be(LockedContentVersion);
-        _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeFalse();
+        _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeTrue();
         _capturedMaterializationRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
         A.CallTo(() =>
                 _readableProfileProjector.Project(
@@ -123,7 +123,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _capturedCurrentStateLoadRequest
             .TargetContext.ObservedContentVersion.Should()
             .Be(LockedContentVersion);
-        _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeFalse();
+        _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeTrue();
     }
 
     [Test]
@@ -174,6 +174,56 @@ public class Given_RelationalCurrentEtagPreconditionChecker
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_matches_a_link_stripped_if_match_value_against_a_link_bearing_current_response()
+    {
+        var linkStrippedCurrentResponse = CreateCurrentExternalResponseWithoutLinks();
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfMatch(
+                RelationalApiMetadataFormatter.FormatEtag(linkStrippedCurrentResponse)
+            )
+        );
+
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Invokes(call =>
+                _capturedMaterializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
+            )
+            .Returns(CreateCurrentExternalResponse());
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsMatch.Should().BeTrue();
+        result
+            .CurrentEtag.Should()
+            .Be(RelationalApiMetadataFormatter.FormatEtag(linkStrippedCurrentResponse));
+    }
+
+    [Test]
+    public async Task It_matches_a_link_bearing_if_match_value_against_a_link_stripped_current_response()
+    {
+        var linkBearingCurrentResponse = CreateCurrentExternalResponse();
+        var request = CreateRequest(
+            SqlDialect.Mssql,
+            new WritePrecondition.IfMatch(
+                RelationalApiMetadataFormatter.FormatEtag(linkBearingCurrentResponse)
+            )
+        );
+
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Invokes(call =>
+                _capturedMaterializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
+            )
+            .Returns(CreateCurrentExternalResponseWithoutLinks());
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsMatch.Should().BeTrue();
+        result.CurrentEtag.Should().Be(RelationalApiMetadataFormatter.FormatEtag(linkBearingCurrentResponse));
     }
 
     private RelationalCurrentEtagPreconditionCheckRequest CreateRequest(
@@ -243,6 +293,19 @@ public class Given_RelationalCurrentEtagPreconditionChecker
                 "rel": "self",
                 "href": "/ed-fi/schools/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
               },
+              "_etag": "stale",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z"
+            }
+            """
+        )!;
+
+    private static JsonNode CreateCurrentExternalResponseWithoutLinks() =>
+        JsonNode.Parse(
+            """
+            {
+              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High",
               "_etag": "stale",
               "_lastModifiedDate": "2026-04-11T17:30:45Z"
             }
