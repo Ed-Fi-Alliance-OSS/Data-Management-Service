@@ -126,6 +126,6 @@
       "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter ETagValidationsFeature`.",
       "Review `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Resources/etag.feature` and its generated test metadata to confirm the feature runs in the relational lane (`@relational-backend` tagging or equivalent lane configuration) and still covers the same six scenarios."
     ],
-    "completed": false
+    "completed": true
   }
 ]
