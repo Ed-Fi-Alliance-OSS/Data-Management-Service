@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
@@ -1030,6 +1031,25 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
 
     [Test]
+    public async Task It_matches_ResourceLinks_IfMatch_against_the_current_relational_state()
+    {
+        _getResultAfterNoOpUpdate.Should().BeOfType<GetResult.GetSuccess>();
+
+        var currentResponse = ((GetResult.GetSuccess)_getResultAfterNoOpUpdate).EdfiDoc;
+        var currentEtag = currentResponse["_etag"]!.GetValue<string>();
+        var linkBearingResponse = CreateLinkBearingResponse(currentResponse);
+        var linkBearingEtag = RelationalApiMetadataFormatter.FormatEtag(linkBearingResponse);
+
+        linkBearingEtag.Should().Be(currentEtag);
+
+        var result = await CheckIfMatchAsync(linkBearingEtag);
+
+        result.Should().NotBeNull();
+        result!.IsMatch.Should().BeTrue();
+        result.CurrentEtag.Should().Be(currentEtag);
+    }
+
+    [Test]
     public void It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection()
     {
         var expectedDocument = CreateExpectedReadableProfileExternalResponse(
@@ -1310,6 +1330,111 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .UpdateDocumentById(request);
+    }
+
+    private async Task<RelationalCurrentEtagPreconditionCheckResult?> CheckIfMatchAsync(string ifMatchValue)
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var resource = new QualifiedResourceName(
+            _resourceInfo.ProjectName.Value,
+            _resourceInfo.ResourceName.Value
+        );
+        var targetLookupResult = await scope
+            .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>()
+            .ResolveForPutAsync(_mappingSet, resource, StudentSchoolAssociationDocumentUuid);
+
+        targetLookupResult.Should().BeOfType<RelationalWriteTargetLookupResult.ExistingDocument>();
+
+        var existingTarget = (RelationalWriteTargetLookupResult.ExistingDocument)targetLookupResult;
+        await using var writeSession = await scope
+            .ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>()
+            .CreateAsync();
+
+        try
+        {
+            return await scope
+                .ServiceProvider.GetRequiredService<IRelationalCurrentEtagPreconditionChecker>()
+                .CheckAsync(
+                    new RelationalCurrentEtagPreconditionCheckRequest(
+                        _mappingSet,
+                        _mappingSet.GetReadPlanOrThrow(resource),
+                        new RelationalWriteTargetContext.ExistingDocument(
+                            existingTarget.DocumentId,
+                            existingTarget.DocumentUuid,
+                            existingTarget.ObservedContentVersion
+                        ),
+                        new WritePrecondition.IfMatch(ifMatchValue)
+                    ),
+                    writeSession
+                );
+        }
+        finally
+        {
+            await writeSession.RollbackAsync();
+        }
+    }
+
+    private static JsonNode CreateLinkBearingResponse(JsonNode responseDocument)
+    {
+        var linkedResponse = responseDocument.DeepClone();
+
+        if (linkedResponse is not JsonObject responseObject)
+        {
+            throw new InvalidOperationException("Expected GET success document to be a JSON object.");
+        }
+
+        responseObject["link"] = new JsonObject
+        {
+            ["rel"] = "StudentSchoolAssociation",
+            ["href"] = $"/ed-fi/studentSchoolAssociations/{responseObject["id"]!.GetValue<string>()}",
+        };
+
+        AddReferenceLink(responseObject, "schoolReference", "/ed-fi/schools/100");
+        AddReferenceLink(responseObject, "calendarReference", "/ed-fi/calendars/100-MAIN-2024");
+        AddReferenceLink(responseObject, "schoolYearTypeReference", "/ed-fi/schoolYearTypes/2024");
+        AddReferenceLink(responseObject, "studentReference", "/ed-fi/students/10001");
+
+        var alternativeGraduationPlans =
+            responseObject["alternativeGraduationPlans"] as JsonArray
+            ?? throw new InvalidOperationException(
+                "Expected StudentSchoolAssociation response to include alternativeGraduationPlans."
+            );
+
+        foreach (var plan in alternativeGraduationPlans)
+        {
+            var planObject =
+                plan as JsonObject
+                ?? throw new InvalidOperationException(
+                    "Expected alternativeGraduationPlans items to be JSON objects."
+                );
+            var referenceObject =
+                planObject["alternativeGraduationPlanReference"] as JsonObject
+                ?? throw new InvalidOperationException(
+                    "Expected alternativeGraduationPlanReference to be a JSON object."
+                );
+
+            referenceObject["link"] = new JsonObject
+            {
+                ["rel"] = "GraduationPlan",
+                ["href"] =
+                    $"/ed-fi/graduationPlans/{referenceObject["graduationSchoolYear"]!.GetValue<int>()}",
+            };
+        }
+
+        return linkedResponse;
+    }
+
+    private static void AddReferenceLink(JsonObject responseObject, string propertyName, string href)
+    {
+        var referenceObject =
+            responseObject[propertyName] as JsonObject
+            ?? throw new InvalidOperationException(
+                $"Expected StudentSchoolAssociation response to include '{propertyName}'."
+            );
+
+        referenceObject["link"] = new JsonObject { ["rel"] = propertyName, ["href"] = href };
     }
 
     private void SetSelectedInstance(IServiceProvider serviceProvider)
