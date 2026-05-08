@@ -4,8 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Text;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -374,4 +376,52 @@ internal static class RelationalWriteMergeSupport
             };
         }
     }
+}
+
+/// <summary>
+/// Encodes the storage-collapsed-identity equality rule used by both write paths.
+/// </summary>
+internal static class StorageCollapsedIdentityHelpers
+{
+    private const char PartSeparator = '\u001E'; // RS - between parts
+    private const char FieldSeparator = '\u001F'; // US - within a part
+    private const string NullValueSentinel = "null";
+
+    /// <summary>
+    /// Builds a storage-collapsed key for a presence-aware identity sequence.
+    /// Two sequences produce equal keys iff they collapse to the same DB shape.
+    /// </summary>
+    public static string BuildKey(ImmutableArray<SemanticIdentityPart> parts)
+    {
+        if (parts.IsDefaultOrEmpty)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(PartSeparator);
+            }
+
+            var part = parts[i];
+            var hasValue = part.IsPresent && part.Value is not null;
+            builder.Append(part.RelativePath);
+            builder.Append(FieldSeparator);
+            builder.Append(hasValue ? '1' : '0');
+            builder.Append(FieldSeparator);
+            builder.Append(hasValue ? part.Value!.ToJsonString() : NullValueSentinel);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Equality comparer for raw <c>object?[]</c> identity values. Aliases
+    /// <see cref="ObjectValueArrayComparer.Instance"/> so the no-profile flattener
+    /// expresses the storage-collapsed-uniqueness rule by name.
+    /// </summary>
+    public static IEqualityComparer<object?[]> ObjectArrayComparer => ObjectValueArrayComparer.Instance;
 }

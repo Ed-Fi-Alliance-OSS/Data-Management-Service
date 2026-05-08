@@ -22,7 +22,6 @@ Earlier slices still own parity expectations for any SQL-sensitive behavior they
 - Dialect-sensitive batching, parameterization, and locking checks where behavior could diverge
 - Remaining reverse-coverage or contract-hardening work required for safe merge
 - Explicit follow-up extraction for unresolved but non-blocking risks
-- Explicit handoff to `DMS-1132` / `../07-semantic-identity-presence-fidelity.md` for presence-sensitive semantic identity fidelity unless that work is intentionally absorbed here
 - Decision on profile vs no-profile collection ordinal-base alignment. Slice 6 (`06-profile-guarded-no-op.md`) ships profile-aware guarded no-op while the no-profile flatten path stamps 0-based ordinals (`RelationalWriteFlattener` `RequestOrder`) and the profile collection walker stamps 1-based `finalOrdinal = i + 1`. Documents created via the no-profile path therefore cannot reach the guarded no-op short-circuit on a later identical profiled PUT — the merged ordinals differ from the stored ordinals and the executor falls through to real collection DML. Slice 6's top-level-collection integration fixture acknowledges this by seeding through the profiled POST path (see `PostgresqlProfileGuardedNoOpTests.cs` lines 666-674). This slice owns the decision to either (a) align ordinal bases on one side, (b) document and accept the first-write DML cost on pre-profile data, or (c) plan a backfill/normalization migration.
 - Decision on whether to extract the no-profile `TableStateBuilder`'s collection row sort (`OrderCollectionRowsIfFullyBound` / `OrderCollectionAlignedExtensionScopeRowsIfFullyBound` / `OrderRowsByBindingIndexesIfFullyBound` plus the `BoundRowComparer` it depends on) into a shared `RelationalWriteMergeSupport` helper and apply it from `ProfileTableStateBuilder.Build()`. The profile path currently relies on the planner's emission order matching DB hydration ordinal order for `RelationalWriteGuardedNoOp.IsNoOpCandidate`'s positional `SequenceEqual` to fire correctly — Slice 6 ships that alignment as a coincidence-of-implementation rather than an enforced invariant. The synthesizer-level fixture `Given_Synthesizer_TopLevelCollection_All_Matched_With_Hidden_Interleaving_Is_NoOp` (added in `RelationalWriteProfileMergeSynthesizerTests.cs`) pins the property under test, but does not enforce it through a sort step. The candidate helpers total ~113 LOC including `BoundRowComparer`, putting the extraction over the threshold for slice-scoped hardening. Slice 7 owns the decision to extract and unify, accept the implicit alignment, or replace it with an alternative invariant such as a builder-side identity-based pairing.
 
@@ -41,14 +40,12 @@ Earlier slices still own parity expectations for any SQL-sensitive behavior they
 
 - Parity is not just "tests exist"; the branch must either demonstrate equivalent behavior or document why a difference is expected.
 - Hardening work that is not a merge blocker must become an explicit follow-up rather than expanding the slice indefinitely.
-- Presence-sensitive semantic identity fragility should stay tied to `DMS-1132` unless this slice explicitly changes the merge guarantee.
 
 ## Acceptance Criteria
 
 - The supported profiled runtime baseline passes on both PostgreSQL and SQL Server.
 - Dialect-sensitive batching/locking/parameterization behavior has explicit coverage or explicit review rationale.
 - Remaining unresolved correctness assumptions are documented as explicit follow-ups, not hidden in comments or oral history.
-- `DMS-1132` / `../07-semantic-identity-presence-fidelity.md` remains the named follow-on for presence-sensitive semantic identity fidelity unless the implementation truly closes that gap here.
 
 ## Tests Required
 
@@ -63,7 +60,6 @@ Earlier slices still own parity expectations for any SQL-sensitive behavior they
 ### Documentation / review outputs
 
 - Explicit list of non-blocking follow-ups extracted from the branch review
-- Explicit statement of whether `DMS-1132` remains open and why
 
 ## Reviewer Focus
 
@@ -82,9 +78,8 @@ Reviewers should explicitly ignore:
 
 After this slice, `DMS-1124` should have:
 
-- a complete serial design plan,
-- an explicit merge-blocker vs follow-up boundary, and
-- a named handoff for any unresolved hardening such as `DMS-1132`.
+- a complete serial design plan, and
+- an explicit merge-blocker vs follow-up boundary.
 
 ## Audit Results
 
@@ -101,7 +96,6 @@ items resolved by the mssql guarded no-op port), 0 `fix-in-slice` remaining, 1 `
 (this slice's own deliverable row). The audit also reviewed pre-existing
 PostgreSQL-only no-profile relational-write tests and descriptor tests; these are
 outside `DMS-1124`'s scope and not merge risks (see `## Reviewed Non-Blockers`).
-The only named handoff from this slice is `DMS-1132`.
 
 ## Parity Matrix
 
@@ -129,7 +123,6 @@ The only named handoff from this slice is `DMS-1132`.
 | `ProfileUnchangedWriteGuardedNoOp` — stale POST-as-update | 6 | `PostgresqlProfileGuardedNoOpTests.cs` :: `Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Update` | `MssqlProfileGuardedNoOpTests.cs` :: `Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Update` | both |
 | `ProfileUnchangedWriteGuardedNoOp` — separate-table PUT | 6 | `PostgresqlProfileGuardedNoOpTests.cs` :: `Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Separate_Table_Shape` | `MssqlProfileGuardedNoOpTests.cs` :: `Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_Table_Shape` | both |
 | `ProfileUnchangedWriteGuardedNoOp` — top-level-collection PUT | 6 | `PostgresqlProfileGuardedNoOpTests.cs` :: `Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level_Collection_Shape` | `MssqlProfileGuardedNoOpTests.cs` :: `Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level_Collection_Shape` | both |
-| pgsql/mssql parity closure and explicit `DMS-1132` handoff | 7 | n/a | n/a | n/a |
 
 ## Hardening Decisions
 
@@ -226,15 +219,3 @@ require a new follow-up Jira from this slice:
 
 A literal three-level provider fixture is also reviewed-and-not-required for
 this slice; the rationale is documented under `## Hardening Decisions`.
-
-The only named handoff from this slice is `DMS-1132`, as documented below.
-
-## DMS-1132 Handoff
-
-`DMS-1132` (`../07-semantic-identity-presence-fidelity.md`) remains the named
-follow-on for presence-sensitive semantic identity fidelity. Slice 7 did not
-change the executor-facing identity-presence contract; this slice fixed
-already-supported behavior (ordinal-base alignment, shared row ordering for
-guarded no-op, mssql guarded no-op parity, and mssql snapshot-path hardening)
-and explicitly did not pull `DMS-1132` work into `DMS-1124`. The
-identity-matching fragility documented in `DMS-1132` is unchanged by this slice.

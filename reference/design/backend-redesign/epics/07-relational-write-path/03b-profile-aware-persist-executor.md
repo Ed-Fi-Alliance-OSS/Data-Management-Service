@@ -88,4 +88,4 @@ All slices inherit these constraints:
   - what tests are required, and
   - what the next slice inherits.
 - The intent is that each PR is independently mergeable because it leaves the runtime in a coherent state.
-- `DMS-1132` remains the named follow-on for presence-sensitive semantic identity fidelity unless that work is explicitly pulled into a later `DMS-1124` slice.
+- Presence-sensitive semantic identity fidelity has been closed out under `DMS-1132` (see `07-semantic-identity-presence-fidelity.md`); `DMS-1124` no longer carries that as an open follow-on.
