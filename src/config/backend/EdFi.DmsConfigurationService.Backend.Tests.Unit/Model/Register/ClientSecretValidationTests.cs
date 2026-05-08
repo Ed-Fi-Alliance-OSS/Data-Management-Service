@@ -61,6 +61,30 @@ public class ClientSecretValidationTests
     }
 
     [Test]
+    public void It_should_format_the_complexity_error_message_using_the_configured_range()
+    {
+        var options = new ClientSecretValidationOptions { MinimumLength = 10, MaximumLength = 16 };
+
+        ClientSecretValidation
+            .BuildComplexityErrorMessage(options)
+            .Should()
+            .Be(
+                "Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be 10 to 16 characters long."
+            );
+    }
+
+    [Test]
+    public void It_should_format_the_length_error_message_using_the_setting_path()
+    {
+        var options = new ClientSecretValidationOptions { MinimumLength = 10, MaximumLength = 16 };
+
+        ClientSecretValidation
+            .BuildLengthErrorMessage("IdentitySettings:ClientSecret", options)
+            .Should()
+            .Be("IdentitySettings:ClientSecret must be between 10 and 16 characters long.");
+    }
+
+    [Test]
     public void It_should_generate_a_secret_that_matches_the_complexity_pattern()
     {
         var options = new ClientSecretValidationOptions { MinimumLength = 32, MaximumLength = 128 };
@@ -69,6 +93,38 @@ public class ClientSecretValidationTests
 
         secret.Should().HaveLength(32);
         Regex.IsMatch(secret, ClientSecretValidation.BuildComplexityPattern(options)).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_should_throw_when_the_maximum_length_is_less_than_the_minimum_length()
+    {
+        var options = new ClientSecretValidationOptions { MinimumLength = 8, MaximumLength = 7 };
+
+        Action act = () => ClientSecretValidation.GenerateSecretWithMinimumLength(options);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Client secret validation options are invalid. MaximumLength must be greater than or equal to MinimumLength."
+            );
+    }
+
+    [Test]
+    public void It_should_throw_when_the_maximum_length_exceeds_the_allowed_upper_bound()
+    {
+        var options = new ClientSecretValidationOptions
+        {
+            MinimumLength = 8,
+            MaximumLength = ClientSecretValidationOptions.MaximumAllowedLength + 1,
+        };
+
+        Action act = () => ClientSecretValidation.GenerateSecretWithMinimumLength(options);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Client secret validation options are invalid. MaximumLength must not exceed {ClientSecretValidationOptions.MaximumAllowedLength}."
+            );
     }
 
     [Test]
