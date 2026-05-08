@@ -44,10 +44,12 @@ public class Given_Descriptor_Write_Handler_Delete
             .Returns(referencingResource);
 
         var result = await fixture.Sut.HandleDeleteAsync(
-            fixture.MappingSet,
-            _descriptorResource,
-            new DocumentUuid(Guid.NewGuid()),
-            new TraceId("descriptor-delete-trace")
+            new DescriptorDeleteRequest(
+                fixture.MappingSet,
+                _descriptorResource,
+                new DocumentUuid(Guid.NewGuid()),
+                new TraceId("descriptor-delete-trace")
+            )
         );
 
         result
@@ -88,10 +90,12 @@ public class Given_Descriptor_Write_Handler_Delete
             .Instance;
 
         var result = await fixture.Sut.HandleDeleteAsync(
-            fixture.MappingSet,
-            _descriptorResource,
-            new DocumentUuid(Guid.NewGuid()),
-            new TraceId("descriptor-delete-trace")
+            new DescriptorDeleteRequest(
+                fixture.MappingSet,
+                _descriptorResource,
+                new DocumentUuid(Guid.NewGuid()),
+                new TraceId("descriptor-delete-trace")
+            )
         );
 
         result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
@@ -123,10 +127,12 @@ public class Given_Descriptor_Write_Handler_Delete
             .Returns((QualifiedResourceName?)null);
 
         var result = await fixture.Sut.HandleDeleteAsync(
-            fixture.MappingSet,
-            _descriptorResource,
-            new DocumentUuid(Guid.NewGuid()),
-            new TraceId("descriptor-delete-trace")
+            new DescriptorDeleteRequest(
+                fixture.MappingSet,
+                _descriptorResource,
+                new DocumentUuid(Guid.NewGuid()),
+                new TraceId("descriptor-delete-trace")
+            )
         );
 
         result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));

@@ -8,6 +8,7 @@ using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
@@ -207,6 +208,145 @@ public class Given_Descriptor_Write_Preconditions
             );
     }
 
+    [Test]
+    public async Task It_returns_precondition_failed_for_descriptor_delete_when_if_match_mismatches()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), commandExecutor, sessionFactory);
+        var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"", null),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .NotContain(command =>
+                command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+            );
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+    }
+
+    [Test]
+    public async Task It_deletes_the_descriptor_when_delete_if_match_exactly_matches_the_current_etag()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var currentState = CreatePersistedDescriptorBody();
+        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["DocumentId"] = 345L }),
+        ]);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), commandExecutor, sessionFactory);
+        var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(currentEtag, null),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
+        sessionFactory
+            .Session.Executor.Commands[2]
+            .CommandText.Should()
+            .Contain("DELETE FROM dms.\"Document\"");
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_descriptor_delete_when_the_scoped_lookup_misses_under_if_match()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), commandExecutor, sessionFactory);
+        var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"current-etag\"", null),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_preserves_descriptor_delete_fk_conflict_mapping_after_an_exact_if_match()
+    {
+        const string constraintName = "FK_School_SchoolTypeDescriptor";
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var classifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsForeignKeyViolationToReturn = true,
+            ClassificationToReturn = new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                constraintName
+            ),
+        };
+        var resolver = A.Fake<IRelationalDeleteConstraintResolver>();
+        var referencingResource = new QualifiedResourceName("Ed-Fi", "School");
+        A.CallTo(() => resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, constraintName))
+            .Returns(referencingResource);
+
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var currentState = CreatePersistedDescriptorBody();
+        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        sessionFactory.Session.Executor.CommandExceptionFactory = command =>
+            command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+                ? new StubDbException("FK constraint violation")
+                : null;
+
+        var sut = CreateSut(
+            new StubRelationalWriteTargetLookupService(),
+            commandExecutor,
+            sessionFactory,
+            classifier,
+            resolver
+        );
+        var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(currentEtag, null),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        A.CallTo(() => resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, constraintName))
+            .MustHaveHappenedOnceExactly();
+    }
+
     private static string ExpectedCanonicalHashEtag(DescriptorWriteRequest request) =>
         RelationalApiMetadataFormatter.FormatEtag(
             DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource)
@@ -258,14 +398,16 @@ public class Given_Descriptor_Write_Preconditions
     private static DescriptorWriteHandler CreateSut(
         IRelationalWriteTargetLookupService targetLookupService,
         IRelationalCommandExecutor commandExecutor,
-        RecordingRelationalWriteSessionFactory sessionFactory
+        RecordingRelationalWriteSessionFactory sessionFactory,
+        IRelationalWriteExceptionClassifier? classifier = null,
+        IRelationalDeleteConstraintResolver? deleteConstraintResolver = null
     )
     {
         return new DescriptorWriteHandler(
             targetLookupService,
             commandExecutor,
-            new NoOpRelationalWriteExceptionClassifier(),
-            A.Fake<IRelationalDeleteConstraintResolver>(),
+            classifier ?? new NoOpRelationalWriteExceptionClassifier(),
+            deleteConstraintResolver ?? A.Fake<IRelationalDeleteConstraintResolver>(),
             sessionFactory,
             NullLogger<DescriptorWriteHandler>.Instance
         );
@@ -300,6 +442,19 @@ public class Given_Descriptor_Write_Preconditions
             documentUuid,
             null,
             new TraceId("descriptor-put-precondition")
+        );
+    }
+
+    private static DescriptorDeleteRequest CreateDeleteRequest(
+        MappingSet mappingSet,
+        DocumentUuid documentUuid
+    )
+    {
+        return new DescriptorDeleteRequest(
+            mappingSet,
+            _descriptorResource,
+            documentUuid,
+            new TraceId("descriptor-delete-precondition")
         );
     }
 
@@ -511,6 +666,8 @@ public class Given_Descriptor_Write_Preconditions
 
         public List<RelationalCommand> Commands { get; } = [];
 
+        public Func<RelationalCommand, Exception?>? CommandExceptionFactory { get; set; }
+
         public async Task<TResult> ExecuteReaderAsync<TResult>(
             RelationalCommand command,
             Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
@@ -519,6 +676,11 @@ public class Given_Descriptor_Write_Preconditions
         {
             cancellationToken.ThrowIfCancellationRequested();
             Commands.Add(command);
+
+            if (CommandExceptionFactory?.Invoke(command) is { } exception)
+            {
+                throw exception;
+            }
 
             IReadOnlyList<InMemoryRelationalResultSet> resultSets =
                 ResultSets.Count == 0 ? [] : ResultSets.Dequeue();
@@ -559,4 +721,6 @@ public class Given_Descriptor_Write_Preconditions
             return Task.FromResult(PutResult);
         }
     }
+
+    private sealed class StubDbException(string message) : DbException(message);
 }
