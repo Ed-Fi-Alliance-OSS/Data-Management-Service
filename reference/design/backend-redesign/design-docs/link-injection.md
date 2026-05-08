@@ -352,17 +352,15 @@ runs after cache retrieval; the `ResourceLinks:Enabled` flag is applied as a str
 projected document. CDC and indexing consumers of `dms.DocumentCache` therefore observe `link`
 subtrees; DMS does not maintain a second link-free projection.
 
-`dms.DocumentCache` stores the materialized `_etag` for the intermediate resource-state shape
-alongside the cached `DocumentJson`. That cached `_etag` is computed with `link` excluded from the
-canonical hash and is returned directly when there is no readable-profile reshaping of resource
-state. The `ResourceLinks:Enabled` strip pass alone does not change `_etag`: flag-on and flag-off
-responses for the same resource-state surface return the same value. When readable-profile
-projection changes the resource-state surface, the response serializer recomputes `_etag` from the
-projected resource-state body using the same link-excluding canonicalization rule. See
+`dms.DocumentCache` stores the materialized full-resource `_etag` alongside the cached
+`DocumentJson`. That cached `_etag` is computed with `link` excluded from the canonical hash and is
+returned for both unprofiled and profiled responses. The `ResourceLinks:Enabled` strip pass and
+readable-profile projection do not change `_etag`: flag-on, flag-off, profiled, and unprofiled
+responses for the same full resource state return the same value. See
 [update-tracking.md](update-tracking.md) §Serving API metadata for the normative derivation.
 
 A flag flip does not require cache truncation, fingerprint reconciliation, or an advisory lock:
-flag-on and flag-off responses reuse the same `_etag` for the same resource-state surface.
+flag-on and flag-off responses reuse the same `_etag` for the same full resource state.
 
 The freshness check on cache reads remains unchanged:
 
@@ -467,10 +465,10 @@ the `DocumentUuid`-stamping decision in particular has been made.
 
 - Flag on + fully-defined references → response body carries `link`.
 - Flag off → response body has no `link` on any reference; `_etag` matches the flag-on value for
-  the same resource-state surface because `link` is excluded from canonicalization.
+  the same full resource state because `link` is excluded from canonicalization.
 - Flag flip across a process restart → existing cached rows remain valid for freshness-check
-  purposes; `_etag` values computed pre-flip still match post-flip responses for the same
-  resource-state surface.
+  purposes; `_etag` values computed pre-flip still match post-flip responses for the same full
+  resource state.
 
 **Fixture tests:**
 
@@ -498,7 +496,7 @@ emit `link`.
 
 **Caller-agnostic cache test.** Two callers who can both read the same source document — one
 authorized for the target, one not — receive the same cached intermediate JSON and the same
-`_etag` (before profile projection and flag-off stripping are applied per caller).
+full-resource `_etag`; profile projection and flag-off stripping do not change the validator.
 
 ---
 

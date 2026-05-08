@@ -41,7 +41,7 @@ Source documents:
 - `DocumentId`: internal surrogate key (`bigint`) used for FKs and clustering.
 - `ReferentialId`: deterministic UUIDv5 used as the canonical “natural identity key”; stored in `dms.ReferentialIdentity`.
 - **Identity component**: a reference whose projected identity participates in a document’s identity (`identityJsonPaths`). Identity-component values are stored locally as reference-identity bindings (which may be generated/persisted aliases of canonical stored columns under key unification) so referential ids can be recomputed row-locally.
-- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the returned JSON representation. Indirect representation changes are realized as database-driven propagation updates to canonical stored identity columns that back the local bindings (PostgreSQL FK cascades; SQL Server `DbTriggerKind.IdentityPropagationFallback` triggers for eligible edges), including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `_etag/_lastModifiedDate/ChangeVersion`.
+- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the full resource-state representation before readable profile projection. Indirect representation changes are realized as database-driven propagation updates to canonical stored identity columns that back the local bindings (PostgreSQL FK cascades; SQL Server `DbTriggerKind.IdentityPropagationFallback` triggers for eligible edges), including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `_etag/_lastModifiedDate/ChangeVersion`.
 
 ## Data model summary
 
@@ -88,7 +88,7 @@ Source documents:
 - Journal (append-only):
   - `dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId, CreatedAt)` emitted when `ContentVersion` changes.
 - Served metadata:
-  - `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the served resource-state document, excluding response decorations such as `link`.
+  - `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the full resource-state document before readable profile projection, excluding response decorations such as `link`.
   - `_lastModifiedDate` served from `ContentLastModifiedAt`.
 
 ### Per-project schemas and resource tables
@@ -210,7 +210,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 - **GET by id**
   1. Resolve `DocumentUuid → DocumentId`.
   2. Authorize the request against stored values (namespace/ownership/relationship/custom-view strategies as configured) using token-derived authorization context; see `auth.md`.
-  3. Hydrate relational tables and reconstitute JSON; compute `_etag` from the canonical JSON form of the resource-state document, excluding response decorations such as `link`; serve `_lastModifiedDate/ChangeVersion` from `dms.Document`; and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
+  3. Hydrate relational tables and reconstitute JSON; compute `_etag` from the canonical JSON form of the full resource-state document before readable profile projection, excluding response decorations such as `link`; serve `_lastModifiedDate/ChangeVersion` from `dms.Document`; and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
 
 - **Query**
   - Query compilation is constrained to root-table paths (`queryFieldMapping` does not cross array boundaries).
@@ -219,7 +219,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
     - materialize a page keyset of `DocumentId`s,
     - hydrate root + child + extension tables by joining each table to the page keyset in one command (multiple result sets),
     - batch descriptor URI lookups,
-    - compute `_etag` from the canonical JSON form of the resource-state document, excluding response decorations such as `link`, and serve `_lastModifiedDate/ChangeVersion` from `dms.Document` without dependency-token expansion.
+    - compute `_etag` from the canonical JSON form of the full resource-state document before readable profile projection, excluding response decorations such as `link`, and serve `_lastModifiedDate/ChangeVersion` from `dms.Document` without dependency-token expansion.
 
 ## Schema management and DDL generation
 

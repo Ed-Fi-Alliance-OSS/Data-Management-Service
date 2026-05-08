@@ -11,9 +11,11 @@ Draft. This document is the normative design for:
 
 The backend redesign needs resource-state-sensitive metadata:
 
-- `_etag` and `_lastModifiedDate` MUST change when the returned resource-state representation changes,
-  including when referenced identity values change. Server-generated response decorations such as
-  reference `link` objects are not resource state and do not participate in `_etag` derivation.
+- `_etag` and `_lastModifiedDate` MUST change when the full resource-state representation changes,
+  including when referenced identity values change. Readable profile filtering can change the
+  response shape, but it does not change the `_etag` surface. Server-generated response decorations
+  such as reference `link` objects are not resource state and do not participate in `_etag`
+  derivation.
   Descriptor identity/URI is immutable, while descriptor metadata fields are mutable and affect
   only the descriptor resource's own representation.
 - Ed-Fi Change Query APIs depend on a global monotonic `ChangeVersion`.
@@ -29,9 +31,9 @@ Those referrer updates naturally trigger the same stamping rules as “direct”
 
 ### Requirements
 
-1. **Correctness**: `_etag` and `_lastModifiedDate` MUST change when the served resource-state
-   representation changes. Response-only decorations such as reference `link` objects MUST NOT
-   change `_etag`.
+1. **Correctness**: `_etag` and `_lastModifiedDate` MUST change when the full resource-state
+   representation changes. Readable profile filtering and response-only decorations such as
+   reference `link` objects MUST NOT change `_etag`.
 2. **Change Queries alignment**: `ChangeVersion` MUST be a global, monotonically increasing `bigint`.
 3. **Cross-engine**: must work on PostgreSQL and SQL Server.
 4. **Optimistic concurrency**: `If-Match` must be resource-state-sensitive.
@@ -82,7 +84,7 @@ See [data-model.md](data-model.md) for the sequence DDL.
 
 ### What counts as a representation change?
 
-A document's served resource-state representation changes when any of the following occur:
+A document's full resource-state representation changes when any of the following occur:
 
 - the document’s own persisted scalar/collection content changes (root/child/extension tables), or
 - any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
@@ -141,29 +143,29 @@ For a document `P`:
 
 - `_lastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
 - `ChangeVersion(P) = dms.Document.ContentVersion`
-- `_etag(P)` is a deterministic hash of the canonical JSON form of the served resource-state
-  document. It is a resource-state validator, not a response-decoration validator:
+- `_etag(P)` is a deterministic hash of the canonical JSON form of the full resource-state
+  document, before readable-profile projection. It is a resource-state validator, not a
+  response-shape validator:
   - remove server-generated fields `id`, `link`, `_etag`, and `_lastModifiedDate`, recursively
     canonicalize object properties using ordinal string ordering while preserving array order,
     serialize the canonical form as minified UTF-8, compute `SHA-256` over those bytes, and encode
     the hash as base64.
-  - readable-profile responses recompute `_etag` from the projected resource-state document using
-    the same rule.
+  - readable-profile responses preserve the same full-resource `_etag`; profile filtering changes
+    which fields are returned, but not the concurrency validator.
   - `DataManagement:ResourceLinks:Enabled` does not affect `_etag`; `link` subtrees are excluded
     from hashing whether they are present in the response or stripped by the flag.
 
 This design does not compute metadata from dependency scans at read time. Representation changes
 are still tracked by stored `ContentVersion`/`ContentLastModifiedAt`, while `_etag` is computed
-from the canonical resource-state document rather than exact transport serializer bytes. When the
-only response-shape difference is link inclusion/exclusion, implementations reuse the same `_etag`;
-when readable-profile projection changes the resource-state surface, implementations recompute
-`_etag` from the projected resource-state document using the same rule.
+from the canonical full resource-state document rather than exact transport serializer bytes. When
+the response-shape difference is readable-profile filtering or link inclusion/exclusion,
+implementations reuse the same `_etag`.
 
 Interaction with `dms.DocumentCache` (when enabled): the cache stores the caller-agnostic pre-profile
-document and its `_etag`/`_lastModifiedDate` for that intermediate resource-state shape. Profile-scoped
-reads apply readable-profile projection after cache retrieval and recompute `_etag` from the projected
-resource-state document. The `DataManagement:ResourceLinks:Enabled` strip pass does not change `_etag`,
-because `link` is excluded from canonicalization in both flag states.
+document and its full-resource `_etag`/`_lastModifiedDate`. Profile-scoped reads apply readable-profile
+projection after cache retrieval and preserve the cached/full-resource `_etag`. The
+`DataManagement:ResourceLinks:Enabled` strip pass does not change `_etag`, because `link` is excluded
+from canonicalization in both flag states.
 
 ## Journaling for Change Queries
 
@@ -248,8 +250,9 @@ ORDER BY c.ChangeVersion, c.DocumentId;
 
 With stored representation stamps:
 
-- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical resource-state
-  JSON representation, with server-generated response decorations such as `link` excluded.
+- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical full
+  resource-state JSON representation, with readable profile filtering and server-generated response
+  decorations such as `link` excluded from ETag-surface selection.
 - PUT/DELETE validates `If-Match` by comparing the client’s `_etag` to the current deterministic hash for that `DocumentId`.
 - No dependency locking is required for correctness because indirect impacts are realized as local updates that bump the same representation stamp.
 

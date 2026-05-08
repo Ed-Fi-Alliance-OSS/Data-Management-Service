@@ -142,9 +142,9 @@ Notes:
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
 - `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth.md](auth.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
-  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's served resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
+  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
-  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the served resource-state document, excluding server-generated response decorations such as `link`.
+  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the full resource-state document before readable profile projection, excluding server-generated response decorations such as `link`.
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization is addressed separately in [auth.md](auth.md).
 
@@ -199,7 +199,7 @@ Why this table exists (vs. scanning resource tables / `dms.Document`):
 
 Columns:
 
-- `ChangeVersion`: the document's served resource-state representation change stamp (recommended: `ContentVersion`).
+- `ChangeVersion`: the document's full resource-state representation change stamp (recommended: `ContentVersion`).
 - `DocumentId`: changed document.
 - `ResourceKeyId`: resource key for filtering change queries.
 - `CreatedAt`: journal insert time (operational/auditing).
@@ -530,8 +530,8 @@ Prefer **eventual consistency** (background/write-driven projection) where rows 
 The cached `DocumentJson` is the caller-agnostic pre-profile document emitted by reconstitution,
 with `link` subtrees already present when link injection is compiled into the read plan.
 Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
-strip pass runs on the projected document immediately before serialization (see
-[link-injection.md](link-injection.md#cache-and-etag)).
+strip pass runs on the projected document immediately before serialization. Neither step changes
+the cached/full-resource `_etag` (see [link-injection.md](link-injection.md#cache-and-etag)).
 
 Update tracking note: `dms.DocumentCache` stores cached `ContentVersion` plus the materialized
 `_etag/_lastModifiedDate`, and cache reads validate freshness by comparing cached

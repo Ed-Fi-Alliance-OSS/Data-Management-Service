@@ -135,7 +135,7 @@ Implement JSON reconstitution from hydrated relational rows:
   7. Relax LastModifiedTraceId to make it optional. GetSuccess still requires it in src/dms/core/EdFi.DataManagementService.Core.External/Backend/GetResult.cs:21, but nothing in the relational redesign
      produces it yet, so make it nullable.
   8. No. Do not ship a split contract where relational GET returns a serialized-JSON-hash `_etag` while write responses use a different format.
-     The normative design in reference/design/backend-redesign/design-docs/update-tracking.md:118 and reference/design/backend-redesign/design-docs/flattening-reconstitution.md:906 applies to
+     The normative design in reference/design/backend-redesign/design-docs/update-tracking.md#serving-api-metadata and reference/design/backend-redesign/design-docs/flattening-reconstitution.md#64-json-assembly-fast-shape-safe applies to
      the external `_etag` surface as a whole, not only to GET materialization. DMS-1005 still owns `If-Match` enforcement, but once the relational read path is active the relational write
      responses must emit the same serialized-JSON hash `_etag` format in the same branch.
   9. Use semantic JSON equivalence for integration tests, with strict array-order checks. Property-order parity is too brittle and not semantically required by the design. If you want

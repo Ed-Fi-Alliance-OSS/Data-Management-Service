@@ -21,6 +21,12 @@ delivers the runtime implementation.
 This story applies only to document references backed by `..._DocumentId`.
 Descriptor references remain on their existing canonical-URI string surface.
 
+> **Superseded ETag guidance:** ETag-specific wording in this older link-injection story is superseded by
+> `reference/design/backend-redesign/design-docs/update-tracking.md` and
+> `../10-update-tracking-change-queries/03-if-match.md`. Implementers must preserve the full-resource
+> `_etag` through readable profile projection and the `ResourceLinks:Enabled` strip pass; do not recompute
+> `_etag` from a profile-filtered response body.
+
 Align with:
 
 - `reference/design/backend-redesign/design-docs/link-injection.md` (link contract, plan extensions,
@@ -30,7 +36,8 @@ Align with:
 - `reference/design/backend-redesign/design-docs/data-model.md` (`dms.Document`, `dms.ResourceKey`,
   abstract identity tables)
 - `reference/design/backend-redesign/design-docs/update-tracking.md` (`_etag` derivation from the
-  canonical resource-state body, excluding response decorations such as `link`)
+  canonical full resource-state body before readable profile projection, excluding response decorations
+  such as `link`)
 - `reference/design/backend-redesign/design-docs/auth.md` (source-resource authorization gate)
 - `reference/design/backend-redesign/design-docs/profiles.md` (readable-profile projection
   boundary)
@@ -121,13 +128,11 @@ Soft dependency:
   serialization.
 - `_etag` is a resource-state validator, not a response-decoration validator. It is computed with
   `link` excluded from canonicalization whether links are present or stripped. Use the cached
-  materialized `_etag` when there is no readable-profile reshaping of resource state. When
-  readable-profile projection changes the resource-state surface, the response serializer
-  recomputes `_etag` from the projected resource-state body using the same link-excluding
-  canonicalization rule. See `design-docs/update-tracking.md` §Serving API metadata for the
-  normative derivation.
+  materialized full-resource `_etag` for both unprofiled and profiled responses. Readable-profile
+  projection changes the response body but does not change the validator. See
+  `design-docs/update-tracking.md` §Serving API metadata for the normative derivation.
 - A flag flip does not require cache truncation or plan-shape fingerprinting: flag-off responses
-  and flag-on responses return the same `_etag` for the same resource-state surface. No advisory
+  and flag-on responses return the same `_etag` for the same full resource state. No advisory
   lock, no `dms.DocumentCachePlanFingerprint` table, and no `ResourceLinksFlag` column are
   introduced.
 - When `dms.DocumentCache` is not provisioned, responses are materialized fresh per request and no
@@ -159,9 +164,9 @@ Soft dependency:
   and child) elements.
 - Feature-flag tests cover: flag on with fully-defined references (body carries `link`); flag off
   (body has no `link` on any reference and `_etag` matches the flag-on value for the same
-  resource-state surface); flag flip across a process restart (existing cached rows remain valid
+  full resource state); flag flip across a process restart (existing cached rows remain valid
   for freshness-check purposes, and `_etag` values computed pre-flip still match post-flip
-  responses for the same resource-state surface).
+  responses for the same full resource state).
 - Fixture tests cover: a concrete reference (e.g., `AcademicWeek` → `School`); an abstract
   reference (any `educationOrganizationReference` site); a nested-collection reference (link
   appears inside collection elements); a reference declared directly on a collection-aligned
@@ -177,7 +182,7 @@ Soft dependency:
   `link`.
 - Caller-agnostic cache test: two callers who can both read the same source document — one
   authorized for the target, one not — receive the same cached intermediate JSON and the same
-  `_etag` before profile projection and flag-off stripping are applied per caller.
+  full-resource `_etag`; profile projection and flag-off stripping do not change the validator.
 - An E2E scenario in
   `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Profiles/ProfileReferenceFiltering.feature`
   POSTs a document with a fully-defined nested document reference, GETs it under a readable
@@ -236,10 +241,10 @@ Soft dependency:
    immediately before serialization, after readable-profile projection. The strip removes exactly
    the `link` subtree on reference objects; other server-generated fields (`_etag`,
    `_lastModifiedDate`) are untouched. `link` is excluded from `_etag` canonicalization in both
-   flag states, so the strip pass alone does not cause `_etag` recomputation or mismatch. Use the
-   cached materialized `_etag` when there is no readable profile reshaping of resource state;
-   otherwise recompute `_etag` from the projected resource-state body per
-   `design-docs/update-tracking.md` §Serving API metadata.
+   flag states, so the strip pass does not cause `_etag` recomputation or mismatch. Use the
+   cached materialized full-resource `_etag` for both unprofiled and profiled responses; readable
+   profile projection does not create a separate ETag surface per `design-docs/update-tracking.md`
+   §Serving API metadata.
 7. When `dms.DocumentCache` is provisioned: extend it to store cached `ContentVersion` alongside
    the materialized `_etag/_lastModifiedDate` so the two-input freshness check
    (`cached ContentVersion == dms.Document.ContentVersion AND cached LastModifiedAt ==

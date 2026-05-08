@@ -11,13 +11,13 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
 - For operations that support `If-Match` (`PUT`, `DELETE`, and `POST` when upsert resolves to an existing
   document), compare the client-provided `If-Match` header value to the current `_etag` computed from the canonical
-  JSON form of the current resource-state representation, as defined by
-  `reference/design/backend-redesign/design-docs/update-tracking.md`. Server-generated response decorations such as
-  reference `link` objects are excluded from the hash and do not affect `If-Match`. This applies equally to descriptor
-  resources stored through `dms.Descriptor`.
+  JSON form of the current full resource-state representation, as defined by
+  `reference/design/backend-redesign/design-docs/update-tracking.md`. Readable profile filtering and
+  server-generated response decorations such as reference `link` objects are excluded from ETag-surface selection and
+  do not affect `If-Match`. This applies equally to descriptor resources stored through `dms.Descriptor`.
 - `If-Match` is optional. When the header is absent, these operations proceed without an HTTP precondition check.
 - Header matching is an exact opaque string comparison: the header value must exactly equal the current `_etag` value
-  DMS would serve for the resource-state representation. The implementation must not normalize quotes, parse
+  DMS would serve for the full resource-state representation. The implementation must not normalize quotes, parse
   entity-tag lists, or otherwise reinterpret the value for this story.
 - When `POST` with `If-Match` resolves to an insert/new document, the request fails with `412` because there is no
   current representation whose `_etag` can satisfy the precondition.
@@ -35,6 +35,11 @@ Implement optimistic concurrency checks using stored representation stamps for r
   executor path.
 - When `If-Match` does not exactly match, the request fails with the appropriate HTTP error semantics (e.g.,
   precondition failed / `412`).
+- When the client obtained `_etag` from a profiled GET/query response, the value still represents the full resource
+  state. Profiled and unprofiled writes compare against the same full-resource `_etag`, and successful profiled writes
+  return the same full-resource ETag that a follow-up unprofiled GET would return.
+- When a profile-hidden field changes, a stale `_etag` obtained from a profiled GET/query no longer satisfies
+  `If-Match`; hidden full-resource changes are still concurrency-relevant.
 - When `POST` resolves to a new document and the request includes `If-Match`, the request fails with `412`; DMS does
   not ignore the header and does not treat it as an insert precondition success.
 - If the shared guarded no-op executor path introduced by `DMS-984` and extended by `DMS-1124` reports that a no-op
@@ -46,9 +51,10 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
 ## Tasks
 
-1. Implement a "read current document and compute `_etag` from its resource-state representation" path usable by
+1. Implement a "read current document and compute `_etag` from its full resource-state representation" path usable by
    `PUT`, `DELETE`, and `POST` upsert-as-update handlers prior to write/delete, for both relational document resources
-   and descriptor resources. The computation follows update-tracking canonicalization, including exclusion of `link`.
+   and descriptor resources. The computation follows update-tracking canonicalization, including exclusion of readable
+   profile filtering and `link`.
    Because DMS-990 already introduced the read metadata canonicalization path, this story must update/reuse that
    metadata-removal logic so `link` is removed alongside `id`, `_etag`, and `_lastModifiedDate` everywhere `_etag` is
    computed or compared.
@@ -65,23 +71,29 @@ Implement optimistic concurrency checks using stored representation stamps for r
    7. at least one PostgreSQL and one SQL Server relational integration test proving a cascaded referenced identity
       change changes the dependent `_etag` and causes stale `If-Match` to return `412`,
    8. existing `If-Match` E2E scenarios switched to the relational backend without changing the scenario coverage,
-   9. canonical metadata removal excludes `link` so the same resource-state surface produces the same `_etag` whether
+   9. canonical metadata removal excludes `link` so the same full resource state produces the same `_etag` whether
       links are present or stripped,
    10. `If-Match` succeeds when the client-supplied `_etag` was obtained with
        `DataManagement:ResourceLinks:Enabled=true` and the write check runs with links stripped,
    11. `If-Match` succeeds when the client-supplied `_etag` was obtained with
        `DataManagement:ResourceLinks:Enabled=false` and the write check runs against a link-bearing
        intermediate document, proving link inclusion/exclusion does not affect the precondition for
-       the same resource-state surface, and
-   12. stale no-op compare reported by the shared guarded no-op executor path (`DMS-984`, reused by `DMS-1124`) that
+       the same full resource state,
+   12. profiled GET/query responses preserve the same `_etag` as unprofiled responses for the same document,
+   13. `If-Match` succeeds when the client-supplied `_etag` was obtained from a profiled GET/query and the current
+      full resource state still matches,
+   14. `If-Match` fails when the client-supplied `_etag` was obtained from a profiled GET/query before a change to
+      profile-hidden full resource state,
+   15. successful profiled writes return the same full-resource ETag that a follow-up unprofiled GET would return, and
+   16. stale no-op compare reported by the shared guarded no-op executor path (`DMS-984`, reused by `DMS-1124`) that
       is rejected by the guarded `If-Match` recheck.
 
 ## Clarifying Questions and Answers
 
 ## Questions 1
 
-  1. For profiled requests, should If-Match compare against the full resource _etag, or the profile-projected representation _etag that a client would have received from a profiled GET? This affects
-     both comparison and the ETag returned from successful profiled writes.
+  1. For profiled requests, should readable profile filtering affect If-Match comparison or the ETag returned from
+     successful profiled writes?
   2. On a stale guarded no-op, should If-Match cause an immediate 412, or should we re-read/recompute the current _etag and only return 412 if the header no longer matches?
   3. Should the If-Match check lock the target dms.Document row through the write/delete transaction for changed writes too? The existing freshness checker locks only guarded no-op rechecks, and
      relational DELETE has the If-Match work explicitly deferred at src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:330.
@@ -99,8 +111,9 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
 ## Answers 1
 
-  1. Profiled requests: compare against the profile-projected _etag the client would have received from a profiled GET, and return that same profile-surface ETag on successful profiled writes. This
-     matches update-tracking.md, which says readable-profile responses recompute _etag from the projected document.
+  1. Profiled requests: compare against the same full-resource _etag used by unprofiled requests, and return that
+     full-resource ETag on successful profiled writes. This matches legacy ODS behavior: readable profiles filter the
+     response body but preserve `_etag` as the resource-state concurrency validator.
   2. Stale guarded no-op: follow the profile/concurrency design. Stale no-op + present If-Match should return 412 immediately. The story wording should say “if the guarded no-op freshness check is
      stale and If-Match was supplied.” Without If-Match, abandon the no-op fast path and re-evaluate/retry.
   3. Locking: yes, for operations that supply If-Match, lock the target dms.Document row through the transaction before comparing and before changed write/delete DML. This is still row-local locking,
@@ -126,8 +139,8 @@ Implement optimistic concurrency checks using stored representation stamps for r
   3. For stale guarded no-op with If-Match present, should the repository bypass the current stale-no-op retry loop and return 412 on the first stale outcome?
   4. When If-Match is absent and stale guarded no-op occurs, is the current single retry enough, or should this story broaden it to a more explicit re-evaluate/retry policy?
   5. Should this story also fix descriptor POST-as-update no-op stamping, or leave that to DMS-1008? The current descriptor POST-as-update path appears to always issue update/stamp work.
-  6. Are profiled descriptor writes in scope for this story’s “profile-projected _etag” rule, or only relational-table resources?
-  7. If a DELETE request carries profile media-type headers, should If-Match compare against the full resource _etag, the profile-projected _etag, or should profile headers be ignored for DELETE?
+  6. Do descriptor writes need any special ETag behavior when profile media-type headers are present, or should they use the same full-resource _etag as relational-table resources?
+  7. If a DELETE request carries profile media-type headers, should If-Match compare against the full resource _etag or should profile headers affect DELETE precondition behavior?
   8. For existing-target mismatch, should 412 take precedence over deeper backend failures such as invalid references, profile creatability, and authorization, once the target is resolved? The story
      answers this for POST create-new, but not for existing-target mismatch.
 
@@ -136,8 +149,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
   1. Use a typed precondition contract. Add something like IfMatchPrecondition / WritePrecondition, built once from request headers with exact opaque-string semantics. Do not have relational or
      descriptor code read Headers["If-Match"] directly. Pass the typed value through RelationalWriteExecutorRequest, DescriptorWriteRequest, and a descriptor delete request shape.
   2. Yes, the authoritative check belongs inside the transaction. Treat the repository’s first target lookup as advisory. For present If-Match, re-resolve or confirm the target in the write/delete
-     transaction, lock dms.Document, compute the current resource-state _etag, compare, then keep the lock through DML/delete/commit. This matches the earlier answer in reference/design/backend-redesign/
-     epics/10-update-tracking-change-queries/03-if-match.md:95.
+     transaction, lock dms.Document, compute the current full-resource _etag, compare, then keep the lock through DML/delete/commit. This matches the earlier locking answer above.
   3. Yes, stale guarded no-op plus If-Match should bypass retry and return 412. The current repository retry loop retries stale no-op unconditionally at src/dms/backend/
      EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:700. Change that so retry only applies when the precondition is absent.
   4. Keep the absent-If-Match retry narrow for this story. The design says stale without If-Match should re-evaluate current state, and the existing single retry is a reasonable scoped implementation.
@@ -145,11 +157,11 @@ Implement optimistic concurrency checks using stored representation stamps for r
   5. Do not absorb all of DMS-1008, but fix the overlap if touched. DMS-1008 owns descriptor stamp/journal correctness, including no-op descriptor updates (reference/design/backend-redesign/epics/10-
      update-tracking-change-queries/06-descriptor-stamping.md:10). But DMS-1005 will already need current descriptor state for If-Match; if practical, use that helper to stop descriptor POST-as-update
      from always issuing update/stamp work, which currently happens in src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs:411.
-  6. Profiled descriptor writes should follow the same rule only when they are actually supported. If DMS accepts a profiled descriptor write, compare against the profile-projected descriptor
-     representation, because descriptor reads already apply readable profile projection. If writable descriptor profiles are not supported, fail earlier as unsupported/invalid profile usage rather than
-     silently comparing the full _etag.
-  7. DELETE should use the full-resource _etag. A DELETE removes the whole resource, not just the profile-visible surface. Ignoring profile media-type headers for DELETE precondition purposes is safer
-     than allowing a profile-projected _etag to authorize deletion after hidden data changed.
+  6. Descriptor writes use the same full-resource _etag as relational-table resources. Profile projection is not an
+     ETag surface. If writable descriptor profiles are unsupported, fail earlier as unsupported/invalid profile usage;
+     if they are supported, If-Match still compares against the full descriptor resource state.
+  7. DELETE should use the full-resource _etag. A DELETE removes the whole resource, not just the profile-visible
+     surface. Ignore profile media-type headers for DELETE precondition purposes.
   8. Precedence: auth should not be overridden by 412; most deeper write validation can be. Suggested order: malformed request/content type/profile usage and missing target still win; authorization
      should still return 403 before exposing an ETag mismatch for an existing target. After target exists and the caller is authorized, If-Match mismatch should short-circuit before reference
      resolution, profile creatability, merge validation, and DML.
@@ -157,8 +169,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
 ## Questions 3
 
   1. Should DataManagement:ResourceLinks:Enabled affect If-Match comparison, or should reference link objects be treated as response decoration excluded from the _etag in both flag states?
-  2. For profiled PUT/POST, should Core pass the readable-profile projection context explicitly into the typed precondition contract, so backend never infers the comparison surface from writable-
-     profile data?
+  2. For profiled PUT/POST, should Core pass the readable-profile projection context explicitly into the typed precondition contract, or should If-Match ignore readable profile projection?
   3. Are writable descriptor profiles expected to work today? If yes, DescriptorWriteRequest likely needs profile/precondition surface plumbing too. If no, should profiled descriptor writes fail before
      If-Match logic?
   4. For descriptor writes, should we refactor them onto IRelationalWriteSessionFactory and the shared transaction/session pattern, or is a single command batch with row lock + compare + update
@@ -176,15 +187,15 @@ Implement optimistic concurrency checks using stored representation stamps for r
      validator, and reference `link` objects are derived from persisted reference state. Compare against the same
      link-excluding `_etag` in both flag states. This aligns with reference/design/backend-redesign/design-docs/
      update-tracking.md and reference/design/backend-redesign/design-docs/link-injection.md.
-  2. Yes, Core should pass the readable comparison surface explicitly. Backend should receive a typed precondition contract like IfMatchPrecondition plus a representation surface/context, not infer
-     from writable profile data. That contract should carry the opaque header value and readable profile projection context when applicable. It does not need resource-link mode for `If-Match`, because
-     `link` is excluded from `_etag` derivation in both flag states. This matches the profile design boundary that Core owns profile semantics and Backend consumes Core-supplied outputs in
-     reference/design/backend-redesign/design-docs/profiles.md:128.
-  3. Treat writable descriptor profiles as unsupported unless deliberately scoped now. Current descriptor write contracts have no profile or precondition surface plumbing in src/dms/backend/
-     EdFi.DataManagementService.Backend/DescriptorWriteContracts.cs:16. If descriptor profile writes are not expected today, fail them before If-Match logic. If they are expected, add the same typed
-     precondition/profile surface to descriptor writes rather than silently comparing against the full descriptor representation.
+  2. If-Match should ignore readable profile projection. Backend should receive a typed precondition contract carrying
+     only the opaque header value; it should compute the current full-resource `_etag` from the same pre-profile full
+     resource state used by unprofiled GET. It does not need resource-link mode for `If-Match`, because `link`
+     is excluded from `_etag` derivation in both flag states.
+  3. Treat writable descriptor profiles as unsupported unless deliberately scoped now. If descriptor profile writes are
+     not expected today, fail them before If-Match logic. If they are expected, they still use the same full-resource
+     descriptor `_etag`; do not add descriptor-specific profile-based comparison.
   4. Prefer moving descriptors onto the shared transaction/session pattern. A single SQL batch with row lock + compare + update can be correct, but DMS-1005 already needs the same row-local lock/check/
-     write semantics described in reference/design/backend-redesign/design-docs/transactions-and-concurrency.md:336. I’d refactor descriptors enough to use a shared session/helper for lock, materialize
+     write semantics described in reference/design/backend-redesign/design-docs/transactions-and-concurrency.md#concurrency-optimistic-if-match. I’d refactor descriptors enough to use a shared session/helper for lock, materialize
      current representation, compare, DML, and commit. It does not need to become the whole relational resource executor.
   5. Fix descriptor POST-as-update no-op stamping if it falls out cheaply. Descriptor upsert currently always performs the update path in src/dms/backend/EdFi.DataManagementService.Backend/
      DescriptorWriteHandler.cs:411. Since If-Match needs current-state comparison anyway, it is reasonable to short-circuit unchanged descriptor POST-as-update while touching this code. Keep broader
