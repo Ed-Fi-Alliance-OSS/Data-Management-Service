@@ -63,8 +63,8 @@ public class ProfileTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            await ResetProfiles(LateSortedProfileNames);
-            foreach (var name in LateSortedProfileNames)
+            await ResetProfiles(EarlySortedProfileNames);
+            foreach (var name in EarlySortedProfileNames)
             {
                 var result = await _repository.InsertProfile(
                     new ProfileInsertCommand { Name = name, Definition = CreateDefinition(name) }
@@ -129,7 +129,12 @@ public class ProfileTests : DatabaseTest
         [Test]
         public async Task Should_apply_offset_after_excluding_invalid_profiles()
         {
-            await ResetProfiles("000-DMS1074-Invalid", "001-DMS1074-Valid", "002-DMS1074-Valid");
+            await ResetProfiles([
+                .. EarlySortedProfileNames,
+                "000-DMS1074-Invalid",
+                "001-DMS1074-Valid",
+                "002-DMS1074-Valid",
+            ]);
 
             var invalidInsert = await _repository.InsertProfile(
                 new ProfileInsertCommand
@@ -184,8 +189,8 @@ public class ProfileTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            await ResetProfiles(EarlySortedProfileNames);
-            foreach (var name in EarlySortedProfileNames)
+            await ResetProfiles(LateSortedProfileNames);
+            foreach (var name in LateSortedProfileNames)
             {
                 var result = await _repository.InsertProfile(
                     new ProfileInsertCommand { Name = name, Definition = CreateDefinition(name) }
