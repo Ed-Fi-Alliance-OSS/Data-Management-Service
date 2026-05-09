@@ -61,3 +61,11 @@ Decisions: treated remaining work as backlog-state closure, not runtime code cha
 Reasoning: this was the highest-priority incomplete task in `tasks.json`; code/test surface already existed, so the missing work was proving both provider loops still passed and then closing task tracking.
 Files changed: tasks.json; progress.txt
 Notes: `dotnet test --no-restore ...Postgresql.Tests.Integration --filter "Profile|IfMatch|ETag"` passed (183); `dotnet test --no-restore ...Mssql.Tests.Integration --filter "Profile|IfMatch|ETag"` initially failed from missing SQL Server listener, then passed (183) after starting local container on port 1434.
+
+2026-05-09
+Task complete: Formatting and Stale Surface Sweep
+Story: reference/design/backend-redesign/epics/10-update-tracking-change-queries/03-if-match.md
+Decisions: ran repo-requested `dotnet csharpier format` sweep; kept only formatter output; stale-surface rg sweep showed no remaining production profile-projected ETag plumbing and only intentional test/utility or superseded-doc references.
+Reasoning: final closeout task was verification-heavy, so the value was proving the landed behavior still passed unit/integration/E2E loops after a clean formatting pass.
+Files changed: src/dms/core/EdFi.DataManagementService.Core.External/Model/DataModelConstants.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/{OpenApi/OpenApiDocumentExtensionTests.cs,Profile/CachedProfileServiceTests.cs}; src/dms/tests/EdFi.DataManagementService.Tests.E2E/{Authorization/OAuthClientCredentialsEncoderTests.cs,Authorization/SystemAdministrator.cs,Profiles/TestXmls/InvalidProfiles.xml,Profiles/TestXmls/Profiles.xml,Profiles/TestXmls/ProfilesTenant1.xml,Profiles/TestXmls/ProfilesTenant2.xml}; tasks.json; progress.txt
+Notes: targeted backend unit passed (141); Core unit passed (148); pgsql integration `Descriptor|Profile|IfMatch|ETag` passed (260); mssql integration initially failed because `localhost:1434` was down, passed (241) after starting `dms-mssql`; E2E `ProfileResponseFilteringFeature|ProfilePUTMergeFunctionalityFeature|ReadDescriptorsValidationFeature|ETag` passed (17) with `NODE_OPTIONS` unset; first parallel test batch hit shared `obj/bin` file-lock contention, reran serially for authoritative results.

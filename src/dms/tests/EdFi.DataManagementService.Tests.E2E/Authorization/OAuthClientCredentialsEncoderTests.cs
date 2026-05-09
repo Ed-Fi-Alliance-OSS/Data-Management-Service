@@ -21,8 +21,6 @@ public class Given_OAuth_Client_Credentials_Encoder
 
         string decodedCredentials = Encoding.UTF8.GetString(Convert.FromBase64String(basicParameter));
 
-        decodedCredentials.Should().Be(
-            "client%3Awith%2Breserved:secret%3Awith%25reserved%2Bchars"
-        );
+        decodedCredentials.Should().Be("client%3Awith%2Breserved:secret%3Awith%25reserved%2Bchars");
     }
 }

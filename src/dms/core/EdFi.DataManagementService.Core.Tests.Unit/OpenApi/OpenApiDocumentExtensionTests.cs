@@ -2420,8 +2420,7 @@ public class OpenApiDocumentExtensionTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Non_Resource_Extension_With_CommonExtensionOverrides
-        : OpenApiDocumentExtensionTests
+    public class Given_Non_Resource_Extension_With_CommonExtensionOverrides : OpenApiDocumentExtensionTests
     {
         private JsonNode? _resourceSpec;
 

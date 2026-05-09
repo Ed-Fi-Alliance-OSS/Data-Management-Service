@@ -13,6 +13,6 @@ public static class DataModelConstants
     /// <summary>
     /// Returns whether the given project name identifies the core Ed-Fi data model.
     /// </summary>
-    public static bool IsCoreProjectName(string projectName)
-        => projectName.Equals("Ed-Fi", StringComparison.OrdinalIgnoreCase);
+    public static bool IsCoreProjectName(string projectName) =>
+        projectName.Equals("Ed-Fi", StringComparison.OrdinalIgnoreCase);
 }

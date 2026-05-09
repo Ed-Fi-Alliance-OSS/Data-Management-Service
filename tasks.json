@@ -97,6 +97,6 @@
       "Run: `rg \"recompute.*_etag|recomputes.*_etag|profile-projected.*_etag|profile.*projected.*ETag|ReadableEtagProjectionContext|EtagProjectionContext\" reference/design/backend-redesign src/dms -g '*.md' -g '*.cs' -g '*.feature'` and verify every remaining match is either an explicitly superseded historical note or unrelated profile projection wording.",
       "Run the targeted test commands from the preceding profile-invariant ETag tasks and document any skipped integration/E2E runs with the concrete environment reason."
     ],
-    "completed": false
+    "completed": true
   }
 ]
