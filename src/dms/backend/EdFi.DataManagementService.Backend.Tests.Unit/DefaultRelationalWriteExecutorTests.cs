@@ -2472,6 +2472,14 @@ public class Given_Default_Relational_Write_Executor
             WritePlan = resourceWritePlan,
             ProfileWriteContext = profileContext,
         };
+        var committedResponse = CreateCommittedExternalResponse(
+            new RelationalWritePersistResult(
+                existingTargetContext.DocumentId,
+                existingTargetContext.DocumentUuid
+            ),
+            JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+        );
+        _committedRepresentationReader.ResultToReturn = committedResponse;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -2509,7 +2517,16 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.CapturedRequest!.IncludeDescriptorProjection.Should().BeTrue();
 
         var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
-        updateResult.Result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .Be(ExpectedCommittedResponseEtag(committedResponse));
+        updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .NotBe(ExpectedSelectedBodyEtag(request));
     }
 
     [Test]
@@ -3019,6 +3036,14 @@ public class Given_Default_Relational_Write_Executor
         {
             ProfileWriteContext = profileContext,
         };
+        var persistedTarget = new RelationalWritePersistResult(
+            910L,
+            ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid
+        );
+        var committedResponse = CreateCommittedExternalResponse(
+            persistedTarget,
+            JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+        );
 
         _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
             [
@@ -3043,6 +3068,8 @@ public class Given_Default_Relational_Write_Executor
             ],
             supportsGuardedNoOp: false
         );
+        _noProfilePersister.ResultToReturn = persistedTarget;
+        _committedRepresentationReader.ResultToReturn = committedResponse;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -3069,7 +3096,16 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
-        upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.InsertSuccess>()
+            .Which.ETag.Should()
+            .Be(ExpectedCommittedResponseEtag(committedResponse));
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.InsertSuccess>()
+            .Which.ETag.Should()
+            .NotBe(ExpectedSelectedBodyEtag(request));
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
     }
 
@@ -3080,6 +3116,14 @@ public class Given_Default_Relational_Write_Executor
         var baseRequest = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody);
         var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
         var request = baseRequest with { ProfileWriteContext = profileContext };
+        var persistedTarget = new RelationalWritePersistResult(
+            345L,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+        );
+        var committedResponse = CreateCommittedExternalResponse(
+            persistedTarget,
+            JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
+        );
 
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
         var sampleRow = new RelationalWriteMergedTableRow(
@@ -3100,6 +3144,7 @@ public class Given_Default_Relational_Write_Executor
             [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
             supportsGuardedNoOp: true
         );
+        _committedRepresentationReader.ResultToReturn = committedResponse;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -3107,7 +3152,16 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeOfType<RelationalWriteExecutorResult.Update>()
             .Which.Result.Should()
-            .BeOfType<UpdateResult.UpdateSuccess>();
+            .BeOfType<UpdateResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .Be(ExpectedCommittedResponseEtag(committedResponse));
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .NotBe(ExpectedSelectedBodyEtag(request));
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -3133,6 +3187,14 @@ public class Given_Default_Relational_Write_Executor
         );
         var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
         var request = baseRequest with { ProfileWriteContext = profileContext };
+        var persistedTarget = new RelationalWritePersistResult(
+            existingTarget.DocumentId,
+            existingTarget.DocumentUuid
+        );
+        var committedResponse = CreateCommittedExternalResponse(
+            persistedTarget,
+            JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
+        );
 
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
         var sampleRow = new RelationalWriteMergedTableRow(
@@ -3153,6 +3215,7 @@ public class Given_Default_Relational_Write_Executor
             [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
             supportsGuardedNoOp: true
         );
+        _committedRepresentationReader.ResultToReturn = committedResponse;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -3160,7 +3223,16 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeOfType<RelationalWriteExecutorResult.Upsert>()
             .Which.Result.Should()
-            .BeOfType<UpsertResult.UpdateSuccess>();
+            .BeOfType<UpsertResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .Be(ExpectedCommittedResponseEtag(committedResponse));
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .NotBe(ExpectedSelectedBodyEtag(request));
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);

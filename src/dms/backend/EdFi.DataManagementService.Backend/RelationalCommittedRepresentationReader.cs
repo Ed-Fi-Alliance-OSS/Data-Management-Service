@@ -7,7 +7,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -23,8 +22,7 @@ internal interface IRelationalCommittedRepresentationReader
 
 internal sealed class RelationalCommittedRepresentationReader(
     ISessionDocumentHydrator sessionDocumentHydrator,
-    IRelationalReadMaterializer readMaterializer,
-    IReadableProfileProjector readableProfileProjector
+    IRelationalReadMaterializer readMaterializer
 ) : IRelationalCommittedRepresentationReader
 {
     private readonly ISessionDocumentHydrator _sessionDocumentHydrator =
@@ -42,7 +40,6 @@ internal sealed class RelationalCommittedRepresentationReader(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(persistedTarget);
         ArgumentNullException.ThrowIfNull(writeSession);
-        ArgumentNullException.ThrowIfNull(readableProfileProjector);
 
         var readPlan =
             request.ExistingDocumentReadPlan

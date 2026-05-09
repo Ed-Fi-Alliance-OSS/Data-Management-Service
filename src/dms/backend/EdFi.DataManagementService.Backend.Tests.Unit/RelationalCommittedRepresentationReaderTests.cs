@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
@@ -23,16 +22,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalCommittedRepresentationReader
 {
     [Test]
-    public async Task It_returns_the_full_committed_response_without_profile_reprojection()
+    public async Task It_returns_the_full_committed_response_as_materialized()
     {
         var sessionDocumentHydrator = A.Fake<ISessionDocumentHydrator>();
         var readMaterializer = A.Fake<IRelationalReadMaterializer>();
-        var readableProfileProjector = A.Fake<IReadableProfileProjector>();
-        var sut = new RelationalCommittedRepresentationReader(
-            sessionDocumentHydrator,
-            readMaterializer,
-            readableProfileProjector
-        );
+        var sut = new RelationalCommittedRepresentationReader(sessionDocumentHydrator, readMaterializer);
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
         var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
@@ -79,14 +73,6 @@ public class Given_RelationalCommittedRepresentationReader
         var result = await sut.ReadAsync(request, persistedTarget, writeSession);
 
         result.Should().BeSameAs(materializedResponse);
-        A.CallTo(() =>
-                readableProfileProjector.Project(
-                    A<JsonNode>._,
-                    A<ContentTypeDefinition>._,
-                    A<IReadOnlySet<string>>._
-                )
-            )
-            .MustNotHaveHappened();
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(

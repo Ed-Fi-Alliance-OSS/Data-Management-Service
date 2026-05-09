@@ -21,3 +21,11 @@ Decisions: removed dead `IReadableProfileProjector` dependency from `RelationalC
 Reasoning: precondition path should compare only against the canonical full-resource validator and stop implying any readable-profile ETag surface in constructor shape or tests.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalCurrentEtagPreconditionChecker.cs; targeted backend unit tests in RelationalCurrentEtagPreconditionCheckerTests and *ReferenceResolverServiceCollectionExtensionsTests
 Notes: next write-response ETag task can remove the same stale projector constructor dependency from `RelationalCommittedRepresentationReader`.
+
+2026-05-09
+Task complete: Relational Write Response ETags
+Story: reference/design/backend-redesign/epics/10-update-tracking-change-queries/03-if-match.md
+Decisions: removed dead `IReadableProfileProjector` dependency from `RelationalCommittedRepresentationReader`; service-registration tests now resolve `IRelationalCommittedRepresentationReader` explicitly; profiled insert/update/guarded-no-op executor tests now pin returned ETags to committed full-resource responses, not selected/profiled bodies.
+Reasoning: write success ETag contract was already implemented in runtime flow, but constructor/test surface still implied profile reprojection and missed the key profiled success assertions this story needs.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalCommittedRepresentationReader.cs; targeted backend unit tests in RelationalCommittedRepresentationReaderTests, DefaultRelationalWriteExecutorTests, and *ReferenceResolverServiceCollectionExtensionsTests
+Notes: descriptor full-resource ETag task remains next backend implementation slice; targeted backend unit loop passed with service-resolution coverage added.

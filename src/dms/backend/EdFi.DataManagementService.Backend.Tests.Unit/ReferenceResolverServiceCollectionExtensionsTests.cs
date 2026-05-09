@@ -89,6 +89,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var targetLookupResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
+        var committedRepresentationReader =
+            scope.ServiceProvider.GetRequiredService<IRelationalCommittedRepresentationReader>();
         var currentEtagPreconditionChecker =
             scope.ServiceProvider.GetRequiredService<IRelationalCurrentEtagPreconditionChecker>();
         var deleteEtagPreconditionChecker =
@@ -122,6 +124,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
+        committedRepresentationReader.Should().BeOfType<RelationalCommittedRepresentationReader>();
         currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
