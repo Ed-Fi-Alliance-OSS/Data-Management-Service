@@ -29,3 +29,11 @@ Decisions: removed dead `IReadableProfileProjector` dependency from `RelationalC
 Reasoning: write success ETag contract was already implemented in runtime flow, but constructor/test surface still implied profile reprojection and missed the key profiled success assertions this story needs.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalCommittedRepresentationReader.cs; targeted backend unit tests in RelationalCommittedRepresentationReaderTests, DefaultRelationalWriteExecutorTests, and *ReferenceResolverServiceCollectionExtensionsTests
 Notes: descriptor full-resource ETag task remains next backend implementation slice; targeted backend unit loop passed with service-resolution coverage added.
+
+2026-05-09
+Task complete: Descriptor Full-Resource ETags
+Story: reference/design/backend-redesign/epics/10-update-tracking-change-queries/03-if-match.md
+Decisions: descriptor read/write/delete runtime already used the same full-resource ETag surface; completed the slice by updating the stale committed descriptor readable-profile E2E expectation from inequality to equality and verifying descriptor backend unit + pgsql/mssql integration suites.
+Reasoning: code path was already aligned with story acceptance; remaining mismatch lived in committed test expectations, so changing runtime would have been noise.
+Files changed: src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Descriptors/ReadDescriptorsValidation.feature; tasks.json; progress.txt
+Notes: provider integration loops need local postgres on 5435 and SQL Server on 1434; docker-desktop being down caused the initial false failures.
