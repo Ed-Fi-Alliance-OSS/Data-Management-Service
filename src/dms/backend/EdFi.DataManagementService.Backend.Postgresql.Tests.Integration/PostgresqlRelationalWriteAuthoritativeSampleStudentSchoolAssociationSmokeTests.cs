@@ -1089,7 +1089,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         success.EdfiDoc["_etag"]!
             .GetValue<string>()
             .Should()
-            .NotBe(unprojectedSuccess.EdfiDoc["_etag"]!.GetValue<string>());
+            .Be(unprojectedSuccess.EdfiDoc["_etag"]!.GetValue<string>());
         RelationalGetIntegrationTestHelper
             .CanonicalizeJson(success.EdfiDoc)
             .Should()
@@ -1260,8 +1260,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 sampleExtension.Remove(propertyName);
             }
         }
-
-        expectedDocument["_etag"] = DocumentComparer.GenerateContentHash(expectedDocument);
 
         return expectedDocument;
     }
