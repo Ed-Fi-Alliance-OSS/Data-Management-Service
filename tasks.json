@@ -75,7 +75,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"Profile|IfMatch|ETag\"`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"Profile|IfMatch|ETag\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Profile ETag E2E Regression",

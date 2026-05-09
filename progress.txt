@@ -53,3 +53,11 @@ Decisions: added school profile E2E scenarios that switch between no-profile and
 Reasoning: API-level coverage still missed the final contract, and the first E2E pass exposed a real runtime gap where profiled school reads lost metadata after response filtering even though backend/full-resource ETags were already correct.
 Files changed: src/dms/core/EdFi.DataManagementService.Core/Profile/ProfileResponseFilter.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/{Profile/ProfileResponseFilterTests.cs,Middleware/ProfileFilteringMiddlewareTests.cs}; src/dms/tests/EdFi.DataManagementService.Tests.E2E/{Features/Profiles/ProfileFiltering.feature,StepDefinitions/ProfileStepDefinitions.cs,StepDefinitions/StepDefinitions.cs}; tasks.json; progress.txt
 Notes: targeted Core unit `ProfileResponseFilter|ProfileFilteringMiddleware` passed; targeted DMS E2E filter `ProfileResponseFilteringFeature|ProfilePUTMergeFunctionalityFeature|ReadDescriptorsValidationFeature|ETag` passed after teardown/setup rebuild; local Playwright runs required `NODE_OPTIONS` unset; Docker rebuilds hit transient Azure Artifacts package download failures but recovered on retry.
+
+2026-05-09
+Task complete: Profile ETag Integration Regression
+Story: reference/design/backend-redesign/epics/10-update-tracking-change-queries/03-if-match.md
+Decisions: treated remaining work as backlog-state closure, not runtime code change; verified the already-landed pgsql+mssql profile `If-Match` integration suites against local provider instances; brought up local SQL Server on `localhost:1434` to match `appsettings.Test.json`.
+Reasoning: this was the highest-priority incomplete task in `tasks.json`; code/test surface already existed, so the missing work was proving both provider loops still passed and then closing task tracking.
+Files changed: tasks.json; progress.txt
+Notes: `dotnet test --no-restore ...Postgresql.Tests.Integration --filter "Profile|IfMatch|ETag"` passed (183); `dotnet test --no-restore ...Mssql.Tests.Integration --filter "Profile|IfMatch|ETag"` initially failed from missing SQL Server listener, then passed (183) after starting local container on port 1434.
