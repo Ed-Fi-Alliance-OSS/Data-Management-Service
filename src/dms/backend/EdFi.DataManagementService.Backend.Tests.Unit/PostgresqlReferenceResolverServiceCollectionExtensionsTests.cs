@@ -66,6 +66,10 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteConstraintResolver>();
         var deleteConstraintResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteConstraintResolver>();
+        var currentEtagPreconditionChecker =
+            scope.ServiceProvider.GetRequiredService<IRelationalCurrentEtagPreconditionChecker>();
+        var deleteEtagPreconditionChecker =
+            scope.ServiceProvider.GetRequiredService<IRelationalDeleteEtagPreconditionChecker>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
@@ -86,6 +90,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         writeExceptionClassifier.Should().BeOfType<PostgresqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
         deleteConstraintResolver.Should().BeOfType<RelationalDeleteConstraintResolver>();
+        currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
+        deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
     }
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)

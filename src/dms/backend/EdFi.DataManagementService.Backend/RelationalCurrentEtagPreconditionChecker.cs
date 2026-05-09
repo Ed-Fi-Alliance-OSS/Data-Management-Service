@@ -4,11 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -72,8 +70,7 @@ internal interface IRelationalCurrentEtagPreconditionChecker
 
 internal sealed class RelationalCurrentEtagPreconditionChecker(
     IRelationalWriteCurrentStateLoader currentStateLoader,
-    IRelationalReadMaterializer readMaterializer,
-    IReadableProfileProjector readableProfileProjector
+    IRelationalReadMaterializer readMaterializer
 ) : IRelationalCurrentEtagPreconditionChecker, IRelationalDeleteEtagPreconditionChecker
 {
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
@@ -120,7 +117,6 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(writeSession);
-        ArgumentNullException.ThrowIfNull(readableProfileProjector);
 
         var currentContentVersion = await TryLockAndReadContentVersionAsync(
                 request.MappingSet.Key.Dialect,

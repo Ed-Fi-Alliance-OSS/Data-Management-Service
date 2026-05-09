@@ -13,3 +13,11 @@ Decisions: profiled relational + descriptor GET/query now keep the full-resource
 Reasoning: client-visible ETag invariance has to land before profiled `If-Match` and profiled write-response tasks so read validators already represent full resource state.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/{RelationalDocumentStoreRepository.cs,DescriptorReadHandler.cs}; targeted backend unit tests in RelationalDocumentStoreRepositoryTests and DescriptorReadHandlerTests
 Notes: relational current `If-Match` and committed-write reader still carry stale projector constructor deps for later tasks; descriptor tests now model projector metadata preservation instead of projected-surface `_etag` recomputation.
+
+2026-05-09
+Task complete: Relational Full-Resource If-Match
+Story: reference/design/backend-redesign/epics/10-update-tracking-change-queries/03-if-match.md
+Decisions: removed dead `IReadableProfileProjector` dependency from `RelationalCurrentEtagPreconditionChecker`; kept full external-response materialization with descriptor projection + link-excluding `_etag`; added explicit hidden-field-change mismatch coverage.
+Reasoning: precondition path should compare only against the canonical full-resource validator and stop implying any readable-profile ETag surface in constructor shape or tests.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalCurrentEtagPreconditionChecker.cs; targeted backend unit tests in RelationalCurrentEtagPreconditionCheckerTests and *ReferenceResolverServiceCollectionExtensionsTests
+Notes: next write-response ETag task can remove the same stale projector constructor dependency from `RelationalCommittedRepresentationReader`.

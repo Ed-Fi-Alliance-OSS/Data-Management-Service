@@ -31,7 +31,7 @@
       "Review `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/ReferenceResolverServiceCollectionExtensionsTests.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/PostgresqlReferenceResolverServiceCollectionExtensionsTests.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/MssqlReferenceResolverServiceCollectionExtensionsTests.cs` to confirm `IRelationalCurrentEtagPreconditionChecker` still resolves after the constructor change.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalCurrentEtagPreconditionChecker`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Relational Write Response ETags",

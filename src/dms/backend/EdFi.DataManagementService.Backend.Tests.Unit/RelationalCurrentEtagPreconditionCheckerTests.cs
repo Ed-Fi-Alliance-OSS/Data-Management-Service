@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
@@ -25,7 +24,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
 {
     private IRelationalWriteCurrentStateLoader _currentStateLoader = null!;
     private IRelationalReadMaterializer _readMaterializer = null!;
-    private IReadableProfileProjector _readableProfileProjector = null!;
     private IRelationalWriteSession _writeSession = null!;
     private RelationalCurrentEtagPreconditionChecker _sut = null!;
     private RelationalCommand _capturedLockCommand = null!;
@@ -40,13 +38,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     {
         _currentStateLoader = A.Fake<IRelationalWriteCurrentStateLoader>();
         _readMaterializer = A.Fake<IRelationalReadMaterializer>();
-        _readableProfileProjector = A.Fake<IReadableProfileProjector>();
         _writeSession = A.Fake<IRelationalWriteSession>();
-        _sut = new RelationalCurrentEtagPreconditionChecker(
-            _currentStateLoader,
-            _readMaterializer,
-            _readableProfileProjector
-        );
+        _sut = new RelationalCurrentEtagPreconditionChecker(_currentStateLoader, _readMaterializer);
 
         A.CallTo(() => _writeSession.CreateCommand(A<RelationalCommand>._))
             .Invokes(call => _capturedLockCommand = call.GetArgument<RelationalCommand>(0)!)
@@ -96,14 +89,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
             .Be(LockedContentVersion);
         _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeTrue();
         _capturedMaterializationRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
-        A.CallTo(() =>
-                _readableProfileProjector.Project(
-                    A<JsonNode>._,
-                    A<ContentTypeDefinition>._,
-                    A<IReadOnlySet<string>>._
-                )
-            )
-            .MustNotHaveHappened();
     }
 
     [Test]
@@ -174,6 +159,34 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         result.Should().NotBeNull();
         result!.IsMatch.Should().BeTrue();
         result.CurrentEtag.Should().Be(RelationalApiMetadataFormatter.FormatEtag(linkBearingCurrentResponse));
+    }
+
+    [Test]
+    public async Task It_reports_mismatch_when_a_profile_hidden_field_changed_in_the_full_resource()
+    {
+        var originalFullResource = CreateCurrentExternalResponse();
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfMatch(RelationalApiMetadataFormatter.FormatEtag(originalFullResource))
+        );
+
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Invokes(call =>
+                _capturedMaterializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
+            )
+            .Returns(CreateCurrentExternalResponseWithHiddenFieldChange());
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsMatch.Should().BeFalse();
+        result
+            .CurrentEtag.Should()
+            .Be(
+                RelationalApiMetadataFormatter.FormatEtag(
+                    CreateCurrentExternalResponseWithHiddenFieldChange()
+                )
+            );
     }
 
     private RelationalCurrentEtagPreconditionCheckRequest CreateRequest(
@@ -256,6 +269,20 @@ public class Given_RelationalCurrentEtagPreconditionChecker
               "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
               "schoolId": 255901,
               "nameOfInstitution": "Lincoln High",
+              "_etag": "stale",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z"
+            }
+            """
+        )!;
+
+    private static JsonNode CreateCurrentExternalResponseWithHiddenFieldChange() =>
+        JsonNode.Parse(
+            """
+            {
+              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High",
+              "shortNameOfInstitution": "Lincoln North",
               "_etag": "stale",
               "_lastModifiedDate": "2026-04-11T17:30:45Z"
             }
