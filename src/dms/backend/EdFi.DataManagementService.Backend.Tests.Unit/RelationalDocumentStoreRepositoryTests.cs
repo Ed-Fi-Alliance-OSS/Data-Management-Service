@@ -463,14 +463,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_recomputes_etag_after_readable_profile_projection_while_preserving_other_metadata()
+    public async Task It_preserves_the_full_resource_etag_after_readable_profile_projection()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
         var mappingSet = CreateProfileProjectionOrderSensitiveMappingSet(_schoolResourceInfo);
         var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
-        var expectedProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(
-            JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!
-        );
         var projectionContext = new ReadableProfileProjectionContext(
             new ContentTypeDefinition(
                 MemberSelection.IncludeOnly,
@@ -561,8 +558,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         success.LastModifiedDate.Should().Be(new DateTime(2026, 4, 11, 17, 30, 45, DateTimeKind.Utc));
         success.EdfiDoc["id"]!.GetValue<string>().Should().Be(documentUuid.Value.ToString());
         success.EdfiDoc["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-11T17:30:45Z");
-        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(expectedProjectedEtag);
-        success.EdfiDoc["_etag"]!.GetValue<string>().Should().NotBe("\"93\"");
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be("\"93\"");
         success.EdfiDoc["ChangeVersion"].Should().BeNull();
         A.CallTo(() =>
                 _readableProfileProjector.Project(
@@ -1100,7 +1096,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_applies_readable_profile_projection_to_each_query_result_and_refreshes_etags()
+    public async Task It_applies_readable_profile_projection_to_each_query_result_without_recomputing_etags()
     {
         var firstDocumentUuid = new DocumentUuid(Guid.Parse("12121212-1111-2222-3333-444444444444"));
         var secondDocumentUuid = new DocumentUuid(Guid.Parse("34343434-1111-2222-3333-555555555555"));
@@ -1193,8 +1189,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             }
             """
         )!;
-        var expectedFirstProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedFirst);
-        var expectedSecondProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedSecond);
 
         A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
             .Returns(hydratedPage);
@@ -1228,10 +1222,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         success.EdfiDocs.Should().HaveCount(2);
         success.EdfiDocs[0].Should().BeSameAs(projectedFirst);
         success.EdfiDocs[1].Should().BeSameAs(projectedSecond);
-        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be(expectedFirstProjectedEtag);
-        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be(expectedSecondProjectedEtag);
-        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().NotBe("\"91\"");
-        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().NotBe("\"92\"");
+        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be("\"91\"");
+        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be("\"92\"");
         A.CallTo(() =>
                 _readableProfileProjector.Project(
                     materializedFirst,

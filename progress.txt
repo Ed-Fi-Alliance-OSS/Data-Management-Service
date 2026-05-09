@@ -5,3 +5,11 @@ Decisions: `WritePrecondition` now carries only absent vs exact opaque `If-Match
 Reasoning: clear core contract first, remove stale profiled-write ETag plumbing before later full-resource `If-Match` and write-response work.
 Files changed: src/dms/core/EdFi.DataManagementService.Core.External/Backend/WritePrecondition.cs; src/dms/core/EdFi.DataManagementService.Core/Backend/WritePreconditionFactory.cs; src/dms/core/EdFi.DataManagementService.Core/Handler/{UpsertHandler.cs,UpdateByIdHandler.cs,Utility.cs}; src/dms/backend/EdFi.DataManagementService.Backend/{RelationalCurrentEtagPreconditionChecker.cs,RelationalCommittedRepresentationReader.cs,RelationalWriteContracts.cs}; targeted unit tests in Core and Backend; deleted src/dms/core/EdFi.DataManagementService.Core.External/Backend/ReadableEtagProjectionContext.cs
 Notes: projector constructor deps still present in relational precondition/readback services; later full-resource ETag tasks can remove DI wiring and broaden behavioral coverage.
+
+2026-05-09
+Task complete: Profile-Invariant Read ETags
+Story: reference/design/backend-redesign/epics/10-update-tracking-change-queries/03-if-match.md
+Decisions: profiled relational + descriptor GET/query now keep the full-resource `_etag` materialized before projection; readable profile projection still filters body fields and preserves root metadata; no post-projection `_etag` refresh in read handlers.
+Reasoning: client-visible ETag invariance has to land before profiled `If-Match` and profiled write-response tasks so read validators already represent full resource state.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/{RelationalDocumentStoreRepository.cs,DescriptorReadHandler.cs}; targeted backend unit tests in RelationalDocumentStoreRepositoryTests and DescriptorReadHandlerTests
+Notes: relational current `If-Match` and committed-write reader still carry stale projector constructor deps for later tasks; descriptor tests now model projector metadata preservation instead of projected-surface `_etag` recomputation.

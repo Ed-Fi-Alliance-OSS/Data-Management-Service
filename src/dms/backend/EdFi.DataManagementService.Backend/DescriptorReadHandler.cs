@@ -325,8 +325,6 @@ internal sealed class DescriptorReadHandler(
             readableProfileProjectionContext.IdentityPropertyNames
         );
 
-        RelationalApiMetadataFormatter.RefreshEtag(projectedDocument);
-
         return projectedDocument;
     }
 
