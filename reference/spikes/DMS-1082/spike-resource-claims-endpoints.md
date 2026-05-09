@@ -1,126 +1,105 @@
-# DMS-1082 Spike: Resource Claims Endpoints in CMS
+# DMS-1082 Architecture Brief: Resource Claims Endpoints in CMS
 
-## Purpose
+## 1. Summary
 
-This spike documents the investigation behind the CMS resource claim endpoints and the implementation approach that should be used.
+The Ed-Fi Admin API exposes resource claim browsing endpoints used by tooling and administrators to inspect claim structure and authorization defaults. DMS authorization follows the ODS/API resource-claim model: a request needs the resource/action grant first, and then the action-specific authorization strategy is evaluated.
 
-It is intended to help the next developer understand:
+CMS did not previously expose equivalent read endpoints. This spike confirmed that the necessary information already exists in CMS across two sources — the claims hierarchy JSON and the `dmscs.ResourceClaim` metadata table — and that read-only projections over those sources are sufficient to achieve Admin API parity without schema changes or new write paths.
 
-- why the endpoints are needed
-- how CMS data differs from the Admin API data model
-- what approach was used to bridge that gap
-- what risks remain with this shape of the solution
+The spike answered:
 
-It is also intended to give future implementation work enough context to avoid filling in contract gaps incorrectly. The executable story for this spike lives in `reference/spikes/DMS-1082/ticket-resource-claims-endpoints.md`; this document explains why that story is shaped the way it is.
+1. Can the CMS data model support the same information in read form? **Yes.**
+2. What is the least risky way to expose it? **Runtime projection over existing configuration stores.**
 
-The endpoints in scope are:
+The executable story for this work is in `reference/spikes/DMS-1082/ticket-resource-claims-endpoints.md`. The original tracking ticket for this feature area is [DMS-853](https://edfi.atlassian.net/browse/DMS-853); the spike (DMS-1082) and implementation story (DMS-1148) supersede it.
 
-- `GET /v2/resourceClaims`
-- `GET /v2/resourceClaims/{id}`
-- `GET /v2/resourceClaimActionAuthStrategies`
+The response and failure contracts in this document are normative and were verified against the ODS/Admin API source and published Admin API OpenAPI artifacts.
 
-## Why This Spike Exists
+---
 
-The Ed-Fi Admin API exposes resource claim browsing endpoints that are used by tooling and administrators to inspect claim structure and authorization defaults. DMS authorization still follows the ODS/API resource-claim model: a request first needs the resource/action grant, and then any action-specific authorization strategy is evaluated against the data.
+## 2. In-Scope Endpoints
 
-CMS did not previously expose equivalent read endpoints. The spike was needed to answer two questions:
+The following four endpoints are in scope:
 
-1. Can the CMS data model support the same information in read form?
-2. If yes, what is the least risky way to expose it without changing the claims model or adding write paths?
+| Route | Description |
+|---|---|
+| `GET /v2/resourceClaims` | Returns the full projected claim hierarchy as a collection of root nodes, each containing its full recursive subtree. |
+| `GET /v2/resourceClaims/{id}` | Returns the projected node matching the given `dmscs.ResourceClaim.Id`, including its full recursive subtree. Returns `404` when the requested id is absent. |
+| `GET /v2/resourceClaimActions` | Returns a flat list of resource claim actions resolved from claim-set metadata. |
+| `GET /v2/resourceClaimActionAuthStrategies` | Returns a flat list of resource claims with default authorization, including action and strategy details. |
 
-The answer is yes, but with important differences in how the data is stored and resolved.
+---
 
-## Key Data-Model Difference
+## 3. Out-of-Scope and Follow-Up Endpoints
 
-The most important distinction is this:
+| Route | Status |
+|---|---|
+| `POST /v2/resourceClaims`, `PUT`, `DELETE` | Out of scope. These endpoints are read-only projections; no write paths are added. |
+| `/v2/claimSets/{id}/resourceClaimActions/...` | Out of scope for this work. Not part of this parity set. |
+| Seed, bootstrap, or maintenance of resource-claim metadata rows | Explicitly out of scope. See Section 6. |
 
-- In the Admin API, resource claims are represented as relational rows with a resource-claim table and integer identifiers.
-- In CMS, the claim structure is stored as a hierarchical JSON document.
+---
 
-That difference changes the implementation shape completely.
+## 4. Parity Expectations
 
-### CMS hierarchy JSON
+### Route and response shape parity
 
-CMS stores the claims tree as a nested document. In the current CMS model, a claim node contains:
+These endpoints match the Admin API route surface and response shape. Divergences are explicit and listed in Section 5.
 
-- `name`, whose value is the full claim URI
-- optional `defaultAuthorization`
-- child `claims`
-- a `Parent` navigation property that is populated during deserialization
+### Hierarchy and collection semantics
 
-This means the hierarchy already exists in memory as a tree, but it is not indexed as relational rows.
+- `GET /v2/resourceClaims` returns a collection of **root nodes**. Each root node includes its full recursive subtree via nested `children` arrays.
+- `GET /v2/resourceClaims/{id}` returns the **selected node with its full recursive subtree**.
+- `GET /v2/resourceClaimActions` returns a flat list. No tree structure.
+- `GET /v2/resourceClaimActionAuthStrategies` returns a flat list with nested `authorizationStrategiesForActions` per item.
 
-### Resource claim metadata table
-
-The CMS also has persisted resource-claim metadata in `dmscs.ResourceClaim`.
-
-That table provides the values needed for the Admin API-compatible response shape, including:
-
-- a stable `long` id backed by the PostgreSQL `BIGINT` column
-- a display resource name
-- the claim URI used to match against the hierarchy document
-
-This table is what makes the CMS response contract possible without changing the hierarchy schema.
-
-The hierarchy remains the structural source of truth. The metadata table enriches hierarchy nodes; it does not decide which nodes are present in the tree response. A metadata row without a hierarchy node is therefore not returned by these read endpoints.
-
-## Why the Endpoints Make Sense
-
-These endpoints are justified because the information already exists in CMS, just not in the same form as the Admin API.
-
-The implementation is effectively a projection:
-
-- the hierarchy JSON provides structure
-- the resource-claim table provides the public-facing identifiers and display names
-- the claim-set metadata provides authorization-action and strategy details
-
-That makes the endpoints read-only projections over existing configuration, not a new domain model.
-
-## Approach Used
-
-The intended service implementation walks the claim hierarchy at runtime and joins each node with the corresponding metadata row from `dmscs.ResourceClaim`.
-
-That produces the response tree for:
-
-- `GET /v2/resourceClaims`
-- `GET /v2/resourceClaims/{id}`
-
-For the auth-strategy endpoint, the service:
-
-- traverses the same claim hierarchy
-- filters to claims that define default authorization
-- resolves action names from the existing claim-set action list
-- resolves authorization strategy names from the existing authorization-strategy list
-- emits a flat response shape for each claim with default authorization
-
-This is a reasonable approach because it reuses the existing configuration stores instead of introducing a parallel persistence model.
-
-## Implementation Contract Summary
-
-Use the companion story document for the final acceptance criteria. The core contract is:
-
-- `GET /v2/resourceClaims` returns a hierarchy of projected `ResourceClaimResponse` nodes.
-- `GET /v2/resourceClaims/{id}` searches the successfully projected hierarchy by metadata id and returns `404` only when the id is absent from that valid projection.
-- `GET /v2/resourceClaimActionAuthStrategies` returns a flat list for claims whose `DefaultAuthorization` contains at least one action.
-- `ResourceClaimResponse.Name` is the display resource name from `dmscs.ResourceClaim.ResourceName`, not the claim URI.
-- `ResourceClaimActionAuthStrategyResponse.ClaimName` is the full claim URI.
-- `ResourceClaimResponse.Id`, `ParentId`, `ResourceClaimActionAuthStrategyResponse.ResourceClaimId`, and `AuthStrategyId` should be `long` to match CMS persisted identifiers.
-- `ActionId` should remain `int`, matching the existing action repository model.
-- Missing lookup data is an integrity failure, not a reason to omit nodes or return zero ids.
-
-Example resource-claim node:
+Sample `resourceClaims` response node (normative contract):
 
 ```json
 {
-  "id": 42,
-  "name": "Student",
+  "id": 382,
+  "name": "epdm",
   "parentId": 0,
   "parentName": null,
-  "children": []
+  "children": [
+    {
+      "id": 386,
+      "name": "performanceEvaluation",
+      "parentId": 382,
+      "parentName": "epdm",
+      "children": [
+        {
+          "id": 387,
+          "name": "performanceEvaluation",
+          "parentId": 386,
+          "parentName": "performanceEvaluation",
+          "children": []
+        }
+      ]
+    }
+  ]
 }
 ```
 
-Example action/auth-strategy item:
+Sample `resourceClaimActions` response item (normative contract — verified against `management-api-2.3.0.yaml`):
+
+```json
+{
+  "resourceClaimId": 42,
+  "resourceName": "Student",
+  "claimName": "http://ed-fi.org/identity/claims/ed-fi/student",
+  "actions": [
+    { "name": "Create" },
+    { "name": "Read" },
+    { "name": "Update" },
+    { "name": "Delete" }
+  ]
+}
+```
+
+> **Note:** `actions` contains objects with only a `name` field. There is no `actionId` in this response shape. This differs from `resourceClaimActionAuthStrategies`, which does include `actionId` inside `authorizationStrategiesForActions`.
+
+Sample `resourceClaimActionAuthStrategies` response item (normative contract):
 
 ```json
 {
@@ -142,142 +121,162 @@ Example action/auth-strategy item:
 }
 ```
 
-## Technical Tradeoffs
+### Query parameter parity
 
-### 1. Runtime join versus materialized claim table
+All four endpoints support general query parameters:
 
-The chosen design performs the hierarchy-to-metadata match at request time.
+| Parameter | Type | Notes |
+|---|---|---|
+| `limit` | int | Maximum items to return |
+| `offset` | int | Pagination offset |
+| `orderBy` | string | Field name to sort by |
+| `direction` | string | `asc`/`ascending` or `desc`/`descending` |
 
-Benefits:
+Endpoint-specific filter parameters:
 
-- no schema change
-- no data migration
-- no extra write path
-- easy to reason about because the source of truth stays in CMS configuration
+| Endpoint | Filter Parameters |
+|---|---|
+| `GET /v2/resourceClaims` | `id` (long), `name` (string) |
+| `GET /v2/resourceClaimActions` | `resourceName` (string) |
+| `GET /v2/resourceClaimActionAuthStrategies` | `resourceName` (string) |
 
-Costs:
+DMS-1074 defines the shared CMS implementation pattern for Admin API-style query parameters such as `orderBy` and `direction`. These endpoints should reuse that implementation pattern rather than introducing a feature-specific variant here.
 
-- response quality depends on both the hierarchy JSON and the metadata table
-- the service can fail or return incomplete data if those sources drift
-- each request requires walking the tree and resolving lookup data in memory
+Admin API query behaviors intentionally not implemented must be listed as explicit omissions in the story acceptance criteria.
 
-### 2. Exact match required between hierarchy and metadata
+---
 
-The hierarchy and the resource-claim table must agree on the claim URI.
+## 5. Intentional CMS Divergences
 
-This is the critical dependency in the current design.
+These are accepted, deliberate differences from the Admin API. They are not compatibility gaps.
 
-If the hierarchy contains a node that is not present in `dmscs.ResourceClaim`, the endpoint cannot safely infer the missing row. The same is true if the metadata exists but the hierarchy node is absent.
+| Divergence | Rationale |
+|---|---|
+| Public and persisted IDs use `long` (`BIGINT`) | CMS uses `bigint` identifiers throughout. `ResourceClaimResponse.Id`, `ParentId`, `ResourceClaimActionAuthStrategyResponse.ResourceClaimId`, and `AuthStrategyId` are `long`. `ActionId` remains `int`, matching the existing action repository model. |
+| Authorization uses `MapSecuredGet` | These endpoints use the standard CMS secured GET pattern: `MapSecuredGet`, which applies `ReadOnlyOrAdminScopePolicy`. No new authorization model is introduced. |
 
-That means this feature depends on data integrity across two sources, not one.
+---
 
-Implementation consequence:
+## 6. Data and Metadata Assumptions
 
-- A hierarchy node without metadata must fail the projection.
-- A parent hierarchy node without metadata must fail the projection because child `ParentId` and `ParentName` cannot be produced reliably.
-- A metadata row without a hierarchy node may be ignored by these read endpoints because the hierarchy determines structure.
-- Duplicate metadata rows for the same claim URI should fail the projection.
+### The two-source dependency
 
-### 3. Tree traversal versus targeted lookup
+The CMS response contract depends on two sources staying aligned:
 
-The single-claim endpoint is served by loading the hierarchy and searching it in memory.
+1. **Claims hierarchy JSON** — the structural source of truth. Stored as a nested document. Provides claim URI, parent/child relationships, and `DefaultAuthorization` entries.
+2. **`dmscs.ResourceClaim` table** — the metadata source. Provides the stable `long` id, the display resource name (`ResourceName`), and the claim URI used to match against the hierarchy.
 
-Benefits:
+The hierarchy determines which nodes appear in the response. The metadata table enriches those nodes. A metadata row without a corresponding hierarchy node is not returned. A hierarchy node without a matching metadata row is a data integrity failure.
 
-- one service path for both list and single-item views
-- no need for a separate query shape
-- easy to test
+### Seed/bootstrap boundary
 
-Costs:
+Creating, seeding, or maintaining `dmscs.ResourceClaim` rows is **explicitly out of scope** for this spike and any direct implementation ticket derived from it. This applies to:
 
-- the request still pays the cost of building the hierarchy projection
-- lookup is linear in the size of the projected tree
+- base bootstrap metadata
+- extension claim metadata
+- custom claim metadata
+- homograph or dynamically composed claim metadata
 
-For the current dataset size, that is acceptable. If the hierarchy grows substantially, this could become a performance concern.
+The endpoints assume required metadata already exists. If it does not exist, the projection fails explicitly — it does not silently skip nodes or return partial results.
 
-### 4. Graceful degradation versus explicit failure
+### Matching policy
 
-Projection-style APIs have a specific risk: missing supporting data can produce partial output if the service treats lookup failures as optional.
+Hierarchy node to metadata row matching is by full claim URI, exact and case-sensitive, unless a different policy is explicitly documented in code and tests.
 
-That is dangerous because the API can look successful while silently omitting claim nodes or authorization information.
+---
 
-For this feature, the safer behavior is to fail explicitly when required metadata cannot be resolved.
+## 7. Authorization
 
-Concrete examples of unsafe graceful degradation:
+These endpoints use the standard CMS secured GET pattern for read endpoints. Endpoint registration should use `MapSecuredGet`, which applies `ReadOnlyOrAdminScopePolicy` along with the existing service policy requirement. No new authorization model is introduced for this feature area.
 
-- returning `200 OK` after skipping a hierarchy node whose claim URI is absent from `dmscs.ResourceClaim`
-- returning `200 OK` with `actionId: 0` because an action name did not resolve
-- returning `200 OK` with `authStrategyId: 0` because authorization strategies failed to load
-- returning an empty action/auth-strategy list because the authorization-strategy repository returned a failure
+---
 
-Those cases should be service failures with useful logs, not successful responses.
+## 8. Failure Contract
 
-## Risks With This Approach
+The public failure behavior should stay aligned with comparable CMS read endpoints while preserving the functional outcomes required for this feature area. This section defines externally visible behavior only. CMS may still enforce internal integrity checks, but those checks must not invent new public error categories unless the team explicitly accepts a divergence.
 
-### Risk: incomplete responses when metadata drifts
+### Public contract
 
-If the hierarchy JSON and `dmscs.ResourceClaim` fall out of sync, the API can return an incomplete tree or miss claims entirely.
+| Endpoint or Condition | API Behavior | Response Shape |
+|---|---|---|
+| `GET /v2/resourceClaims` success | `200 OK` | JSON array |
+| `GET /v2/resourceClaimActions` success | `200 OK` | JSON array |
+| `GET /v2/resourceClaimActionAuthStrategies` success | `200 OK` | JSON array |
+| Query filter matches no records | `200 OK` | Empty JSON array |
+| `GET /v2/resourceClaims/{id}` and id exists | `200 OK` | JSON object |
+| `GET /v2/resourceClaims/{id}` and id is absent | `404 Not Found` | Existing CMS not-found error body |
+| Unsupported `orderBy` value | Use the response defined by the DMS-1074 query-pattern implementation | Existing CMS validation error body |
+| Authorization failure | `401` or `403` | Existing CMS auth error body |
+| Unhandled server-side exception | `500 Internal Server Error` | Existing CMS unknown-error body |
 
-This is the highest operational risk in the design.
+### Response shape notes
 
-### Risk: misleading success on partial lookup failures
+- `404` for missing `resourceClaims/{id}` should use the same CMS not-found response structure as comparable endpoints.
+- `400` validation errors should use the same CMS validation response structure as comparable endpoints.
+- Generic `500` responses should use the same CMS unknown-error response structure as comparable endpoints.
 
-If authorization strategies or action names cannot be resolved, the endpoint can return a `200 OK` with incomplete nested data unless the service handles that failure explicitly.
+### Important constraint
 
-That makes it harder for clients and operators to detect a data problem.
+This spike should not define new public endpoint failures such as:
 
-### Risk: datastore-specific wiring
+- missing hierarchy row -> `404`
+- duplicate metadata row -> custom `500` contract
+- missing action lookup row -> custom `500` contract
+- missing authorization strategy lookup row -> custom `500` contract
 
-The current CMS service wiring supports both `postgresql` and `mssql` values for `AppSettings:Datastore`, but the resource-claim schema and seed data currently exist only in the PostgreSQL deployment scripts.
+Those may still be important CMS implementation concerns, but they belong in internal validation rules, implementation notes, or follow-up decisions unless the team intentionally chooses to diverge from existing CMS endpoint behavior.
 
-If the service is deployed against a datastore that does not have an equivalent table, seed data, repository implementation, and registration path, the new endpoints can fail at startup or runtime.
+Hierarchy repository failures should follow existing CMS patterns:
 
-This should be treated as a deployment constraint, not an incidental detail.
+- `FailureHierarchyNotFound` maps the same way it already does in `AuthorizationMetadataModule`: `404 Not Found`.
+- Other hierarchy or lookup integrity failures remain generic CMS `500` responses unless a broader CMS policy changes separately.
 
-The final implementation should choose one of these outcomes:
+---
 
-- implement `IResourceClaimRepository` and deployment support for every CMS datastore supported by `main`
-- or document PostgreSQL-only support and gate endpoint/repository registration so unsupported datastores fail deliberately with a clear configuration error
+## 9. Validation Items
 
-Leaving a PostgreSQL repository registered in common service wiring is not sufficient because it hides the deployment constraint and conflicts with the existing datastore selection pattern.
+These questions remain genuinely unresolved. They must be confirmed before or during implementation, and the findings must be recorded in the companion story or in this document.
 
-### Risk: endpoint contract depends on source-data stability
+1. **MSSQL datastore support** - The `dmscs.ResourceClaim` table and seed data currently exist only in the PostgreSQL deployment scripts. This spike scopes these endpoints to PostgreSQL only. MSSQL is unsupported for this feature area until equivalent repository and deployment support are added in later work. This spike does not attempt broader datastore-composition cleanup.
 
-The API contract is only as stable as the persisted resource-claim metadata.
+2. **Startup/health validation for unsupported configuration** - It is not yet confirmed whether missing metadata should produce a startup/health-check failure or a request-time failure inside CMS. This is an internal implementation decision, not part of the endpoint contract.
 
-If downstream consumers expect the identifiers, resource names, or hierarchy shape to be stable, the CMS must maintain consistent seed data and repository behavior.
+3. **`GET /v2/resourceClaimActions` response shape** - **Resolved.** Verified against `management-api-2.3.0.yaml`: the `actions` array contains `{ name: string }` objects only. There is no `actionId` in this response shape. See Section 4 for the normative sample.
 
-## What the Developer Should Take Away
+---
 
-- CMS can support these endpoints without a schema redesign.
-- The key bridge is the match between hierarchy JSON and the resource-claim metadata table.
-- The implementation is justified because it exposes existing configuration in a read-only form.
-- The approach is workable, but it is not self-healing if the data sources drift.
-- The service should treat missing support data as an integrity problem, not a normal success path.
+## 10. Deliverable
 
-## Implementation Guidance
+The output of this spike is the companion story `reference/spikes/DMS-1082/ticket-resource-claims-endpoints.md` (Jira: DMS-1148), which contains the full acceptance criteria and task breakdown for implementation.
 
-When working in this area, the next developer should keep these rules in mind:
+---
 
-- preserve the hierarchy JSON as the structural source of truth
-- preserve the resource-claim table as the lookup source for response metadata
-- keep the endpoints read-only
-- fail explicitly when required lookup data is missing
-- make datastore support explicit in startup wiring
-- keep tests focused on both the success path and the failure path
+## Implementation Approach
 
-## Implementation Notes
+The intended service implementation walks the claim hierarchy at runtime and joins each node with the corresponding metadata row from `dmscs.ResourceClaim`.
 
-Implementation should start from the companion story and the current `main` code paths rather than assuming the service, module, or repository already exists. The important paths to compare are the endpoint module pattern, repository result records, datastore registration, `IClaimsHierarchyRepository.GetClaimsHierarchy`, `IClaimSetRepository.GetActions`, and `IClaimSetRepository.GetAuthorizationStrategies`.
+- `GET /v2/resourceClaims`: the service walks the hierarchy, projects each root node to `ResourceClaimResponse`, and includes the full recursive subtree.
+- `GET /v2/resourceClaims/{id}`: the service resolves the selected node by id and returns that node with its full recursive subtree.
+- `GET /v2/resourceClaimActions`: the service resolves action names through `IClaimSetRepository.GetActions` and projects a flat list.
+- `GET /v2/resourceClaimActionAuthStrategies`: the service traverses the hierarchy, filters to claims with `DefaultAuthorization`, resolves action names and authorization strategy names through the existing claim-set repository APIs, and emits a flat response.
 
-The service should validate the full projection before returning success. Missing hierarchy metadata, failed action lookup, failed authorization-strategy lookup, and datastore support gaps should surface through explicit result cases and endpoint mappings instead of becoming empty collections or zero-valued ids.
+This design reuses existing configuration stores without introducing a parallel persistence model or schema changes.
 
-The scope remains read-only. Do not add write endpoints, schema redesigns, synthetic ids, or fallback ids to make the projection succeed.
+### Technical tradeoffs
 
-## Outcome
+**Runtime join versus materialized claim table.** The hierarchy-to-metadata match happens at request time. Benefits: no schema change, no data migration, no extra write path. Costs: response quality depends on both sources; each request walks the tree in memory.
 
-The spike supports adding the endpoints because the necessary information already exists in CMS.
+**Shared projection depth for list and single-item views.** The collection endpoint returns full recursive trees for root nodes, and the `{id}` endpoint returns the selected node with its full recursive subtree. Benefit: one consistent projection contract across both read endpoints. Cost: the single-item lookup may still need to project or traverse a larger portion of the hierarchy before locating the requested node.
 
-The important caveat is that the implementation is a projection over two data sources, so correctness depends on them staying aligned.
+**Exact-match dependency.** The hierarchy and `dmscs.ResourceClaim` must agree on the full claim URI. If they drift, the projection fails or returns incomplete data. This is the highest operational risk in the design and must be surfaced as an explicit failure, not a silent omission.
 
-That is the main design risk to carry forward in maintenance and future changes.
+### Implementation rules
+
+- Preserve the hierarchy JSON as the structural source of truth.
+- Preserve the resource-claim table as the metadata lookup source.
+- Keep all four endpoints read-only.
+- Fail explicitly when required lookup data is missing.
+- Treat PostgreSQL as the supported datastore path for this work; MSSQL support can be added later without changing the endpoint contract.
+- Reuse the shared query-parameter pattern defined by the DMS-1074 implementation instead of introducing a feature-specific filtering or sorting pattern here.
+- Do not add write endpoints, schema redesigns, synthetic ids, or fallback ids.
+- Start from the companion story and the current `main` code paths. Key paths to examine: endpoint module pattern, repository result records, datastore registration, `IClaimsHierarchyRepository.GetClaimsHierarchy`, `IClaimSetRepository.GetActions`, `IClaimSetRepository.GetAuthorizationStrategies`.
