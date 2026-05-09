@@ -280,16 +280,9 @@ public class UpdateByIdHandlerTests
         }
 
         [Test]
-        public void It_threads_the_readable_etag_projection_surface_separately_from_the_writable_body()
+        public void It_keeps_profile_write_state_outside_the_write_precondition_contract()
         {
             _repository.CapturedRequest.WritePrecondition.Should().BeOfType<WritePrecondition.None>();
-            _repository.CapturedRequest.WritePrecondition.EtagProjectionContext.Should().NotBeNull();
-            _repository
-                .CapturedRequest.WritePrecondition.EtagProjectionContext!.ContentTypeDefinition.Should()
-                .BeSameAs(_readContentType);
-            _repository
-                .CapturedRequest.WritePrecondition.EtagProjectionContext.IdentityPropertyNames.Should()
-                .Equal("studentUniqueId", "schoolReference");
             _repository.CapturedRequest.BackendProfileWriteContext.Should().NotBeNull();
             _repository
                 .CapturedRequest.BackendProfileWriteContext!.Request.WritableRequestBody.Should()

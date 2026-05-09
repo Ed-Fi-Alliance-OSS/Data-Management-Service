@@ -31,8 +31,6 @@ internal sealed class RelationalCommittedRepresentationReader(
         sessionDocumentHydrator ?? throw new ArgumentNullException(nameof(sessionDocumentHydrator));
     private readonly IRelationalReadMaterializer _readMaterializer =
         readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
-    private readonly IReadableProfileProjector _readableProfileProjector =
-        readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
 
     public async Task<JsonNode> ReadAsync(
         RelationalWriteExecutorRequest request,
@@ -44,6 +42,7 @@ internal sealed class RelationalCommittedRepresentationReader(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(persistedTarget);
         ArgumentNullException.ThrowIfNull(writeSession);
+        ArgumentNullException.ThrowIfNull(readableProfileProjector);
 
         var readPlan =
             request.ExistingDocumentReadPlan
@@ -96,19 +95,6 @@ internal sealed class RelationalCommittedRepresentationReader(
             )
         );
 
-        var etagProjectionContext = request.WritePrecondition.EtagProjectionContext;
-
-        if (etagProjectionContext is null)
-        {
-            return committedResponse;
-        }
-
-        var projectedResponse = _readableProfileProjector.Project(
-            committedResponse,
-            etagProjectionContext.ContentTypeDefinition,
-            etagProjectionContext.IdentityPropertyNames
-        );
-        RelationalApiMetadataFormatter.RefreshEtag(projectedResponse);
-        return projectedResponse;
+        return committedResponse;
     }
 }

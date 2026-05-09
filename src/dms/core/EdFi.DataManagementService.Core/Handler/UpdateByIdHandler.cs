@@ -41,10 +41,7 @@ internal class UpdateByIdHandler(
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
-        var writePrecondition = WritePreconditionFactory.Create(
-            requestInfo.FrontendRequest.Headers,
-            CreateReadableEtagProjectionContext(requestInfo)
-        );
+        var writePrecondition = WritePreconditionFactory.Create(requestInfo.FrontendRequest.Headers);
 
         var updateResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,

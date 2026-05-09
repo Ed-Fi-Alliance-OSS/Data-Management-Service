@@ -365,12 +365,11 @@ actual: {_requestInfo.FrontendResponse.Body}
         }
 
         [Test]
-        public void It_preserves_if_match_but_does_not_attach_a_profile_etag_surface()
+        public void It_preserves_if_match()
         {
             _repository
                 .CapturedRequest.WritePrecondition.Should()
                 .Be(new WritePrecondition.IfMatch("\"72\""));
-            _repository.CapturedRequest.WritePrecondition.EtagProjectionContext.Should().BeNull();
         }
     }
 }

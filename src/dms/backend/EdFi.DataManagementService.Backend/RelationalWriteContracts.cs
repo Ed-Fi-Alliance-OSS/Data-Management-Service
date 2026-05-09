@@ -681,8 +681,7 @@ public sealed record RelationalWriteExecutorRequest
     public BackendProfileWriteContext? ProfileWriteContext { get; init; }
 
     /// <summary>
-    /// Typed HTTP write precondition plus any readable projection inputs needed to compute
-    /// authoritative profiled-write <c>_etag</c> surfaces.
+    /// Typed HTTP write precondition, if any.
     /// </summary>
     public WritePrecondition WritePrecondition { get; init; }
 }

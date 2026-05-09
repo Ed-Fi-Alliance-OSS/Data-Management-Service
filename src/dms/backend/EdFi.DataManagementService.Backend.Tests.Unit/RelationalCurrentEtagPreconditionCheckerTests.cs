@@ -127,56 +127,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     }
 
     [Test]
-    public async Task It_compares_using_the_profile_projected_surface_when_a_readable_projection_context_is_present()
-    {
-        var projectionContext = CreateReadableEtagProjectionContext();
-        var materializedCurrentResponse = CreateCurrentExternalResponse();
-        var projectedCurrentResponse = JsonNode.Parse(
-            """
-            {
-              "schoolId": 255901,
-              "_etag": "stale"
-            }
-            """
-        )!;
-        var expectedProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedCurrentResponse);
-        var request = CreateRequest(
-            SqlDialect.Pgsql,
-            new WritePrecondition.IfMatch(expectedProjectedEtag, projectionContext)
-        );
-
-        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
-            .Invokes(call =>
-                _capturedMaterializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
-            )
-            .Returns(materializedCurrentResponse);
-        A.CallTo(() =>
-                _readableProfileProjector.Project(
-                    materializedCurrentResponse,
-                    projectionContext.ContentTypeDefinition,
-                    projectionContext.IdentityPropertyNames
-                )
-            )
-            .Returns(projectedCurrentResponse);
-
-        var result = await _sut.CheckAsync(request, _writeSession);
-
-        result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
-        result.CurrentEtag.Should().Be(expectedProjectedEtag);
-        _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeTrue();
-        _capturedMaterializationRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
-        A.CallTo(() =>
-                _readableProfileProjector.Project(
-                    materializedCurrentResponse,
-                    projectionContext.ContentTypeDefinition,
-                    projectionContext.IdentityPropertyNames
-                )
-            )
-            .MustHaveHappenedOnceExactly();
-    }
-
-    [Test]
     public async Task It_matches_a_link_stripped_if_match_value_against_a_link_bearing_current_response()
     {
         var linkStrippedCurrentResponse = CreateCurrentExternalResponseWithoutLinks();
@@ -311,18 +261,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
             }
             """
         )!;
-
-    private static ReadableEtagProjectionContext CreateReadableEtagProjectionContext() =>
-        new(
-            new ContentTypeDefinition(
-                MemberSelection.IncludeOnly,
-                [new PropertyRule("schoolId")],
-                [],
-                [],
-                []
-            ),
-            new HashSet<string>(["schoolId"], StringComparer.Ordinal)
-        );
 
     private sealed class ScalarResultDbCommand(object? scalarResult) : DbCommand
     {

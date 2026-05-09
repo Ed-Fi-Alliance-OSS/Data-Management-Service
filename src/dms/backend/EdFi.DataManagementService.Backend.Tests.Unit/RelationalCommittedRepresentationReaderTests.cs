@@ -23,104 +23,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalCommittedRepresentationReader
 {
     [Test]
-    public async Task It_recomputes_the_committed_response_etag_from_the_profile_projected_surface()
-    {
-        var sessionDocumentHydrator = A.Fake<ISessionDocumentHydrator>();
-        var readMaterializer = A.Fake<IRelationalReadMaterializer>();
-        var readableProfileProjector = A.Fake<IReadableProfileProjector>();
-        var sut = new RelationalCommittedRepresentationReader(
-            sessionDocumentHydrator,
-            readMaterializer,
-            readableProfileProjector
-        );
-        var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
-        var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
-        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        const long documentId = 345L;
-        var etagProjectionContext = CreateReadableEtagProjectionContext();
-        var request = CreateRequest(
-            mappingSet,
-            writePlan,
-            readPlan,
-            documentUuid,
-            documentId,
-            new WritePrecondition.None(etagProjectionContext)
-        );
-        var persistedTarget = new RelationalWritePersistResult(documentId, documentUuid);
-        var writeSession = CreateWriteSession();
-        var hydratedPage = CreateHydratedPage(documentId, documentUuid);
-        var materializedResponse = JsonNode.Parse(
-            """
-            {
-              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
-              "schoolId": 255901,
-              "nameOfInstitution": "Lincoln High",
-              "_etag": "\"91\"",
-              "_lastModifiedDate": "2026-04-11T17:30:45Z"
-            }
-            """
-        )!;
-        var projectedResponse = JsonNode.Parse(
-            """
-            {
-              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
-              "schoolId": 255901,
-              "_etag": "stale",
-              "_lastModifiedDate": "2026-04-11T17:30:45Z"
-            }
-            """
-        )!;
-        var expectedProjectedResponse = projectedResponse.DeepClone();
-        RelationalApiMetadataFormatter.RefreshEtag(expectedProjectedResponse);
-
-        A.CallTo(() =>
-                sessionDocumentHydrator.HydrateAsync(
-                    writeSession.Connection,
-                    writeSession.Transaction,
-                    readPlan,
-                    A<PageKeysetSpec>._,
-                    A<HydrationExecutionOptions>._,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(hydratedPage);
-        A.CallTo(() => readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
-            .Returns(materializedResponse);
-        A.CallTo(() =>
-                readableProfileProjector.Project(
-                    materializedResponse,
-                    etagProjectionContext.ContentTypeDefinition,
-                    etagProjectionContext.IdentityPropertyNames
-                )
-            )
-            .Returns(projectedResponse);
-
-        var result = await sut.ReadAsync(request, persistedTarget, writeSession);
-
-        JsonNode
-            .DeepEquals(result, expectedProjectedResponse)
-            .Should()
-            .BeTrue(
-                $"""
-expected: {expectedProjectedResponse}
-
-actual: {result}
-"""
-            );
-        A.CallTo(() =>
-                readableProfileProjector.Project(
-                    materializedResponse,
-                    etagProjectionContext.ContentTypeDefinition,
-                    etagProjectionContext.IdentityPropertyNames
-                )
-            )
-            .MustHaveHappenedOnceExactly();
-    }
-
-    [Test]
-    public async Task It_returns_the_unprojected_committed_response_when_no_profile_etag_surface_is_present()
+    public async Task It_returns_the_full_committed_response_without_profile_reprojection()
     {
         var sessionDocumentHydrator = A.Fake<ISessionDocumentHydrator>();
         var readMaterializer = A.Fake<IRelationalReadMaterializer>();
@@ -152,6 +55,7 @@ actual: {result}
             {
               "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
               "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High",
               "_etag": "\"91\"",
               "_lastModifiedDate": "2026-04-11T17:30:45Z"
             }
@@ -184,18 +88,6 @@ actual: {result}
             )
             .MustNotHaveHappened();
     }
-
-    private static ReadableEtagProjectionContext CreateReadableEtagProjectionContext() =>
-        new(
-            new ContentTypeDefinition(
-                MemberSelection.IncludeOnly,
-                [new PropertyRule("schoolId")],
-                [],
-                [],
-                []
-            ),
-            new HashSet<string>(["schoolId"], StringComparer.Ordinal)
-        );
 
     private static RelationalWriteExecutorRequest CreateRequest(
         MappingSet mappingSet,

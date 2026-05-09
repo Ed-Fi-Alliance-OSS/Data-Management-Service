@@ -82,9 +82,6 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
     private readonly IRelationalReadMaterializer _readMaterializer =
         readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
 
-    private readonly IReadableProfileProjector _readableProfileProjector =
-        readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
-
     public async Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
         MappingSet mappingSet,
         ResourceReadPlan readPlan,
@@ -123,6 +120,7 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(writeSession);
+        ArgumentNullException.ThrowIfNull(readableProfileProjector);
 
         var currentContentVersion = await TryLockAndReadContentVersionAsync(
                 request.MappingSet.Key.Dialect,
@@ -161,8 +159,16 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             return null;
         }
 
-        var comparisonSurface = BuildComparisonSurface(request, currentState);
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(comparisonSurface);
+        var currentRepresentation = _readMaterializer.Materialize(
+            new RelationalReadMaterializationRequest(
+                request.ReadPlan,
+                currentState.DocumentMetadata,
+                currentState.TableRowsInDependencyOrder,
+                currentState.DescriptorRowsInPlanOrder,
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+        );
+        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentRepresentation);
         var refreshedTargetContext = request.TargetContext with
         {
             ObservedContentVersion = currentState.DocumentMetadata.ContentVersion,
@@ -195,35 +201,6 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         }
 
         return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
-    }
-
-    private JsonNode BuildComparisonSurface(
-        RelationalCurrentEtagPreconditionCheckRequest request,
-        RelationalWriteCurrentState currentState
-    )
-    {
-        var currentRepresentation = _readMaterializer.Materialize(
-            new RelationalReadMaterializationRequest(
-                request.ReadPlan,
-                currentState.DocumentMetadata,
-                currentState.TableRowsInDependencyOrder,
-                currentState.DescriptorRowsInPlanOrder,
-                RelationalGetRequestReadMode.ExternalResponse
-            )
-        );
-
-        var etagProjectionContext = request.Precondition.EtagProjectionContext;
-
-        if (etagProjectionContext is null)
-        {
-            return currentRepresentation;
-        }
-
-        return _readableProfileProjector.Project(
-            currentRepresentation,
-            etagProjectionContext.ContentTypeDefinition,
-            etagProjectionContext.IdentityPropertyNames
-        );
     }
 }
 

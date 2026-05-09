@@ -37,7 +37,7 @@ public class Given_Descriptor_Write_Preconditions
         var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
-            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"", null),
+            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
         };
 
         var result = await sut.HandlePostAsync(request);
@@ -65,7 +65,7 @@ public class Given_Descriptor_Write_Preconditions
         var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
-            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"", null),
+            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
         };
 
         var result = await sut.HandlePostAsync(request);
@@ -101,7 +101,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
-        request = request with { WritePrecondition = new WritePrecondition.IfMatch(currentEtag, null) };
+        request = request with { WritePrecondition = new WritePrecondition.IfMatch(currentEtag) };
 
         var result = await sut.HandlePostAsync(request);
 
@@ -141,7 +141,7 @@ public class Given_Descriptor_Write_Preconditions
             description: "Updated Charter"
         ) with
         {
-            WritePrecondition = new WritePrecondition.IfMatch(currentEtag, null),
+            WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
         };
 
         var result = await sut.HandlePutAsync(request);
@@ -191,7 +191,7 @@ public class Given_Descriptor_Write_Preconditions
             new TraceId("descriptor-put-immutable-if-match")
         )
         {
-            WritePrecondition = new WritePrecondition.IfMatch(currentEtag, null),
+            WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
         };
 
         var result = await sut.HandlePutAsync(request);
@@ -220,7 +220,7 @@ public class Given_Descriptor_Write_Preconditions
         var sut = CreateSut(new StubRelationalWriteTargetLookupService(), commandExecutor, sessionFactory);
         var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
-            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"", null),
+            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
         };
 
         var result = await sut.HandleDeleteAsync(request);
@@ -256,7 +256,7 @@ public class Given_Descriptor_Write_Preconditions
         var sut = CreateSut(new StubRelationalWriteTargetLookupService(), commandExecutor, sessionFactory);
         var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
-            WritePrecondition = new WritePrecondition.IfMatch(currentEtag, null),
+            WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
         };
 
         var result = await sut.HandleDeleteAsync(request);
@@ -281,7 +281,7 @@ public class Given_Descriptor_Write_Preconditions
         var sut = CreateSut(new StubRelationalWriteTargetLookupService(), commandExecutor, sessionFactory);
         var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
-            WritePrecondition = new WritePrecondition.IfMatch("\"current-etag\"", null),
+            WritePrecondition = new WritePrecondition.IfMatch("\"current-etag\""),
         };
 
         var result = await sut.HandleDeleteAsync(request);
@@ -332,7 +332,7 @@ public class Given_Descriptor_Write_Preconditions
         );
         var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
-            WritePrecondition = new WritePrecondition.IfMatch(currentEtag, null),
+            WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
         };
 
         var result = await sut.HandleDeleteAsync(request);

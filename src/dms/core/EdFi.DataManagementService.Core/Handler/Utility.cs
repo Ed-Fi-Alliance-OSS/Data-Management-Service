@@ -109,20 +109,6 @@ public static class Utility
         return new ReadableProfileProjectionContext(readContentType, identityPropertyNames);
     }
 
-    internal static ReadableEtagProjectionContext? CreateReadableEtagProjectionContext(
-        RequestInfo requestInfo
-    )
-    {
-        var readableProfileProjectionContext = CreateReadableProfileProjectionContext(requestInfo);
-
-        return readableProfileProjectionContext is null
-            ? null
-            : new ReadableEtagProjectionContext(
-                readableProfileProjectionContext.ContentTypeDefinition,
-                readableProfileProjectionContext.IdentityPropertyNames
-            );
-    }
-
     /// <summary>
     /// Executes an operation within a resilience pipeline, handling retry logging.
     /// </summary>
