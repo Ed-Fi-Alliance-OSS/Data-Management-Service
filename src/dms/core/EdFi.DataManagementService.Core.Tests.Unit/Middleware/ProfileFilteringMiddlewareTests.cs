@@ -209,6 +209,8 @@ public class ProfileFilteringMiddlewareTests
             var sourceBody = new JsonObject
             {
                 ["id"] = "12345",
+                ["_etag"] = "\"17\"",
+                ["_lastModifiedDate"] = "2026-04-11T17:30:45Z",
                 ["studentUniqueId"] = "STU001",
                 ["firstName"] = "John",
                 ["lastName"] = "Doe",
@@ -254,6 +256,17 @@ public class ProfileFilteringMiddlewareTests
         {
             _requestInfo.FrontendResponse.Body!["id"]?.GetValue<string>().Should().Be("12345");
             _requestInfo.FrontendResponse.Body["studentUniqueId"]?.GetValue<string>().Should().Be("STU001");
+        }
+
+        [Test]
+        public void It_preserves_root_metadata_fields()
+        {
+            _requestInfo.FrontendResponse.Body!["_etag"]?.GetValue<string>().Should().Be("\"17\"");
+            _requestInfo
+                .FrontendResponse.Body["_lastModifiedDate"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("2026-04-11T17:30:45Z");
         }
 
         [Test]

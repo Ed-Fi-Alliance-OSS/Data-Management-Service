@@ -566,19 +566,10 @@ public class ProfileStepDefinitions(
     {
         url = AddDataPrefixIfNecessary(url);
 
-        // Build Content-Type header with profile's writable format
-        string contentType =
-            $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName.ToLowerInvariant()}.writable+json";
-
         _logger.log.Information($"POST url: {url}");
-        _logger.log.Information($"Content-Type header: {contentType}");
         _logger.log.Information($"POST body: {body}");
 
-        var headers = new List<KeyValuePair<string, string>>
-        {
-            new("Authorization", _dmsToken),
-            new("Content-Type", contentType),
-        };
+        List<KeyValuePair<string, string>> headers = GetWritableProfileHeaders(profileName, resourceName);
 
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PostAsync(
@@ -677,19 +668,51 @@ public class ProfileStepDefinitions(
         // Replace {id} placeholder in body with actual id
         body = body.Replace("{id}", _id);
 
-        // Build Content-Type header with profile's writable format
-        string contentType =
-            $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName.ToLowerInvariant()}.writable+json";
-
         _logger.log.Information($"PUT url: {url}");
-        _logger.log.Information($"Content-Type header: {contentType}");
         _logger.log.Information($"PUT body: {body}");
 
-        var headers = new List<KeyValuePair<string, string>>
-        {
-            new("Authorization", _dmsToken),
-            new("Content-Type", contentType),
-        };
+        List<KeyValuePair<string, string>> headers = GetWritableProfileHeaders(profileName, resourceName);
+
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.PutAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!
+        );
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+    }
+
+    [When(
+        @"a PUT request is made to ""([^""]*)"" with profile ""([^""]*)"" for resource ""([^""]*)"" and if-match variable ""([^""]*)"" with body"
+    )]
+    public async Task WhenAPUTRequestIsMadeToWithProfileForResourceAndIfMatchVariableWithBody(
+        string url,
+        string profileName,
+        string resourceName,
+        string ifMatchVariableName,
+        string body
+    )
+    {
+        url = AddDataPrefixIfNecessary(url)
+            .Replace("{id}", _id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        body = body.Replace("{id}", _id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        string ifMatch = _scenarioVariables.GetValueByName(ifMatchVariableName);
+
+        _logger.log.Information($"PUT url: {url}");
+        _logger.log.Information($"PUT body: {body}");
+        _logger.log.Information($"If-Match variable: {ifMatchVariableName}");
+
+        List<KeyValuePair<string, string>> headers = GetWritableProfileHeaders(
+            profileName,
+            resourceName,
+            ifMatch
+        );
 
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PutAsync(
@@ -1080,6 +1103,7 @@ public class ProfileStepDefinitions(
     }
 
     [When(@"the response body path ""([^""]*)"" is stored as variable ""([^""]*)""")]
+    [Then(@"the response body path ""([^""]*)"" is stored as variable ""([^""]*)""")]
     public async Task WhenTheResponseBodyPathIsStoredAsVariable(string jsonPath, string variableName)
     {
         string responseBody = await GetCurrentApiResponse().TextAsync();
@@ -1104,6 +1128,39 @@ public class ProfileStepDefinitions(
             .NotBeNull($"Path '{jsonPath}' should resolve to a non-null value. Response: {responseBody}");
 
         _scenarioVariables.Add(variableName, current!.ToString());
+    }
+
+    [Then(@"the response body path ""([^""]*)"" should equal variable ""([^""]*)""")]
+    public async Task ThenTheResponseBodyPathShouldEqualVariable(string jsonPath, string variableName)
+    {
+        string responseBody = await GetCurrentApiResponse().TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        string[] pathParts = jsonPath.Split('.');
+        bool pathExists = TryResolvePath(
+            responseJson,
+            pathParts,
+            out JsonNode? current,
+            out string failedAtPart
+        );
+
+        pathExists
+            .Should()
+            .BeTrue(
+                $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {responseBody}"
+            );
+
+        current
+            .Should()
+            .NotBeNull($"Path '{jsonPath}' should resolve to a non-null value. Response: {responseBody}");
+
+        current!
+            .ToString()
+            .Should()
+            .Be(
+                _scenarioVariables.GetValueByName(variableName),
+                $"Path '{jsonPath}' should match the stored value in variable '{variableName}'."
+            );
     }
 
     [Then(@"the response body path ""([^""]*)"" should not equal variable ""([^""]*)""")]
@@ -1143,10 +1200,24 @@ public class ProfileStepDefinitions(
     }
 
     [When(@"the response header ""([^""]*)"" is stored as variable ""([^""]*)""")]
+    [Then(@"the response header ""([^""]*)"" is stored as variable ""([^""]*)""")]
     public void WhenTheResponseHeaderIsStoredAsVariable(string headerName, string variableName)
     {
         string headerValue = GetResponseHeaderValue(headerName);
         _scenarioVariables.Add(variableName, headerValue);
+    }
+
+    [Then(@"the response header ""([^""]*)"" should equal variable ""([^""]*)""")]
+    public void ThenTheResponseHeaderShouldEqualVariable(string headerName, string variableName)
+    {
+        string headerValue = GetResponseHeaderValue(headerName);
+
+        headerValue
+            .Should()
+            .Be(
+                _scenarioVariables.GetValueByName(variableName),
+                $"Header '{headerName}' should match the stored value in variable '{variableName}'."
+            );
     }
 
     [Then(@"the response header ""([^""]*)"" should not equal variable ""([^""]*)""")]
@@ -1639,6 +1710,32 @@ public class ProfileStepDefinitions(
         actualHeaderKey.Should().NotBeNull($"Response should include header '{headerName}'");
 
         return apiResponse.Headers[actualHeaderKey!];
+    }
+
+    private List<KeyValuePair<string, string>> GetWritableProfileHeaders(
+        string profileName,
+        string resourceName,
+        string? ifMatch = null
+    )
+    {
+        string contentType =
+            $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName.ToLowerInvariant()}.writable+json";
+
+        _logger.log.Information($"Content-Type header: {contentType}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", contentType),
+        };
+
+        if (ifMatch is not null)
+        {
+            _logger.log.Information($"If-Match header: {ifMatch}");
+            headers.Add(new("If-Match", ifMatch));
+        }
+
+        return headers;
     }
 
     /// <summary>

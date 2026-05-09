@@ -696,8 +696,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
+            string id = GetCurrentId();
+
             url = AddDataPrefixIfNecessary(url)
-                .Replace("{id}", _id)
+                .Replace("{id}", id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
             _logger.log.Information(url);
@@ -710,8 +712,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string} with header {string} value {string}")]
         public async Task WhenAGETRequestIsMadeToWithHeader(string url, string header, string value)
         {
+            string id = GetCurrentId();
+
             url = AddDataPrefixIfNecessary(url)
-                .Replace("{id}", _id)
+                .Replace("{id}", id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
             var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

@@ -86,7 +86,7 @@
       "Run from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`: `pwsh ./setup-local-dms.ps1`.",
       "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"ProfileResponseFilteringFeature|ProfilePUTMergeFunctionalityFeature|ReadDescriptorsValidationFeature|ETag\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Formatting and Stale Surface Sweep",
