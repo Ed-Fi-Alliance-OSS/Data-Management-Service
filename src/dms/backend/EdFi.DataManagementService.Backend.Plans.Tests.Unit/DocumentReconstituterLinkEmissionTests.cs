@@ -1,0 +1,442 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
+
+/// <summary>
+/// Focused fixture for link injection in <see cref="DocumentReconstituter.ReconstitutePage"/>.
+/// Builds a minimal one-table read plan with a single document reference and exercises the
+/// resolver-aware overload.
+/// </summary>
+[TestFixture]
+public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
+{
+    private const short SchoolResourceKeyId = 7;
+    private const long SchoolDocumentId = 901L;
+
+    private static readonly Guid SchoolDocumentUuid = Guid.Parse("11112222-3333-4444-5555-666677778888");
+
+    private static readonly QualifiedResourceName _resource = new("Ed-Fi", "StudentSchoolAssociation");
+    private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private static readonly DbTableName _rootTableName = new(
+        new DbSchemaName("edfi"),
+        "StudentSchoolAssociation"
+    );
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+    private static readonly JsonPathExpression _schoolReferencePath = new(
+        "$.schoolReference",
+        [new JsonPathSegment.Property("schoolReference")]
+    );
+    private static readonly JsonPathExpression _schoolReferenceSchoolIdPath = new(
+        "$.schoolReference.schoolId",
+        [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
+    );
+
+    private static readonly DocumentLinkSlugTriple _expectedSlug = new(
+        ProjectEndpointName: "ed-fi",
+        EndpointName: "schools",
+        ResourceName: "School"
+    );
+
+    [Test]
+    public void It_emits_link_rel_and_href_for_a_concrete_reference_when_FK_hits_the_lookup_map()
+    {
+        var resolver = new StubSlugResolver(_expectedSlug);
+        var result = ReconstituteSingleDocument(
+            schoolDocumentIdFk: SchoolDocumentId,
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
+            resolver: resolver,
+            options: new ResourceLinksOptions { Enabled = true }
+        );
+
+        var link = result["schoolReference"]!["link"].Should().BeOfType<JsonObject>().Subject;
+        link["rel"]!.GetValue<string>().Should().Be("School");
+        link["href"]!.GetValue<string>().Should().Be($"/ed-fi/schools/{SchoolDocumentUuid.ToString("D")}");
+        resolver.Calls.Should().ContainSingle();
+        resolver.Calls[0].Should().Be((SchoolResourceKeyId));
+    }
+
+    [Test]
+    public void It_emits_href_with_36_char_lowercase_hex_uuid_with_hyphens_at_8_13_18_23()
+    {
+        var resolver = new StubSlugResolver(_expectedSlug);
+        var result = ReconstituteSingleDocument(
+            schoolDocumentIdFk: SchoolDocumentId,
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
+            resolver: resolver,
+            options: new ResourceLinksOptions { Enabled = true }
+        );
+
+        var href = result["schoolReference"]!["link"]!["href"]!.GetValue<string>();
+        var uuid = href[(href.LastIndexOf('/') + 1)..];
+
+        uuid.Length.Should().Be(36);
+        uuid[8].Should().Be('-');
+        uuid[13].Should().Be('-');
+        uuid[18].Should().Be('-');
+        uuid[23].Should().Be('-');
+        uuid.Where(c => c != '-').Should().OnlyContain(c => char.IsAsciiHexDigitLower(c) || char.IsDigit(c));
+    }
+
+    [Test]
+    public void It_does_not_emit_link_when_FK_value_is_null()
+    {
+        var resolver = new StubSlugResolver(_expectedSlug);
+        var result = ReconstituteSingleDocument(
+            schoolDocumentIdFk: null,
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
+            resolver: resolver,
+            options: new ResourceLinksOptions { Enabled = true }
+        );
+
+        // Identity-field reconstitution still emits schoolReference even with a null FK, but
+        // link injection requires a non-null FK to look up the page-scoped map.
+        result["schoolReference"]!["schoolId"]!.GetValue<int>().Should().Be(255901);
+        result["schoolReference"]!["link"].Should().BeNull();
+        resolver.Calls.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_does_not_emit_link_when_FK_is_present_but_lookup_map_misses()
+    {
+        var resolver = new StubSlugResolver(_expectedSlug);
+        var result = ReconstituteSingleDocument(
+            schoolDocumentIdFk: SchoolDocumentId,
+            lookupRows: [], // no rows: lookup miss
+            resolver: resolver,
+            options: new ResourceLinksOptions { Enabled = true }
+        );
+
+        result["schoolReference"]!["schoolId"]!.GetValue<int>().Should().Be(255901);
+        result["schoolReference"]!["link"].Should().BeNull();
+        resolver.Calls.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_does_not_emit_link_when_ResourceLinksOptions_Enabled_is_false()
+    {
+        var resolver = new StubSlugResolver(_expectedSlug);
+        var result = ReconstituteSingleDocument(
+            schoolDocumentIdFk: SchoolDocumentId,
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
+            resolver: resolver,
+            options: new ResourceLinksOptions { Enabled = false }
+        );
+
+        result["schoolReference"]!["link"].Should().BeNull();
+        resolver.Calls.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_does_not_emit_link_when_using_the_no_link_overload()
+    {
+        // Sanity: the legacy ReconstitutePage(readPlan, hydratedPage) overload never emits link.
+        var readPlan = BuildReadPlan();
+        var hydratedPage = BuildHydratedPage(
+            schoolDocumentIdFk: SchoolDocumentId,
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)]
+        );
+
+        var results = DocumentReconstituter.ReconstitutePage(readPlan, hydratedPage);
+
+        results.Should().ContainSingle();
+        results[0]!["schoolReference"]!["link"].Should().BeNull();
+    }
+
+    [Test]
+    public void It_propagates_exceptions_from_the_resolver_unchanged()
+    {
+        var resolver = new ThrowingSlugResolver(new InvalidOperationException("boom: unknown ResourceKeyId"));
+        var readPlan = BuildReadPlan();
+        var hydratedPage = BuildHydratedPage(
+            schoolDocumentIdFk: SchoolDocumentId,
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)]
+        );
+
+        Action act = () =>
+            DocumentReconstituter.ReconstitutePage(
+                readPlan,
+                hydratedPage,
+                BuildMappingSet(),
+                resolver,
+                new ResourceLinksOptions { Enabled = true }
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("boom*");
+    }
+
+    [Test]
+    public void It_resolves_concrete_subclass_for_abstract_reference_via_ResourceKeyId()
+    {
+        // The lookup row pins ResourceKeyId to the concrete subclass; the resolver must
+        // see that exact id even though the binding's TargetResource is the abstract type.
+        const short concreteSubclassResourceKeyId = 42;
+        var concreteSlug = new DocumentLinkSlugTriple(
+            ProjectEndpointName: "ed-fi",
+            EndpointName: "schools",
+            ResourceName: "School"
+        );
+        var resolver = new StubSlugResolver(concreteSlug);
+
+        var result = ReconstituteSingleDocument(
+            schoolDocumentIdFk: SchoolDocumentId,
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, concreteSubclassResourceKeyId)],
+            resolver: resolver,
+            options: new ResourceLinksOptions { Enabled = true }
+        );
+
+        resolver.Calls.Should().ContainSingle().Which.Should().Be(concreteSubclassResourceKeyId);
+        result["schoolReference"]!["link"]!["rel"]!.GetValue<string>().Should().Be("School");
+    }
+
+    private static JsonNode ReconstituteSingleDocument(
+        long? schoolDocumentIdFk,
+        IReadOnlyList<(long DocumentId, Guid DocumentUuid, short ResourceKeyId)> lookupRows,
+        IDocumentLinkSlugResolver resolver,
+        ResourceLinksOptions options
+    )
+    {
+        var readPlan = BuildReadPlan();
+        var hydratedPage = BuildHydratedPage(schoolDocumentIdFk, lookupRows);
+
+        var results = DocumentReconstituter.ReconstitutePage(
+            readPlan,
+            hydratedPage,
+            BuildMappingSet(),
+            resolver,
+            options
+        );
+
+        results.Should().ContainSingle();
+        return results[0];
+    }
+
+    private static ResourceReadPlan BuildReadPlan()
+    {
+        var rootTable = BuildRootTableModel();
+        var model = new RelationalResourceModel(
+            Resource: _resource,
+            PhysicalSchema: rootTable.Table.Schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: _schoolReferencePath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: _schoolResource,
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: _schoolReferenceSchoolIdPath,
+                            ReferenceJsonPath: _schoolReferenceSchoolIdPath,
+                            Column: new DbColumnName("SchoolReference_SchoolId")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
+
+        var refProjection = new ReferenceIdentityProjectionTablePlan(
+            Table: rootTable.Table,
+            BindingsInOrder:
+            [
+                new ReferenceIdentityProjectionBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: _schoolReferencePath,
+                    TargetResource: _schoolResource,
+                    FkColumnOrdinal: 1,
+                    IdentityFieldOrdinalsInOrder:
+                    [
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            ReferenceJsonPath: _schoolReferenceSchoolIdPath,
+                            ColumnOrdinal: 2
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        var lookupPlan = new DocumentReferenceLookupPlan(
+            SelectByKeysetSql: "SELECT 1;",
+            ResultShape: new DocumentReferenceLookupResultShape(0, 1, 2),
+            SourcesInOrder:
+            [
+                new DocumentReferenceLookupSource(
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("School_DocumentId")
+                ),
+            ]
+        );
+
+        return new ResourceReadPlan(
+            Model: model,
+            KeysetTable: new KeysetTableContract(
+                Table: new SqlRelationRef.TempTable("page"),
+                DocumentIdColumnName: new DbColumnName("DocumentId")
+            ),
+            TablePlansInDependencyOrder: [new TableReadPlan(rootTable, "SELECT 1;")],
+            ReferenceIdentityProjectionPlansInDependencyOrder: [refProjection],
+            DescriptorProjectionPlansInOrder: [],
+            DocumentReferenceLookup: lookupPlan
+        );
+    }
+
+    private static DbTableModel BuildRootTableModel() =>
+        new(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_StudentSchoolAssociation",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: _schoolReferencePath,
+                    TargetResource: _schoolResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolReference_SchoolId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: _schoolReferenceSchoolIdPath,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+    private static HydratedPage BuildHydratedPage(
+        long? schoolDocumentIdFk,
+        IReadOnlyList<(long DocumentId, Guid DocumentUuid, short ResourceKeyId)> lookupRows
+    )
+    {
+        var rootTableModel = BuildRootTableModel();
+        object?[] row = [1L, (object?)schoolDocumentIdFk, 255901];
+
+        var metadataRow = new DocumentMetadataRow(
+            DocumentId: 1L,
+            DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+            ContentVersion: 1L,
+            IdentityVersion: 1L,
+            ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
+            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+        );
+
+        var lookup = new HydratedDocumentReferenceLookup([
+            .. lookupRows.Select(r => new DocumentReferenceLookupRow(
+                r.DocumentId,
+                r.DocumentUuid,
+                r.ResourceKeyId
+            )),
+        ]);
+
+        return new HydratedPage(
+            TotalCount: null,
+            DocumentMetadata: [metadataRow],
+            TableRowsInDependencyOrder: [new HydratedTableRows(rootTableModel, [row])],
+            DescriptorRowsInPlanOrder: []
+        )
+        {
+            DocumentReferenceLookup = lookup,
+        };
+    }
+
+    private static MappingSet BuildMappingSet()
+    {
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "rmv-test",
+            EffectiveSchemaHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: Enumerable.Range(1, 32).Select(i => (byte)i).ToArray(),
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey(
+                effectiveSchema.EffectiveSchemaHash,
+                SqlDialect.Pgsql,
+                effectiveSchema.RelationalMappingVersion
+            ),
+            Model: new DerivedRelationalModelSet(
+                EffectiveSchema: effectiveSchema,
+                Dialect: SqlDialect.Pgsql,
+                ProjectSchemasInEndpointOrder: [],
+                ConcreteResourcesInNameOrder: [],
+                AbstractIdentityTablesInNameOrder: [],
+                AbstractUnionViewsInNameOrder: [],
+                IndexesInCreateOrder: [],
+                TriggersInCreateOrder: []
+            ),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
+    private sealed class StubSlugResolver : IDocumentLinkSlugResolver
+    {
+        private readonly DocumentLinkSlugTriple _slug;
+
+        public StubSlugResolver(DocumentLinkSlugTriple slug)
+        {
+            _slug = slug;
+        }
+
+        public List<short> Calls { get; } = [];
+
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId)
+        {
+            Calls.Add(resourceKeyId);
+            return _slug;
+        }
+    }
+
+    private sealed class ThrowingSlugResolver(Exception exception) : IDocumentLinkSlugResolver
+    {
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) => throw exception;
+    }
+}

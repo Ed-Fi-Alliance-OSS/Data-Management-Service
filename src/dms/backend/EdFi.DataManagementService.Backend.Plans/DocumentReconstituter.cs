@@ -55,6 +55,13 @@ public static class DocumentReconstituter
     /// <summary>
     /// Reconstitutes all documents from a hydrated page using one page-scoped graph/context build.
     /// </summary>
+    /// <remarks>
+    /// This overload is the test-only / link-injection-disabled path: it builds the context
+    /// without a <see cref="LinkEmissionContext"/>, so document-reference <c>link</c> objects
+    /// are never written. Production callers that want link injection should use the overload
+    /// taking <see cref="MappingSet"/>, <see cref="IDocumentLinkSlugResolver"/>, and
+    /// <see cref="ResourceLinksOptions"/>.
+    /// </remarks>
     public static IReadOnlyList<JsonNode> ReconstitutePage(
         ResourceReadPlan readPlan,
         HydratedPage hydratedPage
@@ -66,13 +73,49 @@ public static class DocumentReconstituter
         var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
         var pageReconstitutionContext = PageReconstitutionContext.Build(compiledPlan, hydratedPage);
 
-        return
+        return ReconstituteAllDocuments(pageReconstitutionContext);
+    }
+
+    /// <summary>
+    /// Reconstitutes all documents from a hydrated page with link injection driven by the
+    /// supplied <see cref="MappingSet"/>, <see cref="IDocumentLinkSlugResolver"/>, and
+    /// <see cref="ResourceLinksOptions"/>. When <paramref name="linksOptions"/> has
+    /// <c>Enabled = false</c> the resolver is wired into the context but the reference-writer
+    /// skips link emission.
+    /// </summary>
+    public static IReadOnlyList<JsonNode> ReconstitutePage(
+        ResourceReadPlan readPlan,
+        HydratedPage hydratedPage,
+        MappingSet mappingSet,
+        IDocumentLinkSlugResolver slugResolver,
+        ResourceLinksOptions linksOptions
+    )
+    {
+        ArgumentNullException.ThrowIfNull(readPlan);
+        ArgumentNullException.ThrowIfNull(hydratedPage);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(slugResolver);
+        ArgumentNullException.ThrowIfNull(linksOptions);
+
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var linkEmission = new LinkEmissionContext(mappingSet, slugResolver, linksOptions);
+        var pageReconstitutionContext = PageReconstitutionContext.Build(
+            compiledPlan,
+            hydratedPage,
+            linkEmission
+        );
+
+        return ReconstituteAllDocuments(pageReconstitutionContext);
+    }
+
+    private static IReadOnlyList<JsonNode> ReconstituteAllDocuments(
+        PageReconstitutionContext pageReconstitutionContext
+    ) =>
         [
             .. pageReconstitutionContext.DocumentsInOrder.Select(documentPageNode =>
                 ReconstituteDocument(documentPageNode, pageReconstitutionContext)
             ),
         ];
-    }
 
     private static JsonNode ReconstituteDocument(
         DocumentPageNode documentPageNode,
@@ -87,7 +130,7 @@ public static class DocumentReconstituter
         var result = new JsonObject();
 
         EmitScalars(result, rootRow.Row, rootTablePlan.TableModel);
-        EmitReferences(result, rootRow.Row, rootTablePlan);
+        EmitReferences(result, rootRow.Row, rootTablePlan, pageReconstitutionContext);
         EmitDescriptors(result, rootRow.Row, rootTablePlan, pageReconstitutionContext.DescriptorUrisById);
         EmitChildScopes(result, rootRow, pageReconstitutionContext);
 
@@ -361,27 +404,38 @@ public static class DocumentReconstituter
         }
     }
 
-    private static void EmitReferences(JsonObject target, object?[] row, TableReconstitutionPlan tablePlan)
+    private static void EmitReferences(
+        JsonObject target,
+        object?[] row,
+        TableReconstitutionPlan tablePlan,
+        PageReconstitutionContext pageReconstitutionContext
+    )
     {
         foreach (var binding in tablePlan.ReferenceBindingsInOrder)
         {
             var projectionResult = ReferenceIdentityProjector.Project(row, binding);
             if (projectionResult is ReferenceProjectionResult.Present present)
             {
-                EmitReferenceObject(target, present, tablePlan.TableModel.JsonScope);
+                EmitReferenceObject(target, row, binding, present, tablePlan, pageReconstitutionContext);
             }
         }
     }
 
     /// <summary>
-    /// Emits a single reference object into the target JSON object.
+    /// Emits a single reference object into the target JSON object, optionally appending the
+    /// document-reference <c>link</c> property when link emission is enabled and the FK value
+    /// is present in the page-scoped lookup map.
     /// </summary>
     private static void EmitReferenceObject(
         JsonObject target,
+        object?[] row,
+        ReferenceIdentityProjectionBinding binding,
         ReferenceProjectionResult.Present present,
-        JsonPathExpression scope
+        TableReconstitutionPlan tablePlan,
+        PageReconstitutionContext pageReconstitutionContext
     )
     {
+        var scope = tablePlan.TableModel.JsonScope;
         var (referenceParent, referencePropertyName) = ResolvePathRelativeToScope(
             target,
             present.ReferenceObjectPath,
@@ -399,7 +453,62 @@ public static class DocumentReconstituter
             fieldParent[fieldPropertyName] = ConvertToJsonValue(field.Value);
         }
 
+        EmitReferenceLink(referenceObject, row, binding, tablePlan, pageReconstitutionContext);
+
         referenceParent[referencePropertyName] = referenceObject;
+    }
+
+    /// <summary>
+    /// Writes a <c>link: { rel, href }</c> object into <paramref name="referenceObject"/> when
+    /// link emission is configured for this page, the binding's FK column is non-null, and
+    /// the FK value is present in the page-scoped lookup map. No-ops otherwise.
+    /// </summary>
+    private static void EmitReferenceLink(
+        JsonObject referenceObject,
+        object?[] row,
+        ReferenceIdentityProjectionBinding binding,
+        TableReconstitutionPlan tablePlan,
+        PageReconstitutionContext pageReconstitutionContext
+    )
+    {
+        var linkEmission = pageReconstitutionContext.LinkEmission;
+
+        if (linkEmission is null || !linkEmission.Options.Enabled)
+        {
+            return;
+        }
+
+        var fkValue = row[binding.FkColumnOrdinal];
+
+        if (fkValue is null)
+        {
+            return;
+        }
+
+        var fkColumnName = tablePlan.TableModel.Columns[binding.FkColumnOrdinal].ColumnName;
+        var documentId = ConvertToInt64OrThrow(
+            fkValue,
+            tablePlan.Table,
+            fkColumnName,
+            binding.FkColumnOrdinal,
+            "document-reference FK"
+        );
+
+        if (!pageReconstitutionContext.DocumentLinkLookupById.TryGetValue(documentId, out var lookup))
+        {
+            return;
+        }
+
+        var slug = linkEmission.SlugResolver.Resolve(linkEmission.MappingSet, lookup.ResourceKeyId);
+        var href =
+            $"/{slug.ProjectEndpointName}/{slug.EndpointName}/"
+            + lookup.DocumentUuid.ToString("D", CultureInfo.InvariantCulture);
+
+        referenceObject["link"] = new JsonObject
+        {
+            ["rel"] = JsonValue.Create(slug.ResourceName),
+            ["href"] = JsonValue.Create(href),
+        };
     }
 
     private static void EmitDescriptors(
@@ -562,7 +671,7 @@ public static class DocumentReconstituter
             var itemObject = new JsonObject();
 
             EmitScalars(itemObject, childRow.Row, childTableModel);
-            EmitReferences(itemObject, childRow.Row, childTablePlan);
+            EmitReferences(itemObject, childRow.Row, childTablePlan, pageReconstitutionContext);
             EmitDescriptors(
                 itemObject,
                 childRow.Row,
@@ -604,7 +713,7 @@ public static class DocumentReconstituter
         var projectObject = new JsonObject();
 
         EmitScalars(projectObject, extensionRow.Row, childTableModel);
-        EmitReferences(projectObject, extensionRow.Row, childTablePlan);
+        EmitReferences(projectObject, extensionRow.Row, childTablePlan, pageReconstitutionContext);
         EmitDescriptors(
             projectObject,
             extensionRow.Row,

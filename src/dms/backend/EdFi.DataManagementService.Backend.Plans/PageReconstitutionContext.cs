@@ -148,6 +148,23 @@ internal sealed class RowNode
     }
 }
 
+/// <summary>
+/// Per-page link-emission configuration bundled for the reference-writer. <see langword="null"/>
+/// on the test-only context build path; non-null when production callers want
+/// <c>link.rel</c> / <c>link.href</c> emission on document references.
+/// </summary>
+internal sealed record LinkEmissionContext(
+    MappingSet MappingSet,
+    IDocumentLinkSlugResolver SlugResolver,
+    ResourceLinksOptions Options
+);
+
+/// <summary>
+/// One entry in the page-scoped <c>DocumentId → (DocumentUuid, ResourceKeyId)</c> map sourced
+/// from <see cref="HydratedDocumentReferenceLookup"/>.
+/// </summary>
+internal readonly record struct DocumentLinkLookupEntry(Guid DocumentUuid, short ResourceKeyId);
+
 internal sealed class PageReconstitutionContext
 {
     private readonly Dictionary<long, DocumentPageNode> _documentsById;
@@ -159,6 +176,8 @@ internal sealed class PageReconstitutionContext
     private PageReconstitutionContext(
         CompiledReconstitutionPlan compiledPlan,
         IReadOnlyDictionary<long, string> descriptorUrisById,
+        IReadOnlyDictionary<long, DocumentLinkLookupEntry> documentLinkLookupById,
+        LinkEmissionContext? linkEmission,
         ImmutableArray<DocumentPageNode> documentsInOrder,
         Dictionary<long, DocumentPageNode> documentsById,
         Dictionary<DbTableName, Dictionary<ScopeKey, RowNode>> rowNodesByTableAndPhysicalIdentity
@@ -166,11 +185,14 @@ internal sealed class PageReconstitutionContext
     {
         ArgumentNullException.ThrowIfNull(compiledPlan);
         ArgumentNullException.ThrowIfNull(descriptorUrisById);
+        ArgumentNullException.ThrowIfNull(documentLinkLookupById);
         ArgumentNullException.ThrowIfNull(documentsById);
         ArgumentNullException.ThrowIfNull(rowNodesByTableAndPhysicalIdentity);
 
         CompiledPlan = compiledPlan;
         DescriptorUrisById = descriptorUrisById;
+        DocumentLinkLookupById = documentLinkLookupById;
+        LinkEmission = linkEmission;
         DocumentsInOrder = documentsInOrder;
         _documentsById = documentsById;
         _rowNodesByTableAndPhysicalIdentity = rowNodesByTableAndPhysicalIdentity;
@@ -179,6 +201,19 @@ internal sealed class PageReconstitutionContext
     public CompiledReconstitutionPlan CompiledPlan { get; }
 
     public IReadOnlyDictionary<long, string> DescriptorUrisById { get; }
+
+    /// <summary>
+    /// Page-scoped <c>DocumentId → (DocumentUuid, ResourceKeyId)</c> map sourced from
+    /// <see cref="HydratedDocumentReferenceLookup"/>. Empty when the read plan had no
+    /// document-reference auxiliary lookup.
+    /// </summary>
+    public IReadOnlyDictionary<long, DocumentLinkLookupEntry> DocumentLinkLookupById { get; }
+
+    /// <summary>
+    /// Optional link-emission configuration. <see langword="null"/> when the caller is the
+    /// test-only adapter or when link emission is otherwise off for this page.
+    /// </summary>
+    public LinkEmissionContext? LinkEmission { get; }
 
     public ImmutableArray<DocumentPageNode> DocumentsInOrder { get; }
 
@@ -192,6 +227,12 @@ internal sealed class PageReconstitutionContext
     public static PageReconstitutionContext Build(
         CompiledReconstitutionPlan compiledPlan,
         HydratedPage hydratedPage
+    ) => Build(compiledPlan, hydratedPage, linkEmission: null);
+
+    public static PageReconstitutionContext Build(
+        CompiledReconstitutionPlan compiledPlan,
+        HydratedPage hydratedPage,
+        LinkEmissionContext? linkEmission
     )
     {
         ArgumentNullException.ThrowIfNull(compiledPlan);
@@ -201,7 +242,9 @@ internal sealed class PageReconstitutionContext
             compiledPlan,
             hydratedPage.DocumentMetadata,
             hydratedPage.TableRowsInDependencyOrder,
-            BuildDescriptorUriLookup(hydratedPage.DescriptorRowsInPlanOrder)
+            BuildDescriptorUriLookup(hydratedPage.DescriptorRowsInPlanOrder),
+            BuildDocumentLinkLookup(hydratedPage.DocumentReferenceLookup),
+            linkEmission
         );
     }
 
@@ -210,12 +253,30 @@ internal sealed class PageReconstitutionContext
         IReadOnlyList<DocumentMetadataRow> documentMetadataRows,
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
         IReadOnlyDictionary<long, string> descriptorUrisById
+    ) =>
+        Build(
+            compiledPlan,
+            documentMetadataRows,
+            tableRowsInDependencyOrder,
+            descriptorUrisById,
+            documentLinkLookupById: new Dictionary<long, DocumentLinkLookupEntry>(),
+            linkEmission: null
+        );
+
+    internal static PageReconstitutionContext Build(
+        CompiledReconstitutionPlan compiledPlan,
+        IReadOnlyList<DocumentMetadataRow> documentMetadataRows,
+        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        IReadOnlyDictionary<long, string> descriptorUrisById,
+        IReadOnlyDictionary<long, DocumentLinkLookupEntry> documentLinkLookupById,
+        LinkEmissionContext? linkEmission
     )
     {
         ArgumentNullException.ThrowIfNull(compiledPlan);
         ArgumentNullException.ThrowIfNull(documentMetadataRows);
         ArgumentNullException.ThrowIfNull(tableRowsInDependencyOrder);
         ArgumentNullException.ThrowIfNull(descriptorUrisById);
+        ArgumentNullException.ThrowIfNull(documentLinkLookupById);
 
         var hydratedRowsByTable = BuildHydratedRowsByTable(tableRowsInDependencyOrder);
         var rowNodesByTableAndPhysicalIdentity = new Dictionary<DbTableName, Dictionary<ScopeKey, RowNode>>();
@@ -290,6 +351,8 @@ internal sealed class PageReconstitutionContext
         return CreateContextOrThrow(
             compiledPlan,
             descriptorUrisById,
+            documentLinkLookupById,
+            linkEmission,
             documentMetadataRows,
             rootRowsByDocumentId,
             rowNodesByTableAndPhysicalIdentity
@@ -348,6 +411,8 @@ internal sealed class PageReconstitutionContext
     private static PageReconstitutionContext CreateContextOrThrow(
         CompiledReconstitutionPlan compiledPlan,
         IReadOnlyDictionary<long, string> descriptorUrisById,
+        IReadOnlyDictionary<long, DocumentLinkLookupEntry> documentLinkLookupById,
+        LinkEmissionContext? linkEmission,
         IReadOnlyList<DocumentMetadataRow> documentMetadataRows,
         IReadOnlyDictionary<long, RowNode> rootRowsByDocumentId,
         Dictionary<DbTableName, Dictionary<ScopeKey, RowNode>> rowNodesByTableAndPhysicalIdentity
@@ -397,10 +462,49 @@ internal sealed class PageReconstitutionContext
         return new PageReconstitutionContext(
             compiledPlan,
             descriptorUrisById,
+            documentLinkLookupById,
+            linkEmission,
             documentsInOrder.MoveToImmutable(),
             documentsById,
             rowNodesByTableAndPhysicalIdentity
         );
+    }
+
+    private static IReadOnlyDictionary<long, DocumentLinkLookupEntry> BuildDocumentLinkLookup(
+        HydratedDocumentReferenceLookup? documentReferenceLookup
+    )
+    {
+        if (documentReferenceLookup is null || documentReferenceLookup.Rows.Count == 0)
+        {
+            return new Dictionary<long, DocumentLinkLookupEntry>();
+        }
+
+        Dictionary<long, DocumentLinkLookupEntry> lookup = new(documentReferenceLookup.Rows.Count);
+
+        foreach (var row in documentReferenceLookup.Rows)
+        {
+            var entry = new DocumentLinkLookupEntry(row.DocumentUuid, row.ResourceKeyId);
+
+            if (lookup.TryGetValue(row.DocumentId, out var existing))
+            {
+                if (
+                    existing.DocumentUuid != entry.DocumentUuid
+                    || existing.ResourceKeyId != entry.ResourceKeyId
+                )
+                {
+                    throw new InvalidOperationException(
+                        "Cannot build page reconstitution context: document-reference lookup returned "
+                            + $"conflicting rows for DocumentId {row.DocumentId}."
+                    );
+                }
+
+                continue;
+            }
+
+            lookup.Add(row.DocumentId, entry);
+        }
+
+        return lookup;
     }
 
     private static IReadOnlyDictionary<long, string> BuildDescriptorUriLookup(
