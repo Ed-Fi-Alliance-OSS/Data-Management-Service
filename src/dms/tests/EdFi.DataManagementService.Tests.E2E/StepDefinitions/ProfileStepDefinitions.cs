@@ -476,8 +476,10 @@ public class ProfileStepDefinitions(
     [When(@"a GET request is made to ""([^""]*)"" with profile ""([^""]*)"" for resource ""([^""]*)""")]
     public async Task WhenAGETRequestIsMadeToWithProfile(string url, string profileName, string resourceName)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         // Both resource name and profile name are lowercased per Ed-Fi convention
@@ -507,8 +509,10 @@ public class ProfileStepDefinitions(
     [When(@"a GET request is made to ""([^""]*)"" without profile header")]
     public async Task WhenAGETRequestIsMadeToWithoutProfileHeader(string url)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         _logger.log.Information($"GET url (no profile header): {url}");
@@ -529,8 +533,10 @@ public class ProfileStepDefinitions(
     [When(@"a GET request is made to ""([^""]*)"" with Accept header ""([^""]*)""")]
     public async Task WhenAGETRequestIsMadeToWithAcceptHeader(string url, string acceptHeader)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         _logger.log.Information($"GET url: {url}");
@@ -587,8 +593,10 @@ public class ProfileStepDefinitions(
     [When(@"a POST request is made to ""([^""]*)"" without profile header with body")]
     public async Task WhenAPOSTRequestIsMadeToWithoutProfileHeaderWithBody(string url, string body)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         _logger.log.Information($"POST url (no profile header): {url}");
@@ -620,8 +628,10 @@ public class ProfileStepDefinitions(
         string body
     )
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         _logger.log.Information($"POST url: {url}");
@@ -661,12 +671,14 @@ public class ProfileStepDefinitions(
         string body
     )
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         // Replace {id} placeholder in body with actual id
-        body = body.Replace("{id}", _id);
+        body = body.Replace("{id}", id);
 
         _logger.log.Information($"PUT url: {url}");
         _logger.log.Information($"PUT body: {body}");
@@ -695,11 +707,13 @@ public class ProfileStepDefinitions(
         string body
     )
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-        body = body.Replace("{id}", _id)
+        body = body.Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         string ifMatch = _scenarioVariables.GetValueByName(ifMatchVariableName);
@@ -728,11 +742,13 @@ public class ProfileStepDefinitions(
     [When(@"a PUT request is made to ""([^""]*)"" without profile header with body")]
     public async Task WhenAPUTRequestIsMadeToWithoutProfileHeaderWithBody(string url, string body)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-        body = body.Replace("{id}", _id);
+        body = body.Replace("{id}", id);
 
         _logger.log.Information($"PUT url (no profile header): {url}");
         _logger.log.Information($"PUT body: {body}");
@@ -761,11 +777,13 @@ public class ProfileStepDefinitions(
         string body
     )
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-        body = body.Replace("{id}", _id);
+        body = body.Replace("{id}", id);
 
         _logger.log.Information($"PUT url: {url}");
         _logger.log.Information($"Content-Type header: {contentType}");
@@ -1697,6 +1715,21 @@ public class ProfileStepDefinitions(
     {
         _apiResponse = apiResponse;
         _scenarioContext[ApiResponseContextKey] = apiResponse;
+    }
+
+    private string GetCurrentId()
+    {
+        if (
+            string.IsNullOrWhiteSpace(_id)
+            && _scenarioContext.TryGetValue(IdContextKey, out object? idObject)
+            && idObject is string currentId
+            && !string.IsNullOrWhiteSpace(currentId)
+        )
+        {
+            _id = currentId;
+        }
+
+        return _id;
     }
 
     private string GetResponseHeaderValue(string headerName)
