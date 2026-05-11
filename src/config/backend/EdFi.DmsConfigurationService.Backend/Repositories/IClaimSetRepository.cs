@@ -14,7 +14,7 @@ public interface IClaimSetRepository
     IEnumerable<Action> GetActions();
     Task<AuthorizationStrategyGetResult> GetAuthorizationStrategies();
     Task<ClaimSetInsertResult> InsertClaimSet(ClaimSetInsertCommand command);
-    Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query);
+    Task<ClaimSetQueryResult> QueryClaimSet(ClaimSetQuery query);
     Task<ClaimSetGetResult> GetClaimSet(long id);
     Task<ClaimSetUpdateResult> UpdateClaimSet(ClaimSetUpdateCommand command);
     Task<ClaimSetDeleteResult> DeleteClaimSet(long id);

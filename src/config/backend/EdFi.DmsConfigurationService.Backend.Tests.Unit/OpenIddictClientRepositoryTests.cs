@@ -33,9 +33,7 @@ public class OpenIddictClientRepositoryTests
         _logger = A.Fake<ILogger<OpenIddictClientRepository>>();
         _secretHasher = A.Fake<IClientSecretHasher>();
         _dataRepository = A.Fake<IOpenIddictDataRepository>();
-        _clientSecretValidationOptionsAccessor = Options.Create(
-            new ClientSecretValidationOptions()
-        );
+        _clientSecretValidationOptionsAccessor = Options.Create(new ClientSecretValidationOptions());
         var connection = A.Fake<IDbConnection>();
         var transaction = A.Fake<IDbTransaction>();
 
@@ -465,11 +463,7 @@ public class OpenIddictClientRepositoryTests
         public void ResetSetup()
         {
             _clientSecretValidationOptionsAccessor = Options.Create(
-                new ClientSecretValidationOptions
-                {
-                    MinimumLength = 40,
-                    MaximumLength = 128,
-                }
+                new ClientSecretValidationOptions { MinimumLength = 40, MaximumLength = 128 }
             );
 
             _repository = new OpenIddictClientRepository(
@@ -485,11 +479,7 @@ public class OpenIddictClientRepositoryTests
         {
             // Arrange
             A.CallTo(() =>
-                    _dataRepository.UpdateClientSecretAsync(
-                        A<Guid>._,
-                        A<string>._,
-                        A<IDbConnection>._
-                    )
+                    _dataRepository.UpdateClientSecretAsync(A<Guid>._, A<string>._, A<IDbConnection>._)
                 )
                 .Returns(1);
 

@@ -22,6 +22,27 @@ public class DmsInstanceRouteContextRepository(
     ITenantContextProvider tenantContextProvider
 ) : IDmsInstanceRouteContextRepository
 {
+    private static readonly IReadOnlyDictionary<string, string> OrderByColumns = new Dictionary<
+        string,
+        string
+    >(StringComparer.OrdinalIgnoreCase)
+    {
+        ["id"] = "Id",
+        ["instanceId"] = "InstanceId",
+        ["contextKey"] = "ContextKey",
+        ["contextValue"] = "ContextValue",
+    };
+
+    private static string BuildOrderByClause(PagingQuery query)
+    {
+        if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
+        {
+            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+        }
+
+        return "ORDER BY Id";
+    }
+
     private TenantContext TenantContext => tenantContextProvider.Context;
 
     private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
@@ -91,13 +112,14 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
+            string orderByClause = BuildOrderByClause(query);
             var sql = $"""
                 SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue
                 FROM dmscs.DmsInstanceRouteContext rc
                 JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
                 WHERE {TenantContext.TenantWhereClause("i")}
-                ORDER BY rc.Id
-                LIMIT @Limit OFFSET @Offset;
+                {orderByClause}
+                {query.BuildPagingClause()};
                 """;
             var instanceRouteContexts = await connection.QueryAsync<DmsInstanceRouteContextResponse>(
                 sql,

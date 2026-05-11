@@ -21,42 +21,38 @@ public class KeycloakClientFacade(KeycloakContext keycloakContext) : IKeycloakCl
 
     public Task<IEnumerable<Role>> GetRolesAsync(string realm) => _keycloakClient.GetRolesAsync(realm);
 
-    public Task<bool> CreateRoleAsync(string realm, Role role)
-        => _keycloakClient.CreateRoleAsync(realm, role);
+    public Task<bool> CreateRoleAsync(string realm, Role role) =>
+        _keycloakClient.CreateRoleAsync(realm, role);
 
-    public Task<Role> GetRoleByNameAsync(string realm, string roleName)
-        => _keycloakClient.GetRoleByNameAsync(realm, roleName);
+    public Task<Role> GetRoleByNameAsync(string realm, string roleName) =>
+        _keycloakClient.GetRoleByNameAsync(realm, roleName);
 
-    public Task<bool> CreateClientScopeAsync(string realm, ClientScope clientScope)
-        => _keycloakClient.CreateClientScopeAsync(realm, clientScope);
+    public Task<bool> CreateClientScopeAsync(string realm, ClientScope clientScope) =>
+        _keycloakClient.CreateClientScopeAsync(realm, clientScope);
 
-    public Task<string?> CreateClientAndRetrieveClientIdAsync(string realm, Client client)
-        => _keycloakClient.CreateClientAndRetrieveClientIdAsync(realm, client);
+    public Task<string?> CreateClientAndRetrieveClientIdAsync(string realm, Client client) =>
+        _keycloakClient.CreateClientAndRetrieveClientIdAsync(realm, client);
 
-    public Task<Client> GetClientAsync(string realm, string clientUuid)
-        => _keycloakClient.GetClientAsync(realm, clientUuid);
+    public Task<Client> GetClientAsync(string realm, string clientUuid) =>
+        _keycloakClient.GetClientAsync(realm, clientUuid);
 
-    public Task<bool> UpdateClientAsync(string realm, string clientUuid, Client client)
-        => _keycloakClient.UpdateClientAsync(realm, clientUuid, client);
+    public Task<bool> UpdateClientAsync(string realm, string clientUuid, Client client) =>
+        _keycloakClient.UpdateClientAsync(realm, clientUuid, client);
 
-    public Task<bool> DeleteClientAsync(string realm, string clientUuid)
-        => _keycloakClient.DeleteClientAsync(realm, clientUuid);
+    public Task<bool> DeleteClientAsync(string realm, string clientUuid) =>
+        _keycloakClient.DeleteClientAsync(realm, clientUuid);
 
-    public Task<Credentials> GenerateClientSecretAsync(string realm, string clientUuid)
-        => _keycloakClient.GenerateClientSecretAsync(realm, clientUuid);
+    public Task<Credentials> GenerateClientSecretAsync(string realm, string clientUuid) =>
+        _keycloakClient.GenerateClientSecretAsync(realm, clientUuid);
 
-    public Task<IEnumerable<Client>> GetClientsAsync(string realm)
-        => _keycloakClient.GetClientsAsync(realm);
+    public Task<IEnumerable<Client>> GetClientsAsync(string realm) => _keycloakClient.GetClientsAsync(realm);
 
-    public Task<IEnumerable<ClientScope>> GetClientScopesAsync(string realm)
-        => _keycloakClient.GetClientScopesAsync(realm);
+    public Task<IEnumerable<ClientScope>> GetClientScopesAsync(string realm) =>
+        _keycloakClient.GetClientScopesAsync(realm);
 
-    public Task<User> GetUserForServiceAccountAsync(string realm, string clientUuid)
-        => _keycloakClient.GetUserForServiceAccountAsync(realm, clientUuid);
+    public Task<User> GetUserForServiceAccountAsync(string realm, string clientUuid) =>
+        _keycloakClient.GetUserForServiceAccountAsync(realm, clientUuid);
 
-    public Task<bool> AddRealmRoleMappingsToUserAsync(
-        string realm,
-        string userId,
-        IEnumerable<Role> roles
-    ) => _keycloakClient.AddRealmRoleMappingsToUserAsync(realm, userId, roles);
+    public Task<bool> AddRealmRoleMappingsToUserAsync(string realm, string userId, IEnumerable<Role> roles) =>
+        _keycloakClient.AddRealmRoleMappingsToUserAsync(realm, userId, roles);
 }

@@ -33,7 +33,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(new ClaimSetQueryResult.Success([]));
 
         List<Claim> hierarchy = [];
@@ -51,7 +51,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -79,7 +79,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -159,7 +159,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -227,7 +227,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -315,7 +315,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -396,7 +396,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -491,7 +491,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -577,7 +577,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -679,7 +679,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -788,7 +788,7 @@ public class AuthorizationMetadataResponseFactoryTests
         // Arrange
         var claimSetName = "TestClaimSet";
 
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse()
@@ -897,7 +897,7 @@ public class AuthorizationMetadataResponseFactoryTests
         var claimSet2 = new ClaimSet { Name = "ClaimSet2" };
 
         // Mock the repository to return two claim sets
-        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
             .Returns(
                 new ClaimSetQueryResult.Success([
                     new ClaimSetResponse

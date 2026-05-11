@@ -30,7 +30,7 @@ public class AuthorizationMetadataResponseFactory(IClaimSetRepository _claimSetR
         {
             // Obtain the list of claim sets to process
             var claimSetResult = await _claimSetRepository.QueryClaimSet(
-                new PagingQuery() { Limit = int.MaxValue }
+                new ClaimSetQuery() { Limit = int.MaxValue }
             );
 
             return claimSetResult switch

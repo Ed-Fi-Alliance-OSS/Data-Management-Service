@@ -20,13 +20,7 @@ public class IdentitySettingsValidatorTests
     public void SetUp()
     {
         _validator = new IdentitySettingsValidator(
-            Options.Create(
-                new ClientSecretValidationOptions
-                {
-                    MinimumLength = 8,
-                    MaximumLength = 12,
-                }
-            )
+            Options.Create(new ClientSecretValidationOptions { MinimumLength = 8, MaximumLength = 12 })
         );
     }
 

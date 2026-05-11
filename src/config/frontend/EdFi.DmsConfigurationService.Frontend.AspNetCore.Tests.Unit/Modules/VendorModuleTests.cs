@@ -79,7 +79,7 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Returns(new VendorInsertResult.Success(1, true));
 
-            A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
+            A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(
                     new VendorQueryResult.Success([
                         new VendorResponse()
@@ -391,7 +391,7 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Returns(new VendorInsertResult.FailureUnknown(""));
 
-            A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
+            A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(new VendorQueryResult.FailureUnknown(""));
 
             A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
@@ -464,7 +464,7 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Returns(new VendorInsertResult());
 
-            A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
+            A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(new VendorQueryResult());
 
             A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored)).Returns(new VendorGetResult());
@@ -627,6 +627,133 @@ public class VendorModuleTests
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
             string responseContent = await response.Content.ReadAsStringAsync();
             responseContent.Should().Contain("It may have been recently deleted.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Invalid_PagingQuery : VendorModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
+                .Returns(new VendorQueryResult.Success([]));
+        }
+
+        [Test]
+        public async Task Should_return_400_when_orderBy_is_invalid()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?orderBy=invalidField");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_direction_is_invalid()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?orderBy=id&direction=SIDEWAYS");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_offset_is_negative()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?offset=-1");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_limit_is_zero()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?limit=0");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_200_with_valid_orderBy_and_direction()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?orderBy=company&direction=DESC");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_direction_is_asc()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?direction=asc");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_direction_is_ascending()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?direction=ascending");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_direction_is_descending()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?direction=descending");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_400_with_correct_message_when_direction_is_invalid()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?direction=sideways");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var content = await response.Content.ReadAsStringAsync();
+            content
+                .Should()
+                .Contain("The direction query parameter must be one of: asc, ascending, desc, descending.");
+        }
+
+        [Test]
+        public async Task Should_return_200_when_filter_id_is_provided()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?id=1");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_filter_company_is_provided()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?company=Acme");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_limit_equals_maximum()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?limit=100");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_offset_is_non_numeric()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?offset=abc");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_limit_is_non_numeric()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/vendors?limit=xyz");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
     }
 }

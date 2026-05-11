@@ -126,20 +126,81 @@ public class ProfileRepository(
         }
     }
 
-    public async Task<IEnumerable<ProfileGetResult>> QueryProfiles(PagingQuery query)
+    private static string BuildFilterClause(ProfileQuery query)
+    {
+        var conditions = new List<string>();
+        if (query.Id.HasValue)
+        {
+            conditions.Add("Id = @Id");
+        }
+
+        if (query.Name is not null)
+        {
+            conditions.Add("ProfileName = @Name");
+        }
+
+        return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
+    }
+
+    private static IEnumerable<ProfileResponse> ApplyOrdering(
+        IEnumerable<ProfileResponse> profiles,
+        ProfileQuery query
+    )
+    {
+        var orderBy = query.OrderBy ?? "id";
+
+        return orderBy.ToLowerInvariant() switch
+        {
+            "name" => query.IsDescending
+                ? profiles.OrderByDescending(profile => profile.Name, StringComparer.Ordinal)
+                : profiles.OrderBy(profile => profile.Name, StringComparer.Ordinal),
+            _ => query.IsDescending
+                ? profiles.OrderByDescending(profile => profile.Id)
+                : profiles.OrderBy(profile => profile.Id),
+        };
+    }
+
+    private bool IsProfileValid(ProfileResponse profile)
+    {
+        var validationResult = ProfileValidationUtils.ValidateProfileXml(profile.Definition);
+        if (validationResult.IsValid)
+        {
+            return true;
+        }
+
+        logger.LogWarning(
+            "Profile definition failed XSD validation for list query. ProfileId: {ProfileId}, Name: {Name}, ValidationErrors: {ValidationErrors}",
+            profile.Id,
+            LoggingUtility.SanitizeForLog(profile.Name),
+            LoggingUtility.SanitizeForLog(string.Join("; ", validationResult.Errors))
+        );
+
+        return false;
+    }
+
+    public async Task<IEnumerable<ProfileGetResult>> QueryProfiles(ProfileQuery query)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
         var results = new List<ProfileGetResult>();
         try
         {
-            string sql =
-                @"SELECT Id, ProfileName AS Name, Definition FROM dmscs.Profile ORDER BY Id LIMIT @Limit OFFSET @Offset;";
-            var profiles = await connection.QueryAsync<ProfileResponse>(
-                sql,
-                new { Limit = query.Limit, Offset = query.Offset }
-            );
-            foreach (var profile in profiles)
+            string filterClause = BuildFilterClause(query);
+            string sql = $"""
+                SELECT Id, ProfileName AS Name, Definition
+                FROM dmscs.Profile
+                {filterClause}
+                """;
+            var profiles = await connection.QueryAsync<ProfileResponse>(sql, new { query.Id, query.Name });
+
+            var validProfiles = ApplyOrdering(profiles.Where(IsProfileValid), query).Skip(query.Offset ?? 0);
+
+            if (query.Limit.HasValue)
+            {
+                validProfiles = validProfiles.Take(query.Limit.Value);
+            }
+
+            foreach (var profile in validProfiles)
             {
                 results.Add(new ProfileGetResult.Success(profile));
             }

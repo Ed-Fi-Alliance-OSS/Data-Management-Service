@@ -74,7 +74,7 @@ public class ApplicationTests : DatabaseTest
         public async Task Should_get_test_application_from_get_all()
         {
             var getResult = await _applicationRepository.QueryApplication(
-                new PagingQuery() { Limit = 25, Offset = 0 }
+                new ApplicationQuery() { Limit = 25, Offset = 0 }
             );
             getResult.Should().BeOfType<ApplicationQueryResult.Success>();
 
@@ -255,7 +255,7 @@ public class ApplicationTests : DatabaseTest
         public async Task Should_get_update_application_from_get_all()
         {
             var getResult = await _applicationRepository.QueryApplication(
-                new PagingQuery() { Limit = 25, Offset = 0 }
+                new ApplicationQuery() { Limit = 25, Offset = 0 }
             );
             getResult.Should().BeOfType<ApplicationQueryResult.Success>();
 
@@ -340,7 +340,7 @@ public class ApplicationTests : DatabaseTest
         public async Task Should_not_get_application_two_from_get_all()
         {
             var getResult = await _applicationRepository.QueryApplication(
-                new PagingQuery() { Limit = 25, Offset = 0 }
+                new ApplicationQuery() { Limit = 25, Offset = 0 }
             );
             getResult.Should().BeOfType<ApplicationQueryResult.Success>();
 
@@ -521,6 +521,160 @@ public class ApplicationTests : DatabaseTest
             updateResult.Should().BeOfType<ApplicationUpdateResult.FailureDuplicateApplication>();
             var failureResult = (ApplicationUpdateResult.FailureDuplicateApplication)updateResult;
             failureResult.ApplicationName.Should().Be("Duplicate Test Application");
+        }
+    }
+
+    [TestFixture]
+    public class QueryPagingTests : ApplicationTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            VendorInsertCommand vendorCommand = new()
+            {
+                Company = "Paging Test Vendor",
+                ContactEmailAddress = "paging@test.com",
+                ContactName = "Paging Tester",
+                NamespacePrefixes = "uri://paging-test.example",
+            };
+            var vendorResult = await vendorRepository.InsertVendor(vendorCommand);
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+            for (int i = 1; i <= 30; i++)
+            {
+                ApplicationInsertCommand app = new()
+                {
+                    ApplicationName = $"PagingApp-{i:D3}",
+                    VendorId = _vendorId,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [],
+                };
+                var insertResult = await _applicationRepository.InsertApplication(
+                    app,
+                    new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                );
+                insertResult
+                    .Should()
+                    .BeOfType<ApplicationInsertResult.Success>(
+                        $"application {i} (PagingApp-{i:D3}) should insert successfully"
+                    );
+            }
+        }
+
+        [Test]
+        public async Task Should_return_all_results_when_no_paging_params_provided()
+        {
+            var result = await _applicationRepository.QueryApplication(new ApplicationQuery());
+            result.Should().BeOfType<ApplicationQueryResult.Success>();
+            ((ApplicationQueryResult.Success)result).ApplicationResponses.Should().HaveCount(30);
+        }
+
+        [Test]
+        public async Task Should_apply_limit_when_limit_is_provided()
+        {
+            var result = await _applicationRepository.QueryApplication(new ApplicationQuery { Limit = 10 });
+            result.Should().BeOfType<ApplicationQueryResult.Success>();
+            ((ApplicationQueryResult.Success)result).ApplicationResponses.Should().HaveCount(10);
+        }
+
+        [Test]
+        public async Task Should_apply_offset_when_offset_is_provided()
+        {
+            var result = await _applicationRepository.QueryApplication(new ApplicationQuery { Offset = 25 });
+            result.Should().BeOfType<ApplicationQueryResult.Success>();
+            ((ApplicationQueryResult.Success)result).ApplicationResponses.Should().HaveCount(5);
+        }
+    }
+
+    [TestFixture]
+    public class QuerySortTests : ApplicationTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            VendorInsertCommand vendorCommand = new()
+            {
+                Company = "Sort Test Vendor",
+                ContactEmailAddress = "sort@test.com",
+                ContactName = "Sort Tester",
+                NamespacePrefixes = "uri://sort-test.example",
+            };
+            var vendorResult = await vendorRepository.InsertVendor(vendorCommand);
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+            foreach (var name in new[] { "Charlie-App", "Alice-App", "Bob-App" })
+            {
+                ApplicationInsertCommand app = new()
+                {
+                    ApplicationName = name,
+                    VendorId = _vendorId,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [],
+                };
+                var insertResult = await _applicationRepository.InsertApplication(
+                    app,
+                    new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                );
+                insertResult
+                    .Should()
+                    .BeOfType<ApplicationInsertResult.Success>(
+                        $"application '{name}' should insert successfully"
+                    );
+            }
+        }
+
+        [Test]
+        public async Task Should_return_ascending_order_by_application_name()
+        {
+            var result = await _applicationRepository.QueryApplication(
+                new ApplicationQuery { OrderBy = "applicationName", Direction = "ASC" }
+            );
+            result.Should().BeOfType<ApplicationQueryResult.Success>();
+            var names = ((ApplicationQueryResult.Success)result)
+                .ApplicationResponses.Select(a => a.ApplicationName)
+                .ToList();
+            names.Should().HaveCount(3);
+            names.Should().ContainInOrder("Alice-App", "Bob-App", "Charlie-App");
+        }
+
+        [Test]
+        public async Task Should_return_descending_order_by_application_name()
+        {
+            var result = await _applicationRepository.QueryApplication(
+                new ApplicationQuery { OrderBy = "applicationName", Direction = "DESC" }
+            );
+            result.Should().BeOfType<ApplicationQueryResult.Success>();
+            var names = ((ApplicationQueryResult.Success)result)
+                .ApplicationResponses.Select(a => a.ApplicationName)
+                .ToList();
+            names.Should().HaveCount(3);
+            names.Should().ContainInOrder("Charlie-App", "Bob-App", "Alice-App");
+        }
+
+        [Test]
+        public async Task Should_default_to_ascending_order_by_application_name_when_orderby_is_omitted()
+        {
+            var result = await _applicationRepository.QueryApplication(new ApplicationQuery());
+            result.Should().BeOfType<ApplicationQueryResult.Success>();
+            var names = ((ApplicationQueryResult.Success)result)
+                .ApplicationResponses.Select(a => a.ApplicationName)
+                .ToList();
+            names.Should().HaveCount(3);
+            names.Should().ContainInOrder("Alice-App", "Bob-App", "Charlie-App");
         }
     }
 }

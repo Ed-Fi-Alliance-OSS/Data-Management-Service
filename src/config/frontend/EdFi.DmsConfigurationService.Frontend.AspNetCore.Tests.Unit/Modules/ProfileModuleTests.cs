@@ -258,7 +258,7 @@ public class ProfileModuleTests
     [Test]
     public async Task GetAllProfiles_ShouldReturnOk()
     {
-        A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
+        A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
             .Returns(
                 new[]
                 {
@@ -496,7 +496,7 @@ public class ProfileModuleTests
     [Test]
     public async Task GetAllProfiles_EmptyResult_ShouldReturnOk()
     {
-        A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
+        A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
             .Returns(new ProfileGetResult[] { });
         using var client = SetUpClient();
         var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
@@ -514,7 +514,7 @@ public class ProfileModuleTests
     [Test]
     public async Task GetAllProfiles_MultipleProfiles_ShouldReturnOk()
     {
-        A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
+        A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
             .Returns(
                 new[]
                 {
@@ -566,7 +566,7 @@ public class ProfileModuleTests
     [Test]
     public async Task GetAllProfiles_FailureUnknown_ShouldReturnInternalServerError()
     {
-        A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
+        A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
             .Returns(new[] { new ProfileGetResult.FailureUnknown("Database error") });
         using var client = SetUpClient();
         var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
@@ -640,13 +640,12 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task GetAllProfiles_WithInvalidProfiles_ShouldFilterOutInvalidProfiles()
+    public async Task GetAllProfiles_ShouldReturnProfilesProvidedByRepository()
     {
-        A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
+        A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
             .Returns(
                 new[]
                 {
-                    // Valid profile
                     new ProfileGetResult.Success(
                         new ProfileResponse
                         {
@@ -656,20 +655,10 @@ public class ProfileModuleTests
                                 @"<Profile name=""ValidProfile""><Resource name=""School""><ReadContentType memberSelection=""IncludeOnly""><Property name=""NameOfInstitution"" /></ReadContentType></Resource></Profile>",
                         }
                     ),
-                    // Invalid profile (missing required attribute)
                     new ProfileGetResult.Success(
                         new ProfileResponse
                         {
                             Id = 2,
-                            Name = "InvalidProfile",
-                            Definition = @"<Profile><Resource name=""School""></Resource></Profile>",
-                        }
-                    ),
-                    // Another valid profile
-                    new ProfileGetResult.Success(
-                        new ProfileResponse
-                        {
-                            Id = 3,
                             Name = "AnotherValidProfile",
                             Definition =
                                 @"<Profile name=""AnotherValidProfile""><Resource name=""Student""><ReadContentType memberSelection=""IncludeAll"" /></Resource></Profile>",
@@ -687,38 +676,15 @@ public class ProfileModuleTests
         profiles.Should().HaveCount(2);
         profiles[0]!["id"]!.GetValue<int>().Should().Be(1);
         profiles[0]!["name"]!.GetValue<string>().Should().Be("ValidProfile");
-        profiles[1]!["id"]!.GetValue<int>().Should().Be(3);
+        profiles[1]!["id"]!.GetValue<int>().Should().Be(2);
         profiles[1]!["name"]!.GetValue<string>().Should().Be("AnotherValidProfile");
     }
 
     [Test]
-    public async Task GetAllProfiles_AllInvalidProfiles_ShouldReturnEmptyArray()
+    public async Task GetAllProfiles_WhenRepositoryReturnsNoVisibleProfiles_ShouldReturnEmptyArray()
     {
-        A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
-            .Returns(
-                new[]
-                {
-                    // Invalid profile (malformed XML)
-                    new ProfileGetResult.Success(
-                        new ProfileResponse
-                        {
-                            Id = 1,
-                            Name = "InvalidProfile1",
-                            Definition =
-                                @"<Profile name=""InvalidProfile1""><Resource name=""School""></Resource>", // Missing closing tag
-                        }
-                    ),
-                    // Invalid profile (missing required attribute)
-                    new ProfileGetResult.Success(
-                        new ProfileResponse
-                        {
-                            Id = 2,
-                            Name = "InvalidProfile2",
-                            Definition = @"<Profile><Resource name=""Student""></Resource></Profile>",
-                        }
-                    ),
-                }
-            );
+        A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
+            .Returns(Array.Empty<ProfileGetResult>());
         using var client = SetUpClient();
         var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
 
@@ -768,5 +734,51 @@ public class ProfileModuleTests
         var response = await client.GetAsync("/v2/profiles/2");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task GetAllProfiles_Should_bind_profile_filters_and_sorting()
+    {
+        ProfileQuery? capturedQuery = null;
+        A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
+            .Invokes(call => capturedQuery = call.GetArgument<ProfileQuery>(0))
+            .Returns(
+                new[]
+                {
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Id = 42,
+                            Name = "FilteredProfile",
+                            Definition =
+                                @"<Profile name=""FilteredProfile""><Resource name=""School""><ReadContentType memberSelection=""IncludeOnly""><Property name=""NameOfInstitution"" /></ReadContentType></Resource></Profile>",
+                        }
+                    ),
+                }
+            );
+
+        using var client = SetUpClient();
+        var response = await client.GetAsync(
+            "/v2/profiles?id=42&name=FilteredProfile&orderBy=name&direction=DESC&limit=1&offset=0"
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Id.Should().Be(42);
+        capturedQuery.Name.Should().Be("FilteredProfile");
+        capturedQuery.OrderBy.Should().Be("name");
+        capturedQuery.Direction.Should().Be("DESC");
+        capturedQuery.Limit.Should().Be(1);
+        capturedQuery.Offset.Should().Be(0);
+    }
+
+    [Test]
+    public async Task GetAllProfiles_InvalidOrderBy_ShouldReturnBadRequest()
+    {
+        using var client = SetUpClient();
+
+        var response = await client.GetAsync("/v2/profiles?orderBy=invalidField");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

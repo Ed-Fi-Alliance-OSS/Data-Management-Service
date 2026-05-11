@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
 using FluentValidation.Results;
 
@@ -55,11 +56,13 @@ public class DmsInstanceModule : IEndpointModule
 
     private static async Task<IResult> GetAll(
         IDmsInstanceRepository repository,
-        [AsParameters] PagingQuery query,
+        [AsParameters] FrontendDmsInstanceQuery query,
+        DmsInstancePagingQueryValidator validator,
         HttpContext httpContext
     )
     {
-        DmsInstanceQueryResult getResult = await repository.QueryDmsInstance(query);
+        await validator.GuardAsync(query);
+        DmsInstanceQueryResult getResult = await repository.QueryDmsInstance(query.ToQuery());
         return getResult switch
         {
             DmsInstanceQueryResult.Success success => Results.Ok(success.DmsInstanceResponses),

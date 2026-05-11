@@ -52,31 +52,27 @@ public static class ClientSecretValidation
     private const string LowercaseAlphabet = "abcdefghijklmnopqrstuvwxyz";
     private const string UppercaseAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private const string DigitAlphabet = "0123456789";
+
     /// <summary>
     /// The set of special characters allowed in client secrets.
     /// Excludes characters that may cause issues in shell scripts, URLs, or JSON: ~ ` | < > " '
     /// </summary>
     private const string SpecialAlphabet = "!@#$%^&*()-_=+[]{}:;,.?";
-    private static readonly string EscapedSpecialCharacterClass =
-        BuildRegexCharacterClass(SpecialAlphabet);
+    private static readonly string EscapedSpecialCharacterClass = BuildRegexCharacterClass(SpecialAlphabet);
     private const string GeneratedClientSecretAlphabet =
         LowercaseAlphabet + UppercaseAlphabet + DigitAlphabet + SpecialAlphabet;
 
-    public static string BuildComplexityPattern(ClientSecretValidationOptions options)
-        => $@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[{EscapedSpecialCharacterClass}]).{{{options.MinimumLength},{options.MaximumLength}}}$";
+    public static string BuildComplexityPattern(ClientSecretValidationOptions options) =>
+        $@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[{EscapedSpecialCharacterClass}]).{{{options.MinimumLength},{options.MaximumLength}}}$";
 
-    public static string BuildComplexityErrorMessage(ClientSecretValidationOptions options)
-        => $"Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be {options.MinimumLength} to {options.MaximumLength} characters long.";
+    public static string BuildComplexityErrorMessage(ClientSecretValidationOptions options) =>
+        $"Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be {options.MinimumLength} to {options.MaximumLength} characters long.";
 
-    public static string BuildLengthErrorMessage(
-        string settingPath,
-        ClientSecretValidationOptions options
-    ) => $"{settingPath} must be between {options.MinimumLength} and {options.MaximumLength} characters long.";
+    public static string BuildLengthErrorMessage(string settingPath, ClientSecretValidationOptions options) =>
+        $"{settingPath} must be between {options.MinimumLength} and {options.MaximumLength} characters long.";
 
-    public static bool IsWithinLengthRange(
-        string value,
-        ClientSecretValidationOptions options
-    ) => value.Length >= options.MinimumLength && value.Length <= options.MaximumLength;
+    public static bool IsWithinLengthRange(string value, ClientSecretValidationOptions options) =>
+        value.Length >= options.MinimumLength && value.Length <= options.MaximumLength;
 
     public static string GenerateSecretWithMinimumLength(ClientSecretValidationOptions options)
     {

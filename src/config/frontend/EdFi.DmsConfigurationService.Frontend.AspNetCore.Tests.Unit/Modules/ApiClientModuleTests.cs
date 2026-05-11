@@ -137,7 +137,7 @@ public class ApiClientModuleTests
                 )
                 .Returns(new ApiClientInsertResult.Success(1));
 
-            A.CallTo(() => _apiClientRepository.QueryApiClient(A<PagingQuery>.Ignored))
+            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
                 .Returns(
                     new ApiClientQueryResult.Success([
                         new ApiClientResponse
@@ -567,7 +567,7 @@ public class ApiClientModuleTests
                 )
                 .Returns(new ApiClientInsertResult.FailureUnknown("Database error"));
 
-            A.CallTo(() => _apiClientRepository.QueryApiClient(A<PagingQuery>.Ignored))
+            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
                 .Returns(new ApiClientQueryResult.FailureUnknown("Database error"));
 
             A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>.Ignored))
@@ -1221,6 +1221,89 @@ public class ApiClientModuleTests
 
             // Assert
             resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Invalid_PagingQuery : ApiClientModuleTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+                .Returns(new ApiClientQueryResult.Success([]));
+        }
+
+        [Test]
+        public async Task Should_return_400_when_orderBy_is_invalid()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/apiClients?orderBy=invalidField");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_direction_is_invalid()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/apiClients?orderBy=id&direction=SIDEWAYS");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_offset_is_negative()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/apiClients?offset=-1");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_limit_is_zero()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/apiClients?limit=0");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_200_with_valid_orderBy_and_direction()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/apiClients?orderBy=name&direction=ASC");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_filter_applicationId_is_provided()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/apiClients?applicationid=1");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_offset_is_non_numeric()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/apiClients?offset=abc");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_400_when_limit_is_non_numeric()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/apiClients?limit=xyz");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_200_when_orderBy_omitted_with_direction()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v2/apiClients?direction=asc");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 }

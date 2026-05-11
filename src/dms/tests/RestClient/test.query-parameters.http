@@ -1,0 +1,235 @@
+### DMS-1074 - CMS query parameter smoke tests
+#
+# Prereqs:
+#   1. Start the local DMS stack.
+#   2. Execute this file from top to bottom with the VS Code REST Client extension.
+#
+# This file exercises the current CMS collection endpoints that accept offset,
+# limit, orderBy, and direction query parameters.
+
+@configPort=8081
+
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=ValidClientSecret1234567890!Abcd
+
+# -----------------------------------------------------------------------------
+# 1. Bootstrap auth
+# -----------------------------------------------------------------------------
+
+### 1.1 Configuration-Service token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+# -----------------------------------------------------------------------------
+# 2. Seed collection data
+# -----------------------------------------------------------------------------
+
+### 2.1 Vendors
+# @name createVendorZulu
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "company": "Zulu Vendor",
+  "contactName": "Vendor Tester",
+  "contactEmailAddress": "zulu@example.com",
+  "namespacePrefixes": "uri://zulu.ed-fi.org"
+}
+
+###
+# @name createVendorAlpha
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "company": "Alpha Vendor",
+  "contactName": "Vendor Tester",
+  "contactEmailAddress": "alpha@example.com",
+  "namespacePrefixes": "uri://alpha.ed-fi.org"
+}
+
+###
+@vendorAlphaId={{createVendorAlpha.response.body.id}}
+
+# @name createVendorMango
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "company": "Mango Vendor",
+  "contactName": "Vendor Tester",
+  "contactEmailAddress": "mango@example.com",
+  "namespacePrefixes": "uri://mango.ed-fi.org"
+}
+
+###
+### 2.2 DMS instances
+# @name createDmsInstanceZulu
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "instanceType": "Test",
+  "instanceName": "Zulu Instance",
+  "connectionString": "Server=zulu;Database=ZuluDb;"
+}
+
+###
+# @name createDmsInstanceAlpha
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "instanceType": "Test",
+  "instanceName": "Alpha Instance",
+  "connectionString": "Server=alpha;Database=AlphaDb;"
+}
+
+###
+@dmsInstanceAlphaId={{createDmsInstanceAlpha.response.body.id}}
+
+# @name createDmsInstanceMango
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "instanceType": "Test",
+  "instanceName": "Mango Instance",
+  "connectionString": "Server=mango;Database=MangoDb;"
+}
+
+###
+@dmsInstanceMangoId={{createDmsInstanceMango.response.body.id}}
+
+### 2.3 Claim sets
+# @name createClaimSetZulu
+POST http://localhost:{{configPort}}/v2/claimSets
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "Zulu-ClaimSet"
+}
+
+###
+# @name createClaimSetAlpha
+POST http://localhost:{{configPort}}/v2/claimSets
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "Alpha-ClaimSet"
+}
+
+###
+# @name createClaimSetMango
+POST http://localhost:{{configPort}}/v2/claimSets
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "Mango-ClaimSet"
+}
+
+###
+### 2.4 Applications and api clients
+# @name createApplicationZulu
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "vendorId": {{vendorAlphaId}},
+  "applicationName": "Zulu Application",
+  "claimSetName": "Zulu-ClaimSet",
+  "educationOrganizationIds": [],
+  "dmsInstanceIds": [{{dmsInstanceAlphaId}}]
+}
+
+###
+# @name createApplicationAlpha
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "vendorId": {{vendorAlphaId}},
+  "applicationName": "Alpha Application",
+  "claimSetName": "Alpha-ClaimSet",
+  "educationOrganizationIds": [],
+  "dmsInstanceIds": [{{dmsInstanceAlphaId}}]
+}
+
+###
+# @name createApplicationMango
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "vendorId": {{vendorAlphaId}},
+  "applicationName": "Mango Application",
+  "claimSetName": "Mango-ClaimSet",
+  "educationOrganizationIds": [],
+  "dmsInstanceIds": [{{dmsInstanceMangoId}}]
+}
+
+###
+# -----------------------------------------------------------------------------
+# 3. Happy-path collection query checks
+# -----------------------------------------------------------------------------
+
+### 3.1 Vendors - sorted by company ascending, paged to the first 2 rows
+GET http://localhost:{{configPort}}/v2/vendors?offset=0&limit=2&orderBy=company&direction=ASC
+Authorization: bearer {{configToken}}
+
+### 3.2 Vendors - sorted by company descending with offset
+GET http://localhost:{{configPort}}/v2/vendors?offset=1&limit=1&orderBy=company&direction=DESC
+Authorization: bearer {{configToken}}
+
+### 3.3 Applications - sorted by applicationName ascending
+GET http://localhost:{{configPort}}/v2/applications?offset=0&limit=2&orderBy=applicationName&direction=ASC
+Authorization: bearer {{configToken}}
+
+### 3.4 Api clients - sorted by name descending
+GET http://localhost:{{configPort}}/v2/apiClients?offset=0&limit=2&orderBy=name&direction=DESC
+Authorization: bearer {{configToken}}
+
+### 3.5 DMS instances - sorted by instanceName ascending
+GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=2&orderBy=instanceName&direction=ASC
+Authorization: bearer {{configToken}}
+
+### 3.6 Claim sets - sorted by name descending
+GET http://localhost:{{configPort}}/v2/claimSets?offset=0&limit=2&orderBy=name&direction=DESC
+Authorization: bearer {{configToken}}
+
+# -----------------------------------------------------------------------------
+# 4. Validation failures
+# -----------------------------------------------------------------------------
+
+### 4.1 Invalid offset is rejected
+GET http://localhost:{{configPort}}/v2/vendors?offset=-1
+Authorization: bearer {{configToken}}
+
+### 4.2 Invalid limit is rejected
+GET http://localhost:{{configPort}}/v2/vendors?offset=0&limit=-1
+Authorization: bearer {{configToken}}
+
+### 4.3 Invalid orderBy field is rejected
+GET http://localhost:{{configPort}}/v2/vendors?orderBy=notARealField
+Authorization: bearer {{configToken}}

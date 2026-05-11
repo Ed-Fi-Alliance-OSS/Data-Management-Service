@@ -19,13 +19,7 @@ public class Given_a_RegisterRequest_validator
     public void SetUp()
     {
         _validator = new RegisterRequest.Validator(
-            Options.Create(
-                new ClientSecretValidationOptions
-                {
-                    MinimumLength = 8,
-                    MaximumLength = 12,
-                }
-            )
+            Options.Create(new ClientSecretValidationOptions { MinimumLength = 8, MaximumLength = 12 })
         );
     }
 

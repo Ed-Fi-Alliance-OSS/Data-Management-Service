@@ -23,8 +23,10 @@ public class ClientSecretValidationOptionsValidatorTests
     public void Validate_WithMaximumLengthExceedingAllowedUpperBound_ShouldFailValidation()
     {
         // Arrange
-        ClientSecretValidationOptions options =
-            new() { MaximumLength = ClientSecretValidationOptions.MaximumAllowedLength + 1 };
+        ClientSecretValidationOptions options = new()
+        {
+            MaximumLength = ClientSecretValidationOptions.MaximumAllowedLength + 1,
+        };
 
         // Act
         var result = _validator.Validate(name: null, options);
@@ -36,5 +38,36 @@ public class ClientSecretValidationOptionsValidatorTests
             .Be(
                 $"Invalid ClientSecretValidation configuration: MaximumLength must not exceed {ClientSecretValidationOptions.MaximumAllowedLength}."
             );
+    }
+
+    [Test]
+    public void Validate_WithMaximumLengthLessThanMinimumLength_ShouldFailValidation()
+    {
+        // Arrange
+        ClientSecretValidationOptions options = new() { MinimumLength = 10, MaximumLength = 9 };
+
+        // Act
+        var result = _validator.Validate(name: null, options);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+        result
+            .FailureMessage.Should()
+            .Be(
+                "Invalid ClientSecretValidation configuration: MaximumLength must be greater than or equal to MinimumLength."
+            );
+    }
+
+    [Test]
+    public void Validate_WithValidBounds_ShouldPassValidation()
+    {
+        // Arrange
+        ClientSecretValidationOptions options = new() { MinimumLength = 8, MaximumLength = 12 };
+
+        // Act
+        var result = _validator.Validate(name: null, options);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
     }
 }

@@ -22,6 +22,26 @@ public class DmsInstanceDerivativeRepository(
     IAuditContext auditContext
 ) : IDmsInstanceDerivativeRepository
 {
+    private static readonly IReadOnlyDictionary<string, string> OrderByColumns = new Dictionary<
+        string,
+        string
+    >(StringComparer.OrdinalIgnoreCase)
+    {
+        ["id"] = "Id",
+        ["instanceId"] = "InstanceId",
+        ["derivativeType"] = "DerivativeType",
+    };
+
+    private static string BuildOrderByClause(PagingQuery query)
+    {
+        if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
+        {
+            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+        }
+
+        return "ORDER BY Id";
+    }
+
     public async Task<DmsInstanceDerivativeInsertResult> InsertDmsInstanceDerivative(
         DmsInstanceDerivativeInsertCommand command
     )
@@ -64,11 +84,12 @@ public class DmsInstanceDerivativeRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
+            string orderByClause = BuildOrderByClause(query);
+            var sql = $"""
                 SELECT Id, InstanceId, DerivativeType, ConnectionString
                 FROM dmscs.DmsInstanceDerivative
-                ORDER BY Id
-                LIMIT @Limit OFFSET @Offset;
+                {orderByClause}
+                {query.BuildPagingClause()};
                 """;
 
             var results = await connection.QueryAsync<(

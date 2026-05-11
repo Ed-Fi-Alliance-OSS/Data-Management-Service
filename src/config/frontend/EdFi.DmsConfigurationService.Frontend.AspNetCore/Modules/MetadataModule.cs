@@ -139,7 +139,6 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                             ["type"] = "integer",
                             ["format"] = "int32",
                             ["minimum"] = 0,
-                            ["default"] = 0,
                         },
                         ["description"] =
                             "Indicates how many items should be skipped before returning results.",
@@ -154,8 +153,6 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                             ["type"] = "integer",
                             ["format"] = "int32",
                             ["minimum"] = 1,
-                            ["maximum"] = 100,
-                            ["default"] = 25,
                         },
                         ["description"] =
                             "Indicates the maximum number of items that should be returned in the results.",
@@ -168,6 +165,24 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                         ["schema"] = new JsonObject { ["type"] = "boolean", ["default"] = false },
                         ["description"] =
                             "Indicates if the total number of items available should be returned in the 'Total-Count' header.",
+                    },
+                    ["orderBy"] = new JsonObject
+                    {
+                        ["name"] = "orderBy",
+                        ["in"] = "query",
+                        ["required"] = false,
+                        ["schema"] = new JsonObject { ["type"] = "string" },
+                        ["description"] =
+                            "Name of the field to sort results by. Must be a valid field name for the resource.",
+                    },
+                    ["direction"] = new JsonObject
+                    {
+                        ["name"] = "direction",
+                        ["in"] = "query",
+                        ["required"] = false,
+                        ["schema"] = new JsonObject { ["type"] = "string" },
+                        ["description"] =
+                            "Sort direction to use with orderBy. Accepted values are asc/ascending and desc/descending, case-insensitive. Defaults to 'asc' if omitted when orderBy is specified.",
                     },
                 };
 

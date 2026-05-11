@@ -130,15 +130,71 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             }
         }
 
-        public async Task<VendorQueryResult> QueryVendor(PagingQuery query)
+        private static readonly IReadOnlyDictionary<string, string> OrderByColumns = new Dictionary<
+            string,
+            string
+        >(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = "Id",
+            ["company"] = "Company",
+            ["contactName"] = "ContactName",
+            ["contactEmailAddress"] = "ContactEmailAddress",
+        };
+
+        private static string BuildOrderByClause(VendorQuery query)
+        {
+            if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
+            {
+                return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+            }
+            return "ORDER BY Id";
+        }
+
+        private static string ResolveOrderByColumn(VendorQuery query) =>
+            query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col) ? col : "Id";
+
+        private static string BuildFilterClause(VendorQuery query)
+        {
+            var conditions = new List<string>();
+            if (query.Id.HasValue)
+            {
+                conditions.Add("Id = @Id");
+            }
+            if (query.Company is not null)
+            {
+                conditions.Add("Company = @Company");
+            }
+            if (query.ContactName is not null)
+            {
+                conditions.Add("ContactName = @ContactName");
+            }
+            if (query.ContactEmailAddress is not null)
+            {
+                conditions.Add("ContactEmailAddress = @ContactEmailAddress");
+            }
+            if (query.NamespacePrefixes is not null)
+            {
+                conditions.Add(
+                    "EXISTS (SELECT 1 FROM dmscs.VendorNamespacePrefix np WHERE np.VendorId = Id AND np.NamespacePrefix = @NamespacePrefixes)"
+                );
+            }
+            return conditions.Count > 0 ? " AND " + string.Join(" AND ", conditions) : string.Empty;
+        }
+
+        public async Task<VendorQueryResult> QueryVendor(VendorQuery query)
         {
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             try
             {
+                string orderByClause = BuildOrderByClause(query);
+                string filterClause = BuildFilterClause(query);
+                string outerCol = ResolveOrderByColumn(query);
+                string direction = query.IsDescending ? "DESC" : "ASC";
                 var sql = $"""
                     SELECT v.Id, Company, ContactName, ContactEmailAddress, TenantId, NamespacePrefix
-                    FROM (SELECT * FROM dmscs.Vendor WHERE {TenantContext.TenantWhereClause()} ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v
-                    LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
+                    FROM (SELECT * FROM dmscs.Vendor WHERE {TenantContext.TenantWhereClause()}{filterClause} {orderByClause} {query.BuildPagingClause()}) AS v
+                    LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
+                    ORDER BY v.{outerCol} {direction};
                     """;
                 var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
                     sql,
@@ -152,6 +208,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         query.Limit,
                         query.Offset,
                         TenantId,
+                        query.Id,
+                        query.Company,
+                        query.ContactName,
+                        query.ContactEmailAddress,
+                        query.NamespacePrefixes,
                     },
                     splitOn: "NamespacePrefix"
                 );

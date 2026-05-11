@@ -7,11 +7,11 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
-using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.Options;
@@ -161,11 +161,13 @@ public class ApplicationModule : IEndpointModule
 
     private static async Task<IResult> GetAll(
         IApplicationRepository applicationRepository,
-        [AsParameters] PagingQuery query,
+        [AsParameters] FrontendApplicationQuery query,
+        ApplicationPagingQueryValidator validator,
         HttpContext httpContext
     )
     {
-        ApplicationQueryResult getResult = await applicationRepository.QueryApplication(query);
+        await validator.GuardAsync(query);
+        ApplicationQueryResult getResult = await applicationRepository.QueryApplication(query.ToQuery());
         return getResult switch
         {
             ApplicationQueryResult.Success success => Results.Ok(success.ApplicationResponses),

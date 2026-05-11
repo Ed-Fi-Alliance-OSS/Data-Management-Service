@@ -7,10 +7,10 @@ using System.Net;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
-using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
 using FluentValidation.Results;
 
@@ -67,11 +67,13 @@ public class ClaimSetModule : IEndpointModule
 
     private static async Task<IResult> GetAll(
         IClaimSetRepository repository,
-        [AsParameters] PagingQuery query,
+        [AsParameters] FrontendClaimSetQuery query,
+        ClaimSetPagingQueryValidator validator,
         HttpContext httpContext
     )
     {
-        ClaimSetQueryResult result = await repository.QueryClaimSet(query);
+        await validator.GuardAsync(query);
+        ClaimSetQueryResult result = await repository.QueryClaimSet(query.ToQuery());
 
         return result switch
         {

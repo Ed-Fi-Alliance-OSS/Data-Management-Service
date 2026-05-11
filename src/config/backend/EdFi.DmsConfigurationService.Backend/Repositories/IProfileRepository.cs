@@ -13,7 +13,7 @@ public interface IProfileRepository
     Task<ProfileInsertResult> InsertProfile(ProfileInsertCommand command);
     Task<ProfileUpdateResult> UpdateProfile(ProfileUpdateCommand command);
     Task<ProfileGetResult> GetProfile(long id);
-    Task<IEnumerable<ProfileGetResult>> QueryProfiles(PagingQuery query);
+    Task<IEnumerable<ProfileGetResult>> QueryProfiles(ProfileQuery query);
     Task<ProfileDeleteResult> DeleteProfile(long id);
 }
 

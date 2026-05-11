@@ -12,7 +12,7 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 public interface IDmsInstanceRepository
 {
     Task<DmsInstanceInsertResult> InsertDmsInstance(DmsInstanceInsertCommand command);
-    Task<DmsInstanceQueryResult> QueryDmsInstance(PagingQuery query);
+    Task<DmsInstanceQueryResult> QueryDmsInstance(DmsInstanceQuery query);
     Task<DmsInstanceGetResult> GetDmsInstance(long id);
     Task<DmsInstanceUpdateResult> UpdateDmsInstance(DmsInstanceUpdateCommand command);
     Task<DmsInstanceDeleteResult> DeleteDmsInstance(long id);

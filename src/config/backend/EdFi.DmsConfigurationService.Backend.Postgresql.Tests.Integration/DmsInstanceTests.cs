@@ -72,7 +72,9 @@ public class DmsInstanceTests : DatabaseTest
         [Test]
         public async Task It_should_retrieve_instance_from_query()
         {
-            var getResult = await _repository.QueryDmsInstance(new PagingQuery() { Limit = 25, Offset = 0 });
+            var getResult = await _repository.QueryDmsInstance(
+                new DmsInstanceQuery() { Limit = 25, Offset = 0 }
+            );
             getResult.Should().BeOfType<DmsInstanceQueryResult.Success>();
 
             var instanceFromDb = ((DmsInstanceQueryResult.Success)getResult).DmsInstanceResponses.First();
@@ -167,7 +169,9 @@ public class DmsInstanceTests : DatabaseTest
         [Test]
         public async Task It_should_retrieve_updated_instance_from_query()
         {
-            var getResult = await _repository.QueryDmsInstance(new PagingQuery() { Limit = 25, Offset = 0 });
+            var getResult = await _repository.QueryDmsInstance(
+                new DmsInstanceQuery() { Limit = 25, Offset = 0 }
+            );
             getResult.Should().BeOfType<DmsInstanceQueryResult.Success>();
 
             var instanceFromDb = ((DmsInstanceQueryResult.Success)getResult).DmsInstanceResponses.First();
@@ -227,7 +231,9 @@ public class DmsInstanceTests : DatabaseTest
         [Test]
         public async Task It_should_not_retrieve_deleted_instance_from_query()
         {
-            var getResult = await _repository.QueryDmsInstance(new PagingQuery() { Limit = 25, Offset = 0 });
+            var getResult = await _repository.QueryDmsInstance(
+                new DmsInstanceQuery() { Limit = 25, Offset = 0 }
+            );
             getResult.Should().BeOfType<DmsInstanceQueryResult.Success>();
 
             var instances = ((DmsInstanceQueryResult.Success)getResult).DmsInstanceResponses;
@@ -675,6 +681,120 @@ public class DmsInstanceTests : DatabaseTest
             );
             queryResult.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
             ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class QueryPagingTests : DmsInstanceTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            for (int i = 1; i <= 20; i++)
+            {
+                DmsInstanceInsertCommand dmsInstanceCommand = new()
+                {
+                    InstanceName = $"Instance-{i:D2}",
+                    InstanceType = "SQL",
+                    ConnectionString = "encrypted-connection-string",
+                };
+                var insertResult = await _repository.InsertDmsInstance(dmsInstanceCommand);
+                insertResult
+                    .Should()
+                    .BeOfType<DmsInstanceInsertResult.Success>(
+                        $"dms instance {i} (Instance-{i:D2}) should insert successfully"
+                    );
+            }
+        }
+
+        [Test]
+        public async Task Should_return_all_results_when_no_paging_params_provided()
+        {
+            var result = await _repository.QueryDmsInstance(new DmsInstanceQuery());
+            result.Should().BeOfType<DmsInstanceQueryResult.Success>();
+            ((DmsInstanceQueryResult.Success)result).DmsInstanceResponses.Should().HaveCount(20);
+        }
+
+        [Test]
+        public async Task Should_apply_limit_when_limit_is_provided()
+        {
+            var result = await _repository.QueryDmsInstance(new DmsInstanceQuery { Limit = 8 });
+            result.Should().BeOfType<DmsInstanceQueryResult.Success>();
+            ((DmsInstanceQueryResult.Success)result).DmsInstanceResponses.Should().HaveCount(8);
+        }
+
+        [Test]
+        public async Task Should_apply_offset_when_offset_is_provided()
+        {
+            var result = await _repository.QueryDmsInstance(new DmsInstanceQuery { Offset = 15 });
+            result.Should().BeOfType<DmsInstanceQueryResult.Success>();
+            ((DmsInstanceQueryResult.Success)result).DmsInstanceResponses.Should().HaveCount(5);
+        }
+    }
+
+    [TestFixture]
+    public class QuerySortTests : DmsInstanceTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            foreach (var name in new[] { "Zulu-Instance", "Charlie-Instance", "November-Instance" })
+            {
+                DmsInstanceInsertCommand dmsInstanceCommand = new()
+                {
+                    InstanceName = name,
+                    InstanceType = "SQL",
+                    ConnectionString = "encrypted-connection-string",
+                };
+                var insertResult = await _repository.InsertDmsInstance(dmsInstanceCommand);
+                insertResult
+                    .Should()
+                    .BeOfType<DmsInstanceInsertResult.Success>(
+                        $"dms instance '{name}' should insert successfully"
+                    );
+            }
+        }
+
+        [Test]
+        public async Task Should_return_ascending_order_by_instanceName()
+        {
+            var result = await _repository.QueryDmsInstance(
+                new DmsInstanceQuery { OrderBy = "instanceName", Direction = "ASC" }
+            );
+            result.Should().BeOfType<DmsInstanceQueryResult.Success>();
+            var names = ((DmsInstanceQueryResult.Success)result)
+                .DmsInstanceResponses.Select(d => d.InstanceName)
+                .ToList();
+            names.Should().HaveCount(3);
+            names.Should().ContainInOrder("Charlie-Instance", "November-Instance", "Zulu-Instance");
+        }
+
+        [Test]
+        public async Task Should_return_descending_order_by_instanceName()
+        {
+            var result = await _repository.QueryDmsInstance(
+                new DmsInstanceQuery { OrderBy = "instanceName", Direction = "DESC" }
+            );
+            result.Should().BeOfType<DmsInstanceQueryResult.Success>();
+            var names = ((DmsInstanceQueryResult.Success)result)
+                .DmsInstanceResponses.Select(d => d.InstanceName)
+                .ToList();
+            names.Should().HaveCount(3);
+            names.Should().ContainInOrder("Zulu-Instance", "November-Instance", "Charlie-Instance");
+        }
+
+        [Test]
+        public async Task Should_default_to_ascending_order_when_direction_is_omitted()
+        {
+            var result = await _repository.QueryDmsInstance(
+                new DmsInstanceQuery { OrderBy = "instanceName" }
+            );
+            result.Should().BeOfType<DmsInstanceQueryResult.Success>();
+            var names = ((DmsInstanceQueryResult.Success)result)
+                .DmsInstanceResponses.Select(d => d.InstanceName)
+                .ToList();
+            names.Should().HaveCount(3);
+            names.Should().ContainInOrder("Charlie-Instance", "November-Instance", "Zulu-Instance");
         }
     }
 }

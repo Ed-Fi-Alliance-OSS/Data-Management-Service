@@ -155,6 +155,19 @@ public class TenantModuleTests
                 getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
                 getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             }
+
+            [Test]
+            public async Task It_returns_bad_request_for_invalid_order_by()
+            {
+                // Arrange
+                using var client = SetUpClient(multiTenancyEnabled: true);
+
+                // Act
+                var response = await client.GetAsync("/v2/tenants/?orderBy=invalidField");
+
+                // Assert
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            }
         }
 
         [TestFixture]

@@ -28,11 +28,7 @@ public class KeycloakClientRepositoryTests
         _keycloakClientFacade = A.Fake<IKeycloakClientFacade>();
         _logger = A.Fake<ILogger<KeycloakClientRepository>>();
         _clientSecretValidationOptionsAccessor = Options.Create(
-            new ClientSecretValidationOptions
-            {
-                MinimumLength = 40,
-                MaximumLength = 128,
-            }
+            new ClientSecretValidationOptions { MinimumLength = 40, MaximumLength = 128 }
         );
 
         _repository = new KeycloakClientRepository(
@@ -57,8 +53,7 @@ public class KeycloakClientRepositoryTests
                 Name = "Test Client",
             };
 
-            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", clientUuid))
-                .Returns(existingClient);
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", clientUuid)).Returns(existingClient);
             A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", clientUuid, existingClient))
                 .Returns(true);
 
@@ -90,8 +85,7 @@ public class KeycloakClientRepositoryTests
                 Name = "Test Client",
             };
 
-            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", clientUuid))
-                .Returns(existingClient);
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", clientUuid)).Returns(existingClient);
             A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", clientUuid, existingClient))
                 .Returns(false);
 
