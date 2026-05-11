@@ -97,6 +97,38 @@ public class Given_Descriptor_Write_Response_Etags
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet(description: "Previous")]);
+        var sut = CreateSut(targetLookupService, commandExecutor);
+        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
+
+        var result = await sut.HandlePostAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .NotMatchRegex(StampStyleEtagPattern);
+        targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        targetLookupService.ResolveForPutCallCount.Should().Be(0);
+        commandExecutor.Commands.Should().HaveCount(2);
+        commandExecutor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
+        commandExecutor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+        commandExecutor.Commands[1].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
+    }
+
+    [Test]
+    public async Task It_returns_the_current_hash_etag_for_descriptor_post_as_update_no_ops_without_an_update_command()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -113,7 +145,8 @@ public class Given_Descriptor_Write_Response_Etags
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
         commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
+        commandExecutor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("UPDATE dms.\"Descriptor\"");
     }
 
     [Test]
@@ -125,20 +158,7 @@ public class Given_Descriptor_Write_Response_Etags
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(
-                new Dictionary<string, object?>
-                {
-                    ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
-                    ["CodeValue"] = "Charter",
-                    ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
-                    ["ShortDescription"] = "Charter",
-                    ["Description"] = "Charter",
-                    ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
-                    ["EffectiveEndDate"] = null,
-                }
-            ),
-        ]);
+        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -166,18 +186,7 @@ public class Given_Descriptor_Write_Response_Etags
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         commandExecutor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(
-                new Dictionary<string, object?>
-                {
-                    ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
-                    ["CodeValue"] = "Charter",
-                    ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
-                    ["ShortDescription"] = "Charter",
-                    ["Description"] = "Previous Description",
-                    ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
-                    ["EffectiveEndDate"] = null,
-                }
-            ),
+            CreatePersistedDescriptorResultSet(description: "Previous Description"),
         ]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = CreatePutRequest(
@@ -281,6 +290,24 @@ public class Given_Descriptor_Write_Response_Etags
             }
             """
         )!;
+    }
+
+    private static InMemoryRelationalResultSet CreatePersistedDescriptorResultSet(
+        string description = "Charter"
+    )
+    {
+        return InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?>
+            {
+                ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+                ["CodeValue"] = "Charter",
+                ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
+                ["ShortDescription"] = "Charter",
+                ["Description"] = description,
+                ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
+                ["EffectiveEndDate"] = null,
+            }
+        );
     }
 
     private static MappingSet CreateMappingSet(SqlDialect dialect)

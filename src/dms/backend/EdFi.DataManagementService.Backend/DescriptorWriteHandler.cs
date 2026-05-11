@@ -100,7 +100,7 @@ internal sealed class DescriptorWriteHandler(
                         .ConfigureAwait(false),
 
                     RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) =>
-                        await UpdateDescriptorForUpsertAsync(
+                        await UpdateDescriptorForUpsertIfChangedAsync(
                                 request,
                                 body,
                                 documentId,
@@ -888,6 +888,55 @@ internal sealed class DescriptorWriteHandler(
             existingDocumentUuid,
             RelationalApiMetadataFormatter.FormatEtag(body)
         );
+    }
+
+    private async Task<UpsertResult> UpdateDescriptorForUpsertIfChangedAsync(
+        DescriptorWriteRequest request,
+        ExtractedDescriptorBody body,
+        long documentId,
+        DocumentUuid existingDocumentUuid,
+        short resourceKeyId,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken
+    )
+    {
+        var persisted = await ReadPersistedDescriptorAsync(commandExecutor, documentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (persisted is null)
+        {
+            return new UpsertResult.UnknownFailure(
+                BuildMissingDescriptorMessage(request.Resource, documentId)
+            );
+        }
+
+        if (IsDescriptorUnchanged(body, persisted))
+        {
+            _logger.LogDebug(
+                "Descriptor POST upsert is a no-op for {Resource} (DocumentId={DocumentId}) - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                documentId,
+                request.TraceId.Value
+            );
+
+            return new UpsertResult.UpdateSuccess(
+                existingDocumentUuid,
+                RelationalApiMetadataFormatter.FormatEtag(
+                    persisted.ToExtractedDescriptorBody(request.Resource)
+                )
+            );
+        }
+
+        return await UpdateDescriptorForUpsertAsync(
+                request,
+                body,
+                documentId,
+                existingDocumentUuid,
+                resourceKeyId,
+                commandExecutor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private static async Task ExecuteWriteCommandAsync(

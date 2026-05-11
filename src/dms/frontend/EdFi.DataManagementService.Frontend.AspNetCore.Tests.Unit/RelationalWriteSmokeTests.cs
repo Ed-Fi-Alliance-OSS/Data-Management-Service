@@ -430,6 +430,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton(A.Fake<IReferenceResolver>());
                 services.AddSingleton(A.Fake<IDescriptorReadHandler>());
                 services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
+                services.AddSingleton(A.Fake<IRelationalDeleteEtagPreconditionChecker>());
                 services.AddSingleton<IRelationalWriteExceptionClassifier>(
                     new NoOpRelationalWriteExceptionClassifier()
                 );
