@@ -195,6 +195,7 @@ Feature: Profile Response Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 07 Profiled GET and query preserve the full-resource etag
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}"
@@ -213,6 +214,7 @@ Feature: Profile Response Filtering
              And the response body should not contain fields "shortNameOfInstitution, educationOrganizationCategories, gradeLevels"
              And the response body path "0._etag" should equal variable "fullSchoolEtag"
 
+        @relational-backend
         Scenario: 08 Profiled PUT succeeds with a profiled If-Match and returns the full-resource etag
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
@@ -245,6 +247,7 @@ Feature: Profile Response Filtering
              And the response body path "_etag" should equal variable "profiledWriteEtag"
              And the response body path "shortNameOfInstitution" should have value "PETS-UPD"
 
+        @relational-backend
         Scenario: 09 Hidden field changes invalidate a stale profiled etag
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
