@@ -657,6 +657,12 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         failures.AddRange(
             properties.SelectMany(property =>
             {
+                var serverGenFailure = CheckServerGeneratedField(property.Name, "Property", context);
+                if (serverGenFailure is not null)
+                {
+                    return new List<ValidationFailure> { serverGenFailure };
+                }
+
                 var memberPath = $"$.{context.PathPrefix}{property.Name}";
                 var propertyFailures = new List<ValidationFailure>();
 
@@ -703,6 +709,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         foreach (var nestedObj in nestedObjects)
         {
+            var serverGenFailure = CheckServerGeneratedField(nestedObj.Name, "Nested object", context);
+            if (serverGenFailure is not null)
+            {
+                failures.Add(serverGenFailure);
+                continue;
+            }
+
             if (!schemaProperties.ContainsKey(nestedObj.Name))
             {
                 failures.Add(
@@ -749,6 +762,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         foreach (var collection in collections)
         {
+            var serverGenFailure = CheckServerGeneratedField(collection.Name, "Nested collection", context);
+            if (serverGenFailure is not null)
+            {
+                failures.Add(serverGenFailure);
+                continue;
+            }
+
             if (!schemaProperties.ContainsKey(collection.Name))
             {
                 failures.Add(
