@@ -41,24 +41,6 @@ internal sealed record RelationalCurrentEtagPreconditionCheckResult(
     bool IsMatch
 );
 
-public sealed record RelationalDeleteEtagPreconditionCheckResult(
-    RelationalWriteTargetContext.ExistingDocument TargetContext,
-    string CurrentEtag,
-    bool IsMatch
-);
-
-public interface IRelationalDeleteEtagPreconditionChecker
-{
-    Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
-        MappingSet mappingSet,
-        ResourceReadPlan readPlan,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        WritePrecondition.IfMatch precondition,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken = default
-    );
-}
-
 internal interface IRelationalCurrentEtagPreconditionChecker
 {
     Task<RelationalCurrentEtagPreconditionCheckResult?> CheckAsync(
@@ -197,37 +179,5 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         }
 
         return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
-    }
-}
-
-internal static class RelationalDocumentLockCommandBuilder
-{
-    private const string DocumentIdParameterName = "@documentId";
-
-    public static RelationalCommand BuildContentVersionCommand(SqlDialect dialect, long documentId)
-    {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
-                SELECT
-                    document."ContentVersion" AS "ContentVersion"
-                FROM dms."Document" document
-                WHERE document."DocumentId" = @documentId
-                FOR UPDATE
-                """,
-                [new RelationalParameter(DocumentIdParameterName, documentId)]
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
-                SELECT
-                    document.[ContentVersion] AS [ContentVersion]
-                FROM [dms].[Document] document WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
-                WHERE document.[DocumentId] = @documentId
-                """,
-                [new RelationalParameter(DocumentIdParameterName, documentId)]
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
-        };
     }
 }
