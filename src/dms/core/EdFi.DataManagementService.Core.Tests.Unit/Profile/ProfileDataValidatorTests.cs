@@ -1803,5 +1803,69 @@ public class ProfileDataValidatorTests
                     && f.Message.Contains("server-generated field")
                 );
         }
+
+        [Test]
+        public void Validate_link_in_IncludeOnly_produces_server_generated_error_not_does_not_exist_error()
+        {
+            // Arrange — schema intentionally omits "link"; if the server-gen check did
+            // not run first, the validator would emit "Property 'link' does not exist".
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("link")],
+                [],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — exactly one failure, the server-gen message
+            result.Failures.Should().HaveCount(1);
+            result.Failures[0].Message.Should().Contain("server-generated field");
+            result.Failures[0].Message.Should().NotContain("does not exist");
+        }
+
+        [Test]
+        public void Validate_should_succeed_for_profile_addressing_only_ordinary_schema_members()
+        {
+            // Arrange — profile references schoolReference.schoolId only.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.IsValid.Should().BeTrue();
+            result.HasErrors.Should().BeFalse();
+            result.Failures.Should().BeEmpty();
+        }
     }
 }
