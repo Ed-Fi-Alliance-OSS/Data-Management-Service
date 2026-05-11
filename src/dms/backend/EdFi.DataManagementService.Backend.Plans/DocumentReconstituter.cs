@@ -33,6 +33,37 @@ public static class DocumentReconstituter
     }
 
     /// <summary>
+    /// Removes the <c>link</c> property from every document-reference object reachable from
+    /// the compiled plan's reference paths when <paramref name="linksOptions"/> has
+    /// <c>Enabled = false</c>; otherwise a no-op pass-through. Plans-layer wrapper so the
+    /// <c>Backend</c> response boundary can drive the strip pass without taking a dependency
+    /// on the internal <c>CompiledReconstitutionPlan</c>.
+    /// </summary>
+    /// <remarks>
+    /// Mutates <paramref name="document"/> in place. Callers should invoke this after the
+    /// readable-profile projection and immediately before serialization — the same boundary
+    /// that sets <c>_etag</c>. Identity fields, <c>_etag</c>, and <c>_lastModifiedDate</c>
+    /// are never touched.
+    /// </remarks>
+    public static void StripReferenceLinks(
+        JsonNode? document,
+        ResourceReadPlan readPlan,
+        ResourceLinksOptions linksOptions
+    )
+    {
+        ArgumentNullException.ThrowIfNull(readPlan);
+        ArgumentNullException.ThrowIfNull(linksOptions);
+
+        if (linksOptions.Enabled || document is null)
+        {
+            return;
+        }
+
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        LinkSubtreeStripper.Strip(document, compiledPlan);
+    }
+
+    /// <summary>
     /// Reconstitutes a single JSON document from hydrated row data using cached compiled metadata
     /// derived from the supplied read plan.
     /// </summary>

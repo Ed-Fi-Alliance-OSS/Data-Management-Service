@@ -1009,6 +1009,9 @@ public sealed class RelationalDocumentStoreRepository(
                 hydratedPage.DescriptorRowsInPlanOrder,
                 relationalGetRequest.ReadMode
             )
+            {
+                MappingSet = mappingSet,
+            }
         );
 
         if (ShouldApplyReadableProfileProjection(relationalGetRequest))
@@ -1110,6 +1113,9 @@ public sealed class RelationalDocumentStoreRepository(
                 hydratedPage,
                 RelationalGetRequestReadMode.ExternalResponse
             )
+            {
+                MappingSet = relationalQueryRequest.MappingSet,
+            }
         );
 
         foreach (

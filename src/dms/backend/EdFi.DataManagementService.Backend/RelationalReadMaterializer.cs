@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -17,13 +18,33 @@ public sealed record RelationalReadMaterializationRequest(
     IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder,
     IReadOnlyList<HydratedDescriptorRows> DescriptorRowsInPlanOrder,
     RelationalGetRequestReadMode ReadMode
-);
+)
+{
+    /// <summary>
+    /// Optional mapping set used to resolve <c>link.rel</c> / <c>link.href</c> slugs during
+    /// reconstitution. <see langword="null"/> on call paths that do not have a mapping set
+    /// in scope (legacy callers, descriptor materialization). When <see langword="null"/>,
+    /// reconstitution falls back to the no-link overload regardless of
+    /// <see cref="ResourceLinksOptions.Enabled"/>.
+    /// </summary>
+    public MappingSet? MappingSet { get; init; }
+}
 
 public sealed record RelationalReadPageMaterializationRequest(
     ResourceReadPlan ReadPlan,
     HydratedPage HydratedPage,
     RelationalGetRequestReadMode ReadMode
-);
+)
+{
+    /// <summary>
+    /// Optional mapping set used to resolve <c>link.rel</c> / <c>link.href</c> slugs during
+    /// reconstitution. <see langword="null"/> on call paths that do not have a mapping set
+    /// in scope (legacy callers, descriptor materialization). When <see langword="null"/>,
+    /// reconstitution falls back to the no-link overload regardless of
+    /// <see cref="ResourceLinksOptions.Enabled"/>.
+    /// </summary>
+    public MappingSet? MappingSet { get; init; }
+}
 
 public sealed record MaterializedDocument(DocumentMetadataRow DocumentMetadata, JsonNode Document);
 
@@ -34,12 +55,20 @@ public interface IRelationalReadMaterializer
     IReadOnlyList<MaterializedDocument> MaterializePage(RelationalReadPageMaterializationRequest request);
 }
 
-internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
+internal sealed class RelationalReadMaterializer(
+    IDocumentLinkSlugResolver slugResolver,
+    IOptions<ResourceLinksOptions> linksOptions
+) : IRelationalReadMaterializer
 {
     private const string IdPropertyName = "id";
     private const string EtagPropertyName = "_etag";
     private const string LastModifiedDatePropertyName = "_lastModifiedDate";
     private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
+
+    private readonly IDocumentLinkSlugResolver _slugResolver =
+        slugResolver ?? throw new ArgumentNullException(nameof(slugResolver));
+    private readonly ResourceLinksOptions _linksOptions =
+        linksOptions?.Value ?? throw new ArgumentNullException(nameof(linksOptions));
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
@@ -56,6 +85,9 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
                 ),
                 request.ReadMode
             )
+            {
+                MappingSet = request.MappingSet,
+            }
         );
 
         if (materializedDocuments.Count != 1)
@@ -75,10 +107,18 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var reconstitutedDocuments = DocumentReconstituter.ReconstitutePage(
-            request.ReadPlan,
-            request.HydratedPage
-        );
+        // When the request carries a MappingSet, use the resolver-aware overload — link
+        // emission is gated internally by ResourceLinksOptions.Enabled. Legacy callers
+        // without a MappingSet fall back to the no-link overload.
+        var reconstitutedDocuments = request.MappingSet is { } mappingSet
+            ? DocumentReconstituter.ReconstitutePage(
+                request.ReadPlan,
+                request.HydratedPage,
+                mappingSet,
+                _slugResolver,
+                _linksOptions
+            )
+            : DocumentReconstituter.ReconstitutePage(request.ReadPlan, request.HydratedPage);
 
         if (reconstitutedDocuments.Count != request.HydratedPage.DocumentMetadata.Count)
         {
@@ -94,15 +134,21 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
                 (documentMetadata, index) =>
                     new MaterializedDocument(
                         documentMetadata,
-                        ApplyReadMode(reconstitutedDocuments[index], documentMetadata, request.ReadMode)
+                        ApplyReadMode(
+                            reconstitutedDocuments[index],
+                            documentMetadata,
+                            request.ReadPlan,
+                            request.ReadMode
+                        )
                     )
             ),
         ];
     }
 
-    private static JsonNode ApplyReadMode(
+    private JsonNode ApplyReadMode(
         JsonNode materializedDocument,
         DocumentMetadataRow documentMetadata,
+        ResourceReadPlan readPlan,
         RelationalGetRequestReadMode readMode
     )
     {
@@ -111,7 +157,8 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
             RelationalGetRequestReadMode.StoredDocument => materializedDocument,
             RelationalGetRequestReadMode.ExternalResponse => InjectApiMetadata(
                 materializedDocument,
-                documentMetadata
+                documentMetadata,
+                readPlan
             ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(readMode),
@@ -121,9 +168,10 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
         };
     }
 
-    private static JsonNode InjectApiMetadata(
+    private JsonNode InjectApiMetadata(
         JsonNode materializedDocument,
-        DocumentMetadataRow documentMetadata
+        DocumentMetadataRow documentMetadata,
+        ResourceReadPlan readPlan
     )
     {
         ArgumentNullException.ThrowIfNull(materializedDocument);
@@ -135,6 +183,17 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
             );
         }
 
+        // Defensive strip pass before computing _etag. No-op when ResourceLinksOptions.Enabled
+        // is true (production default). The dead branch matters once a runtime materialized-
+        // document cache (deferred follow-on of DMS-1145) can hand us a body whose link state
+        // doesn't match the current flag — the strip pass guarantees the served body and the
+        // etag computed below agree on whether link is present.
+        DocumentReconstituter.StripReferenceLinks(materializedDocument, readPlan, _linksOptions);
+
+        // ETag selection: the design carries a conditional for reusing a cached intermediate
+        // etag when (flag on AND no profile reshape AND cache hit). On this branch that branch
+        // is unreachable — there is no runtime cache — so we always recompute from the served
+        // body. The conditional moves in alongside the runtime-cache follow-on.
         var etag = RelationalApiMetadataFormatter.FormatEtag(materializedDocument);
         documentObject[IdPropertyName] = documentMetadata.DocumentUuid.ToString();
         documentObject[EtagPropertyName] = etag;

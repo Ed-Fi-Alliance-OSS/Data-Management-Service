@@ -135,7 +135,10 @@ internal sealed class RecordingRelationalReadMaterializer(PostgresqlRelationalQu
 {
     private readonly PostgresqlRelationalQueryExecutionRecorder _recorder =
         recorder ?? throw new ArgumentNullException(nameof(recorder));
-    private readonly RelationalReadMaterializer _inner = new();
+    private readonly RelationalReadMaterializer _inner = new(
+        new IntegrationFixtureSlugResolver(),
+        Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions())
+    );
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
@@ -151,6 +154,14 @@ internal sealed class RecordingRelationalReadMaterializer(PostgresqlRelationalQu
         _recorder.RecordPageMaterialization(materializedDocuments);
         return materializedDocuments;
     }
+}
+
+internal sealed class IntegrationFixtureSlugResolver : IDocumentLinkSlugResolver
+{
+    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+        throw new InvalidOperationException(
+            "IntegrationFixtureSlugResolver should not be invoked; tests build requests without a MappingSet."
+        );
 }
 
 internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalReadTargetLookupService

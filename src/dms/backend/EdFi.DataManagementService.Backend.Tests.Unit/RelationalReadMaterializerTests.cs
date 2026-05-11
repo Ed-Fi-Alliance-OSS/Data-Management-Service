@@ -21,7 +21,7 @@ public class Given_RelationalReadMaterializer
     [Test]
     public void It_injects_a_canonical_etag_and_stored_last_modified_date_for_external_response_reads()
     {
-        var sut = new RelationalReadMaterializer();
+        var sut = CreateMaterializer();
         var readPlan = CreateReadPlan();
 
         var result = sut.Materialize(
@@ -50,7 +50,7 @@ public class Given_RelationalReadMaterializer
     [Test]
     public void It_does_not_derive_the_external_etag_or_a_public_change_version_from_content_version()
     {
-        var sut = new RelationalReadMaterializer();
+        var sut = CreateMaterializer();
         var readPlan = CreateReadPlan();
 
         var firstResult = sut.Materialize(
@@ -86,7 +86,7 @@ public class Given_RelationalReadMaterializer
     [Test]
     public void It_leaves_api_metadata_out_of_stored_document_reads()
     {
-        var sut = new RelationalReadMaterializer();
+        var sut = CreateMaterializer();
         var readPlan = CreateReadPlan();
 
         var result = sut.Materialize(
@@ -112,7 +112,7 @@ public class Given_RelationalReadMaterializer
     [Test]
     public void It_projects_descriptor_uris_from_hydrated_descriptor_rows()
     {
-        var sut = new RelationalReadMaterializer();
+        var sut = CreateMaterializer();
         var readPlan = CreateReadPlanWithDescriptor();
 
         var result = sut.Materialize(
@@ -138,7 +138,7 @@ public class Given_RelationalReadMaterializer
     [Test]
     public void It_materializes_page_documents_in_metadata_order_for_external_response_reads()
     {
-        var sut = new RelationalReadMaterializer();
+        var sut = CreateMaterializer();
         var readPlan = CreateReadPlan();
         var firstDocumentMetadata = CreateDocumentMetadataRow(
             documentId: 345L,
@@ -184,7 +184,7 @@ public class Given_RelationalReadMaterializer
     [Test]
     public void It_materializes_page_documents_from_shared_descriptor_rows_for_stored_document_reads()
     {
-        var sut = new RelationalReadMaterializer();
+        var sut = CreateMaterializer();
         var readPlan = CreateReadPlanWithDescriptor();
         var firstDocumentMetadata = CreateDocumentMetadataRow(
             documentId: 345L,
@@ -229,6 +229,26 @@ public class Given_RelationalReadMaterializer
             document.Document["_etag"].Should().BeNull();
             document.Document["_lastModifiedDate"].Should().BeNull();
         }
+    }
+
+    private static RelationalReadMaterializer CreateMaterializer(ResourceLinksOptions? linksOptions = null) =>
+        new(
+            new NoLinkSlugResolver(),
+            Microsoft.Extensions.Options.Options.Create(linksOptions ?? new ResourceLinksOptions())
+        );
+
+    /// <summary>
+    /// Stand-in resolver for tests that never exercise link emission: the existing
+    /// <see cref="RelationalReadMaterializerTests"/> assertions all build requests without a
+    /// <c>MappingSet</c>, so the materializer takes the no-link reconstitution path and
+    /// never calls <see cref="IDocumentLinkSlugResolver.Resolve"/>.
+    /// </summary>
+    private sealed class NoLinkSlugResolver : IDocumentLinkSlugResolver
+    {
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+            throw new InvalidOperationException(
+                "NoLinkSlugResolver should not be invoked for legacy (no-MappingSet) materializer requests."
+            );
     }
 
     private static ResourceReadPlan CreateReadPlan()
