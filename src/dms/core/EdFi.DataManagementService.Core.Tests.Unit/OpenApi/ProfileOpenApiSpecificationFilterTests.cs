@@ -879,4 +879,24 @@ public class ProfileOpenApiSpecificationFilterTests
             readableSchema!.ContainsKey("link").Should().BeTrue("readable schemas MUST include link");
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Shared_Server_Generated_Fields_Constant
+    {
+        [Test]
+        public void It_contains_exactly_the_four_canonical_names()
+        {
+            EdFi.DataManagementService.Core.Profile.ServerGeneratedFields.Names.Should()
+                .BeEquivalentTo("id", "link", "_etag", "_lastModifiedDate");
+        }
+
+        [Test]
+        public void It_is_case_sensitive()
+        {
+            EdFi.DataManagementService.Core.Profile.ServerGeneratedFields.Contains("id").Should().BeTrue();
+            EdFi.DataManagementService.Core.Profile.ServerGeneratedFields.Contains("Id").Should().BeFalse();
+            EdFi.DataManagementService.Core.Profile.ServerGeneratedFields.Contains("ID").Should().BeFalse();
+        }
+    }
 }
