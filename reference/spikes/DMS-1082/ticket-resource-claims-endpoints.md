@@ -32,7 +32,7 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 - Uses `0` and `null` for root `parentId` and `parentName`.
 - Each root node includes its full recursive subtree via nested `children` arrays.
 - Fails explicitly if any hierarchy node is missing resource-claim metadata.
-- Supports the general query-parameter pattern defined by the DMS-1074 implementation, including `limit`, `offset`, `orderBy`, and `direction`.
+- Supports the current CMS paging-query pattern, including `limit`, `offset`, `orderBy`, and `direction`.
 - Supports endpoint-specific filters: `id` (long), `name` (string).
 
 ### `GET /v2/resourceClaims/{id}`
@@ -47,7 +47,7 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 - Resolves action names through `IClaimSetRepository.GetActions`.
 - Each item includes `resourceClaimId` (long), `resourceName`, `claimName`, and `actions`.
 - `actions` is an array of objects with only a `name` field (`{ name: string }`). There is no `actionId` in this shape.
-- Supports the general query-parameter pattern defined by the DMS-1074 implementation, including `limit`, `offset`, `orderBy`, and `direction`.
+- Supports the current CMS paging-query pattern, including `limit`, `offset`, `orderBy`, and `direction`.
 - Supports endpoint-specific filter: `resourceName` (string).
 
 ### `GET /v2/resourceClaimActionAuthStrategies`
@@ -56,19 +56,33 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 - Includes `resourceClaimId`, `resourceName`, `claimName`, and `authorizationStrategiesForActions`.
 - Resolves action names through `IClaimSetRepository.GetActions`.
 - Resolves authorization strategy names through `IClaimSetRepository.GetAuthorizationStrategies`.
-- Supports the general query-parameter pattern defined by the DMS-1074 implementation, including `limit`, `offset`, `orderBy`, and `direction`.
+- Supports the current CMS paging-query pattern, including `limit`, `offset`, `orderBy`, and `direction`.
 - Supports endpoint-specific filter: `resourceName` (string).
 
 ### Query parameter alignment
 
-DMS-1074 defines the shared CMS implementation pattern for Admin API-style filtering and sorting parameters. These endpoints should use that implementation pattern rather than introducing a feature-specific query abstraction.
+These endpoints should use the current CMS query implementation pattern rather than introducing a feature-specific query abstraction:
+
+- frontend query DTO bound with `[AsParameters]`
+- endpoint-specific frontend query model for endpoint filters
+- endpoint-specific `PagingQueryValidator<T>` allowlist for `orderBy`
+- repository query model derived from `PagingQuery`
+
+The shared paging behavior to preserve is:
+
+- `offset` optional, but if provided must be `>= 0`
+- `limit` optional, but if provided must be `> 0`
+- `direction` optional, but if provided must be one of `asc`, `ascending`, `desc`, `descending`
+- `orderBy` optional, but if provided must be in the endpoint allowlist
+- omitting both `limit` and `offset` does not impose an implicit row cap
+- omitting `direction` defaults to ascending behavior in current repository implementations unless explicitly documented otherwise
 
 ### Failure handling
 
 - `GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies` return `200 OK` with arrays on success.
 - Query filters that match no records return `200 OK` with an empty array.
 - `GET /v2/resourceClaims/{id}` returns `200 OK` with a JSON object when found and `404 Not Found` when absent.
-- Unsupported `orderBy` values return the same `400 Bad Request` validation response produced by the DMS-1074 query-pattern implementation.
+- Unsupported `orderBy` values return the same `400 Bad Request` validation response pattern used by current CMS paging-query validators.
 - Authorization failures remain `401` or `403`.
 - Unhandled server-side exceptions return the same generic CMS unknown-error response shape used by comparable endpoints.
 - The implementation must not invent new public endpoint failure types unless the team deliberately accepts a divergence from the spike document.
@@ -119,7 +133,7 @@ DMS-1074 defines the shared CMS implementation pattern for Admin API-style filte
 - Successful resource-claim-actions projection.
 - Successful action/auth-strategy projection.
 - Empty-result behavior for `resourceClaimActions` and `resourceClaimActionAuthStrategies` filters.
-- Validation failure for unsupported `orderBy`, using the DMS-1074 query-pattern validation response.
+- Validation failure for unsupported `orderBy`, using the current CMS paging-query validation response pattern.
 - Query parameter filtering and pagination behavior.
 - PostgreSQL-only behavior for this story.
 
@@ -130,7 +144,7 @@ DMS-1074 defines the shared CMS implementation pattern for Admin API-style filte
 3. Add the resource-claims endpoint module and map the four routes listed in this story.
 4. Map service result cases to explicit endpoint responses, preserving the required `200`, `400`, `404`, `401`/`403`, and generic `500` outcomes while using the same CMS error response patterns as comparable endpoints.
 5. Add the resource-claim-actions service projection and endpoint, resolving action names through the existing claim-set repository.
-6. Implement general query parameters (`limit`, `offset`, `orderBy`, `direction`) and endpoint-specific filters for all four endpoints by reusing the shared DMS-1074 query implementation pattern.
+6. Implement general query parameters (`limit`, `offset`, `orderBy`, `direction`) and endpoint-specific filters for all four endpoints by reusing the current CMS query implementation pattern based on frontend query DTOs, `PagingQueryValidator<T>`, and repository models derived from `PagingQuery`.
 7. Resolve authorization strategy metadata through the existing claim-set repository APIs for the auth-strategies endpoint.
 8. Register these endpoints with `MapSecuredGet` and document `ReadOnlyOrAdminScopePolicy` in the architecture brief and endpoint registration.
 9. Keep this story scoped to the PostgreSQL implementation path, and document that MSSQL support can be added later without changing the public endpoint contract.

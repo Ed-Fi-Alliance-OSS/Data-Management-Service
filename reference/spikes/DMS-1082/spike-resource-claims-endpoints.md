@@ -123,7 +123,9 @@ Sample `resourceClaimActionAuthStrategies` response item (normative contract):
 
 ### Query parameter parity
 
-All four endpoints support general query parameters:
+CMS already has an implemented query-parameter pattern for paged read endpoints. The resource-claim endpoints should follow that current pattern using a frontend query DTO bound with `[AsParameters]`, a feature-specific `PagingQueryValidator<T>`, and a repository query model derived from `PagingQuery`.
+
+All four endpoints support these general query parameters:
 
 | Parameter | Type | Notes |
 |---|---|---|
@@ -140,7 +142,20 @@ Endpoint-specific filter parameters:
 | `GET /v2/resourceClaimActions` | `resourceName` (string) |
 | `GET /v2/resourceClaimActionAuthStrategies` | `resourceName` (string) |
 
-DMS-1074 defines the shared CMS implementation pattern for Admin API-style query parameters such as `orderBy` and `direction`. These endpoints should reuse that implementation pattern rather than introducing a feature-specific variant here.
+Current CMS validation and paging behavior to mirror:
+
+- `offset` is optional and, when provided, must be greater than or equal to `0`
+- `limit` is optional and, when provided, must be greater than `0`
+- `direction` is optional and must be one of `asc`, `ascending`, `desc`, or `descending`
+- `orderBy` is optional and, when provided, must be validated against an endpoint-specific allowlist
+- when both `limit` and `offset` are omitted, the current `PagingQuery` implementation applies no implicit row cap
+- when `direction` is omitted, repository implementations default to ascending order unless a repository-specific behavior explicitly differs
+
+Implementation should follow the existing CMS code pattern used by modules such as `VendorModule`, `ClaimSetModule`, and `ProfileModule`:
+
+- frontend binding model in `FrontendQueryModels.cs`
+- validation in `PagingQueryValidators.cs`
+- repository paging contract in `PagingQuery.cs`
 
 Admin API query behaviors intentionally not implemented must be listed as explicit omissions in the story acceptance criteria.
 
@@ -218,7 +233,7 @@ The public failure behavior should stay aligned with comparable CMS read endpoin
 | Query filter matches no records | `200 OK` | Empty JSON array |
 | `GET /v2/resourceClaims/{id}` and id exists | `200 OK` | JSON object |
 | `GET /v2/resourceClaims/{id}` and id is absent | `404 Not Found` | Existing CMS not-found error body |
-| Unsupported `orderBy` value | Use the response defined by the DMS-1074 query-pattern implementation | Existing CMS validation error body |
+| Unsupported `orderBy` value | `400 Bad Request` | Existing CMS validation error body |
 | Authorization failure | `401` or `403` | Existing CMS auth error body |
 | Unhandled server-side exception | `500 Internal Server Error` | Existing CMS unknown-error body |
 
@@ -296,6 +311,6 @@ This design reuses existing configuration stores without introducing a parallel 
 - Keep all four endpoints read-only.
 - Fail explicitly when required lookup data is missing.
 - Treat PostgreSQL as the supported datastore path for this work; MSSQL support can be added later without changing the endpoint contract.
-- Reuse the shared query-parameter pattern defined by the DMS-1074 implementation instead of introducing a feature-specific filtering or sorting pattern here.
+- Reuse the current CMS query pattern implemented through `FrontendPagingQuery`, endpoint-specific frontend query DTOs, `PagingQueryValidator<T>`, and repository query models derived from `PagingQuery` instead of introducing a feature-specific filtering or sorting abstraction here.
 - Do not add write endpoints, schema redesigns, synthetic ids, or fallback ids.
 - Start from the companion story and the current `main` code paths. Key paths to examine: endpoint module pattern, repository result records, datastore registration, `IClaimsHierarchyRepository.GetClaimsHierarchy`, `IClaimSetRepository.GetActions`, `IClaimSetRepository.GetAuthorizationStrategies`.
