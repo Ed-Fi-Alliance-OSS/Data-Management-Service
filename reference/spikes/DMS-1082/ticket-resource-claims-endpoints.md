@@ -82,6 +82,15 @@ DMS-1074 defines the shared CMS implementation pattern for Admin API-style filte
 - Action ids remain `int`.
 - Matching is exact and case-sensitive unless a different policy is explicitly documented in code and tests.
 
+### Tenant scope
+
+- These endpoints use the standard CMS tenant-resolution pattern already used by repositories such as `ClaimSetRepository`.
+- Repository behavior is driven by the current request `TenantContext`, established by the existing tenant middleware.
+- When multi-tenancy is enabled, `dmscs.ResourceClaim` and other tenant-aware lookups for these endpoints are scoped by `TenantId`.
+- When multi-tenancy is disabled, those lookups use rows where `TenantId IS NULL`.
+- This story does not introduce endpoint-specific tenant overrides or a new global-plus-tenant resource-claim model.
+- This story does not define support for duplicate `ClaimName` values across tenants. The current schema retains a unique `ClaimName` constraint.
+
 ### Authorization
 
 - These endpoints use `MapSecuredGet`.
@@ -94,6 +103,13 @@ DMS-1074 defines the shared CMS implementation pattern for Admin API-style filte
 - This story targets PostgreSQL as the supported datastore path for these endpoints.
 - MSSQL support for these endpoints is out of scope and may be added later with equivalent repository behavior and deployment artifacts without changing the public endpoint contract.
 - This story does not include broader datastore-composition cleanup beyond what is required to support the PostgreSQL path.
+
+### Validation timing
+
+- These endpoints follow the existing CMS startup/runtime pattern rather than introducing new health or startup validation.
+- Invalid application configuration remains a startup concern only where CMS already validates options and startup configuration.
+- Database deploy and initial claims bootstrap failures remain startup concerns only when the existing startup initialization paths are enabled.
+- Missing claims hierarchy, multiple hierarchy rows, resource-claim metadata drift, missing lookup rows, and projection failures remain request-time concerns for these read endpoints.
 
 ### Tests cover
 

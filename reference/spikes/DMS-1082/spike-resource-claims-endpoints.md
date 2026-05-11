@@ -183,6 +183,19 @@ The endpoints assume required metadata already exists. If it does not exist, the
 
 Hierarchy node to metadata row matching is by full claim URI, exact and case-sensitive, unless a different policy is explicitly documented in code and tests.
 
+### Tenant-scope policy
+
+These endpoints should follow the standard CMS tenant model already used by repositories such as `ClaimSetRepository`:
+
+- tenant scope is established per request by the existing tenant-resolution middleware
+- repository queries use the current `TenantContext`
+- when multi-tenancy is enabled, repository lookups are scoped by `TenantId`
+- when multi-tenancy is disabled, repository lookups use `TenantId IS NULL`
+
+No endpoint-specific tenant behavior is introduced for this feature area. The endpoint contract should not define a new "global plus tenant override" model unless CMS already supports it in the backing repository behavior.
+
+`dmscs.ResourceClaim` currently has a `TenantId` column, but it also retains a global unique constraint on `ClaimName`. That schema shape does not support tenant-specific duplicates of the same claim URI, so this spike does not define tenant override or duplicate-claim semantics for resource-claim metadata.
+
 ---
 
 ## 7. Authorization
@@ -235,11 +248,17 @@ Hierarchy repository failures should follow existing CMS patterns:
 
 ## 9. Validation Items
 
-These questions remain genuinely unresolved. They must be confirmed before or during implementation, and the findings must be recorded in the companion story or in this document.
+This section records implementation-boundary notes that remain relevant for planning. It is not an open question about public endpoint behavior unless explicitly stated.
 
 1. **MSSQL datastore support** - The `dmscs.ResourceClaim` table and seed data currently exist only in the PostgreSQL deployment scripts. This spike scopes these endpoints to PostgreSQL only. MSSQL is unsupported for this feature area until equivalent repository and deployment support are added in later work. This spike does not attempt broader datastore-composition cleanup.
 
-2. **Startup/health validation for unsupported configuration** - It is not yet confirmed whether missing metadata should produce a startup/health-check failure or a request-time failure inside CMS. This is an internal implementation decision, not part of the endpoint contract.
+2. **Startup versus request-time validation** - These endpoints should follow the existing CMS pattern:
+
+   - configuration validation failures remain startup concerns only where CMS already validates configuration during startup
+   - database deploy and initial claims bootstrap failures remain startup concerns only when those existing startup paths are enabled
+   - hierarchy lookup failures, duplicate hierarchy rows, metadata drift, and related repository or projection failures remain request-time concerns for read endpoints
+
+   This spike does not introduce new startup or health-check validation for resource-claim endpoint data integrity beyond existing CMS startup behavior.
 
 3. **`GET /v2/resourceClaimActions` response shape** - **Resolved.** Verified against `management-api-2.3.0.yaml`: the `actions` array contains `{ name: string }` objects only. There is no `actionId` in this response shape. See Section 4 for the normative sample.
 
