@@ -1,0 +1,70 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Aligned",
+    "projectEndpointName": "aligned",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": true,
+    "abstractResources": {},
+    "resourceSchemas": {
+      "parentResources": {
+        "resourceName": "ParentResource",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {
+          "Sponsor": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "Sponsor",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.sponsorName",
+                "referenceJsonPath": "$.parents[*]._ext.aligned.sponsorReference.sponsorName"
+              }
+            ]
+          }
+        },
+        "arrayUniquenessConstraints": [],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": [],
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "parents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "_ext": {
+                    "type": "object",
+                    "properties": {
+                      "aligned": {
+                        "type": "object",
+                        "properties": {
+                          "sponsorReference": {
+                            "type": "object",
+                            "properties": {
+                              "sponsorName": {
+                                "type": "string",
+                                "maxLength": 30
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
