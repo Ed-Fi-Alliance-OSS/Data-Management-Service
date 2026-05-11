@@ -264,6 +264,182 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         return failures;
     }
 
+    /// <summary>
+    /// Server-generated field names are outside the profile DSL namespace and cannot
+    /// be referenced by any MemberSelection mode. Returns a <see cref="ValidationFailure"/>
+    /// with <see cref="ValidationSeverity.Error"/> if the member name is server-generated,
+    /// otherwise null. Severity is always Error, independent of <paramref name="context"/>.
+    /// </summary>
+    private static ValidationFailure? CheckServerGeneratedField(
+        string memberName,
+        string memberKindLabel,
+        ValidationContext context
+    )
+    {
+        if (!ServerGeneratedFields.Contains(memberName))
+        {
+            return null;
+        }
+
+        return new ValidationFailure(
+            ValidationSeverity.Error,
+            context.ProfileName,
+            context.ResourceName,
+            $"{context.PathPrefix}{memberName}",
+            $"{memberKindLabel} '{memberName}' in {context.ContentTypeName} content type "
+                + "is a server-generated field and is not profile-addressable."
+        );
+    }
+
+    /// <summary>
+    /// Recursive walk over every explicit rule name in a content type, emitting a
+    /// server-generated-field failure for any rule whose name is server-generated.
+    /// Runs ahead of schema/member-selection validation so the rejection contract
+    /// applies regardless of <see cref="MemberSelection"/>, and so siblings deeper
+    /// in the tree are not silently skipped by an IncludeAll ancestor. When a rule
+    /// name is server-generated the walk does not descend into its children: the
+    /// outer name is already invalid, so reporting failures from its bogus subtree
+    /// would be noise. Only server-gen failures are produced here — schema existence
+    /// and identity-path checks remain on their original code paths.
+    /// </summary>
+    private static List<ValidationFailure> CollectServerGeneratedNameFailures(
+        ContentTypeDefinition contentType,
+        ValidationContext context
+    )
+    {
+        var failures = new List<ValidationFailure>();
+
+        foreach (var property in contentType.Properties)
+        {
+            AddIfServerGenerated(property.Name, "Property", context, failures);
+        }
+        foreach (var obj in contentType.Objects)
+        {
+            WalkObjectRuleNames(obj, context, failures);
+        }
+        foreach (var collection in contentType.Collections)
+        {
+            WalkCollectionRuleNames(collection, context, failures);
+        }
+        foreach (var extension in contentType.Extensions)
+        {
+            WalkExtensionRuleNames(extension, context, failures);
+        }
+
+        return failures;
+    }
+
+    private static void WalkObjectRuleNames(
+        ObjectRule objectRule,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        if (AddIfServerGenerated(objectRule.Name, "Object", context, failures))
+        {
+            return;
+        }
+
+        var childContext = context.WithPathPrefix($"{context.PathPrefix}{objectRule.Name}.");
+        foreach (var property in objectRule.Properties ?? [])
+        {
+            AddIfServerGenerated(property.Name, "Property", childContext, failures);
+        }
+        foreach (var nested in objectRule.NestedObjects ?? [])
+        {
+            WalkObjectRuleNames(nested, childContext, failures);
+        }
+        foreach (var nestedCollection in objectRule.Collections ?? [])
+        {
+            WalkCollectionRuleNames(nestedCollection, childContext, failures);
+        }
+        foreach (var nestedExtension in objectRule.Extensions ?? [])
+        {
+            WalkExtensionRuleNames(nestedExtension, childContext, failures);
+        }
+    }
+
+    private static void WalkCollectionRuleNames(
+        CollectionRule collectionRule,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        if (AddIfServerGenerated(collectionRule.Name, "Collection", context, failures))
+        {
+            return;
+        }
+
+        var childContext = context.WithPathPrefix($"{context.PathPrefix}{collectionRule.Name}[].");
+        if (collectionRule.ItemFilter is not null)
+        {
+            AddIfServerGenerated(
+                collectionRule.ItemFilter.PropertyName,
+                "Collection item filter property",
+                childContext,
+                failures
+            );
+        }
+        foreach (var property in collectionRule.Properties ?? [])
+        {
+            AddIfServerGenerated(property.Name, "Property", childContext, failures);
+        }
+        foreach (var nested in collectionRule.NestedObjects ?? [])
+        {
+            WalkObjectRuleNames(nested, childContext, failures);
+        }
+        foreach (var nestedCollection in collectionRule.NestedCollections ?? [])
+        {
+            WalkCollectionRuleNames(nestedCollection, childContext, failures);
+        }
+        foreach (var nestedExtension in collectionRule.Extensions ?? [])
+        {
+            WalkExtensionRuleNames(nestedExtension, childContext, failures);
+        }
+    }
+
+    private static void WalkExtensionRuleNames(
+        ExtensionRule extensionRule,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        if (AddIfServerGenerated(extensionRule.Name, "Extension", context, failures))
+        {
+            return;
+        }
+
+        var childContext = context.WithPathPrefix($"{context.PathPrefix}_ext.{extensionRule.Name}.");
+        foreach (var property in extensionRule.Properties ?? [])
+        {
+            AddIfServerGenerated(property.Name, "Property", childContext, failures);
+        }
+        foreach (var nested in extensionRule.Objects ?? [])
+        {
+            WalkObjectRuleNames(nested, childContext, failures);
+        }
+        foreach (var nestedCollection in extensionRule.Collections ?? [])
+        {
+            WalkCollectionRuleNames(nestedCollection, childContext, failures);
+        }
+    }
+
+    private static bool AddIfServerGenerated(
+        string memberName,
+        string memberKindLabel,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        var failure = CheckServerGeneratedField(memberName, memberKindLabel, context);
+        if (failure is null)
+        {
+            return false;
+        }
+        failures.Add(failure);
+        return true;
+    }
+
     private static List<ValidationFailure> ValidateContentTypeMembers(
         ContentTypeDefinition contentType,
         JsonObject schemaProperties,
@@ -283,25 +459,34 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             resourceSchema
         );
 
-        return contentType.MemberSelection switch
-        {
-            MemberSelection.IncludeOnly => ValidateMembers(
-                contentType,
-                schemaProperties,
-                baseContext.ForMemberSelection(MemberSelection.IncludeOnly)
-            ),
-            MemberSelection.ExcludeOnly => ValidateMembers(
-                contentType,
-                schemaProperties,
-                baseContext.ForMemberSelection(MemberSelection.ExcludeOnly)
-            ),
-            MemberSelection.IncludeAll => ValidateNestedMemberSelection(
-                contentType,
-                schemaProperties,
-                baseContext
-            ),
-            _ => [],
-        };
+        // Reject server-generated rule names everywhere before any schema or
+        // member-selection pruning. Schema validation below skips server-gen
+        // names so the pre-pass is the single source of those failures.
+        var failures = CollectServerGeneratedNameFailures(contentType, baseContext);
+
+        failures.AddRange(
+            contentType.MemberSelection switch
+            {
+                MemberSelection.IncludeOnly => ValidateMembers(
+                    contentType,
+                    schemaProperties,
+                    baseContext.ForMemberSelection(MemberSelection.IncludeOnly)
+                ),
+                MemberSelection.ExcludeOnly => ValidateMembers(
+                    contentType,
+                    schemaProperties,
+                    baseContext.ForMemberSelection(MemberSelection.ExcludeOnly)
+                ),
+                MemberSelection.IncludeAll => ValidateNestedMemberSelection(
+                    contentType,
+                    schemaProperties,
+                    baseContext
+                ),
+                _ => [],
+            }
+        );
+
+        return failures;
     }
 
     /// <summary>
@@ -315,10 +500,17 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     {
         var failures = new List<ValidationFailure>();
 
-        // Validate properties
+        // Validate properties. Server-generated names are emitted by the
+        // pre-pass; skip them here so they do not double-fail or surface a
+        // misleading "does not exist" message.
         failures.AddRange(
             contentType.Properties.SelectMany(property =>
             {
+                if (ServerGeneratedFields.Contains(property.Name))
+                {
+                    return Enumerable.Empty<ValidationFailure>();
+                }
+
                 var memberPath = $"$.{context.PathPrefix}{property.Name}";
                 var propertyFailures = new List<ValidationFailure>();
 
@@ -354,6 +546,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // Validate objects
         foreach (var obj in contentType.Objects)
         {
+            if (ServerGeneratedFields.Contains(obj.Name))
+            {
+                continue;
+            }
+
             if (!schemaProperties.ContainsKey(obj.Name))
             {
                 failures.Add(
@@ -384,6 +581,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // Validate collections
         foreach (var collection in contentType.Collections)
         {
+            if (ServerGeneratedFields.Contains(collection.Name))
+            {
+                continue;
+            }
+
             if (!schemaProperties.ContainsKey(collection.Name))
             {
                 failures.Add(
@@ -431,6 +633,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     {
         var failures = new List<ValidationFailure>();
 
+        if (ServerGeneratedFields.Contains(extension.Name))
+        {
+            return failures;
+        }
+
         if (!schemaProperties.ContainsKey("_ext"))
         {
             failures.Add(
@@ -464,12 +671,15 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             return failures;
         }
 
+        // Preserve the enclosing context prefix so error paths under a nested
+        // extension (e.g. an Extensions rule inside an Object or Collection)
+        // report as "schoolReference._ext.sample.x" rather than "_ext.sample.x".
         failures.AddRange(
             ValidateExtensionRuleMembers(
                 extension,
                 extensionProperties,
                 context
-                    .WithPathPrefix($"_ext.{extension.Name}.")
+                    .WithPathPrefix($"{context.PathPrefix}_ext.{extension.Name}.")
                     .ForMemberSelection(extension.MemberSelection)
             )
         );
@@ -485,13 +695,24 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     {
         var failures = new List<ValidationFailure>();
 
-        // Validate nested objects with member selection
-        foreach (
-            var obj in contentType.Objects.Where(o =>
-                o.MemberSelection != MemberSelection.IncludeAll && schemaProperties.ContainsKey(o.Name)
-            )
-        )
+        // Server-generated rule names are emitted by the pre-pass in
+        // ValidateContentTypeMembers, so skip them here. Schema and member
+        // selection checks below intentionally do not look at
+        // contentType.Properties: under IncludeAll the projector ignores
+        // explicit child Property rules, so emitting "does not exist" warnings
+        // for them would be a behavior change unrelated to the namespace rule.
+        foreach (var obj in contentType.Objects)
         {
+            if (ServerGeneratedFields.Contains(obj.Name))
+            {
+                continue;
+            }
+
+            if (obj.MemberSelection == MemberSelection.IncludeAll || !schemaProperties.ContainsKey(obj.Name))
+            {
+                continue;
+            }
+
             if (
                 schemaProperties[obj.Name] is JsonObject objSchema
                 && objSchema["properties"] is JsonObject objProperties
@@ -507,13 +728,21 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             }
         }
 
-        // Validate nested collections with member selection
-        foreach (
-            var collection in contentType.Collections.Where(c =>
-                c.MemberSelection != MemberSelection.IncludeAll && schemaProperties.ContainsKey(c.Name)
-            )
-        )
+        foreach (var collection in contentType.Collections)
         {
+            if (ServerGeneratedFields.Contains(collection.Name))
+            {
+                continue;
+            }
+
+            if (
+                collection.MemberSelection == MemberSelection.IncludeAll
+                || !schemaProperties.ContainsKey(collection.Name)
+            )
+            {
+                continue;
+            }
+
             if (
                 schemaProperties[collection.Name] is JsonObject collectionObj
                 && collectionObj["items"] is JsonObject itemsNode
@@ -532,13 +761,18 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             }
         }
 
-        // Validate extensions with member selection
-        foreach (
-            var extension in contentType.Extensions.Where(e =>
-                e.MemberSelection != MemberSelection.IncludeAll
-            )
-        )
+        foreach (var extension in contentType.Extensions)
         {
+            if (ServerGeneratedFields.Contains(extension.Name))
+            {
+                continue;
+            }
+
+            if (extension.MemberSelection == MemberSelection.IncludeAll)
+            {
+                continue;
+            }
+
             failures.AddRange(ValidateExtensionRule(extension, schemaProperties, context));
         }
 
@@ -588,6 +822,17 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             );
         }
 
+        // Validate extensions declared inside the object. Mirrors
+        // ValidateExtensionRuleMembers' completeness so server-generated names
+        // and existence errors apply on every branch the parser populates.
+        if (objectRule.Extensions is not null)
+        {
+            foreach (var extension in objectRule.Extensions)
+            {
+                failures.AddRange(ValidateExtensionRule(extension, schemaProperties, context));
+            }
+        }
+
         return failures;
     }
 
@@ -603,6 +848,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         failures.AddRange(
             properties.SelectMany(property =>
             {
+                if (ServerGeneratedFields.Contains(property.Name))
+                {
+                    return Enumerable.Empty<ValidationFailure>();
+                }
+
                 var memberPath = $"$.{context.PathPrefix}{property.Name}";
                 var propertyFailures = new List<ValidationFailure>();
 
@@ -649,6 +899,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         foreach (var nestedObj in nestedObjects)
         {
+            if (ServerGeneratedFields.Contains(nestedObj.Name))
+            {
+                continue;
+            }
+
             if (!schemaProperties.ContainsKey(nestedObj.Name))
             {
                 failures.Add(
@@ -695,6 +950,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         foreach (var collection in collections)
         {
+            if (ServerGeneratedFields.Contains(collection.Name))
+            {
+                continue;
+            }
+
             if (!schemaProperties.ContainsKey(collection.Name))
             {
                 failures.Add(
@@ -769,6 +1029,28 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                     containerName
                 )
             );
+        }
+
+        // Validate nested collections in collection items
+        if (collectionRule.NestedCollections is not null)
+        {
+            failures.AddRange(
+                ValidateNestedCollectionRules(
+                    collectionRule.NestedCollections,
+                    itemSchemaProperties,
+                    context,
+                    containerName
+                )
+            );
+        }
+
+        // Validate extensions declared inside collection items
+        if (collectionRule.Extensions is not null)
+        {
+            foreach (var extension in collectionRule.Extensions)
+            {
+                failures.AddRange(ValidateExtensionRule(extension, itemSchemaProperties, context));
+            }
         }
 
         return failures;

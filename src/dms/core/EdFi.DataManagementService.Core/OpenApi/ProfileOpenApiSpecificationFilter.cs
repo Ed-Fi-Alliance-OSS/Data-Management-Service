@@ -17,18 +17,6 @@ namespace EdFi.DataManagementService.Core.OpenApi;
 public class ProfileOpenApiSpecificationFilter(ILogger logger)
 {
     /// <summary>
-    /// Server-generated metadata fields that are always included in readable schemas
-    /// and always excluded from writable schemas.
-    /// </summary>
-    private static readonly HashSet<string> _serverGeneratedFields =
-    [
-        "id",
-        "link",
-        "_etag",
-        "_lastModifiedDate",
-    ];
-
-    /// <summary>
     /// Property name suffixes that identify natural key and reference fields.
     /// These are always included in both readable and writable schemas.
     /// </summary>
@@ -1000,7 +988,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         foreach ((string propertyName, JsonNode? _) in properties)
         {
             // Writable schemas: Always exclude server-generated fields
-            if (_serverGeneratedFields.Contains(propertyName))
+            if (ServerGeneratedFields.Contains(propertyName))
             {
                 propertiesToRemove.Add(propertyName);
                 continue;
@@ -1092,7 +1080,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// </summary>
     private static bool IsReadableRequiredProperty(string propertyName)
     {
-        return _serverGeneratedFields.Contains(propertyName)
+        return ServerGeneratedFields.Contains(propertyName)
             || Array.Exists(
                 _identityFieldSuffixes,
                 suffix => propertyName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
@@ -1106,7 +1094,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     private static bool IsWritableIdentityProperty(string propertyName)
     {
         // Natural identity fields (UniqueId) and references are kept in writable
-        // Server-generated fields are excluded elsewhere via _serverGeneratedFields
+        // Server-generated fields are excluded elsewhere via ServerGeneratedFields
         return Array.Exists(
             _identityFieldSuffixes,
             suffix => propertyName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)

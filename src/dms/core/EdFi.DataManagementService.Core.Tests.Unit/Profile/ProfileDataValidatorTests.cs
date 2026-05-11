@@ -22,6 +22,135 @@ public class ProfileDataValidatorTests
         private IEffectiveApiSchemaProvider _effectiveApiSchemaProvider = null!;
         private ApiSchemaDocuments _apiSchemaDocuments = null!;
 
+        private static ApiSchemaDocuments CreateSchemaWithReferenceObject(
+            string resourceName,
+            string referenceName,
+            params string[] referencePropertyNames
+        )
+        {
+            var refProperties = new JsonObject();
+            foreach (var name in referencePropertyNames)
+            {
+                refProperties[name] = new JsonObject { ["type"] = "string" };
+            }
+
+            var referenceObject = new JsonObject { ["type"] = "object", ["properties"] = refProperties };
+
+            var jsonSchemaForInsert = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { [referenceName] = referenceObject },
+            };
+
+            var apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource(resourceName)
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            var resourceNode = apiSchemaDocuments
+                .GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new(resourceName));
+
+            if (resourceNode is JsonObject resourceObj)
+            {
+                resourceObj["jsonSchemaForInsert"] = jsonSchemaForInsert;
+                resourceObj["identityJsonPaths"] = new JsonArray
+                {
+                    $"$.{referenceName}.{referencePropertyNames[0]}",
+                };
+            }
+
+            return apiSchemaDocuments;
+        }
+
+        private static ApiSchemaDocuments CreateSchemaWithCollection(
+            string resourceName,
+            string collectionName,
+            params string[] itemPropertyNames
+        )
+        {
+            var itemProperties = new JsonObject();
+            foreach (var name in itemPropertyNames)
+            {
+                itemProperties[name] = new JsonObject { ["type"] = "string" };
+            }
+
+            var itemSchema = new JsonObject { ["type"] = "object", ["properties"] = itemProperties };
+
+            var collectionSchema = new JsonObject { ["type"] = "array", ["items"] = itemSchema };
+
+            var jsonSchemaForInsert = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { [collectionName] = collectionSchema },
+            };
+
+            var apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource(resourceName)
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            var resourceNode = apiSchemaDocuments
+                .GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new(resourceName));
+
+            if (resourceNode is JsonObject resourceObj)
+            {
+                resourceObj["jsonSchemaForInsert"] = jsonSchemaForInsert;
+            }
+
+            return apiSchemaDocuments;
+        }
+
+        private static ApiSchemaDocuments CreateSchemaWithExtension(
+            string resourceName,
+            string extensionName,
+            params string[] extensionPropertyNames
+        )
+        {
+            var extProperties = new JsonObject();
+            foreach (var name in extensionPropertyNames)
+            {
+                extProperties[name] = new JsonObject { ["type"] = "string" };
+            }
+
+            var extensionSchema = new JsonObject { ["type"] = "object", ["properties"] = extProperties };
+
+            var extSchema = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { [extensionName] = extensionSchema },
+            };
+
+            var jsonSchemaForInsert = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { ["_ext"] = extSchema },
+            };
+
+            var apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource(resourceName)
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            var resourceNode = apiSchemaDocuments
+                .GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new(resourceName));
+
+            if (resourceNode is JsonObject resourceObj)
+            {
+                resourceObj["jsonSchemaForInsert"] = jsonSchemaForInsert;
+            }
+
+            return apiSchemaDocuments;
+        }
+
         private static ApiSchemaDocuments CreateSchemaWithProperties(
             string resourceName,
             params string[] propertyNames
@@ -1183,6 +1312,211 @@ public class ProfileDataValidatorTests
         }
 
         [Test]
+        public void Validate_should_return_error_for_server_generated_field_in_IncludeOnly_properties()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            // Schema has firstName so "ordinary members would validate" baseline holds.
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("link")],
+                [],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.IsValid.Should().BeFalse();
+            result.HasErrors.Should().BeTrue();
+            result.Failures.Should().HaveCount(1);
+            result.Failures[0].Severity.Should().Be(ValidationSeverity.Error);
+            result.Failures[0].MemberName.Should().Be("link");
+            result.Failures[0].Message.Should().Contain("server-generated field");
+            result.Failures[0].Message.Should().Contain("not profile-addressable");
+        }
+
+        [TestCase("id")]
+        [TestCase("link")]
+        [TestCase("_etag")]
+        [TestCase("_lastModifiedDate")]
+        public void Validate_should_return_error_for_each_server_generated_field_in_IncludeOnly_properties(
+            string serverGeneratedFieldName
+        )
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule(serverGeneratedFieldName)],
+                [],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == serverGeneratedFieldName
+                    && f.Message.Contains("server-generated field")
+                    && f.Message.Contains("not profile-addressable")
+                );
+        }
+
+        [TestCase("id")]
+        [TestCase("link")]
+        [TestCase("_etag")]
+        [TestCase("_lastModifiedDate")]
+        public void Validate_should_return_error_for_each_server_generated_field_in_ExcludeOnly_properties(
+            string serverGeneratedFieldName
+        )
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [new PropertyRule(serverGeneratedFieldName)],
+                [],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.IsValid.Should().BeFalse();
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == serverGeneratedFieldName
+                    && f.Message.Contains("server-generated field")
+                    && f.Message.Contains("not profile-addressable")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_server_generated_field_as_object_rule_name()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [new ObjectRule("link", MemberSelection.IncludeAll, null, null, null, null, null)],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_server_generated_field_as_collection_rule_name()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [new CollectionRule("link", MemberSelection.IncludeAll, null, null, null, null, null, null)],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_server_generated_field_as_extension_rule_name()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [],
+                [new ExtensionRule("link", MemberSelection.IncludeAll, null, null, null, null)]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
         public void Validate_should_succeed_for_profile_with_all_member_selection_modes()
         {
             // Arrange
@@ -1243,6 +1577,1055 @@ public class ProfileDataValidatorTests
             result.IsValid.Should().BeTrue();
             result.HasErrors.Should().BeFalse();
             result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_link_in_nested_object_rule_properties()
+        {
+            // Arrange — schema must contain schoolReference.schoolId so the failure
+            // is the server-gen rule, not "object does not exist".
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId"), new PropertyRule("link")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_link_in_nested_collection_rule_properties()
+        {
+            // Arrange — schema has addresses[].streetAddress
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithCollection("Student", "addresses", "streetAddress");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var addressesRule = new CollectionRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("link")],
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [addressesRule],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "addresses[].link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_link_in_extension_rule_properties()
+        {
+            // Arrange — schema has _ext.sample.sampleField
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "sample",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("link")],
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "_ext.sample.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_nested_object_named_link()
+        {
+            // Arrange — schema has schoolReference.schoolId; profile defines a nested object named "link"
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var nestedRule = new ObjectRule(
+                Name: "link",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: [nestedRule],
+                Collections: null,
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_nested_collection_named_link()
+        {
+            // Arrange — schema has schoolReference.schoolId; profile defines a nested collection named "link"
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var nestedCollectionNamedLink = new CollectionRule(
+                Name: "link",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: null
+            );
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: [nestedCollectionNamedLink],
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_link_in_IncludeOnly_produces_server_generated_error_not_does_not_exist_error()
+        {
+            // Arrange — schema intentionally omits "link"; if the server-gen check did
+            // not run first, the validator would emit "Property 'link' does not exist".
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("link")],
+                [],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — exactly one failure, the server-gen message
+            result.Failures.Should().HaveCount(1);
+            result.Failures[0].Message.Should().Contain("server-generated field");
+            result.Failures[0].Message.Should().NotContain("does not exist");
+        }
+
+        [Test]
+        public void Validate_should_succeed_for_profile_addressing_only_ordinary_schema_members()
+        {
+            // Arrange — profile references schoolReference.schoolId only.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.IsValid.Should().BeTrue();
+            result.HasErrors.Should().BeFalse();
+            result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void Validate_IncludeAll_content_type_should_return_error_for_object_rule_named_link()
+        {
+            // Arrange — parent content type is IncludeAll; server-gen names are
+            // not profile-addressable regardless of parent member selection.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [new ObjectRule("link", MemberSelection.IncludeAll, null, null, null, null, null)],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_IncludeAll_content_type_should_return_error_for_collection_rule_named_link()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [new CollectionRule("link", MemberSelection.IncludeAll, null, null, null, null, null, null)],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_IncludeAll_content_type_should_return_error_for_extension_rule_named_link()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [],
+                [new ExtensionRule("link", MemberSelection.IncludeAll, null, null, null, null)]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_link_in_object_rule_extensions()
+        {
+            // Arrange — ObjectRule.Extensions is populated by the parser and
+            // consumed by both projectors; the validator must traverse it too.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions:
+                [
+                    new ExtensionRule(
+                        Name: "link",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: null,
+                        Objects: null,
+                        Collections: null
+                    ),
+                ]
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_link_in_collection_rule_nested_collections()
+        {
+            // Arrange — CollectionRule.NestedCollections is populated by the
+            // parser and consumed by both projectors; the validator must
+            // traverse it too.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithCollection("Student", "addresses", "streetAddress");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var addressesRule = new CollectionRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("streetAddress")],
+                NestedObjects: null,
+                NestedCollections:
+                [
+                    new CollectionRule(
+                        Name: "link",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: null,
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: null,
+                ItemFilter: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [addressesRule],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "addresses[].link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_link_in_collection_rule_extensions()
+        {
+            // Arrange — CollectionRule.Extensions is populated by the parser
+            // and consumed by both projectors; the validator must traverse it.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithCollection("Student", "addresses", "streetAddress");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var addressesRule = new CollectionRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("streetAddress")],
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions:
+                [
+                    new ExtensionRule(
+                        Name: "link",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: null,
+                        Objects: null,
+                        Collections: null
+                    ),
+                ],
+                ItemFilter: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [addressesRule],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "addresses[].link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [TestCase("id")]
+        [TestCase("link")]
+        [TestCase("_etag")]
+        [TestCase("_lastModifiedDate")]
+        public void Validate_IncludeAll_content_type_should_return_error_for_property_rule_named_server_gen(
+            string serverGeneratedFieldName
+        )
+        {
+            // Arrange — top-level IncludeAll with a Property naming a server-generated
+            // field. The dispatched IncludeAll path does not look at Properties, so the
+            // server-gen rejection has to come from the recursive name pre-pass.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [new PropertyRule(serverGeneratedFieldName)],
+                [],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == serverGeneratedFieldName
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_IncludeAll_object_rule_should_return_error_for_child_property_named_link()
+        {
+            // Arrange — IncludeAll object containing an explicit Property("link").
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("link")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_IncludeAll_object_rule_should_return_error_for_child_nested_object_named_link()
+        {
+            // Arrange — IncludeAll object containing an explicit nested Object("link").
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects:
+                [
+                    new ObjectRule("link", MemberSelection.IncludeAll, null, null, null, null, null),
+                ],
+                Collections: null,
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_IncludeAll_object_rule_should_return_error_for_child_collection_named_link()
+        {
+            // Arrange — IncludeAll object containing an explicit Collection("link").
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections:
+                [
+                    new CollectionRule(
+                        "link",
+                        MemberSelection.IncludeAll,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                    ),
+                ],
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_IncludeAll_object_rule_should_return_error_for_child_extension_named_link()
+        {
+            // Arrange — IncludeAll object containing an explicit Extension("link").
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions: [new ExtensionRule("link", MemberSelection.IncludeAll, null, null, null, null)]
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_IncludeAll_collection_rule_should_return_error_for_child_property_named_link()
+        {
+            // Arrange — IncludeAll collection containing an explicit Property("link") on its items.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithCollection("Student", "addresses", "streetAddress");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var addressesRule = new CollectionRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("link")],
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [addressesRule],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "addresses[].link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_IncludeAll_extension_rule_should_return_error_for_child_property_named_link()
+        {
+            // Arrange — IncludeAll extension containing an explicit Property("link").
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var sampleExtensionRule = new ExtensionRule(
+                Name: "sample",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("link")],
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [],
+                [sampleExtensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "_ext.sample.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_extension_inside_object_should_report_full_enclosing_path_for_link_property()
+        {
+            // Arrange — Object("schoolReference") -> Extension("sample") -> Property("link").
+            // Failure path must preserve the enclosing object prefix and surface as
+            // "schoolReference._ext.sample.link", not "_ext.sample.link".
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions:
+                [
+                    new ExtensionRule(
+                        Name: "sample",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("link")],
+                        Objects: null,
+                        Collections: null
+                    ),
+                ]
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — server-gen failure carries the full path.
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference._ext.sample.link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [TestCase("id")]
+        [TestCase("link")]
+        [TestCase("_etag")]
+        [TestCase("_lastModifiedDate")]
+        public void Validate_should_return_error_for_item_filter_property_named_server_gen(
+            string serverGeneratedFieldName
+        )
+        {
+            // Arrange — root collection rule whose ItemFilter selects a
+            // server-generated field. The parser accepts any propertyName, so
+            // the namespace contract has to be enforced by the validator.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithCollection("Student", "addresses", "streetAddress");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var addressesRule = new CollectionRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: new CollectionItemFilter(
+                    serverGeneratedFieldName,
+                    FilterMode.IncludeOnly,
+                    ["uri://ed-fi.org/AddressTypeDescriptor#Home"]
+                )
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [addressesRule],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == $"addresses[].{serverGeneratedFieldName}"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_item_filter_property_on_nested_collection()
+        {
+            // Arrange — Object("schoolReference") -> Collection("addresses")
+            // with an ItemFilter.PropertyName of "link". Failure path must
+            // preserve the enclosing object prefix. The schema declares
+            // schoolReference.{ schoolId, addresses[].streetAddress } so the
+            // only failure surfaced is the server-generated one.
+            var validator = new ProfileDataValidator(_logger);
+            var addressesSchema = new JsonObject
+            {
+                ["type"] = "array",
+                ["items"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["streetAddress"] = new JsonObject { ["type"] = "string" },
+                    },
+                },
+            };
+            var schoolReferenceSchema = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["schoolId"] = new JsonObject { ["type"] = "string" },
+                    ["addresses"] = addressesSchema,
+                },
+            };
+            var jsonSchemaForInsert = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { ["schoolReference"] = schoolReferenceSchema },
+            };
+            _apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Student")
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+            var studentNode =
+                _apiSchemaDocuments
+                    .GetCoreProjectSchema()
+                    .FindResourceSchemaNodeByResourceName(new("Student")) as JsonObject;
+            studentNode!["jsonSchemaForInsert"] = jsonSchemaForInsert;
+            studentNode["identityJsonPaths"] = new JsonArray { "$.schoolReference.schoolId" };
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var addressesRule = new CollectionRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: new CollectionItemFilter(
+                    "link",
+                    FilterMode.IncludeOnly,
+                    ["uri://ed-fi.org/AddressTypeDescriptor#Home"]
+                )
+            );
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: [addressesRule],
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — exactly one failure: the server-generated item filter.
+            result.HasErrors.Should().BeTrue();
+            result.Failures.Should().HaveCount(1);
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.addresses[].link"
+                    && f.Message.Contains("server-generated field")
+                );
         }
     }
 }

@@ -469,6 +469,115 @@ public class ProfileFilteringMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Profile_Hides_Link_On_Reference : ProfileFilteringMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        private static ProfileContext CreateProfileContextWithSchoolReferenceObjectRule()
+        {
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+
+            var resourceProfile = new ResourceProfile(
+                ResourceName: "Student",
+                LogicalSchema: null,
+                ReadContentType: contentType,
+                WriteContentType: null
+            );
+
+            return new ProfileContext(
+                ProfileName: "TestProfile",
+                ContentType: ProfileContentType.Read,
+                ResourceProfile: resourceProfile,
+                WasExplicitlySpecified: true
+            );
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo();
+            _requestInfo.ProfileContext = CreateProfileContextWithSchoolReferenceObjectRule();
+
+            // Hand-populated link stands in for runtime link emission (DMS-1145).
+            var sourceBody = new JsonObject
+            {
+                ["id"] = "12345",
+                ["studentUniqueId"] = "STU001",
+                ["schoolReference"] = new JsonObject
+                {
+                    ["schoolId"] = 200,
+                    ["nameOfInstitution"] = "Test School",
+                    ["link"] = new JsonObject { ["rel"] = "School", ["href"] = "/ed-fi/schools/200" },
+                },
+            };
+
+            _requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 200,
+                Body: sourceBody,
+                Headers: []
+            );
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_preserves_link_on_filtered_reference()
+        {
+            var reference = _requestInfo.FrontendResponse.Body!["schoolReference"] as JsonObject;
+            reference.Should().NotBeNull();
+
+            var link = reference!["link"] as JsonObject;
+            link.Should().NotBeNull();
+            link!["rel"]!.GetValue<string>().Should().Be("School");
+            link["href"]!.GetValue<string>().Should().Be("/ed-fi/schools/200");
+        }
+
+        [Test]
+        public void It_filters_unlisted_reference_members()
+        {
+            // schoolReference IncludeOnly = ["schoolId"] — nameOfInstitution is not listed
+            // and is not server-generated, so it must be filtered out. schoolId stays.
+            var reference = (_requestInfo.FrontendResponse.Body!["schoolReference"] as JsonObject)!;
+            reference["schoolId"]!.GetValue<int>().Should().Be(200);
+            reference["nameOfInstitution"].Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Profile_Context_With_Null_ReadContentType : ProfileFilteringMiddlewareTests
     {
         private RequestInfo _requestInfo = null!;

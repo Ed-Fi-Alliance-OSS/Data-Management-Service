@@ -94,6 +94,13 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
                 continue;
             }
 
+            // Server-generated short-circuit at root only fires for "link"; the other
+            // three server-generated names are handled by the metadata block above.
+            if (TryPreserveServerGenerated(result, name, value))
+            {
+                continue;
+            }
+
             // Extensions
             if (name == ExtensionFieldName && value is JsonObject extObject)
             {
@@ -154,11 +161,17 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
     private static JsonObject ProjectNestedObject(JsonObject source, ObjectRule objectRule)
     {
         var result = new JsonObject();
+        List<KeyValuePair<string, JsonNode?>>? deferredServerGenerated = null;
 
         foreach (var property in source)
         {
             string name = property.Key;
             JsonNode? value = property.Value;
+
+            if (TryStageServerGenerated(ref deferredServerGenerated, name, value))
+            {
+                continue;
+            }
 
             // Extensions within nested object
             if (name == ExtensionFieldName && value is JsonObject extObject)
@@ -210,6 +223,7 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             }
         }
 
+        AttachDeferredServerGeneratedIfSurvived(result, deferredServerGenerated);
         return result;
     }
 
@@ -254,11 +268,17 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
     private static JsonObject ProjectCollectionItem(JsonObject source, CollectionRule collectionRule)
     {
         var result = new JsonObject();
+        List<KeyValuePair<string, JsonNode?>>? deferredServerGenerated = null;
 
         foreach (var property in source)
         {
             string name = property.Key;
             JsonNode? value = property.Value;
+
+            if (TryStageServerGenerated(ref deferredServerGenerated, name, value))
+            {
+                continue;
+            }
 
             // Extensions within collection item
             if (name == ExtensionFieldName && value is JsonObject extObject)
@@ -315,6 +335,7 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             }
         }
 
+        AttachDeferredServerGeneratedIfSurvived(result, deferredServerGenerated);
         return result;
     }
 
@@ -372,11 +393,17 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
     private static JsonObject ProjectExtensionObject(JsonObject source, ExtensionRule extensionRule)
     {
         var result = new JsonObject();
+        List<KeyValuePair<string, JsonNode?>>? deferredServerGenerated = null;
 
         foreach (var property in source)
         {
             string name = property.Key;
             JsonNode? value = property.Value;
+
+            if (TryStageServerGenerated(ref deferredServerGenerated, name, value))
+            {
+                continue;
+            }
 
             // Nested objects with explicit rules
             if (extensionRule.ObjectRulesByName.TryGetValue(name, out ObjectRule? objectRule))
@@ -413,6 +440,7 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             }
         }
 
+        AttachDeferredServerGeneratedIfSurvived(result, deferredServerGenerated);
         return result;
     }
 
@@ -462,5 +490,66 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             MemberSelection.ExcludeOnly => !propertyNameSet.Contains(name),
             _ => true,
         };
+    }
+
+    /// <summary>
+    /// Root-only short-circuit: server-generated field names pass through as
+    /// deep-cloned subtrees, ahead of any rule dispatch. The document root always
+    /// survives projection, so attaching server-generated members directly is
+    /// correct. Nested objects, collection items, and extension objects use the
+    /// staged variant below, because their enclosing scope must survive on
+    /// profile-addressable content before server-generated members ride along.
+    /// </summary>
+    private static bool TryPreserveServerGenerated(JsonObject result, string name, JsonNode? value)
+    {
+        if (!ServerGeneratedFields.Contains(name))
+        {
+            return false;
+        }
+
+        result[name] = value?.DeepClone();
+        return true;
+    }
+
+    /// <summary>
+    /// Stages a server-generated field for deferred attachment. Used by every
+    /// projection scope below the root: <see cref="ProjectNestedObject"/>,
+    /// <see cref="ProjectCollectionItem"/>, and <see cref="ProjectExtensionObject"/>.
+    /// The design contract is that server-generated fields pass through
+    /// "whenever their enclosing object survives projection" — that is, when at
+    /// least one profile-addressable member of the enclosing object survives.
+    /// Capturing first and merging at the end (only when other content survived)
+    /// prevents a `link`-only enclosing object from being emitted.
+    /// </summary>
+    private static bool TryStageServerGenerated(
+        ref List<KeyValuePair<string, JsonNode?>>? staged,
+        string name,
+        JsonNode? value
+    )
+    {
+        if (!ServerGeneratedFields.Contains(name))
+        {
+            return false;
+        }
+
+        staged ??= [];
+        staged.Add(new KeyValuePair<string, JsonNode?>(name, value?.DeepClone()));
+        return true;
+    }
+
+    private static void AttachDeferredServerGeneratedIfSurvived(
+        JsonObject result,
+        List<KeyValuePair<string, JsonNode?>>? staged
+    )
+    {
+        if (staged is null || result.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (name, value) in staged)
+        {
+            result[name] = value;
+        }
     }
 }

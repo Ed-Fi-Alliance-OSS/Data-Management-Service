@@ -19,6 +19,22 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     private const string IdFieldName = "id";
     private const string ExtensionFieldName = "_ext";
 
+    /// <summary>
+    /// Server-generated field names short-circuit filtering: they pass through
+    /// as deep-cloned subtrees, ahead of any rule dispatch. This is defensive
+    /// against a loosened validator and enforces the profile-namespace boundary.
+    /// </summary>
+    private static bool TryPreserveServerGenerated(JsonObject result, string name, JsonNode? value)
+    {
+        if (!ServerGeneratedFields.Contains(name))
+        {
+            return false;
+        }
+
+        result[name] = value?.DeepClone();
+        return true;
+    }
+
     /// <inheritdoc />
     public JsonNode FilterDocument(
         JsonNode document,
@@ -60,6 +76,11 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             if (propertyName == IdFieldName || identityPropertyNames.Contains(propertyName))
             {
                 result[propertyName] = propertyValue?.DeepClone();
+                continue;
+            }
+
+            if (TryPreserveServerGenerated(result, propertyName, propertyValue))
+            {
                 continue;
             }
 
@@ -132,6 +153,11 @@ internal class ProfileResponseFilter : IProfileResponseFilter
         {
             string propertyName = property.Key;
             JsonNode? propertyValue = property.Value;
+
+            if (TryPreserveServerGenerated(result, propertyName, propertyValue))
+            {
+                continue;
+            }
 
             // Handle extensions within nested object
             if (propertyName == ExtensionFieldName && propertyValue is JsonObject extObject)
@@ -220,6 +246,11 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             {
                 string propertyName = property.Key;
                 JsonNode? propertyValue = property.Value;
+
+                if (TryPreserveServerGenerated(filteredItem, propertyName, propertyValue))
+                {
+                    continue;
+                }
 
                 // Handle extensions within collection item
                 if (propertyName == ExtensionFieldName && propertyValue is JsonObject extObject)
@@ -384,6 +415,11 @@ internal class ProfileResponseFilter : IProfileResponseFilter
         {
             string propertyName = property.Key;
             JsonNode? propertyValue = property.Value;
+
+            if (TryPreserveServerGenerated(result, propertyName, propertyValue))
+            {
+                continue;
+            }
 
             // Handle nested objects with explicit rules
             if (extensionRule.ObjectRulesByName.TryGetValue(propertyName, out ObjectRule? objectRule))
