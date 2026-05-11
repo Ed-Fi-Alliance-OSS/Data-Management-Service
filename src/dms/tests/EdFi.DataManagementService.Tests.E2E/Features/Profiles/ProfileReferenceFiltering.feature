@@ -59,12 +59,18 @@ Feature: Profile Reference Filtering
 
         @relational-backend
         @relational-ci-shard-3
-        Scenario: 01 IncludeOnly reference profile is currently unsupported on read
+        Scenario: 01 IncludeOnly reference profile preserves server-generated link on surviving references
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-IncludeOnly" for resource "School"
-            Then the profile response status is 406
-             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
-             And the response body should have error message "is not supported by this host"
+            Then the profile response status is 200
+             And the response body should contain fields "id, schoolId, localEducationAgencyReference, charterApprovalSchoolYearTypeReference"
+             And the response body should not contain fields "nameOfInstitution, shortNameOfInstitution, operationalStatusDescriptor"
+             And the response body should contain path "localEducationAgencyReference.link.rel"
+             And the response body path "localEducationAgencyReference.link.rel" should have value "LocalEducationAgency"
+             And the response body should contain path "localEducationAgencyReference.link.href"
+             And the response body should contain path "charterApprovalSchoolYearTypeReference.link.rel"
+             And the response body path "charterApprovalSchoolYearTypeReference.link.rel" should have value "SchoolYearType"
+             And the response body should contain path "charterApprovalSchoolYearTypeReference.link.href"
 
     Rule: ExcludeOnly profile excludes configured reference members on read
 
