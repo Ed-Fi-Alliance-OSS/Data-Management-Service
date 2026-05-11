@@ -69,4 +69,6 @@ internal record UpdateRequest(
 ) : IRelationalUpdateRequest
 {
     public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);
+
+    public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; } = [];
 }

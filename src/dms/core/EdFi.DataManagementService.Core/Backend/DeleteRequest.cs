@@ -35,4 +35,6 @@ internal record DeleteRequest(
 ) : IRelationalDeleteRequest
 {
     public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);
+
+    public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; } = [];
 }

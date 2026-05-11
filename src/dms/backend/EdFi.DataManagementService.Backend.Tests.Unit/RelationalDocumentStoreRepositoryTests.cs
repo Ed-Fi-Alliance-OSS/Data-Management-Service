@@ -1717,6 +1717,58 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_fails_closed_before_post_if_match_checks_when_relational_write_authorization_requires_filtering()
+    {
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("post-auth-guard"));
+        A.CallTo(() => upsertRequest.WritePrecondition)
+            .Returns(new WritePrecondition.IfMatch("\"stale-etag\""));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([CreateAuthorizationStrategyEvaluator("RelationshipsWithEdOrgsOnly")]);
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpsertResult.UpsertFailureNotAuthorized([
+                    "Relational POST authorization is not implemented for resource 'Ed-Fi.School' when effective POST authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported.",
+                ])
+            );
+        _capturedExecutorRequests.Should().BeEmpty();
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_fails_closed_before_put_if_match_checks_when_relational_write_authorization_requires_filtering()
+    {
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.TraceId).Returns(new TraceId("put-auth-guard"));
+        A.CallTo(() => updateRequest.WritePrecondition)
+            .Returns(new WritePrecondition.IfMatch("\"stale-etag\""));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([CreateAuthorizationStrategyEvaluator("RelationshipsWithEdOrgsOnly")]);
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UpdateFailureNotAuthorized([
+                    "Relational PUT authorization is not implemented for resource 'Ed-Fi.School' when effective PUT authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported.",
+                ])
+            );
+        _capturedExecutorRequests.Should().BeEmpty();
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_short_circuits_missing_put_targets_before_executor_entry()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -2667,6 +2719,29 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+    }
+
+    [Test]
+    public async Task It_fails_closed_before_delete_if_match_checks_when_relational_write_authorization_requires_filtering()
+    {
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo),
+            new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([CreateAuthorizationStrategyEvaluator("RelationshipsWithEdOrgsOnly")]);
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new DeleteResult.DeleteFailureNotAuthorized([
+                    "Relational DELETE authorization is not implemented for resource 'Ed-Fi.School' when effective DELETE authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported.",
+                ])
+            );
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
     }
 
     [TestCase(SqlDialect.Pgsql)]

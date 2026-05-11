@@ -71,6 +71,9 @@ internal class UpdateByIdHandler(
                         ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
+                    {
+                        AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
+                    }
                 ),
             requestInfo
         );

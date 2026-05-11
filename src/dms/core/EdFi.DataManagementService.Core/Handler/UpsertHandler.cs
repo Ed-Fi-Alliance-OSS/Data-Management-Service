@@ -74,6 +74,9 @@ internal class UpsertHandler(
                         ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
+                    {
+                        AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
+                    }
                 );
             },
             requestInfo

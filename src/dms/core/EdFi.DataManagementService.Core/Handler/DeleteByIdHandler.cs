@@ -63,6 +63,9 @@ internal class DeleteByIdHandler(
                         Headers: requestInfo.FrontendRequest.Headers,
                         MappingSet: requestInfo.MappingSet
                     )
+                    {
+                        AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
+                    }
                 ),
             requestInfo
         );

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.External;
 
@@ -32,6 +33,11 @@ public interface IRelationalWriteRequest : IRelationalRequestWithMappingSet
     /// Null when no profile applies or the request is not a write operation.
     /// </summary>
     BackendProfileWriteContext? BackendProfileWriteContext { get; }
+
+    /// <summary>
+    /// Effective authorization strategy evaluators for the current write action.
+    /// </summary>
+    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
 }
 
 /// <summary>
@@ -47,4 +53,10 @@ public interface IRelationalUpdateRequest : IUpdateRequest, IRelationalWriteRequ
 /// <summary>
 /// Backend-local relational delete request.
 /// </summary>
-public interface IRelationalDeleteRequest : IDeleteRequest, IRelationalRequestWithMappingSet;
+public interface IRelationalDeleteRequest : IDeleteRequest, IRelationalRequestWithMappingSet
+{
+    /// <summary>
+    /// Effective authorization strategy evaluators for the current delete action.
+    /// </summary>
+    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
+}
