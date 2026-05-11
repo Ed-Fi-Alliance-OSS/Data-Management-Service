@@ -125,7 +125,7 @@ Sample `resourceClaimActionAuthStrategies` response item (normative contract):
 
 CMS already has an implemented query-parameter pattern for paged read endpoints. The resource-claim endpoints should follow that current pattern using a frontend query DTO bound with `[AsParameters]`, a feature-specific `PagingQueryValidator<T>`, and a repository query model derived from `PagingQuery`.
 
-All four endpoints support these general query parameters:
+The three list endpoints (`GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies`) support these general query parameters:
 
 | Parameter | Type | Notes |
 |---|---|---|
@@ -133,6 +133,8 @@ All four endpoints support these general query parameters:
 | `offset` | int | Pagination offset |
 | `orderBy` | string | Field name to sort by |
 | `direction` | string | `asc`/`ascending` or `desc`/`descending` |
+
+`GET /v2/resourceClaims/{id}` accepts only its path parameter. Query parameters (`limit`, `offset`, `orderBy`, `direction`) do not apply to this route.
 
 Endpoint-specific filter parameters:
 
@@ -210,6 +212,8 @@ These endpoints should follow the standard CMS tenant model already used by repo
 No endpoint-specific tenant behavior is introduced for this feature area. The endpoint contract should not define a new "global plus tenant override" model unless CMS already supports it in the backing repository behavior.
 
 `dmscs.ResourceClaim` currently has a `TenantId` column, but it also retains a global unique constraint on `ClaimName`. That schema shape does not support tenant-specific duplicates of the same claim URI, so this spike does not define tenant override or duplicate-claim semantics for resource-claim metadata.
+
+`dmscs.ResourceClaim` rows are global configuration. The resource-claim metadata lookup does not filter by `TenantId`, regardless of whether multi-tenancy is enabled; it always queries rows where `TenantId IS NULL`. This is consistent with the global unique `ClaimName` constraint, which already prevents per-tenant duplicates, and with the fact that seeding is out of scope for this work (existing seed rows carry `TenantId IS NULL`).
 
 ---
 
@@ -291,7 +295,7 @@ The intended service implementation walks the claim hierarchy at runtime and joi
 
 - `GET /v2/resourceClaims`: the service walks the hierarchy, projects each root node to `ResourceClaimResponse`, and includes the full recursive subtree.
 - `GET /v2/resourceClaims/{id}`: the service resolves the selected node by id and returns that node with its full recursive subtree.
-- `GET /v2/resourceClaimActions`: the service resolves action names through `IClaimSetRepository.GetActions` and projects a flat list.
+- `GET /v2/resourceClaimActions`: the service derives action membership for each resource claim from the `DefaultAuthorization` entries in the hierarchy JSON — the same source used by `resourceClaimActionAuthStrategies`. `IClaimSetRepository.GetActions` is used only to resolve action names from action identifiers; it does not define which actions belong to a resource claim. The projection emits a flat list.
 - `GET /v2/resourceClaimActionAuthStrategies`: the service traverses the hierarchy, filters to claims with `DefaultAuthorization`, resolves action names and authorization strategy names through the existing claim-set repository APIs, and emits a flat response.
 
 This design reuses existing configuration stores without introducing a parallel persistence model or schema changes.

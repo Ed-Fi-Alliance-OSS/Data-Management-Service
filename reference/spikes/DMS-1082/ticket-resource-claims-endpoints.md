@@ -40,11 +40,13 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 - Searches the valid projected hierarchy by `dmscs.ResourceClaim.Id`.
 - Returns the matching projected claim node including its full recursive subtree.
 - Returns `404 Not Found` when the requested id is absent.
+- Accepts only its path parameter. Query parameters (`limit`, `offset`, `orderBy`, `direction`) do not apply to this route.
 
 ### `GET /v2/resourceClaimActions`
 
 - Returns a flat list of resource claim actions resolved from claim-set metadata.
-- Resolves action names through `IClaimSetRepository.GetActions`.
+- Action membership for each resource claim is derived from the `DefaultAuthorization` entries in the hierarchy JSON — the same source used by `resourceClaimActionAuthStrategies`.
+- Resolves action names through `IClaimSetRepository.GetActions`. `GetActions` provides name resolution only; it does not define which actions belong to a resource claim.
 - Each item includes `resourceClaimId` (long), `resourceName`, `claimName`, and `actions`.
 - `actions` is an array of objects with only a `name` field (`{ name: string }`). There is no `actionId` in this shape.
 - Supports the current CMS paging-query pattern, including `limit`, `offset`, `orderBy`, and `direction`.
@@ -61,7 +63,7 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 
 ### Query parameter alignment
 
-These endpoints should use the current CMS query implementation pattern rather than introducing a feature-specific query abstraction:
+The three list endpoints (`GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies`) use the current CMS query implementation pattern rather than introducing a feature-specific query abstraction. `GET /v2/resourceClaims/{id}` accepts only its path parameter and does not support these query parameters.
 
 - frontend query DTO bound with `[AsParameters]`
 - endpoint-specific frontend query model for endpoint filters
@@ -100,8 +102,9 @@ The shared paging behavior to preserve is:
 
 - These endpoints use the standard CMS tenant-resolution pattern already used by repositories such as `ClaimSetRepository`.
 - Repository behavior is driven by the current request `TenantContext`, established by the existing tenant middleware.
-- When multi-tenancy is enabled, `dmscs.ResourceClaim` and other tenant-aware lookups for these endpoints are scoped by `TenantId`.
+- When multi-tenancy is enabled, tenant-aware lookups (such as `ClaimSet`) are scoped by `TenantId`.
 - When multi-tenancy is disabled, those lookups use rows where `TenantId IS NULL`.
+- `dmscs.ResourceClaim` rows are global configuration. The resource-claim metadata lookup always queries rows where `TenantId IS NULL`, regardless of whether multi-tenancy is enabled. This is consistent with the global unique `ClaimName` constraint and the fact that existing seed rows carry `TenantId IS NULL`.
 - This story does not introduce endpoint-specific tenant overrides or a new global-plus-tenant resource-claim model.
 - This story does not define support for duplicate `ClaimName` values across tenants. The current schema retains a unique `ClaimName` constraint.
 
@@ -133,6 +136,7 @@ The shared paging behavior to preserve is:
 - Successful resource-claim-actions projection.
 - Successful action/auth-strategy projection.
 - Empty-result behavior for `resourceClaimActions` and `resourceClaimActionAuthStrategies` filters.
+- Explicit failure when a hierarchy node has no matching resource-claim metadata row (metadata drift).
 - Validation failure for unsupported `orderBy`, using the current CMS paging-query validation response pattern.
 - Query parameter filtering and pagination behavior.
 - PostgreSQL-only behavior for this story.
@@ -144,7 +148,7 @@ The shared paging behavior to preserve is:
 3. Add the resource-claims endpoint module and map the four routes listed in this story.
 4. Map service result cases to explicit endpoint responses, preserving the required `200`, `400`, `404`, `401`/`403`, and generic `500` outcomes while using the same CMS error response patterns as comparable endpoints.
 5. Add the resource-claim-actions service projection and endpoint, resolving action names through the existing claim-set repository.
-6. Implement general query parameters (`limit`, `offset`, `orderBy`, `direction`) and endpoint-specific filters for all four endpoints by reusing the current CMS query implementation pattern based on frontend query DTOs, `PagingQueryValidator<T>`, and repository models derived from `PagingQuery`.
+6. Implement general query parameters (`limit`, `offset`, `orderBy`, `direction`) and endpoint-specific filters for the three list endpoints by reusing the current CMS query implementation pattern based on frontend query DTOs, `PagingQueryValidator<T>`, and repository models derived from `PagingQuery`. `GET /v2/resourceClaims/{id}` accepts only its path parameter.
 7. Resolve authorization strategy metadata through the existing claim-set repository APIs for the auth-strategies endpoint.
 8. Register these endpoints with `MapSecuredGet` and document `ReadOnlyOrAdminScopePolicy` in the architecture brief and endpoint registration.
 9. Keep this story scoped to the PostgreSQL implementation path, and document that MSSQL support can be added later without changing the public endpoint contract.
