@@ -150,6 +150,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             return "ORDER BY Id";
         }
 
+        private static string ResolveOrderByColumn(VendorQuery query) =>
+            query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col) ? col : "Id";
+
         private static string BuildFilterClause(VendorQuery query)
         {
             var conditions = new List<string>();
@@ -185,10 +188,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             {
                 string orderByClause = BuildOrderByClause(query);
                 string filterClause = BuildFilterClause(query);
+                string outerCol = ResolveOrderByColumn(query);
+                string direction = query.IsDescending ? "DESC" : "ASC";
                 var sql = $"""
                     SELECT v.Id, Company, ContactName, ContactEmailAddress, TenantId, NamespacePrefix
                     FROM (SELECT * FROM dmscs.Vendor WHERE {TenantContext.TenantWhereClause()}{filterClause} {orderByClause} {query.BuildPagingClause()}) AS v
-                    LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
+                    LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
+                    ORDER BY v.{outerCol} {direction};
                     """;
                 var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
                     sql,
