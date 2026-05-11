@@ -40,7 +40,6 @@ internal class UpsertHandler(
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
-        var writePrecondition = WritePreconditionFactory.Create(requestInfo.FrontendRequest.Headers);
 
         var upsertResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -75,9 +74,6 @@ internal class UpsertHandler(
                         ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
-                    {
-                        WritePrecondition = writePrecondition,
-                    }
                 );
             },
             requestInfo

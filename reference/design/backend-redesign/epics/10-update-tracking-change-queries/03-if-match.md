@@ -90,7 +90,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
 ## Clarifying Questions and Answers
 
-## Questions 1
+### Questions 1
 
   1. For profiled requests, should readable profile filtering affect If-Match comparison or the ETag returned from
      successful profiled writes?
@@ -109,7 +109,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
      integration tests? That seems like the right cost/coverage split unless you want more of this at full E2E level.
 
 
-## Answers 1
+### Answers 1
 
   1. Profiled requests: compare against the same full-resource _etag used by unprofiled requests, and return that
      full-resource ETag on successful profiled writes. This matches legacy ODS behavior: readable profiles filter the
@@ -130,7 +130,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
      no-op coverage mostly in backend unit/integration tests, with explicit PostgreSQL and SQL Server integration coverage for the cascade case.
 
 
-## Questions 2
+### Questions 2
 
   1. Should we introduce a first-class backend contract like IfMatchPrecondition / WritePrecondition, or is it acceptable for relational code to read Headers["If-Match"] directly? This affects
      RelationalWriteExecutorRequest, descriptor writes, and descriptor delete.
@@ -144,7 +144,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
   8. For existing-target mismatch, should 412 take precedence over deeper backend failures such as invalid references, profile creatability, and authorization, once the target is resolved? The story
      answers this for POST create-new, but not for existing-target mismatch.
 
-## Answers 2
+### Answers 2
 
   1. Use a typed precondition contract. Add something like IfMatchPrecondition / WritePrecondition, built once from request headers with exact opaque-string semantics. Do not have relational or
      descriptor code read Headers["If-Match"] directly. Pass the typed value through RelationalWriteExecutorRequest, DescriptorWriteRequest, and a descriptor delete request shape.
@@ -166,7 +166,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
      should still return 403 before exposing an ETag mismatch for an existing target. After target exists and the caller is authorized, If-Match mismatch should short-circuit before reference
      resolution, profile creatability, merge validation, and DML.
 
-## Questions 3
+### Questions 3
 
   1. Should DataManagement:ResourceLinks:Enabled affect If-Match comparison, or should reference link objects be treated as response decoration excluded from the _etag in both flag states?
   2. For profiled PUT/POST, should Core pass the readable-profile projection context explicitly into the typed precondition contract, or should If-Match ignore readable profile projection?
@@ -181,7 +181,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
   8. Do you have a preferred cascade fixture/resource pair for the PostgreSQL + SQL Server integration tests proving dependency identity change causes stale If-Match to return 412? If not, I’ll pick
      the smallest existing backend fixture that exercises an allowIdentityUpdates identity cascade in both dialects.
 
-## Answers 3
+### Answers 3
 
   1. ResourceLinks flag should not affect If-Match. `_etag` is a resource-state validator, not a response-decoration
      validator, and reference `link` objects are derived from persisted reference state. Compare against the same
@@ -208,3 +208,10 @@ Implement optimistic concurrency checks using stored representation stamps for r
   8. Use the small referential identity fixture for cascade tests. Preferred pair: Student -> ResourceA from the small/referential-identity fixtures already used by PostgreSQL and SQL Server tests.
      Change Student.studentUniqueId with allowIdentityUpdates=true, verify dependent ResourceA gets a new _etag, then assert stale If-Match on ResourceA returns 412. Use ResourceB only if you want a
      second dependent; ResourceA is enough for the story.
+
+## Implementation Notes
+
+- Duplicate `If-Match` header values are intentionally handled like legacy ODS behavior: the ASP.NET frontend
+  preserves the first non-blank value and drops the remaining values before Core builds the typed precondition.
+  This is not strictly correct HTTP `If-Match` behavior, but DMS is replicating legacy compatibility rather than
+  treating the collapsed duplicate value set as a mismatch.

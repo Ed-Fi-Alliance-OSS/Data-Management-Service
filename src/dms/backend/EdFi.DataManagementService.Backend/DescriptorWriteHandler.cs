@@ -59,34 +59,34 @@ internal sealed class DescriptorWriteHandler(
             request.Resource
         );
 
-        _logger.LogDebug(
-            "Resolving descriptor POST target context for {Resource} - {TraceId}",
-            RelationalWriteSupport.FormatResource(request.Resource),
-            request.TraceId.Value
-        );
-
-        var targetLookupResult = await _targetLookupService
-            .ResolveForPostAsync(
-                request.MappingSet,
-                request.Resource,
-                request.ReferentialId.Value,
-                request.DocumentUuid,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        var targetContext =
-            RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult)
-            ?? throw new InvalidOperationException(
-                $"Unexpected target lookup result type '{targetLookupResult.GetType().Name}' for descriptor POST."
-            );
-
         IRelationalWriteSession? writeSession = null;
 
         try
         {
             if (request.WritePrecondition is not WritePrecondition.IfMatch ifMatch)
             {
+                _logger.LogDebug(
+                    "Resolving descriptor POST target context for {Resource} - {TraceId}",
+                    RelationalWriteSupport.FormatResource(request.Resource),
+                    request.TraceId.Value
+                );
+
+                var targetLookupResult = await _targetLookupService
+                    .ResolveForPostAsync(
+                        request.MappingSet,
+                        request.Resource,
+                        request.ReferentialId.Value,
+                        request.DocumentUuid,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                var targetContext =
+                    RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult)
+                    ?? throw new InvalidOperationException(
+                        $"Unexpected target lookup result type '{targetLookupResult.GetType().Name}' for descriptor POST."
+                    );
+
                 return targetContext switch
                 {
                     RelationalWriteTargetContext.CreateNew(var documentUuid) => await InsertDescriptorAsync(
@@ -284,78 +284,6 @@ internal sealed class DescriptorWriteHandler(
 
         var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource);
 
-        _logger.LogDebug(
-            "Resolving descriptor PUT target context for {Resource} - {TraceId}",
-            RelationalWriteSupport.FormatResource(request.Resource),
-            request.TraceId.Value
-        );
-
-        var targetLookupResult = await _targetLookupService
-            .ResolveForPutAsync(request.MappingSet, request.Resource, request.DocumentUuid, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (targetLookupResult is RelationalWriteTargetLookupResult.NotFound)
-        {
-            return new UpdateResult.UpdateFailureNotExists();
-        }
-
-        var targetContext =
-            RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult)
-            ?? throw new InvalidOperationException(
-                $"Unexpected target lookup result type '{targetLookupResult.GetType().Name}' for descriptor PUT."
-            );
-
-        if (
-            targetContext
-            is not RelationalWriteTargetContext.ExistingDocument
-            (var documentId, var documentUuid, _)
-        )
-        {
-            throw new InvalidOperationException(
-                $"Unexpected target context type '{targetContext.GetType().Name}' for descriptor PUT."
-            );
-        }
-
-        if (request.WritePrecondition is not WritePrecondition.IfMatch)
-        {
-            var persisted = await ReadPersistedDescriptorAsync(
-                    _commandExecutor,
-                    documentId,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (persisted is null)
-            {
-                return new UpdateResult.UnknownFailure(
-                    BuildMissingDescriptorMessage(request.Resource, documentId)
-                );
-            }
-
-            if (!string.Equals(body.Uri, persisted.Uri, StringComparison.Ordinal))
-            {
-                return new UpdateResult.UpdateFailureImmutableIdentity(
-                    $"Identity of resource '{RelationalWriteSupport.FormatResource(request.Resource)}' "
-                        + "cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
-                );
-            }
-
-            if (IsDescriptorUnchanged(body, persisted))
-            {
-                _logger.LogDebug(
-                    "Descriptor PUT is a no-op for {Resource} (DocumentId={DocumentId}) - {TraceId}",
-                    RelationalWriteSupport.FormatResource(request.Resource),
-                    documentId,
-                    request.TraceId.Value
-                );
-
-                return new UpdateResult.UpdateSuccess(
-                    documentUuid,
-                    RelationalApiMetadataFormatter.FormatEtag(body)
-                );
-            }
-        }
-
         IRelationalWriteSession? writeSession = null;
 
         try
@@ -487,6 +415,80 @@ internal sealed class DescriptorWriteHandler(
                             $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
                         );
                 }
+            }
+
+            _logger.LogDebug(
+                "Resolving descriptor PUT target context for {Resource} - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                request.TraceId.Value
+            );
+
+            var targetLookupResult = await _targetLookupService
+                .ResolveForPutAsync(
+                    request.MappingSet,
+                    request.Resource,
+                    request.DocumentUuid,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (targetLookupResult is RelationalWriteTargetLookupResult.NotFound)
+            {
+                return new UpdateResult.UpdateFailureNotExists();
+            }
+
+            var targetContext =
+                RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult)
+                ?? throw new InvalidOperationException(
+                    $"Unexpected target lookup result type '{targetLookupResult.GetType().Name}' for descriptor PUT."
+                );
+
+            if (
+                targetContext
+                is not RelationalWriteTargetContext.ExistingDocument
+                (var documentId, var documentUuid, _)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Unexpected target context type '{targetContext.GetType().Name}' for descriptor PUT."
+                );
+            }
+
+            var persistedDescriptor = await ReadPersistedDescriptorAsync(
+                    _commandExecutor,
+                    documentId,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (persistedDescriptor is null)
+            {
+                return new UpdateResult.UnknownFailure(
+                    BuildMissingDescriptorMessage(request.Resource, documentId)
+                );
+            }
+
+            if (!string.Equals(body.Uri, persistedDescriptor.Uri, StringComparison.Ordinal))
+            {
+                return new UpdateResult.UpdateFailureImmutableIdentity(
+                    $"Identity of resource '{RelationalWriteSupport.FormatResource(request.Resource)}' "
+                        + "cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
+                );
+            }
+
+            if (IsDescriptorUnchanged(body, persistedDescriptor))
+            {
+                _logger.LogDebug(
+                    "Descriptor PUT is a no-op for {Resource} (DocumentId={DocumentId}) - {TraceId}",
+                    RelationalWriteSupport.FormatResource(request.Resource),
+                    documentId,
+                    request.TraceId.Value
+                );
+
+                return new UpdateResult.UpdateSuccess(
+                    documentUuid,
+                    RelationalApiMetadataFormatter.FormatEtag(body)
+                );
             }
 
             _logger.LogDebug(
