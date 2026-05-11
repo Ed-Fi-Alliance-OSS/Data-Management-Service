@@ -4,13 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -42,7 +41,10 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
             string jsonBody = """
                 {
                     "schoolReference": {
-                        "schoolId": 1
+                        "schoolId": 1,
+                        "link": {
+                            "href": "/ed-fi/schools/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
+                        }
                     },
                     "bellScheduleName": "Test Schedule",
                     "totalInstructionalTime": 325,
@@ -93,16 +95,10 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
             Trace.Assert(lastModifiedDate != null);
             Trace.Assert(eTag != null);
 
-            if (_requestInfo.ParsedBody.DeepClone() is JsonObject cloneForHash)
-            {
-                cloneForHash.Remove("_etag");
-                cloneForHash.Remove("_lastModifiedDate");
-
-                // Compute _etag from clone
-                byte[] hash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(cloneForHash));
-                var reverseEtag = Convert.ToBase64String(hash);
-                reverseEtag.Should().BeEquivalentTo(eTag.GetValue<string>());
-            }
+            ResourceEtagFormatter
+                .FormatEtag(_requestInfo.ParsedBody)
+                .Should()
+                .BeEquivalentTo(eTag.GetValue<string>());
         }
     }
 }

@@ -6,6 +6,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 using NUnit.Framework;
@@ -46,6 +47,31 @@ public class Given_RelationalApiMetadataFormatter
             .FormatEtag(firstDocument)
             .Should()
             .Be(RelationalApiMetadataFormatter.FormatEtag(secondDocument));
+    }
+
+    [Test]
+    public void It_uses_the_core_resource_etag_formatter_for_json_documents()
+    {
+        var document = JsonNode.Parse(
+            """
+            {
+              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+              "_etag": "stale",
+              "name": "Lincoln High",
+              "schoolReference": {
+                "schoolId": 255901,
+                "link": {
+                  "href": "/ed-fi/schools/bbbbbbbb-1111-2222-3333-cccccccccccc"
+                }
+              }
+            }
+            """
+        )!;
+
+        RelationalApiMetadataFormatter
+            .FormatEtag(document)
+            .Should()
+            .Be(ResourceEtagFormatter.FormatEtag(document));
     }
 
     [Test]
@@ -264,28 +290,5 @@ public class Given_RelationalApiMetadataFormatter
             .FormatEtag(descriptorBody)
             .Should()
             .Be(RelationalApiMetadataFormatter.FormatEtag(externalResponseDocument));
-    }
-
-    [Test]
-    public void It_refreshes_etag_from_the_projected_document_shape_without_mutating_other_metadata()
-    {
-        var projectedDocument = JsonNode.Parse(
-            """
-            {
-              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
-              "_etag": "stale",
-              "_lastModifiedDate": "2026-04-13T12:00:00Z",
-              "schoolId": 255901,
-              "nameOfInstitution": "Lincoln High"
-            }
-            """
-        )!;
-        var expectedHash = RelationalApiMetadataFormatter.FormatEtag(projectedDocument);
-
-        RelationalApiMetadataFormatter.RefreshEtag(projectedDocument);
-
-        projectedDocument["id"]!.GetValue<string>().Should().Be("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
-        projectedDocument["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-13T12:00:00Z");
-        projectedDocument["_etag"]!.GetValue<string>().Should().Be(expectedHash);
     }
 }

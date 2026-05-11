@@ -64,11 +64,13 @@ public class Given_DocumentComparer
             }
             """
         )!;
-        var canonicalDocument = document.DeepClone().AsObject();
-
-        canonicalDocument.Remove("_etag");
-        canonicalDocument.Remove("_lastModifiedDate");
-        canonicalDocument.Remove("id");
+        var canonicalDocument = JsonNode.Parse(
+            """
+            {
+              "name": "A&B <tag>"
+            }
+            """
+        )!;
 
         var expectedHash = Convert.ToBase64String(
             SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(canonicalDocument))
@@ -79,5 +81,63 @@ public class Given_DocumentComparer
 
         DocumentComparer.GenerateContentHash(document).Should().Be(expectedHash);
         DocumentComparer.GenerateContentHash(document).Should().NotBe(legacySerializerHash);
+    }
+
+    [Test]
+    public void It_ignores_server_generated_fields_recursively()
+    {
+        var documentWithServerFields = JsonNode.Parse(
+            """
+            {
+              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+              "_etag": "stale",
+              "_lastModifiedDate": "2026-04-13T12:00:00Z",
+              "studentUniqueId": "10001",
+              "schoolReference": {
+                "schoolId": 255901,
+                "link": {
+                  "href": "/ed-fi/schools/bbbbbbbb-1111-2222-3333-cccccccccccc"
+                }
+              },
+              "addresses": [
+                {
+                  "id": "server-generated-collection-id",
+                  "streetNumberName": "100 Main St",
+                  "periods": [
+                    {
+                      "_etag": "nested-stale",
+                      "beginDate": "2026-01-01"
+                    }
+                  ]
+                }
+              ]
+            }
+            """
+        )!;
+        var documentWithoutServerFields = JsonNode.Parse(
+            """
+            {
+              "studentUniqueId": "10001",
+              "schoolReference": {
+                "schoolId": 255901
+              },
+              "addresses": [
+                {
+                  "streetNumberName": "100 Main St",
+                  "periods": [
+                    {
+                      "beginDate": "2026-01-01"
+                    }
+                  ]
+                }
+              ]
+            }
+            """
+        )!;
+
+        DocumentComparer
+            .GenerateContentHash(documentWithServerFields)
+            .Should()
+            .Be(DocumentComparer.GenerateContentHash(documentWithoutServerFields));
     }
 }
