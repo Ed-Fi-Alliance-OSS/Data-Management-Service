@@ -37,3 +37,14 @@ This story ensures update tracking remains correct for descriptor resources with
    2. updates a non-identity field,
    3. asserts stored stamps and journal behavior,
    4. repeats the same PUT and asserts stamps/journal remain unchanged.
+
+## Transition Notes
+
+`DMS-1005` currently stamps descriptor representation changes manually in `DescriptorWriteHandler` by updating
+`dms.Document.ContentVersion` and `dms.Document.ContentLastModifiedAt` after changed `dms.Descriptor` updates. That is
+a temporary bridge for `If-Match` correctness until this story moves descriptor stamping ownership into
+`dms.Descriptor` triggers.
+
+When this story adds descriptor stamping triggers, remove the manual `dms.Document` stamp updates from
+`DescriptorWriteHandler` in the same change. Leaving both mechanisms active would double-stamp descriptor writes and
+can emit extra `dms.DocumentChangeEvent` journal rows.

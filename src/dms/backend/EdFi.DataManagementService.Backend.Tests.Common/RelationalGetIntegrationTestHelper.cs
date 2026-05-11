@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
@@ -63,7 +64,7 @@ public static class RelationalGetIntegrationTestHelper
         );
         var canonicalDocument = DocumentReconstituter.ReorderToReadPlanOrder(expectedDocument, readPlan);
 
-        return DocumentComparer.GenerateContentHash(canonicalDocument);
+        return ResourceEtagFormatter.FormatEtag(canonicalDocument);
     }
 
     public static string FormatExternalLastModifiedDate(DateTimeOffset lastModifiedAt) =>

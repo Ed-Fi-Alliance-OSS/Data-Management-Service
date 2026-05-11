@@ -6,16 +6,15 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Core.Tests.Unit.Backend;
+namespace EdFi.DataManagementService.Core.Tests.Unit.Utilities;
 
 [TestFixture]
 [Parallelizable]
-public class Given_DocumentComparer
+public class Given_ResourceEtagFormatter
 {
     [Test]
     public void It_generates_the_same_hash_for_equivalent_documents_with_different_property_order()
@@ -45,10 +44,10 @@ public class Given_DocumentComparer
             """
         )!;
 
-        DocumentComparer
-            .GenerateContentHash(firstDocument)
+        ResourceEtagFormatter
+            .FormatEtag(firstDocument)
             .Should()
-            .Be(DocumentComparer.GenerateContentHash(secondDocument));
+            .Be(ResourceEtagFormatter.FormatEtag(secondDocument));
     }
 
     [Test]
@@ -79,8 +78,8 @@ public class Given_DocumentComparer
             SHA256.HashData(Encoding.UTF8.GetBytes(canonicalDocument.ToJsonString()))
         );
 
-        DocumentComparer.GenerateContentHash(document).Should().Be(expectedHash);
-        DocumentComparer.GenerateContentHash(document).Should().NotBe(legacySerializerHash);
+        ResourceEtagFormatter.FormatEtag(document).Should().Be(expectedHash);
+        ResourceEtagFormatter.FormatEtag(document).Should().NotBe(legacySerializerHash);
     }
 
     [Test]
@@ -135,9 +134,9 @@ public class Given_DocumentComparer
             """
         )!;
 
-        DocumentComparer
-            .GenerateContentHash(documentWithServerFields)
+        ResourceEtagFormatter
+            .FormatEtag(documentWithServerFields)
             .Should()
-            .Be(DocumentComparer.GenerateContentHash(documentWithoutServerFields));
+            .Be(ResourceEtagFormatter.FormatEtag(documentWithoutServerFields));
     }
 }

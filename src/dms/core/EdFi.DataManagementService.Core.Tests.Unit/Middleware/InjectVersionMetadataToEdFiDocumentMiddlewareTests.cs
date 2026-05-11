@@ -92,8 +92,8 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
             var eTag = _requestInfo.ParsedBody["_etag"]?.AsValue();
             eTag.Should().NotBeNull();
 
-            Trace.Assert(lastModifiedDate != null);
-            Trace.Assert(eTag != null);
+            Trace.Assert(lastModifiedDate is not null);
+            Trace.Assert(eTag is not null);
 
             ResourceEtagFormatter
                 .FormatEtag(_requestInfo.ParsedBody)
