@@ -290,4 +290,39 @@ public class Given_RelationalApiMetadataFormatter
             .Should()
             .Be(RelationalApiMetadataFormatter.FormatEtag(externalResponseDocument));
     }
+
+    [Test]
+    public void It_preserves_null_short_description_on_descriptor_canonicalization()
+    {
+        var descriptorBody = new ExtractedDescriptorBody(
+            "uri://ed-fi.org/SchoolTypeDescriptor",
+            "Alternative",
+            null,
+            "Alternative school type",
+            new DateOnly(2025, 1, 15),
+            new DateOnly(2025, 12, 31),
+            "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
+            "SchoolTypeDescriptor"
+        );
+        var externalResponseDocument = JsonNode.Parse(
+            """
+            {
+              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+              "_etag": "stale",
+              "_lastModifiedDate": "2026-04-13T12:00:00Z",
+              "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+              "codeValue": "Alternative",
+              "shortDescription": null,
+              "description": "Alternative school type",
+              "effectiveBeginDate": "2025-01-15",
+              "effectiveEndDate": "2025-12-31"
+            }
+            """
+        )!;
+
+        RelationalApiMetadataFormatter
+            .FormatEtag(descriptorBody)
+            .Should()
+            .Be(RelationalApiMetadataFormatter.FormatEtag(externalResponseDocument));
+    }
 }

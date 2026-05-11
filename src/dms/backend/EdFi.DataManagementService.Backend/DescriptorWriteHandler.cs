@@ -487,7 +487,9 @@ internal sealed class DescriptorWriteHandler(
 
                 return new UpdateResult.UpdateSuccess(
                     documentUuid,
-                    RelationalApiMetadataFormatter.FormatEtag(body)
+                    RelationalApiMetadataFormatter.FormatEtag(
+                        persistedDescriptor.ToExtractedDescriptorBody(request.Resource)
+                    )
                 );
             }
 

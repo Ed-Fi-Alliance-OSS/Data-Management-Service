@@ -26,12 +26,8 @@ internal static class RelationalApiMetadataFormatter
         {
             ["namespace"] = descriptorBody.Namespace,
             ["codeValue"] = descriptorBody.CodeValue,
+            ["shortDescription"] = descriptorBody.ShortDescription,
         };
-
-        if (descriptorBody.ShortDescription is not null)
-        {
-            document["shortDescription"] = descriptorBody.ShortDescription;
-        }
 
         if (descriptorBody.Description is not null)
         {
