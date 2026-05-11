@@ -538,7 +538,8 @@ internal static class HydrationBatchBuilderTestHelper
 {
     public static ResourceReadPlan BuildTestReadPlan(
         SqlDialect dialect = SqlDialect.Pgsql,
-        IReadOnlyList<DescriptorProjectionPlan>? descriptorProjectionPlans = null
+        IReadOnlyList<DescriptorProjectionPlan>? descriptorProjectionPlans = null,
+        DocumentReferenceLookupPlan? documentReferenceLookup = null
     )
     {
         var rootTable = new DbTableModel(
@@ -651,7 +652,8 @@ internal static class HydrationBatchBuilderTestHelper
             KeysetTable: KeysetTableConventions.GetKeysetTableContract(dialect),
             TablePlansInDependencyOrder: [rootTablePlan, childTablePlan],
             ReferenceIdentityProjectionPlansInDependencyOrder: [],
-            DescriptorProjectionPlansInOrder: descriptorProjectionPlans ?? []
+            DescriptorProjectionPlansInOrder: descriptorProjectionPlans ?? [],
+            DocumentReferenceLookup: documentReferenceLookup
         );
     }
 
