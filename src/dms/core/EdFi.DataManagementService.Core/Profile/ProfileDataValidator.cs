@@ -264,6 +264,33 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         return failures;
     }
 
+    /// <summary>
+    /// Server-generated field names are outside the profile DSL namespace and cannot
+    /// be referenced by IncludeOnly or ExcludeOnly. Returns a <see cref="ValidationFailure"/>
+    /// with <see cref="ValidationSeverity.Error"/> if the member name is server-generated,
+    /// otherwise null. Severity is always Error, independent of <paramref name="context"/>.
+    /// </summary>
+    private static ValidationFailure? CheckServerGeneratedField(
+        string memberName,
+        string memberKindLabel,
+        ValidationContext context
+    )
+    {
+        if (!ServerGeneratedFields.Contains(memberName))
+        {
+            return null;
+        }
+
+        return new ValidationFailure(
+            ValidationSeverity.Error,
+            context.ProfileName,
+            context.ResourceName,
+            $"{context.PathPrefix}{memberName}",
+            $"{memberKindLabel} '{memberName}' in {context.ContentTypeName} content type "
+                + "is a server-generated field and is not profile-addressable."
+        );
+    }
+
     private static List<ValidationFailure> ValidateContentTypeMembers(
         ContentTypeDefinition contentType,
         JsonObject schemaProperties,
@@ -319,6 +346,12 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         failures.AddRange(
             contentType.Properties.SelectMany(property =>
             {
+                var serverGenFailure = CheckServerGeneratedField(property.Name, "Property", context);
+                if (serverGenFailure is not null)
+                {
+                    return new List<ValidationFailure> { serverGenFailure };
+                }
+
                 var memberPath = $"$.{context.PathPrefix}{property.Name}";
                 var propertyFailures = new List<ValidationFailure>();
 
@@ -354,6 +387,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // Validate objects
         foreach (var obj in contentType.Objects)
         {
+            var serverGenFailure = CheckServerGeneratedField(obj.Name, "Object", context);
+            if (serverGenFailure is not null)
+            {
+                failures.Add(serverGenFailure);
+                continue;
+            }
+
             if (!schemaProperties.ContainsKey(obj.Name))
             {
                 failures.Add(
@@ -384,6 +424,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // Validate collections
         foreach (var collection in contentType.Collections)
         {
+            var serverGenFailure = CheckServerGeneratedField(collection.Name, "Collection", context);
+            if (serverGenFailure is not null)
+            {
+                failures.Add(serverGenFailure);
+                continue;
+            }
+
             if (!schemaProperties.ContainsKey(collection.Name))
             {
                 failures.Add(
@@ -430,6 +477,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     )
     {
         var failures = new List<ValidationFailure>();
+
+        var serverGenFailure = CheckServerGeneratedField(extension.Name, "Extension", context);
+        if (serverGenFailure is not null)
+        {
+            failures.Add(serverGenFailure);
+            return failures;
+        }
 
         if (!schemaProperties.ContainsKey("_ext"))
         {

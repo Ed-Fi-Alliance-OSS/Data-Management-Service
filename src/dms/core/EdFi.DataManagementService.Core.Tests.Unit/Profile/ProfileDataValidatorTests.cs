@@ -1183,6 +1183,211 @@ public class ProfileDataValidatorTests
         }
 
         [Test]
+        public void Validate_should_return_error_for_server_generated_field_in_IncludeOnly_properties()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            // Schema has firstName so "ordinary members would validate" baseline holds.
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("link")],
+                [],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.IsValid.Should().BeFalse();
+            result.HasErrors.Should().BeTrue();
+            result.Failures.Should().HaveCount(1);
+            result.Failures[0].Severity.Should().Be(ValidationSeverity.Error);
+            result.Failures[0].MemberName.Should().Be("link");
+            result.Failures[0].Message.Should().Contain("server-generated field");
+            result.Failures[0].Message.Should().Contain("not profile-addressable");
+        }
+
+        [TestCase("id")]
+        [TestCase("link")]
+        [TestCase("_etag")]
+        [TestCase("_lastModifiedDate")]
+        public void Validate_should_return_error_for_each_server_generated_field_in_IncludeOnly_properties(
+            string serverGeneratedFieldName
+        )
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule(serverGeneratedFieldName)],
+                [],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == serverGeneratedFieldName
+                    && f.Message.Contains("server-generated field")
+                    && f.Message.Contains("not profile-addressable")
+                );
+        }
+
+        [TestCase("id")]
+        [TestCase("link")]
+        [TestCase("_etag")]
+        [TestCase("_lastModifiedDate")]
+        public void Validate_should_return_error_for_each_server_generated_field_in_ExcludeOnly_properties(
+            string serverGeneratedFieldName
+        )
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [new PropertyRule(serverGeneratedFieldName)],
+                [],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.IsValid.Should().BeFalse();
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == serverGeneratedFieldName
+                    && f.Message.Contains("server-generated field")
+                    && f.Message.Contains("not profile-addressable")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_server_generated_field_as_object_rule_name()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [new ObjectRule("link", MemberSelection.IncludeAll, null, null, null, null, null)],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_server_generated_field_as_collection_rule_name()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [new CollectionRule("link", MemberSelection.IncludeAll, null, null, null, null, null, null)],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_server_generated_field_as_extension_rule_name()
+        {
+            // Arrange
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [],
+                [new ExtensionRule("link", MemberSelection.IncludeAll, null, null, null, null)]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
         public void Validate_should_succeed_for_profile_with_all_member_selection_modes()
         {
             // Arrange
