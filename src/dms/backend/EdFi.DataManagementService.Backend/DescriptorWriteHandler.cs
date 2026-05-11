@@ -270,6 +270,13 @@ internal sealed class DescriptorWriteHandler(
                 "An unexpected error occurred while processing the descriptor request."
             );
         }
+        finally
+        {
+            if (writeSession is not null)
+            {
+                await writeSession.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     public async Task<UpdateResult> HandlePutAsync(
@@ -544,6 +551,13 @@ internal sealed class DescriptorWriteHandler(
             return new UpdateResult.UnknownFailure(
                 "An unexpected error occurred while processing the descriptor request."
             );
+        }
+        finally
+        {
+            if (writeSession is not null)
+            {
+                await writeSession.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 

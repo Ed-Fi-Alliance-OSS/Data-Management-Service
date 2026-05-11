@@ -74,6 +74,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
         sessionFactory
             .Session.Executor.Commands.Should()
@@ -109,6 +110,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
         sessionFactory
             .Session.Executor.Commands.Should()
@@ -152,6 +154,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
         sessionFactory.Session.Executor.Commands[2].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
     }
@@ -200,6 +203,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
         sessionFactory
             .Session.Executor.Commands.Should()
