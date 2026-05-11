@@ -5,9 +5,8 @@
 
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Utilities;
 
-namespace EdFi.DataManagementService.Core.Backend;
+namespace EdFi.DataManagementService.Core.Utilities;
 
 public static class ResourceEtagFormatter
 {

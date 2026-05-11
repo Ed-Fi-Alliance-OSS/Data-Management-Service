@@ -6,7 +6,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 using NUnit.Framework;

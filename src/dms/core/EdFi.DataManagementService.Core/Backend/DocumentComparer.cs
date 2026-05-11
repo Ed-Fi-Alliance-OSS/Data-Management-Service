@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
