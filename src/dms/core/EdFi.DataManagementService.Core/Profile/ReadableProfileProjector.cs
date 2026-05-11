@@ -94,6 +94,13 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
                 continue;
             }
 
+            // Server-generated short-circuit at root only fires for "link"; the other
+            // three server-generated names are handled by the metadata block above.
+            if (TryPreserveServerGenerated(result, name, value))
+            {
+                continue;
+            }
+
             // Extensions
             if (name == ExtensionFieldName && value is JsonObject extObject)
             {
@@ -159,6 +166,11 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
         {
             string name = property.Key;
             JsonNode? value = property.Value;
+
+            if (TryPreserveServerGenerated(result, name, value))
+            {
+                continue;
+            }
 
             // Extensions within nested object
             if (name == ExtensionFieldName && value is JsonObject extObject)
@@ -259,6 +271,11 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
         {
             string name = property.Key;
             JsonNode? value = property.Value;
+
+            if (TryPreserveServerGenerated(result, name, value))
+            {
+                continue;
+            }
 
             // Extensions within collection item
             if (name == ExtensionFieldName && value is JsonObject extObject)
@@ -378,6 +395,11 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             string name = property.Key;
             JsonNode? value = property.Value;
 
+            if (TryPreserveServerGenerated(result, name, value))
+            {
+                continue;
+            }
+
             // Nested objects with explicit rules
             if (extensionRule.ObjectRulesByName.TryGetValue(name, out ObjectRule? objectRule))
             {
@@ -462,5 +484,21 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             MemberSelection.ExcludeOnly => !propertyNameSet.Contains(name),
             _ => true,
         };
+    }
+
+    /// <summary>
+    /// Server-generated field names short-circuit projection: they pass through
+    /// as deep-cloned subtrees, ahead of any rule dispatch. This is defensive
+    /// against a loosened validator and enforces the profile-namespace boundary.
+    /// </summary>
+    private static bool TryPreserveServerGenerated(JsonObject result, string name, JsonNode? value)
+    {
+        if (!ServerGeneratedFields.Contains(name))
+        {
+            return false;
+        }
+
+        result[name] = value?.DeepClone();
+        return true;
     }
 }

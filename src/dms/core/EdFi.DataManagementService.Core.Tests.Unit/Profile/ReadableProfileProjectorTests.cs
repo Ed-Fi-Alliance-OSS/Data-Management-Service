@@ -1830,6 +1830,195 @@ public class ReadableProfileProjectorTests
     }
 
     // =======================================================================
+    //  Server-generated fields short-circuit per namespace contract
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Link_On_Reference_Under_IncludeOnly : ReadableProfileProjectorTests
+    {
+        private JsonObject _source = null!;
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["schoolReference"] = new JsonObject
+                {
+                    ["schoolId"] = 200,
+                    ["link"] = new JsonObject { ["rel"] = "School", ["href"] = "/ed-fi/schools/200" },
+                },
+            };
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = CreateContentType(MemberSelection.IncludeAll, objects: [schoolReferenceRule]);
+
+            _result = _projector.Project(_source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_preserves_link_subtree_on_filtered_reference()
+        {
+            var reference = (_result["schoolReference"] as JsonObject)!;
+            var link = reference["link"] as JsonObject;
+            link.Should().NotBeNull();
+            link!["rel"]!.GetValue<string>().Should().Be("School");
+            link["href"]!.GetValue<string>().Should().Be("/ed-fi/schools/200");
+        }
+
+        [Test]
+        public void It_preserves_link_via_deep_clone_not_alias()
+        {
+            var resultLink = (((_result["schoolReference"] as JsonObject)!)["link"] as JsonObject)!;
+            var sourceLink = ((_source["schoolReference"] as JsonObject)!["link"] as JsonObject)!;
+
+            resultLink["href"] = "/mutated";
+
+            sourceLink["href"]!.GetValue<string>().Should().Be("/ed-fi/schools/200");
+        }
+    }
+
+    // Root-scope `_etag` / `_lastModifiedDate` are preserved by the metadata block
+    // at the top of ProjectRoot, not by TryPreserveServerGenerated. Kept as
+    // regression coverage for the metadata-preservation contract.
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Root_Etag_And_LastModifiedDate_Under_IncludeOnly : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["_etag"] = "\"42\"",
+                ["_lastModifiedDate"] = "2026-05-11T00:00:00Z",
+                ["nameOfInstitution"] = "Test School",
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeOnly,
+                properties: [new PropertyRule("nameOfInstitution")]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_preserves_etag()
+        {
+            _result["_etag"]!.GetValue<string>().Should().Be("\"42\"");
+        }
+
+        [Test]
+        public void It_preserves_last_modified_date()
+        {
+            _result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-11T00:00:00Z");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Root_Link_Under_IncludeOnly : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["link"] = new JsonObject { ["rel"] = "Student", ["href"] = "/ed-fi/students/abc-123" },
+                ["nameOfInstitution"] = "Test School",
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeOnly,
+                properties: [new PropertyRule("nameOfInstitution")]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_preserves_root_link()
+        {
+            var link = _result["link"] as JsonObject;
+            link.Should().NotBeNull();
+            link!["rel"]!.GetValue<string>().Should().Be("Student");
+            link["href"]!.GetValue<string>().Should().Be("/ed-fi/students/abc-123");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Illegal_ObjectRule_Named_Link : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        // Defensive: the validator would normally reject this profile. The projector
+        // must still bypass rule dispatch for server-generated names and preserve
+        // the link subtree intact.
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["link"] = new JsonObject { ["rel"] = "Student", ["href"] = "/ed-fi/students/abc-123" },
+            };
+
+            var illegalLinkRule = new ObjectRule(
+                Name: "link",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("rel")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = CreateContentType(MemberSelection.IncludeAll, objects: [illegalLinkRule]);
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_preserves_link_rel_via_short_circuit_bypassing_rule_dispatch()
+        {
+            var link = _result["link"] as JsonObject;
+            link.Should().NotBeNull();
+            link!["rel"]!.GetValue<string>().Should().Be("Student");
+        }
+
+        [Test]
+        public void It_preserves_link_href_despite_IncludeOnly_listing_only_rel()
+        {
+            var link = (_result["link"] as JsonObject)!;
+            link["href"]!.GetValue<string>().Should().Be("/ed-fi/students/abc-123");
+        }
+    }
+
+    // =======================================================================
     //  Null property values in source documents
     // =======================================================================
 
