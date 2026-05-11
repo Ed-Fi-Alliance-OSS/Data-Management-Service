@@ -170,6 +170,7 @@ CREATE TABLE [dms].[DocumentCache]
     [ResourceName] nvarchar(256) NOT NULL,
     [ResourceVersion] nvarchar(32) NOT NULL,
     [Etag] nvarchar(64) NOT NULL,
+    [ContentVersion] bigint NOT NULL,
     [LastModifiedAt] datetime2(7) NOT NULL,
     [DocumentJson] nvarchar(max) NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentCache_ComputedAt] DEFAULT (sysutcdatetime()),
