@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
+using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -129,7 +131,10 @@ public class Given_Descriptor_Write_Response_Etags
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePostAsync(request);
@@ -147,6 +152,10 @@ public class Given_Descriptor_Write_Response_Etags
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
         commandExecutor.Commands[0].CommandText.Should().NotContain("UPDATE dms.\"Descriptor\"");
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
     }
 
     [Test]
@@ -159,7 +168,10 @@ public class Given_Descriptor_Write_Response_Etags
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePutAsync(request);
@@ -174,6 +186,9 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
         commandExecutor.Commands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
     }
 
     [Test]
@@ -217,7 +232,8 @@ public class Given_Descriptor_Write_Response_Etags
 
     private static DescriptorWriteHandler CreateSut(
         IRelationalWriteTargetLookupService targetLookupService,
-        IRelationalCommandExecutor commandExecutor
+        IRelationalCommandExecutor commandExecutor,
+        IRelationalWriteSessionFactory? writeSessionFactory = null
     )
     {
         return new DescriptorWriteHandler(
@@ -225,7 +241,7 @@ public class Given_Descriptor_Write_Response_Etags
             commandExecutor,
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
-            A.Fake<IRelationalWriteSessionFactory>(),
+            writeSessionFactory ?? A.Fake<IRelationalWriteSessionFactory>(),
             NullLogger<DescriptorWriteHandler>.Instance
         );
     }
@@ -426,6 +442,86 @@ public class Given_Descriptor_Write_Response_Etags
             await using var reader = new InMemoryRelationalCommandReader(resultSets);
             return await readAsync(reader, cancellationToken);
         }
+    }
+
+    private sealed class RecordingRelationalWriteSessionFactory(SqlDialect dialect)
+        : IRelationalWriteSessionFactory
+    {
+        public RecordingRelationalWriteSession Session { get; } = new(dialect);
+
+        public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IRelationalWriteSession>(Session);
+        }
+    }
+
+    private sealed class RecordingRelationalWriteSession : IRelationalWriteSession
+    {
+        private readonly RecordingDbConnection _connection = new(
+            new RecordingDbCommand(new DataTable().CreateDataReader())
+        );
+        private readonly RecordingDbTransaction _transaction;
+
+        public RecordingRelationalWriteSession(SqlDialect dialect)
+        {
+            _transaction = new RecordingDbTransaction(_connection, IsolationLevel.ReadCommitted);
+            Executor = new RecordingRelationalCommandExecutor(dialect);
+        }
+
+        public DbConnection Connection => _connection;
+
+        public DbTransaction Transaction => _transaction;
+
+        public RecordingRelationalCommandExecutor Executor { get; }
+
+        public Queue<object?> ScalarResults { get; } = [];
+
+        public List<RelationalCommand> ScalarCommands { get; } = [];
+
+        public int CommitCallCount { get; private set; }
+
+        public int RollbackCallCount { get; private set; }
+
+        public DbCommand CreateCommand(RelationalCommand command)
+        {
+            ScalarCommands.Add(command);
+
+            var dbCommand = new RecordingDbCommand(new DataTable().CreateDataReader())
+            {
+                CommandText = command.CommandText,
+                ScalarResult = ScalarResults.Count == 0 ? null : ScalarResults.Dequeue(),
+            };
+
+            foreach (var parameter in command.Parameters)
+            {
+                var dbParameter = dbCommand.CreateParameter();
+                dbParameter.ParameterName = parameter.Name;
+                dbParameter.Value = parameter.Value ?? DBNull.Value;
+                parameter.ConfigureParameter?.Invoke(dbParameter);
+                dbCommand.Parameters.Add((RecordingDbParameter)dbParameter);
+            }
+
+            return dbCommand;
+        }
+
+        public IRelationalCommandExecutor CreateCommandExecutor() => Executor;
+
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CommitCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RollbackCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class StubRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
