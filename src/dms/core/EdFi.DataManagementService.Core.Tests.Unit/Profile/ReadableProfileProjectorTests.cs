@@ -2019,6 +2019,165 @@ public class ReadableProfileProjectorTests
     }
 
     // =======================================================================
+    //  Enclosure-survival: server-generated fields do not, on their own,
+    //  keep an enclosing nested object / collection item / extension object
+    //  alive when every profile-addressable member has been filtered out.
+    //  See design-docs/profiles.md §"Profile Namespace": server-generated
+    //  fields pass through "whenever their enclosing object survives
+    //  projection" — the projector does not decide whether to emit them.
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Nested_Object_With_Only_Link_After_Filtering : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["nameOfInstitution"] = "Outer School",
+                ["schoolReference"] = new JsonObject
+                {
+                    ["nameOfInstitution"] = "Filtered Out",
+                    ["link"] = new JsonObject { ["rel"] = "School", ["href"] = "/ed-fi/schools/200" },
+                },
+            };
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("nameOfInstitution")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = CreateContentType(MemberSelection.IncludeAll, objects: [schoolReferenceRule]);
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_omits_the_enclosing_reference()
+        {
+            _result["schoolReference"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_still_emits_unrelated_root_content()
+        {
+            _result["nameOfInstitution"]?.GetValue<string>().Should().Be("Outer School");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_Item_With_Only_Link_After_Filtering : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["addresses"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["addressTypeDescriptor"] = "uri://ed-fi.org/AddressTypeDescriptor#Home",
+                        ["city"] = "Austin",
+                        ["link"] = new JsonObject { ["rel"] = "Address", ["href"] = "/ed-fi/addresses/1" },
+                    },
+                    new JsonObject
+                    {
+                        ["addressTypeDescriptor"] = "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                        ["city"] = "Boston",
+                        ["link"] = new JsonObject { ["rel"] = "Address", ["href"] = "/ed-fi/addresses/2" },
+                    },
+                },
+            };
+
+            var addressesRule = new CollectionRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("addressTypeDescriptor"), new PropertyRule("city")],
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: null
+            );
+
+            var contentType = CreateContentType(MemberSelection.IncludeAll, collections: [addressesRule]);
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_omits_the_collection_entirely()
+        {
+            _result["addresses"].Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extension_Object_With_Only_Link_After_Filtering : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["_ext"] = new JsonObject
+                {
+                    ["SampleExt"] = new JsonObject
+                    {
+                        ["customField"] = "filtered-out",
+                        ["link"] = new JsonObject { ["rel"] = "SampleExt", ["href"] = "/ed-fi/sample-ext/1" },
+                    },
+                },
+            };
+
+            var sampleExtRule = new ExtensionRule(
+                Name: "SampleExt",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("customField")],
+                Objects: null,
+                Collections: null
+            );
+
+            var contentType = CreateContentType(MemberSelection.IncludeAll, extensions: [sampleExtRule]);
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_omits_the_link_only_extension_object()
+        {
+            var ext = _result["_ext"] as JsonObject;
+            if (ext is not null)
+            {
+                ext["SampleExt"].Should().BeNull();
+            }
+        }
+    }
+
+    // =======================================================================
     //  Null property values in source documents
     // =======================================================================
 
