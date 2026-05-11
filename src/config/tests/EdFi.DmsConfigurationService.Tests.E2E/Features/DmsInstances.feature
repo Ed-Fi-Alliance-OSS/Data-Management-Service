@@ -18,7 +18,7 @@ Feature: DmsInstances endpoints
                           "id": {id},
                           "instanceType": "Production",
                           "instanceName": "Test Instance",
-                          "connectionString": "Server=localhost;Database=TestDb;",
+                          "connectionString": "{ignore}",
                           "dmsInstanceRouteContexts": [],
                           "dmsInstanceDerivatives": []
                       },
@@ -26,7 +26,7 @@ Feature: DmsInstances endpoints
                           "id": {id},
                           "instanceType": "Development",
                           "instanceName": "Dev Instance",
-                          "connectionString": "Server=dev;Database=DevDb;",
+                          "connectionString": "{ignore}",
                           "dmsInstanceRouteContexts": [],
                           "dmsInstanceDerivatives": []
                       }]
@@ -54,7 +54,7 @@ Feature: DmsInstances endpoints
                         "id": {id},
                         "instanceType": "Production",
                         "instanceName": "New Test Instance",
-                        "connectionString": "Server=newtest;Database=NewTestDb;",
+                        "connectionString": "{ignore}",
                         "dmsInstanceRouteContexts": [],
                         "dmsInstanceDerivatives": []
                     }
@@ -78,7 +78,7 @@ Feature: DmsInstances endpoints
                           "id": {id},
                           "instanceType": "Development",
                           "instanceName": "Retrieved Instance",
-                          "connectionString": "Server=retrieved;Database=RetrievedDb;",
+                          "connectionString": "{ignore}",
                           "dmsInstanceRouteContexts": [],
                           "dmsInstanceDerivatives": []
                       }
@@ -110,7 +110,7 @@ Feature: DmsInstances endpoints
                         "id": {id},
                         "instanceType": "Production",
                         "instanceName": "Updated Instance",
-                        "connectionString": "Server=updated;Database=UpdatedDb;",
+                        "connectionString": "{ignore}",
                         "dmsInstanceRouteContexts": [],
                         "dmsInstanceDerivatives": []
                     }
@@ -352,20 +352,20 @@ Feature: DmsInstances endpoints
                         "id": {id},
                         "instanceType": "Production",
                         "instanceName": "Instance with Derivatives",
-                        "connectionString": "Server=main;Database=MainDb;",
+                        "connectionString": "{ignore}",
                         "dmsInstanceRouteContexts": [],
                         "dmsInstanceDerivatives": [
                             {
                                 "id": "{*}",
                                 "dmsInstanceId": {dmsInstanceId},
                                 "derivativeType": "ReadReplica",
-                                "connectionString": "Server=replica;Database=ReplicaDb;"
+                                "connectionString": "{ignore}"
                             },
                             {
                                 "id": "{*}",
                                 "dmsInstanceId": {dmsInstanceId},
                                 "derivativeType": "Snapshot",
-                                "connectionString": "Server=snapshot;Database=SnapshotDb;"
+                                "connectionString": "{ignore}"
                             }
                         ]
                     }

@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
@@ -18,6 +20,29 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Configuration;
 
 public class ConfigurationServiceDmsInstanceProviderTests
 {
+    private const string TestEncryptionKey = "TestEncryptionKey123456789012345678901234567890";
+
+    /// <summary>
+    /// Mirrors the CMS ConnectionStringEncryptionService.Encrypt() method exactly.
+    /// </summary>
+    private static string EncryptToBase64(string plainText, string encryptionKey)
+    {
+        byte[] keyBytes = Encoding.UTF8.GetBytes(encryptionKey.PadRight(32, '0')[..32]);
+        using var aes = Aes.Create();
+        aes.Key = keyBytes;
+        aes.GenerateIV();
+
+        using var encryptor = aes.CreateEncryptor();
+        byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
+        byte[] cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+
+        byte[] result = new byte[aes.IV.Length + cipherBytes.Length];
+        Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
+        Buffer.BlockCopy(cipherBytes, 0, result, aes.IV.Length, cipherBytes.Length);
+
+        return Convert.ToBase64String(result);
+    }
+
     [TestFixture]
     public class Given_Valid_DmsInstances_From_ConfigService
     {
@@ -39,7 +64,10 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 1L,
                     InstanceType = "Production",
                     InstanceName = "Main Instance",
-                    ConnectionString = "host=localhost;port=5432;database=edfi;",
+                    ConnectionString = EncryptToBase64(
+                        "host=localhost;port=5432;database=edfi;",
+                        TestEncryptionKey
+                    ),
                     DmsInstanceRouteContexts = new object[]
                     {
                         new
@@ -63,7 +91,10 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 2L,
                     InstanceType = "Development",
                     InstanceName = "Dev Instance",
-                    ConnectionString = "host=devhost;port=5432;database=edfi_dev;",
+                    ConnectionString = EncryptToBase64(
+                        "host=devhost;port=5432;database=edfi_dev;",
+                        TestEncryptionKey
+                    ),
                     DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
@@ -78,7 +109,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
             _loadedInstances = await _provider.LoadDmsInstances();
         }
@@ -173,7 +205,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
             _loadedInstances = await _provider.LoadDmsInstances();
         }
@@ -218,7 +251,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
 
             Assert.ThrowsAsync<InvalidOperationException>(async () => await provider.LoadDmsInstances());
@@ -240,7 +274,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
 
             Assert.ThrowsAsync<InvalidOperationException>(async () => await provider.LoadDmsInstances());
@@ -269,7 +304,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 1L,
                     InstanceType = "Production",
                     InstanceName = "First Instance",
-                    ConnectionString = "host=first;database=db1;",
+                    ConnectionString = EncryptToBase64("host=first;database=db1;", TestEncryptionKey),
                     DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
@@ -282,7 +317,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 2L,
                     InstanceType = "Development",
                     InstanceName = "Second Instance",
-                    ConnectionString = "host=second;database=db2;",
+                    ConnectionString = EncryptToBase64("host=second;database=db2;", TestEncryptionKey),
                     DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
                 new
@@ -290,7 +325,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 3L,
                     InstanceType = "Staging",
                     InstanceName = "Third Instance",
-                    ConnectionString = "host=third;database=db3;",
+                    ConnectionString = EncryptToBase64("host=third;database=db3;", TestEncryptionKey),
                     DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
@@ -305,7 +340,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
 
             // First load
@@ -361,27 +397,30 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
 
-            // Use JSON string directly to handle null values properly
-            var dmsInstancesJson = """
-                [
-                    {
-                        "id": 1,
-                        "instanceType": "Production",
-                        "instanceName": "Valid Instance",
-                        "connectionString": "host=localhost;database=edfi;",
-                        "dmsInstanceRouteContexts": []
-                    },
-                    {
-                        "id": 2,
-                        "instanceType": "Development",
-                        "instanceName": "Instance With Null Connection",
-                        "connectionString": null,
-                        "dmsInstanceRouteContexts": []
-                    }
-                ]
-                """;
+            var dmsInstancesResponse = new object[]
+            {
+                new
+                {
+                    Id = 1L,
+                    InstanceType = "Production",
+                    InstanceName = "Valid Instance",
+                    ConnectionString = (string?)EncryptToBase64(
+                        "host=localhost;database=edfi;",
+                        TestEncryptionKey
+                    ),
+                    DmsInstanceRouteContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 2L,
+                    InstanceType = "Development",
+                    InstanceName = "Instance With Null Connection",
+                    ConnectionString = (string?)null,
+                    DmsInstanceRouteContexts = Array.Empty<object>(),
+                },
+            };
 
-            handler.SetJsonResponse("v2/dmsInstances/", dmsInstancesJson);
+            handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -391,7 +430,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
             _loadedInstances = await _provider.LoadDmsInstances();
         }
@@ -432,7 +472,10 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 1L,
                     InstanceType = "Production",
                     InstanceName = "District 255901 - 2024",
-                    ConnectionString = "host=localhost;database=edfi_255901_2024;",
+                    ConnectionString = EncryptToBase64(
+                        "host=localhost;database=edfi_255901_2024;",
+                        TestEncryptionKey
+                    ),
                     DmsInstanceRouteContexts = new object[]
                     {
                         new
@@ -456,7 +499,10 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 2L,
                     InstanceType = "Production",
                     InstanceName = "District 255901 - 2025",
-                    ConnectionString = "host=localhost;database=edfi_255901_2025;",
+                    ConnectionString = EncryptToBase64(
+                        "host=localhost;database=edfi_255901_2025;",
+                        TestEncryptionKey
+                    ),
                     DmsInstanceRouteContexts = new object[]
                     {
                         new
@@ -480,7 +526,10 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 3L,
                     InstanceType = "Production",
                     InstanceName = "District 255902 - 2024",
-                    ConnectionString = "host=localhost;database=edfi_255902_2024;",
+                    ConnectionString = EncryptToBase64(
+                        "host=localhost;database=edfi_255902_2024;",
+                        TestEncryptionKey
+                    ),
                     DmsInstanceRouteContexts = new object[]
                     {
                         new
@@ -511,7 +560,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
             _loadedInstances = await _provider.LoadDmsInstances();
         }
@@ -586,7 +636,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 1L,
                     InstanceType = "Production",
                     InstanceName = "Valid Instance",
-                    ConnectionString = "host=localhost;database=edfi;",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi;", TestEncryptionKey),
                     DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
@@ -601,7 +651,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
             await _provider.LoadDmsInstances();
         }
@@ -636,7 +687,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 1L,
                     InstanceType = "Production",
                     InstanceName = "Instance Without Route Context",
-                    ConnectionString = "host=localhost;database=edfi;",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi;", TestEncryptionKey),
                     DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
@@ -651,7 +702,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
             _loadedInstances = await _provider.LoadDmsInstances();
         }
@@ -692,7 +744,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     Id = 1L,
                     InstanceType = "Production",
                     InstanceName = "District Only Instance",
-                    ConnectionString = "host=localhost;database=edfi;",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi;", TestEncryptionKey),
                     DmsInstanceRouteContexts = new object[]
                     {
                         new
@@ -716,7 +768,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
             await _provider.LoadDmsInstances();
         }
@@ -756,7 +809,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
             await _provider.LoadDmsInstances("TenantA");
         }
@@ -791,7 +845,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
             await _provider.LoadDmsInstances();
         }
@@ -823,7 +878,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
 
             // First call with TenantA
@@ -862,7 +918,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
 
             // Load instances for multiple tenants
@@ -904,7 +961,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 apiClient,
                 tokenHandler,
                 context,
-                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
             );
         }
 
@@ -940,7 +998,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                         Id = 1L,
                         InstanceType = "Production",
                         InstanceName = "Initial Instance",
-                        ConnectionString = "host=first;database=db1;",
+                        ConnectionString = EncryptToBase64("host=first;database=db1;", TestEncryptionKey),
                         DmsInstanceRouteContexts = Array.Empty<object>(),
                     },
                 }
@@ -962,6 +1020,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 tokenHandler,
                 context,
                 NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey),
                 cacheSettings,
                 _fakeTimeProvider
             );
@@ -977,7 +1036,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                         Id = 2L,
                         InstanceType = "Development",
                         InstanceName = "Updated Instance",
-                        ConnectionString = "host=second;database=db2;",
+                        ConnectionString = EncryptToBase64("host=second;database=db2;", TestEncryptionKey),
                         DmsInstanceRouteContexts = Array.Empty<object>(),
                     },
                 }
@@ -1017,7 +1076,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                         Id = 1L,
                         InstanceType = "Production",
                         InstanceName = "Initial Instance",
-                        ConnectionString = "host=first;database=db1;",
+                        ConnectionString = EncryptToBase64("host=first;database=db1;", TestEncryptionKey),
                         DmsInstanceRouteContexts = Array.Empty<object>(),
                     },
                 }
@@ -1038,6 +1097,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 tokenHandler,
                 context,
                 NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey),
                 cacheSettings
             );
 
@@ -1052,7 +1112,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                         Id = 2L,
                         InstanceType = "Development",
                         InstanceName = "Updated Instance",
-                        ConnectionString = "host=second;database=db2;",
+                        ConnectionString = EncryptToBase64("host=second;database=db2;", TestEncryptionKey),
                         DmsInstanceRouteContexts = Array.Empty<object>(),
                     },
                 }
@@ -1094,7 +1154,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                         Id = 1L,
                         InstanceType = "Production",
                         InstanceName = "Initial Instance",
-                        ConnectionString = "host=first;database=db1;",
+                        ConnectionString = EncryptToBase64("host=first;database=db1;", TestEncryptionKey),
                         DmsInstanceRouteContexts = Array.Empty<object>(),
                     },
                 }
@@ -1115,6 +1175,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 tokenHandler,
                 context,
                 NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey),
                 cacheSettings,
                 _fakeTimeProvider
             );
@@ -1130,7 +1191,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                         Id = 2L,
                         InstanceType = "Development",
                         InstanceName = "Updated Instance",
-                        ConnectionString = "host=second;database=db2;",
+                        ConnectionString = EncryptToBase64("host=second;database=db2;", TestEncryptionKey),
                         DmsInstanceRouteContexts = Array.Empty<object>(),
                     },
                 }
@@ -1167,7 +1228,6 @@ public class ConfigurationServiceDmsInstanceProviderTests
         : HttpMessageHandler
     {
         private readonly Dictionary<string, object> _responses = new();
-        private readonly Dictionary<string, string> _jsonResponses = new();
         private readonly Dictionary<string, int> _requestCounts = new();
 
         /// <summary>
@@ -1178,11 +1238,6 @@ public class ConfigurationServiceDmsInstanceProviderTests
         public void SetResponse(string path, object response)
         {
             _responses[path] = response;
-        }
-
-        public void SetJsonResponse(string path, string jsonContent)
-        {
-            _jsonResponses[path] = jsonContent;
         }
 
         public int GetRequestCount(string path) =>
@@ -1204,11 +1259,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             string content = defaultContent;
 
-            if (_jsonResponses.TryGetValue(path, out var jsonResponse))
-            {
-                content = jsonResponse;
-            }
-            else if (_responses.TryGetValue(path, out var response))
+            if (_responses.TryGetValue(path, out var response))
             {
                 content = JsonSerializer.Serialize(response);
             }

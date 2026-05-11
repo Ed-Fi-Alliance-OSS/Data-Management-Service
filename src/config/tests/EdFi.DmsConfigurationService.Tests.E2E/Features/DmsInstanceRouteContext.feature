@@ -237,7 +237,7 @@ Feature: DMS Instance Route Context
                        "id": {id},
                        "instanceType": "Production",
                        "instanceName": "Test Instance",
-                       "connectionString": "Server=localhost;Database=TestDb;",
+                       "connectionString": "{ignore}",
                        "dmsInstanceRouteContexts": [
                            {
                                "id": "{*}",
