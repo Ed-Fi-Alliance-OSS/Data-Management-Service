@@ -77,13 +77,16 @@ param(
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
 
+$openApiGeneratorVersion = "7.19.0"
+$openApiGeneratorJar = "openApi-codegen-cli-$openApiGeneratorVersion.jar"
+
 $solutionRoot = "$PSScriptRoot/$OutputFolder"
 $projectPath = "$solutionRoot/src/$PackageName/$PackageName.csproj"
 $nuspecPath = "$PSScriptRoot/eng/sdkGen/$PackageName.nuspec"
 
 function DownloadCodeGen {
-    if (-not (Test-Path -Path openApi-codegen-cli.jar)) {
-        Invoke-WebRequest -OutFile openApi-codegen-cli.jar https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/7.9.0/openapi-generator-cli-7.9.0.jar
+    if (-not (Test-Path -Path $openApiGeneratorJar)) {
+        Invoke-WebRequest -OutFile $openApiGeneratorJar https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/$openApiGeneratorVersion/openapi-generator-cli-$openApiGeneratorVersion.jar
     }
 }
 
@@ -96,7 +99,10 @@ function GenerateSdk {
         $ModelPackage,
 
         [string]
-        $Endpoint
+        $Endpoint,
+
+        [string]
+        $ExtraOperationIdMappings = ""
     )
 
     # Download and parse OpenAPI spec
@@ -126,14 +132,23 @@ function GenerateSdk {
     $mappings = ($operationIds | Sort-Object -Unique | ForEach-Object { "$(Normalize-OperationId $_)=$(Capitalize-FirstChar $_)" }) -join ","
     # Example --operation-id-name-mappings deleteHomographContactsById=Delete_HomographContactsById
 
-    & java -Xmx5g -jar openApi-codegen-cli.jar generate `
+    # Merge in any extra mappings provided by the caller (e.g. to resolve cross-spec operationId collisions)
+    if ($ExtraOperationIdMappings -ne "") {
+        if ($mappings -ne "") {
+            $mappings = "$mappings,$ExtraOperationIdMappings"
+        } else {
+            $mappings = $ExtraOperationIdMappings
+        }
+    }
+
+    & java -Xmx5g -jar $openApiGeneratorJar generate `
     -g csharp `
     -i $Endpoint `
     --api-package $ApiPackage `
     --model-package $ModelPackage `
     -o $OutputFolder `
     --operation-id-name-mappings $mappings `
-    --additional-properties "packageName=$PackageName,targetFramework=net8.0,netCoreProjectFile=true" `
+    --additional-properties "packageName=$PackageName,targetFramework=net10.0,netCoreProjectFile=true" `
     --global-property modelTests=false `
     --global-property apiTests=false `
     --global-property apiDocs=false `
@@ -195,15 +210,64 @@ function PushPackage {
     }
 }
 
+function Get-OperationIds {
+    param([string]$Endpoint)
+    $spec = Invoke-WebRequest -Uri $Endpoint | ConvertFrom-Json
+    $ids = $spec.paths.PSObject.Properties.Value | ForEach-Object {
+        $_.PSObject.Properties.Value | Where-Object { $_.operationId } | ForEach-Object { $_.operationId }
+    }
+    return ($ids | Sort-Object -Unique)
+}
+
+function Build-CollisionMappings {
+    param(
+        [string[]]$ResourcesIds,
+        [string[]]$DescriptorsIds
+    )
+    # Find operationIds present in both specs (collisions that would produce duplicate C# names)
+    $collisions = $DescriptorsIds | Where-Object { $ResourcesIds -contains $_ }
+    if ($collisions.Count -eq 0) {
+        return ""
+    }
+    # For each colliding descriptor operationId, insert "Descriptor" before any "ById" suffix
+    # or replace a trailing "s" with "Descriptors", otherwise append "Descriptor".
+    # Examples:  getGradingPeriods        -> getGradingPeriodDescriptors
+    #            deleteGradingPeriodsById -> deleteGradingPeriodDescriptorsById
+    #            postGradingPeriod        -> postGradingPeriodDescriptor
+    #            putGradingPeriod         -> putGradingPeriodDescriptor
+    $mappings = $collisions | ForEach-Object {
+        $old = $_
+        if ($old -match 'ById$') {
+            $new = $old -replace 'ById$', 'DescriptorById'
+        } elseif ($old -match 's$') {
+            $new = $old -replace 's$', 'Descriptors'
+        } else {
+            $new = "${old}Descriptor"
+        }
+        "$old=$new"
+    }
+    return ($mappings -join ",")
+}
+
 function Invoke-BuildAndGenerateSdk {
     Invoke-Step { DownloadCodeGen }
 
     if ($PackageName -eq "EdFi.DmsApi.TestSdk") {
         Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
-        Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
+        # Detect operationId collisions between the two specs and remap the descriptor-side ones to
+        # avoid duplicate C# type names when both specs are merged into the same Apis.All namespace.
+        $resourcesIds = Get-OperationIds -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json"
+        $descriptorsIds = Get-OperationIds -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json"
+        $collisionMappings = Build-CollisionMappings -ResourcesIds $resourcesIds -DescriptorsIds $descriptorsIds
+        Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" -ExtraOperationIdMappings $collisionMappings }
     } elseif ($PackageName -eq "EdFi.DmsApi.Sdk") {
         Invoke-Step { GenerateSdk -ApiPackage "Apis.Ed_Fi" -ModelPackage "Models.Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
-        Invoke-Step { GenerateSdk -ApiPackage "Apis.Ed_Fi" -ModelPackage "Models.Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
+        # Apply the same collision-avoidance logic as TestSdk so that GradingPeriodDescriptors
+        # response interfaces do not duplicate those from the GradingPeriods resources spec.
+        $resourcesIds = Get-OperationIds -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json"
+        $descriptorsIds = Get-OperationIds -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json"
+        $collisionMappings = Build-CollisionMappings -ResourcesIds $resourcesIds -DescriptorsIds $descriptorsIds
+        Invoke-Step { GenerateSdk -ApiPackage "Apis.Ed_Fi" -ModelPackage "Models.Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" -ExtraOperationIdMappings $collisionMappings }
     } else {
         throw "Unknown PackageName value: $PackageName"
     }
