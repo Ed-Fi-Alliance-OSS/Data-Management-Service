@@ -77,6 +77,7 @@ internal static class ReadPlanProjectionContractValidator
 
         ValidateReferenceProjectionPlanContracts(readPlan, hydrationTablePlansByTable, createException);
         ValidateDescriptorProjectionPlanContracts(readPlan, hydrationTablePlansByTable, createException);
+        ValidateDocumentReferenceLookupPlanContract(readPlan, hydrationTablePlansByTable, createException);
     }
 
     private static IReadOnlyDictionary<DbTableName, TableReadPlan> BuildHydrationTablePlansByTableOrThrow(
@@ -826,5 +827,114 @@ internal static class ReadPlanProjectionContractValidator
     private static string FormatDescriptorSource(DescriptorEdgeSource source)
     {
         return $"'{source.DescriptorValuePath.Canonical}' on table '{source.Table}' FK column '{source.FkColumn.Value}'";
+    }
+
+    private static void ValidateDocumentReferenceLookupPlanContract(
+        ResourceReadPlan readPlan,
+        IReadOnlyDictionary<DbTableName, TableReadPlan> hydrationTablePlansByTable,
+        Func<string, Exception> createException
+    )
+    {
+        var lookup = readPlan.DocumentReferenceLookup;
+        var hasBindings = readPlan.Model.DocumentReferenceBindings.Count > 0;
+
+        if (lookup is null)
+        {
+            if (hasBindings)
+            {
+                throw createException(
+                    "DocumentReferenceBindings are present while DocumentReferenceLookup is null"
+                );
+            }
+
+            return;
+        }
+
+        if (!hasBindings)
+        {
+            throw createException(
+                "DocumentReferenceBindings are absent while DocumentReferenceLookup is populated"
+            );
+        }
+
+        var resultShape = lookup.ResultShape;
+
+        if (resultShape is not { DocumentIdOrdinal: 0, DocumentUuidOrdinal: 1, ResourceKeyIdOrdinal: 2 })
+        {
+            throw createException(
+                "document-reference lookup plan result shape must expose DocumentId at ordinal '0', "
+                    + "DocumentUuid at ordinal '1', and ResourceKeyId at ordinal '2', but was "
+                    + $"DocumentId='{resultShape.DocumentIdOrdinal}', "
+                    + $"DocumentUuid='{resultShape.DocumentUuidOrdinal}', "
+                    + $"ResourceKeyId='{resultShape.ResourceKeyIdOrdinal}'"
+            );
+        }
+
+        if (lookup.SourcesInOrder.IsDefaultOrEmpty)
+        {
+            throw createException(
+                "document-reference lookup plan must contain at least one source when populated"
+            );
+        }
+
+        HashSet<(DbTableName, DbColumnName)> seenSources = [];
+
+        for (var sourceIndex = 0; sourceIndex < lookup.SourcesInOrder.Length; sourceIndex++)
+        {
+            var source = lookup.SourcesInOrder[sourceIndex];
+
+            if (!seenSources.Add((source.Table, source.FkColumn)))
+            {
+                throw createException(
+                    $"document-reference lookup plan source at index '{sourceIndex}' duplicates "
+                        + $"table '{source.Table}' FK column '{source.FkColumn.Value}'"
+                );
+            }
+
+            var hydrationTablePlan = ProjectionMetadataResolver.ResolveHydrationTablePlanOrThrow(
+                source.Table,
+                hydrationTablePlansByTable,
+                missingTable =>
+                    createException(
+                        $"document-reference lookup plan source at index '{sourceIndex}' references "
+                            + $"table '{missingTable}' that is not present in compiled table plans"
+                    )
+            );
+
+            var fkColumnModel = ResolveTableColumnOrThrow(
+                hydrationTablePlan.TableModel,
+                source.FkColumn,
+                missingColumn =>
+                    createException(
+                        $"document-reference lookup plan source at index '{sourceIndex}' on table "
+                            + $"'{source.Table}' references FK column '{missingColumn.Value}' that does "
+                            + $"not exist in table columns"
+                    )
+            );
+
+            ValidateColumnKindOrThrow(
+                fkColumnModel,
+                expectedKind: ColumnKind.DocumentFk,
+                $"document-reference lookup plan source at index '{sourceIndex}' on table '{source.Table}' FK column",
+                createException
+            );
+        }
+    }
+
+    private static DbColumnModel ResolveTableColumnOrThrow(
+        DbTableModel tableModel,
+        DbColumnName columnName,
+        Func<DbColumnName, Exception> createMissingException
+    )
+    {
+        foreach (var column in tableModel.Columns)
+        {
+            if (column.ColumnName == columnName)
+            {
+                return column;
+            }
+        }
+
+        throw createMissingException(columnName);
     }
 }

@@ -465,7 +465,8 @@ internal sealed record ResourceReadPlanDto
         KeysetTableContractDto KeysetTable,
         IEnumerable<TableReadPlanDto> TablePlansInDependencyOrder,
         IEnumerable<ReferenceIdentityProjectionTablePlanDto> ReferenceIdentityProjectionPlansInDependencyOrder,
-        IEnumerable<DescriptorProjectionPlanDto> DescriptorProjectionPlansInOrder
+        IEnumerable<DescriptorProjectionPlanDto> DescriptorProjectionPlansInOrder,
+        DocumentReferenceLookupPlanDto? DocumentReferenceLookup = null
     )
     {
         ArgumentNullException.ThrowIfNull(Resource);
@@ -482,6 +483,7 @@ internal sealed record ResourceReadPlanDto
             .. ReferenceIdentityProjectionPlansInDependencyOrder,
         ];
         this.DescriptorProjectionPlansInOrder = [.. DescriptorProjectionPlansInOrder];
+        this.DocumentReferenceLookup = DocumentReferenceLookup;
     }
 
     public QualifiedResourceNameDto Resource { get; init; }
@@ -493,6 +495,8 @@ internal sealed record ResourceReadPlanDto
     public ImmutableArray<ReferenceIdentityProjectionTablePlanDto> ReferenceIdentityProjectionPlansInDependencyOrder { get; init; }
 
     public ImmutableArray<DescriptorProjectionPlanDto> DescriptorProjectionPlansInOrder { get; init; }
+
+    public DocumentReferenceLookupPlanDto? DocumentReferenceLookup { get; init; }
 }
 
 internal sealed record KeysetTableContractDto(string TempTableName, string DocumentIdColumnName);
@@ -582,6 +586,36 @@ internal sealed record DescriptorProjectionSourceDto(
     QualifiedResourceNameDto DescriptorResource,
     int DescriptorIdColumnOrdinal
 );
+
+internal sealed record DocumentReferenceLookupPlanDto
+{
+    public DocumentReferenceLookupPlanDto(
+        string SelectByKeysetSql,
+        DocumentReferenceLookupResultShapeDto ResultShape,
+        IEnumerable<DocumentReferenceLookupSourceDto> SourcesInOrder
+    )
+    {
+        ArgumentNullException.ThrowIfNull(SourcesInOrder);
+
+        this.SelectByKeysetSql = SelectByKeysetSql;
+        this.ResultShape = ResultShape;
+        this.SourcesInOrder = [.. SourcesInOrder];
+    }
+
+    public string SelectByKeysetSql { get; init; }
+
+    public DocumentReferenceLookupResultShapeDto ResultShape { get; init; }
+
+    public ImmutableArray<DocumentReferenceLookupSourceDto> SourcesInOrder { get; init; }
+}
+
+internal sealed record DocumentReferenceLookupResultShapeDto(
+    int DocumentIdOrdinal,
+    int DocumentUuidOrdinal,
+    int ResourceKeyIdOrdinal
+);
+
+internal sealed record DocumentReferenceLookupSourceDto(DbTableNameDto Table, string FkColumn);
 
 internal sealed record PageDocumentIdSqlPlanDto
 {
