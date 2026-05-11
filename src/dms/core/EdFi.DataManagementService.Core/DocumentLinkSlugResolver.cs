@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
@@ -19,6 +20,14 @@ namespace EdFi.DataManagementService.Core;
 /// <see cref="IApiSchemaProvider"/> to produce the <c>(projectEndpointName,
 /// endpointName, resourceName)</c> slug triple used by reference-link emission.
 /// </summary>
+/// <remarks>
+/// The per-resource-key cache is held in a <see cref="ConditionalWeakTable{TKey,TValue}"/>
+/// keyed by <see cref="MappingSet"/> instance, mirroring
+/// <c>RelationalDeleteConstraintResolver</c>. Cache entries are reused for the lifetime of
+/// the mapping set and released when the mapping set is collected, so a schema swap (which
+/// produces a new <see cref="MappingSet"/> instance) does not leak entries from the prior
+/// instance.
+/// </remarks>
 public sealed class DocumentLinkSlugResolver(
     IApiSchemaProvider apiSchemaProvider,
     ILogger<DocumentLinkSlugResolver> logger
@@ -26,13 +35,20 @@ public sealed class DocumentLinkSlugResolver(
 {
     private readonly IApiSchemaProvider _apiSchemaProvider = apiSchemaProvider;
     private readonly ILogger<DocumentLinkSlugResolver> _logger = logger;
-    private readonly ConcurrentDictionary<(MappingSetKey, short), DocumentLinkSlugTriple> _cache = new();
+    private readonly ConditionalWeakTable<
+        MappingSet,
+        ConcurrentDictionary<short, DocumentLinkSlugTriple>
+    > _cacheByMappingSet = new();
 
     public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId)
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
 
-        return _cache.GetOrAdd((mappingSet.Key, resourceKeyId), _ => ResolveCore(mappingSet, resourceKeyId));
+        var cache = _cacheByMappingSet.GetValue(
+            mappingSet,
+            static _ => new ConcurrentDictionary<short, DocumentLinkSlugTriple>()
+        );
+        return cache.GetOrAdd(resourceKeyId, key => ResolveCore(mappingSet, key));
     }
 
     private DocumentLinkSlugTriple ResolveCore(MappingSet mappingSet, short resourceKeyId)

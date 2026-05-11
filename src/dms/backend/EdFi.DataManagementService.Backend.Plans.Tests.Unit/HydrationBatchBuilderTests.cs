@@ -534,6 +534,104 @@ public class Given_HydrationBatchBuilder_With_Descriptor_Projection_Plans
     }
 }
 
+[TestFixture]
+public class Given_HydrationBatchBuilder_With_Document_Reference_Lookup_Plan
+{
+    private const string LookupSqlMarker = "SELECT lookup rows FROM document_reference_lookup;";
+    private const string FirstDescriptorSqlMarker = "SELECT descriptor rows FROM root_descriptor;";
+    private const string SecondDescriptorSqlMarker = "SELECT descriptor rows FROM child_descriptor;";
+
+    private static DocumentReferenceLookupPlan BuildLookupPlan() =>
+        new(
+            SelectByKeysetSql: LookupSqlMarker,
+            ResultShape: new DocumentReferenceLookupResultShape(
+                DocumentIdOrdinal: 0,
+                DocumentUuidOrdinal: 1,
+                ResourceKeyIdOrdinal: 2
+            ),
+            SourcesInOrder:
+            [
+                new DocumentReferenceLookupSource(
+                    Table: new DbTableName(new DbSchemaName("edfi"), "School"),
+                    FkColumn: new DbColumnName("School_DocumentId")
+                ),
+            ]
+        );
+
+    private static DescriptorProjectionPlan[] BuildDescriptorPlans() =>
+        [
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: FirstDescriptorSqlMarker,
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: SecondDescriptorSqlMarker,
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+        ];
+
+    [Test]
+    public void It_should_emit_lookup_sql_after_descriptor_projections_when_plan_carries_lookup()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, BuildDescriptorPlans(), BuildLookupPlan()),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql
+        );
+
+        AssertAppearsInOrder(
+            batch,
+            "SELECT child columns FROM child;",
+            FirstDescriptorSqlMarker,
+            SecondDescriptorSqlMarker,
+            LookupSqlMarker
+        );
+    }
+
+    [Test]
+    public void It_should_emit_lookup_sql_after_table_hydration_when_descriptor_projection_is_omitted()
+    {
+        // The plan has no descriptor projections (empty list), so the lookup must immediately
+        // follow the last table-hydration statement.
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, descriptorProjectionPlans: [], BuildLookupPlan()),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql
+        );
+
+        AssertAppearsInOrder(batch, "SELECT child columns FROM child;", LookupSqlMarker);
+        batch.Should().NotContain("SELECT descriptor rows FROM");
+    }
+
+    [Test]
+    public void It_should_omit_lookup_sql_when_plan_has_null_DocumentReferenceLookup()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, BuildDescriptorPlans(), documentReferenceLookup: null),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql
+        );
+
+        batch.Should().NotContain(LookupSqlMarker);
+        batch.Should().Contain(FirstDescriptorSqlMarker);
+        batch.Should().Contain(SecondDescriptorSqlMarker);
+    }
+
+    [Test]
+    public void It_should_emit_lookup_sql_for_mssql_after_descriptor_projections()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Mssql, BuildDescriptorPlans(), BuildLookupPlan()),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Mssql
+        );
+
+        AssertAppearsInOrder(batch, FirstDescriptorSqlMarker, SecondDescriptorSqlMarker, LookupSqlMarker);
+    }
+}
+
 internal static class HydrationBatchBuilderTestHelper
 {
     public static ResourceReadPlan BuildTestReadPlan(

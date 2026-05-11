@@ -149,4 +149,23 @@ public class DocumentLinkSlugResolverTests
 
         second.Should().BeSameAs(first);
     }
+
+    [Test]
+    public void It_isolates_cache_entries_per_mapping_set_instance()
+    {
+        // The ConditionalWeakTable key is the MappingSet instance, so two different mapping
+        // sets — even with the same resource-key id — get separate cache entries. This is
+        // what enables old entries to be GC'd when their MappingSet is released.
+        var resolver = CreateResolver(BuildEdFiSchoolApiSchema());
+        var firstMappingSet = BuildMappingSetWith(SchoolEntry());
+        var secondMappingSet = BuildMappingSetWith(SchoolEntry());
+
+        var first = resolver.Resolve(firstMappingSet, SchoolResourceKeyId);
+        var second = resolver.Resolve(secondMappingSet, SchoolResourceKeyId);
+
+        // Equal values (same resolution rules), but the cache produced separate instances
+        // — one per mapping-set entry — confirming the per-instance partitioning.
+        first.Should().Be(second);
+        second.Should().NotBeSameAs(first);
+    }
 }

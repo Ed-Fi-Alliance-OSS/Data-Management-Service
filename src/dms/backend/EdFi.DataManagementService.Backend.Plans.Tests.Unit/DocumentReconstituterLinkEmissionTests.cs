@@ -198,6 +198,88 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         result["schoolReference"]!["link"]!["rel"]!.GetValue<string>().Should().Be("School");
     }
 
+    // NOTE: an abstract-reference + lookup-miss test was considered but is functionally
+    // identical to the concrete-reference + lookup-miss test above
+    // (It_does_not_emit_link_when_FK_is_present_but_lookup_map_misses) — the miss-suppression
+    // gate fires inside EmitReferenceLink before the resolver runs, regardless of whether
+    // the binding's TargetResource is abstract or concrete. The abstract-vs-concrete code
+    // path only diverges on a HIT, which is covered by
+    // It_resolves_concrete_subclass_for_abstract_reference_via_ResourceKeyId above.
+
+    [Test]
+    public void It_resolves_two_references_targeting_the_same_DocumentId_via_a_single_lookup_row()
+    {
+        // Page-level dedup: the auxiliary lookup returns ONE row for the shared school,
+        // and both documents on the page emit a link pointing at it. Confirms the
+        // page-scoped map is consulted per-reference-site, not per-row.
+        var resolver = new StubSlugResolver(_expectedSlug);
+        var readPlan = BuildReadPlan();
+        var hydratedPage = BuildHydratedPageWithTwoDocumentsSharingSchool();
+
+        var results = DocumentReconstituter.ReconstitutePage(
+            readPlan,
+            hydratedPage,
+            BuildMappingSet(),
+            resolver,
+            new ResourceLinksOptions { Enabled = true }
+        );
+
+        results.Should().HaveCount(2);
+        string expectedHref = $"/ed-fi/schools/{SchoolDocumentUuid.ToString("D")}";
+        foreach (var document in results)
+        {
+            var link = document["schoolReference"]!["link"]!.AsObject();
+            link["rel"]!.GetValue<string>().Should().Be("School");
+            link["href"]!.GetValue<string>().Should().Be(expectedHref);
+        }
+
+        // Resolver is called per emission site (2 sites, 1 ResourceKeyId), proving the page-
+        // scoped lookup map serves both reference sites from the same single row.
+        resolver.Calls.Should().HaveCount(2);
+        resolver.Calls.Should().AllBeEquivalentTo(SchoolResourceKeyId);
+    }
+
+    private static HydratedPage BuildHydratedPageWithTwoDocumentsSharingSchool()
+    {
+        var rootTableModel = BuildRootTableModel();
+        object?[] firstRow = [1L, (object?)SchoolDocumentId, 255901];
+        object?[] secondRow = [2L, (object?)SchoolDocumentId, 255902];
+
+        var metadataRows = new[]
+        {
+            new DocumentMetadataRow(
+                DocumentId: 1L,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
+                IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+            ),
+            new DocumentMetadataRow(
+                DocumentId: 2L,
+                DocumentUuid: Guid.Parse("cccccccc-4444-5555-6666-dddddddddddd"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
+                IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+            ),
+        };
+
+        var lookup = new HydratedDocumentReferenceLookup([
+            new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+        ]);
+
+        return new HydratedPage(
+            TotalCount: null,
+            DocumentMetadata: metadataRows,
+            TableRowsInDependencyOrder: [new HydratedTableRows(rootTableModel, [firstRow, secondRow])],
+            DescriptorRowsInPlanOrder: []
+        )
+        {
+            DocumentReferenceLookup = lookup,
+        };
+    }
+
     private static JsonNode ReconstituteSingleDocument(
         long? schoolDocumentIdFk,
         IReadOnlyList<(long DocumentId, Guid DocumentUuid, short ResourceKeyId)> lookupRows,

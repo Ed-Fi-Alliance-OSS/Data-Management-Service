@@ -294,3 +294,297 @@ public class Given_ResourceLinksOptions
         options.Enabled.Should().BeTrue();
     }
 }
+
+/// <summary>
+/// Multi-site coverage for <see cref="LinkSubtreeStripper"/>. Drives the stripper directly with a
+/// hand-built <see cref="CompiledReconstitutionPlan"/> so each reference-path shape can be tested
+/// in isolation without constructing a full multi-table relational model.
+/// </summary>
+[TestFixture]
+public class Given_LinkSubtreeStripper_With_Non_Root_Reference_Paths
+{
+    private static readonly DbTableName _rootTable = new(new DbSchemaName("edfi"), "Root");
+    private static readonly DbTableName _addressTable = new(new DbSchemaName("edfi"), "Address");
+
+    private static readonly QualifiedResourceName _resource = new("Ed-Fi", "Root");
+    private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private static readonly QualifiedResourceName _localEducationAgencyResource = new(
+        "Ed-Fi",
+        "LocalEducationAgency"
+    );
+
+    [Test]
+    public void It_removes_link_from_collection_element_references()
+    {
+        // Reference path: $.contactAddresses[*].schoolReference
+        var collectionScope = new JsonPathExpression(
+            "$.contactAddresses[*]",
+            [new JsonPathSegment.Property("contactAddresses"), new JsonPathSegment.AnyArrayElement()]
+        );
+        var referencePath = new JsonPathExpression(
+            "$.contactAddresses[*].schoolReference",
+            [
+                new JsonPathSegment.Property("contactAddresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("schoolReference"),
+            ]
+        );
+        var compiledPlan = BuildPlanWithSingleBinding(
+            tableName: _addressTable,
+            jsonScope: collectionScope,
+            referencePath: referencePath,
+            targetResource: _schoolResource
+        );
+
+        var document = new JsonObject
+        {
+            ["contactAddresses"] = new JsonArray(
+                BuildAddressElement(streetNumber: "100", schoolId: 255901),
+                BuildAddressElement(streetNumber: "200", schoolId: 255902)
+            ),
+        };
+
+        LinkSubtreeStripper.Strip(document, compiledPlan);
+
+        foreach (
+            var element in document["contactAddresses"]!.AsArray().Where(static node => node is not null)
+        )
+        {
+            var schoolReference = element!["schoolReference"]!.AsObject();
+            schoolReference.Should().NotContainKey("link");
+            schoolReference["schoolId"]!.GetValue<int>().Should().BeOneOf(255901, 255902);
+        }
+    }
+
+    [Test]
+    public void It_removes_link_from_ext_scope_references()
+    {
+        // Reference path: $._ext.sample.sponsorReference (singleton _ext block on root)
+        var rootScope = new JsonPathExpression("$", []);
+        var referencePath = new JsonPathExpression(
+            "$._ext.sample.sponsorReference",
+            [
+                new JsonPathSegment.Property("_ext"),
+                new JsonPathSegment.Property("sample"),
+                new JsonPathSegment.Property("sponsorReference"),
+            ]
+        );
+        var compiledPlan = BuildPlanWithSingleBinding(
+            tableName: _rootTable,
+            jsonScope: rootScope,
+            referencePath: referencePath,
+            targetResource: _schoolResource
+        );
+
+        var document = new JsonObject
+        {
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["sponsorReference"] = new JsonObject
+                    {
+                        ["sponsorId"] = 42,
+                        ["link"] = new JsonObject
+                        {
+                            ["rel"] = "School",
+                            ["href"] = "/ed-fi/schools/aaaa1111-2222-3333-4444-555566667777",
+                        },
+                    },
+                },
+            },
+        };
+
+        LinkSubtreeStripper.Strip(document, compiledPlan);
+
+        var sponsorReference = document["_ext"]!["sample"]!["sponsorReference"]!.AsObject();
+        sponsorReference.Should().NotContainKey("link");
+        sponsorReference["sponsorId"]!.GetValue<int>().Should().Be(42);
+    }
+
+    [Test]
+    public void It_removes_link_from_every_binding_in_a_multi_binding_plan()
+    {
+        // Two bindings on the root table: $.schoolReference and $.localEducationAgencyReference.
+        var rootScope = new JsonPathExpression("$", []);
+        var schoolReferencePath = new JsonPathExpression(
+            "$.schoolReference",
+            [new JsonPathSegment.Property("schoolReference")]
+        );
+        var leaReferencePath = new JsonPathExpression(
+            "$.localEducationAgencyReference",
+            [new JsonPathSegment.Property("localEducationAgencyReference")]
+        );
+        var compiledPlan = BuildPlan(
+            tableName: _rootTable,
+            jsonScope: rootScope,
+            bindings:
+            [
+                BuildBinding(schoolReferencePath, _schoolResource),
+                BuildBinding(leaReferencePath, _localEducationAgencyResource),
+            ]
+        );
+
+        var document = new JsonObject
+        {
+            ["schoolReference"] = new JsonObject
+            {
+                ["schoolId"] = 255901,
+                ["link"] = BuildLink("School", "/ed-fi/schools/abc"),
+            },
+            ["localEducationAgencyReference"] = new JsonObject
+            {
+                ["localEducationAgencyId"] = 123,
+                ["link"] = BuildLink("LocalEducationAgency", "/ed-fi/localEducationAgencies/xyz"),
+            },
+        };
+
+        LinkSubtreeStripper.Strip(document, compiledPlan);
+
+        document["schoolReference"]!.AsObject().Should().NotContainKey("link");
+        document["localEducationAgencyReference"]!.AsObject().Should().NotContainKey("link");
+        // Identity fields preserved on both references.
+        document["schoolReference"]!["schoolId"]!.GetValue<int>().Should().Be(255901);
+        document["localEducationAgencyReference"]!["localEducationAgencyId"]!
+            .GetValue<int>()
+            .Should()
+            .Be(123);
+    }
+
+    [Test]
+    public void It_does_not_throw_when_array_path_traverses_a_missing_collection()
+    {
+        // Plan expects $.contactAddresses[*].schoolReference but the document has no
+        // contactAddresses property at all. The walk must short-circuit silently.
+        var collectionScope = new JsonPathExpression(
+            "$.contactAddresses[*]",
+            [new JsonPathSegment.Property("contactAddresses"), new JsonPathSegment.AnyArrayElement()]
+        );
+        var referencePath = new JsonPathExpression(
+            "$.contactAddresses[*].schoolReference",
+            [
+                new JsonPathSegment.Property("contactAddresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("schoolReference"),
+            ]
+        );
+        var compiledPlan = BuildPlanWithSingleBinding(
+            tableName: _addressTable,
+            jsonScope: collectionScope,
+            referencePath: referencePath,
+            targetResource: _schoolResource
+        );
+
+        var document = new JsonObject { ["nameOfInstitution"] = "Has no addresses" };
+
+        Action act = () => LinkSubtreeStripper.Strip(document, compiledPlan);
+
+        act.Should().NotThrow();
+        document["nameOfInstitution"]!.GetValue<string>().Should().Be("Has no addresses");
+    }
+
+    private static JsonObject BuildAddressElement(string streetNumber, int schoolId) =>
+        new()
+        {
+            ["streetNumber"] = streetNumber,
+            ["schoolReference"] = new JsonObject
+            {
+                ["schoolId"] = schoolId,
+                ["link"] = BuildLink("School", $"/ed-fi/schools/{schoolId}"),
+            },
+        };
+
+    private static JsonObject BuildLink(string rel, string href) => new() { ["rel"] = rel, ["href"] = href };
+
+    private static CompiledReconstitutionPlan BuildPlanWithSingleBinding(
+        DbTableName tableName,
+        JsonPathExpression jsonScope,
+        JsonPathExpression referencePath,
+        QualifiedResourceName targetResource
+    ) => BuildPlan(tableName, jsonScope, [BuildBinding(referencePath, targetResource)]);
+
+    private static ReferenceIdentityProjectionBinding BuildBinding(
+        JsonPathExpression referencePath,
+        QualifiedResourceName targetResource
+    ) =>
+        new(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: referencePath,
+            TargetResource: targetResource,
+            FkColumnOrdinal: 0,
+            IdentityFieldOrdinalsInOrder: []
+        );
+
+    private static CompiledReconstitutionPlan BuildPlan(
+        DbTableName tableName,
+        JsonPathExpression jsonScope,
+        IReadOnlyList<ReferenceIdentityProjectionBinding> bindings
+    )
+    {
+        var tableModel = new DbTableModel(
+            Table: tableName,
+            JsonScope: jsonScope,
+            Key: new TableKey(
+                $"PK_{tableName.Name}",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var model = new RelationalResourceModel(
+            Resource: _resource,
+            PhysicalSchema: tableModel.Table.Schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: tableModel,
+            TablesInDependencyOrder: [tableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var readPlan = new ResourceReadPlan(
+            Model: model,
+            KeysetTable: new KeysetTableContract(
+                Table: new SqlRelationRef.TempTable("page"),
+                DocumentIdColumnName: new DbColumnName("DocumentId")
+            ),
+            TablePlansInDependencyOrder: [new TableReadPlan(tableModel, "SELECT 1;")],
+            ReferenceIdentityProjectionPlansInDependencyOrder: [],
+            DescriptorProjectionPlansInOrder: []
+        );
+
+        var tableReconstitutionPlan = new TableReconstitutionPlan(
+            TableModel: tableModel,
+            RootScopeLocatorOrdinals: [0],
+            ImmediateParentScopeLocatorOrdinals: [],
+            PhysicalRowIdentityOrdinals: [0],
+            OrdinalColumnOrdinal: null,
+            ReferenceBindingsInOrder: bindings,
+            DescriptorBindingsInOrder: []
+        );
+
+        return new CompiledReconstitutionPlan(
+            ReadPlan: readPlan,
+            TablePlansInDependencyOrder: [tableReconstitutionPlan],
+            PropertyOrder: PropertyOrderNode.Empty
+        );
+    }
+}
