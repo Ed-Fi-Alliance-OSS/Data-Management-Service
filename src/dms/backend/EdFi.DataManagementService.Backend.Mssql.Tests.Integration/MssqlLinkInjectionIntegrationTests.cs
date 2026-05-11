@@ -466,9 +466,11 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
     {
         return await _database.ExecuteScalarAsync<long>(
             """
+            DECLARE @Inserted TABLE ([DocumentId] bigint);
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT inserted.[DocumentId]
+            OUTPUT inserted.[DocumentId] INTO @Inserted ([DocumentId])
             VALUES (@documentUuid, @resourceKeyId);
+            SELECT TOP (1) [DocumentId] FROM @Inserted;
             """,
             new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@resourceKeyId", resourceKeyId)

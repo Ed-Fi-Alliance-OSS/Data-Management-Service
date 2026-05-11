@@ -1235,6 +1235,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         {
                             item.Remove("_etag");
                         }
+
+                        RemoveLinkSubtrees(item);
                     }
                 }
             }
@@ -1250,6 +1252,50 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 {
                     (responseJson as JsonObject)?.Remove("_etag");
                 }
+
+                RemoveLinkSubtrees(jsonObject);
+            }
+        }
+
+        /// <summary>
+        /// Recursively removes <c>link</c> subtree objects (<c>{ rel, href }</c>) from a response
+        /// node. DMS emits <c>link</c> on every fully-defined document reference when
+        /// <c>DataManagement:ResourceLinks:Enabled</c> is <c>true</c> (the production default).
+        /// Pre-existing tests assert full response-body equality against fixtures authored
+        /// before link injection; rather than updating every fixture, we strip <c>link</c>
+        /// here so the comparison succeeds. Tests that explicitly assert link emission use
+        /// path-based step definitions (e.g. <c>should contain path "link.rel"</c>) which read
+        /// the raw response directly and are unaffected by this scrub.
+        /// </summary>
+        private static void RemoveLinkSubtrees(JsonNode? node)
+        {
+            switch (node)
+            {
+                case JsonObject obj:
+                    // Only remove a "link" property when it looks like the server-generated
+                    // link object: a JSON object with both "rel" and "href" string members and
+                    // no other members. This avoids accidentally stripping any future user-
+                    // defined "link" property on a different shape.
+                    if (
+                        obj["link"] is JsonObject linkObj
+                        && linkObj.Count == 2
+                        && linkObj["rel"] is JsonValue
+                        && linkObj["href"] is JsonValue
+                    )
+                    {
+                        obj.Remove("link");
+                    }
+                    foreach (var kvp in obj.ToList())
+                    {
+                        RemoveLinkSubtrees(kvp.Value);
+                    }
+                    break;
+                case JsonArray array:
+                    foreach (var item in array)
+                    {
+                        RemoveLinkSubtrees(item);
+                    }
+                    break;
             }
         }
 
