@@ -539,13 +539,24 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     {
         var failures = new List<ValidationFailure>();
 
-        // Validate nested objects with member selection
-        foreach (
-            var obj in contentType.Objects.Where(o =>
-                o.MemberSelection != MemberSelection.IncludeAll && schemaProperties.ContainsKey(o.Name)
-            )
-        )
+        // Server-generated names are not profile-addressable regardless of the
+        // parent content type's member selection. Check each top-level rule name
+        // before applying the IncludeAll/schema-key filter that would otherwise
+        // skip the rule silently.
+        foreach (var obj in contentType.Objects)
         {
+            var serverGenFailure = CheckServerGeneratedField(obj.Name, "Object", context);
+            if (serverGenFailure is not null)
+            {
+                failures.Add(serverGenFailure);
+                continue;
+            }
+
+            if (obj.MemberSelection == MemberSelection.IncludeAll || !schemaProperties.ContainsKey(obj.Name))
+            {
+                continue;
+            }
+
             if (
                 schemaProperties[obj.Name] is JsonObject objSchema
                 && objSchema["properties"] is JsonObject objProperties
@@ -561,13 +572,23 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             }
         }
 
-        // Validate nested collections with member selection
-        foreach (
-            var collection in contentType.Collections.Where(c =>
-                c.MemberSelection != MemberSelection.IncludeAll && schemaProperties.ContainsKey(c.Name)
-            )
-        )
+        foreach (var collection in contentType.Collections)
         {
+            var serverGenFailure = CheckServerGeneratedField(collection.Name, "Collection", context);
+            if (serverGenFailure is not null)
+            {
+                failures.Add(serverGenFailure);
+                continue;
+            }
+
+            if (
+                collection.MemberSelection == MemberSelection.IncludeAll
+                || !schemaProperties.ContainsKey(collection.Name)
+            )
+            {
+                continue;
+            }
+
             if (
                 schemaProperties[collection.Name] is JsonObject collectionObj
                 && collectionObj["items"] is JsonObject itemsNode
@@ -586,13 +607,20 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             }
         }
 
-        // Validate extensions with member selection
-        foreach (
-            var extension in contentType.Extensions.Where(e =>
-                e.MemberSelection != MemberSelection.IncludeAll
-            )
-        )
+        foreach (var extension in contentType.Extensions)
         {
+            var serverGenFailure = CheckServerGeneratedField(extension.Name, "Extension", context);
+            if (serverGenFailure is not null)
+            {
+                failures.Add(serverGenFailure);
+                continue;
+            }
+
+            if (extension.MemberSelection == MemberSelection.IncludeAll)
+            {
+                continue;
+            }
+
             failures.AddRange(ValidateExtensionRule(extension, schemaProperties, context));
         }
 
@@ -640,6 +668,17 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                     containerName
                 )
             );
+        }
+
+        // Validate extensions declared inside the object. Mirrors
+        // ValidateExtensionRuleMembers' completeness so server-generated names
+        // and existence errors apply on every branch the parser populates.
+        if (objectRule.Extensions is not null)
+        {
+            foreach (var extension in objectRule.Extensions)
+            {
+                failures.AddRange(ValidateExtensionRule(extension, schemaProperties, context));
+            }
         }
 
         return failures;
@@ -843,6 +882,28 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                     containerName
                 )
             );
+        }
+
+        // Validate nested collections in collection items
+        if (collectionRule.NestedCollections is not null)
+        {
+            failures.AddRange(
+                ValidateNestedCollectionRules(
+                    collectionRule.NestedCollections,
+                    itemSchemaProperties,
+                    context,
+                    containerName
+                )
+            );
+        }
+
+        // Validate extensions declared inside collection items
+        if (collectionRule.Extensions is not null)
+        {
+            foreach (var extension in collectionRule.Extensions)
+            {
+                failures.AddRange(ValidateExtensionRule(extension, itemSchemaProperties, context));
+            }
         }
 
         return failures;
