@@ -25,7 +25,7 @@ public class Given_Descriptor_Write_Preconditions
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
 
     [Test]
-    public async Task It_returns_precondition_failed_for_descriptor_post_creates_when_if_match_is_present()
+    public async Task It_re_resolves_descriptor_post_creates_inside_the_write_session_before_returning_precondition_failed()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -43,8 +43,59 @@ public class Given_Descriptor_Write_Preconditions
         var result = await sut.HandlePostAsync(request);
 
         result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
-        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
         commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory
+            .Session.Executor.Commands[0]
+            .CommandText.Should()
+            .Contain("FROM dms.\"ReferentialIdentity\"");
+        sessionFactory.Session.ScalarCommands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_uses_the_in_session_descriptor_post_target_when_the_advisory_create_target_now_exists()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
+        };
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var currentState = CreatePersistedDescriptorBody(description: "Current Charter");
+        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorRow(description: "Current Charter"),
+        ]);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var request = CreatePostRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Charter"
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
+        };
+
+        var result = await sut.HandlePostAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
+        sessionFactory.Session.Executor.Commands[2].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
     }
 
     [Test]

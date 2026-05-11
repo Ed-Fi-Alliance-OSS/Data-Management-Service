@@ -117,11 +117,6 @@ internal sealed class DescriptorWriteHandler(
                 };
             }
 
-            if (targetContext is RelationalWriteTargetContext.CreateNew)
-            {
-                return new UpsertResult.UpsertFailureETagMisMatch();
-            }
-
             writeSession = await _writeSessionFactory.CreateAsync(cancellationToken).ConfigureAwait(false);
             var sessionCommandExecutor = writeSession.CreateCommandExecutor();
 
