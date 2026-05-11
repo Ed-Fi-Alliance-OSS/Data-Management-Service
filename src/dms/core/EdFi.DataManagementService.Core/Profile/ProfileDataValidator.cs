@@ -371,6 +371,15 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         }
 
         var childContext = context.WithPathPrefix($"{context.PathPrefix}{collectionRule.Name}[].");
+        if (collectionRule.ItemFilter is not null)
+        {
+            AddIfServerGenerated(
+                collectionRule.ItemFilter.PropertyName,
+                "Collection item filter property",
+                childContext,
+                failures
+            );
+        }
         foreach (var property in collectionRule.Properties ?? [])
         {
             AddIfServerGenerated(property.Name, "Property", childContext, failures);

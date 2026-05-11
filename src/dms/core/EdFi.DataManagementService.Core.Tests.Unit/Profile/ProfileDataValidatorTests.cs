@@ -2477,5 +2477,155 @@ public class ProfileDataValidatorTests
                     && f.Message.Contains("server-generated field")
                 );
         }
+
+        [TestCase("id")]
+        [TestCase("link")]
+        [TestCase("_etag")]
+        [TestCase("_lastModifiedDate")]
+        public void Validate_should_return_error_for_item_filter_property_named_server_gen(
+            string serverGeneratedFieldName
+        )
+        {
+            // Arrange — root collection rule whose ItemFilter selects a
+            // server-generated field. The parser accepts any propertyName, so
+            // the namespace contract has to be enforced by the validator.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithCollection("Student", "addresses", "streetAddress");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var addressesRule = new CollectionRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: new CollectionItemFilter(
+                    serverGeneratedFieldName,
+                    FilterMode.IncludeOnly,
+                    ["uri://ed-fi.org/AddressTypeDescriptor#Home"]
+                )
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [addressesRule],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == $"addresses[].{serverGeneratedFieldName}"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
+
+        [Test]
+        public void Validate_should_return_error_for_item_filter_property_on_nested_collection()
+        {
+            // Arrange — Object("schoolReference") -> Collection("addresses")
+            // with an ItemFilter.PropertyName of "link". Failure path must
+            // preserve the enclosing object prefix. The schema declares
+            // schoolReference.{ schoolId, addresses[].streetAddress } so the
+            // only failure surfaced is the server-generated one.
+            var validator = new ProfileDataValidator(_logger);
+            var addressesSchema = new JsonObject
+            {
+                ["type"] = "array",
+                ["items"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["streetAddress"] = new JsonObject { ["type"] = "string" },
+                    },
+                },
+            };
+            var schoolReferenceSchema = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["schoolId"] = new JsonObject { ["type"] = "string" },
+                    ["addresses"] = addressesSchema,
+                },
+            };
+            var jsonSchemaForInsert = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { ["schoolReference"] = schoolReferenceSchema },
+            };
+            _apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Student")
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+            var studentNode =
+                _apiSchemaDocuments
+                    .GetCoreProjectSchema()
+                    .FindResourceSchemaNodeByResourceName(new("Student")) as JsonObject;
+            studentNode!["jsonSchemaForInsert"] = jsonSchemaForInsert;
+            studentNode["identityJsonPaths"] = new JsonArray { "$.schoolReference.schoolId" };
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var addressesRule = new CollectionRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: new CollectionItemFilter(
+                    "link",
+                    FilterMode.IncludeOnly,
+                    ["uri://ed-fi.org/AddressTypeDescriptor#Home"]
+                )
+            );
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: [addressesRule],
+                Extensions: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [schoolReferenceRule],
+                [],
+                []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — exactly one failure: the server-generated item filter.
+            result.HasErrors.Should().BeTrue();
+            result.Failures.Should().HaveCount(1);
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference.addresses[].link"
+                    && f.Message.Contains("server-generated field")
+                );
+        }
     }
 }
