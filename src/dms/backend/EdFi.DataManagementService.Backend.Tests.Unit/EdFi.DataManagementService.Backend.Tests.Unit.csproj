@@ -33,4 +33,9 @@
     <ItemGroup>
         <PackageReference Include="Npgsql" />
     </ItemGroup>
+    <ItemGroup>
+        <None Update="LinkInjection\OdsParity\*.json">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
 </Project>

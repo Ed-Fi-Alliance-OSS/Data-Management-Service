@@ -1,0 +1,14 @@
+{
+  "id": "11111111222233334444555555555555",
+  "weekIdentifier": "Week-2025-08-15",
+  "schoolReference": {
+    "schoolId": 255901,
+    "link": {
+      "rel": "School",
+      "href": "/ed-fi/schools/abcd1234ef0156782a3b4c5d6e7f8001"
+    }
+  },
+  "beginDate": "2025-08-15",
+  "endDate": "2025-08-22",
+  "totalInstructionalDays": 5
+}

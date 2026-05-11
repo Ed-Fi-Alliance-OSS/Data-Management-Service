@@ -68,6 +68,21 @@ internal static class LinkInjectionAssertions
                 $"/{expectedProjectEndpointName}/{expectedEndpointName}/{expectedDocumentUuid.ToString("D", CultureInfo.InvariantCulture)}"
             );
     }
+
+    /// <summary>
+    /// Asserts the reference object carries identity fields but no <c>link</c>. Used by
+    /// task 30 (auxiliary-lookup miss / orphaned FK) — the reconstitution contract is
+    /// that a missing lookup row silently suppresses link emission rather than throwing.
+    /// </summary>
+    public static void AssertNoLink(JsonNode referenceObject)
+    {
+        ArgumentNullException.ThrowIfNull(referenceObject);
+        referenceObject["link"]
+            .Should()
+            .BeNull(
+                "link must NOT be emitted when the auxiliary lookup misses the FK (e.g., concurrent delete)"
+            );
+    }
 }
 
 /// <summary>
