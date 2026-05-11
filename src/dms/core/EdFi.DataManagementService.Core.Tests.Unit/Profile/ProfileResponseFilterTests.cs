@@ -780,4 +780,160 @@ public class ProfileResponseFilterTests
             _result!["nonIdentityField"].Should().BeNull();
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Link_On_Reference_Under_IncludeOnly : ProfileResponseFilterTests
+    {
+        private JsonObject _source = null!;
+        private JsonNode? _result;
+
+        [SetUp]
+        public void Setup()
+        {
+            _source = new JsonObject
+            {
+                ["id"] = "12345",
+                ["schoolId"] = 100,
+                ["schoolReference"] = new JsonObject
+                {
+                    ["schoolId"] = 200,
+                    ["link"] = new JsonObject { ["rel"] = "School", ["href"] = "/ed-fi/schools/200" },
+                },
+            };
+
+            var schoolReferenceRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("schoolId")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = CreateContentType(MemberSelection.IncludeAll, objects: [schoolReferenceRule]);
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
+        }
+
+        [Test]
+        public void It_preserves_link_subtree_on_filtered_reference()
+        {
+            var reference = (_result!["schoolReference"] as JsonObject)!;
+            var link = reference["link"] as JsonObject;
+            link.Should().NotBeNull();
+            link!["rel"]!.GetValue<string>().Should().Be("School");
+            link["href"]!.GetValue<string>().Should().Be("/ed-fi/schools/200");
+        }
+
+        [Test]
+        public void It_preserves_link_via_deep_clone_not_alias()
+        {
+            var resultLink = (((_result!["schoolReference"] as JsonObject)!)["link"] as JsonObject)!;
+            var sourceLink = ((_source["schoolReference"] as JsonObject)!["link"] as JsonObject)!;
+
+            resultLink["href"] = "/mutated";
+
+            sourceLink["href"]!.GetValue<string>().Should().Be("/ed-fi/schools/200");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Root_Server_Generated_Fields_Under_IncludeOnly : ProfileResponseFilterTests
+    {
+        private JsonNode? _result;
+
+        [SetUp]
+        public void Setup()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "12345",
+                ["schoolId"] = 100,
+                ["_etag"] = "\"42\"",
+                ["_lastModifiedDate"] = "2026-05-11T00:00:00Z",
+                ["link"] = new JsonObject { ["rel"] = "Student", ["href"] = "/ed-fi/students/12345" },
+                ["nameOfInstitution"] = "Test School",
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeOnly,
+                properties: [new PropertyRule("nameOfInstitution")]
+            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+
+            _result = Filter.FilterDocument(source, contentType, identityPropertyNames);
+        }
+
+        [Test]
+        public void It_preserves_etag()
+        {
+            _result!["_etag"]!.GetValue<string>().Should().Be("\"42\"");
+        }
+
+        [Test]
+        public void It_preserves_last_modified_date()
+        {
+            _result!["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-11T00:00:00Z");
+        }
+
+        [Test]
+        public void It_preserves_root_link()
+        {
+            var link = _result!["link"] as JsonObject;
+            link.Should().NotBeNull();
+            link!["rel"]!.GetValue<string>().Should().Be("Student");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Illegal_ObjectRule_Named_Link : ProfileResponseFilterTests
+    {
+        private JsonNode? _result;
+
+        [SetUp]
+        public void Setup()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "12345",
+                ["schoolId"] = 100,
+                ["link"] = new JsonObject { ["rel"] = "Student", ["href"] = "/ed-fi/students/12345" },
+            };
+
+            var illegalLinkRule = new ObjectRule(
+                Name: "link",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("rel")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = CreateContentType(MemberSelection.IncludeAll, objects: [illegalLinkRule]);
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+
+            _result = Filter.FilterDocument(source, contentType, identityPropertyNames);
+        }
+
+        [Test]
+        public void It_preserves_link_rel_via_short_circuit_bypassing_rule_dispatch()
+        {
+            var link = _result!["link"] as JsonObject;
+            link.Should().NotBeNull();
+            link!["rel"]!.GetValue<string>().Should().Be("Student");
+        }
+
+        [Test]
+        public void It_preserves_link_href_despite_IncludeOnly_listing_only_rel()
+        {
+            var link = (_result!["link"] as JsonObject)!;
+            link["href"]!.GetValue<string>().Should().Be("/ed-fi/students/12345");
+        }
+    }
 }
