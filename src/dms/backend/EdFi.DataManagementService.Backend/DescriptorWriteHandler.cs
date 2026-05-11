@@ -118,70 +118,45 @@ internal sealed class DescriptorWriteHandler(
             }
 
             writeSession = await _writeSessionFactory.CreateAsync(cancellationToken).ConfigureAwait(false);
-            var sessionCommandExecutor = writeSession.CreateCommandExecutor();
 
-            var sessionTargetLookupResult = await RelationalWriteTargetLookupSupport
-                .ResolveForPostAsync(
-                    sessionCommandExecutor,
+            var preconditionResult = await ResolveLockedDescriptorForIfMatchAsync(
                     request.MappingSet,
                     request.Resource,
-                    request.ReferentialId.Value,
                     request.DocumentUuid,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            var sessionTargetContext =
-                RelationalWriteSupport.TryTranslateTargetContext(sessionTargetLookupResult)
-                ?? throw new InvalidOperationException(
-                    $"Unexpected target lookup result type '{sessionTargetLookupResult.GetType().Name}' for descriptor POST."
-                );
-
-            if (sessionTargetContext is RelationalWriteTargetContext.CreateNew)
-            {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return new UpsertResult.UpsertFailureETagMisMatch();
-            }
-
-            if (
-                sessionTargetContext
-                is not RelationalWriteTargetContext.ExistingDocument
-                (var sessionDocumentId, var sessionDocumentUuid, _)
-            )
-            {
-                throw new InvalidOperationException(
-                    $"Unexpected target context type '{sessionTargetContext.GetType().Name}' for descriptor POST."
-                );
-            }
-
-            var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
-                    request.MappingSet.Key.Dialect,
-                    request.Resource,
-                    sessionDocumentId,
+                    request.ReferentialId,
+                    DescriptorPreconditionTargetKind.Post,
+                    ifMatch,
                     writeSession,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            switch (lockedCurrentState)
+            switch (preconditionResult)
             {
-                case DescriptorCurrentStateLoadResult.MissingDocument:
+                case DescriptorLockedPreconditionResult.CreateNew:
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UpsertFailureETagMisMatch();
+
+                case DescriptorLockedPreconditionResult.MissingDocument:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return new UpsertResult.UpsertFailureWriteConflict();
 
-                case DescriptorCurrentStateLoadResult.MissingDescriptor:
+                case DescriptorLockedPreconditionResult.MissingDescriptor(var missingDescriptorDocumentId):
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return new UpsertResult.UnknownFailure(
-                        BuildMissingDescriptorMessage(request.Resource, sessionDocumentId)
+                        BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
                     );
 
-                case DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag):
-                    if (!string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal))
-                    {
-                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return new UpsertResult.UpsertFailureETagMisMatch();
-                    }
+                case DescriptorLockedPreconditionResult.Mismatch:
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UpsertFailureETagMisMatch();
 
+                case DescriptorLockedPreconditionResult.Loaded(
+                    var sessionTargetContext,
+                    var persisted,
+                    var currentEtag
+                ):
+                    var sessionDocumentId = sessionTargetContext.DocumentId;
                     if (IsDescriptorUnchanged(body, persisted))
                     {
                         _logger.LogDebug(
@@ -192,16 +167,16 @@ internal sealed class DescriptorWriteHandler(
                         );
 
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return new UpsertResult.UpdateSuccess(sessionDocumentUuid, currentEtag);
+                        return new UpsertResult.UpdateSuccess(sessionTargetContext.DocumentUuid, currentEtag);
                     }
 
                     var upsertResult = await UpdateDescriptorForUpsertAsync(
                             request,
                             body,
                             sessionDocumentId,
-                            sessionDocumentUuid,
+                            sessionTargetContext.DocumentUuid,
                             resourceKeyId,
-                            sessionCommandExecutor,
+                            writeSession.CreateCommandExecutor(),
                             cancellationToken
                         )
                         .ConfigureAwait(false);
@@ -211,7 +186,7 @@ internal sealed class DescriptorWriteHandler(
 
                 default:
                     throw new InvalidOperationException(
-                        $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
+                        $"Unexpected locked descriptor precondition result type '{preconditionResult.GetType().Name}'."
                     );
             }
         }
@@ -294,69 +269,43 @@ internal sealed class DescriptorWriteHandler(
                     .CreateAsync(cancellationToken)
                     .ConfigureAwait(false);
 
-                var sessionCommandExecutor = writeSession.CreateCommandExecutor();
-
-                var sessionTargetLookupResult = await RelationalWriteTargetLookupSupport
-                    .ResolveForPutAsync(
-                        sessionCommandExecutor,
+                var preconditionResult = await ResolveLockedDescriptorForIfMatchAsync(
                         request.MappingSet,
                         request.Resource,
                         request.DocumentUuid,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                if (sessionTargetLookupResult is RelationalWriteTargetLookupResult.NotFound)
-                {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpdateResult.UpdateFailureNotExists();
-                }
-
-                var sessionTargetContext =
-                    RelationalWriteSupport.TryTranslateTargetContext(sessionTargetLookupResult)
-                    ?? throw new InvalidOperationException(
-                        $"Unexpected target lookup result type '{sessionTargetLookupResult.GetType().Name}' for descriptor PUT."
-                    );
-
-                if (
-                    sessionTargetContext
-                    is not RelationalWriteTargetContext.ExistingDocument
-                    (var sessionDocumentId, var sessionDocumentUuid, _)
-                )
-                {
-                    throw new InvalidOperationException(
-                        $"Unexpected target context type '{sessionTargetContext.GetType().Name}' for descriptor PUT."
-                    );
-                }
-
-                var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
-                        request.MappingSet.Key.Dialect,
-                        request.Resource,
-                        sessionDocumentId,
+                        referentialId: null,
+                        DescriptorPreconditionTargetKind.Put,
+                        ifMatch,
                         writeSession,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
 
-                switch (lockedCurrentState)
+                switch (preconditionResult)
                 {
-                    case DescriptorCurrentStateLoadResult.MissingDocument:
+                    case DescriptorLockedPreconditionResult.NotFound:
+                    case DescriptorLockedPreconditionResult.MissingDocument:
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         return new UpdateResult.UpdateFailureNotExists();
 
-                    case DescriptorCurrentStateLoadResult.MissingDescriptor:
+                    case DescriptorLockedPreconditionResult.MissingDescriptor(
+                        var missingDescriptorDocumentId
+                    ):
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         return new UpdateResult.UnknownFailure(
-                            BuildMissingDescriptorMessage(request.Resource, sessionDocumentId)
+                            BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
                         );
 
-                    case DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag):
-                        if (!string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal))
-                        {
-                            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                            return new UpdateResult.UpdateFailureETagMisMatch();
-                        }
+                    case DescriptorLockedPreconditionResult.Mismatch:
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpdateResult.UpdateFailureETagMisMatch();
 
+                    case DescriptorLockedPreconditionResult.Loaded(
+                        var sessionTargetContext,
+                        var persisted,
+                        var currentEtag
+                    ):
+                        var sessionDocumentId = sessionTargetContext.DocumentId;
                         if (!string.Equals(body.Uri, persisted.Uri, StringComparison.Ordinal))
                         {
                             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -377,7 +326,10 @@ internal sealed class DescriptorWriteHandler(
 
                             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                            return new UpdateResult.UpdateSuccess(sessionDocumentUuid, currentEtag);
+                            return new UpdateResult.UpdateSuccess(
+                                sessionTargetContext.DocumentUuid,
+                                currentEtag
+                            );
                         }
 
                         _logger.LogDebug(
@@ -397,7 +349,7 @@ internal sealed class DescriptorWriteHandler(
                         };
 
                         await ExecuteWriteCommandAsync(
-                                sessionCommandExecutor,
+                                writeSession.CreateCommandExecutor(),
                                 lockedCommand,
                                 cancellationToken
                             )
@@ -406,13 +358,13 @@ internal sealed class DescriptorWriteHandler(
                         await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
 
                         return new UpdateResult.UpdateSuccess(
-                            sessionDocumentUuid,
+                            sessionTargetContext.DocumentUuid,
                             RelationalApiMetadataFormatter.FormatEtag(body)
                         );
 
                     default:
                         throw new InvalidOperationException(
-                            $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
+                            $"Unexpected locked descriptor precondition result type '{preconditionResult.GetType().Name}'."
                         );
                 }
             }
@@ -639,64 +591,51 @@ internal sealed class DescriptorWriteHandler(
 
             try
             {
-                var resolved = await RelationalDocumentUuidLookupSupport
-                    .TryResolveDeleteTargetAsync(
-                        sessionCommandExecutor,
+                var preconditionResult = await ResolveLockedDescriptorForIfMatchAsync(
                         request.MappingSet,
                         request.Resource,
                         request.DocumentUuid,
+                        referentialId: null,
+                        DescriptorPreconditionTargetKind.Delete,
+                        ifMatch,
+                        writeSession,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
 
-                if (resolved is null)
+                outcome = preconditionResult switch
                 {
-                    outcome = new DeleteResult.DeleteFailureNotExists();
-                }
-                else
-                {
-                    var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
-                            request.MappingSet.Key.Dialect,
-                            request.Resource,
-                            resolved.DocumentId,
-                            writeSession,
+                    DescriptorLockedPreconditionResult.NotFound => new DeleteResult.DeleteFailureNotExists(),
+                    DescriptorLockedPreconditionResult.MissingDocument =>
+                        new DeleteResult.DeleteFailureNotExists(),
+                    DescriptorLockedPreconditionResult.MissingDescriptor(var documentId) =>
+                        new DeleteResult.UnknownFailure(
+                            BuildMissingDescriptorMessage(request.Resource, documentId)
+                        ),
+                    DescriptorLockedPreconditionResult.Mismatch =>
+                        new DeleteResult.DeleteFailureETagMisMatch(),
+                    DescriptorLockedPreconditionResult.Loaded => await RelationalDeleteExecution
+                        .TryExecuteAsync(
+                            sessionCommandExecutor,
+                            BuildDescriptorDeleteCommand(
+                                sessionCommandExecutor.Dialect,
+                                request.DocumentUuid,
+                                resourceKeyId
+                            ),
+                            _writeExceptionClassifier,
+                            _deleteConstraintResolver,
+                            request.MappingSet.Model,
+                            _logger,
+                            request.DocumentUuid,
+                            request.TraceId,
+                            DeleteTargetKind.Descriptor,
                             cancellationToken
                         )
-                        .ConfigureAwait(false);
-
-                    outcome = lockedCurrentState switch
-                    {
-                        DescriptorCurrentStateLoadResult.MissingDocument =>
-                            new DeleteResult.DeleteFailureNotExists(),
-                        DescriptorCurrentStateLoadResult.MissingDescriptor => new DeleteResult.UnknownFailure(
-                            BuildMissingDescriptorMessage(request.Resource, resolved.DocumentId)
-                        ),
-                        DescriptorCurrentStateLoadResult.Loaded(_, var currentEtag)
-                            when !string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal) =>
-                            new DeleteResult.DeleteFailureETagMisMatch(),
-                        DescriptorCurrentStateLoadResult.Loaded => await RelationalDeleteExecution
-                            .TryExecuteAsync(
-                                sessionCommandExecutor,
-                                BuildDescriptorDeleteCommand(
-                                    sessionCommandExecutor.Dialect,
-                                    request.DocumentUuid,
-                                    resourceKeyId
-                                ),
-                                _writeExceptionClassifier,
-                                _deleteConstraintResolver,
-                                request.MappingSet.Model,
-                                _logger,
-                                request.DocumentUuid,
-                                request.TraceId,
-                                DeleteTargetKind.Descriptor,
-                                cancellationToken
-                            )
-                            .ConfigureAwait(false),
-                        _ => throw new InvalidOperationException(
-                            $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
-                        ),
-                    };
-                }
+                        .ConfigureAwait(false),
+                    _ => throw new InvalidOperationException(
+                        $"Unexpected locked descriptor precondition result type '{preconditionResult.GetType().Name}'."
+                    ),
+                };
             }
             catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
             {
@@ -764,6 +703,141 @@ internal sealed class DescriptorWriteHandler(
             return outcome;
         }
     }
+
+    private static async Task<DescriptorLockedPreconditionResult> ResolveLockedDescriptorForIfMatchAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        ReferentialId? referentialId,
+        DescriptorPreconditionTargetKind targetKind,
+        WritePrecondition.IfMatch ifMatch,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(ifMatch);
+        ArgumentNullException.ThrowIfNull(writeSession);
+
+        var sessionCommandExecutor = writeSession.CreateCommandExecutor();
+        RelationalWriteTargetContext targetContext;
+
+        switch (targetKind)
+        {
+            case DescriptorPreconditionTargetKind.Post:
+                if (referentialId is null)
+                {
+                    throw new InvalidOperationException(
+                        "Descriptor POST requires a ReferentialId for target context resolution."
+                    );
+                }
+
+                var postTargetLookupResult = await RelationalWriteTargetLookupSupport
+                    .ResolveForPostAsync(
+                        sessionCommandExecutor,
+                        mappingSet,
+                        resource,
+                        referentialId.Value,
+                        documentUuid,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                targetContext = TranslateDescriptorTargetContext(postTargetLookupResult, "POST");
+                break;
+
+            case DescriptorPreconditionTargetKind.Put:
+                var putTargetLookupResult = await RelationalWriteTargetLookupSupport
+                    .ResolveForPutAsync(
+                        sessionCommandExecutor,
+                        mappingSet,
+                        resource,
+                        documentUuid,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (putTargetLookupResult is RelationalWriteTargetLookupResult.NotFound)
+                {
+                    return DescriptorLockedPreconditionResult.NotFound.Instance;
+                }
+
+                targetContext = TranslateDescriptorTargetContext(putTargetLookupResult, "PUT");
+                break;
+
+            case DescriptorPreconditionTargetKind.Delete:
+                var resolvedDeleteTarget = await RelationalDocumentUuidLookupSupport
+                    .TryResolveDeleteTargetAsync(
+                        sessionCommandExecutor,
+                        mappingSet,
+                        resource,
+                        documentUuid,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (resolvedDeleteTarget is null)
+                {
+                    return DescriptorLockedPreconditionResult.NotFound.Instance;
+                }
+
+                targetContext = new RelationalWriteTargetContext.ExistingDocument(
+                    resolvedDeleteTarget.DocumentId,
+                    documentUuid
+                );
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(targetKind), targetKind, null);
+        }
+
+        if (targetContext is RelationalWriteTargetContext.CreateNew)
+        {
+            return DescriptorLockedPreconditionResult.CreateNew.Instance;
+        }
+
+        if (targetContext is not RelationalWriteTargetContext.ExistingDocument existingTargetContext)
+        {
+            throw new InvalidOperationException(
+                $"Unexpected target context type '{targetContext.GetType().Name}' for descriptor {targetKind}."
+            );
+        }
+
+        var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
+                mappingSet.Key.Dialect,
+                resource,
+                existingTargetContext.DocumentId,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return lockedCurrentState switch
+        {
+            DescriptorCurrentStateLoadResult.MissingDocument => DescriptorLockedPreconditionResult
+                .MissingDocument
+                .Instance,
+            DescriptorCurrentStateLoadResult.MissingDescriptor =>
+                new DescriptorLockedPreconditionResult.MissingDescriptor(existingTargetContext.DocumentId),
+            DescriptorCurrentStateLoadResult.Loaded(_, var currentEtag)
+                when !string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal) =>
+                DescriptorLockedPreconditionResult.Mismatch.Instance,
+            DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag) =>
+                new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag),
+            _ => throw new InvalidOperationException(
+                $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static RelationalWriteTargetContext TranslateDescriptorTargetContext(
+        RelationalWriteTargetLookupResult targetLookupResult,
+        string operationLabel
+    ) =>
+        RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult)
+        ?? throw new InvalidOperationException(
+            $"Unexpected target lookup result type '{targetLookupResult.GetType().Name}' for descriptor {operationLabel}."
+        );
 
     private static RelationalCommand BuildDescriptorDeleteCommand(
         SqlDialect dialect,
@@ -1437,6 +1511,54 @@ internal sealed class DescriptorWriteHandler(
                 Uri,
                 resource.ResourceName
             );
+    }
+
+    private enum DescriptorPreconditionTargetKind
+    {
+        Post,
+        Put,
+        Delete,
+    }
+
+    private abstract record DescriptorLockedPreconditionResult
+    {
+        private DescriptorLockedPreconditionResult() { }
+
+        public sealed record CreateNew : DescriptorLockedPreconditionResult
+        {
+            private CreateNew() { }
+
+            public static CreateNew Instance { get; } = new();
+        }
+
+        public sealed record NotFound : DescriptorLockedPreconditionResult
+        {
+            private NotFound() { }
+
+            public static NotFound Instance { get; } = new();
+        }
+
+        public sealed record MissingDocument : DescriptorLockedPreconditionResult
+        {
+            private MissingDocument() { }
+
+            public static MissingDocument Instance { get; } = new();
+        }
+
+        public sealed record MissingDescriptor(long DocumentId) : DescriptorLockedPreconditionResult;
+
+        public sealed record Mismatch : DescriptorLockedPreconditionResult
+        {
+            private Mismatch() { }
+
+            public static Mismatch Instance { get; } = new();
+        }
+
+        public sealed record Loaded(
+            RelationalWriteTargetContext.ExistingDocument TargetContext,
+            PersistedDescriptorState Persisted,
+            string CurrentEtag
+        ) : DescriptorLockedPreconditionResult;
     }
 
     private abstract record DescriptorCurrentStateLoadResult
