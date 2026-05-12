@@ -215,6 +215,11 @@ Implement optimistic concurrency checks using stored representation stamps for r
   preserves the first non-blank value and drops the remaining values before Core builds the typed precondition.
   This is not strictly correct HTTP `If-Match` behavior, but DMS is replicating legacy compatibility rather than
   treating the collapsed duplicate value set as a mismatch.
+- DMS-1005 defines the intended precedence that authorization failures should not be overridden by `412`
+  precondition failures for existing targets. The relational write authorization guard is intentionally deferred to
+  DMS-1057, so this branch may still expose ETag freshness through `412` responses until DMS-1057 restores real
+  relational write authorization. Treat that as a scoped authorization rollout gap, not as the desired final
+  DMS-1005 behavior.
 - The PostgreSQL provisioned-schema golden comparison excludes the `public` schema from discovered DMS schemas.
   `public` can contain version-dependent `pgcrypto` extension functions such as `public.fips_mode`, which are not DMS
   DDL and should not be snapshotted in the provisioned DMS schema manifest.

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -96,7 +95,7 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(writeSession);
 
-        var currentContentVersion = await TryLockAndReadContentVersionAsync(
+        var documentLocked = await TryLockDocumentAsync(
                 request.MappingSet.Key.Dialect,
                 request.TargetContext.DocumentId,
                 writeSession,
@@ -104,7 +103,7 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             )
             .ConfigureAwait(false);
 
-        if (currentContentVersion is null)
+        if (!documentLocked)
         {
             return null;
         }
@@ -151,7 +150,7 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         );
     }
 
-    private static async Task<long?> TryLockAndReadContentVersionAsync(
+    private static async Task<bool> TryLockDocumentAsync(
         SqlDialect dialect,
         long documentId,
         IRelationalWriteSession writeSession,
@@ -163,12 +162,6 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         );
 
         var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-
-        if (scalarResult is null or DBNull)
-        {
-            return null;
-        }
-
-        return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
+        return scalarResult is not null and not DBNull;
     }
 }

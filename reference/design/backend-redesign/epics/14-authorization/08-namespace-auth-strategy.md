@@ -44,6 +44,10 @@ blocked current relational E2E setup data for profile tests: descriptor seed POS
 descriptor write handler could persist values such as `EducationOrganizationCategoryDescriptor`
 and `GradeLevelDescriptor`.
 
+Until this story restores real relational write authorization, `If-Match` handling from DMS-1005 can still return
+`412` before a final `403` decision for existing targets; restoring the authorization-before-precondition ordering is
+part of closing this deferred guard.
+
 When this story implements `NamespaceBased`, restore write authorization behavior as real
 strategy execution, not as the temporary "only NoFurtherAuthorizationRequired is allowed" guard.
 Remove the DMS-1057 TODO comments in:
