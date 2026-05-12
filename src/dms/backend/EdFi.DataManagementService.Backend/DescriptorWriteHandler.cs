@@ -1281,7 +1281,7 @@ internal sealed class DescriptorWriteHandler(
 
     // DMS-1005 bridge: descriptor writes stamp dms.Document manually until DMS-1008
     // moves descriptor stamping ownership into dms.Descriptor triggers. Remove the
-    // dms.Document stamp updates below in the same change that adds those triggers;
+    // dms.Document stamp updates below in the same change that adds those triggers
     // otherwise descriptor writes can double-stamp and double-journal.
     // ── Update SQL builders (POST as upsert-as-update) ───────────────────
 

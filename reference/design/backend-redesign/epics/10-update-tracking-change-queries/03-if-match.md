@@ -215,3 +215,6 @@ Implement optimistic concurrency checks using stored representation stamps for r
   preserves the first non-blank value and drops the remaining values before Core builds the typed precondition.
   This is not strictly correct HTTP `If-Match` behavior, but DMS is replicating legacy compatibility rather than
   treating the collapsed duplicate value set as a mismatch.
+- The PostgreSQL provisioned-schema golden comparison excludes the `public` schema from discovered DMS schemas.
+  `public` can contain version-dependent `pgcrypto` extension functions such as `public.fips_mode`, which are not DMS
+  DDL and should not be snapshotted in the provisioned DMS schema manifest.
