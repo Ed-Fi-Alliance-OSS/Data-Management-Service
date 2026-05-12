@@ -84,6 +84,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.Tests.Integration.Common", "backend\EdFi.DataManagementService.Backend.Tests.Integration.Common\EdFi.DataManagementService.Backend.Tests.Integration.Common.csproj", "{E99049FC-E18E-4DE6-9197-AE2851AEBCAE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Tests.Integration", "tests\EdFi.DataManagementService.Tests.Integration\EdFi.DataManagementService.Tests.Integration.csproj", "{23B5C669-8FBA-49E4-BB29-9A9FAC705264}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -490,6 +492,18 @@ Global
 		{E99049FC-E18E-4DE6-9197-AE2851AEBCAE}.Release|x64.Build.0 = Release|Any CPU
 		{E99049FC-E18E-4DE6-9197-AE2851AEBCAE}.Release|x86.ActiveCfg = Release|Any CPU
 		{E99049FC-E18E-4DE6-9197-AE2851AEBCAE}.Release|x86.Build.0 = Release|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Debug|x64.Build.0 = Debug|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Debug|x86.Build.0 = Debug|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Release|Any CPU.Build.0 = Release|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Release|x64.ActiveCfg = Release|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Release|x64.Build.0 = Release|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Release|x86.ActiveCfg = Release|Any CPU
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -528,6 +542,7 @@ Global
 		{36A6B176-FF97-468B-8C91-34B2981ACC63} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{E72AE3F0-E664-4339-BD96-984AF109B34A} = {22F7EF40-C77C-4AF0-8C1E-500EA6B85496}
 		{E99049FC-E18E-4DE6-9197-AE2851AEBCAE} = {75AE8F7B-B980-48AE-8518-073830FA6471}
+		{23B5C669-8FBA-49E4-BB29-9A9FAC705264} = {22F7EF40-C77C-4AF0-8C1E-500EA6B85496}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAB3D5DE-BC6C-44FD-831C-9C7BE3935343}
