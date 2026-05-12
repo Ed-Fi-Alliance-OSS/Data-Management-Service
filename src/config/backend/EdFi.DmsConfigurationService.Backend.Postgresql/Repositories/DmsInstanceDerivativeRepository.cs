@@ -104,7 +104,9 @@ public class DmsInstanceDerivativeRepository(
                 Id = row.Id,
                 InstanceId = row.InstanceId,
                 DerivativeType = row.DerivativeType,
-                ConnectionString = row.ConnectionString is null ? null : Convert.ToBase64String(row.ConnectionString),
+                ConnectionString = row.ConnectionString is null
+                    ? null
+                    : Convert.ToBase64String(row.ConnectionString),
             });
 
             return new DmsInstanceDerivativeQueryResult.Success(derivatives);
@@ -144,7 +146,9 @@ public class DmsInstanceDerivativeRepository(
                 Id = result.Value.Id,
                 InstanceId = result.Value.InstanceId,
                 DerivativeType = result.Value.DerivativeType,
-                ConnectionString = result.Value.ConnectionString is null ? null : Convert.ToBase64String(result.Value.ConnectionString),
+                ConnectionString = result.Value.ConnectionString is null
+                    ? null
+                    : Convert.ToBase64String(result.Value.ConnectionString),
             };
 
             return new DmsInstanceDerivativeGetResult.Success(derivative);
@@ -249,7 +253,9 @@ public class DmsInstanceDerivativeRepository(
                 Id = row.Id,
                 InstanceId = row.InstanceId,
                 DerivativeType = row.DerivativeType,
-                ConnectionString = row.ConnectionString is null ? null : Convert.ToBase64String(row.ConnectionString),
+                ConnectionString = row.ConnectionString is null
+                    ? null
+                    : Convert.ToBase64String(row.ConnectionString),
             });
 
             return new InstanceDerivativeQueryByInstanceResult.Success(derivatives);
@@ -287,7 +293,9 @@ public class DmsInstanceDerivativeRepository(
                 Id = row.Id,
                 InstanceId = row.InstanceId,
                 DerivativeType = row.DerivativeType,
-                ConnectionString = row.ConnectionString is null ? null : Convert.ToBase64String(row.ConnectionString),
+                ConnectionString = row.ConnectionString is null
+                    ? null
+                    : Convert.ToBase64String(row.ConnectionString),
             });
 
             return new InstanceDerivativeQueryByInstanceIdsResult.Success(derivatives);
