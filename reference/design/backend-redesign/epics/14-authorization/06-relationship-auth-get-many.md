@@ -26,8 +26,10 @@ This ticket delivers the complete authorization subquery pipeline (SQL generatio
 
 - Authorization subqueries filter the auth views/table using the EdOrgIds from the client's token.
 - When multiple relationship-based strategies are configured for the same resource, they are combined with OR semantics.
+- NoFurtherAuthorizationRequired is ignored as a no-op when combined with relationship-based strategies.
 - No duplicate results are returned (uses IN subquery approach, not JOIN).
 - Pagination (offset/limit) and total count work correctly with the authorization filter applied.
+- If the token's unique EdOrgId list is empty, GET-many returns an empty page and totalCount = 0 when requested; it does not return 403.
 - Works for both PostgreSQL and SQL Server. For SQL Server, when the token's EdOrgId list has fewer than 2,000 entries, use a parameterized IN clause; otherwise, use a TVP of type dms.BigIntTable.
 
 NOTE: The People-involved strategies (RelationshipsWithEdOrgsAndPeople, RelationshipsWithEdOrgsAndPeopleInverted, RelationshipsWithPeopleOnly, RelationshipsWithStudentsOnly, RelationshipsWithStudentsOnlyThroughResponsibility) will be implemented in [DMS-1095](https://edfi.atlassian.net/browse/DMS-1095).
@@ -70,7 +72,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   3. EdOrg-only strategy but no EdOrg securable elements: return a 500 security configuration error. ODS throws SecurityConfigurationException when a relationship strategy produces no
      authorization subjects; silently returning all rows is unsafe, and returning no rows hides bad metadata.
 
-  4. Child collection EdOrg columns: do not state that EdOrg securables are always root-table columns. The design says EdOrg/Namespace columns live on whichever table owns the reference. For DMS-1055, implement child-table EdOrg filtering with an EXISTS/IN semi-join back to root DocumentId.
+  4. Child collection EdOrg columns: do not state that EdOrg securables are always root-table columns. The design says EdOrg/Namespace columns live on whichever table owns the reference. For DMS-1055, implement child-table EdOrg filtering back to root DocumentId. See Answers 2 for the required "every existing child row" semantics.
 
   5. Multiple EdOrg securable elements in one strategy: yes, AND them. ODS builds one relationship strategy as a conjunction of its filters, and the DMS design says the token must have access to all securable elements.
 
@@ -131,9 +133,9 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 
   Use existing failure paths for exceptional cases:
 
-  - Empty EdOrg token list: keep current DMS behavior, a 403 from the auth filter provider.
-  - Unsupported/mixed strategies outside DMS-1055 scope: fail fast, likely current 501 not implemented.
-  - Invalid security configuration/path resolution failure: server/configuration failure, likely 500.
+  - Empty EdOrg token list: return an empty page and totalCount = 0 when requested. The GET-many path must not use the current write/single-item-style 403 from the auth filter provider.
+  - Unsupported/mixed strategies outside DMS-1055 scope: fail fast with 501 Not Implemented for known strategies that have not yet been implemented in the relational GET-many path.
+  - Invalid security configuration/path resolution failure: server/configuration failure, status 500.
 
   13. Acceptance tests:
 
@@ -145,11 +147,11 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   - Multiple EdOrg securable elements within one strategy are ANDed, matching current DMS single-item behavior.
   - Duplicate avoidance: one document returned once when multiple auth rows or strategies match.
   - Pagination and totalCount are applied after authorization filtering.
-  - Empty token EdOrg IDs produces the existing 403.
+  - Empty token EdOrg IDs returns an empty page and totalCount = 0 when requested.
   - SQL Server 1,999 unique IDs uses expanded scalar params; 2,000 unique IDs uses dms.BigIntTable.
   - Duplicate token IDs are deduped before threshold selection.
   - PostgreSQL uses a single array parameter.
-  - Unsupported mixed strategies such as NamespaceBased, ownership, custom view, People strategies, and mixed NoFurtherAuthorizationRequired plus relationship fail fast unless a later story explicitly defines their semantics.
+  - Unsupported mixed strategies such as NamespaceBased, ownership, custom view, and People strategies fail fast unless a later story explicitly defines their semantics. NoFurtherAuthorizationRequired is ignored as a no-op when combined with relationship strategies.
   - Unresolvable/no EdOrg securable path fails as configuration error.
 
 
@@ -176,3 +178,25 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
      TypeName.
   10. What test level do you expect for acceptance: backend unit/integration tests only, or also DMS E2E tests through the local
      Docker stack and real token/claim-set wiring?
+
+### Answers 2
+
+  1. Empty EdOrg-token behavior: GET-many returns 200 with an empty result page and totalCount = 0 when requested. This answer supersedes the conflicting "current 403" wording in Answers 1. The existing 403 is appropriate for write/single-item-style authorization, but GET-many should model ODS's empty auth list as a filter that matches no rows.
+
+  2. NoFurtherAuthorizationRequired plus RelationshipsWithEdOrgsOnly: NoFurtherAuthorizationRequired is a no-op. It does not make the request fail fast, does not restrict results, and does not contribute error hints. The relationship strategy still applies normally.
+
+  3. Middleware/refactoring: yes. DMS-1055 should refactor the current filter-provider/request path enough for GET-many to reach relational query planning with an empty EdOrg claim list, inverted relationship strategy names, and known unsupported mixed strategies. The relational planner/repository should then return the correct result or fail-fast surface instead of the shared filter provider preemptively returning 403.
+
+  4. Unsupported mixed strategy failure surface: known strategies that are outside DMS-1055 scope for GET-many should fail as 501 Not Implemented. Examples include NamespaceBased, OwnershipBased, custom view-based strategies, and People relationship strategies until their stories are implemented. Unknown strategy names or invalid security metadata are security configuration failures and should use the security-configuration 500 path.
+
+  5. Child-table EdOrg securable semantics: require every existing child row for that securable path to be authorized. Using "any matching child row" can authorize a document while reconstitution still returns unauthorized child rows. The SQL shape should require at least one child row for the configured securable path and no unauthorized child row for that path.
+
+  6. Child-table path with no child rows: exclude the document from GET-many results. That is an authorization non-match for the document's data shape, not a configuration error. A configuration error applies when the securable path cannot be resolved from metadata, or when the configured strategy has no applicable EdOrg securable elements.
+
+  7. Richer securable-path metadata: yes. It is acceptable to extend compiled mapping-set/runtime contracts so each resolved path carries the original JSON path and a readable/MetaEd name alongside ResolvedSecurableElementPath. This supports diagnostics, security configuration errors, and per-element handling without reverse-mapping from physical columns.
+
+  8. Inverted strategy registry support: add GET-many support for RelationshipsWithEdOrgsOnlyInverted and add enough constants/provider registration for the shared authorization registry to recognize it. For GET-by-id, POST, PUT, and DELETE before DMS-1056, fail explicitly as not implemented rather than falling through to missing-provider 403s or accidental authorization.
+
+  9. SQL Server TVP binding model: yes. Extend the page keyset/query parameter model or introduce a companion runtime parameter contract so parameters can carry provider-specific configuration such as SqlDbType.Structured and TypeName. Keep compiled/AOT query plans provider-neutral where possible; use the runtime binding layer to attach SQL Server-specific parameter configuration.
+
+  10. Test level: include backend unit tests, PostgreSQL and SQL Server backend integration tests, and a focused DMS E2E slice through the local Docker stack with real token/claim-set wiring. Keep SQL shape, TVP threshold, deduplication, and provider binding coverage in unit/integration tests; use E2E for middleware/claim interactions such as empty EdOrg claims, normal filtering, inverted filtering, OR semantics, and totalCount after authorization.
