@@ -18,6 +18,8 @@ public static class BaselineDatabaseConfiguration
 {
     private const string EnvironmentVariableName = "ConnectionStrings__DatabaseConnection";
     private const string ConfigurationConnectionStringName = "DatabaseConnection";
+    private const string MssqlAdminEnvironmentVariableName = "ConnectionStrings__MssqlAdmin";
+    private const string MssqlAdminConfigurationConnectionStringName = "MssqlAdmin";
 
     private static IConfiguration? _configuration;
 
@@ -29,6 +31,15 @@ public static class BaselineDatabaseConfiguration
                 + $"Set the {EnvironmentVariableName} environment variable, or add a "
                 + "DatabaseConnection entry to appsettings.json / appsettings.Test.json."
         );
+
+    /// <summary>
+    /// Optional admin connection string for SQL Server. Returns null when neither the
+    /// ConnectionStrings__MssqlAdmin environment variable nor the MssqlAdmin entry of
+    /// appsettings.json / appsettings.Test.json is set.
+    /// </summary>
+    public static string? MssqlAdminConnectionString =>
+        Environment.GetEnvironmentVariable(MssqlAdminEnvironmentVariableName)
+        ?? Config().GetConnectionString(MssqlAdminConfigurationConnectionStringName);
 
     private static IConfiguration Config()
     {

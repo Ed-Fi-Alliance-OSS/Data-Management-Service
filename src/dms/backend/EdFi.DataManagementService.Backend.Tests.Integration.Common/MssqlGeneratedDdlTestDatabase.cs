@@ -7,9 +7,9 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 
-namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
 
-internal sealed record MssqlForeignKeyMetadata(
+public sealed record MssqlForeignKeyMetadata(
     string ConstraintName,
     string[] Columns,
     string ReferencedSchema,
@@ -19,7 +19,7 @@ internal sealed record MssqlForeignKeyMetadata(
     string UpdateAction
 );
 
-internal sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
+public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
     private static readonly (string Schema, string Table)[] _generatedDdlBaselineTables =

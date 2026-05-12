@@ -6,6 +6,7 @@
 using System.Globalization;
 using Be.Vlaanderen.Basisregisters.Generators.Guid;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;

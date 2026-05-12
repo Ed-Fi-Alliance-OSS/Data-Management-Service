@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
 

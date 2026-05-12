@@ -6,6 +6,7 @@
 using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;

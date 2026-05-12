@@ -6,6 +6,7 @@
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;

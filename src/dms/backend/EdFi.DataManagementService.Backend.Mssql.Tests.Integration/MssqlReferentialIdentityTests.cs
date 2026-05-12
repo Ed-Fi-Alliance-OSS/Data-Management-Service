@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
