@@ -109,8 +109,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         var documentReferenceLookupPlan = _documentReferenceLookupPlanCompiler.Compile(
             resourceModel,
             keysetTable,
-            hydrationPlanMetadata.TablesByName,
-            hydrationPlanMetadata.ColumnOrdinalsByTable
+            hydrationPlanMetadata.TablesByName
         );
 
         var readPlan = new ResourceReadPlan(

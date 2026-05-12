@@ -110,11 +110,12 @@ public static class DocumentReconstituter
     /// <summary>
     /// Reconstitutes all documents from a hydrated page with link injection driven by the
     /// supplied <see cref="MappingSet"/>, <see cref="IDocumentLinkSlugResolver"/>, and
-    /// <see cref="ResourceLinksOptions"/>. When <paramref name="linksOptions"/> has
-    /// <c>Enabled = false</c> the per-page <see cref="LinkEmissionContext"/> is skipped
-    /// entirely — the reference-writer takes the no-link path and the resolver is never
-    /// invoked. Production flag is restart-only (<see cref="Microsoft.Extensions.Options.IOptions{T}"/>),
-    /// so the conditional is evaluated once at construction time.
+    /// <see cref="ResourceLinksOptions"/>. The <see cref="LinkEmissionContext"/> is always
+    /// built when a <see cref="MappingSet"/> and resolver are in scope — the reconstituted
+    /// intermediate is caller-agnostic and link-bearing per
+    /// <c>design-docs/link-injection.md</c> §Configuration and §Cache and Etag.
+    /// <c>ResourceLinksOptions.Enabled = false</c> is honored at the response-serialization
+    /// boundary via <see cref="StripReferenceLinks"/>, not by suppressing emission here.
     /// </summary>
     public static IReadOnlyList<JsonNode> ReconstitutePage(
         ResourceReadPlan readPlan,
@@ -131,9 +132,7 @@ public static class DocumentReconstituter
         ArgumentNullException.ThrowIfNull(linksOptions);
 
         var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
-        var linkEmission = linksOptions.Enabled
-            ? new LinkEmissionContext(mappingSet, slugResolver, linksOptions)
-            : null;
+        var linkEmission = new LinkEmissionContext(mappingSet, slugResolver, linksOptions);
         var pageReconstitutionContext = PageReconstitutionContext.Build(
             compiledPlan,
             hydratedPage,
@@ -508,7 +507,7 @@ public static class DocumentReconstituter
     {
         var linkEmission = pageReconstitutionContext.LinkEmission;
 
-        if (linkEmission is null || !linkEmission.Options.Enabled)
+        if (linkEmission is null)
         {
             return;
         }

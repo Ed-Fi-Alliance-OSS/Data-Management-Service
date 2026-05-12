@@ -597,6 +597,30 @@ public static class ProfileDefinitions
         """;
 
     /// <summary>
+    /// Profile for BellSchedule that selects only the ClassPeriods collection on read, and
+    /// inside it lists only the ClassPeriodReference property. The server-generated
+    /// <c>link</c> subtree is never listed but must survive readable-profile projection
+    /// on each nested <c>classPeriods[*].classPeriodReference</c> — this is the
+    /// nested-collection counterpart to <c>Test-Profile-Resource-References-IncludeOnly</c>
+    /// (which only covers root-level references on School).
+    /// </summary>
+    public const string BellScheduleClassPeriodsIncludeOnlyName =
+        "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly";
+
+    public const string BellScheduleClassPeriodsIncludeOnlyXml = """
+        <Profile name="E2E-Test-BellSchedule-ClassPeriods-IncludeOnly">
+            <Resource name="BellSchedule">
+                <ReadContentType memberSelection="IncludeOnly">
+                    <Collection name="ClassPeriods" memberSelection="IncludeOnly">
+                        <Property name="ClassPeriodReference"/>
+                    </Collection>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
     /// Invalid profile: IncludeOnly contains a property in a nested collection that doesn't exist.
     /// Expected behavior: Profile loading fails with error, returns 406 when used.
     /// </summary>
@@ -657,6 +681,8 @@ public static class ProfileDefinitions
                 (InvalidExtensionPropertyName, InvalidExtensionPropertyXml),
                 (WarningExcludeIdentityName, WarningExcludeIdentityXml),
                 (InvalidNestedCollectionPropertyName, InvalidNestedCollectionPropertyXml),
+                // Nested collection-scoped reference: link must survive on classPeriods[*].classPeriodReference
+                (BellScheduleClassPeriodsIncludeOnlyName, BellScheduleClassPeriodsIncludeOnlyXml),
             ],
             ProfileXmlFileLoader.LoadProfiles("Profiles/TestXmls/Profiles.xml")
         );

@@ -122,8 +122,14 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
     }
 
     [Test]
-    public void It_does_not_emit_link_when_ResourceLinksOptions_Enabled_is_false()
+    public void It_emits_link_even_when_ResourceLinksOptions_Enabled_is_false()
     {
+        // Per design-docs/link-injection.md §Configuration and §Cache and Etag, the
+        // reconstituted intermediate is caller-agnostic and always link-bearing when a
+        // MappingSet, slug resolver, and lookup row are in scope. The flag is honored at
+        // the response-serialization boundary via DocumentReconstituter.StripReferenceLinks,
+        // not by suppressing emission here — so a future runtime DocumentCache always sees
+        // the link-bearing shape regardless of the per-deployment flag value.
         var resolver = new StubSlugResolver(_expectedSlug);
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: SchoolDocumentId,
@@ -132,8 +138,11 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
             options: new ResourceLinksOptions { Enabled = false }
         );
 
-        result["schoolReference"]!["link"].Should().BeNull();
-        resolver.Calls.Should().BeEmpty();
+        var link = result["schoolReference"]!["link"].Should().BeOfType<JsonObject>().Subject;
+        link["rel"]!.GetValue<string>().Should().Be("School");
+        link["href"]!.GetValue<string>().Should().Be($"/ed-fi/schools/{SchoolDocumentUuid.ToString("D")}");
+        resolver.Calls.Should().ContainSingle();
+        resolver.Calls[0].Should().Be(SchoolResourceKeyId);
     }
 
     [Test]

@@ -28,6 +28,15 @@ public sealed record RelationalReadMaterializationRequest(
     /// <see cref="ResourceLinksOptions.Enabled"/>.
     /// </summary>
     public MappingSet? MappingSet { get; init; }
+
+    /// <summary>
+    /// Hydrated rows from the document-reference auxiliary lookup for the originating
+    /// <see cref="HydratedPage"/>. Propagated through the single-document path so
+    /// reconstitution can emit <c>link.rel</c> / <c>link.href</c> on GET-by-id. <see langword="null"/>
+    /// when the resource read plan has no <c>DocumentReferenceLookup</c> or when the caller
+    /// does not have one in scope.
+    /// </summary>
+    public HydratedDocumentReferenceLookup? DocumentReferenceLookup { get; init; }
 }
 
 public sealed record RelationalReadPageMaterializationRequest(
@@ -82,7 +91,10 @@ internal sealed class RelationalReadMaterializer(
                     DocumentMetadata: [request.DocumentMetadata],
                     TableRowsInDependencyOrder: request.TableRowsInDependencyOrder,
                     DescriptorRowsInPlanOrder: request.DescriptorRowsInPlanOrder
-                ),
+                )
+                {
+                    DocumentReferenceLookup = request.DocumentReferenceLookup,
+                },
                 request.ReadMode
             )
             {
@@ -107,9 +119,12 @@ internal sealed class RelationalReadMaterializer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // When the request carries a MappingSet, use the resolver-aware overload — link
-        // emission is gated internally by ResourceLinksOptions.Enabled. Legacy callers
-        // without a MappingSet fall back to the no-link overload.
+        // When the request carries a MappingSet, use the resolver-aware overload — the
+        // reconstituted intermediate is always link-bearing (caller-agnostic). The
+        // ResourceLinksOptions.Enabled flag is honored at the response-serialization
+        // boundary via StripReferenceLinks in InjectApiMetadata, not by suppressing
+        // emission here. Legacy callers without a MappingSet fall back to the no-link
+        // overload.
         var reconstitutedDocuments = request.MappingSet is { } mappingSet
             ? DocumentReconstituter.ReconstitutePage(
                 request.ReadPlan,
@@ -183,11 +198,12 @@ internal sealed class RelationalReadMaterializer(
             );
         }
 
-        // Defensive strip pass before computing _etag. No-op when ResourceLinksOptions.Enabled
-        // is true (production default). The dead branch matters once a runtime materialized-
-        // document cache (deferred follow-on of DMS-1145) can hand us a body whose link state
-        // doesn't match the current flag — the strip pass guarantees the served body and the
-        // etag computed below agree on whether link is present.
+        // Response-boundary strip pass. The reconstituted intermediate is always link-bearing
+        // (caller-agnostic, per design-docs/link-injection.md §Configuration and §Cache and
+        // Etag), so this is the single point at which ResourceLinksOptions.Enabled is honored
+        // before _etag is computed. No-op when Enabled is true (production default); strips
+        // every reference's link subtree when Enabled is false. The strip-then-etag ordering
+        // guarantees the served body and the etag agree on whether link is present.
         DocumentReconstituter.StripReferenceLinks(materializedDocument, readPlan, _linksOptions);
 
         // ETag selection: the design carries a conditional for reusing a cached intermediate

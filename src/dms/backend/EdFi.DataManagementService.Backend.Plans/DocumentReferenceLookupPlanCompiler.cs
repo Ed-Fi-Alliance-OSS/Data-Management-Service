@@ -27,14 +27,12 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
     public DocumentReferenceLookupPlan? Compile(
         RelationalResourceModel resourceModel,
         KeysetTableContract keysetTable,
-        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
-        IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalsByTable
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
     )
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
         ArgumentNullException.ThrowIfNull(keysetTable);
         ArgumentNullException.ThrowIfNull(tablesByName);
-        ArgumentNullException.ThrowIfNull(columnOrdinalsByTable);
 
         if (resourceModel.DocumentReferenceBindings.Count == 0)
         {

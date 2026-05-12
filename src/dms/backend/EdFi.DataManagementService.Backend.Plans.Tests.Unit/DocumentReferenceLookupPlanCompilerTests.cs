@@ -119,16 +119,8 @@ public class Given_DocumentReferenceLookupPlanCompiler
             static table => table.Table,
             static table => table
         );
-        var columnOrdinalsByTable = model.TablesInDependencyOrder.ToDictionary(
-            static table => table.Table,
-            static table =>
-                (IReadOnlyDictionary<DbColumnName, int>)
-                    table
-                        .Columns.Select((column, index) => (column.ColumnName, index))
-                        .ToDictionary(static entry => entry.ColumnName, static entry => entry.index)
-        );
 
-        return compiler.Compile(model, keysetTable, tablesByName, columnOrdinalsByTable);
+        return compiler.Compile(model, keysetTable, tablesByName);
     }
 
     private static RelationalResourceModel BuildModelWithCollectionTableBinding()

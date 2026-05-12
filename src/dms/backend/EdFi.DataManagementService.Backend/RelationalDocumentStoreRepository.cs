@@ -1011,6 +1011,7 @@ public sealed class RelationalDocumentStoreRepository(
             )
             {
                 MappingSet = mappingSet,
+                DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
             }
         );
 

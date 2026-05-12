@@ -264,3 +264,47 @@ Feature: Profile Reference Filtering
              And the response body path "nameOfInstitution" should have value "Write ExcludeOnly Reference Updated"
              And the response body path "shortNameOfInstitution" should have value "WEORU"
              And the response body path "charterApprovalSchoolYearTypeReference.schoolYear" should have value "2024"
+
+    Rule: IncludeOnly profile preserves server-generated link on a nested collection-scoped reference
+
+        Background:
+            Given the claimSet "EdFiSandbox" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                                          |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School           |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                         |
+              And the system has these "schools"
+                  | schoolId | nameOfInstitution         | educationOrganizationCategories                                                                                   | gradeLevels                                                                          |
+                  | 99006030 | Nested Reference School   | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ]      |
+              And the system has these "classPeriods"
+                  | classPeriodName | schoolReference            |
+                  | First Period    | {"schoolId": 99006030}     |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+              And a profile test POST request is made to "/ed-fi/bellSchedules" with
+                  """
+                  {
+                      "bellScheduleName": "Nested Reference Schedule",
+                      "schoolReference": {
+                          "schoolId": 99006030
+                      },
+                      "classPeriods": [
+                          {
+                              "classPeriodReference": {
+                                  "schoolId": 99006030,
+                                  "classPeriodName": "First Period"
+                              }
+                          }
+                      ]
+                  }
+                  """
+
+        @relational-backend
+        Scenario: 05 IncludeOnly profile preserves link on classPeriods[*].classPeriodReference
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/bellSchedules/{id}" with profile "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly" for resource "BellSchedule"
+            Then the profile response status is 200
+             And the response body should contain fields "id, classPeriods"
+             And the response body should not contain fields "bellScheduleName, schoolReference"
+             And the response body should contain path "classPeriods.0.classPeriodReference.link.rel"
+             And the response body path "classPeriods.0.classPeriodReference.link.rel" should have value "ClassPeriod"
+             And the response body should contain path "classPeriods.0.classPeriodReference.link.href"

@@ -738,16 +738,116 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             .NotContainKey("link", "no-link overload must omit the link property entirely");
     }
 
+    /// <summary>
+    /// Pins the GET-by-id contract end-to-end through the single-doc
+    /// <see cref="IRelationalReadMaterializer.Materialize"/> overload: when the caller passes
+    /// <see cref="RelationalReadMaterializationRequest.DocumentReferenceLookup"/>, the overload
+    /// must propagate it into the internally-constructed <see cref="HydratedPage"/> so
+    /// reconstitution emits <c>link.rel</c> / <c>link.href</c> on fully-defined references.
+    /// A regression here would surface as GET-by-id silently dropping <c>link</c> on every
+    /// fully-defined reference while GET-many continues to emit it (the
+    /// <see cref="IRelationalReadMaterializer.MaterializePage"/> path is unaffected because the
+    /// caller passes the original <see cref="HydratedPage"/>).
+    /// </summary>
+    [Test]
+    public void It_emits_link_on_get_by_id_through_single_document_materialize_overload()
+    {
+        var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = true });
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+
+        object?[] row = [1L, (object?)SchoolDocumentId, 255901];
+        var metadata = new DocumentMetadataRow(
+            DocumentId: 1L,
+            DocumentUuid: AcademicWeekDocumentUuid,
+            ContentVersion: 1L,
+            IdentityVersion: 1L,
+            ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+        );
+        var lookup = new HydratedDocumentReferenceLookup([
+            new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+        ]);
+
+        var result = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                metadata,
+                [new HydratedTableRows(readPlan.Model.Root, [row])],
+                [],
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+            {
+                MappingSet = BuildMappingSet(),
+                DocumentReferenceLookup = lookup,
+            }
+        );
+
+        var schoolReference = result["schoolReference"] as JsonObject;
+        schoolReference.Should().NotBeNull("reference object must be present in the reconstituted body");
+        var link = schoolReference!["link"] as JsonObject;
+        link.Should()
+            .NotBeNull(
+                "single-doc Materialize must propagate DocumentReferenceLookup so reconstitution can emit link"
+            );
+        link!["rel"]!.GetValue<string>().Should().Be("School");
+        link["href"]!.GetValue<string>().Should().Be($"/ed-fi/schools/{SchoolDocumentUuid:D}");
+    }
+
+    /// <summary>
+    /// Pins the inverse: a single-doc <see cref="IRelationalReadMaterializer.Materialize"/>
+    /// caller that does NOT pass <c>DocumentReferenceLookup</c> (legacy callers, descriptor
+    /// materialization) gets no <c>link</c> emission even with a <see cref="MappingSet"/> in
+    /// scope — the lookup map is empty so <c>EmitReferenceLink</c> returns on the miss.
+    /// </summary>
+    [Test]
+    public void It_omits_link_on_single_document_materialize_when_document_reference_lookup_is_null()
+    {
+        var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = true });
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+
+        object?[] row = [1L, (object?)SchoolDocumentId, 255901];
+        var metadata = new DocumentMetadataRow(
+            DocumentId: 1L,
+            DocumentUuid: AcademicWeekDocumentUuid,
+            ContentVersion: 1L,
+            IdentityVersion: 1L,
+            ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+        );
+
+        var result = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                metadata,
+                [new HydratedTableRows(readPlan.Model.Root, [row])],
+                [],
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+            {
+                MappingSet = BuildMappingSet(),
+            }
+        );
+
+        result["schoolReference"]!
+            .AsObject()
+            .Should()
+            .NotContainKey(
+                "link",
+                "no DocumentReferenceLookup on the request means an empty lookup map; emission must miss"
+            );
+    }
+
     private static RelationalReadMaterializer CreateMaterializer(ResourceLinksOptions linksOptions) =>
         new(new StubSlugResolver(_schoolSlug), Microsoft.Extensions.Options.Options.Create(linksOptions));
 
     /// <summary>
     /// Drives <see cref="IRelationalReadMaterializer.MaterializePage"/> directly with a
     /// <see cref="HydratedPage"/> that carries the auxiliary
-    /// <see cref="HydratedDocumentReferenceLookup"/> populated for the page. The single-doc
-    /// <c>Materialize</c> overload re-wraps into a fresh <see cref="HydratedPage"/> internally
-    /// and does not plumb the lookup through, so the page entry point is the seam we want to
-    /// exercise here.
+    /// <see cref="HydratedDocumentReferenceLookup"/> populated for the page. The
+    /// single-doc <c>Materialize</c> overload now propagates the lookup through (see
+    /// <c>It_emits_link_on_get_by_id_through_single_document_materialize_overload</c>); this
+    /// helper continues to drive the page entry point so the etag / strip / projection
+    /// fixtures here exercise the GET-many seam.
     /// </summary>
     private static JsonNode MaterializeSingleExternalResponse(
         IRelationalReadMaterializer sut,
