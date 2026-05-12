@@ -275,6 +275,10 @@ public class ProfileStepDefinitions(
 
             string body = await response.TextAsync();
             _logger.log.Information($"Descriptor response: {response.Status} - {body}");
+
+            response
+                .Status.Should()
+                .BeOneOf([200, 201], $"POST for descriptor {descriptorName} failed:\n{body}");
         }
     }
 

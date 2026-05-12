@@ -33,3 +33,51 @@ Implement the namespace-based authorization strategy for all CRUD operations per
   - §2.10 — Namespace value uninitialized (existing data).
   - §2.11 — Namespace value missing (proposed data).
   - §2.12 — Namespace mismatch (prefix does not match).
+
+## Deferred Write Authorization Guard
+
+DMS-1005 temporarily deferred the fail-closed relational write authorization guard in
+`RelationalDocumentStoreRepository` because the guard rejected all write requests whose
+effective authorization strategy was not `NoFurtherAuthorizationRequired`. That behavior
+blocked current relational E2E setup data for profile tests: descriptor seed POSTs made with
+`EdFiSandbox` use `NamespaceBased` authorization, so the guard returned 403 before the
+descriptor write handler could persist values such as `EducationOrganizationCategoryDescriptor`
+and `GradeLevelDescriptor`.
+
+When this story implements `NamespaceBased`, restore write authorization behavior as real
+strategy execution, not as the temporary "only NoFurtherAuthorizationRequired is allowed" guard.
+Remove the DMS-1057 TODO comments in:
+
+- `src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs`
+  - `UpsertDocument`
+  - `UpdateDocumentById`
+  - `DeleteDocumentById`
+  - the non-If-Match DELETE execution branch in `DeleteDocumentByIdAsync`
+
+The restored behavior should run in the same transactional/roundtrip shape as the write operation:
+
+- POST create: authorize the proposed namespace from the request body before insert.
+- POST upsert-as-update: authorize the stored namespace first, then authorize the proposed namespace before update.
+- PUT: authorize the stored namespace first, then authorize the proposed namespace before update.
+- DELETE: authorize the stored namespace before delete.
+- Descriptor writes must participate in the same NamespaceBased rules. Descriptor POST/PUT should authorize the proposed descriptor `namespace`; descriptor PUT/DELETE should authorize the stored descriptor namespace before mutation.
+- If authorization fails, no insert/update/delete should execute, and the result should map to the AUTH1 ProblemDetails cases listed above.
+
+### Tests To Restore Or Replace
+
+The DMS-1005 unit tests currently document the temporary deferral with names like:
+
+- `It_defers_relational_post_authorization_until_namespace_authorization_is_implemented`
+- `It_defers_relational_put_authorization_until_namespace_authorization_is_implemented`
+- `It_defers_relational_delete_authorization_until_namespace_authorization_is_implemented`
+
+When NamespaceBased write authorization is implemented, replace those tests with coverage that proves:
+
+- POST, PUT, and DELETE with a matching namespace prefix are allowed to reach the write executor or descriptor handler.
+- POST create with a proposed namespace outside the client's prefixes fails before insert.
+- POST upsert-as-update fails before update when the stored namespace is unauthorized, even if the proposed namespace would be authorized.
+- POST upsert-as-update fails before update when the stored namespace is authorized but the proposed namespace is unauthorized.
+- PUT follows the same stored-then-proposed authorization order.
+- DELETE fails before delete when the stored namespace is unauthorized.
+- Descriptor setup scenarios that create descriptors in `uri://ed-fi.org` with an EdFiSandbox-style token and matching namespace prefix still pass.
+- The failing-path tests assert that the executor/delete command is not called and that the result is translated to the expected authorization failure.

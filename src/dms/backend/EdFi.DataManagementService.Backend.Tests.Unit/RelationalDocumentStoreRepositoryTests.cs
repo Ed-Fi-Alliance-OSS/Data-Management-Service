@@ -1717,55 +1717,95 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_fails_closed_before_post_if_match_checks_when_relational_write_authorization_requires_filtering()
+    public async Task It_defers_relational_post_authorization_until_namespace_authorization_is_implemented()
     {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var committedEtag = CreateCommittedReadbackEtag("Roosevelt High");
+        var requestBody = CreateRequestBody("Roosevelt High");
+        var documentInfo = CreateDocumentInfo();
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.InsertSuccess(documentUuid, committedEtag)
+                    )
+                )
+            );
+
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
-        A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("post-auth-guard"));
-        A.CallTo(() => upsertRequest.WritePrecondition)
-            .Returns(new WritePrecondition.IfMatch("\"stale-etag\""));
+        A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("post-auth-deferred"));
+        A.CallTo(() => upsertRequest.WritePrecondition).Returns(writePrecondition);
         A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([CreateAuthorizationStrategyEvaluator("RelationshipsWithEdOrgsOnly")]);
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]);
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpsertResult.UpsertFailureNotAuthorized([
-                    "Relational POST authorization is not implemented for resource 'Ed-Fi.School' when effective POST authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported.",
-                ])
-            );
-        _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
+        _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequest.WritePrecondition.Should().Be(writePrecondition);
+        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
     }
 
     [Test]
-    public async Task It_fails_closed_before_put_if_match_checks_when_relational_write_authorization_requires_filtering()
+    public async Task It_defers_relational_put_authorization_until_namespace_authorization_is_implemented()
     {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var committedEtag = CreateCommittedReadbackEtag("Roosevelt High");
+        var requestBody = CreateRequestBody("Roosevelt High");
+        var documentInfo = CreateDocumentInfo();
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(documentUuid, committedEtag)
+                    )
+                )
+            );
+
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
-        A.CallTo(() => updateRequest.TraceId).Returns(new TraceId("put-auth-guard"));
-        A.CallTo(() => updateRequest.WritePrecondition)
-            .Returns(new WritePrecondition.IfMatch("\"stale-etag\""));
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(documentInfo);
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => updateRequest.TraceId).Returns(new TraceId("put-auth-deferred"));
+        A.CallTo(() => updateRequest.WritePrecondition).Returns(writePrecondition);
         A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
-            .Returns([CreateAuthorizationStrategyEvaluator("RelationshipsWithEdOrgsOnly")]);
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]);
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpdateResult.UpdateFailureNotAuthorized([
-                    "Relational PUT authorization is not implemented for resource 'Ed-Fi.School' when effective PUT authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported.",
-                ])
-            );
-        _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, committedEtag));
+        _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequest.WritePrecondition.Should().Be(writePrecondition);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
     }
 
     [Test]
@@ -2722,26 +2762,32 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_fails_closed_before_delete_if_match_checks_when_relational_write_authorization_requires_filtering()
+    public async Task It_defers_relational_delete_authorization_until_namespace_authorization_is_implemented()
     {
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo),
-            new WritePrecondition.IfMatch("\"stale-etag\"")
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteOutcome(deleted: true);
+        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
+            documentUuid,
+            123L,
+            writePrecondition.Value,
+            isMatch: true
         );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, writePrecondition, documentUuid);
         A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
-            .Returns([CreateAuthorizationStrategyEvaluator("RelationshipsWithEdOrgsOnly")]);
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]);
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(
-                new DeleteResult.DeleteFailureNotAuthorized([
-                    "Relational DELETE authorization is not implemented for resource 'Ed-Fi.School' when effective DELETE authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported.",
-                ])
-            );
-        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
+        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
     }
 
     [TestCase(SqlDialect.Pgsql)]

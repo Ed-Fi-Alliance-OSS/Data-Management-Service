@@ -82,17 +82,8 @@ public sealed class RelationalDocumentStoreRepository(
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
         var writePrecondition = NormalizeWritePrecondition(relationalUpsertRequest.WritePrecondition);
 
-        if (
-            TryBuildRelationalWriteAuthorizationNotImplementedMessage(
-                resource,
-                relationalUpsertRequest.AuthorizationStrategyEvaluators,
-                "POST",
-                out var authorizationNotImplementedMessage
-            )
-        )
-        {
-            return new UpsertResult.UpsertFailureNotAuthorized([authorizationNotImplementedMessage]);
-        }
+        // TODO DMS-1057: Restore relational write authorization checks once NamespaceBased
+        // CRUD authorization is implemented for relational writes.
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
@@ -215,17 +206,8 @@ public sealed class RelationalDocumentStoreRepository(
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
         var writePrecondition = NormalizeWritePrecondition(relationalUpdateRequest.WritePrecondition);
 
-        if (
-            TryBuildRelationalWriteAuthorizationNotImplementedMessage(
-                resource,
-                relationalUpdateRequest.AuthorizationStrategyEvaluators,
-                "PUT",
-                out var authorizationNotImplementedMessage
-            )
-        )
-        {
-            return new UpdateResult.UpdateFailureNotAuthorized([authorizationNotImplementedMessage]);
-        }
+        // TODO DMS-1057: Restore relational write authorization checks once NamespaceBased
+        // CRUD authorization is implemented for relational writes.
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
@@ -298,19 +280,8 @@ public sealed class RelationalDocumentStoreRepository(
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
         var writePrecondition = NormalizeWritePrecondition(relationalDeleteRequest.WritePrecondition);
 
-        if (
-            TryBuildRelationalWriteAuthorizationNotImplementedMessage(
-                resource,
-                relationalDeleteRequest.AuthorizationStrategyEvaluators,
-                "DELETE",
-                out var authorizationNotImplementedMessage
-            )
-        )
-        {
-            return Task.FromResult<DeleteResult>(
-                new DeleteResult.DeleteFailureNotAuthorized([authorizationNotImplementedMessage])
-            );
-        }
+        // TODO DMS-1057: Restore relational write authorization checks once NamespaceBased
+        // CRUD authorization is implemented for relational writes.
 
         if (relationalDeleteRequest.ResourceInfo.IsDescriptor)
         {
@@ -445,9 +416,8 @@ public sealed class RelationalDocumentStoreRepository(
                     }
                     else
                     {
-                        // Requests requiring relational authorization filtering fail closed before
-                        // reaching this delete path. Future SQL-layer CRUD authorization can join
-                        // this transaction before executing the DELETE.
+                        // TODO DMS-1057: SQL-layer CRUD authorization must join this transaction
+                        // before executing the DELETE.
                         var deleteCommand = BuildDocumentDeleteByDocumentIdCommand(
                             mappingSet.Key.Dialect,
                             resolved.DocumentId
@@ -907,30 +877,6 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteTargetContext? TargetContext,
         RelationalWriteExecutorResult? ImmediateResult
     );
-
-    private static bool TryBuildRelationalWriteAuthorizationNotImplementedMessage(
-        QualifiedResourceName resource,
-        IReadOnlyList<AuthorizationStrategyEvaluator>? authorizationStrategyEvaluators,
-        string operationLabel,
-        out string message
-    )
-    {
-        var evaluators = authorizationStrategyEvaluators ?? [];
-
-        if (RelationalReadGuardrails.HasOnlyNoFurtherAuthorizationRequired(evaluators))
-        {
-            message = string.Empty;
-            return false;
-        }
-
-        message = RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-            resource,
-            evaluators,
-            operationLabel,
-            operationLabel
-        );
-        return true;
-    }
 
     private async Task<GetResult> GetDocumentByIdAsync(
         IRelationalGetRequest relationalGetRequest,
