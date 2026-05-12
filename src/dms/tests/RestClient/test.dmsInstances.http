@@ -1,0 +1,137 @@
+# DMS-1075: DMS Instances and Derivatives Encrypted Connection String Test
+#
+# This file exercises the /v2/dmsInstances and /v2/dmsInstanceDerivatives
+# CMS endpoints. As of DMS-1075, GET responses return the connectionString
+# field as a Base64-encoded AES-encrypted value rather than plain text.
+# Callers should expect the connectionString in GET responses to be an
+# opaque Base64 string, not the original plain-text value.
+#
+# Prerequisites:
+# - Configuration Service running at localhost:8081 (update configPort if needed)
+# - System administrator credentials registered (run register step if needed)
+
+@configPort=8081
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9
+@encodedSysAdminSecret=SdfH%2998%26JkSdfH%2998%26JkSdfH%2998%26JkSdfH)9
+
+###############################################################################
+# STEP 1: Register system administrator (skip if already registered)
+###############################################################################
+
+### Register system administrator
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+###############################################################################
+# STEP 2: Get a CMS token (OAuth2 client credentials)
+###############################################################################
+
+### Get CMS access token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+###############################################################################
+# STEP 3: Create a DMS instance with a plain-text connection string
+# The POST body accepts plain text; on GET the connectionString is encrypted.
+###############################################################################
+
+### Create a DMS instance
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Production",
+    "instanceName": "DMS-1075 Test Instance",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
+###############################################################################
+# STEP 4: GET /v2/dmsInstances — list all instances
+# Expected: connectionString values are Base64-encoded AES-encrypted (DMS-1075).
+# The connectionString will NOT match the plain-text value sent in POST.
+###############################################################################
+
+### List all DMS instances
+GET http://localhost:{{configPort}}/v2/dmsInstances
+Authorization: bearer {{configToken}}
+
+###############################################################################
+# STEP 5: GET /v2/dmsInstances/{id} — get a single instance by ID
+# Expected: connectionString is Base64-encoded AES-encrypted (DMS-1075).
+###############################################################################
+
+### Get DMS instance by ID
+GET http://localhost:{{configPort}}/v2/dmsInstances/{{dmsInstanceId}}
+Authorization: bearer {{configToken}}
+
+###############################################################################
+# STEP 6: Create a DMS instance derivative with a plain-text connection string
+###############################################################################
+
+### Create a DMS instance derivative (ReadReplica)
+# @name createDmsInstanceDerivative
+POST http://localhost:{{configPort}}/v2/dmsInstanceDerivatives
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceId": {{dmsInstanceId}},
+    "derivativeType": "ReadReplica",
+    "connectionString": "host=dms-postgresql-replica;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_replica;"
+}
+
+###
+@dmsInstanceDerivativeId={{createDmsInstanceDerivative.response.body.id}}
+
+###############################################################################
+# STEP 7: GET /v2/dmsInstanceDerivatives — list all derivatives
+# Expected: connectionString values are Base64-encoded AES-encrypted (DMS-1075).
+###############################################################################
+
+### List all DMS instance derivatives
+GET http://localhost:{{configPort}}/v2/dmsInstanceDerivatives
+Authorization: bearer {{configToken}}
+
+###############################################################################
+# STEP 8: GET /v2/dmsInstanceDerivatives/{id} — get a single derivative by ID
+# Expected: connectionString is Base64-encoded AES-encrypted (DMS-1075).
+###############################################################################
+
+### Get DMS instance derivative by ID
+GET http://localhost:{{configPort}}/v2/dmsInstanceDerivatives/{{dmsInstanceDerivativeId}}
+Authorization: bearer {{configToken}}
+
+###############################################################################
+# STEP 9: DELETE /v2/dmsInstanceDerivatives/{id} — clean up derivative
+###############################################################################
+
+### Delete DMS instance derivative
+DELETE http://localhost:{{configPort}}/v2/dmsInstanceDerivatives/{{dmsInstanceDerivativeId}}
+Authorization: bearer {{configToken}}
+
+###############################################################################
+# STEP 10: DELETE /v2/dmsInstances/{id} — clean up instance
+###############################################################################
+
+### Delete DMS instance
+DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{dmsInstanceId}}
+Authorization: bearer {{configToken}}

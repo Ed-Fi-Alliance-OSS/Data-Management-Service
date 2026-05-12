@@ -17,6 +17,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public class DmsInstanceTests : DatabaseTest
 {
+    private static void AssertIsValidEncryptedBase64(string? base64, string expectedPlainText)
+    {
+        base64.Should().NotBeNullOrEmpty();
+        var encryptedBytes = Convert.FromBase64String(base64!);
+        var encryptionService = new ConnectionStringEncryptionService(Configuration.DatabaseOptions);
+        encryptionService.Decrypt(encryptedBytes).Should().Be(expectedPlainText);
+    }
+
     private readonly IDmsInstanceRouteContextRepository _routeContextRepository =
         new DmsInstanceRouteContextRepository(
             Configuration.DatabaseOptions,
@@ -80,9 +88,10 @@ public class DmsInstanceTests : DatabaseTest
             var instanceFromDb = ((DmsInstanceQueryResult.Success)getResult).DmsInstanceResponses.First();
             instanceFromDb.InstanceType.Should().Be("Production");
             instanceFromDb.InstanceName.Should().Be("Test Instance");
-            instanceFromDb
-                .ConnectionString.Should()
-                .Be("Server=localhost;Database=TestDb;User Id=user;Password=pass;");
+            AssertIsValidEncryptedBase64(
+                instanceFromDb.ConnectionString,
+                "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
+            );
         }
 
         [Test]
@@ -94,9 +103,10 @@ public class DmsInstanceTests : DatabaseTest
             var instanceFromDb = ((DmsInstanceGetResult.Success)getByIdResult).DmsInstanceResponse;
             instanceFromDb.InstanceType.Should().Be("Production");
             instanceFromDb.InstanceName.Should().Be("Test Instance");
-            instanceFromDb
-                .ConnectionString.Should()
-                .Be("Server=localhost;Database=TestDb;User Id=user;Password=pass;");
+            AssertIsValidEncryptedBase64(
+                instanceFromDb.ConnectionString,
+                "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
+            );
         }
     }
 
@@ -177,7 +187,7 @@ public class DmsInstanceTests : DatabaseTest
             var instanceFromDb = ((DmsInstanceQueryResult.Success)getResult).DmsInstanceResponses.First();
             instanceFromDb.InstanceType.Should().Be("Production");
             instanceFromDb.InstanceName.Should().Be("Updated Instance");
-            instanceFromDb.ConnectionString.Should().Be("Server=updated;Database=UpdatedDb;");
+            AssertIsValidEncryptedBase64(instanceFromDb.ConnectionString, "Server=updated;Database=UpdatedDb;");
         }
 
         [Test]
@@ -189,7 +199,7 @@ public class DmsInstanceTests : DatabaseTest
             var instanceFromDb = ((DmsInstanceGetResult.Success)getByIdResult).DmsInstanceResponse;
             instanceFromDb.InstanceType.Should().Be("Production");
             instanceFromDb.InstanceName.Should().Be("Updated Instance");
-            instanceFromDb.ConnectionString.Should().Be("Server=updated;Database=UpdatedDb;");
+            AssertIsValidEncryptedBase64(instanceFromDb.ConnectionString, "Server=updated;Database=UpdatedDb;");
         }
     }
 

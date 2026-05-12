@@ -42,6 +42,8 @@ public class WebApplicationBuilderExtensionsTests
             ["ConfigurationServiceSettings:ClientId"] = "client-id",
             ["ConfigurationServiceSettings:ClientSecret"] = "client-secret",
             ["ConfigurationServiceSettings:Scope"] = "scope",
+            ["ConfigurationServiceSettings:EncryptionKey"] =
+                "TestEncryptionKey123456789012345678901234567890",
         };
 
         if (additionalConfiguration is not null)

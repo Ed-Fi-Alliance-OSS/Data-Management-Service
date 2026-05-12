@@ -34,7 +34,7 @@ Feature: DmsInstanceDerivatives endpoints
                         "id": {id},
                         "instanceId": {dmsInstanceId},
                         "derivativeType": "ReadReplica",
-                        "connectionString": "Server=newreplica;Database=NewReplicaDb;"
+                        "connectionString": "{ignore}"
                     }
                   """
 
@@ -54,7 +54,7 @@ Feature: DmsInstanceDerivatives endpoints
                         "id": {id},
                         "instanceId": {dmsInstanceId},
                         "derivativeType": "Snapshot",
-                        "connectionString": "Server=newsnapshot;Database=NewSnapshotDb;"
+                        "connectionString": "{ignore}"
                     }
                   """
 
@@ -76,7 +76,7 @@ Feature: DmsInstanceDerivatives endpoints
                           "id": {id},
                           "instanceId": {dmsInstanceId},
                           "derivativeType": "ReadReplica",
-                          "connectionString": "Server=retrieved;Database=RetrievedDb;"
+                          "connectionString": "{ignore}"
                       }
                   """
 
@@ -106,7 +106,7 @@ Feature: DmsInstanceDerivatives endpoints
                         "id": {id},
                         "instanceId": {dmsInstanceId},
                         "derivativeType": "Snapshot",
-                        "connectionString": "Server=updated;Database=UpdatedDb;"
+                        "connectionString": "{ignore}"
                     }
                   """
 

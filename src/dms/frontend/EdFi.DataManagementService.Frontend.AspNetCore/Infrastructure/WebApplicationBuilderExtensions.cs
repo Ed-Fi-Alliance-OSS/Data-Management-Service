@@ -69,6 +69,10 @@ public static class WebApplicationBuilderExtensions
                 IValidateOptions<Frontend.AspNetCore.Configuration.AppSettings>,
                 AppSettingsValidator
             >()
+            .AddSingleton<
+                IValidateOptions<ConfigurationServiceSettings>,
+                ConfigurationServiceSettingsValidator
+            >()
             .AddSingleton<IValidateOptions<MappingSetProviderOptions>, MappingSetProviderOptionsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
@@ -171,6 +175,9 @@ public static class WebApplicationBuilderExtensions
         );
 
         // Register DMS Instance services
+        webAppBuilder.Services.AddSingleton<IConnectionStringDecryptionService>(
+            new ConnectionStringDecryptionService(configServiceSettings.EncryptionKey)
+        );
         webAppBuilder.Services.AddSingleton<IDmsInstanceProvider, ConfigurationServiceDmsInstanceProvider>();
         webAppBuilder.Services.AddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
 

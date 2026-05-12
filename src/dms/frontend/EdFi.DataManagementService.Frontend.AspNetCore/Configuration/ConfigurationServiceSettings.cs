@@ -13,6 +13,7 @@ public class ConfigurationServiceSettings
     public required string ClientId { get; set; }
     public required string ClientSecret { get; set; }
     public required string Scope { get; set; }
+    public required string EncryptionKey { get; set; }
 }
 
 public class ConfigurationServiceSettingsValidator : IValidateOptions<ConfigurationServiceSettings>
@@ -39,6 +40,12 @@ public class ConfigurationServiceSettingsValidator : IValidateOptions<Configurat
         if (string.IsNullOrWhiteSpace(options.Scope))
         {
             return ValidateOptionsResult.Fail("Missing required ConfigurationServiceSettings value: Scope");
+        }
+        if (string.IsNullOrWhiteSpace(options.EncryptionKey))
+        {
+            return ValidateOptionsResult.Fail(
+                "Missing required ConfigurationServiceSettings value: EncryptionKey"
+            );
         }
 
         return ValidateOptionsResult.Success;

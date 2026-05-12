@@ -44,6 +44,7 @@
 #        "BaseUrl": "http://localhost:5126",
 #        "ClientId": "DmsConfigurationService",
 #        "ClientSecret": "ValidClientSecret1234567890!Abcd",
+#        "EncryptionKey": "YourSecureEncryptionKey32Characters",
 #        "Scope": "edfi_admin_api/full_access",
 #        "CacheExpirationMinutes": 10
 #    },

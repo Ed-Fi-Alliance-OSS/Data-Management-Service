@@ -191,7 +191,9 @@ public class DmsInstanceRepository(
                 Id = row.Id,
                 InstanceType = row.InstanceType,
                 InstanceName = row.InstanceName,
-                ConnectionString = encryptionService.Decrypt(row.ConnectionString),
+                ConnectionString = row.ConnectionString is null
+                    ? null
+                    : Convert.ToBase64String(row.ConnectionString),
                 DmsInstanceRouteContexts = routeContextsByInstanceId.GetValueOrDefault(row.Id, []),
                 DmsInstanceDerivatives = derivativesByInstanceId.GetValueOrDefault(row.Id, []),
                 TenantId = row.TenantId,
@@ -261,7 +263,9 @@ public class DmsInstanceRepository(
                 Id = result.Value.Id,
                 InstanceType = result.Value.InstanceType,
                 InstanceName = result.Value.InstanceName,
-                ConnectionString = encryptionService.Decrypt(result.Value.ConnectionString),
+                ConnectionString = result.Value.ConnectionString is null
+                    ? null
+                    : Convert.ToBase64String(result.Value.ConnectionString),
                 DmsInstanceRouteContexts = routeContexts,
                 DmsInstanceDerivatives = derivatives,
                 TenantId = result.Value.TenantId,

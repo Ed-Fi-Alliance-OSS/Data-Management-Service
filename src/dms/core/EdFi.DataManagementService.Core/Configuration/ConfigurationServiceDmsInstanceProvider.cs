@@ -21,6 +21,7 @@ public class ConfigurationServiceDmsInstanceProvider(
     IConfigurationServiceTokenHandler configurationServiceTokenHandler,
     ConfigurationServiceContext configurationServiceContext,
     ILogger<ConfigurationServiceDmsInstanceProvider> logger,
+    IConnectionStringDecryptionService connectionStringDecryptionService,
     CacheSettings? cacheSettings = null,
     TimeProvider? timeProvider = null
 ) : IDmsInstanceProvider
@@ -30,6 +31,8 @@ public class ConfigurationServiceDmsInstanceProvider(
 
     private readonly CacheSettings _cacheSettings = cacheSettings ?? new CacheSettings();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly IConnectionStringDecryptionService _connectionStringDecryptionService =
+        connectionStringDecryptionService;
     private readonly ConcurrentDictionary<string, TenantCacheEntry> _instancesByTenant = new(
         StringComparer.OrdinalIgnoreCase
     );
@@ -341,7 +344,7 @@ public class ConfigurationServiceDmsInstanceProvider(
                 response.Id,
                 response.InstanceType,
                 response.InstanceName,
-                response.ConnectionString,
+                _connectionStringDecryptionService.DecryptFromBase64(response.ConnectionString),
                 response.DmsInstanceRouteContexts.ToDictionary(
                     rc => new RouteQualifierName(rc.ContextKey),
                     rc => new RouteQualifierValue(rc.ContextValue)

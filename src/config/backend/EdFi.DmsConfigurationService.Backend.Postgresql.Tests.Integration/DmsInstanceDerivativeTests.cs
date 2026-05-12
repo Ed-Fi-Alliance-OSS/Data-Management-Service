@@ -16,6 +16,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public class DmsInstanceDerivativeTests : DatabaseTest
 {
+    private static void AssertIsValidEncryptedBase64(string? base64, string expectedPlainText)
+    {
+        base64.Should().NotBeNullOrEmpty();
+        var encryptedBytes = Convert.FromBase64String(base64!);
+        var encryptionService = new ConnectionStringEncryptionService(Configuration.DatabaseOptions);
+        encryptionService.Decrypt(encryptedBytes).Should().Be(expectedPlainText);
+    }
+
     private readonly IDmsInstanceRepository _instanceRepository;
     private readonly IDmsInstanceDerivativeRepository _repository;
 
@@ -93,9 +101,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             ).DmsInstanceDerivativeResponses.First();
             derivativeFromDb.InstanceId.Should().Be(_instanceId);
             derivativeFromDb.DerivativeType.Should().Be("ReadReplica");
-            derivativeFromDb
-                .ConnectionString.Should()
-                .Be("Server=replica;Database=ReplicaDb;User Id=user;Password=pass;");
+            AssertIsValidEncryptedBase64(
+                derivativeFromDb.ConnectionString,
+                "Server=replica;Database=ReplicaDb;User Id=user;Password=pass;"
+            );
         }
 
         [Test]
@@ -109,9 +118,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             ).DmsInstanceDerivativeResponse;
             derivativeFromDb.InstanceId.Should().Be(_instanceId);
             derivativeFromDb.DerivativeType.Should().Be("ReadReplica");
-            derivativeFromDb
-                .ConnectionString.Should()
-                .Be("Server=replica;Database=ReplicaDb;User Id=user;Password=pass;");
+            AssertIsValidEncryptedBase64(
+                derivativeFromDb.ConnectionString,
+                "Server=replica;Database=ReplicaDb;User Id=user;Password=pass;"
+            );
         }
     }
 
@@ -263,7 +273,7 @@ public class DmsInstanceDerivativeTests : DatabaseTest
                 (DmsInstanceDerivativeQueryResult.Success)getResult
             ).DmsInstanceDerivativeResponses.First();
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
-            derivativeFromDb.ConnectionString.Should().Be("Server=updated;Database=UpdatedDb;");
+            AssertIsValidEncryptedBase64(derivativeFromDb.ConnectionString, "Server=updated;Database=UpdatedDb;");
         }
 
         [Test]
@@ -276,7 +286,7 @@ public class DmsInstanceDerivativeTests : DatabaseTest
                 (DmsInstanceDerivativeGetResult.Success)getByIdResult
             ).DmsInstanceDerivativeResponse;
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
-            derivativeFromDb.ConnectionString.Should().Be("Server=updated;Database=UpdatedDb;");
+            AssertIsValidEncryptedBase64(derivativeFromDb.ConnectionString, "Server=updated;Database=UpdatedDb;");
         }
     }
 

@@ -50,13 +50,14 @@ The following parameters apply to the DMS Configuration Service (`appsettings.js
 
 ## ConfigurationServiceSettings
 
-These settings configure how the DMS API connects to the Configuration Service to retrieve claim sets, DMS instances, and other metadata.
+These settings configure how the DMS API connects to the Configuration Service to retrieve claim sets, DMS instances, and other metadata. `EncryptionKey` must match CMS `DatabaseSettings:EncryptionKey`.
 
 | Parameter              | Description                                                                                                                                                              |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | BaseUrl                | The base URL of the Configuration Service. Example: `http://dms-config-service:8081`                                                                                     |
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
 | ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints.                                                                       |
+| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Must match CMS `DatabaseSettings:EncryptionKey`.                                             |
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
 | CacheExpirationMinutes | The duration in minutes before cached claim sets and other metadata expire and are refreshed from the Configuration Service.                                             |
 

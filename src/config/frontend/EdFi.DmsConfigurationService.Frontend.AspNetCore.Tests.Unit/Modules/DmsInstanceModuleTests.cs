@@ -35,6 +35,18 @@ public class DmsInstanceModuleTests
     private readonly IConnectionStringEncryptionService _encryptionService =
         A.Fake<IConnectionStringEncryptionService>();
 
+    private static readonly string FakeEncryptedConnection1 = Convert.ToBase64String(
+        new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 }
+    );
+
+    private static readonly string FakeEncryptedReplica1 = Convert.ToBase64String(
+        new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18 }
+    );
+
+    private static readonly string FakeEncryptedSnapshot1 = Convert.ToBase64String(
+        new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19 }
+    );
+
     private HttpClient SetUpClient()
     {
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -99,11 +111,8 @@ public class DmsInstanceModuleTests
                             Id = 1,
                             InstanceType = "Production",
                             InstanceName = "Test Instance",
-                            ConnectionString = "Server=localhost;Database=TestDb;",
-                            DmsInstanceDerivatives =
-                            [
-                                new(1, 1, "ReadReplica", "Server=localhost;Database=Replica1;"),
-                            ],
+                            ConnectionString = FakeEncryptedConnection1,
+                            DmsInstanceDerivatives = [new(1, 1, "ReadReplica", FakeEncryptedReplica1)],
                         },
                     ])
                 );
@@ -116,7 +125,7 @@ public class DmsInstanceModuleTests
                             Id = 1,
                             InstanceType = "Production",
                             InstanceName = "Test Instance",
-                            ConnectionString = "Server=localhost;Database=TestDb;",
+                            ConnectionString = FakeEncryptedConnection1,
                             DmsInstanceRouteContexts =
                             [
                                 new(1, 1, "contextKey1", "contextValue1"),
@@ -124,8 +133,8 @@ public class DmsInstanceModuleTests
                             ],
                             DmsInstanceDerivatives =
                             [
-                                new(1, 1, "ReadReplica", "Server=localhost;Database=Replica1;"),
-                                new(2, 1, "Snapshot", "Server=localhost;Database=Snapshot1;"),
+                                new(1, 1, "ReadReplica", FakeEncryptedReplica1),
+                                new(2, 1, "Snapshot", FakeEncryptedSnapshot1),
                             ],
                         }
                     )
@@ -251,7 +260,7 @@ public class DmsInstanceModuleTests
                     d.Id == 1
                     && d.DmsInstanceId == 1
                     && d.DerivativeType == "ReadReplica"
-                    && d.ConnectionString == "Server=localhost;Database=Replica1;"
+                    && d.ConnectionString == FakeEncryptedReplica1
                 );
             instance
                 .DmsInstanceDerivatives.Should()
@@ -259,7 +268,7 @@ public class DmsInstanceModuleTests
                     d.Id == 2
                     && d.DmsInstanceId == 1
                     && d.DerivativeType == "Snapshot"
-                    && d.ConnectionString == "Server=localhost;Database=Snapshot1;"
+                    && d.ConnectionString == FakeEncryptedSnapshot1
                 );
         }
     }
