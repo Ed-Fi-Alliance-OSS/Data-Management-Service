@@ -115,7 +115,7 @@ Sample `resourceClaimActionAuthStrategies` response item (normative contract):
 
 ### Query parameter parity
 
-CMS already has an implemented query-parameter pattern for paged read endpoints. The resource-claim endpoints should follow that current pattern using a frontend query DTO bound with `[AsParameters]`, a feature-specific `PagingQueryValidator<T>`, and a repository query model derived from `PagingQuery`.
+CMS already has an implemented query-parameter pattern for paged read endpoints. The resource-claim endpoints should follow that pattern rather than introducing feature-specific paging, sorting, or validation plumbing.
 
 The three list endpoints (`GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies`) support these general query parameters:
 
@@ -141,24 +141,13 @@ Filter, sort, and paging semantics:
 - `GET /v2/resourceClaims` first builds the valid projected hierarchy. Without filters, the result collection contains the root nodes. With `id` or `name` filters, the result collection contains matching nodes from anywhere in the hierarchy, and each matching node still includes its full recursive subtree. The original `parentId` and `parentName` values are preserved.
 - For `GET /v2/resourceClaims`, `orderBy`, `direction`, `limit`, and `offset` apply to the top-level result collection after filtering. They do not page, sort, or remove descendant `children` within each returned subtree.
 - For `GET /v2/resourceClaimActions` and `GET /v2/resourceClaimActionAuthStrategies`, filters, sorting, and paging apply to the flat projected collection.
+- `name` and `resourceName` filters are case-insensitive.
+- When multiple filters are supplied, these endpoints follow the existing Config query-filter behavior.
 - Required `orderBy` allowlists are `id`, `name`, `parentId`, and `parentName` for `resourceClaims`; `resourceClaimId`, `resourceName`, and `claimName` for `resourceClaimActions`; and `resourceClaimId`, `resourceName`, and `claimName` for `resourceClaimActionAuthStrategies`.
 
-Current CMS validation and paging behavior to mirror:
+Current CMS validation and paging behavior should be reused as-is: optional `limit`/`offset`, validated `direction`, endpoint-specific `orderBy` allowlists, no implicit row cap when paging is omitted, and the existing default sort direction behavior. When `orderBy` is omitted, default ordering is determined by the current query-parameter implementation, which defaults to `id`.
 
-- `offset` is optional and, when provided, must be greater than or equal to `0`
-- `limit` is optional and, when provided, must be greater than `0`
-- `direction` is optional and must be one of `asc`, `ascending`, `desc`, or `descending`
-- `orderBy` is optional and, when provided, must be validated against an endpoint-specific allowlist
-- when both `limit` and `offset` are omitted, the current `PagingQuery` implementation applies no implicit row cap
-- when `direction` is omitted, repository implementations default to ascending order unless a repository-specific behavior explicitly differs
-
-Implementation should follow the existing CMS code pattern used by modules such as `VendorModule`, `ClaimSetModule`, and `ProfileModule`:
-
-- frontend binding model in `FrontendQueryModels.cs`
-- validation in `PagingQueryValidators.cs`
-- repository paging contract in `PagingQuery.cs`
-
-Admin API query behaviors intentionally not implemented must be listed as explicit omissions in the story acceptance criteria.
+Any Admin API query behavior intentionally not implemented should be listed as an explicit omission in the implementation story.
 
 ---
 
@@ -184,6 +173,8 @@ The CMS response contract depends on two sources staying aligned:
 
 The hierarchy determines which nodes appear in the response. The metadata table enriches those nodes. A metadata row without a corresponding hierarchy node is not returned. A hierarchy node without a matching metadata row is a data integrity failure.
 
+The projection contract is complete-or-fail: once a request needs the projected hierarchy, every required hierarchy node must resolve to exactly one `dmscs.ResourceClaim` row by full claim URI. A response must not silently skip unresolved hierarchy nodes, omit unresolved descendants, or return a successful partial result because metadata is missing.
+
 ### Seed/bootstrap boundary
 
 Creating, seeding, or maintaining `dmscs.ResourceClaim` rows is **explicitly out of scope** for this spike and any direct implementation ticket derived from it. This applies to:
@@ -193,11 +184,15 @@ Creating, seeding, or maintaining `dmscs.ResourceClaim` rows is **explicitly out
 - custom claim metadata
 - homograph or dynamically composed claim metadata
 
-The endpoints assume required metadata already exists. If it does not exist, the projection fails explicitly — it does not silently skip nodes or return partial results.
+The endpoints assume required metadata already exists. If it does not exist, the projection fails explicitly - it does not silently skip nodes or return partial results.
+
+Before implementation is treated as ready, validate the current PostgreSQL seed data against the loaded claims hierarchy and record the result in implementation notes or tests. The useful evidence is simple: every claim URI present in the hierarchy has one matching `dmscs.ResourceClaim.ClaimName` row for the tenant scope under test. Known gaps must be documented as data limitations or fixed outside these read endpoints.
+
+Action and authorization-strategy lookup data is also complete-or-fail. If a `DefaultAuthorization` entry references an action or authorization strategy that cannot be resolved through the existing claim-set repository lookups, the endpoint must not return a successful partial response. It must fail using the existing CMS generic server-error response pattern for lookup or projection integrity failures.
 
 ### Matching policy
 
-Hierarchy node to metadata row matching is by full claim URI, exact and case-sensitive, unless a different policy is explicitly documented in code and tests.
+Hierarchy node to metadata row matching uses the exact full claim URI without casing normalization, unless a different policy is explicitly documented in code and tests.
 
 ### Tenant-scope policy
 
@@ -207,8 +202,6 @@ These endpoints should follow the current CMS tenant behavior of each dependency
 - tenant-aware repository lookups continue to use their current tenant behavior
 - the claims hierarchy remains the structural source used by these endpoints
 - `dmscs.ResourceClaim` provides the resource-claim metadata for this projection
-
-Resource-claim metadata lookup is by full claim URI, exact and case-sensitive. Tenant behavior follows the existing CMS dependencies; this story adds no endpoint-specific tenant behavior.
 
 ---
 
@@ -244,19 +237,14 @@ The public failure behavior should stay aligned with comparable CMS read endpoin
 
 ### Important constraint
 
-This spike should not define new public endpoint failures such as:
-
-- missing hierarchy row -> `404`
-- duplicate metadata row -> custom `500` contract
-- missing action lookup row -> custom `500` contract
-- missing authorization strategy lookup row -> custom `500` contract
-
-Those may still be important CMS implementation concerns, but they belong in internal validation rules, implementation notes, or follow-up decisions unless the team intentionally chooses to diverge from existing CMS endpoint behavior.
+This spike should not define new public endpoint failure categories for internal integrity issues such as missing metadata, duplicate lookup data, or missing action/authorization-strategy rows. Those concerns can be handled internally, logged, or tested as implementation failures, but the public contract should stay aligned with comparable CMS endpoints unless the team intentionally accepts a broader CMS divergence.
 
 Hierarchy repository failures should follow existing CMS patterns:
 
 - `FailureHierarchyNotFound` maps the same way it already does in `AuthorizationMetadataModule`: `404 Not Found`.
 - Other hierarchy or lookup integrity failures remain generic CMS `500` responses unless a broader CMS policy changes separately.
+
+For implementers and reviewers: "generic CMS `500`" is the required public outcome for metadata drift, not a required internal mechanism. The implementation may use any local result type, validation step, or exception handling pattern that fits CMS conventions, as long as unresolved required metadata cannot produce a successful partial response.
 
 ---
 
@@ -266,13 +254,7 @@ This section records implementation-boundary notes that remain relevant for plan
 
 1. **MSSQL datastore support** - The `dmscs.ResourceClaim` table and seed data currently exist only in the PostgreSQL deployment scripts. This spike scopes these endpoints to PostgreSQL only. MSSQL is unsupported for this feature area until equivalent repository and deployment support are added in later work. The implementation must not silently route these endpoints to PostgreSQL-only repository code when CMS is configured for MSSQL. This spike does not attempt broader datastore-composition cleanup.
 
-2. **Startup versus request-time validation** - These endpoints should follow the existing CMS pattern:
-
-   - configuration validation failures remain startup concerns only where CMS already validates configuration during startup
-   - database deploy and initial claims bootstrap failures remain startup concerns only when those existing startup paths are enabled
-   - hierarchy lookup failures, duplicate hierarchy rows, metadata drift, and related repository or projection failures remain request-time concerns for read endpoints
-
-   This spike does not introduce new startup or health-check validation for resource-claim endpoint data integrity beyond existing CMS startup behavior.
+2. **Startup versus request-time validation** - These endpoints should follow existing CMS behavior. This spike does not add new startup checks, health checks, or datastore-integrity validation beyond what CMS already performs. Hierarchy lookup failures, metadata drift, and projection failures remain request-time concerns for these read endpoints.
 
 3. **`GET /v2/resourceClaimActions` response shape** - **Resolved.** Verified against `management-api-2.3.0.yaml`: the `actions` array contains `{ name: string }` objects only. There is no `actionId` in this response shape. See Section 4 for the normative sample.
 
@@ -308,9 +290,9 @@ This design reuses existing configuration stores without introducing a parallel 
 - Preserve the hierarchy JSON as the structural source of truth.
 - Preserve the resource-claim table as the metadata lookup source.
 - Keep all four endpoints read-only.
-- Fail explicitly when required lookup data is missing.
+- Fail explicitly when required lookup data is missing; do not turn metadata drift into omitted nodes, empty child collections, or empty action/auth-strategy collections.
 - Treat PostgreSQL as the supported datastore path for this work; MSSQL support can be added later without changing the endpoint contract.
 - Use `dmscs.ResourceClaim` as the metadata source in DMS-1148 without adding endpoint-specific tenant behavior in this work.
-- Reuse the current CMS query pattern implemented through `FrontendPagingQuery`, endpoint-specific frontend query DTOs, `PagingQueryValidator<T>`, and repository query models derived from `PagingQuery` instead of introducing a feature-specific filtering or sorting abstraction here.
+- Reuse the current CMS query pattern instead of introducing a feature-specific filtering or sorting abstraction here.
 - Do not add write endpoints, schema redesigns, synthetic ids, or fallback ids.
-- Start from the companion story and the current `main` code paths. Key paths to examine: endpoint module pattern, repository result records, datastore registration, `IClaimsHierarchyRepository.GetClaimsHierarchy`, `IClaimSetRepository.GetActions`, `IClaimSetRepository.GetAuthorizationStrategies`.
+- Start from the companion story and the current `main` code paths for endpoint modules, repository result records, datastore registration, claims hierarchy access, action lookup, and authorization-strategy lookup.

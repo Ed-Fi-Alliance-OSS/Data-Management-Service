@@ -18,7 +18,7 @@ Resource claim structure is stored in the CMS claims hierarchy JSON. The public 
 
 This story covers read-only projections over those existing stores. It does not add resource-claim write endpoints, synthetic ids, fallback ids, or a new claims persistence model. Seeding or maintaining resource-claim metadata rows is also out of scope.
 
-See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-endpoints.md` for the full parity decisions, CMS divergences, failure contract, and open validation items. Response and failure contracts were verified against the ODS/Admin API source and published OpenAPI artifacts. The original tracking ticket for this feature area is [DMS-853](https://edfi.atlassian.net/browse/DMS-853).
+See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-endpoints.md` for parity decisions, CMS divergences, failure contract, and validation boundaries. Response and failure contracts were verified against the ODS/Admin API source and published OpenAPI artifacts. The original tracking ticket for this feature area is [DMS-853](https://edfi.atlassian.net/browse/DMS-853).
 
 ## Acceptance Criteria
 
@@ -26,7 +26,7 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 
 - Loads the single CMS claims hierarchy.
 - Projects every hierarchy node to a `ResourceClaimResponse`.
-- Joins each hierarchy node to `dmscs.ResourceClaim` by full claim URI (exact, case-sensitive).
+- Joins each hierarchy node to `dmscs.ResourceClaim` by exact full claim URI, without casing normalization.
 - Returns `id`, `name`, `parentId`, `parentName`, and `children`.
 - Uses `dmscs.ResourceClaim.ResourceName` for `name`, not the claim URI.
 - Uses `0` and `null` for root `parentId` and `parentName`.
@@ -65,21 +65,9 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 
 ### Query parameter alignment
 
-The three list endpoints (`GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies`) use the current CMS query implementation pattern rather than introducing a feature-specific query abstraction. `GET /v2/resourceClaims/{id}` accepts only its path parameter and does not support these query parameters.
+The three list endpoints (`GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies`) reuse the current CMS query pattern for paging, sorting, validation, and endpoint-specific filters. `GET /v2/resourceClaims/{id}` accepts only its path parameter and does not support these query parameters.
 
-- frontend query DTO bound with `[AsParameters]`
-- endpoint-specific frontend query model for endpoint filters
-- endpoint-specific `PagingQueryValidator<T>` allowlist for `orderBy`
-- repository query model derived from `PagingQuery`
-
-The shared paging behavior to preserve is:
-
-- `offset` optional, but if provided must be `>= 0`
-- `limit` optional, but if provided must be `> 0`
-- `direction` optional, but if provided must be one of `asc`, `ascending`, `desc`, `descending`
-- `orderBy` optional, but if provided must be in the endpoint allowlist
-- omitting both `limit` and `offset` does not impose an implicit row cap
-- omitting `direction` defaults to ascending behavior in current repository implementations unless explicitly documented otherwise
+The shared paging behavior to preserve is the existing CMS behavior: optional `limit`/`offset`, validated `direction`, endpoint-specific `orderBy` allowlists, no implicit row cap when paging is omitted, and the current default sort direction behavior.
 
 Endpoint-specific `orderBy` allowlists:
 
@@ -89,24 +77,40 @@ Endpoint-specific `orderBy` allowlists:
 | `GET /v2/resourceClaimActions` | `resourceClaimId`, `resourceName`, `claimName` |
 | `GET /v2/resourceClaimActionAuthStrategies` | `resourceClaimId`, `resourceName`, `claimName` |
 
+Additional query rules:
+
+- `name` and `resourceName` filters are case-insensitive.
+- When multiple filters are supplied, including `id` and `name` together for `GET /v2/resourceClaims`, these endpoints follow the existing Config query-filter behavior.
+- When `orderBy` is omitted, default ordering is determined by the current query-parameter implementation, which defaults to `id`.
+
 ### Failure handling
 
 - `GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies` return `200 OK` with arrays on success.
 - Query filters that match no records return `200 OK` with an empty array.
 - `GET /v2/resourceClaims/{id}` returns `200 OK` with a JSON object when found and `404 Not Found` when absent.
-- Unsupported `orderBy` values return the same `400 Bad Request` validation response pattern used by current CMS paging-query validators.
+- Unsupported `orderBy` values return the existing CMS `400 Bad Request` validation response pattern.
 - Authorization failures remain `401` or `403`.
 - Unhandled server-side exceptions return the same generic CMS unknown-error response shape used by comparable endpoints.
 - The implementation must not invent new public endpoint failure types unless the team deliberately accepts a divergence from the spike document.
 - `FailureHierarchyNotFound` maps to `404 Not Found`, consistent with existing CMS hierarchy-backed endpoint behavior.
 - Other hierarchy or lookup integrity failures remain generic CMS `500` responses unless broader CMS behavior changes separately.
 
+### Data integrity contract
+
+The hierarchy projection must be complete with respect to the CMS claims hierarchy source. Every hierarchy node that participates in these endpoint responses must resolve to exactly one `dmscs.ResourceClaim` metadata row by the exact full claim URI.
+
+If any required hierarchy node cannot be resolved to resource-claim metadata, the endpoint must not return a successful partial response. The request must fail explicitly using the existing CMS generic server-error response pattern for lookup or projection integrity failures.
+
+Action and authorization-strategy lookup data is also complete-or-fail. If a `DefaultAuthorization` entry references an action or authorization strategy that cannot be resolved through the existing claim-set repository lookups, the endpoint must not return a successful partial response. It must fail using the existing CMS generic server-error response pattern for lookup or projection integrity failures.
+
+This contract defines observable behavior, not an implementation shape. The implementation may detect metadata drift before projection, during recursive projection, through a validation helper, or inside an existing service/repository boundary. Do not silently skip unresolved hierarchy nodes, omit unresolved child subtrees, or return empty action/auth-strategy results because metadata is missing.
+
 ### Response model types
 
 - Resource claim ids and parent ids use `long`.
 - Authorization strategy ids use `long`.
 - Action ids remain `int`.
-- Matching is exact and case-sensitive unless a different policy is explicitly documented in code and tests.
+- Matching uses the exact full claim URI without casing normalization unless a different policy is explicitly documented in code and tests.
 
 ### Tenant scope
 
@@ -115,7 +119,7 @@ Endpoint-specific `orderBy` allowlists:
 - Tenant-aware lookups, such as `IClaimSetRepository.GetAuthorizationStrategies`, continue to use their current request tenant behavior.
 - The claims hierarchy remains the structural source used by these endpoints.
 - `dmscs.ResourceClaim` provides the resource-claim metadata for this projection.
-- Resource-claim metadata lookup is by full claim URI, exact and case-sensitive.
+- Resource-claim metadata lookup uses the exact full claim URI without casing normalization.
 - This story adds no endpoint-specific tenant behavior.
 
 ### Authorization
@@ -130,13 +134,11 @@ Endpoint-specific `orderBy` allowlists:
 - This story targets PostgreSQL as the supported datastore path for these endpoints.
 - MSSQL support for these endpoints is out of scope and may be added later with equivalent repository behavior and deployment artifacts without changing the public endpoint contract.
 - The implementation must not silently route these endpoints to PostgreSQL-only repository code when CMS is configured for MSSQL.
-- This story does not include broader datastore-composition cleanup beyond what is required to support the PostgreSQL path.
+- Broader datastore-composition cleanup is out of scope.
 
 ### Validation timing
 
-- These endpoints follow the existing CMS startup/runtime pattern rather than introducing new health or startup validation.
-- Invalid application configuration remains a startup concern only where CMS already validates options and startup configuration.
-- Database deploy and initial claims bootstrap failures remain startup concerns only when the existing startup initialization paths are enabled.
+- These endpoints follow existing CMS startup/runtime behavior rather than introducing new health or startup validation.
 - Missing claims hierarchy, multiple hierarchy rows, resource-claim metadata drift, missing lookup rows, and projection failures remain request-time concerns for these read endpoints.
 
 ### Tests cover
@@ -148,22 +150,19 @@ Endpoint-specific `orderBy` allowlists:
 - Successful resource-claim-actions projection.
 - Successful action/auth-strategy projection.
 - Empty-result behavior for `resourceClaimActions` and `resourceClaimActionAuthStrategies` filters.
-- Explicit failure when a hierarchy node has no matching resource-claim metadata row (metadata drift).
+- Explicit failure when a hierarchy node has no matching resource-claim metadata row (metadata drift). This test must prove the endpoint does not return a successful partial tree, silently omit the unresolved node, or silently omit its descendant subtree.
+- Explicit failure when `DefaultAuthorization` references an unresolved action id or authorization strategy id. This test must prove the endpoint does not return `200 OK` with a partial `actions` or `authorizationStrategiesForActions` collection.
 - Validation failure for unsupported `orderBy`, using the current CMS paging-query validation response pattern.
-- Query parameter filtering and pagination behavior.
+- Query parameter filtering and pagination behavior, including case-insensitive `name`/`resourceName` filters, existing Config combined-filter behavior, and default `id` ordering when `orderBy` is omitted.
 - Tenant-scoped requests follow existing CMS dependency behavior.
 - PostgreSQL-only behavior for this story.
 
 ## Tasks
 
-1. Add the resource-claim read model and service projection over `IClaimsHierarchyRepository` plus `IResourceClaimRepository`.
-2. Add `IResourceClaimRepository` in the backend repository abstractions, add the PostgreSQL implementation under the PostgreSQL repository project, and register it with the current CMS DI pattern without enabling it for unsupported MSSQL execution.
-3. Add the resource-claims endpoint module and map the four routes listed in this story.
-4. Map service result cases to explicit endpoint responses, preserving the required `200`, `400`, `404`, `401`/`403`, and generic `500` outcomes while using the same CMS error response patterns as comparable endpoints.
-5. Add the resource-claim-actions service projection and endpoint, resolving action names through the existing claim-set repository.
-6. Implement general query parameters (`limit`, `offset`, `orderBy`, `direction`) and endpoint-specific filters for the three list endpoints by reusing the current CMS query implementation pattern based on frontend query DTOs, `PagingQueryValidator<T>`, and repository models derived from `PagingQuery`. Apply the hierarchy filtering and paging semantics defined in the acceptance criteria. `GET /v2/resourceClaims/{id}` accepts only its path parameter.
-7. Resolve authorization strategy metadata through the existing claim-set repository APIs for the auth-strategies endpoint.
-8. Register these endpoints with `MapSecuredGet` and document `ReadOnlyOrAdminScopePolicy` in the architecture brief and endpoint registration.
-9. Keep this story scoped to the PostgreSQL implementation path, and document that MSSQL support can be added later without changing the public endpoint contract. Add an explicit guard so unsupported MSSQL configuration cannot use PostgreSQL-only resource-claim repositories.
-10. Add focused unit and endpoint tests for the success and failure cases listed above, including query parameter behavior and empty-filter-result behavior.
-11. Run the relevant backend and frontend tests and format changed C# files with `dotnet csharpier format`.
+1. Add the resource-claim read models and service projections over the claims hierarchy, `dmscs.ResourceClaim`, and existing claim-set metadata lookups.
+2. Add the resource-claim repository abstraction, PostgreSQL implementation, and datastore registration while keeping unsupported MSSQL behavior explicit.
+3. Add the endpoint module and map the four read-only routes with `MapSecuredGet`.
+4. Map service results to the public outcomes in the acceptance criteria using existing CMS response patterns.
+5. Implement list filtering, sorting, and paging by reusing the current CMS query pattern and the hierarchy-specific semantics defined above.
+6. Keep the implementation scoped to PostgreSQL support; add an explicit guard so unsupported MSSQL configuration cannot use PostgreSQL-only resource-claim repositories.
+7. Add focused unit and endpoint tests for the success, failure, query, tenant, and PostgreSQL-only cases listed above.
