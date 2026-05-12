@@ -29,6 +29,16 @@ public static class ReadableProfileProjectorTestExtensions
         return services;
     }
 
+    /// <summary>
+    /// Factory for the real (non-passthrough) <see cref="IReadableProfileProjector"/>. Lets
+    /// test projects without <see cref="EdFi.DataManagementService.Core"/>'s
+    /// <c>InternalsVisibleTo</c> grant exercise the production projector logic — the projector
+    /// type is <c>internal</c> in Core, but Common has the InternalsVisibleTo grant, so the
+    /// construction happens here and the result is handed back via the public interface.
+    /// </summary>
+    public static IReadableProfileProjector CreateProductionReadableProfileProjector() =>
+        new ReadableProfileProjector();
+
     private sealed class PassthroughReadableProfileProjector : IReadableProfileProjector
     {
         public JsonNode Project(

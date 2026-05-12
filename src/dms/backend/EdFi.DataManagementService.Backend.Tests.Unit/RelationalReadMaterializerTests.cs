@@ -6,6 +6,8 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -465,4 +467,502 @@ public class Given_RelationalReadMaterializer
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
         IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
     ) => new(null, documentMetadata, tableRowsInDependencyOrder, descriptorRowsInPlanOrder);
+}
+
+/// <summary>
+/// Verifies the strip-pass / etag-recompute ordering at the materializer boundary
+/// (<see cref="RelationalReadMaterializer.InjectApiMetadata"/>): the strip runs first, then
+/// the etag is computed over the served body. A future reorder that computed the etag before
+/// the strip would silently violate the contract that <c>_etag</c> is the SHA-256 of the
+/// served body.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_Response
+{
+    private const short SchoolResourceKeyId = 7;
+    private const long SchoolDocumentId = 901L;
+
+    private static readonly Guid AcademicWeekDocumentUuid = Guid.Parse(
+        "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
+    );
+    private static readonly Guid SchoolDocumentUuid = Guid.Parse("11112222-3333-4444-5555-666677778888");
+
+    private static readonly QualifiedResourceName _resource = new("Ed-Fi", "StudentSchoolAssociation");
+    private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private static readonly DbTableName _rootTableName = new(
+        new DbSchemaName("edfi"),
+        "StudentSchoolAssociation"
+    );
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+    private static readonly JsonPathExpression _schoolReferencePath = new(
+        "$.schoolReference",
+        [new JsonPathSegment.Property("schoolReference")]
+    );
+    private static readonly JsonPathExpression _schoolReferenceSchoolIdPath = new(
+        "$.schoolReference.schoolId",
+        [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
+    );
+
+    private static readonly DocumentLinkSlugTriple _schoolSlug = new(
+        ProjectEndpointName: "ed-fi",
+        EndpointName: "schools",
+        ResourceName: "School"
+    );
+
+    [Test]
+    public void It_computes_etag_over_the_link_bearing_body_when_links_enabled()
+    {
+        var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = true });
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+
+        var result = MaterializeSingleExternalResponse(sut, readPlan);
+
+        // Link is present on the reference object.
+        result["schoolReference"]!
+            ["link"]
+            .Should()
+            .NotBeNull("link must be emitted when ResourceLinksOptions.Enabled is true");
+        result["schoolReference"]!["link"]!["rel"]!.GetValue<string>().Should().Be("School");
+
+        // _etag is the canonical SHA-256 of the served body excluding id/_etag/_lastModifiedDate
+        // (FormatEtag strips those before hashing). Passing the served document back into
+        // FormatEtag must reproduce the same value, proving the etag in the response matches
+        // the body that was actually served (link-bearing).
+        result["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                RelationalApiMetadataFormatter.FormatEtag(result),
+                "etag must be computed over the served (link-bearing) body when links are enabled"
+            );
+    }
+
+    [Test]
+    public void It_computes_etag_over_the_link_free_body_when_links_disabled()
+    {
+        var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = false });
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+
+        var result = MaterializeSingleExternalResponse(sut, readPlan);
+
+        // Strip pass ran before etag computation: no link on the reference object.
+        result["schoolReference"]!
+            ["link"]
+            .Should()
+            .BeNull("link must be stripped when ResourceLinksOptions.Enabled is false");
+
+        // _etag is the SHA-256 of the served (now link-free) body. Passing it back into
+        // FormatEtag must reproduce the same value — if the etag had been computed BEFORE
+        // the strip (i.e. over a link-bearing body that was then mutated), this assertion
+        // would fail.
+        result["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                RelationalApiMetadataFormatter.FormatEtag(result),
+                "etag must be computed over the served (link-free) body when links are disabled"
+            );
+    }
+
+    [Test]
+    public void It_produces_different_etags_for_enabled_versus_disabled_on_the_same_input()
+    {
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+
+        var withLink = MaterializeSingleExternalResponse(
+            CreateMaterializer(new ResourceLinksOptions { Enabled = true }),
+            readPlan
+        );
+        var withoutLink = MaterializeSingleExternalResponse(
+            CreateMaterializer(new ResourceLinksOptions { Enabled = false }),
+            readPlan
+        );
+
+        // Sanity: the two bodies differ structurally (one has link, one doesn't).
+        withLink["schoolReference"]!.AsObject().Should().ContainKey("link");
+        withoutLink["schoolReference"]!.AsObject().Should().NotContainKey("link");
+
+        // The etags therefore MUST differ — proof the strip ran before the etag computation
+        // rather than after.
+        withLink["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(
+                withoutLink["_etag"]!.GetValue<string>(),
+                "flag-on body and flag-off body differ in shape, so their etags must differ"
+            );
+    }
+
+    /// <summary>
+    /// Composes the DMS-reconstitution → readable-profile-projection seam end-to-end at the
+    /// Backend unit level. Matches the design contract in
+    /// <c>link-injection.md:402-406</c>: <c>link</c> lies outside the profile namespace,
+    /// so readable-profile projection preserves it whenever the enclosing reference survives.
+    /// The Core unit tests in <c>ReadableProfileProjectorTests</c> cover the projector half
+    /// in isolation (with hand-built JSON); this test proves the wiring still works when the
+    /// link is emitted by DMS reconstitution rather than authored by the test.
+    /// </summary>
+    [Test]
+    public void It_preserves_link_through_readable_profile_projection_with_includeOnly_filter()
+    {
+        var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = true });
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+        var materialized = MaterializeSingleExternalResponse(sut, readPlan);
+
+        // Sanity: DMS-reconstituted document carries the link before projection runs.
+        materialized["schoolReference"]!
+            ["link"]
+            .Should()
+            .NotBeNull(
+                "precondition — DMS must emit the link before we can test that the projector preserves it"
+            );
+
+        // IncludeOnly profile that selects the reference object (so it survives) but lists
+        // ONLY the identity field `schoolId` under it. The contract is that `link` survives
+        // even though the profile never lists it — server-generated subtrees short-circuit
+        // rule dispatch (see profiles.md §Profile Namespace).
+        var schoolReferenceRule = new ObjectRule(
+            Name: "schoolReference",
+            MemberSelection: MemberSelection.IncludeOnly,
+            LogicalSchema: null,
+            Properties: [new PropertyRule("schoolId")],
+            NestedObjects: null,
+            Collections: null,
+            Extensions: null
+        );
+        var contentType = new ContentTypeDefinition(
+            MemberSelection: MemberSelection.IncludeAll,
+            Properties: [],
+            Objects: [schoolReferenceRule],
+            Collections: [],
+            Extensions: []
+        );
+
+        var projector = ReadableProfileProjectorTestExtensions.CreateProductionReadableProfileProjector();
+        var projected = projector.Project(
+            materialized,
+            contentType,
+            new HashSet<string>(StringComparer.Ordinal) { "schoolId" }
+        );
+
+        var projectedReference = projected["schoolReference"] as JsonObject;
+        projectedReference
+            .Should()
+            .NotBeNull("the reference object must survive — it is the carrier for the link");
+        projectedReference!
+            ["link"]
+            .Should()
+            .NotBeNull("link must survive readable-profile projection — it is outside the profile namespace");
+
+        var link = projectedReference["link"] as JsonObject;
+        link!["rel"]!
+            .GetValue<string>()
+            .Should()
+            .Be("School", "link.rel must survive byte-equal through the projector");
+        link["href"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                $"/ed-fi/schools/{SchoolDocumentUuid:D}",
+                "link.href must survive byte-equal through the projector"
+            );
+    }
+
+    /// <summary>
+    /// Pins the <see cref="RelationalReadMaterializationRequest.MappingSet"/> opt-in contract:
+    /// a null <c>MappingSet</c> must route to the no-link reconstitution overload even when
+    /// <see cref="ResourceLinksOptions.Enabled"/> is <see langword="true"/>. This guards
+    /// against a future regression where the routing predicate in
+    /// <see cref="RelationalReadMaterializer.MaterializePage"/> is changed to consult
+    /// <c>linksOptions.Enabled</c> first (or any condition other than
+    /// <c>request.MappingSet is { }</c>) — such a change would invoke the slug resolver on a
+    /// stored-document-mode caller (e.g. <c>DefaultRelationalWriteExecutor.cs:184-191</c>) that
+    /// deliberately omits <c>MappingSet</c>. The throwing resolver below converts that silent
+    /// routing slip into a loud test failure.
+    /// </summary>
+    [Test]
+    public void It_does_not_invoke_slug_resolver_when_mappingset_is_null_even_if_links_enabled()
+    {
+        var sut = new RelationalReadMaterializer(
+            new ThrowingSlugResolver(),
+            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true })
+        );
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+        object?[] row = [1L, (object?)SchoolDocumentId, 255901];
+        var metadata = new DocumentMetadataRow(
+            DocumentId: 1L,
+            DocumentUuid: AcademicWeekDocumentUuid,
+            ContentVersion: 1L,
+            IdentityVersion: 1L,
+            ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+        );
+        var hydratedPage = new HydratedPage(
+            TotalCount: null,
+            DocumentMetadata: [metadata],
+            TableRowsInDependencyOrder: [new HydratedTableRows(readPlan.Model.Root, [row])],
+            DescriptorRowsInPlanOrder: []
+        )
+        {
+            DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+            ]),
+        };
+
+        // No MappingSet on the request — must take the no-link path. The throwing resolver
+        // guarantees that any deviation from that contract surfaces as a test failure here.
+        Action act = () =>
+            sut.MaterializePage(
+                new RelationalReadPageMaterializationRequest(
+                    readPlan,
+                    hydratedPage,
+                    RelationalGetRequestReadMode.ExternalResponse
+                )
+            );
+
+        act.Should().NotThrow("MappingSet=null must route to the no-link overload regardless of flag state");
+
+        var materialized = sut.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                hydratedPage,
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+        );
+        materialized.Should().ContainSingle();
+        materialized[0].Document["schoolReference"]!
+            .AsObject()
+            .Should()
+            .NotContainKey("link", "no-link overload must omit the link property entirely");
+    }
+
+    private static RelationalReadMaterializer CreateMaterializer(ResourceLinksOptions linksOptions) =>
+        new(new StubSlugResolver(_schoolSlug), Microsoft.Extensions.Options.Options.Create(linksOptions));
+
+    /// <summary>
+    /// Drives <see cref="IRelationalReadMaterializer.MaterializePage"/> directly with a
+    /// <see cref="HydratedPage"/> that carries the auxiliary
+    /// <see cref="HydratedDocumentReferenceLookup"/> populated for the page. The single-doc
+    /// <c>Materialize</c> overload re-wraps into a fresh <see cref="HydratedPage"/> internally
+    /// and does not plumb the lookup through, so the page entry point is the seam we want to
+    /// exercise here.
+    /// </summary>
+    private static JsonNode MaterializeSingleExternalResponse(
+        IRelationalReadMaterializer sut,
+        ResourceReadPlan readPlan
+    )
+    {
+        object?[] row = [1L, (object?)SchoolDocumentId, 255901];
+        var rootTableModel = readPlan.Model.Root;
+        var metadata = new DocumentMetadataRow(
+            DocumentId: 1L,
+            DocumentUuid: AcademicWeekDocumentUuid,
+            ContentVersion: 1L,
+            IdentityVersion: 1L,
+            ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+        );
+        var hydratedPage = new HydratedPage(
+            TotalCount: null,
+            DocumentMetadata: [metadata],
+            TableRowsInDependencyOrder: [new HydratedTableRows(rootTableModel, [row])],
+            DescriptorRowsInPlanOrder: []
+        )
+        {
+            DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+            ]),
+        };
+
+        var materialized = sut.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                hydratedPage,
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+            {
+                MappingSet = BuildMappingSet(),
+            }
+        );
+
+        materialized.Should().ContainSingle();
+        return materialized[0].Document;
+    }
+
+    private static ResourceReadPlan BuildReadPlanWithDocumentReferenceBinding()
+    {
+        var rootTable = BuildRootTableModel();
+        var model = new RelationalResourceModel(
+            Resource: _resource,
+            PhysicalSchema: rootTable.Table.Schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: _schoolReferencePath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: _schoolResource,
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: _schoolReferenceSchoolIdPath,
+                            ReferenceJsonPath: _schoolReferenceSchoolIdPath,
+                            Column: new DbColumnName("SchoolReference_SchoolId")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
+
+        var refProjection = new ReferenceIdentityProjectionTablePlan(
+            Table: rootTable.Table,
+            BindingsInOrder:
+            [
+                new ReferenceIdentityProjectionBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: _schoolReferencePath,
+                    TargetResource: _schoolResource,
+                    FkColumnOrdinal: 1,
+                    IdentityFieldOrdinalsInOrder:
+                    [
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            ReferenceJsonPath: _schoolReferenceSchoolIdPath,
+                            ColumnOrdinal: 2
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        var lookupPlan = new DocumentReferenceLookupPlan(
+            SelectByKeysetSql: "SELECT 1;",
+            ResultShape: new DocumentReferenceLookupResultShape(0, 1, 2),
+            SourcesInOrder:
+            [
+                new DocumentReferenceLookupSource(
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("School_DocumentId")
+                ),
+            ]
+        );
+
+        return new ResourceReadPlan(
+            Model: model,
+            KeysetTable: new KeysetTableContract(
+                Table: new SqlRelationRef.TempTable("page"),
+                DocumentIdColumnName: new DbColumnName("DocumentId")
+            ),
+            TablePlansInDependencyOrder: [new TableReadPlan(rootTable, "SELECT 1;")],
+            ReferenceIdentityProjectionPlansInDependencyOrder: [refProjection],
+            DescriptorProjectionPlansInOrder: [],
+            DocumentReferenceLookup: lookupPlan
+        );
+    }
+
+    private static DbTableModel BuildRootTableModel() =>
+        new(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_StudentSchoolAssociation",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: _schoolReferencePath,
+                    TargetResource: _schoolResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolReference_SchoolId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: _schoolReferenceSchoolIdPath,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+    private static MappingSet BuildMappingSet()
+    {
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "rmv-test",
+            EffectiveSchemaHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: Enumerable.Range(1, 32).Select(i => (byte)i).ToArray(),
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey(
+                effectiveSchema.EffectiveSchemaHash,
+                SqlDialect.Pgsql,
+                effectiveSchema.RelationalMappingVersion
+            ),
+            Model: new DerivedRelationalModelSet(
+                EffectiveSchema: effectiveSchema,
+                Dialect: SqlDialect.Pgsql,
+                ProjectSchemasInEndpointOrder: [],
+                ConcreteResourcesInNameOrder: [],
+                AbstractIdentityTablesInNameOrder: [],
+                AbstractUnionViewsInNameOrder: [],
+                IndexesInCreateOrder: [],
+                TriggersInCreateOrder: []
+            ),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
+    private sealed class StubSlugResolver(DocumentLinkSlugTriple slug) : IDocumentLinkSlugResolver
+    {
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) => slug;
+    }
+
+    private sealed class ThrowingSlugResolver : IDocumentLinkSlugResolver
+    {
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+            throw new InvalidOperationException(
+                "ThrowingSlugResolver was invoked; the no-link reconstitution overload should have been "
+                    + $"selected because the request omitted MappingSet. ResourceKeyId was {resourceKeyId}."
+            );
+    }
 }

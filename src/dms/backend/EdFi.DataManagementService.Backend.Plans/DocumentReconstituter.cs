@@ -111,8 +111,10 @@ public static class DocumentReconstituter
     /// Reconstitutes all documents from a hydrated page with link injection driven by the
     /// supplied <see cref="MappingSet"/>, <see cref="IDocumentLinkSlugResolver"/>, and
     /// <see cref="ResourceLinksOptions"/>. When <paramref name="linksOptions"/> has
-    /// <c>Enabled = false</c> the resolver is wired into the context but the reference-writer
-    /// skips link emission.
+    /// <c>Enabled = false</c> the per-page <see cref="LinkEmissionContext"/> is skipped
+    /// entirely — the reference-writer takes the no-link path and the resolver is never
+    /// invoked. Production flag is restart-only (<see cref="Microsoft.Extensions.Options.IOptions{T}"/>),
+    /// so the conditional is evaluated once at construction time.
     /// </summary>
     public static IReadOnlyList<JsonNode> ReconstitutePage(
         ResourceReadPlan readPlan,
@@ -129,7 +131,9 @@ public static class DocumentReconstituter
         ArgumentNullException.ThrowIfNull(linksOptions);
 
         var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
-        var linkEmission = new LinkEmissionContext(mappingSet, slugResolver, linksOptions);
+        var linkEmission = linksOptions.Enabled
+            ? new LinkEmissionContext(mappingSet, slugResolver, linksOptions)
+            : null;
         var pageReconstitutionContext = PageReconstitutionContext.Build(
             compiledPlan,
             hydratedPage,
@@ -531,9 +535,7 @@ public static class DocumentReconstituter
         }
 
         var slug = linkEmission.SlugResolver.Resolve(linkEmission.MappingSet, lookup.ResourceKeyId);
-        var href =
-            $"/{slug.ProjectEndpointName}/{slug.EndpointName}/"
-            + lookup.DocumentUuid.ToString("D", CultureInfo.InvariantCulture);
+        var href = $"/{slug.ProjectEndpointName}/{slug.EndpointName}/" + lookup.DocumentUuid.ToString("D");
 
         referenceObject["link"] = new JsonObject
         {

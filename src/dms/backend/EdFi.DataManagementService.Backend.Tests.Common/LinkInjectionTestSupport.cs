@@ -65,7 +65,7 @@ internal static class LinkInjectionAssertions
             .GetValue<string>()
             .Should()
             .Be(
-                $"/{expectedProjectEndpointName}/{expectedEndpointName}/{expectedDocumentUuid.ToString("D", CultureInfo.InvariantCulture)}"
+                $"/{expectedProjectEndpointName}/{expectedEndpointName}/{expectedDocumentUuid.ToString("D")}"
             );
     }
 
