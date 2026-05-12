@@ -90,7 +90,10 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
 {
     private readonly MssqlRelationalQueryExecutionRecorder _recorder =
         recorder ?? throw new ArgumentNullException(nameof(recorder));
-    private readonly IRelationalReadMaterializer _inner = CreateInnerMaterializer();
+    private readonly RelationalReadMaterializer _inner = new(
+        new IntegrationFixtureSlugResolver(),
+        Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions())
+    );
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
@@ -106,23 +109,14 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
         _recorder.RecordPageMaterialization(materializedDocuments);
         return materializedDocuments;
     }
+}
 
-    private static IRelationalReadMaterializer CreateInnerMaterializer()
-    {
-        var innerType =
-            typeof(RelationalReadMaterializationRequest).Assembly.GetType(
-                "EdFi.DataManagementService.Backend.RelationalReadMaterializer",
-                throwOnError: true
-            )
-            ?? throw new InvalidOperationException(
-                "Could not resolve internal relational read materializer type."
-            );
-
-        return Activator.CreateInstance(innerType, nonPublic: true) as IRelationalReadMaterializer
-            ?? throw new InvalidOperationException(
-                "Could not construct internal relational read materializer."
-            );
-    }
+internal sealed class IntegrationFixtureSlugResolver : IDocumentLinkSlugResolver
+{
+    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+        throw new InvalidOperationException(
+            "IntegrationFixtureSlugResolver should not be invoked; tests build requests without a MappingSet."
+        );
 }
 
 internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalReadTargetLookupService
