@@ -104,8 +104,11 @@ public class Given_Descriptor_Write_Response_Etags
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet(description: "Previous")]);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorResultSet(description: "Previous"),
+        ]);
         var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -121,16 +124,14 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
-        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
-        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
-        sessionFactory
-            .Session.Executor.Commands[0]
-            .CommandText.Should()
-            .NotContain("SELECT document.\"ContentVersion\"");
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
     }
 
     [Test]
@@ -142,7 +143,6 @@ public class Given_Descriptor_Write_Response_Etags
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
@@ -161,9 +161,7 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
-        commandExecutor.Commands[0].CommandText.Should().NotContain("UPDATE dms.\"Descriptor\"");
+        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.Session.ScalarCommands.Should().ContainSingle();
         sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
         sessionFactory.Session.Executor.Commands.Should().ContainSingle();
@@ -179,7 +177,6 @@ public class Given_Descriptor_Write_Response_Etags
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
@@ -197,7 +194,7 @@ public class Given_Descriptor_Write_Response_Etags
             .Which.ETag.Should()
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
-        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.Session.ScalarCommands.Should().ContainSingle();
         sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
         sessionFactory.Session.Executor.Commands.Should().ContainSingle();
@@ -212,10 +209,11 @@ public class Given_Descriptor_Write_Response_Etags
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorResultSet(description: "Previous Description"),
         ]);
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -234,14 +232,14 @@ public class Given_Descriptor_Write_Response_Etags
             .Which.ETag.Should()
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
-        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
-        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
-        sessionFactory
-            .Session.Executor.Commands[0]
-            .CommandText.Should()
-            .NotContain("SELECT document.\"ContentVersion\"");
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
     }
 
     private static string ExpectedCanonicalHashEtag(DescriptorWriteRequest request) =>

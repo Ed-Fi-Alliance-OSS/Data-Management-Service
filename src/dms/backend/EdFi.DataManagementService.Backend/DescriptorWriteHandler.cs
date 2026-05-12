@@ -105,13 +105,12 @@ internal sealed class DescriptorWriteHandler(
                             .ConfigureAwait(false),
 
                     RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) =>
-                        await UpdateDescriptorForUpsertIfChangedAsync(
+                        await ApplyDescriptorPostUpsertWithLockedCurrentStateAsync(
                                 request,
                                 body,
                                 documentId,
                                 documentUuid,
                                 resourceKeyId,
-                                _commandExecutor,
                                 cancellationToken
                             )
                             .ConfigureAwait(false),
@@ -351,67 +350,11 @@ internal sealed class DescriptorWriteHandler(
                 );
             }
 
-            var persistedDescriptor = await ReadPersistedDescriptorAsync(
-                    _commandExecutor,
+            return await ApplyDescriptorPutWithLockedCurrentStateAsync(
+                    request,
+                    body,
                     documentId,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (persistedDescriptor is null)
-            {
-                return new UpdateResult.UnknownFailure(
-                    BuildMissingDescriptorMessage(request.Resource, documentId)
-                );
-            }
-
-            if (!string.Equals(body.Uri, persistedDescriptor.Uri, StringComparison.Ordinal))
-            {
-                return new UpdateResult.UpdateFailureImmutableIdentity(
-                    $"Identity of resource '{RelationalWriteSupport.FormatResource(request.Resource)}' "
-                        + "cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
-                );
-            }
-
-            if (IsDescriptorUnchanged(body, persistedDescriptor))
-            {
-                return await ReevaluateDescriptorPutNoOpCandidateAsync(
-                        request,
-                        body,
-                        documentId,
-                        documentUuid,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            _logger.LogDebug(
-                "Updating descriptor {Resource} (DocumentId={DocumentId}) via PUT - {TraceId}",
-                RelationalWriteSupport.FormatResource(request.Resource),
-                documentId,
-                request.TraceId.Value
-            );
-
-            var command = request.MappingSet.Key.Dialect switch
-            {
-                SqlDialect.Pgsql => BuildPostgresqlUpdateCommand(body, documentId),
-                SqlDialect.Mssql => BuildMssqlUpdateCommand(body, documentId),
-                _ => throw new NotSupportedException(
-                    $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
-                ),
-            };
-
-            return await ExecuteDescriptorWriteInTransactionAsync(
-                    async (sessionCommandExecutor, ct) =>
-                    {
-                        await ExecuteWriteCommandAsync(sessionCommandExecutor, command, ct)
-                            .ConfigureAwait(false);
-
-                        return new UpdateResult.UpdateSuccess(
-                            documentUuid,
-                            RelationalApiMetadataFormatter.FormatEtag(body)
-                        );
-                    },
+                    documentUuid,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -913,55 +856,6 @@ internal sealed class DescriptorWriteHandler(
         );
     }
 
-    private async Task<UpsertResult> UpdateDescriptorForUpsertIfChangedAsync(
-        DescriptorWriteRequest request,
-        ExtractedDescriptorBody body,
-        long documentId,
-        DocumentUuid existingDocumentUuid,
-        short resourceKeyId,
-        IRelationalCommandExecutor commandExecutor,
-        CancellationToken cancellationToken
-    )
-    {
-        var persisted = await ReadPersistedDescriptorAsync(commandExecutor, documentId, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (persisted is null)
-        {
-            return new UpsertResult.UnknownFailure(
-                BuildMissingDescriptorMessage(request.Resource, documentId)
-            );
-        }
-
-        if (IsDescriptorUnchanged(body, persisted))
-        {
-            return await ReevaluateDescriptorPostNoOpCandidateAsync(
-                    request,
-                    body,
-                    documentId,
-                    existingDocumentUuid,
-                    resourceKeyId,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-
-        return await ExecuteDescriptorWriteInTransactionAsync(
-                (sessionCommandExecutor, ct) =>
-                    UpdateDescriptorForUpsertAsync(
-                        request,
-                        body,
-                        documentId,
-                        existingDocumentUuid,
-                        resourceKeyId,
-                        sessionCommandExecutor,
-                        ct
-                    ),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
     private async Task<TResult> ExecuteDescriptorWriteInTransactionAsync<TResult>(
         Func<IRelationalCommandExecutor, CancellationToken, Task<TResult>> executeAsync,
         CancellationToken cancellationToken
@@ -1082,7 +976,7 @@ internal sealed class DescriptorWriteHandler(
         return new UpdateResult.UpdateSuccess(documentUuid, RelationalApiMetadataFormatter.FormatEtag(body));
     }
 
-    private async Task<UpsertResult> ReevaluateDescriptorPostNoOpCandidateAsync(
+    private async Task<UpsertResult> ApplyDescriptorPostUpsertWithLockedCurrentStateAsync(
         DescriptorWriteRequest request,
         ExtractedDescriptorBody body,
         long documentId,
@@ -1146,7 +1040,7 @@ internal sealed class DescriptorWriteHandler(
         }
     }
 
-    private async Task<UpdateResult> ReevaluateDescriptorPutNoOpCandidateAsync(
+    private async Task<UpdateResult> ApplyDescriptorPutWithLockedCurrentStateAsync(
         DescriptorWriteRequest request,
         ExtractedDescriptorBody body,
         long documentId,

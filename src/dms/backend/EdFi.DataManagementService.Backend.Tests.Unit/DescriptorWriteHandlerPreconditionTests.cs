@@ -179,7 +179,6 @@ public class Given_Descriptor_Write_Preconditions
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -190,7 +189,7 @@ public class Given_Descriptor_Write_Preconditions
         var result = await sut.HandlePostAsync(request);
 
         result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, currentEtag));
-        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -210,7 +209,6 @@ public class Given_Descriptor_Write_Preconditions
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -221,7 +219,7 @@ public class Given_Descriptor_Write_Preconditions
         var result = await sut.HandlePutAsync(request);
 
         result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, currentEtag));
-        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -233,7 +231,7 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
-    public async Task It_re_evaluates_and_updates_a_stale_descriptor_post_no_op_candidate_when_if_match_is_absent()
+    public async Task It_updates_descriptor_post_as_update_under_a_content_version_lock_when_if_match_is_absent()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -241,7 +239,6 @@ public class Given_Descriptor_Write_Preconditions
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(45L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
@@ -255,14 +252,17 @@ public class Given_Descriptor_Write_Preconditions
         result
             .Should()
             .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
         sessionFactory.Session.Executor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
     }
 
     [Test]
-    public async Task It_re_evaluates_and_updates_a_stale_descriptor_put_no_op_candidate_when_if_match_is_absent()
+    public async Task It_updates_descriptor_put_under_a_content_version_lock_when_if_match_is_absent()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -270,7 +270,6 @@ public class Given_Descriptor_Write_Preconditions
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(45L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
@@ -284,10 +283,71 @@ public class Given_Descriptor_Write_Preconditions
         result
             .Should()
             .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
         sessionFactory.Session.Executor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+    }
+
+    [Test]
+    public async Task It_returns_write_conflict_for_descriptor_post_as_update_when_the_locked_document_is_missing()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var request = CreatePostRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Description"
+        );
+
+        var result = await sut.HandlePostAsync(request);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        sessionFactory.Session.Executor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_descriptor_put_when_the_locked_document_is_missing()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var request = CreatePutRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Description"
+        );
+
+        var result = await sut.HandlePutAsync(request);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        sessionFactory.Session.Executor.Commands.Should().BeEmpty();
     }
 
     [Test]
@@ -299,10 +359,11 @@ public class Given_Descriptor_Write_Preconditions
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Previous Description"),
         ]);
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.CommandExceptionFactory = command =>
             command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
                 ? new StubDbException("descriptor update failed")
@@ -317,13 +378,13 @@ public class Given_Descriptor_Write_Preconditions
         var result = await sut.HandlePutAsync(request);
 
         result.Should().BeOfType<UpdateResult.UnknownFailure>();
-        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
-        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
-        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
     }
 
     [Test]
