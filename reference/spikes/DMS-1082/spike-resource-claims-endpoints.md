@@ -57,25 +57,17 @@ Sample `resourceClaims` response node (normative contract):
 
 ```json
 {
-  "id": 382,
-  "name": "epdm",
+  "id": 4,
+  "name": "educationOrganizations",
   "parentId": 0,
   "parentName": null,
   "children": [
     {
-      "id": 386,
-      "name": "performanceEvaluation",
-      "parentId": 382,
-      "parentName": "epdm",
-      "children": [
-        {
-          "id": 387,
-          "name": "performanceEvaluation",
-          "parentId": 386,
-          "parentName": "performanceEvaluation",
-          "children": []
-        }
-      ]
+      "id": 229,
+      "name": "school",
+      "parentId": 4,
+      "parentName": "educationOrganizations",
+      "children": []
     }
   ]
 }
@@ -144,6 +136,13 @@ Endpoint-specific filter parameters:
 | `GET /v2/resourceClaimActions` | `resourceName` (string) |
 | `GET /v2/resourceClaimActionAuthStrategies` | `resourceName` (string) |
 
+Filter, sort, and paging semantics:
+
+- `GET /v2/resourceClaims` first builds the valid projected hierarchy. Without filters, the result collection contains the root nodes. With `id` or `name` filters, the result collection contains matching nodes from anywhere in the hierarchy, and each matching node still includes its full recursive subtree. The original `parentId` and `parentName` values are preserved.
+- For `GET /v2/resourceClaims`, `orderBy`, `direction`, `limit`, and `offset` apply to the top-level result collection after filtering. They do not page, sort, or remove descendant `children` within each returned subtree.
+- For `GET /v2/resourceClaimActions` and `GET /v2/resourceClaimActionAuthStrategies`, filters, sorting, and paging apply to the flat projected collection.
+- Required `orderBy` allowlists are `id`, `name`, `parentId`, and `parentName` for `resourceClaims`; `resourceClaimId`, `resourceName`, and `claimName` for `resourceClaimActions`; and `resourceClaimId`, `resourceName`, and `claimName` for `resourceClaimActionAuthStrategies`.
+
 Current CMS validation and paging behavior to mirror:
 
 - `offset` is optional and, when provided, must be greater than or equal to `0`
@@ -202,18 +201,17 @@ Hierarchy node to metadata row matching is by full claim URI, exact and case-sen
 
 ### Tenant-scope policy
 
-These endpoints should follow the standard CMS tenant model already used by repositories such as `ClaimSetRepository`:
+These endpoints should follow the current CMS tenant behavior of each dependency instead of introducing feature-specific tenant semantics:
 
 - tenant scope is established per request by the existing tenant-resolution middleware
-- repository queries use the current `TenantContext`
-- when multi-tenancy is enabled, repository lookups are scoped by `TenantId`
-- when multi-tenancy is disabled, repository lookups use `TenantId IS NULL`
+- tenant-aware repository lookups use the current `TenantContext`
+- `IClaimSetRepository.GetAuthorizationStrategies` follows its existing tenant-aware behavior: when multi-tenancy is enabled, it scopes lookup rows by `TenantId`; when multi-tenancy is disabled, it uses rows where `TenantId IS NULL`
+- `IClaimsHierarchyRepository` reads the single CMS claims hierarchy table; the current PostgreSQL schema does not carry a hierarchy `TenantId`
+- `dmscs.ResourceClaim` is global CMS configuration; the current PostgreSQL schema has no `TenantId` column and retains a unique `ClaimName` constraint
 
-No endpoint-specific tenant behavior is introduced for this feature area. The endpoint contract should not define a new "global plus tenant override" model unless CMS already supports it in the backing repository behavior.
+No endpoint-specific tenant behavior is introduced for this feature area. The endpoint contract must not define a new "global plus tenant override" model unless CMS adds that behavior to the backing schema and repositories in separate work.
 
-`dmscs.ResourceClaim` currently has a `TenantId` column, but it also retains a global unique constraint on `ClaimName`. That schema shape does not support tenant-specific duplicates of the same claim URI, so this spike does not define tenant override or duplicate-claim semantics for resource-claim metadata.
-
-`dmscs.ResourceClaim` rows are global configuration. The resource-claim metadata lookup does not filter by `TenantId`, regardless of whether multi-tenancy is enabled; it always queries rows where `TenantId IS NULL`. This is consistent with the global unique `ClaimName` constraint, which already prevents per-tenant duplicates, and with the fact that seeding is out of scope for this work (existing seed rows carry `TenantId IS NULL`).
+This spike does not define support for tenant-specific duplicates of the same claim URI. Do not add a `TenantId` predicate, `TenantId` column, or duplicate-claim semantics to `dmscs.ResourceClaim` as part of DMS-1148.
 
 ---
 
@@ -269,7 +267,7 @@ Hierarchy repository failures should follow existing CMS patterns:
 
 This section records implementation-boundary notes that remain relevant for planning. It is not an open question about public endpoint behavior unless explicitly stated.
 
-1. **MSSQL datastore support** - The `dmscs.ResourceClaim` table and seed data currently exist only in the PostgreSQL deployment scripts. This spike scopes these endpoints to PostgreSQL only. MSSQL is unsupported for this feature area until equivalent repository and deployment support are added in later work. This spike does not attempt broader datastore-composition cleanup.
+1. **MSSQL datastore support** - The `dmscs.ResourceClaim` table and seed data currently exist only in the PostgreSQL deployment scripts. This spike scopes these endpoints to PostgreSQL only. MSSQL is unsupported for this feature area until equivalent repository and deployment support are added in later work. The implementation must not silently route these endpoints to PostgreSQL-only repository code when CMS is configured for MSSQL. This spike does not attempt broader datastore-composition cleanup.
 
 2. **Startup versus request-time validation** - These endpoints should follow the existing CMS pattern:
 
@@ -306,7 +304,7 @@ This design reuses existing configuration stores without introducing a parallel 
 
 **Shared projection depth for list and single-item views.** The collection endpoint returns full recursive trees for root nodes, and the `{id}` endpoint returns the selected node with its full recursive subtree. Benefit: one consistent projection contract across both read endpoints. Cost: the single-item lookup may still need to project or traverse a larger portion of the hierarchy before locating the requested node.
 
-**Exact-match dependency.** The hierarchy and `dmscs.ResourceClaim` must agree on the full claim URI. If they drift, the projection fails or returns incomplete data. This is the highest operational risk in the design and must be surfaced as an explicit failure, not a silent omission.
+**Exact-match dependency.** The hierarchy and `dmscs.ResourceClaim` must agree on the full claim URI. If they drift, the projection fails explicitly. This is the highest operational risk in the design and must not become a silent omission or partial response.
 
 ### Implementation rules
 
@@ -315,6 +313,7 @@ This design reuses existing configuration stores without introducing a parallel 
 - Keep all four endpoints read-only.
 - Fail explicitly when required lookup data is missing.
 - Treat PostgreSQL as the supported datastore path for this work; MSSQL support can be added later without changing the endpoint contract.
+- Treat `dmscs.ResourceClaim` as global CMS configuration in DMS-1148. Do not add tenant-specific resource-claim metadata behavior in this work.
 - Reuse the current CMS query pattern implemented through `FrontendPagingQuery`, endpoint-specific frontend query DTOs, `PagingQueryValidator<T>`, and repository query models derived from `PagingQuery` instead of introducing a feature-specific filtering or sorting abstraction here.
 - Do not add write endpoints, schema redesigns, synthetic ids, or fallback ids.
 - Start from the companion story and the current `main` code paths. Key paths to examine: endpoint module pattern, repository result records, datastore registration, `IClaimsHierarchyRepository.GetClaimsHierarchy`, `IClaimSetRepository.GetActions`, `IClaimSetRepository.GetAuthorizationStrategies`.
