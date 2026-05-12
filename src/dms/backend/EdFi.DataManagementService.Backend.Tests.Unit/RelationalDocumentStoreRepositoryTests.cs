@@ -2810,7 +2810,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
             documentUuid,
             123L,
-            writePrecondition.Value,
             isMatch: true
         );
 
@@ -3273,7 +3272,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
             documentUuid,
             123L,
-            writePrecondition.Value,
             isMatch: true
         );
 
@@ -3308,7 +3306,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
             documentUuid,
             123L,
-            "\"current-etag\"",
             isMatch: false
         );
 
@@ -3370,7 +3367,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
             documentUuid,
             123L,
-            writePrecondition.Value,
             isMatch: true
         );
         _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
@@ -3647,13 +3643,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private static RelationalDeleteEtagPreconditionCheckResult CreateDeletePreconditionCheckResult(
         DocumentUuid documentUuid,
         long documentId,
-        string currentEtag,
         bool isMatch
     )
     {
         var targetContext = new RelationalWriteTargetContext.ExistingDocument(documentId, documentUuid, 42L);
 
-        return new RelationalDeleteEtagPreconditionCheckResult(targetContext, currentEtag, isMatch);
+        return new RelationalDeleteEtagPreconditionCheckResult(targetContext, isMatch);
     }
 
     private void ConfigureResolvedDocument(long documentId, DocumentUuid documentUuid)

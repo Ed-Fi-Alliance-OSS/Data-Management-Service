@@ -114,7 +114,7 @@ Feature: ETag validations
                   }
                   """
         @relational-backend
-        Scenario: 04 Ensure that clients cannot pass a different ETag in the If-Match header to delete a resource
+        Scenario: 05 Ensure that clients cannot pass a different ETag in the If-Match header to delete a resource
             Given a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -140,7 +140,7 @@ Feature: ETag validations
                   }
                   """
         @relational-backend
-        Scenario: 05 Ensure that clients can pass an ETag to delete a resource
+        Scenario: 06 Ensure that clients can pass an ETag to delete a resource
             Given a POST request is made to "/ed-fi/students" with
                   """
                   {

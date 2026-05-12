@@ -84,11 +84,7 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
 
         return result is null
             ? null
-            : new RelationalDeleteEtagPreconditionCheckResult(
-                result.TargetContext,
-                result.CurrentEtag,
-                result.IsMatch
-            );
+            : new RelationalDeleteEtagPreconditionCheckResult(result.TargetContext, result.IsMatch);
     }
 
     public async Task<RelationalCurrentEtagPreconditionCheckResult?> CheckAsync(

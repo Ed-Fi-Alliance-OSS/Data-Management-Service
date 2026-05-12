@@ -11,7 +11,6 @@ namespace EdFi.DataManagementService.Backend;
 
 public sealed record RelationalDeleteEtagPreconditionCheckResult(
     RelationalWriteTargetContext.ExistingDocument TargetContext,
-    string CurrentEtag,
     bool IsMatch
 );
 

@@ -976,75 +976,76 @@ internal sealed class DescriptorWriteHandler(
         return new UpdateResult.UpdateSuccess(documentUuid, RelationalApiMetadataFormatter.FormatEtag(body));
     }
 
-    private async Task<UpsertResult> ApplyDescriptorPostUpsertWithLockedCurrentStateAsync(
+    private Task<UpsertResult> ApplyDescriptorPostUpsertWithLockedCurrentStateAsync(
         DescriptorWriteRequest request,
         ExtractedDescriptorBody body,
         long documentId,
         DocumentUuid existingDocumentUuid,
         short resourceKeyId,
         CancellationToken cancellationToken
-    )
-    {
-        await using var writeSession = await _writeSessionFactory
-            .CreateAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        try
-        {
-            var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
-                    request.MappingSet.Key.Dialect,
-                    request.Resource,
+    ) =>
+        ApplyWithLockedDescriptorCurrentStateAsync<UpsertResult>(
+            request,
+            documentId,
+            static () => new UpsertResult.UpsertFailureWriteConflict(),
+            missingDescriptorDocumentId => new UpsertResult.UnknownFailure(
+                BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
+            ),
+            (persisted, currentEtag, writeSession, ct) =>
+                ApplyLockedDescriptorPostUpsertAsync(
+                    request,
+                    body,
                     documentId,
+                    existingDocumentUuid,
+                    resourceKeyId,
+                    persisted,
+                    currentEtag,
                     writeSession,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+                    ct
+                ),
+            cancellationToken
+        );
 
-            switch (lockedCurrentState)
-            {
-                case DescriptorCurrentStateLoadResult.MissingDocument:
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UpsertFailureWriteConflict();
-
-                case DescriptorCurrentStateLoadResult.MissingDescriptor:
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UnknownFailure(
-                        BuildMissingDescriptorMessage(request.Resource, documentId)
-                    );
-
-                case DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag):
-                    return await ApplyLockedDescriptorPostUpsertAsync(
-                            request,
-                            body,
-                            documentId,
-                            existingDocumentUuid,
-                            resourceKeyId,
-                            persisted,
-                            currentEtag,
-                            writeSession,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
-
-                default:
-                    throw new InvalidOperationException(
-                        $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
-                    );
-            }
-        }
-        catch
-        {
-            await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
-
-            throw;
-        }
-    }
-
-    private async Task<UpdateResult> ApplyDescriptorPutWithLockedCurrentStateAsync(
+    private Task<UpdateResult> ApplyDescriptorPutWithLockedCurrentStateAsync(
         DescriptorWriteRequest request,
         ExtractedDescriptorBody body,
         long documentId,
         DocumentUuid documentUuid,
+        CancellationToken cancellationToken
+    ) =>
+        ApplyWithLockedDescriptorCurrentStateAsync<UpdateResult>(
+            request,
+            documentId,
+            static () => new UpdateResult.UpdateFailureNotExists(),
+            missingDescriptorDocumentId => new UpdateResult.UnknownFailure(
+                BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
+            ),
+            (persisted, currentEtag, writeSession, ct) =>
+                ApplyLockedDescriptorPutAsync(
+                    request,
+                    body,
+                    documentId,
+                    documentUuid,
+                    persisted,
+                    currentEtag,
+                    writeSession,
+                    ct
+                ),
+            cancellationToken
+        );
+
+    private async Task<TResult> ApplyWithLockedDescriptorCurrentStateAsync<TResult>(
+        DescriptorWriteRequest request,
+        long documentId,
+        Func<TResult> missingDocumentResultFactory,
+        Func<long, TResult> missingDescriptorResultFactory,
+        Func<
+            PersistedDescriptorState,
+            string,
+            IRelationalWriteSession,
+            CancellationToken,
+            Task<TResult>
+        > applyLoadedAsync,
         CancellationToken cancellationToken
     )
     {
@@ -1067,25 +1068,14 @@ internal sealed class DescriptorWriteHandler(
             {
                 case DescriptorCurrentStateLoadResult.MissingDocument:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpdateResult.UpdateFailureNotExists();
+                    return missingDocumentResultFactory();
 
                 case DescriptorCurrentStateLoadResult.MissingDescriptor:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpdateResult.UnknownFailure(
-                        BuildMissingDescriptorMessage(request.Resource, documentId)
-                    );
+                    return missingDescriptorResultFactory(documentId);
 
                 case DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag):
-                    return await ApplyLockedDescriptorPutAsync(
-                            request,
-                            body,
-                            documentId,
-                            documentUuid,
-                            persisted,
-                            currentEtag,
-                            writeSession,
-                            cancellationToken
-                        )
+                    return await applyLoadedAsync(persisted, currentEtag, writeSession, cancellationToken)
                         .ConfigureAwait(false);
 
                 default:
