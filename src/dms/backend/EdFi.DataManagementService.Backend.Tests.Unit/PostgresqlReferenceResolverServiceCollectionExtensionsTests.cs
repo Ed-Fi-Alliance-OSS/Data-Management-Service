@@ -95,6 +95,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         committedRepresentationReader.Should().BeOfType<RelationalCommittedRepresentationReader>();
         currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
+        deleteEtagPreconditionChecker.Should().BeSameAs(currentEtagPreconditionChecker);
     }
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)

@@ -84,9 +84,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _capturedLockCommand.Parameters.Should().ContainSingle();
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
         _capturedLockCommand.Parameters[0].Value.Should().Be(DocumentId);
-        _capturedCurrentStateLoadRequest
-            .TargetContext.ObservedContentVersion.Should()
-            .Be(LockedContentVersion);
+        _capturedCurrentStateLoadRequest.TargetContext.ObservedContentVersion.Should().Be(44L);
         _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeTrue();
         _capturedMaterializationRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
     }
@@ -105,9 +103,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _capturedLockCommand.Parameters.Should().ContainSingle();
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
         _capturedLockCommand.Parameters[0].Value.Should().Be(DocumentId);
-        _capturedCurrentStateLoadRequest
-            .TargetContext.ObservedContentVersion.Should()
-            .Be(LockedContentVersion);
+        _capturedCurrentStateLoadRequest.TargetContext.ObservedContentVersion.Should().Be(44L);
         _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeTrue();
     }
 

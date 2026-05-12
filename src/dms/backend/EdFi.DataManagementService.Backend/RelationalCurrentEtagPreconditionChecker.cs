@@ -113,16 +113,11 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             return null;
         }
 
-        var lockConfirmedTargetContext = request.TargetContext with
-        {
-            ObservedContentVersion = currentContentVersion.Value,
-        };
-
         var currentState = await _currentStateLoader
             .LoadAsync(
                 new RelationalWriteCurrentStateLoadRequest(
                     request.ReadPlan,
-                    lockConfirmedTargetContext,
+                    request.TargetContext,
                     // External-response ETag comparison always needs descriptor URI hydration when
                     // the read plan serves descriptor-valued members, regardless of profile use.
                     includeDescriptorProjection: true

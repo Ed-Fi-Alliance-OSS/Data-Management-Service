@@ -64,15 +64,19 @@ public static class ReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<
-                IRelationalCurrentEtagPreconditionChecker,
+                RelationalCurrentEtagPreconditionChecker,
                 RelationalCurrentEtagPreconditionChecker
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<
-                IRelationalDeleteEtagPreconditionChecker,
-                RelationalCurrentEtagPreconditionChecker
-            >()
+            ServiceDescriptor.Scoped<IRelationalCurrentEtagPreconditionChecker>(static serviceProvider =>
+                serviceProvider.GetRequiredService<RelationalCurrentEtagPreconditionChecker>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IRelationalDeleteEtagPreconditionChecker>(static serviceProvider =>
+                serviceProvider.GetRequiredService<RelationalCurrentEtagPreconditionChecker>()
+            )
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<

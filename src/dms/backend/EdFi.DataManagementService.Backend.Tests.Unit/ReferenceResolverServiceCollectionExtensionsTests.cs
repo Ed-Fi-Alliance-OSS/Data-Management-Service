@@ -127,6 +127,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         committedRepresentationReader.Should().BeOfType<RelationalCommittedRepresentationReader>();
         currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
+        deleteEtagPreconditionChecker.Should().BeSameAs(currentEtagPreconditionChecker);
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);
     }
