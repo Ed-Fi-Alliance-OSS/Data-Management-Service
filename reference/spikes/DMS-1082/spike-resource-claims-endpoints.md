@@ -203,6 +203,8 @@ These endpoints should follow the current CMS tenant behavior of each dependency
 - the claims hierarchy remains the structural source used by these endpoints
 - `dmscs.ResourceClaim` provides the resource-claim metadata for this projection
 
+`dmscs.ResourceClaim` metadata is treated as global bootstrap metadata for this projection. Resource-claim metadata lookup must resolve the existing seeded rows where `TenantId IS NULL`; it must not require `TenantId = @TenantId` in multitenant requests. This does not introduce endpoint-specific tenant behavior for mutable tenant-owned CMS data. It reflects that `ResourceClaim` seed rows are global metadata and `ClaimName` is globally unique.
+
 ---
 
 ## 7. Authorization

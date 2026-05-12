@@ -119,6 +119,8 @@ This contract defines observable behavior, not an implementation shape. The impl
 - Tenant-aware lookups, such as `IClaimSetRepository.GetAuthorizationStrategies`, continue to use their current request tenant behavior.
 - The claims hierarchy remains the structural source used by these endpoints.
 - `dmscs.ResourceClaim` provides the resource-claim metadata for this projection.
+- `dmscs.ResourceClaim` metadata is global bootstrap metadata for this projection. Resource-claim metadata lookup must resolve the existing seeded rows where `TenantId IS NULL`; it must not require `TenantId = @TenantId` in multitenant requests.
+- This global `ResourceClaim` lookup rule does not apply to mutable tenant-owned CMS data. It reflects that `ResourceClaim` seed rows are global metadata and `ClaimName` is globally unique.
 - Resource-claim metadata lookup uses the exact full claim URI without casing normalization.
 - This story adds no endpoint-specific tenant behavior.
 
@@ -155,6 +157,7 @@ This contract defines observable behavior, not an implementation shape. The impl
 - Validation failure for unsupported `orderBy`, using the current CMS paging-query validation response pattern.
 - Query parameter filtering and pagination behavior, including case-insensitive `name`/`resourceName` filters, existing Config combined-filter behavior, and default `id` ordering when `orderBy` is omitted.
 - Tenant-scoped requests follow existing CMS dependency behavior.
+- Multitenant requests resolve `dmscs.ResourceClaim` metadata from the existing global seed rows (`TenantId IS NULL`) and do not require tenant-specific duplicate `ResourceClaim` rows.
 - PostgreSQL-only behavior for this story.
 
 ## Tasks
