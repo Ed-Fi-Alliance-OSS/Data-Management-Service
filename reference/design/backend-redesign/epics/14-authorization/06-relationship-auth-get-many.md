@@ -225,17 +225,25 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 
   - known supported in DMS-1055: RelationshipsWithEdOrgsOnly, RelationshipsWithEdOrgsOnlyInverted
   - known no-op: NoFurtherAuthorizationRequired
-  - known but not implemented for GET-many yet: NamespaceBased, OwnershipBased, People relationship strategies, and custom view-based strategy names that match the `{BasisResource}With...` convention and resolve to a known basis resource or descriptor
-  - unknown or invalid security metadata: 500 security configuration error
+  - known but not implemented for GET-many yet, returning 501 Not Implemented: NamespaceBased, OwnershipBased, People relationship strategies, and custom view-based strategy names that match the `{BasisResource}With...` convention and resolve to a known basis resource or descriptor
+  - unknown or invalid security metadata: security-configuration 500 path
 
   For custom view names, treat `{BasisResource}With...` as known-but-not-implemented only if the basis resource or descriptor resolves from the effective schema. Non-matching names, names with an unknown
   basis resource, and otherwise invalid custom-view metadata remain 500 security configuration errors. This aligns with the view-based design and DMS-1062 story in
   reference/design/backend-redesign/epics/14-authorization/13-view-based-auth-get-many.md:16.
 
-  4. Add the narrow security-configuration ProblemDetails shape now.
-     I would not pull all of DMS-1099 into this story, but I would add a reusable minimal helper for the DMS-1055 security-config failures using urn:ed-fi:api:system-configuration:security. Otherwise
-     the new tests will encode generic 500 behavior that DMS-1099 immediately has to unwind. Keep the full catalog for reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-
-     details.md:12.
+  4. Use the canonical security-configuration ProblemDetails shape now.
+     DMS-1055 should not introduce a new ProblemDetails shape or encode a generic 500 response for security configuration failures. Use the canonical 500 shape from `auth.md`:
+
+  - type: `urn:ed-fi:api:system-configuration:security`
+  - title: `Security Configuration Error`
+  - detail: `A security configuration problem was detected. The request cannot be authorized.`
+
+  If the shared DMS-1099 implementation is not available yet, add the minimal request-time mapping needed for DMS-1055 security configuration failures and keep it compatible with DMS-1099. This applies to
+  invalid/missing security metadata, unresolvable EdOrg securable paths, and relationship strategies with no applicable EdOrg securable elements.
+
+  Normal GET-many authorization denial still returns 200 with filtered results, possibly empty. Unsupported-but-known strategies outside DMS-1055 scope still return 501 Not Implemented.
+
   5. Add a permanent test-only inverted claim set.
      Create a focused E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet in the CMS/E2E claimset artifacts. Do not patch claim metadata ad hoc inside tests. The acceptance criteria explicitly need real
      token/claim-set wiring, and a committed fixture is easier to reason about than runtime mutation.
