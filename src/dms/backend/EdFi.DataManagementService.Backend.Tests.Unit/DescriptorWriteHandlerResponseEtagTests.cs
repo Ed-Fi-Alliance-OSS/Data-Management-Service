@@ -34,7 +34,8 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
@@ -54,9 +55,12 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor
-            .Commands[0]
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory
+            .Session.Executor.Commands[0]
             .CommandText.Should()
             .NotContain("RETURNING \"DocumentId\", \"ContentVersion\"");
     }
@@ -71,7 +75,8 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = new DescriptorWriteRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             _descriptorResource,
@@ -100,7 +105,8 @@ public class Given_Descriptor_Write_Response_Etags
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         commandExecutor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet(description: "Previous")]);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePostAsync(request);
@@ -115,10 +121,16 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().HaveCount(2);
+        commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
-        commandExecutor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
-        commandExecutor.Commands[1].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+        sessionFactory
+            .Session.Executor.Commands[0]
+            .CommandText.Should()
+            .NotContain("SELECT document.\"ContentVersion\"");
     }
 
     [Test]
@@ -203,7 +215,8 @@ public class Given_Descriptor_Write_Response_Etags
         commandExecutor.ResultSets.Enqueue([
             CreatePersistedDescriptorResultSet(description: "Previous Description"),
         ]);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             documentUuid,
@@ -221,8 +234,14 @@ public class Given_Descriptor_Write_Response_Etags
             .Which.ETag.Should()
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
-        commandExecutor.Commands.Should().HaveCount(2);
-        commandExecutor.Commands[1].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
+        commandExecutor.Commands.Should().ContainSingle();
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory
+            .Session.Executor.Commands[0]
+            .CommandText.Should()
+            .NotContain("SELECT document.\"ContentVersion\"");
     }
 
     private static string ExpectedCanonicalHashEtag(DescriptorWriteRequest request) =>

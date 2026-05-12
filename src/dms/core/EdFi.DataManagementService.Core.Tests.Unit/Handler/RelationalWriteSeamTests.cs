@@ -705,6 +705,24 @@ actual: {requestInfo.FrontendResponse.Body}
 
         public CapturingWriteExecutor WriteExecutor { get; }
 
+        private sealed class ThrowingDescriptorWriteHandler : IDescriptorWriteHandler
+        {
+            public Task<UpsertResult> HandlePostAsync(
+                DescriptorWriteRequest request,
+                CancellationToken cancellationToken = default
+            ) => throw new AssertionException("Descriptor POST was not expected.");
+
+            public Task<UpdateResult> HandlePutAsync(
+                DescriptorWriteRequest request,
+                CancellationToken cancellationToken = default
+            ) => throw new AssertionException("Descriptor PUT was not expected.");
+
+            public Task<DeleteResult> HandleDeleteAsync(
+                DescriptorDeleteRequest request,
+                CancellationToken cancellationToken = default
+            ) => throw new AssertionException("Descriptor DELETE was not expected.");
+        }
+
         public static RelationalWriteSeamHarness Create(
             ResourceInfo resourceInfo,
             Func<RelationalWriteExecutorRequest, RelationalWriteExecutorResult> writeResultFactory,
@@ -721,7 +739,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 writeExecutor,
                 targetLookupService,
                 A.Fake<IRelationalDeleteEtagPreconditionChecker>(),
-                new DefaultDescriptorWriteHandler(),
+                new ThrowingDescriptorWriteHandler(),
                 A.Fake<IDescriptorReadHandler>(),
                 A.Fake<IReferenceResolver>(),
                 A.Fake<IDocumentHydrator>(),

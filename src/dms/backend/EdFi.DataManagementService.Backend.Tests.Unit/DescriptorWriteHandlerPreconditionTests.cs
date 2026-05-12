@@ -291,6 +291,42 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
+    public async Task It_rolls_back_descriptor_put_update_transactions_when_if_match_is_absent_and_the_write_fails()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        commandExecutor.ResultSets.Enqueue([
+            CreatePersistedDescriptorRow(description: "Previous Description"),
+        ]);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.CommandExceptionFactory = command =>
+            command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
+                ? new StubDbException("descriptor update failed")
+                : null;
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var request = CreatePutRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Description"
+        );
+
+        var result = await sut.HandlePutAsync(request);
+
+        result.Should().BeOfType<UpdateResult.UnknownFailure>();
+        commandExecutor.Commands.Should().ContainSingle();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+    }
+
+    [Test]
     public async Task It_updates_descriptor_put_when_if_match_exactly_matches_current_etag()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));

@@ -133,7 +133,27 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             _currentEtagPreconditionChecker,
-            new DefaultDescriptorWriteHandler(),
+            new ThrowingDescriptorWriteHandler(),
+            _descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory
+        );
+    }
+
+    private void UseDescriptorWriteHandler(IDescriptorWriteHandler descriptorWriteHandler)
+    {
+        _sut = new RelationalDocumentStoreRepository(
+            _logger,
+            _writeExecutor,
+            _targetLookupService,
+            _currentEtagPreconditionChecker,
+            descriptorWriteHandler,
             _descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
@@ -260,7 +280,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             _currentEtagPreconditionChecker,
-            new DefaultDescriptorWriteHandler(),
+            new ThrowingDescriptorWriteHandler(),
             descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
@@ -811,7 +831,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             _currentEtagPreconditionChecker,
-            new DefaultDescriptorWriteHandler(),
+            new ThrowingDescriptorWriteHandler(),
             descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
@@ -883,7 +903,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             _currentEtagPreconditionChecker,
-            new DefaultDescriptorWriteHandler(),
+            new ThrowingDescriptorWriteHandler(),
             descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
@@ -951,7 +971,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             _currentEtagPreconditionChecker,
-            new DefaultDescriptorWriteHandler(),
+            new ThrowingDescriptorWriteHandler(),
             descriptorReadHandler,
             _referenceResolver,
             _documentHydrator,
@@ -2326,6 +2346,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_descriptor_post_requests_to_the_descriptor_write_handler()
     {
+        var expectedResult = new UpsertResult.UnknownFailure(
+            "Descriptor POST write is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
+        );
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .Returns(expectedResult);
+        UseDescriptorWriteHandler(descriptorHandler);
+
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
@@ -2335,13 +2363,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpsertResult.UnknownFailure(
-                    "Descriptor POST write is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
-                )
-            );
+        result.Should().BeEquivalentTo(expectedResult);
+        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
         _capturedExecutorRequests.Should().BeEmpty();
         _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
@@ -2349,6 +2373,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_descriptor_put_requests_to_the_descriptor_write_handler()
     {
+        var expectedResult = new UpdateResult.UnknownFailure(
+            "Descriptor PUT write is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
+        );
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .Returns(expectedResult);
+        UseDescriptorWriteHandler(descriptorHandler);
+
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
@@ -2358,13 +2390,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpdateResult.UnknownFailure(
-                    "Descriptor PUT write is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
-                )
-            );
+        result.Should().BeEquivalentTo(expectedResult);
+        A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
         _capturedExecutorRequests.Should().BeEmpty();
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
     }
@@ -2554,6 +2582,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_descriptor_delete_requests_to_the_descriptor_write_handler()
     {
+        var expectedResult = new DeleteResult.UnknownFailure("Descriptor DELETE write is not implemented.");
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        A.CallTo(() =>
+                descriptorHandler.HandleDeleteAsync(A<DescriptorDeleteRequest>._, A<CancellationToken>._)
+            )
+            .Returns(expectedResult);
+        UseDescriptorWriteHandler(descriptorHandler);
+
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
         A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => deleteRequest.MappingSet)
@@ -2564,9 +2600,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(new DeleteResult.UnknownFailure("Descriptor DELETE write is not implemented."));
+        result.Should().BeEquivalentTo(expectedResult);
+        A.CallTo(() =>
+                descriptorHandler.HandleDeleteAsync(A<DescriptorDeleteRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedOnceExactly();
         _capturedExecutorRequests.Should().BeEmpty();
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
