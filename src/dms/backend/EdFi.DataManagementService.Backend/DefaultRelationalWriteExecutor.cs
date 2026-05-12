@@ -697,7 +697,10 @@ internal sealed class DefaultRelationalWriteExecutor(
         if (
             request.TargetRequest
                 is RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid)
-            && targetContext is RelationalWriteTargetContext.CreateNew
+            && (
+                targetContext is RelationalWriteTargetContext.CreateNew
+                || request.WritePrecondition is WritePrecondition.IfMatch
+            )
         )
         {
             inSessionTargetResolution = await ResolvePostTargetAsync(

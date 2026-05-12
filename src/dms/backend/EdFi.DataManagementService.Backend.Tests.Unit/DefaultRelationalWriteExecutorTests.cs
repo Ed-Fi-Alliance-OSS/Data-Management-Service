@@ -755,6 +755,9 @@ public class Given_Default_Relational_Write_Executor
             targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
             writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
         );
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: false,
@@ -769,11 +772,58 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
             );
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_if_match_failure_when_advisory_post_as_update_re_resolves_as_create_new()
+    {
+        var advisoryDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, advisoryDocumentUuid, 44L),
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+        var candidateDocumentUuid = (
+            (RelationalWriteTargetRequest.Post)request.TargetRequest
+        ).CandidateDocumentUuid;
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: true,
+            currentEtag: "\"stale-etag\"",
+            contentVersion: 44L
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
+        _targetLookupResolver
+            .CapturedWriteSession!.Connection.Should()
+            .BeSameAs(_writeSessionFactory.Session.Connection);
+        _targetLookupResolver
+            .CapturedWriteSession!.Transaction.Should()
+            .BeSameAs(_writeSessionFactory.Session.Transaction);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -3352,6 +3402,13 @@ public class Given_Default_Relational_Write_Executor
         );
         var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
         var request = baseRequest with { ProfileWriteContext = profileContext };
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(
+                existingTarget.DocumentId,
+                existingTarget.DocumentUuid,
+                existingTarget.ObservedContentVersion
+            )
+        );
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: true,
