@@ -6,3 +6,4 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit")]
+[assembly: InternalsVisibleTo("EdFi.DataManagementService.Tests.Integration")]

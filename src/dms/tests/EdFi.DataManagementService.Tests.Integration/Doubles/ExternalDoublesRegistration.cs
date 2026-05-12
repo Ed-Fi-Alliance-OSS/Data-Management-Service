@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -31,6 +32,7 @@ internal static class ExternalDoublesRegistration
         services.RemoveAll<IApplicationContextProvider>();
         services.RemoveAll<IDmsInstanceProvider>();
         services.RemoveAll<IProfileCmsProvider>();
+        services.RemoveAll<IStartupProcessExit>();
 
         services.AddSingleton<IJwtValidationService>(
             FakeJwtValidationService.Allowing(
@@ -47,5 +49,6 @@ internal static class ExternalDoublesRegistration
             )
         );
         services.AddSingleton<IProfileCmsProvider>(FakeProfileCmsProvider.FromFixture(fixture));
+        services.AddSingleton<IStartupProcessExit, NonExitingStartupProcessExit>();
     }
 }
