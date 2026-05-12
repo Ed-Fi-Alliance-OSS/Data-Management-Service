@@ -25,6 +25,20 @@ This story runs the shared profile scenario matrix defined in `reference/design/
 
 Fixture names and helper APIs in this story should use the shared scenario names from the matrix verbatim.
 
+## Implementation Clarification
+
+This story owns creating an API-level integration harness. The harness should run the DMS HTTP pipeline against real provisioned PostgreSQL and SQL Server relational databases, while using controlled test doubles for nonessential external concerns such as auth/config-service dependencies where appropriate. This is not intended to be a full docker-stack E2E suite.
+
+The backend/unit/database integration layers remain the exhaustive coverage point for unusual apiSchema/profile shapes and deep merge edge cases. The API-level harness should cover representative no-profile and profiled scenarios through HTTP, using the shared scenario names where applicable, and assert both response JSON/error semantics and enough persisted relational state to prove the public pipeline is correctly wired to the relational backend.
+
+Scope boundaries for implementation and review:
+
+- The primary deliverable is the reusable API-level integration harness plus representative coverage through that harness on both PostgreSQL and SQL Server.
+- Do not require every shared profile matrix variant to be exercised through HTTP. The shared matrix must remain covered across the test strategy, with exhaustive edge-case coverage allowed to stay in backend/unit/database integration tests.
+- Do not require this story to port every existing PostgreSQL-only backend relational-write integration test to SQL Server. Add only the SQL Server coverage needed for the representative API-level scenarios owned by this story.
+- Do not expand this story into a full E2E suite or require real CMS/auth service wiring when controlled test doubles can prove the DMS HTTP-to-relational-backend boundary.
+- Reviewers should evaluate whether the public DMS pipeline is proven for representative no-profile success, profiled success, profiled failure/error semantics, CRUD/query behavior, and persisted relational state, rather than expecting exhaustive HTTP coverage for every rare schema/profile shape.
+
 ## Acceptance Criteria
 
 - Integration tests validate:
