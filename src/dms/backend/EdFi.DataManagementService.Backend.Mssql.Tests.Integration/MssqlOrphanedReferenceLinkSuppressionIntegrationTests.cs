@@ -196,7 +196,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
                 new DeterministicLinkSlugResolver(slugByResourceKeyId)
             )
         );
-        services.AddOptions<ResourceLinksOptions>();
+        services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

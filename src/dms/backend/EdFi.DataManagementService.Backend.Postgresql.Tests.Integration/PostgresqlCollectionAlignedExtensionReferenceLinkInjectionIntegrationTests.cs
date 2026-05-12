@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -12,6 +13,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -102,6 +104,8 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
     private ResourceSchema _sponsorResourceSchema = null!;
     private ResourceInfo _parentResourceInfo = null!;
     private ResourceSchema _parentResourceSchema = null!;
+    private ResourceInfo _alignedExtParentResourceInfo = null!;
+    private ResourceSchema _alignedExtParentResourceSchema = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -129,6 +133,14 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
         );
         _parentResourceInfo = CreateResourceInfo(parentProjectSchema, parentSchema);
         _parentResourceSchema = parentSchema;
+
+        (ProjectSchema alignedExtProjectSchema, ResourceSchema alignedExtParentSchema) = GetResourceSchema(
+            _fixture.EffectiveSchemaSet,
+            "aligned",
+            "ParentResource"
+        );
+        _alignedExtParentResourceInfo = CreateResourceInfo(alignedExtProjectSchema, alignedExtParentSchema);
+        _alignedExtParentResourceSchema = alignedExtParentSchema;
 
         (await UpsertSponsorAsync()).Should().BeOfType<UpsertResult.InsertSuccess>();
         (await UpsertParentResourceAsync()).Should().BeOfType<UpsertResult.InsertSuccess>();
@@ -158,7 +170,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
 
         JsonNode parentDocument = success.EdfiDocs[0]!;
         parentDocument["id"]!.GetValue<string>().Should().Be(ParentResourceDocumentUuid.Value.ToString("D"));
-        parentDocument["parentResourceId"]!.GetValue<long>().Should().Be(ParentResourceId);
+        parentDocument["parentResourceId"]!.GetValue<int>().Should().Be(ParentResourceId);
 
         // Path traversal goes: parents (collection) -> [*] (each element) -> _ext.aligned.sponsorReference
         JsonNode sponsorReference = ReferenceLocator.RequireSingle(
@@ -204,7 +216,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
                 new DeterministicLinkSlugResolver(slugByResourceKeyId)
             )
         );
-        services.AddOptions<ResourceLinksOptions>();
+        services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -301,7 +313,21 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
                 requestBody,
                 _parentResourceInfo,
                 _parentResourceSchema,
-                _mappingSet
+                _mappingSet,
+                additionalSources:
+                [
+                    new RelationalDocumentInfoExtractionSource(
+                        _alignedExtParentResourceInfo,
+                        _alignedExtParentResourceSchema,
+                        UseReferenceExtraction: false,
+                        UseRelationalDescriptorExtraction: false
+                    ),
+                ],
+                supplement: new RelationalDocumentInfoSupplement(
+                    DocumentReferences: BuildAlignedSponsorReferences(requestBody),
+                    DocumentReferenceArrays: [],
+                    DescriptorReferences: []
+                )
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -353,6 +379,56 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             }
             """
         )!;
+    }
+
+    /// <summary>
+    /// Builds the sponsor DocumentReference entries for every <c>$.parents[*]._ext.aligned.sponsorReference</c>
+    /// occurrence in the request body. The reference resolver normally extracts these from the
+    /// extension's ResourceSchema; the synthetic aligned extension exposes the binding shape but
+    /// not the full mapping pipeline, so the supplement provides the resolved references directly.
+    /// </summary>
+    private static IReadOnlyList<DocumentReference> BuildAlignedSponsorReferences(JsonNode requestBody)
+    {
+        var parents = requestBody["parents"]?.AsArray();
+        if (parents is null)
+        {
+            return [];
+        }
+
+        List<DocumentReference> references = [];
+        for (var index = 0; index < parents.Count; index++)
+        {
+            var sponsorName = parents[index]
+                ?["_ext"]?["aligned"]?["sponsorReference"]?["sponsorName"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(sponsorName))
+            {
+                continue;
+            }
+
+            var sponsorResourceInfo = new BaseResourceInfo(
+                new ProjectName("Ed-Fi"),
+                new ResourceName("Sponsor"),
+                IsDescriptor: false
+            );
+            var sponsorIdentity = new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.sponsorName"), sponsorName),
+            ]);
+            references.Add(
+                new DocumentReference(
+                    ResourceInfo: sponsorResourceInfo,
+                    DocumentIdentity: sponsorIdentity,
+                    ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
+                        sponsorResourceInfo,
+                        sponsorIdentity
+                    ),
+                    Path: new JsonPath(
+                        $"$.parents[{index.ToString(CultureInfo.InvariantCulture)}]._ext.aligned.sponsorReference"
+                    )
+                )
+            );
+        }
+
+        return references;
     }
 
     private static JsonNode CreateParentResourceRequestBody()

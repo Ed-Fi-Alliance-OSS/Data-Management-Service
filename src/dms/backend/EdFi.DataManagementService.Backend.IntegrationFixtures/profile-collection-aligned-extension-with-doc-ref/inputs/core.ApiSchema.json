@@ -11,6 +11,7 @@
         "resourceName": "ParentResource",
         "isDescriptor": false,
         "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
         "isSubclass": false,
         "allowIdentityUpdates": false,
         "documentPathsMapping": {
@@ -29,6 +30,13 @@
         ],
         "decimalPropertyValidationInfos": [],
         "identityJsonPaths": ["$.parentResourceId"],
+        "booleanJsonPaths": [],
+        "numericJsonPaths": ["$.parentResourceId"],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "queryFieldMapping": {},
+        "securableElements": {},
+        "authorizationPathways": [],
         "equalityConstraints": [],
         "jsonSchemaForInsert": {
           "type": "object",
@@ -60,6 +68,7 @@
         "resourceName": "Sponsor",
         "isDescriptor": false,
         "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
         "isSubclass": false,
         "allowIdentityUpdates": false,
         "documentPathsMapping": {
@@ -73,6 +82,13 @@
         "arrayUniquenessConstraints": [],
         "decimalPropertyValidationInfos": [],
         "identityJsonPaths": ["$.sponsorName"],
+        "booleanJsonPaths": [],
+        "numericJsonPaths": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "queryFieldMapping": {},
+        "securableElements": {},
+        "authorizationPathways": [],
         "equalityConstraints": [],
         "jsonSchemaForInsert": {
           "type": "object",

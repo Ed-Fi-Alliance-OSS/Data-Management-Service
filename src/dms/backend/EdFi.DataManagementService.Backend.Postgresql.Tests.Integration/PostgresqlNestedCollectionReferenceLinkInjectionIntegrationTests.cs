@@ -264,7 +264,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
                 new DeterministicLinkSlugResolver(slugByResourceKeyId)
             )
         );
-        services.AddOptions<ResourceLinksOptions>();
+        services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

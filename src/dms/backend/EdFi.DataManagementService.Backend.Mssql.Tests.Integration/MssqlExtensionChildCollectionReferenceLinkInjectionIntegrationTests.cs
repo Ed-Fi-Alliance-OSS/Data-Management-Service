@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -90,6 +91,8 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
     private ResourceSchema _schoolResourceSchema = null!;
     private ResourceInfo _busResourceInfo = null!;
     private ResourceSchema _busResourceSchema = null!;
+    private ResourceInfo _sampleExtSchoolResourceInfo = null!;
+    private ResourceSchema _sampleExtSchoolResourceSchema = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -124,6 +127,14 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
         );
         _busResourceInfo = CreateResourceInfo(busProjectSchema, busSchema);
         _busResourceSchema = busSchema;
+
+        (ProjectSchema sampleExtSchoolProjectSchema, ResourceSchema sampleExtSchoolSchema) =
+            GetResourceSchema(_fixture.EffectiveSchemaSet, "sample", "School");
+        _sampleExtSchoolResourceInfo = CreateResourceInfo(
+            sampleExtSchoolProjectSchema,
+            sampleExtSchoolSchema
+        );
+        _sampleExtSchoolResourceSchema = sampleExtSchoolSchema;
 
         await SeedReferenceDataAsync();
 
@@ -197,7 +208,7 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
                 new DeterministicLinkSlugResolver(slugByResourceKeyId)
             )
         );
-        services.AddOptions<ResourceLinksOptions>();
+        services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -344,7 +355,21 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
                 requestBody,
                 _schoolResourceInfo,
                 _schoolResourceSchema,
-                _mappingSet
+                _mappingSet,
+                additionalSources:
+                [
+                    new RelationalDocumentInfoExtractionSource(
+                        _sampleExtSchoolResourceInfo,
+                        _sampleExtSchoolResourceSchema,
+                        UseReferenceExtraction: false,
+                        UseRelationalDescriptorExtraction: false
+                    ),
+                ],
+                supplement: new RelationalDocumentInfoSupplement(
+                    DocumentReferences: BuildExtensionBusReferences(requestBody),
+                    DocumentReferenceArrays: [],
+                    DescriptorReferences: []
+                )
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -385,6 +410,50 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .QueryDocuments(request);
+    }
+
+    /// <summary>
+    /// Builds the bus DocumentReference entries for every
+    /// <c>$._ext.sample.directlyOwnedBuses[*].directlyOwnedBusReference</c> occurrence.
+    /// </summary>
+    private static IReadOnlyList<DocumentReference> BuildExtensionBusReferences(JsonNode requestBody)
+    {
+        var directlyOwnedBuses = requestBody["_ext"]?["sample"]?["directlyOwnedBuses"]?.AsArray();
+        if (directlyOwnedBuses is null)
+        {
+            return [];
+        }
+
+        List<DocumentReference> references = [];
+        for (var index = 0; index < directlyOwnedBuses.Count; index++)
+        {
+            var busId = directlyOwnedBuses[index]?["directlyOwnedBusReference"]?["busId"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(busId))
+            {
+                continue;
+            }
+
+            var busResourceInfo = new BaseResourceInfo(
+                new ProjectName("Sample"),
+                new ResourceName("Bus"),
+                IsDescriptor: false
+            );
+            var busIdentity = new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.busId"), busId),
+            ]);
+            references.Add(
+                new DocumentReference(
+                    ResourceInfo: busResourceInfo,
+                    DocumentIdentity: busIdentity,
+                    ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(busResourceInfo, busIdentity),
+                    Path: new JsonPath(
+                        $"$._ext.sample.directlyOwnedBuses[{index.ToString(CultureInfo.InvariantCulture)}].directlyOwnedBusReference"
+                    )
+                )
+            );
+        }
+
+        return references;
     }
 
     private static JsonNode CreateBusRequestBody()

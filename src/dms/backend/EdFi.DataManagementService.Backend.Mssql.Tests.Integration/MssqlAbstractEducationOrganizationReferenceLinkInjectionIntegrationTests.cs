@@ -201,7 +201,7 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
                 new DeterministicLinkSlugResolver(slugByResourceKeyId)
             )
         );
-        services.AddOptions<ResourceLinksOptions>();
+        services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

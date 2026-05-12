@@ -11,6 +11,7 @@
         "resourceName": "ParentResource",
         "isDescriptor": false,
         "isResourceExtension": true,
+        "isSchoolYearEnumeration": false,
         "isSubclass": false,
         "allowIdentityUpdates": false,
         "documentPathsMapping": {
