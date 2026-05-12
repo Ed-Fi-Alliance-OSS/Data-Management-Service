@@ -55,6 +55,49 @@ Visual Studio. The file name is
 > `appsettings.json` file on EdFi.DataManagementService.Api.Tests.Integration
 > folder.
 
+## API-level integration tests
+
+The `EdFi.DataManagementService.Tests.Integration` project boots the real DMS
+HTTP pipeline against a provisioned PostgreSQL and/or SQL Server database,
+with auth/CMS/profile-catalog/application-context faked. See
+[`src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md`](../src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md)
+for the fixture map, runtime-compatibility materialization details, and the
+recipe for adding a scenario.
+
+### Prerequisites
+
+Start PostgreSQL via the repo docker compose, then set the admin
+connection string:
+
+```powershell
+cd eng/docker-compose
+pwsh ./start-postgresql.ps1
+$env:ConnectionStrings__DatabaseConnection = "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_dms_backend_integration;pooling=true;minimum pool size=10;maximum pool size=50;Application Name=EdFi.DataManagementService;NoResetOnClose=true;"
+```
+
+Start SQL Server in a container, then set the admin connection string:
+
+```powershell
+docker run -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='<password>' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+$env:ConnectionStrings__MssqlAdmin = "Server=localhost,1433;User Id=sa;Password=<password>;TrustServerCertificate=true"
+```
+
+### Run
+
+```powershell
+# All dialects
+dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration
+
+# PostgreSQL only
+dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration --filter "Category=PostgresqlIntegration"
+
+# SQL Server only
+dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration --filter "Category=MssqlIntegration"
+```
+
+Tests whose dialect is unconfigured cleanly `Assert.Ignore`, so partial
+local setups still produce a useful test run.
+
 ## Running Unit Tests and Generate Code Coverage Report
 
 > [!CAUTION]

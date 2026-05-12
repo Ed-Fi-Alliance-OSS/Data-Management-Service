@@ -65,3 +65,7 @@ Scope boundaries for implementation and review:
    - execute HTTP requests with and without profile media types and assert responses/persisted state.
 3. Add a test category for integration tests and wire into CI as appropriate.
 4. Add fixtures/assertions covering the shared profile scenario matrix from `02-parity-and-fixtures.md`, including no-profile omitted-scope and `_ext` coverage, semantic-identity-based visible-row matching rather than request ordinal, hidden-data preservation across base and `_ext` scopes plus key-unified/presence/FK/descriptor bindings, visible-vs-hidden non-collection behavior, update-allowed/create-denied pairings including the three-level chain, and unchanged-write guarded no-op behavior.
+
+## Implementation
+
+The harness implementation lives at `src/dms/tests/EdFi.DataManagementService.Tests.Integration/`. See its README for run commands, fixture map, and the runtime-compatibility materialization details.
