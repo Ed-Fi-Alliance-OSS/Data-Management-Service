@@ -23,4 +23,5 @@ Implement the ownership-based authorization strategy for all CRUD operations per
 - Auth checks are batched in the same DB roundtrip as other statements (reconstitution, insert, delete, etc.) to match the roundtrip targets in the design doc.
 - Ownership-based executes last among the AND strategies (after Namespace-based and Custom view-based).
 - Ownership-based is combined with AND when other strategy types are configured for the resource.
+- This story replaces the temporary DMS-1055 GET-many 501 Not Implemented behavior for OwnershipBased in mixed strategy configurations. OwnershipBased is applied as an AND filter with the relationship strategy OR group instead of causing the unsupported mixed-strategy failure.
 - Works for both PostgreSQL and SQL Server. For SQL Server, when the client's ownership token list has fewer than 2,000 entries, use a parameterized IN clause; when >= 2,000, throw an error (no TVP is used for ownership tokens).

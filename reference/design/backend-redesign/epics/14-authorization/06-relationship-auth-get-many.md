@@ -151,7 +151,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   - SQL Server 1,999 unique IDs uses expanded scalar params; 2,000 unique IDs uses dms.BigIntTable.
   - Duplicate token IDs are deduped before threshold selection.
   - PostgreSQL uses a single array parameter.
-  - Unsupported mixed strategies such as NamespaceBased, ownership, custom view, and People strategies fail fast unless a later story explicitly defines their semantics. NoFurtherAuthorizationRequired is ignored as a no-op when combined with relationship strategies.
+  - Unsupported mixed strategies such as NamespaceBased, OwnershipBased, convention-matching custom view-based strategies, and People strategies fail fast with the temporary DMS-1055 501 behavior. These tests must be updated by later strategy stories to assert the final `auth.md` composition semantics, where non-relationship strategies are ANDed with the relationship strategy OR group. NoFurtherAuthorizationRequired is ignored as a no-op when combined with relationship strategies.
   - Unresolvable/no EdOrg securable path fails as configuration error.
 
 
@@ -188,6 +188,8 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   3. Middleware/refactoring: yes. DMS-1055 should refactor the current filter-provider/request path enough for GET-many to reach relational query planning with an empty EdOrg claim list, inverted relationship strategy names, and known unsupported mixed strategies. The relational planner/repository should then return the correct result or fail-fast surface instead of the shared filter provider preemptively returning 403.
 
   4. Unsupported mixed strategy failure surface: known strategies that are outside DMS-1055 scope for GET-many should fail as 501 Not Implemented. Examples include NamespaceBased, OwnershipBased, People relationship strategies, and custom view-based strategies whose names match the `{BasisResource}With...` convention and resolve to a known basis resource, until their stories are implemented. Truly unknown strategy names, invalid custom-view strategy names, custom-view names that cannot be resolved to a known basis resource, or other invalid security metadata are security configuration failures and should use the security-configuration 500 path.
+
+  Temporary staging behavior: the 501 response is only for DMS-1055's limited implementation scope and is not the final authorization composition model. As NamespaceBased, OwnershipBased, custom view-based, and People relationship stories are implemented, this fail-fast behavior must be replaced with the final `auth.md` semantics: non-relationship strategies are ANDed with the relationship strategy OR group.
 
   5. Child-table EdOrg securable semantics: require every existing child row for that securable path to be authorized. Using "any matching child row" can authorize a document while reconstitution still returns unauthorized child rows. The SQL shape should require at least one child row for the configured securable path and no unauthorized child row for that path.
 

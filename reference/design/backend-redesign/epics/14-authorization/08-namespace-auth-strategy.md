@@ -28,6 +28,7 @@ Implement the namespace-based authorization strategy for all CRUD operations per
   - PostgreSQL: Use `LIKE ANY(ARRAY[...])` with parameterized prefix values.
   - SQL Server: When the client has fewer than 2,000 namespace prefixes, use parameterized OR chains of LIKE clauses. When >= 2,000, throw an error (no TVP is used for namespace prefixes).
 - Namespace-based is combined with AND when other strategy types are also configured for the resource. It executes before relationship-based (OR) strategies.
+- This story replaces the temporary DMS-1055 GET-many 501 Not Implemented behavior for NamespaceBased in mixed strategy configurations. NamespaceBased is applied as an AND filter with the relationship strategy OR group instead of causing the unsupported mixed-strategy failure.
 - ProblemDetails follow `auth.md` §"ProblemDetails", specifically:
   - §2.9 — No namespace prefixes configured on the API client.
   - §2.10 — Namespace value uninitialized (existing data).

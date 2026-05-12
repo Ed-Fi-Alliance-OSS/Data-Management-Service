@@ -24,6 +24,7 @@ People-related securable elements (Student, Contact, Staff) require transitive j
 - GET-many results are filtered based on the configured strategy; unauthorized resources are never returned.
 - People-related securable elements (Student, Contact, Staff) are resolved using DocumentId (not UniqueId/USI) by joining through intermediate tables when the person reference is transitive (e.g., CourseTranscript -> StudentAcademicRecord -> Student).
 - All shared framework behavior from DMS-1055 (OR semantics, IN subquery approach, pagination, caching, TVP threshold) applies to the strategies implemented here.
+- This story replaces the temporary DMS-1055 GET-many 501 Not Implemented behavior for People relationship strategies. When mixed with EdOrg-only relationship strategies, People relationship strategies are added to the relationship OR group instead of causing the unsupported mixed-strategy failure.
 - Works for both PostgreSQL and SQL Server.
 
 NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS-1056](https://edfi.atlassian.net/browse/DMS-1056).
