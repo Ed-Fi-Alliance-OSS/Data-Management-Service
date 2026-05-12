@@ -204,14 +204,11 @@ Hierarchy node to metadata row matching is by full claim URI, exact and case-sen
 These endpoints should follow the current CMS tenant behavior of each dependency instead of introducing feature-specific tenant semantics:
 
 - tenant scope is established per request by the existing tenant-resolution middleware
-- tenant-aware repository lookups use the current `TenantContext`
-- `IClaimSetRepository.GetAuthorizationStrategies` follows its existing tenant-aware behavior: when multi-tenancy is enabled, it scopes lookup rows by `TenantId`; when multi-tenancy is disabled, it uses rows where `TenantId IS NULL`
-- `IClaimsHierarchyRepository` reads the single CMS claims hierarchy table; the current PostgreSQL schema does not carry a hierarchy `TenantId`
-- `dmscs.ResourceClaim` is global CMS configuration; the current PostgreSQL schema has no `TenantId` column and retains a unique `ClaimName` constraint
+- tenant-aware repository lookups continue to use their current tenant behavior
+- the claims hierarchy remains the structural source used by these endpoints
+- `dmscs.ResourceClaim` provides the resource-claim metadata for this projection
 
-No endpoint-specific tenant behavior is introduced for this feature area. The endpoint contract must not define a new "global plus tenant override" model unless CMS adds that behavior to the backing schema and repositories in separate work.
-
-This spike does not define support for tenant-specific duplicates of the same claim URI. Do not add a `TenantId` predicate, `TenantId` column, or duplicate-claim semantics to `dmscs.ResourceClaim` as part of DMS-1148.
+Resource-claim metadata lookup is by full claim URI, exact and case-sensitive. Tenant behavior follows the existing CMS dependencies; this story adds no endpoint-specific tenant behavior.
 
 ---
 
@@ -313,7 +310,7 @@ This design reuses existing configuration stores without introducing a parallel 
 - Keep all four endpoints read-only.
 - Fail explicitly when required lookup data is missing.
 - Treat PostgreSQL as the supported datastore path for this work; MSSQL support can be added later without changing the endpoint contract.
-- Treat `dmscs.ResourceClaim` as global CMS configuration in DMS-1148. Do not add tenant-specific resource-claim metadata behavior in this work.
+- Use `dmscs.ResourceClaim` as the metadata source in DMS-1148 without adding endpoint-specific tenant behavior in this work.
 - Reuse the current CMS query pattern implemented through `FrontendPagingQuery`, endpoint-specific frontend query DTOs, `PagingQueryValidator<T>`, and repository query models derived from `PagingQuery` instead of introducing a feature-specific filtering or sorting abstraction here.
 - Do not add write endpoints, schema redesigns, synthetic ids, or fallback ids.
 - Start from the companion story and the current `main` code paths. Key paths to examine: endpoint module pattern, repository result records, datastore registration, `IClaimsHierarchyRepository.GetClaimsHierarchy`, `IClaimSetRepository.GetActions`, `IClaimSetRepository.GetAuthorizationStrategies`.

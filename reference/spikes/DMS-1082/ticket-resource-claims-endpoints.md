@@ -112,12 +112,11 @@ Endpoint-specific `orderBy` allowlists:
 
 - These endpoints use the current CMS tenant behavior of each dependency rather than introducing feature-specific tenant semantics.
 - Request tenant scope is established by the existing tenant middleware.
-- Tenant-aware lookups, such as `IClaimSetRepository.GetAuthorizationStrategies`, continue to use the current request `TenantContext`.
-- `IClaimsHierarchyRepository` reads the single CMS claims hierarchy table. The current PostgreSQL schema does not carry a hierarchy `TenantId`.
-- `dmscs.ResourceClaim` rows are global CMS configuration. The current PostgreSQL schema has no `TenantId` column and retains a unique `ClaimName` constraint.
-- Resource-claim metadata lookup must not add a `TenantId` predicate, `TenantId` column, or tenant-specific duplicate-claim behavior as part of this story.
-- This story does not introduce endpoint-specific tenant overrides or a new global-plus-tenant resource-claim model.
-- This story does not define support for duplicate `ClaimName` values across tenants. The current schema retains a unique `ClaimName` constraint.
+- Tenant-aware lookups, such as `IClaimSetRepository.GetAuthorizationStrategies`, continue to use their current request tenant behavior.
+- The claims hierarchy remains the structural source used by these endpoints.
+- `dmscs.ResourceClaim` provides the resource-claim metadata for this projection.
+- Resource-claim metadata lookup is by full claim URI, exact and case-sensitive.
+- This story adds no endpoint-specific tenant behavior.
 
 ### Authorization
 
@@ -152,6 +151,7 @@ Endpoint-specific `orderBy` allowlists:
 - Explicit failure when a hierarchy node has no matching resource-claim metadata row (metadata drift).
 - Validation failure for unsupported `orderBy`, using the current CMS paging-query validation response pattern.
 - Query parameter filtering and pagination behavior.
+- Tenant-scoped requests follow existing CMS dependency behavior.
 - PostgreSQL-only behavior for this story.
 
 ## Tasks
