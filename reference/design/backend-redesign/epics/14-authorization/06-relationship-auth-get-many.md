@@ -200,3 +200,49 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   9. SQL Server TVP binding model: yes. Extend the page keyset/query parameter model or introduce a companion runtime parameter contract so parameters can carry provider-specific configuration such as SqlDbType.Structured and TypeName. Keep compiled/AOT query plans provider-neutral where possible; use the runtime binding layer to attach SQL Server-specific parameter configuration.
 
   10. Test level: include backend unit tests, PostgreSQL and SQL Server backend integration tests, and a focused DMS E2E slice through the local Docker stack with real token/claim-set wiring. Keep SQL shape, TVP threshold, deduplication, and provider binding coverage in unit/integration tests; use E2E for middleware/claim interactions such as empty EdOrg claims, normal filtering, inverted filtering, OR semantics, and totalCount after authorization.
+
+### Questions 3
+
+  1. Should DMS-1055 introduce a typed token authorization context for relational GET-many, or keep parsing EdOrg IDs from AuthorizationStrategyEvaluator.Filters? I prefer a typed context so dedupe/sort/TVP binding is not coupled to legacy filter providers.
+  2. For empty EdOrg claims, should the implementation short-circuit in C# to an empty page/count 0, or should it still generate SQL with a 1 = 0 authorization predicate?
+  3. How should we distinguish custom view-based strategy names from truly unknown strategy names before DMS-1062? For example, should {BasisResource}With... be treated as “known but not implemented” and return 501, while non-matching unknown names remain a 500 security configuration error?
+  4. For security configuration failures in this story, should we use the current generic 500 response path, or add the urn:ed-fi:api:system-configuration:security ProblemDetails shape ahead of DMS-1099?
+  5. Should we add a permanent CMS/E2E claim set for RelationshipsWithEdOrgsOnlyInverted, or create/patch that claim metadata only inside focused tests? I did not find an existing E2E inverted claim set.
+  6. For non-GET operations configured with RelationshipsWithEdOrgsOnlyInverted before DMS-1056, should DMS-1055 force an explicit 501, or is it enough that GET-many works and other operations remain on the current failure path?
+  7. Is it acceptable to add provider-specific parameter metadata to the query/runtime parameter model for SQL Server TVPs, while keeping actual SqlParameter construction in the executor layer?
+
+### Answers 3
+
+  1. Use a typed relational authorization context.
+     Do not keep parsing EdOrg IDs out of AuthorizationStrategyEvaluator.Filters. Build a request-scoped context from ClientAuthorizations, with deduped/sorted ClaimEducationOrganizationIds, and pass
+     it into relational GET-many. Keep AuthorizationStrategyEvaluator for effective strategy names/grouping. This also avoids the current empty-claim 403 path in src/dms/core/
+     EdFi.DataManagementService.Core/Security/AuthorizationFilters/IAuthorizationFiltersProvider.cs:28.
+  2. Short-circuit empty EdOrg claims in C# after strategy classification.
+     First classify strategies and return 501 for unsupported known strategies. Then, if the effective supported relationship group requires EdOrg claims and the deduped list is empty, return 200,
+     empty page, and Total-Count: 0 when requested. No need to generate 1 = 0 SQL for DMS-1055.
+  3. Add a strategy classifier now.
+     Classify strategy names as:
+
+  - known supported in DMS-1055: RelationshipsWithEdOrgsOnly, RelationshipsWithEdOrgsOnlyInverted
+  - known no-op: NoFurtherAuthorizationRequired
+  - known but not implemented for GET-many yet: Namespace, Ownership, People relationship strategies, and valid custom view-style names
+  - unknown or invalid security metadata: 500 security configuration error
+
+  For custom view names, treat {BasisResource}With... as known-but-not-implemented only if the basis resource or descriptor resolves from the effective schema. This aligns with the view-based design
+  and DMS-1062 story in reference/design/backend-redesign/epics/14-authorization/13-view-based-auth-get-many.md:16.
+
+  4. Add the narrow security-configuration ProblemDetails shape now.
+     I would not pull all of DMS-1099 into this story, but I would add a reusable minimal helper for the DMS-1055 security-config failures using urn:ed-fi:api:system-configuration:security. Otherwise
+     the new tests will encode generic 500 behavior that DMS-1099 immediately has to unwind. Keep the full catalog for reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-
+     details.md:12.
+  5. Add a permanent test-only inverted claim set.
+     Create a focused E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet in the CMS/E2E claimset artifacts. Do not patch claim metadata ad hoc inside tests. The acceptance criteria explicitly need real
+     token/claim-set wiring, and a committed fixture is easier to reason about than runtime mutation.
+  6. Force explicit 501 for non-GET inverted operations before DMS-1056.
+     Add constants/registration so RelationshipsWithEdOrgsOnlyInverted is recognized everywhere, but for GET-by-id, POST, PUT, and DELETE return an intentional not-implemented result until DMS-1056. Do
+     not let it fall through to missing-provider 403s.
+  7. Yes, add provider-specific runtime parameter metadata.
+     Keep SQL Server SqlParameter construction in the executor/binder layer, but extend the query parameter contract so a parameter can say “structured TVP, type dms.BigIntTable, column Id.” The
+     current hydration path only carries name/value and binds generic parameters in src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs:239; that is not enough for SQL
+     Server TVPs. The existing RelationalParameter.ConfigureParameter pattern in src/dms/backend/EdFi.DataManagementService.Backend/RelationalCommandAccess.cs:43 is a useful precedent, but keep
+     delegates out of AOT/compiled plan contracts.
