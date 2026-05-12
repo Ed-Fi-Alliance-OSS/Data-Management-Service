@@ -155,6 +155,81 @@ public class Given_PostgresqlDescriptorWriteHandler
     }
 
     [Test]
+    public async Task It_returns_descriptor_write_etags_matching_follow_up_get_by_id()
+    {
+        using var scope = CreateConfiguredScope();
+        var writeHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
+        var readHandler = scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>();
+
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Parity",
+                "shortDescription": "Parity"
+            }
+            """
+        );
+        var createResult = await writeHandler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
+
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            createResult,
+            await GetDescriptorByIdAsync(
+                readHandler,
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid
+            )
+        );
+
+        var upsertRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Parity",
+                "shortDescription": "Parity Upsert",
+                "description": "Updated through POST"
+            }
+            """
+        );
+        var upsertResult = await writeHandler.HandlePostAsync(upsertRequest);
+
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            upsertResult,
+            await GetDescriptorByIdAsync(
+                readHandler,
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid
+            )
+        );
+
+        var putRequest = CreatePutRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            documentUuid,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Parity",
+                "shortDescription": "Parity PUT",
+                "description": "Updated through PUT"
+            }
+            """
+        );
+        var putResult = await writeHandler.HandlePutAsync(putRequest);
+
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            putResult,
+            await GetDescriptorByIdAsync(
+                readHandler,
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid
+            )
+        );
+    }
+
+    [Test]
     public async Task It_returns_success_without_update_for_unchanged_put()
     {
         var handler = ResolveHandler();
@@ -531,7 +606,28 @@ public class Given_PostgresqlDescriptorWriteHandler
 
     private sealed record DocumentTrackingStamps(long ContentVersion, DateTime ContentLastModifiedAt);
 
-    private IDescriptorWriteHandler ResolveHandler()
+    private async Task<GetResult> GetDescriptorByIdAsync(
+        IDescriptorReadHandler handler,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid
+    )
+    {
+        return await handler
+            .HandleGetByIdAsync(
+                new DescriptorGetByIdRequest(
+                    _database.MappingSet,
+                    resource,
+                    documentUuid,
+                    RelationalGetRequestReadMode.ExternalResponse,
+                    authorizationStrategyEvaluators: [],
+                    readableProfileProjectionContext: null,
+                    traceId: new TraceId("test-trace")
+                )
+            )
+            .ConfigureAwait(false);
+    }
+
+    private IServiceScope CreateConfiguredScope()
     {
         var scope = _serviceProvider.CreateScope();
         var instanceSelection = scope.ServiceProvider.GetRequiredService<IDmsInstanceSelection>();
@@ -544,6 +640,13 @@ public class Given_PostgresqlDescriptorWriteHandler
                 RouteContext: []
             )
         );
+
+        return scope;
+    }
+
+    private IDescriptorWriteHandler ResolveHandler()
+    {
+        var scope = CreateConfiguredScope();
 
         return scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
     }
