@@ -6,9 +6,9 @@
 using System.Globalization;
 using Npgsql;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
 
-internal sealed record PostgresqlForeignKeyMetadata(
+public sealed record PostgresqlForeignKeyMetadata(
     string ConstraintName,
     string[] Columns,
     string ReferencedSchema,
@@ -18,7 +18,7 @@ internal sealed record PostgresqlForeignKeyMetadata(
     string UpdateAction
 );
 
-internal sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
+public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
     private static readonly string[] _generatedDdlBaselineTables =
@@ -463,7 +463,9 @@ internal sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
 
     private static string BuildAdminConnectionString()
     {
-        var builder = new NpgsqlConnectionStringBuilder(Configuration.DatabaseConnectionString)
+        var builder = new NpgsqlConnectionStringBuilder(
+            BaselineDatabaseConfiguration.DatabaseConnectionString
+        )
         {
             Database = "postgres",
         };
@@ -473,7 +475,9 @@ internal sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
 
     private static string BuildConnectionString(string databaseName)
     {
-        var builder = new NpgsqlConnectionStringBuilder(Configuration.DatabaseConnectionString)
+        var builder = new NpgsqlConnectionStringBuilder(
+            BaselineDatabaseConfiguration.DatabaseConnectionString
+        )
         {
             Database = databaseName,
         };

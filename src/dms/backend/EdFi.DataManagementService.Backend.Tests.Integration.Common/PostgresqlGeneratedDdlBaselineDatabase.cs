@@ -6,9 +6,9 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
 
-internal sealed class PostgresqlGeneratedDdlBaselineDatabase : IAsyncDisposable
+public sealed class PostgresqlGeneratedDdlBaselineDatabase : IAsyncDisposable
 {
     private static readonly object _sync = new();
     private static readonly Dictionary<string, SharedBaselineEntry> _sharedBaselines = new(
