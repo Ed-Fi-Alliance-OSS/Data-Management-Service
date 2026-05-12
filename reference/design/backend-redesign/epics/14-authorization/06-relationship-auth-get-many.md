@@ -187,7 +187,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 
   3. Middleware/refactoring: yes. DMS-1055 should refactor the current filter-provider/request path enough for GET-many to reach relational query planning with an empty EdOrg claim list, inverted relationship strategy names, and known unsupported mixed strategies. The relational planner/repository should then return the correct result or fail-fast surface instead of the shared filter provider preemptively returning 403.
 
-  4. Unsupported mixed strategy failure surface: known strategies that are outside DMS-1055 scope for GET-many should fail as 501 Not Implemented. Examples include NamespaceBased, OwnershipBased, custom view-based strategies, and People relationship strategies until their stories are implemented. Unknown strategy names or invalid security metadata are security configuration failures and should use the security-configuration 500 path.
+  4. Unsupported mixed strategy failure surface: known strategies that are outside DMS-1055 scope for GET-many should fail as 501 Not Implemented. Examples include NamespaceBased, OwnershipBased, People relationship strategies, and custom view-based strategies whose names match the `{BasisResource}With...` convention and resolve to a known basis resource, until their stories are implemented. Truly unknown strategy names, invalid custom-view strategy names, custom-view names that cannot be resolved to a known basis resource, or other invalid security metadata are security configuration failures and should use the security-configuration 500 path.
 
   5. Child-table EdOrg securable semantics: require every existing child row for that securable path to be authorized. Using "any matching child row" can authorize a document while reconstitution still returns unauthorized child rows. The SQL shape should require at least one child row for the configured securable path and no unauthorized child row for that path.
 
@@ -225,11 +225,12 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 
   - known supported in DMS-1055: RelationshipsWithEdOrgsOnly, RelationshipsWithEdOrgsOnlyInverted
   - known no-op: NoFurtherAuthorizationRequired
-  - known but not implemented for GET-many yet: Namespace, Ownership, People relationship strategies, and valid custom view-style names
+  - known but not implemented for GET-many yet: NamespaceBased, OwnershipBased, People relationship strategies, and custom view-based strategy names that match the `{BasisResource}With...` convention and resolve to a known basis resource or descriptor
   - unknown or invalid security metadata: 500 security configuration error
 
-  For custom view names, treat {BasisResource}With... as known-but-not-implemented only if the basis resource or descriptor resolves from the effective schema. This aligns with the view-based design
-  and DMS-1062 story in reference/design/backend-redesign/epics/14-authorization/13-view-based-auth-get-many.md:16.
+  For custom view names, treat `{BasisResource}With...` as known-but-not-implemented only if the basis resource or descriptor resolves from the effective schema. Non-matching names, names with an unknown
+  basis resource, and otherwise invalid custom-view metadata remain 500 security configuration errors. This aligns with the view-based design and DMS-1062 story in
+  reference/design/backend-redesign/epics/14-authorization/13-view-based-auth-get-many.md:16.
 
   4. Add the narrow security-configuration ProblemDetails shape now.
      I would not pull all of DMS-1099 into this story, but I would add a reusable minimal helper for the DMS-1055 security-config failures using urn:ed-fi:api:system-configuration:security. Otherwise
