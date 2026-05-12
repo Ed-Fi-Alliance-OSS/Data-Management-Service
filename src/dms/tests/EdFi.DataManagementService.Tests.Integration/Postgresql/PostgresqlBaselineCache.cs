@@ -31,6 +31,8 @@ internal static class PostgresqlBaselineCache
     /// Returns the cached baseline database for the supplied fixture, building it on
     /// first access. The fixture signature handed to the baseline is the
     /// <see cref="FixtureKey"/> value so distinct fixtures get distinct templates.
+    /// The DDL is generated from the same materialized ApiSchema directory the DMS
+    /// host scans for so the effective schema hash matches at request time.
     /// </summary>
     public static async Task<PostgresqlGeneratedDdlBaselineDatabase> CreateOrGetAsync(FixtureContext fixture)
     {
@@ -38,7 +40,7 @@ internal static class PostgresqlBaselineCache
 
         Lazy<Task<PostgresqlGeneratedDdlBaselineDatabase>> lazy = _cache.GetOrAdd(
             fixture.Key,
-            key => new(() => BuildBaselineAsync(key), LazyThreadSafetyMode.ExecutionAndPublication)
+            _ => new(() => BuildBaselineAsync(fixture), LazyThreadSafetyMode.ExecutionAndPublication)
         );
 
         try
@@ -52,11 +54,12 @@ internal static class PostgresqlBaselineCache
         }
     }
 
-    private static async Task<PostgresqlGeneratedDdlBaselineDatabase> BuildBaselineAsync(FixtureKey key)
+    private static async Task<PostgresqlGeneratedDdlBaselineDatabase> BuildBaselineAsync(
+        FixtureContext fixture
+    )
     {
-        string fixtureDirectory = FixtureRepositoryPaths.ResolveFixtureDirectory(key);
         EffectiveSchemaSet effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(
-            fixtureDirectory
+            fixture.ApiSchemaDirectory
         );
         (_, string generatedDdl) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,
@@ -64,6 +67,6 @@ internal static class PostgresqlBaselineCache
             strict: true
         );
 
-        return await PostgresqlGeneratedDdlBaselineDatabase.CreateAsync(key.ToString(), generatedDdl);
+        return await PostgresqlGeneratedDdlBaselineDatabase.CreateAsync(fixture.Key.ToString(), generatedDdl);
     }
 }

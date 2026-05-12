@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
 
 namespace EdFi.DataManagementService.Tests.Integration;
 
@@ -67,28 +66,24 @@ public abstract class ApiIntegrationTestBase
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.ConfigureAppConfiguration(
-                (_, configuration) =>
-                {
-                    configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?>
-                        {
-                            ["AppSettings:UseRelationalBackend"] = "true",
-                            ["AppSettings:UseApiSchemaPath"] = "true",
-                            ["AppSettings:ApiSchemaPath"] = fixtureContext.ApiSchemaDirectory,
-                            ["AppSettings:StartupStatusFilePath"] = startupStatusFilePath,
-                            ["AppSettings:Datastore"] = Datastore,
-                            ["AppSettings:QueryHandler"] = "postgresql",
-                            ["AppSettings:DeployDatabaseOnStartup"] = "false",
-                            ["AppSettings:BypassAuthorization"] = "true",
-                            ["ConfigurationServiceSettings:BaseUrl"] = "http://localhost/test-cms",
-                            ["ConfigurationServiceSettings:ClientId"] = "test-cms-client",
-                            ["ConfigurationServiceSettings:ClientSecret"] = "test-cms-secret",
-                            ["ConfigurationServiceSettings:Scope"] = "edfi_admin_api/full_access",
-                        }
-                    );
-                }
-            );
+
+            // UseSetting writes into the host's IConfiguration before AddServices() runs,
+            // so options bound during service registration (e.g. AppSettings:UseRelationalBackend,
+            // AppSettings:Datastore) observe the harness-owned values without relying on
+            // process environment variables or file-based appsettings.
+            builder.UseSetting("AppSettings:UseRelationalBackend", "true");
+            builder.UseSetting("AppSettings:UseApiSchemaPath", "true");
+            builder.UseSetting("AppSettings:ApiSchemaPath", fixtureContext.ApiSchemaDirectory);
+            builder.UseSetting("AppSettings:StartupStatusFilePath", startupStatusFilePath);
+            builder.UseSetting("AppSettings:Datastore", Datastore);
+            builder.UseSetting("AppSettings:QueryHandler", "postgresql");
+            builder.UseSetting("AppSettings:DeployDatabaseOnStartup", "false");
+            builder.UseSetting("AppSettings:BypassAuthorization", "true");
+            builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
+            builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");
+            builder.UseSetting("ConfigurationServiceSettings:ClientSecret", "test-cms-secret");
+            builder.UseSetting("ConfigurationServiceSettings:Scope", "edfi_admin_api/full_access");
+
             builder.ConfigureServices(services =>
             {
                 ExternalDoublesRegistration.RegisterAll(services, fixtureContext, leasedConnectionString);

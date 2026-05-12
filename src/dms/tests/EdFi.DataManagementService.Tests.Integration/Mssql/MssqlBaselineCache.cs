@@ -31,6 +31,8 @@ internal static class MssqlBaselineCache
     /// Returns the cached baseline database for the supplied fixture, building it on
     /// first access. The fixture signature handed to the baseline is the
     /// <see cref="FixtureKey"/> value so distinct fixtures get distinct snapshots.
+    /// The DDL is generated from the same materialized ApiSchema directory the DMS
+    /// host scans for so the effective schema hash matches at request time.
     /// </summary>
     public static async Task<MssqlGeneratedDdlBaselineDatabase> CreateOrGetAsync(FixtureContext fixture)
     {
@@ -38,7 +40,7 @@ internal static class MssqlBaselineCache
 
         Lazy<Task<MssqlGeneratedDdlBaselineDatabase>> lazy = _cache.GetOrAdd(
             fixture.Key,
-            key => new(() => BuildBaselineAsync(key), LazyThreadSafetyMode.ExecutionAndPublication)
+            _ => new(() => BuildBaselineAsync(fixture), LazyThreadSafetyMode.ExecutionAndPublication)
         );
 
         try
@@ -52,11 +54,10 @@ internal static class MssqlBaselineCache
         }
     }
 
-    private static async Task<MssqlGeneratedDdlBaselineDatabase> BuildBaselineAsync(FixtureKey key)
+    private static async Task<MssqlGeneratedDdlBaselineDatabase> BuildBaselineAsync(FixtureContext fixture)
     {
-        string fixtureDirectory = FixtureRepositoryPaths.ResolveFixtureDirectory(key);
         EffectiveSchemaSet effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(
-            fixtureDirectory
+            fixture.ApiSchemaDirectory
         );
         (_, string generatedDdl) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,
@@ -64,6 +65,6 @@ internal static class MssqlBaselineCache
             strict: true
         );
 
-        return await MssqlGeneratedDdlBaselineDatabase.CreateAsync(key.ToString(), generatedDdl);
+        return await MssqlGeneratedDdlBaselineDatabase.CreateAsync(fixture.Key.ToString(), generatedDdl);
     }
 }
