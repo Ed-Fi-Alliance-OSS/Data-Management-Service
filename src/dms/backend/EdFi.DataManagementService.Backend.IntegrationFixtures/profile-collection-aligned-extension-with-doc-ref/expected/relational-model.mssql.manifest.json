@@ -1,6 +1,6 @@
 {
   "dialect": "mssql",
-  "effective_schema_hash": "a005597104f407d33ed4493710208fc76db1b3a86baedfb54e9f774a71d64129",
+  "effective_schema_hash": "628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46",
   "relational_mapping_version": "v1",
   "projects": [
     {
