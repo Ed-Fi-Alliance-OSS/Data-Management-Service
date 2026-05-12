@@ -29,6 +29,7 @@ This ticket delivers the complete authorization subquery pipeline (SQL generatio
 - NoFurtherAuthorizationRequired is ignored as a no-op when combined with relationship-based strategies.
 - No duplicate results are returned (uses IN subquery approach, not JOIN).
 - Pagination (offset/limit) and total count work correctly with the authorization filter applied.
+- EducationOrganization securable elements can resolve to the root resource table or a child collection table. When the resolved source table is a child collection table, GET-many authorization filters root DocumentIds through child-table predicates. For each configured child-table EdOrg securable path, require at least one existing child row and no unauthorized child row for that path; documents with no child rows for that path are excluded.
 - If the token's unique EdOrgId list is empty, GET-many returns an empty page and totalCount = 0 when requested; it does not return 403.
 - Works for both PostgreSQL and SQL Server. For SQL Server, when the token's EdOrgId list has fewer than 2,000 entries, use a parameterized IN clause; otherwise, use a TVP of type dms.BigIntTable.
 

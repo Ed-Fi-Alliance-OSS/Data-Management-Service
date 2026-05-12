@@ -11,7 +11,7 @@ Extend the authorization subquery framework established in [DMS-1055](https://ed
 
 - `reference/design/backend-redesign/design-docs/auth.md`
 
-People-related securable elements (Student, Contact, Staff) require transitive joins through intermediate tables when the person reference is indirect (e.g., CourseTranscript -> StudentAcademicRecord -> Student), unlike EducationOrganization columns which are always directly on the resource table. This ticket adds that transitive-join resolution on top of the framework delivered by DMS-1055.
+People-related securable elements (Student, Contact, Staff) require transitive joins through intermediate tables when the person reference is indirect (e.g., CourseTranscript -> StudentAcademicRecord -> Student), unlike EducationOrganization columns which are denormalized directly onto whichever table owns the reference. For EducationOrganization securable elements, that table can be the root resource table for non-nested paths or a child collection table for array-nested paths. This ticket adds People transitive-join resolution on top of the framework delivered by DMS-1055.
 
 ## Acceptance Criteria
 

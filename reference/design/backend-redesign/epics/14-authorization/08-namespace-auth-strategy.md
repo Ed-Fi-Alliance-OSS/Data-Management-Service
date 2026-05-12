@@ -21,7 +21,7 @@ Implement the namespace-based authorization strategy for all CRUD operations per
   - First, authorize using the currently stored namespace value (abort if unauthorized).
   - Second, authorize using the new namespace value from the request body (abort if unauthorized).
 - DELETE: An authorization check is executed against the stored namespace value before deletion. If unauthorized, the delete does not happen and a 403 Forbidden response is returned.
-- The namespace column to check is resolved from the resource's Namespace securable element in ApiSchema.json. The column is always directly available on the resource's root table (no transitive joins needed).
+- The namespace column to check is resolved from the resource's Namespace securable element in ApiSchema.json. The column is directly available on whichever table owns the reference, with no transitive joins needed. For non-nested paths this is the root resource table; for array-nested paths this is the child collection table that owns the reference.
 - When authorization fails, an AUTH1 error is thrown with the strategy index in the message (e.g., 'Unauthorized, index: 0'), aborting the batch and allowing C# to map the failure to the correct strategy for ProblemDetails.
 - Auth checks are batched in the same DB roundtrip as other statements (reconstitution, insert, delete, etc.) to match the roundtrip targets in the design doc.
 - Works for both PostgreSQL and SQL Server:

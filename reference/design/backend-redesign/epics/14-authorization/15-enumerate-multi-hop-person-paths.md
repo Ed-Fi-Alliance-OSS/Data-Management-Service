@@ -12,7 +12,7 @@ Per `reference/design/backend-redesign/design-docs/auth.md`, using the ResolveSe
 ## Acceptance Criteria
 
 - All DS 5.2 resources are processed — The implementation iterates every resource in the projectSchema.resourceSchemas of the DS 5.2 ApiSchema.json and invokes ResolveSecurableElementColumnPath for each Person securable element (Student, Contact, Staff) present in the resource's securableElements.
-- Only Person securable elements are evaluated — EducationOrganization and Namespace securable elements are excluded from the output since they are always available directly on the root resource table (join path length is always 1).
+- Only Person securable elements are evaluated — EducationOrganization and Namespace securable elements are excluded from the output because they resolve as a single step on whichever table owns the reference, without transitive reference traversal. That table can be the root resource table for non-nested paths or a child collection table for array-nested paths.
 - Only multi-hop paths are reported — The output includes only resources where the resolved join path has more than one entry (i.e., the person is reached through at least one intermediate resource).
 - Output includes the full join path — For each reported resource, the output contains:
   - The resource name (e.g., CourseTranscript)
