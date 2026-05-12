@@ -138,14 +138,14 @@ Endpoint-specific filter parameters:
 
 Filter, sort, and paging semantics:
 
-- `GET /v2/resourceClaims` first builds the valid projected hierarchy. Without filters, the result collection contains the root nodes. With `id` or `name` filters, the result collection contains matching nodes from anywhere in the hierarchy, and each matching node still includes its full recursive subtree. The original `parentId` and `parentName` values are preserved.
+- `GET /v2/resourceClaims` first builds the valid projected hierarchy. Without filters, the result collection contains the root nodes. With `id` or `name` filters, the query applies those filters to the top-level root-node collection only. Matching root nodes retain their full recursive subtree, and the original `parentId` and `parentName` values are preserved.
 - For `GET /v2/resourceClaims`, `orderBy`, `direction`, `limit`, and `offset` apply to the top-level result collection after filtering. They do not page, sort, or remove descendant `children` within each returned subtree.
 - For `GET /v2/resourceClaimActions` and `GET /v2/resourceClaimActionAuthStrategies`, filters, sorting, and paging apply to the flat projected collection.
 - `name` and `resourceName` filters are case-insensitive.
 - When multiple filters are supplied, these endpoints follow the existing Config query-filter behavior.
-- Required `orderBy` allowlists are `id`, `name`, `parentId`, and `parentName` for `resourceClaims`; `resourceClaimId`, `resourceName`, and `claimName` for `resourceClaimActions`; and `resourceClaimId`, `resourceName`, and `claimName` for `resourceClaimActionAuthStrategies`.
+- Required `orderBy` allowlists are `name`, `parentName`, `parentId`, and `id` for `resourceClaims`; `resourceClaimId` and `resourceName` for `resourceClaimActions`; and `resourceClaimId`, `resourceName`, and `claimName` for `resourceClaimActionAuthStrategies`.
 
-Current CMS validation and paging behavior should be reused as-is: optional `limit`/`offset`, validated `direction`, endpoint-specific `orderBy` allowlists, no implicit row cap when paging is omitted, and the existing default sort direction behavior. When `orderBy` is omitted, default ordering is determined by the current query-parameter implementation, which defaults to `id`.
+Current CMS validation and paging behavior should be reused as-is: optional `limit`/`offset`, validated `direction`, endpoint-specific `orderBy` allowlists, no implicit row cap when paging is omitted, and the existing default sort direction behavior. When `orderBy` is omitted, default ordering follows the current CMS query configuration for each endpoint: `name` for `resourceClaims`, `resourceClaimId` for `resourceClaimActions`, and `resourceClaimId` for `resourceClaimActionAuthStrategies`.
 
 Any Admin API query behavior intentionally not implemented should be listed as an explicit omission in the implementation story.
 
@@ -159,6 +159,9 @@ These are accepted, deliberate differences from the Admin API. They are not comp
 |---|---|
 | Public and persisted IDs use `long` (`BIGINT`) | CMS uses `bigint` identifiers throughout. `ResourceClaimResponse.Id`, `ParentId`, `ResourceClaimActionAuthStrategyResponse.ResourceClaimId`, and `AuthStrategyId` are `long`. `ActionId` remains `int`, matching the existing action repository model. |
 | Authorization uses `MapSecuredGet` | These endpoints use the standard CMS secured GET pattern: `MapSecuredGet`, which applies `ReadOnlyOrAdminScopePolicy`. No new authorization model is introduced. |
+| Query paging follows the existing CMS query pattern | CMS does not add an implicit row cap when `limit`/`offset` are omitted, and `orderBy` resolution follows the current endpoint query configuration. Any Admin API default-page-size behavior is intentionally not reproduced. |
+| `resourceClaims` list filters run before paging | CMS applies `id` and `name` filters to the root-node result collection before sorting and paging. Admin API v2 sorts and pages root nodes before applying those filters; that operation order is intentionally not reproduced. |
+| Query filters follow existing CMS matching rules | `name` and `resourceName` filters are case-insensitive, and `orderBy` matching follows the current CMS query implementation. This keeps the query contract aligned with the existing CMS stack rather than introducing endpoint-specific parsing rules. |
 
 ---
 

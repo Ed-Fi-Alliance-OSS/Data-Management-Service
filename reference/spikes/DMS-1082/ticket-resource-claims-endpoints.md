@@ -34,7 +34,7 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 - Fails explicitly if any hierarchy node is missing resource-claim metadata.
 - Supports the current CMS paging-query pattern, including `limit`, `offset`, `orderBy`, and `direction`.
 - Supports endpoint-specific filters: `id` (long), `name` (string).
-- Without filters, returns root nodes as the top-level collection. With `id` or `name` filters, returns matching nodes from anywhere in the hierarchy as the top-level collection, with each matching node retaining its original `parentId`, `parentName`, and full recursive `children` subtree.
+- Without filters, returns root nodes as the top-level collection. With `id` or `name` filters, applies those filters to the top-level root-node collection only. Matching root nodes retain their original `parentId`, `parentName`, and full recursive `children` subtree.
 - Applies `orderBy`, `direction`, `limit`, and `offset` to the top-level result collection after filtering. Paging and sorting do not remove or reorder descendant `children` within each returned subtree.
 
 ### `GET /v2/resourceClaims/{id}`
@@ -73,15 +73,15 @@ Endpoint-specific `orderBy` allowlists:
 
 | Endpoint | Allowed `orderBy` values |
 |---|---|
-| `GET /v2/resourceClaims` | `id`, `name`, `parentId`, `parentName` |
-| `GET /v2/resourceClaimActions` | `resourceClaimId`, `resourceName`, `claimName` |
+| `GET /v2/resourceClaims` | `name`, `parentName`, `parentId`, `id` |
+| `GET /v2/resourceClaimActions` | `resourceClaimId`, `resourceName` |
 | `GET /v2/resourceClaimActionAuthStrategies` | `resourceClaimId`, `resourceName`, `claimName` |
 
 Additional query rules:
 
 - `name` and `resourceName` filters are case-insensitive.
 - When multiple filters are supplied, including `id` and `name` together for `GET /v2/resourceClaims`, these endpoints follow the existing Config query-filter behavior.
-- When `orderBy` is omitted, default ordering is determined by the current query-parameter implementation, which defaults to `id`.
+- When `orderBy` is omitted, default ordering is determined by the current query-parameter implementation: `name` for `resourceClaims`, `resourceClaimId` for `resourceClaimActions`, and `resourceClaimId` for `resourceClaimActionAuthStrategies`.
 
 ### Failure handling
 
@@ -155,7 +155,7 @@ This contract defines observable behavior, not an implementation shape. The impl
 - Explicit failure when a hierarchy node has no matching resource-claim metadata row (metadata drift). This test must prove the endpoint does not return a successful partial tree, silently omit the unresolved node, or silently omit its descendant subtree.
 - Explicit failure when `DefaultAuthorization` references an unresolved action id or authorization strategy id. This test must prove the endpoint does not return `200 OK` with a partial `actions` or `authorizationStrategiesForActions` collection.
 - Validation failure for unsupported `orderBy`, using the current CMS paging-query validation response pattern.
-- Query parameter filtering and pagination behavior, including case-insensitive `name`/`resourceName` filters, existing Config combined-filter behavior, and default `id` ordering when `orderBy` is omitted.
+- Query parameter filtering and pagination behavior, including case-insensitive `name`/`resourceName` filters, existing Config combined-filter behavior, and the endpoint-specific default sort field when `orderBy` is omitted.
 - Tenant-scoped requests follow existing CMS dependency behavior.
 - Multitenant requests resolve `dmscs.ResourceClaim` metadata from the existing global seed rows (`TenantId IS NULL`) and do not require tenant-specific duplicate `ResourceClaim` rows.
 - PostgreSQL-only behavior for this story.
