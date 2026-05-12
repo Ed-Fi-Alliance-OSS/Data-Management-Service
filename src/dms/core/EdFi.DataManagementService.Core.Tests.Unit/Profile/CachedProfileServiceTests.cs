@@ -159,7 +159,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("student", "StudentProfile", ProfileUsageType.Readable);
+            var parsedHeader = new ParsedProfileHeader(
+                "student",
+                "StudentProfile",
+                ProfileUsageType.Readable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,
@@ -196,7 +200,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("student", "StudentProfile", ProfileUsageType.Writable);
+            var parsedHeader = new ParsedProfileHeader(
+                "student",
+                "StudentProfile",
+                ProfileUsageType.Writable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,
@@ -233,7 +241,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("student", "StudentProfile", ProfileUsageType.Writable);
+            var parsedHeader = new ParsedProfileHeader(
+                "student",
+                "StudentProfile",
+                ProfileUsageType.Writable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,
@@ -745,7 +757,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("Student", "StudentProfile", ProfileUsageType.Readable);
+            var parsedHeader = new ParsedProfileHeader(
+                "Student",
+                "StudentProfile",
+                ProfileUsageType.Readable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,
@@ -886,9 +902,18 @@ public class CachedProfileServiceTests
             result.IsSuccess.Should().BeFalse();
             result.Error!.StatusCode.Should().Be(403);
             result.Error.Errors.Should().ContainSingle();
-            result.Error.Errors[0].Should().Contain("application/vnd.ed-fi.school.schoolprofile.readable+json");
-            result.Error.Errors[0].Should().NotContain("application/vnd.ed-fi.school.studentprofile.readable+json");
-            result.Error.Errors[0].Should().NotContain("application/vnd.ed-fi.school.writeonlyprofile.readable+json");
+            result
+                .Error.Errors[0]
+                .Should()
+                .Contain("application/vnd.ed-fi.school.schoolprofile.readable+json");
+            result
+                .Error.Errors[0]
+                .Should()
+                .NotContain("application/vnd.ed-fi.school.studentprofile.readable+json");
+            result
+                .Error.Errors[0]
+                .Should()
+                .NotContain("application/vnd.ed-fi.school.writeonlyprofile.readable+json");
         }
 
         [Test]
@@ -905,7 +930,11 @@ public class CachedProfileServiceTests
                 );
 
             var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("Student", "MissingProfile", ProfileUsageType.Readable);
+            var parsedHeader = new ParsedProfileHeader(
+                "Student",
+                "MissingProfile",
+                ProfileUsageType.Readable
+            );
 
             var result = await service.ResolveProfileAsync(
                 parsedHeader: parsedHeader,

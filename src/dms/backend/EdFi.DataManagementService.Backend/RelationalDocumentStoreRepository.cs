@@ -21,6 +21,7 @@ public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
     IRelationalWriteExecutor writeExecutor,
     IRelationalWriteTargetLookupService targetLookupService,
+    IRelationalDeleteEtagPreconditionChecker deleteEtagPreconditionChecker,
     IDescriptorWriteHandler descriptorWriteHandler,
     IDescriptorReadHandler descriptorReadHandler,
     IReferenceResolver referenceResolver,
@@ -39,6 +40,9 @@ public sealed class RelationalDocumentStoreRepository(
         writeExecutor ?? throw new ArgumentNullException(nameof(writeExecutor));
     private readonly IRelationalWriteTargetLookupService _targetLookupService =
         targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
+    private readonly IRelationalDeleteEtagPreconditionChecker _deleteEtagPreconditionChecker =
+        deleteEtagPreconditionChecker
+        ?? throw new ArgumentNullException(nameof(deleteEtagPreconditionChecker));
     private readonly IDescriptorWriteHandler _descriptorWriteHandler =
         descriptorWriteHandler ?? throw new ArgumentNullException(nameof(descriptorWriteHandler));
     private readonly IDescriptorReadHandler _descriptorReadHandler =
@@ -76,6 +80,10 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
+        var writePrecondition = NormalizeWritePrecondition(relationalUpsertRequest.WritePrecondition);
+
+        // TODO DMS-1057: Restore relational write authorization checks once NamespaceBased
+        // CRUD authorization is implemented for relational writes.
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
@@ -89,6 +97,9 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalUpsertRequest.DocumentInfo.ReferentialId,
                         relationalUpsertRequest.TraceId
                     )
+                    {
+                        WritePrecondition = writePrecondition,
+                    }
                 )
                 .ConfigureAwait(false);
         }
@@ -99,6 +110,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         var result = await ExecuteWriteGuardRails<UpsertResult>(
                 requestBody: selectedBody,
+                writePrecondition: writePrecondition,
                 traceId: relationalUpsertRequest.TraceId,
                 mappingSet,
                 relationalUpsertRequest.ResourceInfo,
@@ -192,6 +204,10 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
+        var writePrecondition = NormalizeWritePrecondition(relationalUpdateRequest.WritePrecondition);
+
+        // TODO DMS-1057: Restore relational write authorization checks once NamespaceBased
+        // CRUD authorization is implemented for relational writes.
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
@@ -205,6 +221,9 @@ public sealed class RelationalDocumentStoreRepository(
                         referentialId: null,
                         relationalUpdateRequest.TraceId
                     )
+                    {
+                        WritePrecondition = writePrecondition,
+                    }
                 )
                 .ConfigureAwait(false);
         }
@@ -215,6 +234,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         var result = await ExecuteWriteGuardRails<UpdateResult>(
                 requestBody: selectedBody,
+                writePrecondition: writePrecondition,
                 traceId: relationalUpdateRequest.TraceId,
                 mappingSet,
                 relationalUpdateRequest.ResourceInfo,
@@ -258,28 +278,50 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(mappingSet);
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
+        var writePrecondition = NormalizeWritePrecondition(relationalDeleteRequest.WritePrecondition);
+
+        // TODO DMS-1057: Restore relational write authorization checks once NamespaceBased
+        // CRUD authorization is implemented for relational writes.
 
         if (relationalDeleteRequest.ResourceInfo.IsDescriptor)
         {
             return _descriptorWriteHandler.HandleDeleteAsync(
-                mappingSet,
-                resource,
-                relationalDeleteRequest.DocumentUuid,
-                relationalDeleteRequest.TraceId
+                new DescriptorDeleteRequest(
+                    mappingSet,
+                    resource,
+                    relationalDeleteRequest.DocumentUuid,
+                    relationalDeleteRequest.TraceId
+                )
+                {
+                    WritePrecondition = writePrecondition,
+                }
             );
         }
 
-        return DeleteDocumentByIdAsync(relationalDeleteRequest, mappingSet);
+        return DeleteDocumentByIdAsync(relationalDeleteRequest, mappingSet, resource, writePrecondition);
     }
 
     private async Task<DeleteResult> DeleteDocumentByIdAsync(
         IRelationalDeleteRequest relationalDeleteRequest,
-        MappingSet mappingSet
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        WritePrecondition writePrecondition
     )
     {
-        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
         var documentUuid = relationalDeleteRequest.DocumentUuid;
         var traceId = relationalDeleteRequest.TraceId;
+        var readPlanPreparation =
+            writePrecondition is WritePrecondition.IfMatch
+                ? PrepareExistingDocumentReadPlan(mappingSet, resource)
+                : new ExistingDocumentReadPlanPreparation(null, null);
+
+        if (writePrecondition is WritePrecondition.IfMatch && readPlanPreparation.ReadPlan is null)
+        {
+            return new DeleteResult.UnknownFailure(
+                readPlanPreparation.FailureMessage
+                    ?? RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(resource)
+            );
+        }
 
         IRelationalWriteSession writeSession;
         try
@@ -327,30 +369,74 @@ public sealed class RelationalDocumentStoreRepository(
                 }
                 else
                 {
-                    // Authorization-check statements will join this DELETE in a future DMS-1009 child
-                    // ticket; If-Match/ETag validation against the resolved ContentVersion is likewise
-                    // deferred. Until then, this path stays gated behind the UseRelationalBackend
-                    // setting, while production DELETE traffic continues to flow through the Old
-                    // Postgresql DeleteDocumentById handler which already enforces both.
-                    // See reference/design/backend-redesign/design-docs/auth.md for the target shape.
-                    var deleteCommand = BuildDocumentDeleteByDocumentIdCommand(
-                        mappingSet.Key.Dialect,
-                        resolved.DocumentId
-                    );
+                    if (writePrecondition is WritePrecondition.IfMatch ifMatch)
+                    {
+                        var preconditionCheckResult = await _deleteEtagPreconditionChecker
+                            .CheckAsync(
+                                mappingSet,
+                                readPlanPreparation.ReadPlan!,
+                                new RelationalWriteTargetContext.ExistingDocument(
+                                    resolved.DocumentId,
+                                    documentUuid
+                                ),
+                                ifMatch,
+                                writeSession
+                            )
+                            .ConfigureAwait(false);
 
-                    outcome = await RelationalDeleteExecution
-                        .TryExecuteAsync(
-                            sessionCommandExecutor,
-                            deleteCommand,
-                            _writeExceptionClassifier,
-                            _deleteConstraintResolver,
-                            mappingSet.Model,
-                            _logger,
-                            documentUuid,
-                            traceId,
-                            DeleteTargetKind.Document
-                        )
-                        .ConfigureAwait(false);
+                        if (preconditionCheckResult is null)
+                        {
+                            outcome = new DeleteResult.DeleteFailureNotExists();
+                        }
+                        else if (!preconditionCheckResult.IsMatch)
+                        {
+                            outcome = new DeleteResult.DeleteFailureETagMisMatch();
+                        }
+                        else
+                        {
+                            var deleteCommand = BuildDocumentDeleteByDocumentIdCommand(
+                                mappingSet.Key.Dialect,
+                                preconditionCheckResult.TargetContext.DocumentId
+                            );
+
+                            outcome = await RelationalDeleteExecution
+                                .TryExecuteAsync(
+                                    sessionCommandExecutor,
+                                    deleteCommand,
+                                    _writeExceptionClassifier,
+                                    _deleteConstraintResolver,
+                                    mappingSet.Model,
+                                    _logger,
+                                    documentUuid,
+                                    traceId,
+                                    DeleteTargetKind.Document
+                                )
+                                .ConfigureAwait(false);
+                        }
+                    }
+                    else
+                    {
+                        // TODO DMS-1057: SQL-layer CRUD authorization must join this transaction
+                        // before executing the DELETE.
+                        var deleteCommand = BuildDocumentDeleteByDocumentIdCommand(
+                            mappingSet.Key.Dialect,
+                            resolved.DocumentId
+                        );
+
+                        outcome = await RelationalDeleteExecution
+                            .TryExecuteAsync(
+                                sessionCommandExecutor,
+                                deleteCommand,
+                                _writeExceptionClassifier,
+                                _deleteConstraintResolver,
+                                mappingSet.Model,
+                                _logger,
+                                documentUuid,
+                                traceId,
+                                DeleteTargetKind.Document
+                            )
+                            .ConfigureAwait(false);
+                    }
                 }
             }
             catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
@@ -614,6 +700,7 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
         System.Text.Json.Nodes.JsonNode requestBody,
+        WritePrecondition writePrecondition,
         TraceId traceId,
         MappingSet mappingSet,
         ResourceInfo resourceInfo,
@@ -627,6 +714,7 @@ public sealed class RelationalDocumentStoreRepository(
     )
     {
         ArgumentNullException.ThrowIfNull(requestBody);
+        ArgumentNullException.ThrowIfNull(writePrecondition);
         ArgumentNullException.ThrowIfNull(resourceInfo);
         ArgumentNullException.ThrowIfNull(documentReferences);
         ArgumentNullException.ThrowIfNull(descriptorReferences);
@@ -692,7 +780,8 @@ public sealed class RelationalDocumentStoreRepository(
                             DescriptorReferences: descriptorReferences
                         ),
                         targetContext: targetResolution.TargetContext!,
-                        profileWriteContext: profileWriteContext
+                        profileWriteContext: profileWriteContext,
+                        writePrecondition: writePrecondition
                     )
                 )
                 .ConfigureAwait(false);
@@ -700,6 +789,7 @@ public sealed class RelationalDocumentStoreRepository(
             if (
                 executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
                 && attemptIndex == 0
+                && writePrecondition is not WritePrecondition.IfMatch
             )
             {
                 continue;
@@ -870,7 +960,6 @@ public sealed class RelationalDocumentStoreRepository(
                 projectionContext.ContentTypeDefinition,
                 projectionContext.IdentityPropertyNames
             );
-            RelationalApiMetadataFormatter.RefreshEtag(edfiDoc);
         }
 
         return new GetResult.GetSuccess(
@@ -921,7 +1010,6 @@ public sealed class RelationalDocumentStoreRepository(
                     projectionContext.ContentTypeDefinition,
                     projectionContext.IdentityPropertyNames
                 );
-                RelationalApiMetadataFormatter.RefreshEtag(projectedOrUnchangedDocument);
             }
 
             edfiDocs.Add(projectedOrUnchangedDocument);
@@ -951,4 +1039,7 @@ public sealed class RelationalDocumentStoreRepository(
                 paramName
             );
     }
+
+    private static WritePrecondition NormalizeWritePrecondition(WritePrecondition? writePrecondition) =>
+        writePrecondition ?? new WritePrecondition.None();
 }

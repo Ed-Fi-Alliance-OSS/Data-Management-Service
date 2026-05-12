@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Core.Profile;
 
@@ -17,6 +18,8 @@ namespace EdFi.DataManagementService.Core.Profile;
 internal class ProfileResponseFilter : IProfileResponseFilter
 {
     private const string IdFieldName = "id";
+    private const string EtagFieldName = "_etag";
+    private const string LastModifiedDateFieldName = "_lastModifiedDate";
     private const string ExtensionFieldName = "_ext";
 
     /// <summary>
@@ -26,7 +29,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     /// </summary>
     private static bool TryPreserveServerGenerated(JsonObject result, string name, JsonNode? value)
     {
-        if (!ServerGeneratedFields.Contains(name))
+        if (!ServerGeneratedFieldNames.Contains(name))
         {
             return false;
         }
@@ -72,8 +75,11 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             string propertyName = property.Key;
             JsonNode? propertyValue = property.Value;
 
-            // Always include identity fields and 'id' field
-            if (propertyName == IdFieldName || identityPropertyNames.Contains(propertyName))
+            // Always include identity fields and root metadata
+            if (
+                propertyName is IdFieldName or EtagFieldName or LastModifiedDateFieldName
+                || identityPropertyNames.Contains(propertyName)
+            )
             {
                 result[propertyName] = propertyValue?.DeepClone();
                 continue;

@@ -157,7 +157,7 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
-    public async Task It_applies_readable_profile_projection_to_external_descriptor_reads_and_refreshes_etag()
+    public async Task It_applies_readable_profile_projection_to_external_descriptor_reads_without_recomputing_etag()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-111111111111"));
         var projectionContext = CreateReadableProfileProjectionContext();
@@ -184,7 +184,7 @@ public class Given_DescriptorReadHandler
             """
             {
               "id": "aaaaaaaa-1111-2222-3333-111111111111",
-              "_etag": "stale",
+              "_etag": "",
               "_lastModifiedDate": "2026-05-05T14:30:45Z",
               "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
               "codeValue": "Alternative",
@@ -192,6 +192,7 @@ public class Given_DescriptorReadHandler
             }
             """
         )!;
+        projectedDocument["_etag"] = unprojectedDocument["_etag"]!.DeepClone();
         var readableProfileProjector = A.Fake<IReadableProfileProjector>();
         A.CallTo(() =>
                 readableProfileProjector.Project(
@@ -218,11 +219,7 @@ public class Given_DescriptorReadHandler
         success.EdfiDoc["_etag"]!
             .GetValue<string>()
             .Should()
-            .Be(RelationalApiMetadataFormatter.FormatEtag(success.EdfiDoc));
-        success.EdfiDoc["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .NotBe(unprojectedDocument["_etag"]!.GetValue<string>());
+            .Be(unprojectedDocument["_etag"]!.GetValue<string>());
         A.CallTo(() =>
                 readableProfileProjector.Project(
                     A<JsonNode>._,
@@ -549,7 +546,7 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
-    public async Task It_applies_readable_profile_projection_to_descriptor_query_items_and_refreshes_each_etag()
+    public async Task It_applies_readable_profile_projection_to_descriptor_query_items_without_recomputing_etags()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-888888888888");
         var projectionContext = CreateReadableProfileProjectionContext();
@@ -576,7 +573,7 @@ public class Given_DescriptorReadHandler
             """
             {
               "id": "aaaaaaaa-1111-2222-3333-888888888888",
-              "_etag": "stale",
+              "_etag": "",
               "_lastModifiedDate": "2026-05-05T14:30:45Z",
               "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
               "codeValue": "Alternative",
@@ -584,6 +581,7 @@ public class Given_DescriptorReadHandler
             }
             """
         )!;
+        projectedDocument["_etag"] = unprojectedDocument["_etag"]!.DeepClone();
         var readableProfileProjector = A.Fake<IReadableProfileProjector>();
         A.CallTo(() =>
                 readableProfileProjector.Project(
@@ -614,11 +612,7 @@ public class Given_DescriptorReadHandler
         projectedItem["_etag"]!
             .GetValue<string>()
             .Should()
-            .Be(RelationalApiMetadataFormatter.FormatEtag(projectedItem));
-        projectedItem["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .NotBe(unprojectedDocument["_etag"]!.GetValue<string>());
+            .Be(unprojectedDocument["_etag"]!.GetValue<string>());
 
         A.CallTo(() =>
                 readableProfileProjector.Project(

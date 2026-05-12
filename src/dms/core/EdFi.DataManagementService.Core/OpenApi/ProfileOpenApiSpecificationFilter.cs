@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.OpenApi;
@@ -988,7 +989,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         foreach ((string propertyName, JsonNode? _) in properties)
         {
             // Writable schemas: Always exclude server-generated fields
-            if (ServerGeneratedFields.Contains(propertyName))
+            if (ServerGeneratedFieldNames.Contains(propertyName))
             {
                 propertiesToRemove.Add(propertyName);
                 continue;
@@ -1080,7 +1081,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// </summary>
     private static bool IsReadableRequiredProperty(string propertyName)
     {
-        return ServerGeneratedFields.Contains(propertyName)
+        return ServerGeneratedFieldNames.Contains(propertyName)
             || Array.Exists(
                 _identityFieldSuffixes,
                 suffix => propertyName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
@@ -1094,7 +1095,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     private static bool IsWritableIdentityProperty(string propertyName)
     {
         // Natural identity fields (UniqueId) and references are kept in writable
-        // Server-generated fields are excluded elsewhere via ServerGeneratedFields
+        // Server-generated fields are excluded elsewhere via ServerGeneratedFieldNames
         return Array.Exists(
             _identityFieldSuffixes,
             suffix => propertyName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)

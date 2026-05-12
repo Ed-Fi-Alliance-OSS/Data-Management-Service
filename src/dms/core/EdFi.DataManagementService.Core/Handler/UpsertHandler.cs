@@ -74,6 +74,9 @@ internal class UpsertHandler(
                         ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
+                    {
+                        AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
+                    }
                 );
             },
             requestInfo
@@ -151,6 +154,18 @@ internal class UpsertHandler(
             UpsertFailureWriteConflict => new(
                 StatusCode: 500,
                 Body: ForSystemError(requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            UpsertFailureETagMisMatch => new(
+                StatusCode: 412,
+                Body: ForETagMisMatch(
+                    "The item has been modified by another user.",
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: new[]
+                    {
+                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
+                    }
+                ),
                 Headers: []
             ),
             UpsertFailureNotAuthorized failure => new(

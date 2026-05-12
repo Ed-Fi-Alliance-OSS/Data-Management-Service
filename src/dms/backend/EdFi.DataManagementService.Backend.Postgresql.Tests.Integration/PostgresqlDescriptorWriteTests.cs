@@ -155,6 +155,81 @@ public class Given_PostgresqlDescriptorWriteHandler
     }
 
     [Test]
+    public async Task It_returns_descriptor_write_etags_matching_follow_up_get_by_id()
+    {
+        using var scope = CreateConfiguredScope();
+        var writeHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
+        var readHandler = scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>();
+
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Parity",
+                "shortDescription": "Parity"
+            }
+            """
+        );
+        var createResult = await writeHandler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
+
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            createResult,
+            await GetDescriptorByIdAsync(
+                readHandler,
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid
+            )
+        );
+
+        var upsertRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Parity",
+                "shortDescription": "Parity Upsert",
+                "description": "Updated through POST"
+            }
+            """
+        );
+        var upsertResult = await writeHandler.HandlePostAsync(upsertRequest);
+
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            upsertResult,
+            await GetDescriptorByIdAsync(
+                readHandler,
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid
+            )
+        );
+
+        var putRequest = CreatePutRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            documentUuid,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Parity",
+                "shortDescription": "Parity PUT",
+                "description": "Updated through PUT"
+            }
+            """
+        );
+        var putResult = await writeHandler.HandlePutAsync(putRequest);
+
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            putResult,
+            await GetDescriptorByIdAsync(
+                readHandler,
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid
+            )
+        );
+    }
+
+    [Test]
     public async Task It_returns_success_without_update_for_unchanged_put()
     {
         var handler = ResolveHandler();
@@ -247,10 +322,7 @@ public class Given_PostgresqlDescriptorWriteHandler
 
         // Delete
         var result = await handler.HandleDeleteAsync(
-            _database.MappingSet,
-            _database.Fixture.SchoolTypeDescriptorResource,
-            documentUuid,
-            new TraceId("test-trace")
+            CreateDeleteRequest(_database.Fixture.SchoolTypeDescriptorResource, documentUuid)
         );
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
@@ -262,10 +334,10 @@ public class Given_PostgresqlDescriptorWriteHandler
         var handler = ResolveHandler();
 
         var result = await handler.HandleDeleteAsync(
-            _database.MappingSet,
-            _database.Fixture.SchoolTypeDescriptorResource,
-            new DocumentUuid(Guid.NewGuid()),
-            new TraceId("test-trace")
+            CreateDeleteRequest(
+                _database.Fixture.SchoolTypeDescriptorResource,
+                new DocumentUuid(Guid.NewGuid())
+            )
         );
 
         result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
@@ -293,10 +365,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         // Attempt to delete it via the AcademicSubjectDescriptor resource endpoint —
         // must not delete cross-resource.
         var result = await handler.HandleDeleteAsync(
-            _database.MappingSet,
-            _database.Fixture.AcademicSubjectDescriptorResource,
-            documentUuid,
-            new TraceId("test-trace-cross-descriptor")
+            CreateDeleteRequest(_database.Fixture.AcademicSubjectDescriptorResource, documentUuid)
         );
 
         result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
@@ -309,6 +378,71 @@ public class Given_PostgresqlDescriptorWriteHandler
         probe.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
         var stillThere = await probe.ExecuteScalarAsync();
         stillThere.Should().NotBeNull("cross-resource DELETE must not remove the target row");
+    }
+
+    [Test]
+    public async Task It_deletes_a_descriptor_when_if_match_exactly_matches_the_current_etag()
+    {
+        var handler = ResolveHandler();
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        var insertResult = await handler.HandlePostAsync(createRequest);
+        var success = (UpsertResult.InsertSuccess)insertResult;
+        success.ETag.Should().NotBeNull();
+
+        var result = await handler.HandleDeleteAsync(
+            CreateDeleteRequest(
+                _database.Fixture.SchoolTypeDescriptorResource,
+                success.NewDocumentUuid,
+                new WritePrecondition.IfMatch(success.ETag!)
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_when_descriptor_delete_if_match_mismatches()
+    {
+        var handler = ResolveHandler();
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        var insertResult = await handler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
+
+        var result = await handler.HandleDeleteAsync(
+            CreateDeleteRequest(
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid,
+                new WritePrecondition.IfMatch("\"stale-etag\"")
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+
+        await using var dataSource = Npgsql.NpgsqlDataSource.Create(_database.ConnectionString);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var probe = connection.CreateCommand();
+        probe.CommandText = "SELECT 1 FROM dms.\"Document\" WHERE \"DocumentUuid\" = @documentUuid";
+        probe.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
+        var stillThere = await probe.ExecuteScalarAsync();
+        stillThere.Should().NotBeNull("mismatched If-Match must not delete the descriptor row");
     }
 
     [Test]
@@ -472,7 +606,28 @@ public class Given_PostgresqlDescriptorWriteHandler
 
     private sealed record DocumentTrackingStamps(long ContentVersion, DateTime ContentLastModifiedAt);
 
-    private IDescriptorWriteHandler ResolveHandler()
+    private async Task<GetResult> GetDescriptorByIdAsync(
+        IDescriptorReadHandler handler,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid
+    )
+    {
+        return await handler
+            .HandleGetByIdAsync(
+                new DescriptorGetByIdRequest(
+                    _database.MappingSet,
+                    resource,
+                    documentUuid,
+                    RelationalGetRequestReadMode.ExternalResponse,
+                    authorizationStrategyEvaluators: [],
+                    readableProfileProjectionContext: null,
+                    traceId: new TraceId("test-trace")
+                )
+            )
+            .ConfigureAwait(false);
+    }
+
+    private IServiceScope CreateConfiguredScope()
     {
         var scope = _serviceProvider.CreateScope();
         var instanceSelection = scope.ServiceProvider.GetRequiredService<IDmsInstanceSelection>();
@@ -485,6 +640,13 @@ public class Given_PostgresqlDescriptorWriteHandler
                 RouteContext: []
             )
         );
+
+        return scope;
+    }
+
+    private IDescriptorWriteHandler ResolveHandler()
+    {
+        var scope = CreateConfiguredScope();
 
         return scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
     }
@@ -527,10 +689,30 @@ public class Given_PostgresqlDescriptorWriteHandler
         );
     }
 
+    private DescriptorDeleteRequest CreateDeleteRequest(
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        WritePrecondition? writePrecondition = null
+    )
+    {
+        return new DescriptorDeleteRequest(
+            _database.MappingSet,
+            resource,
+            documentUuid,
+            new TraceId("test-trace")
+        )
+        {
+            WritePrecondition = writePrecondition ?? new WritePrecondition.None(),
+        };
+    }
+
     private static ServiceProvider CreateServiceProvider()
     {
         var services = new ServiceCollection();
 
+        services.Configure<DatabaseOptions>(options =>
+            options.IsolationLevel = System.Data.IsolationLevel.ReadCommitted
+        );
         services.AddSingleton<IHostApplicationLifetime, TestHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();

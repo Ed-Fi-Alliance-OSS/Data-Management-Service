@@ -47,4 +47,9 @@ public interface IDeleteRequest
     /// Request Header provided by the frontend service as a dictionary
     /// </summary>
     Dictionary<string, string> Headers { get; }
+
+    /// <summary>
+    /// Typed write precondition derived once from the request headers by Core.
+    /// </summary>
+    WritePrecondition WritePrecondition { get; }
 }

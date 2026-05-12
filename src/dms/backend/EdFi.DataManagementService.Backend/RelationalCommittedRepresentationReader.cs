@@ -82,7 +82,7 @@ internal sealed class RelationalCommittedRepresentationReader(
             );
         }
 
-        return _readMaterializer.Materialize(
+        var committedResponse = _readMaterializer.Materialize(
             new RelationalReadMaterializationRequest(
                 readPlan,
                 documentMetadata,
@@ -91,5 +91,7 @@ internal sealed class RelationalCommittedRepresentationReader(
                 RelationalGetRequestReadMode.ExternalResponse
             )
         );
+
+        return committedResponse;
     }
 }

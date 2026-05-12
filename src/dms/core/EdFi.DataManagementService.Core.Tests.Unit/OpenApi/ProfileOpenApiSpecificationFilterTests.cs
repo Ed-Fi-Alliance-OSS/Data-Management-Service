@@ -887,16 +887,22 @@ public class ProfileOpenApiSpecificationFilterTests
         [Test]
         public void It_contains_exactly_the_four_canonical_names()
         {
-            EdFi.DataManagementService.Core.Profile.ServerGeneratedFields.Names.Should()
+            EdFi.DataManagementService.Core.Utilities.ServerGeneratedFieldNames.Names.Should()
                 .BeEquivalentTo("id", "link", "_etag", "_lastModifiedDate");
         }
 
         [Test]
         public void It_is_case_sensitive()
         {
-            EdFi.DataManagementService.Core.Profile.ServerGeneratedFields.Contains("id").Should().BeTrue();
-            EdFi.DataManagementService.Core.Profile.ServerGeneratedFields.Contains("Id").Should().BeFalse();
-            EdFi.DataManagementService.Core.Profile.ServerGeneratedFields.Contains("ID").Should().BeFalse();
+            EdFi.DataManagementService.Core.Utilities.ServerGeneratedFieldNames.Contains("id")
+                .Should()
+                .BeTrue();
+            EdFi.DataManagementService.Core.Utilities.ServerGeneratedFieldNames.Contains("Id")
+                .Should()
+                .BeFalse();
+            EdFi.DataManagementService.Core.Utilities.ServerGeneratedFieldNames.Contains("ID")
+                .Should()
+                .BeFalse();
         }
     }
 }

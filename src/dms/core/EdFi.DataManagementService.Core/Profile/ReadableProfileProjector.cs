@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Core.Profile;
 
@@ -502,7 +503,7 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
     /// </summary>
     private static bool TryPreserveServerGenerated(JsonObject result, string name, JsonNode? value)
     {
-        if (!ServerGeneratedFields.Contains(name))
+        if (!ServerGeneratedFieldNames.Contains(name))
         {
             return false;
         }
@@ -527,7 +528,7 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
         JsonNode? value
     )
     {
-        if (!ServerGeneratedFields.Contains(name))
+        if (!ServerGeneratedFieldNames.Contains(name))
         {
             return false;
         }

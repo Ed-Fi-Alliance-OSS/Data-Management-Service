@@ -168,6 +168,40 @@ public class DeadlockRetryPolicyTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Upsert_Etag_Mismatch_Failure : DeadlockRetryPolicyTests
+    {
+        private object? _result;
+        private int _callCount;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _callCount = 0;
+            var pipeline = BuildPipeline(maxRetryAttempts: 3);
+
+            _result = await pipeline.ExecuteAsync(async _ =>
+            {
+                _callCount++;
+                await Task.CompletedTask;
+                return (object)new UpsertResult.UpsertFailureETagMisMatch();
+            });
+        }
+
+        [Test]
+        public void It_does_not_retry()
+        {
+            _result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        }
+
+        [Test]
+        public void It_called_the_callback_exactly_once()
+        {
+            _callCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Configurable_Max_Retry_Attempts : DeadlockRetryPolicyTests
     {
         private int _callCount;

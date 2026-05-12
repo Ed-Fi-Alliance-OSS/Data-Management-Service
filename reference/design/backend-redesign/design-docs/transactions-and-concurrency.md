@@ -317,7 +317,7 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
 
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)
   - Propagation updates canonical/storage identity columns in all direct referrers (identity-component and non-identity references).
-  - Referrers’ `dms.Document.ContentVersion` stamps update because their served representation changes (the embedded reference identity changed).
+  - Referrers’ `dms.Document.ContentVersion` stamps update because their full resource-state representation changes (the embedded reference identity changed).
   - For identity-component referrers, triggers also update `dms.Document.IdentityVersion` and `dms.ReferentialIdentity` for the referrer (and this may cascade further).
 
 - **Outgoing reference changes on a document** (`..._DocumentId` value changes)
@@ -326,13 +326,13 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
   - Composite FK enforcement guarantees the canonical/storage identity-part values match the referenced target.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, `ChangeVersion`)**
-  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`; `_etag` is computed from the deterministic canonical JSON form of the served response document those stamps track.
+  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`; `_etag` is computed from the deterministic canonical JSON form of the full resource-state document those stamps track, before readable profile projection and excluding response decorations such as `link`.
   - Because identity propagation is materialized as row updates, the same per-table stamping triggers cover indirect changes (no read-time dependency derivation).
 
 ### Concurrency (optimistic `If-Match`)
 
 With stored representation stamps:
-- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical JSON representation.
+- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical full resource-state JSON representation, before readable profile projection and excluding response decorations such as `link`.
 - PUT/DELETE `If-Match` validation is row-local:
   - compare the request `_etag` to the current deterministic hash for that `DocumentId`;
   - if mismatched, return `412 Precondition Failed`.
@@ -354,7 +354,7 @@ Collection-write note:
   exactly one scope-local `DocumentReferenceBinding` in `documentPathsMapping.referenceJsonPaths` order. Collection
   semantic-identity UNIQUE constraints are derived from that compiled identity, and any supported model that still
   cannot produce it must fail before runtime merge execution.
-- Correctness for accepted profile writes still relies on the same `If-Match` / `ContentVersion` guard described above; no new API surface is required.
+- Correctness for accepted profile writes still relies on the same full-resource `If-Match` / `ContentVersion` guard described above; profile projection does not create a separate ETag surface, and no new API surface is required.
 
 ### Deadlock + retry policy
 

@@ -4,8 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.Backend.DocumentComparer;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.ParsedBody["_etag"] = GenerateContentHash(requestInfo.ParsedBody);
+            requestInfo.ParsedBody["_etag"] = ResourceEtagFormatter.FormatEtag(requestInfo.ParsedBody);
 
             requestInfo.ParsedBody["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString(
                 "yyyy-MM-ddTHH:mm:ssZ"

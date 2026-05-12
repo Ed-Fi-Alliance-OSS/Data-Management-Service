@@ -47,6 +47,8 @@ public class ProfileResponseFilterTests
             _source = new JsonObject
             {
                 ["id"] = "12345",
+                ["_etag"] = "\"17\"",
+                ["_lastModifiedDate"] = "2026-04-11T17:30:45Z",
                 ["schoolId"] = 100,
                 ["nameOfInstitution"] = "Test School",
                 ["shortNameOfInstitution"] = "TS",
@@ -86,6 +88,13 @@ public class ProfileResponseFilterTests
         {
             _result!["schoolId"]?.GetValue<int>().Should().Be(100);
         }
+
+        [Test]
+        public void It_always_includes_root_metadata_fields()
+        {
+            _result!["_etag"]?.GetValue<string>().Should().Be("\"17\"");
+            _result["_lastModifiedDate"]?.GetValue<string>().Should().Be("2026-04-11T17:30:45Z");
+        }
     }
 
     [TestFixture]
@@ -101,6 +110,8 @@ public class ProfileResponseFilterTests
             _source = new JsonObject
             {
                 ["id"] = "12345",
+                ["_etag"] = "\"18\"",
+                ["_lastModifiedDate"] = "2026-04-12T10:15:30Z",
                 ["schoolId"] = 100,
                 ["nameOfInstitution"] = "Test School",
                 ["shortNameOfInstitution"] = "TS",
@@ -139,6 +150,13 @@ public class ProfileResponseFilterTests
         public void It_always_includes_identity_fields()
         {
             _result!["schoolId"]?.GetValue<int>().Should().Be(100);
+        }
+
+        [Test]
+        public void It_always_includes_root_metadata_fields()
+        {
+            _result!["_etag"]?.GetValue<string>().Should().Be("\"18\"");
+            _result["_lastModifiedDate"]?.GetValue<string>().Should().Be("2026-04-12T10:15:30Z");
         }
     }
 

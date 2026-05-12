@@ -66,6 +66,8 @@ Related redesign discussion:
 ## Goals and Constraints
 
 - **Preserve legacy profile semantics**: readable profiles limit returned fields; writable profiles limit accepted input; hidden stored data is preserved on update.
+- **Preserve legacy ETag semantics**: readable profile filtering does not change `_etag`; profiled
+  and unprofiled responses for the same full resource state return the same concurrency validator.
 - **Core owns profile semantics**: member filtering, value filtering, readable vs writable mode, request validation, stored-state projection, and creatability rules belong in Core.
 - **Backend owns persistence mechanics**: relational flattening, current-state loading, semantic-key matching, `CollectionItemId` reservation, and DML execution remain backend responsibilities.
 - **No public API change**: the Core/backend profile contract is internal. Profile support must not add a new external write API.
@@ -122,6 +124,8 @@ The relational redesign must preserve these behaviors:
   - hidden 1:1 scopes are not deleted because they are absent from the filtered request,
   - hidden extension data is preserved under the same rules as base data.
 - These rules apply recursively to nested collections, common types, and `_ext` sites.
+- Readable profiles preserve server-generated metadata, including the full-resource `_etag`; they do
+  not create profile-specific concurrency validators.
 
 ## Ownership Boundary
 
@@ -1027,6 +1031,8 @@ Related redesign discussion:
 - Core owns readable profile projection of that document,
 - backend serializers must not reimplement readable profile member filtering,
 - extension data participates in readable profile shaping under the same rules as base data.
+- `_etag` remains the full-resource validator from the pre-profile document; projection preserves
+  the metadata value rather than recomputing it from the filtered response.
 
 ## No-Op Detection and Concurrency
 
@@ -1050,7 +1056,8 @@ Related redesign discussion:
   - with `If-Match`, return `412 Precondition Failed`,
   - without `If-Match`, abandon the no-op fast path and re-evaluate against current state.
 
-Profiles do not require a new concurrency surface. They rely on the same `If-Match` / `ContentVersion` guard as the rest of the redesign.
+Profiles do not require a new concurrency surface. They rely on the same full-resource `If-Match` /
+`ContentVersion` guard as the rest of the redesign.
 
 ## Validation and Error Semantics
 

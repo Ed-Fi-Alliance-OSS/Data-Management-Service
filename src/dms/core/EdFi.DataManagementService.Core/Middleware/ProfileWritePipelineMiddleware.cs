@@ -103,11 +103,15 @@ internal class ProfileWritePipelineMiddleware(
             logger.LogWarning(
                 ex,
                 "ProfileWritePipelineMiddleware: Write plan not available for resource {ResourceName}. "
-                    + "Skipping profile pipeline. TraceId: {TraceId}",
+                    + "Rejecting writable profile request. TraceId: {TraceId}",
                 LoggingSanitizer.SanitizeForLogging(resourceName),
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
-            await next();
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 400,
+                Body: FailureResponse.ForDataPolicyEnforced(profileName, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            );
             return;
         }
 

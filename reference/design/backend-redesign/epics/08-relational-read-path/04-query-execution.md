@@ -72,10 +72,10 @@ Authorization is out of scope for this story, but the query execution SQL should
      projection context. Mirror the GET-by-id pattern (src/dms/core/EdFi.DataManagementService.Core/Backend/GetRequest.cs:22), but I would not invent a query “stored document” mode unless a
      real internal caller appears.
   5. Profile response integration: yes, DMS-993 should own the full relational readable-profile path for GET-many. The repository should project each item through IReadableProfileProjector
-     and refresh per-item _etag, and the handler should set the profile-specific response content type. The legacy middleware explicitly skips relational reads (src/dms/core/
+     while preserving each item’s full-resource _etag, and the handler should set the profile-specific response content type. The legacy middleware explicitly skips relational reads (src/dms/core/
      EdFi.DataManagementService.Core/Middleware/ProfileFilteringMiddleware.cs:29), and QueryRequestHandler currently just returns the array body with no relational profile content-type
      handling (src/dms/core/EdFi.DataManagementService.Core/Handler/QueryRequestHandler.cs:57). That matches the ownership split in reference/design/backend-redesign/design-docs/
-     profiles.md:1000 and the _etag rule in reference/design/backend-redesign/design-docs/update-tracking.md:121.
+     profiles.md#read-path-under-profiles and the _etag rule in reference/design/backend-redesign/design-docs/update-tracking.md#serving-api-metadata.
   6. Unsupported query mappings: fail fast during mapping/query-plan compilation for the resource, not only when a parameter is used. queryFieldMapping is schema contract, so an un-
      compilable field is a compiler/schema problem, not ordinary request-time input. Request-time latent failures would be especially confusing because Core validation has already accepted
      the parameter. If the implementation supports resource-scoped omission rather than whole-mapping-set failure, that is fine; the important part is deterministic pre-request failure, not

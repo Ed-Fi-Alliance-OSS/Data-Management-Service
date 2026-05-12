@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
+using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -32,7 +34,8 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
@@ -52,9 +55,12 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor
-            .Commands[0]
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory
+            .Session.Executor.Commands[0]
             .CommandText.Should()
             .NotContain("RETURNING \"DocumentId\", \"ContentVersion\"");
     }
@@ -69,7 +75,8 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = new DescriptorWriteRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             _descriptorResource,
@@ -97,7 +104,12 @@ public class Given_Descriptor_Write_Response_Etags
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorResultSet(description: "Previous"),
+        ]);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePostAsync(request);
@@ -112,8 +124,48 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+    }
+
+    [Test]
+    public async Task It_returns_the_current_hash_etag_for_descriptor_post_as_update_no_ops_without_an_update_command()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
+
+        var result = await sut.HandlePostAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .NotMatchRegex(StampStyleEtagPattern);
+        targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        targetLookupService.ResolveForPutCallCount.Should().Be(0);
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
     }
 
     [Test]
@@ -125,19 +177,10 @@ public class Given_Descriptor_Write_Response_Etags
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(
-                new Dictionary<string, object?>
-                {
-                    ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
-                    ["ShortDescription"] = "Charter",
-                    ["Description"] = "Charter",
-                    ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
-                    ["EffectiveEndDate"] = null,
-                }
-            ),
-        ]);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePutAsync(request);
@@ -151,7 +194,10 @@ public class Given_Descriptor_Write_Response_Etags
             .Which.ETag.Should()
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
-        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
     }
 
     [Test]
@@ -163,19 +209,12 @@ public class Given_Descriptor_Write_Response_Etags
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(
-                new Dictionary<string, object?>
-                {
-                    ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
-                    ["ShortDescription"] = "Charter",
-                    ["Description"] = "Previous Description",
-                    ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
-                    ["EffectiveEndDate"] = null,
-                }
-            ),
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorResultSet(description: "Previous Description"),
         ]);
-        var sut = CreateSut(targetLookupService, commandExecutor);
+        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             documentUuid,
@@ -193,8 +232,14 @@ public class Given_Descriptor_Write_Response_Etags
             .Which.ETag.Should()
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
-        commandExecutor.Commands.Should().HaveCount(2);
-        commandExecutor.Commands[1].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
+        commandExecutor.Commands.Should().BeEmpty();
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
     }
 
     private static string ExpectedCanonicalHashEtag(DescriptorWriteRequest request) =>
@@ -204,7 +249,8 @@ public class Given_Descriptor_Write_Response_Etags
 
     private static DescriptorWriteHandler CreateSut(
         IRelationalWriteTargetLookupService targetLookupService,
-        IRelationalCommandExecutor commandExecutor
+        IRelationalCommandExecutor commandExecutor,
+        IRelationalWriteSessionFactory? writeSessionFactory = null
     )
     {
         return new DescriptorWriteHandler(
@@ -212,6 +258,7 @@ public class Given_Descriptor_Write_Response_Etags
             commandExecutor,
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
+            writeSessionFactory ?? A.Fake<IRelationalWriteSessionFactory>(),
             NullLogger<DescriptorWriteHandler>.Instance
         );
     }
@@ -276,6 +323,24 @@ public class Given_Descriptor_Write_Response_Etags
             }
             """
         )!;
+    }
+
+    private static InMemoryRelationalResultSet CreatePersistedDescriptorResultSet(
+        string description = "Charter"
+    )
+    {
+        return InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?>
+            {
+                ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+                ["CodeValue"] = "Charter",
+                ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
+                ["ShortDescription"] = "Charter",
+                ["Description"] = description,
+                ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
+                ["EffectiveEndDate"] = null,
+            }
+        );
     }
 
     private static MappingSet CreateMappingSet(SqlDialect dialect)
@@ -394,6 +459,86 @@ public class Given_Descriptor_Write_Response_Etags
             await using var reader = new InMemoryRelationalCommandReader(resultSets);
             return await readAsync(reader, cancellationToken);
         }
+    }
+
+    private sealed class RecordingRelationalWriteSessionFactory(SqlDialect dialect)
+        : IRelationalWriteSessionFactory
+    {
+        public RecordingRelationalWriteSession Session { get; } = new(dialect);
+
+        public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IRelationalWriteSession>(Session);
+        }
+    }
+
+    private sealed class RecordingRelationalWriteSession : IRelationalWriteSession
+    {
+        private readonly RecordingDbConnection _connection = new(
+            new RecordingDbCommand(new DataTable().CreateDataReader())
+        );
+        private readonly RecordingDbTransaction _transaction;
+
+        public RecordingRelationalWriteSession(SqlDialect dialect)
+        {
+            _transaction = new RecordingDbTransaction(_connection, IsolationLevel.ReadCommitted);
+            Executor = new RecordingRelationalCommandExecutor(dialect);
+        }
+
+        public DbConnection Connection => _connection;
+
+        public DbTransaction Transaction => _transaction;
+
+        public RecordingRelationalCommandExecutor Executor { get; }
+
+        public Queue<object?> ScalarResults { get; } = [];
+
+        public List<RelationalCommand> ScalarCommands { get; } = [];
+
+        public int CommitCallCount { get; private set; }
+
+        public int RollbackCallCount { get; private set; }
+
+        public DbCommand CreateCommand(RelationalCommand command)
+        {
+            ScalarCommands.Add(command);
+
+            var dbCommand = new RecordingDbCommand(new DataTable().CreateDataReader())
+            {
+                CommandText = command.CommandText,
+                ScalarResult = ScalarResults.Count == 0 ? null : ScalarResults.Dequeue(),
+            };
+
+            foreach (var parameter in command.Parameters)
+            {
+                var dbParameter = dbCommand.CreateParameter();
+                dbParameter.ParameterName = parameter.Name;
+                dbParameter.Value = parameter.Value ?? DBNull.Value;
+                parameter.ConfigureParameter?.Invoke(dbParameter);
+                dbCommand.Parameters.Add((RecordingDbParameter)dbParameter);
+            }
+
+            return dbCommand;
+        }
+
+        public IRelationalCommandExecutor CreateCommandExecutor() => Executor;
+
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CommitCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RollbackCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class StubRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService

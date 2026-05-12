@@ -135,7 +135,7 @@ Implement JSON reconstitution from hydrated relational rows:
   7. Relax LastModifiedTraceId to make it optional. GetSuccess still requires it in src/dms/core/EdFi.DataManagementService.Core.External/Backend/GetResult.cs:21, but nothing in the relational redesign
      produces it yet, so make it nullable.
   8. No. Do not ship a split contract where relational GET returns a serialized-JSON-hash `_etag` while write responses use a different format.
-     The normative design in reference/design/backend-redesign/design-docs/update-tracking.md:118 and reference/design/backend-redesign/design-docs/flattening-reconstitution.md:906 applies to
+     The normative design in reference/design/backend-redesign/design-docs/update-tracking.md#serving-api-metadata and reference/design/backend-redesign/design-docs/flattening-reconstitution.md#64-json-assembly-fast-shape-safe applies to
      the external `_etag` surface as a whole, not only to GET materialization. DMS-1005 still owns `If-Match` enforcement, but once the relational read path is active the relational write
      responses must emit the same serialized-JSON hash `_etag` format in the same branch.
   9. Use semantic JSON equivalence for integration tests, with strict array-order checks. Property-order parity is too brittle and not semantically required by the design. If you want
@@ -146,7 +146,7 @@ Implement JSON reconstitution from hydrated relational rows:
   1. Should readable profile projection always preserve id, _etag, and _lastModifiedDate regardless of profile member rules? src/dms/core/EdFi.DataManagementService.Core/Profile/
      ReadableProfileProjector.cs:18 currently only special-cases id plus identity fields, while src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs:20 says
      readable schemas always include those metadata fields. If yes, should DMS-990 own that Core fix?
-  2. What exact format do you want for relational read metadata? We know _etag should come from the canonical JSON form of the response document, but I still need the concrete string form, and whether _lastModifiedDate should
+  2. What exact format do you want for relational read metadata? We know _etag should come from the canonical JSON form of the resource-state document, excluding server-generated response decorations, but I still need the concrete string form, and whether _lastModifiedDate should
      match the current write-side yyyy-MM-ddTHH:mm:ssZ format or preserve higher precision from stored ContentLastModifiedAt.
   3. While GET-many and descriptor endpoints remain deferred, what external behavior do you want under UseRelationalBackend=true for those unsupported reads? src/dms/backend/
      EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:95 currently returns UnknownFailure, which Core maps to HTTP 500. If you want an explicit 501/503 style response
@@ -164,7 +164,7 @@ Implement JSON reconstitution from hydrated relational rows:
      This should be true regardless of profile member rules. src/dms/core/EdFi.DataManagementService.Core/Profile/ReadableProfileProjector.cs:16 and src/dms/core/EdFi.DataManagementService.Core/
      OpenApi/ProfileOpenApiSpecificationFilter.cs:20 should agree. I would let DMS-990 own that fix because relational GET will bypass the legacy filter path.
   2. Use `_etag = base64(SHA-256(canonical JSON))` and `_lastModifiedDate` in UTC second precision.
-     Remove `id`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object members while preserving array order, then hash the minified UTF-8 bytes. That keeps read/write behavior aligned without coupling `_etag` to exact frontend serializer bytes and preserves
+     Remove `id`, `link`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object members while preserving array order, then hash the minified UTF-8 bytes. That keeps read/write behavior aligned without coupling `_etag` to exact frontend serializer bytes and preserves
      `_lastModifiedDate` formatting as yyyy-MM-ddTHH:mm:ssZ for now, even if the stored DB stamp has higher precision.
   3. Return an explicit “not implemented yet” result for unsupported relational reads.
      I would not leave intentional gaps as UnknownFailure/HTTP 500 from src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:95. Add a NotImplemented-style read

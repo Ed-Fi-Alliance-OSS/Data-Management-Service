@@ -128,6 +128,7 @@ internal static partial class ProvisionTestHelper
             "pg_catalog",
             "information_schema",
             "pg_toast",
+            "public",
         };
 
         using var connection = new NpgsqlConnection(connectionString);

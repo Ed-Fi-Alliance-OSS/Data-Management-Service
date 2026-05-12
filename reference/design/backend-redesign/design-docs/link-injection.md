@@ -338,7 +338,9 @@ the next process restart, consistent with the flag-flip-across-restart case in
 [Testing Strategy](#testing-strategy); hot-reload via `IOptionsMonitor<T>` is not a V1 requirement.
 The flag governs GET response serialization only — write endpoints (POST/PUT/DELETE) do not emit
 `link` and are unaffected. The strip pass removes exactly the `link` subtree on reference objects;
-other server-generated fields (`_etag`, `_lastModifiedDate`) are untouched.
+other server-generated fields (`_etag`, `_lastModifiedDate`) are untouched. Because `link` is a
+server-generated response decoration derived from persisted reference state, the flag does not
+participate in `_etag` derivation.
 
 ---
 
@@ -350,16 +352,15 @@ runs after cache retrieval; the `ResourceLinks:Enabled` flag is applied as a str
 projected document. CDC and indexing consumers of `dms.DocumentCache` therefore observe `link`
 subtrees; DMS does not maintain a second link-free projection.
 
-`dms.DocumentCache` stores the materialized `_etag` for the intermediate shape alongside the
-cached `DocumentJson`. That cached `_etag` is returned directly when the served body equals the
-cached intermediate (flag on, no readable profile reshaping the body). When readable-profile
-projection or the `ResourceLinks:Enabled` strip pass changes the served shape, the response
-serializer recomputes `_etag` from the served body using the same canonicalization rule. See
+`dms.DocumentCache` stores the materialized full-resource `_etag` alongside the cached
+`DocumentJson`. That cached `_etag` is computed with `link` excluded from the canonical hash and is
+returned for both unprofiled and profiled responses. The `ResourceLinks:Enabled` strip pass and
+readable-profile projection do not change `_etag`: flag-on, flag-off, profiled, and unprofiled
+responses for the same full resource state return the same value. See
 [update-tracking.md](update-tracking.md) §Serving API metadata for the normative derivation.
 
 A flag flip does not require cache truncation, fingerprint reconciliation, or an advisory lock:
-flag-off responses recompute `_etag` from the stripped body, and flag-on responses fall back to
-the cached `_etag` for the intermediate shape.
+flag-on and flag-off responses reuse the same `_etag` for the same full resource state.
 
 The freshness check on cache reads remains unchanged:
 
@@ -463,9 +464,11 @@ the `DocumentUuid`-stamping decision in particular has been made.
 **Feature-flag tests:**
 
 - Flag on + fully-defined references → response body carries `link`.
-- Flag off → response body has no `link` on any reference; `_etag` reflects the link-free form.
+- Flag off → response body has no `link` on any reference; `_etag` matches the flag-on value for
+  the same full resource state because `link` is excluded from canonicalization.
 - Flag flip across a process restart → existing cached rows remain valid for freshness-check
-  purposes; `_etag` values computed pre-flip do not match post-flip responses (expected).
+  purposes; `_etag` values computed pre-flip still match post-flip responses for the same full
+  resource state.
 
 **Fixture tests:**
 
@@ -493,7 +496,7 @@ emit `link`.
 
 **Caller-agnostic cache test.** Two callers who can both read the same source document — one
 authorized for the target, one not — receive the same cached intermediate JSON and the same
-`_etag` (before profile projection and flag-off stripping are applied per caller).
+full-resource `_etag`; profile projection and flag-off stripping do not change the validator.
 
 ---
 
@@ -514,7 +517,7 @@ Small-to-medium. The implementation surfaces:
 
 No new per-reference DDL. No new singleton metadata tables. No abstract-identity LEFT JOINs in
 hydration SQL. No startup trigger-existence validation. No advisory-lock protocol. No
-cache truncate. No etag carve-out.
+cache truncate. No link-driven etag churn.
 
 ---
 
@@ -533,6 +536,7 @@ cache truncate. No etag carve-out.
   contract.
 - [compiled-mapping-set.md](compiled-mapping-set.md) §4.3 step 6 — descriptor URI auxiliary
   pattern this design reuses.
-- [update-tracking.md](update-tracking.md) — `_etag` derivation from the served body.
+- [update-tracking.md](update-tracking.md) — `_etag` derivation from the canonical resource-state
+  body, excluding response decorations such as `link`.
 - [auth.md](auth.md) — authorization strategy families.
 - [profiles.md](profiles.md) — readable-profile projection boundary.

@@ -166,3 +166,142 @@ Feature: Profile Response Filtering
             Then the profile response status is 200
              And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
              And the response body should not contain fields "shortNameOfInstitution"
+
+    Rule: Profile filtering preserves full-resource etags
+
+        Background:
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                                       |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
+              And a profile test POST request is made to "/ed-fi/schools" with
+                  """
+                  {
+                      "schoolId": 99000106,
+                      "nameOfInstitution": "Profile ETag Test School",
+                      "shortNameOfInstitution": "PETS",
+                      "webSite": "https://profile-etag.example.com",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+
+        @relational-backend
+        Scenario: 07 Profiled GET and query preserve the full-resource etag
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/schools/{id}"
+            Then it should respond with 200
+             And the response body path "_etag" is stored as variable "fullSchoolEtag"
+             And the response body path "shortNameOfInstitution" should have value "PETS"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
+            Then the profile response status is 200
+             And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
+             And the response body should not contain fields "shortNameOfInstitution, educationOrganizationCategories, gradeLevels"
+             And the response body path "_etag" should equal variable "fullSchoolEtag"
+            When a GET request is made to "/ed-fi/schools?schoolId=99000106" with profile "E2E-Test-School-IncludeOnly" for resource "School"
+            Then the profile response status is 200
+             And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
+             And the response body should not contain fields "shortNameOfInstitution, educationOrganizationCategories, gradeLevels"
+             And the response body path "0._etag" should equal variable "fullSchoolEtag"
+
+        @relational-backend
+        Scenario: 08 Profiled PUT succeeds with a profiled If-Match and returns the full-resource etag
+            When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
+            Then the profile response status is 200
+             And the response body path "_etag" is stored as variable "profiledSchoolEtag"
+            When a PUT request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School" and if-match variable "profiledSchoolEtag" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId": 99000106,
+                      "nameOfInstitution": "Profile ETag Test School Updated",
+                      "shortNameOfInstitution": "PETS-UPD",
+                      "webSite": "https://profile-etag-updated.example.com",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 204
+            When the response header "etag" is stored as variable "profiledWriteEtag"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/schools/{id}"
+            Then it should respond with 200
+             And the response body path "_etag" should equal variable "profiledWriteEtag"
+             And the response body path "shortNameOfInstitution" should have value "PETS-UPD"
+
+        @relational-backend
+        Scenario: 09 Hidden field changes invalidate a stale profiled etag
+            When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
+            Then the profile response status is 200
+             And the response body path "_etag" is stored as variable "staleProfiledEtag"
+             And the response body should not contain fields "shortNameOfInstitution"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/schools/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId": 99000106,
+                      "nameOfInstitution": "Profile ETag Test School",
+                      "shortNameOfInstitution": "PETS-HIDDEN",
+                      "webSite": "https://profile-etag.example.com",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then it should respond with 204
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
+            Then the profile response status is 200
+             And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
+             And the response body should not contain fields "shortNameOfInstitution, educationOrganizationCategories, gradeLevels"
+             And the response body path "nameOfInstitution" should have value "Profile ETag Test School"
+             And the response body path "_etag" should not equal variable "staleProfiledEtag"
+            When a PUT request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School" and if-match variable "staleProfiledEtag" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId": 99000106,
+                      "nameOfInstitution": "Profile ETag Stale Write",
+                      "shortNameOfInstitution": "PETS-HIDDEN",
+                      "webSite": "https://profile-etag-stale.example.com",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 412
+             And the response body should have error type "urn:ed-fi:api:optimistic-lock-failed"
+             And the response body should have error message "etag value does not match"

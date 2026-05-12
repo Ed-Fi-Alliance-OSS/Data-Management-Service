@@ -32,4 +32,9 @@ internal record DeleteRequest(
     bool DeleteInEdOrgHierarchy,
     Dictionary<string, string> Headers,
     MappingSet? MappingSet
-) : IRelationalDeleteRequest;
+) : IRelationalDeleteRequest
+{
+    public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);
+
+    public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; } = [];
+}

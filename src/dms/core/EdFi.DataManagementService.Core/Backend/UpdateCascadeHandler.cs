@@ -9,10 +9,10 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using Json.More;
 using Json.Path;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.Backend.DocumentComparer;
 using JsonPath = Json.Path.JsonPath;
 
 namespace EdFi.DataManagementService.Core.Backend;
@@ -221,7 +221,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
         }
 
         // finally update _lastModifiedDate and _etag
-        returnEdFiDoc["_etag"] = GenerateContentHash(returnEdFiDoc);
+        returnEdFiDoc["_etag"] = ResourceEtagFormatter.FormatEtag(returnEdFiDoc);
         returnEdFiDoc["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
         return new UpdateCascadeResult(

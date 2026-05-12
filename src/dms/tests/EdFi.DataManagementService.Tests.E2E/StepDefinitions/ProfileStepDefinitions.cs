@@ -275,6 +275,10 @@ public class ProfileStepDefinitions(
 
             string body = await response.TextAsync();
             _logger.log.Information($"Descriptor response: {response.Status} - {body}");
+
+            response
+                .Status.Should()
+                .BeOneOf([200, 201], $"POST for descriptor {descriptorName} failed:\n{body}");
         }
     }
 
@@ -476,8 +480,10 @@ public class ProfileStepDefinitions(
     [When(@"a GET request is made to ""([^""]*)"" with profile ""([^""]*)"" for resource ""([^""]*)""")]
     public async Task WhenAGETRequestIsMadeToWithProfile(string url, string profileName, string resourceName)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         // Both resource name and profile name are lowercased per Ed-Fi convention
@@ -507,8 +513,10 @@ public class ProfileStepDefinitions(
     [When(@"a GET request is made to ""([^""]*)"" without profile header")]
     public async Task WhenAGETRequestIsMadeToWithoutProfileHeader(string url)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         _logger.log.Information($"GET url (no profile header): {url}");
@@ -529,8 +537,10 @@ public class ProfileStepDefinitions(
     [When(@"a GET request is made to ""([^""]*)"" with Accept header ""([^""]*)""")]
     public async Task WhenAGETRequestIsMadeToWithAcceptHeader(string url, string acceptHeader)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         _logger.log.Information($"GET url: {url}");
@@ -566,19 +576,10 @@ public class ProfileStepDefinitions(
     {
         url = AddDataPrefixIfNecessary(url);
 
-        // Build Content-Type header with profile's writable format
-        string contentType =
-            $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName.ToLowerInvariant()}.writable+json";
-
         _logger.log.Information($"POST url: {url}");
-        _logger.log.Information($"Content-Type header: {contentType}");
         _logger.log.Information($"POST body: {body}");
 
-        var headers = new List<KeyValuePair<string, string>>
-        {
-            new("Authorization", _dmsToken),
-            new("Content-Type", contentType),
-        };
+        List<KeyValuePair<string, string>> headers = GetWritableProfileHeaders(profileName, resourceName);
 
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PostAsync(
@@ -596,8 +597,10 @@ public class ProfileStepDefinitions(
     [When(@"a POST request is made to ""([^""]*)"" without profile header with body")]
     public async Task WhenAPOSTRequestIsMadeToWithoutProfileHeaderWithBody(string url, string body)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         _logger.log.Information($"POST url (no profile header): {url}");
@@ -629,8 +632,10 @@ public class ProfileStepDefinitions(
         string body
     )
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         _logger.log.Information($"POST url: {url}");
@@ -670,26 +675,62 @@ public class ProfileStepDefinitions(
         string body
     )
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         // Replace {id} placeholder in body with actual id
-        body = body.Replace("{id}", _id);
-
-        // Build Content-Type header with profile's writable format
-        string contentType =
-            $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName.ToLowerInvariant()}.writable+json";
+        body = body.Replace("{id}", id);
 
         _logger.log.Information($"PUT url: {url}");
-        _logger.log.Information($"Content-Type header: {contentType}");
         _logger.log.Information($"PUT body: {body}");
 
-        var headers = new List<KeyValuePair<string, string>>
-        {
-            new("Authorization", _dmsToken),
-            new("Content-Type", contentType),
-        };
+        List<KeyValuePair<string, string>> headers = GetWritableProfileHeaders(profileName, resourceName);
+
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.PutAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!
+        );
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+    }
+
+    [When(
+        @"a PUT request is made to ""([^""]*)"" with profile ""([^""]*)"" for resource ""([^""]*)"" and if-match variable ""([^""]*)"" with body"
+    )]
+    public async Task WhenAPUTRequestIsMadeToWithProfileForResourceAndIfMatchVariableWithBody(
+        string url,
+        string profileName,
+        string resourceName,
+        string ifMatchVariableName,
+        string body
+    )
+    {
+        string id = GetCurrentId();
+
+        url = AddDataPrefixIfNecessary(url)
+            .Replace("{id}", id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        body = body.Replace("{id}", id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        string ifMatch = _scenarioVariables.GetValueByName(ifMatchVariableName);
+
+        _logger.log.Information($"PUT url: {url}");
+        _logger.log.Information($"PUT body: {body}");
+        _logger.log.Information($"If-Match variable: {ifMatchVariableName}");
+
+        List<KeyValuePair<string, string>> headers = GetWritableProfileHeaders(
+            profileName,
+            resourceName,
+            ifMatch
+        );
 
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PutAsync(
@@ -705,11 +746,13 @@ public class ProfileStepDefinitions(
     [When(@"a PUT request is made to ""([^""]*)"" without profile header with body")]
     public async Task WhenAPUTRequestIsMadeToWithoutProfileHeaderWithBody(string url, string body)
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-        body = body.Replace("{id}", _id);
+        body = body.Replace("{id}", id);
 
         _logger.log.Information($"PUT url (no profile header): {url}");
         _logger.log.Information($"PUT body: {body}");
@@ -738,11 +781,13 @@ public class ProfileStepDefinitions(
         string body
     )
     {
+        string id = GetCurrentId();
+
         url = AddDataPrefixIfNecessary(url)
-            .Replace("{id}", _id)
+            .Replace("{id}", id)
             .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-        body = body.Replace("{id}", _id);
+        body = body.Replace("{id}", id);
 
         _logger.log.Information($"PUT url: {url}");
         _logger.log.Information($"Content-Type header: {contentType}");
@@ -1080,6 +1125,7 @@ public class ProfileStepDefinitions(
     }
 
     [When(@"the response body path ""([^""]*)"" is stored as variable ""([^""]*)""")]
+    [Then(@"the response body path ""([^""]*)"" is stored as variable ""([^""]*)""")]
     public async Task WhenTheResponseBodyPathIsStoredAsVariable(string jsonPath, string variableName)
     {
         string responseBody = await GetCurrentApiResponse().TextAsync();
@@ -1104,6 +1150,39 @@ public class ProfileStepDefinitions(
             .NotBeNull($"Path '{jsonPath}' should resolve to a non-null value. Response: {responseBody}");
 
         _scenarioVariables.Add(variableName, current!.ToString());
+    }
+
+    [Then(@"the response body path ""([^""]*)"" should equal variable ""([^""]*)""")]
+    public async Task ThenTheResponseBodyPathShouldEqualVariable(string jsonPath, string variableName)
+    {
+        string responseBody = await GetCurrentApiResponse().TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        string[] pathParts = jsonPath.Split('.');
+        bool pathExists = TryResolvePath(
+            responseJson,
+            pathParts,
+            out JsonNode? current,
+            out string failedAtPart
+        );
+
+        pathExists
+            .Should()
+            .BeTrue(
+                $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {responseBody}"
+            );
+
+        current
+            .Should()
+            .NotBeNull($"Path '{jsonPath}' should resolve to a non-null value. Response: {responseBody}");
+
+        current!
+            .ToString()
+            .Should()
+            .Be(
+                _scenarioVariables.GetValueByName(variableName),
+                $"Path '{jsonPath}' should match the stored value in variable '{variableName}'."
+            );
     }
 
     [Then(@"the response body path ""([^""]*)"" should not equal variable ""([^""]*)""")]
@@ -1143,10 +1222,24 @@ public class ProfileStepDefinitions(
     }
 
     [When(@"the response header ""([^""]*)"" is stored as variable ""([^""]*)""")]
+    [Then(@"the response header ""([^""]*)"" is stored as variable ""([^""]*)""")]
     public void WhenTheResponseHeaderIsStoredAsVariable(string headerName, string variableName)
     {
         string headerValue = GetResponseHeaderValue(headerName);
         _scenarioVariables.Add(variableName, headerValue);
+    }
+
+    [Then(@"the response header ""([^""]*)"" should equal variable ""([^""]*)""")]
+    public void ThenTheResponseHeaderShouldEqualVariable(string headerName, string variableName)
+    {
+        string headerValue = GetResponseHeaderValue(headerName);
+
+        headerValue
+            .Should()
+            .Be(
+                _scenarioVariables.GetValueByName(variableName),
+                $"Header '{headerName}' should match the stored value in variable '{variableName}'."
+            );
     }
 
     [Then(@"the response header ""([^""]*)"" should not equal variable ""([^""]*)""")]
@@ -1628,6 +1721,21 @@ public class ProfileStepDefinitions(
         _scenarioContext[ApiResponseContextKey] = apiResponse;
     }
 
+    private string GetCurrentId()
+    {
+        if (
+            string.IsNullOrWhiteSpace(_id)
+            && _scenarioContext.TryGetValue(IdContextKey, out object? idObject)
+            && idObject is string currentId
+            && !string.IsNullOrWhiteSpace(currentId)
+        )
+        {
+            _id = currentId;
+        }
+
+        return _id;
+    }
+
     private string GetResponseHeaderValue(string headerName)
     {
         IAPIResponse apiResponse = GetCurrentApiResponse();
@@ -1639,6 +1747,32 @@ public class ProfileStepDefinitions(
         actualHeaderKey.Should().NotBeNull($"Response should include header '{headerName}'");
 
         return apiResponse.Headers[actualHeaderKey!];
+    }
+
+    private List<KeyValuePair<string, string>> GetWritableProfileHeaders(
+        string profileName,
+        string resourceName,
+        string? ifMatch = null
+    )
+    {
+        string contentType =
+            $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName.ToLowerInvariant()}.writable+json";
+
+        _logger.log.Information($"Content-Type header: {contentType}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", contentType),
+        };
+
+        if (ifMatch is not null)
+        {
+            _logger.log.Information($"If-Match header: {ifMatch}");
+            headers.Add(new("If-Match", ifMatch));
+        }
+
+        return headers;
     }
 
     /// <summary>

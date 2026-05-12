@@ -35,6 +35,11 @@ public interface IUpdateRequest
     Dictionary<string, string> Headers { get; }
 
     /// <summary>
+    /// Typed write precondition derived once from the request headers by Core.
+    /// </summary>
+    WritePrecondition WritePrecondition { get; }
+
+    /// <summary>
     /// The elements extracted from the document that are being secured on
     /// </summary>
     DocumentSecurityElements DocumentSecurityElements { get; }

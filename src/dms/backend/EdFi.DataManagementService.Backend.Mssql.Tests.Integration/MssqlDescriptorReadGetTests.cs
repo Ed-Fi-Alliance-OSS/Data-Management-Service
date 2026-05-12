@@ -10,10 +10,10 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Tests.Common;
-using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -382,7 +382,7 @@ public class Given_A_Mssql_DescriptorRead_Get_Request
         expectedDocument["id"] = seed.DocumentUuid.Value.ToString();
         expectedDocument["_lastModifiedDate"] =
             RelationalGetIntegrationTestHelper.FormatExternalLastModifiedDate(expectedLastModifiedAt);
-        expectedDocument["_etag"] = DocumentComparer.GenerateContentHash(expectedDocument);
+        expectedDocument["_etag"] = ResourceEtagFormatter.FormatEtag(expectedDocument);
 
         return expectedDocument;
     }

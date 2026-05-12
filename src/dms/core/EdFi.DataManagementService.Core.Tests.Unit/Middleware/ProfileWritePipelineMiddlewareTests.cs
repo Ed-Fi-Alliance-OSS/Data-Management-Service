@@ -46,9 +46,9 @@ public class Given_A_Writable_Profile_Post_Request_With_A_Missing_Write_Plan
     }
 
     [Test]
-    public void It_calls_next_so_repository_guard_rails_can_classify_the_failure()
+    public void It_does_not_call_next_because_the_writable_profile_cannot_be_applied()
     {
-        _nextCalled.Should().BeTrue();
+        _nextCalled.Should().BeFalse();
     }
 
     [Test]
@@ -58,9 +58,9 @@ public class Given_A_Writable_Profile_Post_Request_With_A_Missing_Write_Plan
     }
 
     [Test]
-    public void It_does_not_set_a_frontend_error_response()
+    public void It_sets_a_data_policy_error_response()
     {
-        _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+        _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
     }
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()

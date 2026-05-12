@@ -61,6 +61,67 @@ public sealed record DescriptorWriteRequest
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// Typed write precondition forwarded from Core for descriptor write flows.
+    /// </summary>
+    public WritePrecondition WritePrecondition
+    {
+        get => _writePrecondition;
+        init => _writePrecondition = value ?? new WritePrecondition.None();
+    }
+
+    private WritePrecondition _writePrecondition = new WritePrecondition.None();
+}
+
+/// <summary>
+/// Delete request context for descriptor resources stored in the shared <c>dms.Descriptor</c> table.
+/// </summary>
+public sealed record DescriptorDeleteRequest
+{
+    public DescriptorDeleteRequest(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        TraceId traceId
+    )
+    {
+        MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
+        Resource = resource;
+        DocumentUuid = documentUuid;
+        TraceId = traceId;
+    }
+
+    /// <summary>
+    /// The resolved runtime mapping set for the active request.
+    /// </summary>
+    public MappingSet MappingSet { get; init; }
+
+    /// <summary>
+    /// The qualified resource name of the descriptor being deleted.
+    /// </summary>
+    public QualifiedResourceName Resource { get; init; }
+
+    /// <summary>
+    /// The existing document UUID for the descriptor being deleted.
+    /// </summary>
+    public DocumentUuid DocumentUuid { get; init; }
+
+    /// <summary>
+    /// The request trace id for diagnostics.
+    /// </summary>
+    public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// Typed write precondition forwarded from Core for descriptor delete flows.
+    /// </summary>
+    public WritePrecondition WritePrecondition
+    {
+        get => _writePrecondition;
+        init => _writePrecondition = value ?? new WritePrecondition.None();
+    }
+
+    private WritePrecondition _writePrecondition = new WritePrecondition.None();
 }
 
 /// <summary>
@@ -92,10 +153,7 @@ public interface IDescriptorWriteHandler
     /// non-descriptor document.
     /// </summary>
     Task<DeleteResult> HandleDeleteAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        TraceId traceId,
+        DescriptorDeleteRequest request,
         CancellationToken cancellationToken = default
     );
 }

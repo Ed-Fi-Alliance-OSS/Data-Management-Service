@@ -429,7 +429,8 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton(A.Fake<IReadableProfileProjector>());
                 services.AddSingleton(A.Fake<IReferenceResolver>());
                 services.AddSingleton(A.Fake<IDescriptorReadHandler>());
-                services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
+                services.AddSingleton<IDescriptorWriteHandler>(new ThrowingDescriptorWriteHandler());
+                services.AddSingleton(A.Fake<IRelationalDeleteEtagPreconditionChecker>());
                 services.AddSingleton<IRelationalWriteExceptionClassifier>(
                     new NoOpRelationalWriteExceptionClassifier()
                 );
@@ -867,5 +868,23 @@ public class Given_A_Host_Using_The_Relational_Backend
         {
             return new JsonPathExpression(canonical, segments);
         }
+    }
+
+    private sealed class ThrowingDescriptorWriteHandler : IDescriptorWriteHandler
+    {
+        public Task<UpsertResult> HandlePostAsync(
+            DescriptorWriteRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new AssertionException("Descriptor POST was not expected.");
+
+        public Task<UpdateResult> HandlePutAsync(
+            DescriptorWriteRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new AssertionException("Descriptor PUT was not expected.");
+
+        public Task<DeleteResult> HandleDeleteAsync(
+            DescriptorDeleteRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new AssertionException("Descriptor DELETE was not expected.");
     }
 }
