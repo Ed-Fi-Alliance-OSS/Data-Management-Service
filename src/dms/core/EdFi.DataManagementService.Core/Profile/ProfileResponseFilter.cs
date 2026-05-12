@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Core.Profile;
 
@@ -28,7 +29,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     /// </summary>
     private static bool TryPreserveServerGenerated(JsonObject result, string name, JsonNode? value)
     {
-        if (!ServerGeneratedFields.Contains(name))
+        if (!ServerGeneratedFieldNames.Contains(name))
         {
             return false;
         }

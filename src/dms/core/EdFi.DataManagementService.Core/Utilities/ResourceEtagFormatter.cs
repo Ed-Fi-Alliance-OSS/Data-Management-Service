@@ -10,14 +10,6 @@ namespace EdFi.DataManagementService.Core.Utilities;
 
 public static class ResourceEtagFormatter
 {
-    private static readonly string[] ServerGeneratedPropertyNames =
-    [
-        "id",
-        "link",
-        "_etag",
-        "_lastModifiedDate",
-    ];
-
     public static string FormatEtag(JsonNode document)
     {
         var canonicalDocument = BuildCanonicalDocument(document);
@@ -47,7 +39,7 @@ public static class ResourceEtagFormatter
         switch (node)
         {
             case JsonObject objectNode:
-                foreach (var propertyName in ServerGeneratedPropertyNames)
+                foreach (var propertyName in ServerGeneratedFieldNames.Names)
                 {
                     objectNode.Remove(propertyName);
                 }

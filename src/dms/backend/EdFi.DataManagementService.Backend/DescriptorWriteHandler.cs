@@ -1486,12 +1486,15 @@ internal sealed class DescriptorWriteHandler(
         PersistedDescriptorState persisted
     )
     {
-        return string.Equals(body.Namespace, persisted.Namespace, StringComparison.Ordinal)
-            && string.Equals(body.CodeValue, persisted.CodeValue, StringComparison.Ordinal)
-            && string.Equals(body.ShortDescription, persisted.ShortDescription, StringComparison.Ordinal)
-            && string.Equals(body.Description, persisted.Description, StringComparison.Ordinal)
-            && body.EffectiveBeginDate == persisted.EffectiveBeginDate
-            && body.EffectiveEndDate == persisted.EffectiveEndDate;
+        return DescriptorNoOpComparer.IsUnchanged(
+            body,
+            persisted.Namespace,
+            persisted.CodeValue,
+            persisted.ShortDescription,
+            persisted.Description,
+            persisted.EffectiveBeginDate,
+            persisted.EffectiveEndDate
+        );
     }
 
     private sealed record PersistedDescriptorState(

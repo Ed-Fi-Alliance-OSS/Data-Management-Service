@@ -276,7 +276,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         ValidationContext context
     )
     {
-        if (!ServerGeneratedFields.Contains(memberName))
+        if (!ServerGeneratedFieldNames.Contains(memberName))
         {
             return null;
         }
@@ -506,7 +506,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         failures.AddRange(
             contentType.Properties.SelectMany(property =>
             {
-                if (ServerGeneratedFields.Contains(property.Name))
+                if (ServerGeneratedFieldNames.Contains(property.Name))
                 {
                     return Enumerable.Empty<ValidationFailure>();
                 }
@@ -546,7 +546,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // Validate objects
         foreach (var obj in contentType.Objects)
         {
-            if (ServerGeneratedFields.Contains(obj.Name))
+            if (ServerGeneratedFieldNames.Contains(obj.Name))
             {
                 continue;
             }
@@ -581,7 +581,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // Validate collections
         foreach (var collection in contentType.Collections)
         {
-            if (ServerGeneratedFields.Contains(collection.Name))
+            if (ServerGeneratedFieldNames.Contains(collection.Name))
             {
                 continue;
             }
@@ -633,7 +633,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     {
         var failures = new List<ValidationFailure>();
 
-        if (ServerGeneratedFields.Contains(extension.Name))
+        if (ServerGeneratedFieldNames.Contains(extension.Name))
         {
             return failures;
         }
@@ -703,7 +703,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // for them would be a behavior change unrelated to the namespace rule.
         foreach (var obj in contentType.Objects)
         {
-            if (ServerGeneratedFields.Contains(obj.Name))
+            if (ServerGeneratedFieldNames.Contains(obj.Name))
             {
                 continue;
             }
@@ -730,7 +730,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         foreach (var collection in contentType.Collections)
         {
-            if (ServerGeneratedFields.Contains(collection.Name))
+            if (ServerGeneratedFieldNames.Contains(collection.Name))
             {
                 continue;
             }
@@ -763,7 +763,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         foreach (var extension in contentType.Extensions)
         {
-            if (ServerGeneratedFields.Contains(extension.Name))
+            if (ServerGeneratedFieldNames.Contains(extension.Name))
             {
                 continue;
             }
@@ -848,7 +848,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         failures.AddRange(
             properties.SelectMany(property =>
             {
-                if (ServerGeneratedFields.Contains(property.Name))
+                if (ServerGeneratedFieldNames.Contains(property.Name))
                 {
                     return Enumerable.Empty<ValidationFailure>();
                 }
@@ -899,7 +899,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         foreach (var nestedObj in nestedObjects)
         {
-            if (ServerGeneratedFields.Contains(nestedObj.Name))
+            if (ServerGeneratedFieldNames.Contains(nestedObj.Name))
             {
                 continue;
             }
@@ -950,7 +950,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         foreach (var collection in collections)
         {
-            if (ServerGeneratedFields.Contains(collection.Name))
+            if (ServerGeneratedFieldNames.Contains(collection.Name))
             {
                 continue;
             }

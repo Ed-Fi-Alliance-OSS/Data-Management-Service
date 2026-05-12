@@ -37,10 +37,7 @@ public class Given_Descriptor_No_Op_Comparison
             "AcademicSubjectDescriptor"
         );
 
-        // The no-op comparison in DescriptorWriteHandler compares ShortDescription,
-        // Description, EffectiveBeginDate, EffectiveEndDate. Records give us
-        // value equality on all fields, which is a superset of the no-op check.
-        a.Should().Be(b);
+        DescriptorNoOpComparer.IsUnchanged(a, b).Should().BeTrue();
     }
 
     [Test]
@@ -68,8 +65,7 @@ public class Given_Descriptor_No_Op_Comparison
             "AcademicSubjectDescriptor"
         );
 
-        a.Should().NotBe(b);
-        a.Description.Should().NotBe(b.Description);
+        DescriptorNoOpComparer.IsUnchanged(a, b).Should().BeFalse();
     }
 
     [Test]
@@ -97,7 +93,7 @@ public class Given_Descriptor_No_Op_Comparison
             "AcademicSubjectDescriptor"
         );
 
-        a.EffectiveBeginDate.Should().NotBe(b.EffectiveBeginDate);
+        DescriptorNoOpComparer.IsUnchanged(a, b).Should().BeFalse();
     }
 
     [Test]
@@ -125,11 +121,11 @@ public class Given_Descriptor_No_Op_Comparison
             "AcademicSubjectDescriptor"
         );
 
-        a.ShortDescription.Should().NotBe(b.ShortDescription);
+        DescriptorNoOpComparer.IsUnchanged(a, b).Should().BeFalse();
     }
 
     [Test]
-    public void It_detects_identity_change_via_uri_difference()
+    public void It_detects_identity_change_via_namespace_and_code_value_difference()
     {
         var original = new ExtractedDescriptorBody(
             "uri://ed-fi.org/AcademicSubjectDescriptor",
@@ -153,6 +149,6 @@ public class Given_Descriptor_No_Op_Comparison
             "AcademicSubjectDescriptor"
         );
 
-        original.Uri.Should().NotBe(changed.Uri);
+        DescriptorNoOpComparer.IsUnchanged(original, changed).Should().BeFalse();
     }
 }

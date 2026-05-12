@@ -5,15 +5,13 @@
 
 using System.Collections.Frozen;
 
-namespace EdFi.DataManagementService.Core.Profile;
+namespace EdFi.DataManagementService.Core.Utilities;
 
 /// <summary>
-/// Canonical, case-sensitive set of server-generated field names that are not
-/// addressable by the profile DSL. Single source of truth consumed by
-/// <see cref="ProfileDataValidator"/>, <see cref="ReadableProfileProjector"/>,
-/// <see cref="ProfileResponseFilter"/>, and the OpenAPI schema filter.
+/// Canonical, case-sensitive set of server-generated field names excluded from
+/// resource-state ETag canonicalization and not addressable by the profile DSL.
 /// </summary>
-internal static class ServerGeneratedFields
+internal static class ServerGeneratedFieldNames
 {
     public static FrozenSet<string> Names { get; } =
         FrozenSet.Create(StringComparer.Ordinal, "id", "link", "_etag", "_lastModifiedDate");
