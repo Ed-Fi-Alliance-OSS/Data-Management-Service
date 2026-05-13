@@ -84,6 +84,7 @@ file static class MssqlProfileIfMatchEtagTestSupport
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
+        services.AddNoOpDocumentLinkSlugResolver();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddMssqlReferenceResolver();
 

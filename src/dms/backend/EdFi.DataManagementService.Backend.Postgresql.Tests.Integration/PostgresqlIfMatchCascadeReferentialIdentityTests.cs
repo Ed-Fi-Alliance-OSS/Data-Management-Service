@@ -113,6 +113,7 @@ file static class PostgresqlIfMatchCascadeReferentialIdentityTestSupport
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
+        services.AddNoOpDocumentLinkSlugResolver();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 

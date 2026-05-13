@@ -18,13 +18,26 @@ public static class ReadableProfileProjectorTestExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton<IReadableProfileProjector, PassthroughReadableProfileProjector>();
-        // RelationalReadMaterializer's constructor requires IDocumentLinkSlugResolver. Tests
-        // that don't exercise link injection register a no-op resolver here. The default
-        // ResourceLinksOptions configuration also flips Enabled=false so the reconstituter
-        // never actually invokes the resolver — link-injection-specific fixtures override
-        // both via services.Replace / services.Configure to opt back in.
-        services.TryAddSingleton<IDocumentLinkSlugResolver, NoOpDocumentLinkSlugResolver>();
+        services.AddNoOpDocumentLinkSlugResolver();
         services.Configure<ResourceLinksOptions>(static options => options.Enabled = false);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a no-op <see cref="IDocumentLinkSlugResolver"/> that returns a placeholder
+    /// slug triple. Use this when a fixture builds its own service provider and needs to
+    /// satisfy <see cref="EdFi.DataManagementService.Backend.RelationalReadMaterializer"/>'s
+    /// constructor dependency without exercising real link emission. Under the DMS-1005
+    /// caller-agnostic emission contract the reconstituter always invokes the resolver
+    /// regardless of <c>ResourceLinksOptions.Enabled</c>; the strip pass at the
+    /// response-serialization boundary removes link decoration when the flag is false.
+    /// </summary>
+    public static IServiceCollection AddNoOpDocumentLinkSlugResolver(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton<IDocumentLinkSlugResolver, NoOpDocumentLinkSlugResolver>();
 
         return services;
     }
@@ -55,20 +68,9 @@ public static class ReadableProfileProjectorTestExtensions
         }
     }
 
-    /// <summary>
-    /// Test-only resolver that throws if invoked. Pairs with <c>ResourceLinksOptions.Enabled
-    /// = false</c> in the same test extension so the reconstituter never calls it. If a
-    /// fixture flips <c>Enabled = true</c> without also replacing this registration, the
-    /// throw surfaces the wiring gap fast.
-    /// </summary>
     private sealed class NoOpDocumentLinkSlugResolver : IDocumentLinkSlugResolver
     {
         public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
-            throw new InvalidOperationException(
-                "NoOpDocumentLinkSlugResolver was invoked but ResourceLinksOptions.Enabled is "
-                    + "expected to be false under AddTestReadableProfileProjector. Register a "
-                    + "real DocumentLinkSlugResolver (via services.Replace) before enabling "
-                    + $"link emission. ResourceKeyId was {resourceKeyId}."
-            );
+            new("ed-fi", "noop", "NoOp");
     }
 }
