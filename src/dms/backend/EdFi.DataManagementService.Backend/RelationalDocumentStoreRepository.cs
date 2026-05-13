@@ -599,6 +599,7 @@ public sealed class RelationalDocumentStoreRepository(
             resource,
             relationalQueryRequest.AuthorizationStrategyEvaluators
         );
+        PageDocumentIdAuthorizationSpec? pageQueryAuthorization = null;
 
         switch (authorizationStrategyClassification.Outcome)
         {
@@ -629,14 +630,20 @@ public sealed class RelationalDocumentStoreRepository(
                     ]);
                 }
 
-                return new QueryResult.QueryFailureNotImplemented(
-                    RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                        resource,
-                        relationalQueryRequest.AuthorizationStrategyEvaluators,
-                        "query",
-                        "GET-many"
-                    )
+                if (relationalQueryRequest.AuthorizationContext.ClaimEducationOrganizationIds.Count == 0)
+                {
+                    return new QueryResult.QuerySuccess(
+                        [],
+                        relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+                    );
+                }
+
+                pageQueryAuthorization = CreatePageDocumentIdAuthorizationSpec(
+                    authorizationStrategyClassification.SupportedStrategies,
+                    selectedEdOrgSubjects,
+                    relationalQueryRequest.AuthorizationContext
                 );
+                break;
 
             case RelationalGetManyAuthorizationStrategyClassificationOutcome.KnownButNotImplemented:
                 return new QueryResult.QueryFailureNotImplemented(
@@ -718,7 +725,8 @@ public sealed class RelationalDocumentStoreRepository(
                     preprocessingResult,
                     relationalQueryRequest.PaginationParameters,
                     out plannedQuery,
-                    out _
+                    out _,
+                    authorization: pageQueryAuthorization
                 ) || plannedQuery is null
             )
             {
@@ -1023,6 +1031,54 @@ public sealed class RelationalDocumentStoreRepository(
     private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>
         relationalGetRequest.ReadMode == RelationalGetRequestReadMode.ExternalResponse
         && relationalGetRequest.ReadableProfileProjectionContext is not null;
+
+    private static PageDocumentIdAuthorizationSpec CreatePageDocumentIdAuthorizationSpec(
+        IReadOnlyList<RelationalGetManySupportedAuthorizationStrategy> supportedStrategies,
+        RelationalEdOrgAuthorizationSubjectSelection selectedEdOrgSubjects,
+        RelationalAuthorizationContext authorizationContext
+    )
+    {
+        ArgumentNullException.ThrowIfNull(supportedStrategies);
+        ArgumentNullException.ThrowIfNull(selectedEdOrgSubjects);
+        ArgumentNullException.ThrowIfNull(authorizationContext);
+
+        IReadOnlyList<PageDocumentIdAuthorizationSubject> authorizationSubjects =
+        [
+            .. selectedEdOrgSubjects.Subjects.Select(static subject => new PageDocumentIdAuthorizationSubject(
+                subject.Table,
+                subject.Column
+            )),
+        ];
+
+        IReadOnlyList<PageDocumentIdAuthorizationStrategy> authorizationStrategies =
+        [
+            .. supportedStrategies.Select(strategy => new PageDocumentIdAuthorizationStrategy(
+                MapPageDocumentIdAuthorizationStrategyKind(strategy.Kind),
+                authorizationSubjects
+            )),
+        ];
+
+        return new PageDocumentIdAuthorizationSpec(
+            authorizationStrategies,
+            authorizationContext.ClaimEducationOrganizationIds
+        );
+    }
+
+    private static PageDocumentIdAuthorizationStrategyKind MapPageDocumentIdAuthorizationStrategyKind(
+        RelationalGetManyAuthorizationStrategyKind kind
+    ) =>
+        kind switch
+        {
+            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly =>
+                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted =>
+                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(kind),
+                kind,
+                "Unsupported page-query authorization strategy kind."
+            ),
+        };
 
     private QueryResult BuildQuerySuccess(
         IRelationalQueryRequest relationalQueryRequest,

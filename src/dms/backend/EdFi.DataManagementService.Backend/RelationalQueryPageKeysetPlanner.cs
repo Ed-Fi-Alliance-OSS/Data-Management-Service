@@ -21,13 +21,15 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         DbTableModel rootTable,
         RelationalQueryPreprocessingResult preprocessingResult,
         PaginationParameters paginationParameters,
-        Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null
+        Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
+        PageDocumentIdAuthorizationSpec? authorization = null
     )
     {
         var plannedQuery = PlanOrEmptyPage(
             rootTable,
             preprocessingResult,
             paginationParameters,
+            authorization,
             out var emptyPageReason,
             comparisonOperatorResolver
         );
@@ -44,13 +46,15 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         PaginationParameters paginationParameters,
         out PageKeysetSpec.Query? plannedQuery,
         out string? emptyPageReason,
-        Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null
+        Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
+        PageDocumentIdAuthorizationSpec? authorization = null
     )
     {
         plannedQuery = PlanOrEmptyPage(
             rootTable,
             preprocessingResult,
             paginationParameters,
+            authorization,
             out emptyPageReason,
             comparisonOperatorResolver
         );
@@ -62,6 +66,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         DbTableModel rootTable,
         RelationalQueryPreprocessingResult preprocessingResult,
         PaginationParameters paginationParameters,
+        PageDocumentIdAuthorizationSpec? authorization,
         out string? emptyPageReason,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null
     )
@@ -84,6 +89,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             static column => column.ColumnName,
             static column => column
         );
+        var authorizationClaimParameterization = CreateAuthorizationClaimParameterization(authorization);
         var parameterNamesByIndex = DeriveParameterNames(preprocessingResult.QueryElementsInOrder);
         var predicates = new QueryValuePredicate[preprocessingResult.QueryElementsInOrder.Count];
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal)
@@ -123,17 +129,72 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             parameterValues[parameterName] = plannedPredicate.ParameterValue;
         }
 
+        AddAuthorizationParameterValues(parameterValues, authorizationClaimParameterization);
+
         var querySpec = new PageDocumentIdQuerySpec(
             RootTable: rootTable.Table,
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: BuildUnifiedAliasMappingsByColumn(rootTable),
             OffsetParameterName: OffsetParameterName,
             LimitParameterName: LimitParameterName,
-            IncludeTotalCountSql: paginationParameters.TotalCount
+            IncludeTotalCountSql: paginationParameters.TotalCount,
+            Authorization: authorization
         );
         var sqlPlan = _sqlCompiler.Compile(querySpec);
 
         return new PageKeysetSpec.Query(sqlPlan, parameterValues);
+    }
+
+    private AuthorizationClaimEducationOrganizationIdParameterization? CreateAuthorizationClaimParameterization(
+        PageDocumentIdAuthorizationSpec? authorization
+    ) =>
+        authorization is null
+            ? null
+            : AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                dialect,
+                authorization.ClaimEducationOrganizationIds,
+                authorization.ClaimEducationOrganizationIdsParameterName
+            );
+
+    private static void AddAuthorizationParameterValues(
+        IDictionary<string, object?> parameterValues,
+        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
+    )
+    {
+        if (authorizationClaimParameterization is null)
+        {
+            return;
+        }
+
+        switch (authorizationClaimParameterization.Kind)
+        {
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray:
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured:
+                parameterValues[authorizationClaimParameterization.BaseParameterName] =
+                    authorizationClaimParameterization.ClaimEducationOrganizationIds;
+                return;
+
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar:
+                for (
+                    var parameterIndex = 0;
+                    parameterIndex < authorizationClaimParameterization.ParameterNamesInOrder.Count;
+                    parameterIndex++
+                )
+                {
+                    parameterValues[
+                        authorizationClaimParameterization.ParameterNamesInOrder[parameterIndex]
+                    ] = authorizationClaimParameterization.ClaimEducationOrganizationIds[parameterIndex];
+                }
+
+                return;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(authorizationClaimParameterization),
+                    authorizationClaimParameterization.Kind,
+                    "Unsupported authorization claim EdOrg parameterization kind."
+                );
+        }
     }
 
     private static PlannedPredicate? PlanPredicate(
