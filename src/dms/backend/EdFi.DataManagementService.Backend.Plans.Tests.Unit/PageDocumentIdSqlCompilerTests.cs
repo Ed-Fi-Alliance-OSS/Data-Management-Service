@@ -819,6 +819,223 @@ public class Given_PageDocumentIdSqlCompiler
             .Equal("schoolId");
     }
 
+    [TestCase(
+        SqlDialect.Pgsql,
+        "\"auth\".\"EducationOrganizationIdToEducationOrganizationId\"",
+        "r.\"SchoolId\" IN (SELECT t0.\"TargetEducationOrganizationId\"",
+        "WHERE t0.\"SourceEducationOrganizationId\" IN (@ClaimEducationOrganizationIds)"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "[auth].[EducationOrganizationIdToEducationOrganizationId]",
+        "r.[SchoolId] IN (SELECT t0.[TargetEducationOrganizationId]",
+        "WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds)"
+    )]
+    public void It_should_emit_normal_edorg_authorization_sql_for_page_and_total_count_queries(
+        SqlDialect dialect,
+        string expectedAuthTableFragment,
+        string expectedSubjectFragment,
+        string expectedClaimFilterFragment
+    )
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        CreateAuthorizationSubject("SchoolId")
+                    )
+                )
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain(expectedAuthTableFragment);
+        plan.PageDocumentIdSql.Should().Contain(expectedSubjectFragment);
+        plan.PageDocumentIdSql.Should().Contain(expectedClaimFilterFragment);
+        plan.TotalCountSql.Should().Contain(expectedAuthTableFragment);
+        plan.TotalCountSql.Should().Contain(expectedSubjectFragment);
+        plan.TotalCountSql.Should().Contain(expectedClaimFilterFragment);
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("ClaimEducationOrganizationIds", "offset", "limit");
+        plan.TotalCountParametersInOrder.Should().NotBeNull();
+        plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("ClaimEducationOrganizationIds");
+    }
+
+    [TestCase(
+        SqlDialect.Pgsql,
+        "r.\"SchoolId\" IN (SELECT t0.\"SourceEducationOrganizationId\"",
+        "WHERE t0.\"TargetEducationOrganizationId\" IN (@ClaimEducationOrganizationIds)"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "r.[SchoolId] IN (SELECT t0.[SourceEducationOrganizationId]",
+        "WHERE t0.[TargetEducationOrganizationId] IN (@ClaimEducationOrganizationIds)"
+    )]
+    public void It_should_emit_inverted_edorg_authorization_sql_for_page_and_total_count_queries(
+        SqlDialect dialect,
+        string expectedSubjectFragment,
+        string expectedClaimFilterFragment
+    )
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                        CreateAuthorizationSubject("SchoolId")
+                    )
+                )
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain(expectedSubjectFragment);
+        plan.PageDocumentIdSql.Should().Contain(expectedClaimFilterFragment);
+        plan.TotalCountSql.Should().Contain(expectedSubjectFragment);
+        plan.TotalCountSql.Should().Contain(expectedClaimFilterFragment);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_or_multiple_authorization_strategies(SqlDialect dialect)
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        CreateAuthorizationSubject("SchoolId")
+                    ),
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                        CreateAuthorizationSubject("LocalEducationAgencyId")
+                    )
+                )
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain(" OR ");
+        plan.PageDocumentIdSql.Should().Contain("SchoolId");
+        plan.PageDocumentIdSql.Should().Contain("LocalEducationAgencyId");
+        plan.PageDocumentIdSql.Should().Contain("TargetEducationOrganizationId");
+        plan.PageDocumentIdSql.Should().Contain("SourceEducationOrganizationId");
+        plan.TotalCountSql.Should().Contain(" OR ");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_and_multiple_subjects_within_one_authorization_strategy(SqlDialect dialect)
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        CreateAuthorizationSubject("SchoolId"),
+                        CreateAuthorizationSubject("LocalEducationAgencyId")
+                    )
+                )
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain(" AND ");
+        plan.PageDocumentIdSql.Should().Contain("SchoolId");
+        plan.PageDocumentIdSql.Should().Contain("LocalEducationAgencyId");
+        plan.PageDocumentIdSql.Should().Contain("t0");
+        plan.PageDocumentIdSql.Should().Contain("t1");
+        plan.TotalCountSql.Should().Contain(" AND ");
+    }
+
+    [TestCase(
+        SqlDialect.Pgsql,
+        "\"edfi\".\"CourseTranscript\"",
+        "r.\"StudentAcademicRecord_EducationOrganizationId\""
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "[edfi].[CourseTranscript]",
+        "r.[StudentAcademicRecord_EducationOrganizationId]"
+    )]
+    public void It_should_bind_authorization_subjects_to_the_root_alias_for_derived_resource_subject_columns(
+        SqlDialect dialect,
+        string expectedRootTableFragment,
+        string expectedSubjectFragment
+    )
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        CreateAuthorizationSubject(
+                            "StudentAcademicRecord_EducationOrganizationId",
+                            new DbTableName(new DbSchemaName("edfi"), "CourseTranscript")
+                        )
+                    )
+                ),
+                rootTable: new DbTableName(new DbSchemaName("edfi"), "CourseTranscript")
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain($"FROM {expectedRootTableFragment} r");
+        plan.PageDocumentIdSql.Should().Contain(expectedSubjectFragment);
+        plan.PageDocumentIdSql.Should().NotContain("StudentAcademicRecord\" t");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_ignore_no_further_authorization_required_when_mixed_with_relationship_strategies(
+        SqlDialect dialect
+    )
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.NoFurtherAuthorizationRequired
+                    ),
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        CreateAuthorizationSubject("SchoolId")
+                    )
+                )
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain("ClaimEducationOrganizationIds");
+        plan.PageDocumentIdSql.Should().NotContain(" OR ");
+        plan.TotalCountSql.Should().Contain("ClaimEducationOrganizationIds");
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("ClaimEducationOrganizationIds", "offset", "limit");
+    }
+
     [Test]
     public void It_should_reject_predicate_parameter_names_that_are_not_safe_to_emit()
     {
@@ -940,7 +1157,9 @@ public class Given_PageDocumentIdSqlCompiler
         IReadOnlyList<KeyValuePair<DbColumnName, ColumnStorage.UnifiedAlias>> unifiedAliasMappings,
         string offsetParameterName = "offset",
         string limitParameterName = "limit",
-        bool includeTotalCountSql = false
+        bool includeTotalCountSql = false,
+        PageDocumentIdAuthorizationSpec? authorization = null,
+        DbTableName? rootTable = null
     )
     {
         var unifiedAliasMappingsByColumn = new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>();
@@ -951,12 +1170,13 @@ public class Given_PageDocumentIdSqlCompiler
         }
 
         return new PageDocumentIdQuerySpec(
-            RootTable: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
+            RootTable: rootTable ?? new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: unifiedAliasMappingsByColumn,
             OffsetParameterName: offsetParameterName,
             LimitParameterName: limitParameterName,
-            IncludeTotalCountSql: includeTotalCountSql
+            IncludeTotalCountSql: includeTotalCountSql,
+            Authorization: authorization
         );
     }
 
@@ -974,6 +1194,32 @@ public class Given_PageDocumentIdSqlCompiler
             OffsetParameterName: offsetParameterName,
             LimitParameterName: limitParameterName,
             IncludeTotalCountSql: includeTotalCountSql
+        );
+    }
+
+    private static PageDocumentIdAuthorizationSpec CreateAuthorizationSpec(
+        params PageDocumentIdAuthorizationStrategy[] strategies
+    )
+    {
+        return new PageDocumentIdAuthorizationSpec(strategies);
+    }
+
+    private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategy(
+        PageDocumentIdAuthorizationStrategyKind kind,
+        params PageDocumentIdAuthorizationSubject[] subjects
+    )
+    {
+        return new PageDocumentIdAuthorizationStrategy(kind, subjects);
+    }
+
+    private static PageDocumentIdAuthorizationSubject CreateAuthorizationSubject(
+        string columnName,
+        DbTableName? table = null
+    )
+    {
+        return new PageDocumentIdAuthorizationSubject(
+            table ?? new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
+            new DbColumnName(columnName)
         );
     }
 
