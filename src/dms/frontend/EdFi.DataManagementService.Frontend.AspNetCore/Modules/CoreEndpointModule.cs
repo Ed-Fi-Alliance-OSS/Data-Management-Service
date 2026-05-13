@@ -19,10 +19,17 @@ public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointMo
             appSettings.Value.MultiTenancy
         );
 
-        endpoints.MapPost(routePattern, Upsert);
-        endpoints.MapGet(routePattern, Get);
-        endpoints.MapPut(routePattern, UpdateById);
-        endpoints.MapDelete(routePattern, DeleteById);
+        // /data/v3 alias for parity with ODS API URLs so SDK consumers (e.g. EdFi.LoadTools'
+        // SdkConfigurationFactory) that hardcode the historical /data/v3 base reach the same handlers.
+        string v3AliasPattern = routePattern.Replace("/data/{**dmsPath}", "/data/v3/{**dmsPath}");
+
+        foreach (var pattern in new[] { routePattern, v3AliasPattern })
+        {
+            endpoints.MapPost(pattern, Upsert);
+            endpoints.MapGet(pattern, Get);
+            endpoints.MapPut(pattern, UpdateById);
+            endpoints.MapDelete(pattern, DeleteById);
+        }
     }
 
     /// <summary>

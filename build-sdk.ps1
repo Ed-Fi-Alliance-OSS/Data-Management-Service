@@ -90,71 +90,164 @@ function DownloadCodeGen {
     }
 }
 
-function GenerateSdk {
-    param (
-        [string]
-        $ApiPackage,
+function Rename-DescriptorOperationId {
+    param([string]$old)
+    if ($old -match 'ById$') {
+        return ($old -replace 'ById$', 'DescriptorById')
+    } elseif ($old -match 's$') {
+        return ($old -replace 's$', 'Descriptors')
+    } else {
+        return "${old}Descriptor"
+    }
+}
 
-        [string]
-        $ModelPackage,
-
-        [string]
-        $Endpoint,
-
-        [string]
-        $ExtraOperationIdMappings = ""
+function Merge-DmsSpecs {
+    # Merges resources-spec and descriptors-spec into a single OpenAPI document so the generator
+    # runs once and emits a complete HostConfiguration.cs / IApi.cs. The two-pass flow used to
+    # let the descriptors pass clobber the resources-pass HostConfiguration, leaving resource
+    # APIs unregistered in DI and the smoke test tool throwing NREs on every resource call.
+    param(
+        [string]$ResourcesEndpoint,
+        [string]$DescriptorsEndpoint
     )
 
-    # Download and parse OpenAPI spec
-    $spec = Invoke-WebRequest -Uri $Endpoint | ConvertFrom-Json
+    $resources = (Invoke-WebRequest -Uri $ResourcesEndpoint).Content | ConvertFrom-Json -Depth 100 -AsHashtable
+    $descriptors = (Invoke-WebRequest -Uri $DescriptorsEndpoint).Content | ConvertFrom-Json -Depth 100 -AsHashtable
 
-    # Find all operationIds that contain an underscore
-    $operationIds = $spec.paths.PSObject.Properties.Value | ForEach-Object {
-        $_.PSObject.Properties.Value | Where-Object { $_.operationId -and $_.operationId -like "*_*" } | ForEach-Object { $_.operationId }
+    # Rename descriptor operationIds that collide with resource ones (e.g. getGradingPeriods
+    # appears in both specs; without renaming we'd get duplicate C# method names in Apis.All).
+    $resourceIds = @{}
+    foreach ($pathOps in $resources.paths.Values) {
+        foreach ($op in $pathOps.Values) {
+            if ($op -is [System.Collections.IDictionary] -and $op.ContainsKey('operationId')) {
+                $resourceIds[$op.operationId] = $true
+            }
+        }
+    }
+    foreach ($pathOps in $descriptors.paths.Values) {
+        foreach ($op in $pathOps.Values) {
+            if ($op -is [System.Collections.IDictionary] -and $op.ContainsKey('operationId') -and $resourceIds.ContainsKey($op.operationId)) {
+                $op.operationId = Rename-DescriptorOperationId $op.operationId
+            }
+        }
     }
 
-    # Normalize operationId to camelCase without underscores (for the left side of mapping)
+    # Union descriptor paths/schemas/tags into resources. Parameters/responses/securitySchemes
+    # are identical across both specs (verified by inspection) so the resources copy is kept.
+    foreach ($pathName in $descriptors.paths.Keys) {
+        if (-not $resources.paths.ContainsKey($pathName)) {
+            $resources.paths[$pathName] = $descriptors.paths[$pathName]
+        }
+    }
+    foreach ($schemaName in $descriptors.components.schemas.Keys) {
+        if (-not $resources.components.schemas.ContainsKey($schemaName)) {
+            $resources.components.schemas[$schemaName] = $descriptors.components.schemas[$schemaName]
+        }
+    }
+    $existingTagNames = @{}
+    foreach ($t in $resources.tags) { $existingTagNames[$t.name] = $true }
+    foreach ($t in $descriptors.tags) {
+        if (-not $existingTagNames.ContainsKey($t.name)) {
+            $resources.tags += $t
+        }
+    }
+
+    # Drop required arrays on Homograph* schemas so the generichost-library generator omits its
+    # throw-on-missing-required validation. The smoke test tool's data factory cannot populate
+    # required props on these extension models, and the server-side spec still enforces them.
+    foreach ($schemaName in @($resources.components.schemas.Keys)) {
+        if ($schemaName.StartsWith('Homograph')) {
+            $schema = $resources.components.schemas[$schemaName]
+            if ($schema -is [System.Collections.IDictionary] -and $schema.ContainsKey('required')) {
+                $schema.Remove('required')
+            }
+        }
+    }
+
+    return $resources
+}
+
+function GenerateSdk {
+    param (
+        [string]$ApiPackage,
+        [string]$ModelPackage,
+        [System.Collections.IDictionary]$Spec
+    )
+
+    # Rewrite tags on non-ed-fi paths whose tag also appears on /ed-fi/* paths. Without this,
+    # /ed-fi/contacts and /homograph/contacts share tag 'contacts' and land on the same
+    # ContactsApi, which the smoke test tool's "one Post per Api class" categorizer can't
+    # disambiguate. The generator emits a distinct *Api class per tag, so prefixing the tag
+    # with the namespace splits the colliding endpoints into separate classes.
+    $coreTags = @{}
+    foreach ($pathName in @($Spec.paths.Keys)) {
+        if ($pathName.StartsWith('/ed-fi/')) {
+            foreach ($verb in @($Spec.paths[$pathName].Keys)) {
+                $op = $Spec.paths[$pathName][$verb]
+                if ($op -is [System.Collections.IDictionary] -and $op.ContainsKey('tags') -and $op['tags']) {
+                    foreach ($t in $op['tags']) { $coreTags[$t] = $true }
+                }
+            }
+        }
+    }
+    foreach ($pathName in @($Spec.paths.Keys)) {
+        if ($pathName -match '^/(?<ns>[^/]+)/' -and $matches.ns -ne 'ed-fi') {
+            $nsSafe = ($matches.ns -replace '[^A-Za-z0-9]', '')
+            foreach ($verb in @($Spec.paths[$pathName].Keys)) {
+                $op = $Spec.paths[$pathName][$verb]
+                if ($op -is [System.Collections.IDictionary] -and $op.ContainsKey('tags') -and $op['tags']) {
+                    $op['tags'] = @($op['tags'] | ForEach-Object { if ($coreTags.ContainsKey($_)) { "${nsSafe}_$_" } else { $_ } })
+                }
+            }
+        }
+    }
+
+    # Build --operation-id-name-mappings for underscore-bearing operationIds so the generator
+    # preserves the namespace separator in C# method names (post_HomographContact stays
+    # Post_HomographContact rather than collapsing to PostHomographContact).
+    $operationIds = @()
+    foreach ($pathOps in $Spec.paths.Values) {
+        foreach ($op in $pathOps.Values) {
+            if ($op -is [System.Collections.IDictionary] -and $op.ContainsKey('operationId') -and $op.operationId -like "*_*") {
+                $operationIds += $op.operationId
+            }
+        }
+    }
+
     function Normalize-OperationId {
         param($opId)
         $parts = $opId -split '_'
-        $camel = $parts[0] + ($parts[1..($parts.Count-1)] | ForEach-Object { $_.Substring(0,1).ToUpper() + $_.Substring(1) } | ForEach-Object { $_ }) -join ''
+        $camel = $parts[0] + (($parts[1..($parts.Count-1)] | ForEach-Object { $_.Substring(0,1).ToUpper() + $_.Substring(1) }) -join '')
         return $camel
     }
-
-    # Capitalize the first character of the string
     function Capitalize-FirstChar {
         param($s)
         if ($s.Length -eq 0) { return $s }
         return $s.Substring(0,1).ToUpper() + $s.Substring(1)
     }
-
-    # Build mappings string: left = normalized, right = original with first char uppercased
     $mappings = ($operationIds | Sort-Object -Unique | ForEach-Object { "$(Normalize-OperationId $_)=$(Capitalize-FirstChar $_)" }) -join ","
-    # Example --operation-id-name-mappings deleteHomographContactsById=Delete_HomographContactsById
 
-    # Merge in any extra mappings provided by the caller (e.g. to resolve cross-spec operationId collisions)
-    if ($ExtraOperationIdMappings -ne "") {
-        if ($mappings -ne "") {
-            $mappings = "$mappings,$ExtraOperationIdMappings"
-        } else {
-            $mappings = $ExtraOperationIdMappings
-        }
+    $specTempPath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "openapi-spec-$([System.Guid]::NewGuid()).json")
+    $Spec | ConvertTo-Json -Depth 100 -Compress | Set-Content -Path $specTempPath -Encoding UTF8NoBOM
+
+    try {
+        & java -Xmx5g -jar $openApiGeneratorJar generate `
+        -g csharp `
+        -i $specTempPath `
+        --api-package $ApiPackage `
+        --model-package $ModelPackage `
+        -o $OutputFolder `
+        --operation-id-name-mappings $mappings `
+        --additional-properties "packageName=$PackageName,targetFramework=net10.0,netCoreProjectFile=true" `
+        --global-property modelTests=false `
+        --global-property apiTests=false `
+        --global-property apiDocs=false `
+        --global-property modelDocs=false `
+        --skip-validate-spec
     }
-
-    & java -Xmx5g -jar $openApiGeneratorJar generate `
-    -g csharp `
-    -i $Endpoint `
-    --api-package $ApiPackage `
-    --model-package $ModelPackage `
-    -o $OutputFolder `
-    --operation-id-name-mappings $mappings `
-    --additional-properties "packageName=$PackageName,targetFramework=net10.0,netCoreProjectFile=true" `
-    --global-property modelTests=false `
-    --global-property apiTests=false `
-    --global-property apiDocs=false `
-    --global-property modelDocs=false `
-    --skip-validate-spec
-
+    finally {
+        Remove-Item $specTempPath -ErrorAction SilentlyContinue
+    }
 }
 
 function BuildSdk {
@@ -210,67 +303,20 @@ function PushPackage {
     }
 }
 
-function Get-OperationIds {
-    param([string]$Endpoint)
-    $spec = Invoke-WebRequest -Uri $Endpoint | ConvertFrom-Json
-    $ids = $spec.paths.PSObject.Properties.Value | ForEach-Object {
-        $_.PSObject.Properties.Value | Where-Object { $_.operationId } | ForEach-Object { $_.operationId }
-    }
-    return ($ids | Sort-Object -Unique)
-}
-
-function Build-CollisionMappings {
-    param(
-        [string[]]$ResourcesIds,
-        [string[]]$DescriptorsIds
-    )
-    # Find operationIds present in both specs (collisions that would produce duplicate C# names)
-    $collisions = $DescriptorsIds | Where-Object { $ResourcesIds -contains $_ }
-    if ($collisions.Count -eq 0) {
-        return ""
-    }
-    # For each colliding descriptor operationId, insert "Descriptor" before any "ById" suffix
-    # or replace a trailing "s" with "Descriptors", otherwise append "Descriptor".
-    # Examples:  getGradingPeriods        -> getGradingPeriodDescriptors
-    #            deleteGradingPeriodsById -> deleteGradingPeriodDescriptorsById
-    #            postGradingPeriod        -> postGradingPeriodDescriptor
-    #            putGradingPeriod         -> putGradingPeriodDescriptor
-    $mappings = $collisions | ForEach-Object {
-        $old = $_
-        if ($old -match 'ById$') {
-            $new = $old -replace 'ById$', 'DescriptorById'
-        } elseif ($old -match 's$') {
-            $new = $old -replace 's$', 'Descriptors'
-        } else {
-            $new = "${old}Descriptor"
-        }
-        "$old=$new"
-    }
-    return ($mappings -join ",")
-}
-
 function Invoke-BuildAndGenerateSdk {
     Invoke-Step { DownloadCodeGen }
 
-    if ($PackageName -eq "EdFi.DmsApi.TestSdk") {
-        Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
-        # Detect operationId collisions between the two specs and remap the descriptor-side ones to
-        # avoid duplicate C# type names when both specs are merged into the same Apis.All namespace.
-        $resourcesIds = Get-OperationIds -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json"
-        $descriptorsIds = Get-OperationIds -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json"
-        $collisionMappings = Build-CollisionMappings -ResourcesIds $resourcesIds -DescriptorsIds $descriptorsIds
-        Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" -ExtraOperationIdMappings $collisionMappings }
-    } elseif ($PackageName -eq "EdFi.DmsApi.Sdk") {
-        Invoke-Step { GenerateSdk -ApiPackage "Apis.Ed_Fi" -ModelPackage "Models.Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
-        # Apply the same collision-avoidance logic as TestSdk so that GradingPeriodDescriptors
-        # response interfaces do not duplicate those from the GradingPeriods resources spec.
-        $resourcesIds = Get-OperationIds -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json"
-        $descriptorsIds = Get-OperationIds -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json"
-        $collisionMappings = Build-CollisionMappings -ResourcesIds $resourcesIds -DescriptorsIds $descriptorsIds
-        Invoke-Step { GenerateSdk -ApiPackage "Apis.Ed_Fi" -ModelPackage "Models.Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" -ExtraOperationIdMappings $collisionMappings }
-    } else {
-        throw "Unknown PackageName value: $PackageName"
+    $mergedSpec = Merge-DmsSpecs `
+        -ResourcesEndpoint "$DmsUrl/metadata/specifications/resources-spec.json" `
+        -DescriptorsEndpoint "$DmsUrl/metadata/specifications/descriptors-spec.json"
+
+    $packagePair = switch ($PackageName) {
+        "EdFi.DmsApi.TestSdk" { @{ Api = "Apis.All"; Model = "Models.All" } }
+        "EdFi.DmsApi.Sdk"     { @{ Api = "Apis.Ed_Fi"; Model = "Models.Ed_Fi" } }
+        default               { throw "Unknown PackageName value: $PackageName" }
     }
+
+    Invoke-Step { GenerateSdk -ApiPackage $packagePair.Api -ModelPackage $packagePair.Model -Spec $mergedSpec }
 
     Invoke-Step { BuildSdk }
 }

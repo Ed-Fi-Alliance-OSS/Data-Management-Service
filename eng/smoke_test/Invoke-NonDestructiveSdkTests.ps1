@@ -40,7 +40,7 @@ if ($SdkPath) {
   $sdkDllPath = Get-ApiSdkDll
 }
 
-$path = Get-SmokeTestTool -PackageVersion '7.3.10008' -PreRelease
+$path = Get-SmokeTestTool -PackageVersion '7.3.20144' -PreRelease
 
 $parameters = @{
   BaseUrl = $BaseUrl

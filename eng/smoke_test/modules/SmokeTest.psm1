@@ -9,6 +9,31 @@ $ErrorActionPreference = "Stop"
 # Import the Dms-Management module for vendor/application management
 Import-Module "$PSScriptRoot/../../Dms-Management.psm1" -Force
 
+function Get-SmokeTestConsolePath {
+    param (
+        [string]
+        [Parameter(Mandatory = $True)]
+        $ToolPath
+    )
+
+    $toolsPath = Join-Path -Path ($ToolPath).Trim() -ChildPath "tools"
+    $frameworkDirectory = Get-ChildItem -Path $toolsPath -Directory |
+        Where-Object { $_.Name -match '^net\d+(\.\d+)?$' } |
+        Sort-Object { [version]($_.Name -replace '^net', '') } -Descending |
+        Select-Object -First 1
+
+    if ($null -eq $frameworkDirectory) {
+        throw "No supported .NET tool framework directory found in '$toolsPath'."
+    }
+
+    $consolePath = Join-Path -Path $frameworkDirectory.FullName -ChildPath "any/EdFi.SmokeTest.Console.dll"
+    if (-not (Test-Path $consolePath)) {
+        throw "Smoke test console not found at '$consolePath'."
+    }
+
+    return $consolePath
+}
+
 function Invoke-SmokeTestUtility {
 
     [CmdletBinding()]
@@ -36,13 +61,21 @@ function Invoke-SmokeTestUtility {
         [string]
         $SdkPath,
 
+        [string]
+        $OAuthUrl,
+
         [ValidateSet("EdFi.DmsApi.TestSdk", "EdFi.DmsApi.Sdk", "EdFi.OdsApi.Sdk")]
         [string]
         $SdkNamespace = "EdFi.DmsApi.TestSdk"
     )
 
+    if ([string]::IsNullOrWhiteSpace($OAuthUrl)) {
+        $OAuthUrl = "$($BaseUrl.TrimEnd('/'))/oauth/token"
+    }
+
     $options = @(
         "-b", $BaseUrl,
+        "-o", $OAuthUrl,
         "-k", $Key,
         "-s", $Secret,
         "-t", $TestSet,
@@ -64,7 +97,7 @@ function Invoke-SmokeTestUtility {
     Write-Output $ToolPath $options
     $host.UI.RawUI.ForegroundColor = $previousForegroundColor
 
-    $path = (Join-Path -Path ($ToolPath).Trim() -ChildPath "tools/net8.0/any/EdFi.SmokeTest.Console.dll")
+    $path = Get-SmokeTestConsolePath -ToolPath $ToolPath
     &dotnet $path $options
 }
 

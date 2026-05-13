@@ -23,7 +23,7 @@ $ErrorActionPreference = "Stop"
 Import-Module ../Package-Management.psm1 -Force
 Import-Module ./modules/SmokeTest.psm1
 
-$path = Get-SmokeTestTool -PackageVersion '7.2.413'
+$path = Get-SmokeTestTool -PackageVersion '7.3.20144' -PreRelease
 
 $parameters = @{
   BaseUrl = $BaseUrl

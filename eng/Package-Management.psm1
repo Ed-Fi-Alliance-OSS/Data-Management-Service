@@ -123,6 +123,16 @@ function Get-NugetPackage {
         $PreRelease
     )
 
+    $lowerId = $PackageName.ToLower()
+    $packagesDir = ".packages"
+
+    if (-not [string]::IsNullOrWhiteSpace($PackageVersion) -and $PackageVersion.Split('.').Length -ge 3) {
+        $cachedPackage = Join-Path -Path $packagesDir -ChildPath "$lowerId.$PackageVersion"
+        if (Test-Path -Path $cachedPackage) {
+            return $cachedPackage
+        }
+    }
+
     # Pre-releases
     $nugetServicesURL = $ReleaseServiceIndex
     if ($PreRelease) {
@@ -136,7 +146,6 @@ function Get-NugetPackage {
                         | Where-Object { $_."@type" -like "PackageBaseAddress*" } `
                         | Select-Object -Property "@id" -ExpandProperty "@id"
 
-    $lowerId = $PackageName.ToLower()
     # Lookup available packages
     $package = Invoke-RestMethod "$($packageService)$($lowerId)/index.json"
     # Sort by SemVer
@@ -165,7 +174,6 @@ function Get-NugetPackage {
 
     $file = "$($lowerId).$($version)"
     $zip = "$($file).zip"
-    $packagesDir = ".packages"
     New-Item -Path $packagesDir -Force -ItemType Directory | Out-Null
 
     Push-Location $packagesDir
