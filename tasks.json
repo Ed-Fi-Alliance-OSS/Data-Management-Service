@@ -27,7 +27,7 @@
       "Add regression tests proving the legacy backend or non-query paths still use existing provider validation and missing-provider failure behavior.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Strategy Classification",
