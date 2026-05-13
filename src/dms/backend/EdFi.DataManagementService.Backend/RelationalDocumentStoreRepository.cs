@@ -606,6 +606,29 @@ public sealed class RelationalDocumentStoreRepository(
                 break;
 
             case RelationalGetManyAuthorizationStrategyClassificationOutcome.SupportedRelationshipStrategies:
+                var selectedEdOrgSubjects = RelationalEdOrgAuthorizationSubjectSelector.Select(
+                    mappingSet,
+                    resource,
+                    [
+                        .. authorizationStrategyClassification.SupportedStrategies.Select(static strategy =>
+                            strategy.Evaluator.AuthorizationStrategyName
+                        ),
+                    ]
+                );
+
+                if (
+                    selectedEdOrgSubjects.Outcome
+                    is RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError
+                )
+                {
+                    return new QueryResult.QueryFailureSecurityConfiguration([
+                        selectedEdOrgSubjects.FailureMessage
+                            ?? throw new InvalidOperationException(
+                                "EdOrg authorization subject selection must provide a failure message for security-configuration errors."
+                            ),
+                    ]);
+                }
+
                 return new QueryResult.QueryFailureNotImplemented(
                     RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
                         resource,

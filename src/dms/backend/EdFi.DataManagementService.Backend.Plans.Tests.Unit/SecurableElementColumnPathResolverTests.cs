@@ -1093,6 +1093,68 @@ public class Given_SecurableElementColumnPathResolver
         }
 
         [Test]
+        public void It_should_keep_a_valid_path_when_an_unresolvable_sibling_shares_the_same_metaed_name()
+        {
+            var rootTable = CreateRootTable(
+                Table("TestResource"),
+                [
+                    new DbColumnModel(
+                        Col("SchoolReference_DocumentId"),
+                        ColumnKind.DocumentFk,
+                        null,
+                        false,
+                        null,
+                        new QualifiedResourceName("Ed-Fi", "School")
+                    ),
+                    new DbColumnModel(
+                        Col("SchoolReference_SchoolId"),
+                        ColumnKind.Scalar,
+                        null,
+                        false,
+                        Path("$.schoolReference.schoolId"),
+                        null
+                    ),
+                ]
+            );
+
+            var rootBinding = new DocumentReferenceBinding(
+                true,
+                Path("$.schoolReference"),
+                rootTable.Table,
+                Col("SchoolReference_DocumentId"),
+                new QualifiedResourceName("Ed-Fi", "School"),
+                [
+                    new ReferenceIdentityBinding(
+                        Path("$.schoolReference.schoolId"),
+                        Path("$.schoolReference.schoolId"),
+                        Col("SchoolReference_SchoolId")
+                    ),
+                ]
+            );
+
+            var model = CreateModel("Ed-Fi", "TestResource", rootTable, [rootBinding]);
+            var securableElements = new ResourceSecurableElements(
+                [
+                    new EdOrgSecurableElement("$.schoolReference.schoolId", "SchoolId"),
+                    new EdOrgSecurableElement("$.missingSchoolReference.schoolId", "SchoolId"),
+                ],
+                [],
+                [],
+                [],
+                []
+            );
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "TestResource", model, securableElements);
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().ContainSingle();
+            results[0].Kind.Should().Be(SecurableElementKind.EducationOrganization);
+            results[0].Steps.Should().ContainSingle();
+            results[0].Steps[0].SourceTable.Should().Be(rootTable.Table);
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("SchoolReference_SchoolId"));
+        }
+
+        [Test]
         public void It_should_throw_when_all_person_paths_are_array_nested()
         {
             // Resource has only array-nested Student paths — should throw.

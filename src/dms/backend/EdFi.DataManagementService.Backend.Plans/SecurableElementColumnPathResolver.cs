@@ -7,6 +7,17 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
+internal sealed record ResolvedEdOrgSecurableElementCandidate(
+    string JsonPath,
+    string ReadableName,
+    ColumnPathStep Step
+);
+
+internal sealed record ResolvedEdOrgSecurableElementCandidateResolution(
+    IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> ResolvedCandidates,
+    IReadOnlyList<EdOrgSecurableElement> UnresolvedElements
+);
+
 /// <summary>
 /// Resolves securable element authorization column paths from the derived relational model.
 /// Given a subject resource and its securable elements, produces the chain of table joins
@@ -34,19 +45,46 @@ internal static class SecurableElementColumnPathResolver
         var results = new List<ResolvedSecurableElementPath>();
         var unresolvedPaths = new List<string>();
         var skippedArrayNestedPaths = new List<string>();
+        var resolvedEdOrgCandidates = ResolveEducationOrganizationCandidates(subjectResource);
+        var resolvedEdOrgByJsonPath = resolvedEdOrgCandidates
+            .ResolvedCandidates.GroupBy(static candidate => candidate.JsonPath, StringComparer.Ordinal)
+            .ToDictionary(
+                static grouping => grouping.Key,
+                static grouping => grouping.ToArray(),
+                StringComparer.Ordinal
+            );
+        var resolvedEdOrgNames = resolvedEdOrgCandidates
+            .ResolvedCandidates.Select(static candidate => candidate.ReadableName)
+            .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var jsonPath in securableElements.EducationOrganization.Select(e => e.JsonPath))
+        foreach (var edOrgElement in securableElements.EducationOrganization)
         {
-            var path = ResolveEdOrgOrNamespacePath(subjectResource, jsonPath);
-            if (path is not null)
+            if (
+                !resolvedEdOrgByJsonPath.TryGetValue(edOrgElement.JsonPath, out var candidates)
+                || candidates.Length == 0
+            )
+            {
+                continue;
+            }
+
+            var preferredCandidate = SelectPreferredSingleStepCandidate(subjectResource, candidates);
+
+            if (preferredCandidate is not null)
             {
                 results.Add(
-                    new ResolvedSecurableElementPath(SecurableElementKind.EducationOrganization, [path])
+                    new ResolvedSecurableElementPath(
+                        SecurableElementKind.EducationOrganization,
+                        [preferredCandidate.Step]
+                    )
                 );
             }
-            else
+        }
+
+        foreach (var unresolvedEdOrgElement in resolvedEdOrgCandidates.UnresolvedElements)
+        {
+            if (!resolvedEdOrgNames.Contains(unresolvedEdOrgElement.MetaEdName))
             {
-                unresolvedPaths.Add(jsonPath);
+                unresolvedPaths.Add(unresolvedEdOrgElement.JsonPath);
             }
         }
 
@@ -120,6 +158,37 @@ internal static class SecurableElementColumnPathResolver
         return results;
     }
 
+    internal static ResolvedEdOrgSecurableElementCandidateResolution ResolveEducationOrganizationCandidates(
+        ConcreteResourceModel subjectResource
+    )
+    {
+        ArgumentNullException.ThrowIfNull(subjectResource);
+
+        List<ResolvedEdOrgSecurableElementCandidate> resolvedCandidates = [];
+        List<EdOrgSecurableElement> unresolvedElements = [];
+
+        foreach (var edOrgElement in subjectResource.SecurableElements.EducationOrganization)
+        {
+            var candidates = ResolveEdOrgOrNamespaceCandidates(subjectResource, edOrgElement.JsonPath);
+
+            if (candidates.Count == 0)
+            {
+                unresolvedElements.Add(edOrgElement);
+                continue;
+            }
+
+            resolvedCandidates.AddRange(
+                candidates.Select(candidate => new ResolvedEdOrgSecurableElementCandidate(
+                    edOrgElement.JsonPath,
+                    edOrgElement.MetaEdName,
+                    candidate
+                ))
+            );
+        }
+
+        return new ResolvedEdOrgSecurableElementCandidateResolution(resolvedCandidates, unresolvedElements);
+    }
+
     /// <summary>
     /// Resolves an EdOrg or Namespace securable element to a single column path step
     /// (<see cref="ColumnPathStep.TargetTable"/> and <see cref="ColumnPathStep.TargetColumnName"/>
@@ -136,7 +205,33 @@ internal static class SecurableElementColumnPathResolver
         string securableElementPath
     )
     {
+        var candidates = ResolveEdOrgOrNamespaceCandidates(resource, securableElementPath);
+        return candidates.Count == 0
+            ? null
+            : SelectPreferredSingleStepCandidate(resource, candidates, securableElementPath);
+    }
+
+    private static DbTableModel? FindTable(RelationalResourceModel model, DbTableName tableName)
+    {
+        foreach (var t in model.TablesInDependencyOrder)
+        {
+            if (t.Table == tableName)
+            {
+                return t;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<ColumnPathStep> ResolveEdOrgOrNamespaceCandidates(
+        ConcreteResourceModel resource,
+        string securableElementPath
+    )
+    {
         var model = resource.RelationalModel;
+        List<ColumnPathStep> candidates = [];
+        HashSet<ColumnPathStep> seenCandidates = [];
 
         foreach (var binding in model.DocumentReferenceBindings)
         {
@@ -153,7 +248,12 @@ internal static class SecurableElementColumnPathResolver
             var column = owningTable is null
                 ? identityBinding.Column
                 : ResolveToCanonicalColumn(owningTable, identityBinding.Column);
-            return new ColumnPathStep(binding.Table, column, null, null);
+            var candidate = new ColumnPathStep(binding.Table, column, null, null);
+
+            if (seenCandidates.Add(candidate))
+            {
+                candidates.Add(candidate);
+            }
         }
 
         foreach (var table in model.TablesInDependencyOrder)
@@ -161,34 +261,28 @@ internal static class SecurableElementColumnPathResolver
             foreach (var column in table.Columns)
             {
                 if (
-                    column.SourceJsonPath is not null
-                    && string.Equals(
+                    column.SourceJsonPath is null
+                    || !string.Equals(
                         column.SourceJsonPath.Value.Canonical,
                         securableElementPath,
                         StringComparison.Ordinal
                     )
                 )
                 {
-                    var resolved = ResolveToCanonicalColumn(table, column.ColumnName);
-                    return new ColumnPathStep(table.Table, resolved, null, null);
+                    continue;
+                }
+
+                var resolved = ResolveToCanonicalColumn(table, column.ColumnName);
+                var candidate = new ColumnPathStep(table.Table, resolved, null, null);
+
+                if (seenCandidates.Add(candidate))
+                {
+                    candidates.Add(candidate);
                 }
             }
         }
 
-        return null;
-    }
-
-    private static DbTableModel? FindTable(RelationalResourceModel model, DbTableName tableName)
-    {
-        foreach (var t in model.TablesInDependencyOrder)
-        {
-            if (t.Table == tableName)
-            {
-                return t;
-            }
-        }
-
-        return null;
+        return candidates;
     }
 
     /// <summary>
@@ -488,5 +582,53 @@ internal static class SecurableElementColumnPathResolver
     private static bool IsArrayNestedPath(string jsonPath)
     {
         return jsonPath.Contains("[*]", StringComparison.Ordinal);
+    }
+
+    private static ResolvedEdOrgSecurableElementCandidate? SelectPreferredSingleStepCandidate(
+        ConcreteResourceModel subjectResource,
+        IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> candidates
+    )
+    {
+        return candidates
+            .OrderBy(candidate => GetSingleStepCandidatePriority(subjectResource, candidate.Step))
+            .ThenBy(static candidate => candidate.JsonPath.Length)
+            .ThenBy(static candidate => candidate.JsonPath, StringComparer.Ordinal)
+            .ThenBy(static candidate => candidate.Step.SourceTable.ToString(), StringComparer.Ordinal)
+            .ThenBy(static candidate => candidate.Step.SourceColumnName.Value, StringComparer.Ordinal)
+            .FirstOrDefault();
+    }
+
+    private static ColumnPathStep? SelectPreferredSingleStepCandidate(
+        ConcreteResourceModel subjectResource,
+        IReadOnlyList<ColumnPathStep> candidates,
+        string securableElementPath
+    )
+    {
+        return candidates
+            .OrderBy(candidate => GetSingleStepCandidatePriority(subjectResource, candidate))
+            .ThenBy(_ => securableElementPath.Length)
+            .ThenBy(_ => securableElementPath, StringComparer.Ordinal)
+            .ThenBy(static candidate => candidate.SourceTable.ToString(), StringComparer.Ordinal)
+            .ThenBy(static candidate => candidate.SourceColumnName.Value, StringComparer.Ordinal)
+            .FirstOrDefault();
+    }
+
+    private static int GetSingleStepCandidatePriority(
+        ConcreteResourceModel subjectResource,
+        ColumnPathStep candidate
+    )
+    {
+        if (candidate.SourceTable == subjectResource.RelationalModel.Root.Table)
+        {
+            return 0;
+        }
+
+        var table = FindTable(subjectResource.RelationalModel, candidate.SourceTable);
+        return table is null ? int.MaxValue : GetJsonScopeDepth(table.JsonScope) + 1;
+    }
+
+    private static int GetJsonScopeDepth(JsonPathExpression jsonScope)
+    {
+        return jsonScope.Segments.Count;
     }
 }

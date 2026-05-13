@@ -1344,7 +1344,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_returns_not_implemented_when_query_authorization_requires_filtering()
     {
         var queryRequest = CreateQueryRequest(
-            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
             [],
             totalCount: false,
             authorizationStrategyEvaluators:
@@ -1366,6 +1366,41 @@ public class Given_RelationalDocumentStoreRepositoryTests
             );
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_failure_when_supported_query_authorization_has_only_child_table_edorg_subjects()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithChildOnlyEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().ContainSingle();
+        result
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors[0]
+            .Should()
+            .Contain("$.classPeriods[*].classPeriodReference.schoolId");
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors[0].Should().Contain("ClassPeriod");
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -4162,6 +4197,263 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
     }
 
+    private static MappingSet CreateQuerySupportedMappingSetWithRootEdOrgSubject(ResourceInfo resourceInfo)
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolReference_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolReference_SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    new JsonPathExpression("$.schoolReference.schoolId", []),
+                    null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var resourceModel = new RelationalResourceModel(
+            Resource: resourceKey.Resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    new JsonPathExpression("$.schoolReference", []),
+                    rootTable.Table,
+                    new DbColumnName("SchoolReference_DocumentId"),
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    [
+                        new ReferenceIdentityBinding(
+                            new JsonPathExpression("$.schoolReference.schoolId", []),
+                            new JsonPathExpression("$.schoolReference.schoolId", []),
+                            new DbColumnName("SchoolReference_SchoolId")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
+
+        return CreateAuthorizationAwareQuerySupportedMappingSet(
+            resourceInfo,
+            resourceModel,
+            new ResourceSecurableElements(
+                [new EdOrgSecurableElement("$.schoolReference.schoolId", "SchoolId")],
+                [],
+                [],
+                [],
+                []
+            )
+        );
+    }
+
+    private static MappingSet CreateQuerySupportedMappingSetWithChildOnlyEdOrgSubject(
+        ResourceInfo resourceInfo
+    )
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var childTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolClassPeriod"),
+            new JsonPathExpression(
+                "$.classPeriods[*]",
+                [new JsonPathSegment.Property("classPeriods"), new JsonPathSegment.AnyArrayElement()]
+            ),
+            new TableKey(
+                "PK_SchoolClassPeriod",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.Scalar)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ClassPeriod_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "ClassPeriod")
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ClassPeriod_SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+            ],
+            []
+        );
+
+        var resourceModel = new RelationalResourceModel(
+            Resource: resourceKey.Resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable, childTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    new JsonPathExpression(
+                        "$.classPeriods[*].classPeriodReference",
+                        [
+                            new JsonPathSegment.Property("classPeriods"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("classPeriodReference"),
+                        ]
+                    ),
+                    childTable.Table,
+                    new DbColumnName("ClassPeriod_DocumentId"),
+                    new QualifiedResourceName("Ed-Fi", "ClassPeriod"),
+                    [
+                        new ReferenceIdentityBinding(
+                            new JsonPathExpression("$.schoolReference.schoolId", []),
+                            new JsonPathExpression("$.classPeriods[*].classPeriodReference.schoolId", []),
+                            new DbColumnName("ClassPeriod_SchoolId")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
+
+        return CreateAuthorizationAwareQuerySupportedMappingSet(
+            resourceInfo,
+            resourceModel,
+            new ResourceSecurableElements(
+                [new EdOrgSecurableElement("$.classPeriods[*].classPeriodReference.schoolId", "SchoolId")],
+                [],
+                [],
+                [],
+                []
+            )
+        );
+    }
+
+    private static MappingSet CreateAuthorizationAwareQuerySupportedMappingSet(
+        ResourceInfo resourceInfo,
+        RelationalResourceModel resourceModel,
+        ResourceSecurableElements securableElements
+    )
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var concreteResourceModel = new ConcreteResourceModel(
+            resourceKey,
+            ResourceStorageKind.RelationalTables,
+            resourceModel
+        )
+        {
+            SecurableElements = securableElements,
+        };
+        var readPlan = CreateReadPlan(resourceModel, resourceModel.Root);
+        var resource = resourceKey.Resource;
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(concreteResourceModel),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [resource] = readPlan,
+            },
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        )
+        {
+            QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
+            {
+                [resource] = new RelationalQueryCapability(
+                    new RelationalQuerySupport.Supported(),
+                    new Dictionary<string, SupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase),
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
+                ),
+            },
+        };
+    }
+
     private static MappingSet CreateQuerySupportedMappingSet(
         ResourceInfo resourceInfo,
         params SupportedRelationalQueryField[] supportedFields
@@ -4419,8 +4711,17 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private static DerivedRelationalModelSet CreateDerivedModelSet(
         RelationalResourceModel resourceModel,
         ResourceKeyEntry resourceKey
+    ) =>
+        CreateDerivedModelSet(
+            new ConcreteResourceModel(resourceKey, resourceModel.StorageKind, resourceModel)
+        );
+
+    private static DerivedRelationalModelSet CreateDerivedModelSet(
+        ConcreteResourceModel concreteResourceModel
     )
     {
+        var resourceKey = concreteResourceModel.ResourceKey;
+
         return new DerivedRelationalModelSet(
             EffectiveSchema: new EffectiveSchemaInfo(
                 ApiSchemaFormatVersion: "1.0",
@@ -4439,10 +4740,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             [
                 new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
             ],
-            ConcreteResourcesInNameOrder:
-            [
-                new ConcreteResourceModel(resourceKey, resourceModel.StorageKind, resourceModel),
-            ],
+            ConcreteResourcesInNameOrder: [concreteResourceModel],
             AbstractIdentityTablesInNameOrder: [],
             AbstractUnionViewsInNameOrder: [],
             IndexesInCreateOrder: [],
