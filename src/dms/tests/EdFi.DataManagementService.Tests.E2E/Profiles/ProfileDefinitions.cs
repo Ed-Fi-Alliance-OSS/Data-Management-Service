@@ -611,8 +611,8 @@ public static class ProfileDefinitions
         <Profile name="E2E-Test-BellSchedule-ClassPeriods-IncludeOnly">
             <Resource name="BellSchedule">
                 <ReadContentType memberSelection="IncludeOnly">
-                    <Collection name="ClassPeriods" memberSelection="IncludeOnly">
-                        <Property name="ClassPeriodReference"/>
+                    <Collection name="classPeriods" memberSelection="IncludeOnly">
+                        <Property name="classPeriodReference"/>
                     </Collection>
                 </ReadContentType>
                 <WriteContentType memberSelection="IncludeAll"/>
