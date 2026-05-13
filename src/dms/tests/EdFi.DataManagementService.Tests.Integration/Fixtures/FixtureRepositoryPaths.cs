@@ -22,8 +22,6 @@ internal static class FixtureRepositoryPaths
         string
     >
     {
-        [FixtureKey.SmallReferentialIdentity] =
-            "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/referential-identity",
         [FixtureKey.FocusedStableKeyUpdateSemantics] =
             "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics",
         [FixtureKey.ProfileRootOnlyMerge] =

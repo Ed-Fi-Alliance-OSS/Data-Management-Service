@@ -109,11 +109,12 @@ effective schema.
 | `ProfileCollectionAlignedExtension` | `src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension/` | Extension scope aligned to a profile-visible collection. |
 | `ProfileCollectionAlignedExtensionHiddenDescendant` | `src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension-hidden-descendant/` | Same shape with a hidden descendant; loaded only by scenarios that need it. |
 
-`SmallReferentialIdentity` is intentionally excluded from this harness. It is
-a synthetic backend/non-strict fixture authored without post-key-unification
-columns, and the production DMS runtime mapping compiler is strict and
-rejects it. It remains valid for the non-strict
-`Backend.{Postgresql,Mssql}.Tests.Integration` projects.
+The harness's `FixtureKey` enum lists only fixtures whose effective schema the
+strict production DMS runtime mapping compiler accepts. The backend-only
+`small/referential-identity` fixture (used by
+`Backend.{Postgresql,Mssql}.Tests.Integration` in non-strict mode) is omitted
+here because the runtime compiler is hardcoded strict and rejects fixtures
+authored without post-key-unification columns.
 
 ## Runtime-compatibility materialization
 

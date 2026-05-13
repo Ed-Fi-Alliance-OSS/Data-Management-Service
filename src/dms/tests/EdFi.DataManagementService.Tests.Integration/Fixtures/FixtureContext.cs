@@ -30,7 +30,6 @@ public readonly record struct QualifiedResourceName(string ProjectName, string R
 /// </summary>
 public enum FixtureKey
 {
-    SmallReferentialIdentity,
     FocusedStableKeyUpdateSemantics,
     ProfileRootOnlyMerge,
     ProfileSeparateTableMerge,
