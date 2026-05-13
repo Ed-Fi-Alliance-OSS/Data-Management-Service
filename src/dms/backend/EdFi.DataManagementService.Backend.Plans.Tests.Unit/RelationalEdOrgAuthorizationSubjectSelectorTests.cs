@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.Security;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -382,6 +383,207 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         result.FailureMessage.Should().Contain("TestResourceClassPeriod");
     }
 
+    [Test]
+    public void It_should_rebuild_strategy_specific_failure_messages_from_cached_element_resolutions()
+    {
+        var rootTable = CreateRootTable(Table("TestResource"));
+        var childTableName = Table("TestResourceClassPeriod");
+        var childTable = CreateChildTable(
+            childTableName,
+            "$.classPeriods[*]",
+            [
+                new DbColumnModel(Col("CollectionItemId"), ColumnKind.Scalar, null, false, null, null),
+                new DbColumnModel(
+                    Col("ClassPeriod_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "ClassPeriod")
+                ),
+                new DbColumnModel(Col("ClassPeriod_SchoolId"), ColumnKind.Scalar, null, false, null, null),
+            ]
+        );
+
+        var model = CreateModelWithTables(
+            "TestResource",
+            rootTable,
+            [childTable],
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    Path("$.classPeriods[*].classPeriodReference"),
+                    childTableName,
+                    Col("ClassPeriod_DocumentId"),
+                    new QualifiedResourceName("Ed-Fi", "ClassPeriod"),
+                    [
+                        new ReferenceIdentityBinding(
+                            Path("$.schoolReference.schoolId"),
+                            Path("$.classPeriods[*].classPeriodReference.schoolId"),
+                            Col("ClassPeriod_SchoolId")
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                "TestResource",
+                model,
+                new ResourceSecurableElements(
+                    [
+                        new EdOrgSecurableElement(
+                            "$.classPeriods[*].classPeriodReference.schoolId",
+                            "SchoolId"
+                        ),
+                    ],
+                    [],
+                    [],
+                    [],
+                    []
+                )
+            )
+        );
+        var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
+
+        var firstResult = RelationalEdOrgAuthorizationSubjectSelector.Select(
+            mappingSet,
+            resource,
+            [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly]
+        );
+
+        var secondResult = RelationalEdOrgAuthorizationSubjectSelector.Select(
+            mappingSet,
+            resource,
+            [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted]
+        );
+
+        firstResult.FailureMessage.Should().Contain("['RelationshipsWithEdOrgsOnly']");
+        secondResult.FailureMessage.Should().Contain("['RelationshipsWithEdOrgsOnlyInverted']");
+    }
+
+    [Test]
+    public void It_should_reuse_cached_element_resolutions_for_repeated_mapping_set_resource_lookups()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
+        var element = new EdOrgSecurableElement("$.schoolReference.schoolId", "SchoolId");
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                "TestResource",
+                CreateModelWithTables("TestResource", CreateRootTable(Table("TestResource")), [], []),
+                new ResourceSecurableElements([element], [], [], [], [])
+            )
+        );
+        Dictionary<(string Resource, string JsonPath), int> resolutionCounts = [];
+        var cache = new RelationalEdOrgAuthorizationElementResolutionCache(
+            (resourceModel, configuredElement) =>
+            {
+                var key = (resourceModel.RelationalModel.Resource.ResourceName, configuredElement.JsonPath);
+                resolutionCounts[key] = resolutionCounts.GetValueOrDefault(key) + 1;
+
+                return
+                [
+                    new ResolvedEdOrgSecurableElementCandidate(
+                        configuredElement.JsonPath,
+                        configuredElement.MetaEdName,
+                        new ColumnPathStep(
+                            resourceModel.RelationalModel.Root.Table,
+                            Col("SchoolId"),
+                            null,
+                            null
+                        )
+                    ),
+                ];
+            }
+        );
+
+        var firstResult = cache.GetOrResolveAll(mappingSet, resource);
+        var secondResult = cache.GetOrResolveAll(mappingSet, resource);
+
+        resolutionCounts[(resource.ResourceName, element.JsonPath)].Should().Be(1);
+        firstResult.Should().ContainSingle();
+        secondResult.Should().ContainSingle();
+        secondResult[0].Should().BeSameAs(firstResult[0]);
+    }
+
+    [Test]
+    public void It_should_keep_mapping_set_resource_and_element_cache_keys_independent()
+    {
+        var firstResource = new QualifiedResourceName("Ed-Fi", "TestResource");
+        var secondResource = new QualifiedResourceName("Ed-Fi", "AnotherResource");
+        var firstResourcePrimaryElement = new EdOrgSecurableElement("$.schoolReference.schoolId", "SchoolId");
+        var firstResourceSecondaryElement = new EdOrgSecurableElement(
+            "$.localEducationAgencyReference.localEducationAgencyId",
+            "LocalEducationAgencyId"
+        );
+        var secondResourceElement = new EdOrgSecurableElement(
+            "$.educationOrganizationReference.educationOrganizationId",
+            "EducationOrganizationId"
+        );
+        var firstMappingSet = CreateMappingSet(
+            "schema-hash-one",
+            CreateConcrete(
+                "TestResource",
+                CreateModelWithTables("TestResource", CreateRootTable(Table("TestResource")), [], []),
+                new ResourceSecurableElements(
+                    [firstResourcePrimaryElement, firstResourceSecondaryElement],
+                    [],
+                    [],
+                    [],
+                    []
+                ),
+                resourceKeyId: 1
+            ),
+            CreateConcrete(
+                "AnotherResource",
+                CreateModelWithTables("AnotherResource", CreateRootTable(Table("AnotherResource")), [], []),
+                new ResourceSecurableElements([secondResourceElement], [], [], [], []),
+                resourceKeyId: 2
+            )
+        );
+        var secondMappingSet = CreateMappingSet(
+            "schema-hash-two",
+            CreateConcrete(
+                "TestResource",
+                CreateModelWithTables("TestResource", CreateRootTable(Table("TestResource")), [], []),
+                new ResourceSecurableElements([firstResourcePrimaryElement], [], [], [], []),
+                resourceKeyId: 1
+            )
+        );
+        Dictionary<(string Resource, string JsonPath), int> resolutionCounts = [];
+        var cache = new RelationalEdOrgAuthorizationElementResolutionCache(
+            (resourceModel, configuredElement) =>
+            {
+                var key = (resourceModel.RelationalModel.Resource.ResourceName, configuredElement.JsonPath);
+                resolutionCounts[key] = resolutionCounts.GetValueOrDefault(key) + 1;
+
+                return
+                [
+                    new ResolvedEdOrgSecurableElementCandidate(
+                        configuredElement.JsonPath,
+                        configuredElement.MetaEdName,
+                        new ColumnPathStep(
+                            resourceModel.RelationalModel.Root.Table,
+                            Col("EdOrgId"),
+                            null,
+                            null
+                        )
+                    ),
+                ];
+            }
+        );
+
+        _ = cache.GetOrResolveAll(firstMappingSet, firstResource);
+        _ = cache.GetOrResolveAll(firstMappingSet, firstResource);
+        _ = cache.GetOrResolveAll(firstMappingSet, secondResource);
+        _ = cache.GetOrResolveAll(secondMappingSet, firstResource);
+
+        resolutionCounts[(firstResource.ResourceName, firstResourcePrimaryElement.JsonPath)].Should().Be(2);
+        resolutionCounts[(firstResource.ResourceName, firstResourceSecondaryElement.JsonPath)].Should().Be(1);
+        resolutionCounts[(secondResource.ResourceName, secondResourceElement.JsonPath)].Should().Be(1);
+    }
+
     private static DbTableName Table(string name) => new(_edfiSchema, name);
 
     private static DbColumnName Col(string name) => new(name);
@@ -435,38 +637,48 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
     private static ConcreteResourceModel CreateConcrete(
         string resource,
         RelationalResourceModel model,
-        ResourceSecurableElements securableElements
+        ResourceSecurableElements securableElements,
+        short resourceKeyId = 1
     ) =>
-        new(ResourceKey(1, resource), ResourceStorageKind.RelationalTables, model)
+        new(ResourceKey(resourceKeyId, resource), ResourceStorageKind.RelationalTables, model)
         {
             SecurableElements = securableElements,
         };
 
-    private static MappingSet CreateMappingSet(ConcreteResourceModel concreteResourceModel)
+    private static MappingSet CreateMappingSet(ConcreteResourceModel concreteResourceModel) =>
+        CreateMappingSet("schema-hash", concreteResourceModel);
+
+    private static MappingSet CreateMappingSet(
+        string effectiveSchemaHash,
+        params ConcreteResourceModel[] concreteResourceModels
+    )
     {
-        var resourceKey = concreteResourceModel.ResourceKey;
+        var resourceKeysInIdOrder = concreteResourceModels
+            .Select(static concreteResourceModel => concreteResourceModel.ResourceKey)
+            .OrderBy(static resourceKey => resourceKey.ResourceKeyId)
+            .ToArray();
 
         return new MappingSet(
-            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Key: new MappingSetKey(effectiveSchemaHash, SqlDialect.Pgsql, "v1"),
             Model: new DerivedRelationalModelSet(
                 EffectiveSchema: new EffectiveSchemaInfo(
                     ApiSchemaFormatVersion: "1.0",
                     RelationalMappingVersion: "v1",
-                    EffectiveSchemaHash: "schema-hash",
-                    ResourceKeyCount: 1,
+                    EffectiveSchemaHash: effectiveSchemaHash,
+                    ResourceKeyCount: checked((short)resourceKeysInIdOrder.Length),
                     ResourceKeySeedHash: [1, 2, 3],
                     SchemaComponentsInEndpointOrder:
                     [
                         new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash"),
                     ],
-                    ResourceKeysInIdOrder: [resourceKey]
+                    ResourceKeysInIdOrder: resourceKeysInIdOrder
                 ),
                 Dialect: SqlDialect.Pgsql,
                 ProjectSchemasInEndpointOrder:
                 [
                     new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, _edfiSchema),
                 ],
-                ConcreteResourcesInNameOrder: [concreteResourceModel],
+                ConcreteResourcesInNameOrder: concreteResourceModels,
                 AbstractIdentityTablesInNameOrder: [],
                 AbstractUnionViewsInNameOrder: [],
                 IndexesInCreateOrder: [],
@@ -474,14 +686,13 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
-            {
-                [resourceKey.Resource] = resourceKey.ResourceKeyId,
-            },
-            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
-            {
-                [resourceKey.ResourceKeyId] = resourceKey,
-            },
+            ResourceKeyIdByResource: resourceKeysInIdOrder.ToDictionary(
+                static resourceKey => resourceKey.Resource,
+                static resourceKey => resourceKey.ResourceKeyId
+            ),
+            ResourceKeyById: resourceKeysInIdOrder.ToDictionary(static resourceKey =>
+                resourceKey.ResourceKeyId
+            ),
             SecurableElementColumnPathsByResource: new Dictionary<
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>

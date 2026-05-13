@@ -169,7 +169,7 @@ internal static class SecurableElementColumnPathResolver
 
         foreach (var edOrgElement in subjectResource.SecurableElements.EducationOrganization)
         {
-            var candidates = ResolveEdOrgOrNamespaceCandidates(subjectResource, edOrgElement.JsonPath);
+            var candidates = ResolveEducationOrganizationCandidates(subjectResource, edOrgElement);
 
             if (candidates.Count == 0)
             {
@@ -177,16 +177,29 @@ internal static class SecurableElementColumnPathResolver
                 continue;
             }
 
-            resolvedCandidates.AddRange(
-                candidates.Select(candidate => new ResolvedEdOrgSecurableElementCandidate(
-                    edOrgElement.JsonPath,
-                    edOrgElement.MetaEdName,
-                    candidate
-                ))
-            );
+            resolvedCandidates.AddRange(candidates);
         }
 
         return new ResolvedEdOrgSecurableElementCandidateResolution(resolvedCandidates, unresolvedElements);
+    }
+
+    internal static IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> ResolveEducationOrganizationCandidates(
+        ConcreteResourceModel subjectResource,
+        EdOrgSecurableElement edOrgElement
+    )
+    {
+        ArgumentNullException.ThrowIfNull(subjectResource);
+        ArgumentNullException.ThrowIfNull(edOrgElement);
+
+        return
+        [
+            .. ResolveEdOrgOrNamespaceCandidates(subjectResource, edOrgElement.JsonPath)
+                .Select(candidate => new ResolvedEdOrgSecurableElementCandidate(
+                    edOrgElement.JsonPath,
+                    edOrgElement.MetaEdName,
+                    candidate
+                )),
+        ];
     }
 
     /// <summary>

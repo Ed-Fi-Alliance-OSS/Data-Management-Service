@@ -28,6 +28,9 @@ internal sealed record RelationalEdOrgAuthorizationSubjectSelection(
 
 internal static class RelationalEdOrgAuthorizationSubjectSelector
 {
+    private static readonly RelationalEdOrgAuthorizationElementResolutionCache _elementResolutionCache =
+        new();
+
     public static RelationalEdOrgAuthorizationSubjectSelection Select(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -39,20 +42,24 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
 
         var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
         var rootTable = concreteResourceModel.RelationalModel.Root.Table;
-        var candidateResolution = SecurableElementColumnPathResolver.ResolveEducationOrganizationCandidates(
-            concreteResourceModel
-        );
+        var elementResolutions = _elementResolutionCache.GetOrResolveAll(mappingSet, resource);
+        var configuredElements = elementResolutions.Select(static resolution => resolution.Element).ToArray();
+        var resolvedCandidates = elementResolutions
+            .SelectMany(static resolution => resolution.ResolvedCandidates)
+            .ToArray();
 
-        var resolvedCandidatesByName = candidateResolution
-            .ResolvedCandidates.GroupBy(static candidate => candidate.ReadableName, StringComparer.Ordinal)
+        var resolvedCandidatesByName = resolvedCandidates
+            .GroupBy(static candidate => candidate.ReadableName, StringComparer.Ordinal)
             .ToDictionary(
                 static grouping => grouping.Key,
                 static grouping => grouping.ToArray(),
                 StringComparer.Ordinal
             );
 
-        var unresolvedElementsByName = candidateResolution
-            .UnresolvedElements.GroupBy(static element => element.MetaEdName, StringComparer.Ordinal)
+        var unresolvedElementsByName = elementResolutions
+            .Where(static resolution => resolution.ResolvedCandidates.Count == 0)
+            .Select(static resolution => resolution.Element)
+            .GroupBy(static element => element.MetaEdName, StringComparer.Ordinal)
             .ToDictionary(
                 static grouping => grouping.Key,
                 static grouping => grouping.ToArray(),
@@ -63,8 +70,8 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
         List<EdOrgSecurableElement> unresolvedWithoutSelectedSubject = [];
 
         foreach (
-            var metaEdName in concreteResourceModel
-                .SecurableElements.EducationOrganization.Select(static element => element.MetaEdName)
+            var metaEdName in configuredElements
+                .Select(static element => element.MetaEdName)
                 .Distinct(StringComparer.Ordinal)
         )
         {
@@ -127,8 +134,8 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
                 mappingSet,
                 resource,
                 strategyNames,
-                candidateResolution.ResolvedCandidates,
-                concreteResourceModel.SecurableElements.EducationOrganization
+                resolvedCandidates,
+                configuredElements
             )
         );
     }

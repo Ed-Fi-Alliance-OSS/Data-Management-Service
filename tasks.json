@@ -68,7 +68,7 @@
       "Add a regression test proving authorization SQL still reflects the current strategy set and parameter shape instead of reusing a cached resource-specific SQL string.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authorization SQL",
