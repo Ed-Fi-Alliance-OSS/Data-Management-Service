@@ -298,13 +298,19 @@ Feature: Profile Reference Filtering
                   }
                   """
 
+        # bellScheduleName and schoolReference are identity members for BellSchedule
+        # (identity = bellScheduleName + schoolReference.schoolId). The readable-profile
+        # projector preserves identity properties at the document root regardless of
+        # profile rules (IReadableProfileProjector.ExtractIdentityPropertyNames +
+        # ReadableProfileProjector.ProjectRoot "Always preserve metadata and identity
+        # fields at the document root"). This scenario therefore only asserts the
+        # DMS-1145 link-preservation contract on the nested classPeriodReference.
         @relational-backend
         Scenario: 05 IncludeOnly profile preserves link on classPeriods[*].classPeriodReference
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/bellSchedules/{id}" with profile "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly" for resource "BellSchedule"
             Then the profile response status is 200
              And the response body should contain fields "id, classPeriods"
-             And the response body should not contain fields "bellScheduleName, schoolReference"
              And the response body should contain path "classPeriods.0.classPeriodReference.link.rel"
              And the response body path "classPeriods.0.classPeriodReference.link.rel" should have value "ClassPeriod"
              And the response body should contain path "classPeriods.0.classPeriodReference.link.href"
