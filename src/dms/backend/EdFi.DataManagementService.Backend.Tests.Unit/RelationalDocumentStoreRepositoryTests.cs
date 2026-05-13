@@ -1377,6 +1377,74 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_not_implemented_when_query_authorization_includes_known_out_of_scope_strategies()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>();
+        result
+            .As<QueryResult.QueryFailureNotImplemented>()
+            .FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+        result
+            .As<QueryResult.QueryFailureNotImplemented>()
+            .FailureMessage.Should()
+            .Contain($"{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_unknown_failure_when_query_authorization_strategy_metadata_is_invalid()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.UnknownFailure>();
+        result
+            .As<QueryResult.UnknownFailure>()
+            .FailureMessage.Should()
+            .Contain("CustomAuthorizationStrategy");
+        result.As<QueryResult.UnknownFailure>().FailureMessage.Should().Contain("{BasisResource}With...");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_returns_the_compiled_omission_reason_for_omitted_query_resources()
     {
         var omissionReason =

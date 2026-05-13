@@ -594,20 +594,47 @@ public sealed class RelationalDocumentStoreRepository(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
-        if (
-            !RelationalReadGuardrails.HasOnlyNoFurtherAuthorizationRequired(
-                relationalQueryRequest.AuthorizationStrategyEvaluators
-            )
-        )
+        var authorizationStrategyClassification = RelationalGetManyAuthorizationStrategyClassifier.Classify(
+            mappingSet,
+            resource,
+            relationalQueryRequest.AuthorizationStrategyEvaluators
+        );
+
+        switch (authorizationStrategyClassification.Outcome)
         {
-            return new QueryResult.QueryFailureNotImplemented(
-                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                    resource,
-                    relationalQueryRequest.AuthorizationStrategyEvaluators,
-                    "query",
-                    "GET-many"
-                )
-            );
+            case RelationalGetManyAuthorizationStrategyClassificationOutcome.NoAuthorizationRequired:
+                break;
+
+            case RelationalGetManyAuthorizationStrategyClassificationOutcome.SupportedRelationshipStrategies:
+                return new QueryResult.QueryFailureNotImplemented(
+                    RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                        resource,
+                        relationalQueryRequest.AuthorizationStrategyEvaluators,
+                        "query",
+                        "GET-many"
+                    )
+                );
+
+            case RelationalGetManyAuthorizationStrategyClassificationOutcome.KnownButNotImplemented:
+                return new QueryResult.QueryFailureNotImplemented(
+                    authorizationStrategyClassification.FailureMessage
+                        ?? throw new InvalidOperationException(
+                            "Known-but-not-implemented authorization classification must provide a failure message."
+                        )
+                );
+
+            case RelationalGetManyAuthorizationStrategyClassificationOutcome.SecurityConfigurationError:
+                return new QueryResult.UnknownFailure(
+                    authorizationStrategyClassification.FailureMessage
+                        ?? throw new InvalidOperationException(
+                            "Security-configuration authorization classification must provide a failure message."
+                        )
+                );
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported authorization classification outcome '{authorizationStrategyClassification.Outcome}'."
+                );
         }
 
         RelationalQueryPreprocessingResult preprocessingResult;

@@ -37,7 +37,7 @@
       "Add backend unit tests for custom view name classification: standard resource preferred, descriptor basis accepted, unknown basis rejected as security configuration, and non-convention names rejected as security configuration.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Security ProblemDetails",
