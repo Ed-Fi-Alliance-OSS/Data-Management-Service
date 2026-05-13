@@ -8,14 +8,11 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 
 /// <summary>
-/// Replaces <see cref="EnvironmentStartupProcessExit"/> so that fatal startup failures
-/// during a test surface as a rethrown exception caught by NUnit's setup pipeline
+/// Replaces <see cref="EnvironmentStartupProcessExit"/> so that fatal startup
+/// failures surface as a rethrown exception caught by NUnit's setup pipeline
 /// instead of terminating the test host with <see cref="Environment.Exit(int)"/>.
-/// The captured <see cref="LastExitCode"/> is exposed for diagnostic assertions.
 /// </summary>
 internal sealed class NonExitingStartupProcessExit : IStartupProcessExit
 {
-    public int? LastExitCode { get; private set; }
-
-    public void Exit(int exitCode) => LastExitCode = exitCode;
+    public void Exit(int exitCode) { }
 }
