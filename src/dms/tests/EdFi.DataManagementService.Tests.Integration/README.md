@@ -138,10 +138,14 @@ Profile XML for each fixture lives at
 that uses a profile in any of its scenarios gets its own directory. The
 fake CMS profile catalog walks that directory at harness startup.
 
-The current smoke scenario binds to `ProfileRootOnlyMerge` in no-profile
-mode, so `Fixtures/Profiles/ProfileRootOnlyMerge/` contains only a
-`.gitkeep` placeholder. Profile XML will be added there when profiled
-scenarios land.
+`Fixtures/Profiles/ProfileRootOnlyMerge/` holds the first profile XML
+files used by the suite (`profilerootonlymergeitem-visible.xml` and
+`profilerootonlymergeitem-readonly.xml`). They back the profiled HTTP
+scenarios in `Scenarios/ProfileRootOnlyMergeProfileScenario.cs`, which
+cover profiled create/read, hidden-field preservation through a
+profiled PUT, and the read-only-profile-used-for-write 405 path. The
+unprofiled CRUD scenarios bound to the same fixture continue to run
+in no-profile mode regardless of what profile XML is present.
 
 Use lowercase `.xml` extensions. Linux CI is case-sensitive about file
 extensions, and the catalog walker matches the lowercase pattern.
