@@ -1,0 +1,155 @@
+[
+  {
+    "category": "Authorization Context",
+    "description": "Introduce a typed request-scoped relational authorization context for GET-many and pass it through the relational query request path. Acceptance: `RelationalQueryRequest`/`IRelationalQueryRequest` exposes a backend-facing context built from `RequestInfo.ClientAuthorizations`; the context contains `ClaimEducationOrganizationIds` as unique `long` values sorted ascending; the context supports an empty EdOrg list without throwing; relational GET-many authorization code no longer parses EdOrg IDs from `AuthorizationStrategyEvaluator.Filters`; the logical auth-list parameter name is centralized as `ClaimEducationOrganizationIds`.",
+    "steps-to-verify": [
+      "Add unit tests proving duplicate EdOrg claims are deduplicated, sorted ascending, and preserved as an empty list when no EdOrg claims exist.",
+      "Add a unit test proving relational query request creation carries the typed context alongside existing query elements, pagination, profile context, and strategy evaluators.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Strategy Registry",
+    "description": "Add the strategy names and provider behavior needed for DMS-1055 staging. Acceptance: constants exist for `RelationshipsWithEdOrgsOnlyInverted`, `RelationshipsWithEdOrgsAndPeopleInverted`, `RelationshipsWithPeopleOnly`, and `OwnershipBased`; the shared authorization registry recognizes `RelationshipsWithEdOrgsOnlyInverted`; GET-by-id, POST, PUT, and DELETE with `RelationshipsWithEdOrgsOnlyInverted` fail intentionally as not implemented until DMS-1056 instead of falling through to missing-provider 403 behavior; existing strategy names keep their current behavior.",
+    "steps-to-verify": [
+      "Add unit tests for `NamedAuthorizationServiceFactory` or the relevant middleware proving the inverted EdOrg-only strategy is recognized.",
+      "Add unit tests for non-GET operations showing `RelationshipsWithEdOrgsOnlyInverted` produces an explicit not-implemented failure surface rather than a missing provider 403.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Filter Middleware",
+    "description": "Refactor `ProvideAuthorizationFiltersMiddleware` so relational GET-many reaches the backend planner with raw strategy names and typed claim context. Acceptance: in the relational query pipeline, empty EdOrg claim lists do not produce the current relationship-provider 403; known-but-not-implemented strategies are allowed through for backend classification; convention-shaped custom view strategy names are allowed through for backend classification; truly missing legacy providers still produce the existing response outside relational GET-many; legacy backend and non-query paths retain existing filter-provider behavior.",
+    "steps-to-verify": [
+      "Add middleware tests for relational GET-many with empty EdOrg claims, `RelationshipsWithEdOrgsOnlyInverted`, `NamespaceBased`, `OwnershipBased`, a People relationship strategy, and a `{BasisResource}With...` custom view name.",
+      "Add regression tests proving the legacy backend or non-query paths still use existing provider validation and missing-provider failure behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Strategy Classification",
+    "description": "Implement a relational GET-many authorization strategy classifier for DMS-1055. Acceptance: `RelationshipsWithEdOrgsOnly` and `RelationshipsWithEdOrgsOnlyInverted` are classified as supported relationship strategies; `NoFurtherAuthorizationRequired` is classified as a no-op and ignored when combined with relationship strategies; `NamespaceBased`, `OwnershipBased`, `RelationshipsWithEdOrgsAndPeople`, `RelationshipsWithEdOrgsAndPeopleInverted`, `RelationshipsWithPeopleOnly`, `RelationshipsWithStudentsOnly`, `RelationshipsWithStudentsOnlyThroughResponsibility`, and custom view strategy names matching `{BasisResource}With...` with a basis resource or descriptor resolvable from the effective schema are classified as known-but-not-implemented and produce 501 for DMS-1055; convention-matching custom view names resolve the basis resource using effective-schema lookup that prefers standard `edfi` resources over extension homographs and also accepts descriptor bases; non-matching custom names, custom names with an unknown basis resource, and unknown built-in names produce the security-configuration 500 path; classification runs before empty-claim short-circuiting so unsupported mixed strategies still return 501.",
+    "steps-to-verify": [
+      "Add backend unit tests for supported EdOrg-only normal/inverted strategies, normal plus inverted OR grouping, `NoFurtherAuthorizationRequired` as a no-op, and unsupported mixed strategy 501 classification.",
+      "Add backend unit tests for custom view name classification: standard resource preferred, descriptor basis accepted, unknown basis rejected as security configuration, and non-convention names rejected as security configuration.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Security ProblemDetails",
+    "description": "Add the canonical request-time security-configuration failure surface for relational GET-many authorization metadata errors. Acceptance: query results can represent a security configuration failure separately from generic `UnknownFailure`; `QueryRequestHandler` maps it to HTTP 500 with `Content-Type: application/problem+json`; the body uses `type: urn:ed-fi:api:system-configuration:security`, `title: Security Configuration Error`, `detail: A security configuration problem was detected. The request cannot be authorized.`, `status: 500`, `correlationId`, and an `errors` array carrying actionable diagnostics such as the affected resource, strategy name, and unresolved securable path or basis-resource details; normal GET-many authorization denial still returns 200 with filtered results; known unsupported DMS-1055 strategies still return 501.",
+    "steps-to-verify": [
+      "Add unit tests for the new `FailureResponse` helper or equivalent ProblemDetails mapping.",
+      "Add `QueryRequestHandler` tests for security configuration 500, known unsupported 501, and normal empty successful pages.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authorization Subjects",
+    "description": "Select DMS-1055 EdOrg authorization subjects from resolved securable paths using ODS-parity root/base scope. Acceptance: resolved securable path metadata carries enough diagnostics to report the original JSON path and readable/MetaEd name for EdOrg subjects; supported EdOrg-only GET-many authorization uses only `EducationOrganization` paths whose resolved column is on the aggregate root table, or the base table for derived resources; child collection EdOrg paths remain resolved and indexed but are excluded from DMS-1055 GET-many subjects; documents with a valid root/base EdOrg subject are not excluded just because a configured child collection is empty; when a securable element has multiple candidate root/base paths, the valid shortest/canonical root/base path is used and an unresolvable sibling path does not hide it; multiple root/base EdOrg subjects within one strategy are retained and later combined with AND; a strategy with no applicable root/base EdOrg subjects fails as a security configuration error with resource, strategy, and path details; generated authorization SQL does not join child collection tables for EdOrg-only relationship GET-many.",
+    "steps-to-verify": [
+      "Add unit tests for a resource with one root EdOrg subject, a derived-resource base-table EdOrg subject, multiple root/base EdOrg subjects, both root and child EdOrg paths, root-plus-child paths where the child collection is empty, child-only EdOrg paths, and mixed valid/unresolvable root/base candidate paths where the valid shortest/canonical path still wins.",
+      "Add a regression test proving child-only paths fail as security configuration rather than returning all rows or an empty page.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authorization Path Caching",
+    "description": "Cache only the helper results needed to build DMS-1055 authorization predicates, not the generated authorization SQL itself. Acceptance: resolved EdOrg securable path or eligible root/base-subject calculations are cached by effective schema or mapping-set identity, resource, and securable element; repeated relational GET-many planning for the same key reuses the cached helper result; different schema hashes, resources, or securable elements do not reuse the wrong entry; generated authorization SQL and strategy composition remain request-built and are not stored in compiled/AOT plan artifacts or a resource-level SQL cache.",
+    "steps-to-verify": [
+      "Add unit tests around the helper cache proving the same schema/resource/securable-element key reuses a resolved result while different keys trigger independent resolution.",
+      "Add a regression test proving authorization SQL still reflects the current strategy set and parameter shape instead of reusing a cached resource-specific SQL string.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authorization SQL",
+    "description": "Extend page DocumentId query planning/SQL generation with EdOrg relationship authorization predicates. Acceptance: the page query and optional total-count query apply the same authorization filter; `RelationshipsWithEdOrgsOnly` filters `auth.EducationOrganizationIdToEducationOrganizationId.SourceEducationOrganizationId` by claim EdOrg IDs and compares `TargetEducationOrganizationId` to the root/base resource EdOrg column; `RelationshipsWithEdOrgsOnlyInverted` swaps Source/Target; multiple subjects inside one strategy are combined with AND; multiple relationship strategies are wrapped and combined with OR; `NoFurtherAuthorizationRequired` contributes no SQL; SQL uses an IN subquery or equivalent predicate rather than joining auth rows to the page query, so duplicate auth rows or matching strategies do not duplicate documents; existing query predicates, descriptor predicates, paging, and total count remain compatible.",
+    "steps-to-verify": [
+      "Add SQL compiler/unit tests for PostgreSQL and SQL Server normal strategy SQL, inverted strategy SQL, normal-plus-inverted OR SQL, multi-subject AND SQL, `NoFurtherAuthorizationRequired` no-op behavior, and matching authorization predicates on both page and total-count SQL.",
+      "Add SQL shape assertions proving child collection tables are absent and auth predicates bind to the aggregate root alias `r` or base alias `b` for derived resources.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Claim Parameters",
+    "description": "Implement dialect-specific claim EdOrg ID SQL parameterization for the authorization predicate. Acceptance: this parameterization path is used only when the deduplicated claim list is non-empty because repository integration short-circuits empty claim sets before SQL generation; PostgreSQL uses one `bigint[]` parameter named `@ClaimEducationOrganizationIds` and SQL uses `= ANY(@ClaimEducationOrganizationIds)`; SQL Server uses scalar `bigint` parameters named `@ClaimEducationOrganizationIds_0`, `@ClaimEducationOrganizationIds_1`, etc. when the deduplicated claim list has fewer than 2,000 entries; SQL Server uses one structured parameter named `@ClaimEducationOrganizationIds` and SQL references `SELECT [Id] FROM @ClaimEducationOrganizationIds` or an equivalent subquery when the deduplicated claim list has 2,000 or more entries; IDs are deduplicated before threshold selection and sorted ascending for deterministic parameter names, logs, tests, and TVP row order; token IDs are never inlined into SQL.",
+    "steps-to-verify": [
+      "Add unit tests for 1, 1,999, 2,000, and duplicate-heavy claim lists in both dialects.",
+      "Add SQL assertions proving PostgreSQL uses a single array parameter and SQL Server switches from scalar parameters to the TVP shape at exactly 2,000 unique IDs.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Parameter Binding",
+    "description": "Extend the query/runtime parameter model and binders so authorization parameters can carry provider-specific metadata without putting provider delegates in compiled/AOT plan contracts. Acceptance: query parameter contracts can describe normal scalar values, PostgreSQL array values, and SQL Server structured TVP values; `HydrationBatchBuilder` or its runtime companion binds the new parameter shapes for both page and total-count SQL; SQL Server TVP binding creates a `Microsoft.Data.SqlClient.SqlParameter` with `ParameterName = @ClaimEducationOrganizationIds`, `SqlDbType = Structured`, `TypeName = dms.BigIntTable`, and a value table with exactly one `long` column named `Id`; existing scalar query/paging parameter binding continues to work.",
+    "steps-to-verify": [
+      "Add unit tests around parameter inventory/value validation for scalar, array, and TVP parameters, including parameters shared by page and total-count SQL.",
+      "Add SQL Server binder tests proving the structured parameter has `SqlDbType.Structured`, `TypeName = dms.BigIntTable`, and an `Id` column with sorted unique values.",
+      "Add PostgreSQL binder tests proving the array parameter is bound as a single value under `@ClaimEducationOrganizationIds`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~RelationalQuery`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Repository Integration",
+    "description": "Wire DMS-1055 authorization into `RelationalDocumentStoreRepository.QueryDocuments`. Acceptance: relational GET-many gets query capability and read plan as before, classifies authorization strategies, returns 501 for known unsupported strategies before checking empty claims, returns the canonical security-configuration 500 for invalid strategy metadata or no applicable root/base EdOrg subjects, returns `QuerySuccess([], 0)` when supported EdOrg relationship authorization applies and `ClaimEducationOrganizationIds` is empty with `totalCount=true`, returns an empty array with null total count when `totalCount=false`, and otherwise passes the authorization predicate/parameters into page keyset planning and hydration; existing descriptor query behavior and `NoFurtherAuthorizationRequired`-only behavior remain unchanged.",
+    "steps-to-verify": [
+      "Add repository unit tests for supported normal filtering path, supported inverted path, unsupported mixed strategy 501, unknown strategy security configuration 500, empty EdOrg claim short-circuit with and without totalCount, and `NoFurtherAuthorizationRequired`-only no-op behavior.",
+      "Add regression tests proving existing query filters and profile readable projection still flow into hydration when authorization is active.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration",
+    "description": "Add PostgreSQL backend integration coverage for EdOrg-only relationship GET-many authorization. Acceptance: tests run against generated relational DDL with `auth.EducationOrganizationIdToEducationOrganizationId`; normal strategy returns only resources whose root/base EdOrg is reachable from the token EdOrg; inverted strategy swaps Source/Target and returns bottom-to-top authorized rows; normal plus inverted strategies are ORed; multiple root/base EdOrg subjects in one strategy are ANDed; duplicate auth rows or two matching strategies return one document once; paging and `Total-Count` are calculated after authorization filtering; empty EdOrg claims return an empty page and total count 0; derived resources authorize through the base-table EdOrg subject; root-plus-child EdOrg resources authorize from the root/base subject only, including when the child collection is empty; child-only EdOrg subject resources fail as security configuration.",
+    "steps-to-verify": [
+      "Create focused PostgreSQL integration tests with small fixture data for normal, inverted, OR, AND, duplicate avoidance, paging/count, empty claims, derived-resource base-table authorization, root-plus-child including an empty-child variant, and child-only configuration error cases.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~Authorization`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Integration",
+    "description": "Add SQL Server backend integration coverage for EdOrg-only relationship GET-many authorization and threshold-specific binding. Acceptance: SQL Server behavior matches the PostgreSQL authorization cases for normal, inverted, OR, AND, duplicate avoidance, paging/count, empty claims, derived-resource base-table authorization, root-plus-child including an empty-child variant, and child-only configuration failures; 1,999 unique claim EdOrg IDs use expanded scalar parameters; 2,000 unique claim EdOrg IDs use the `dms.BigIntTable` TVP; duplicate token IDs are deduped before choosing the threshold; structured parameter execution succeeds against the emitted `dms.BigIntTable` type.",
+    "steps-to-verify": [
+      "Create focused SQL Server integration tests for the shared authorization behavior, including derived-resource and empty-child root/base cases, and separate tests for 1,999, 2,000, and duplicate-heavy claim lists.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~Authorization`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "E2E Authorization",
+    "description": "Add focused DMS E2E coverage through the relational backend and real token/claim-set wiring. Acceptance: a permanent test-only `E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet` is added to the CMS/E2E claim set artifacts instead of patching claim metadata inside tests; new scenarios are tagged at scenario level with `@relational-backend`; scenarios cover normal EdOrg filtering, inverted filtering, normal-plus-inverted OR semantics, empty EdOrg claims returning 200 with an empty page and `Total-Count: 0` when requested, pagination/totalCount after authorization, and known unsupported mixed strategy returning 501; existing E2E scenarios that already cover DMS-1055 behavior, including `NoFurtherAuthorizationRequired` as a no-op when mixed with EdOrg authorization, are switched to the relational backend by adding only the scenario-level `@relational-backend` tag.",
+    "steps-to-verify": [
+      "Run from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`: `pwsh ./teardown-local-dms.ps1` then `pwsh ./setup-local-dms.ps1`.",
+      "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=Authorization&Category=relational-backend\"`",
+      "If failures occur before API requests, inspect the dms-local Docker logs for environment/runtime issues as described in `AGENTS.md`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Formatting and Regression",
+    "description": "Run final formatting and the focused regression suite for DMS-1055. Acceptance: all touched C# files are formatted with CSharpier; unit tests for Core, Backend, and Plans pass; focused PostgreSQL and SQL Server integration tests pass; focused relational-backend E2E authorization scenarios pass.",
+    "steps-to-verify": [
+      "Run: `dotnet csharpier format ./src/dms`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run the focused PostgreSQL, SQL Server, and relational-backend E2E authorization commands from the preceding tasks."
+    ],
+    "completed": false
+  }
+]
