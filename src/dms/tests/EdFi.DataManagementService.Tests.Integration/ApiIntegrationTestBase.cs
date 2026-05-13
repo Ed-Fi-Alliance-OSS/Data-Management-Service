@@ -103,13 +103,20 @@ public abstract class ApiIntegrationTestBase
             await Harness.DisposeAsync();
             Harness = null!;
         }
+        else if (_assertionConnection is not null)
+        {
+            // Host startup failed before the harness was constructed; the assertion
+            // connection is otherwise unreferenced. Dispose it directly so that the
+            // leased database can be dropped without an open session blocking it.
+            await _assertionConnection.DisposeAsync();
+        }
+        _assertionConnection = null;
 
         if (_factory is not null)
         {
             await _factory.DisposeAsync();
             _factory = null;
         }
-        _assertionConnection = null;
 
         if (_leasedConnectionString is not null)
         {
