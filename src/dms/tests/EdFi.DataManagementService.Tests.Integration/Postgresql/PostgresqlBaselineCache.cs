@@ -69,4 +69,39 @@ internal static class PostgresqlBaselineCache
 
         return await PostgresqlGeneratedDdlBaselineDatabase.CreateAsync(fixture.Key.ToString(), generatedDdl);
     }
+
+    /// <summary>
+    /// Disposes every cached baseline database and removes it from the cache.
+    /// Drives the underlying template-database cleanup. Safe to call from an
+    /// assembly-level teardown; subsequent <see cref="CreateOrGetAsync"/> calls
+    /// will repopulate the cache.
+    /// </summary>
+    public static async Task DisposeAllAsync()
+    {
+        foreach (
+            KeyValuePair<
+                FixtureKey,
+                Lazy<Task<PostgresqlGeneratedDdlBaselineDatabase>>
+            > entry in _cache.ToArray()
+        )
+        {
+            if (!_cache.TryRemove(entry))
+            {
+                continue;
+            }
+            if (!entry.Value.IsValueCreated)
+            {
+                continue;
+            }
+            try
+            {
+                PostgresqlGeneratedDdlBaselineDatabase baseline = await entry.Value.Value;
+                await baseline.DisposeAsync();
+            }
+            catch
+            {
+                // Best-effort teardown; do not mask test failures.
+            }
+        }
+    }
 }
