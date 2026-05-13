@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Read-only companion profile used to exercise the "method not allowed with
+    profile" branch: the profile is valid and resolves, but its resource has
+    no WriteContentType, so a write that names this profile's writable content
+    type must be rejected with 405.
+-->
+<Profile name="ProfileRootOnlyMergeItem-ReadOnly">
+    <Resource name="ProfileRootOnlyMergeItem">
+        <ReadContentType memberSelection="IncludeOnly">
+            <Property name="profileRootOnlyMergeItemId" />
+            <Property name="displayName" />
+        </ReadContentType>
+    </Resource>
+</Profile>

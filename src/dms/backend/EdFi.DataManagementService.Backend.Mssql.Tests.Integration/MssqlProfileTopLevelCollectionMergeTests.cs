@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;

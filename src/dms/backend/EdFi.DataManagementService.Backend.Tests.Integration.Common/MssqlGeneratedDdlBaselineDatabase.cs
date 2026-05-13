@@ -8,9 +8,9 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.SqlClient;
 
-namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
 
-internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
+public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
     private static readonly object _sync = new();
@@ -330,7 +330,7 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
             ORDER BY [file_id];
             """;
 
-        await using SqlConnection connection = new(Configuration.MssqlAdminConnectionString!);
+        await using SqlConnection connection = new(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
         await connection.OpenAsync();
         await using SqlCommand command = connection.CreateCommand();
         command.CommandText = sql;
@@ -356,7 +356,7 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
             );
     }
 
-    internal static string BuildSnapshotPath(
+    public static string BuildSnapshotPath(
         string physicalName,
         string databaseName,
         int fileId,
@@ -384,7 +384,7 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
 
     private static async Task ExecuteAdminNonQueryAsync(string sql, int commandTimeoutSeconds)
     {
-        await using SqlConnection connection = new(Configuration.MssqlAdminConnectionString!);
+        await using SqlConnection connection = new(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
         await connection.OpenAsync();
         await using SqlCommand command = connection.CreateCommand();
         command.CommandText = sql;
@@ -482,7 +482,7 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
     private sealed record MssqlSnapshotSourceFile(string LogicalName, string SnapshotPath);
 }
 
-internal sealed class MssqlGeneratedDdlBaselineLease : IAsyncDisposable
+public sealed class MssqlGeneratedDdlBaselineLease : IAsyncDisposable
 {
     private readonly Func<ValueTask> _releaseLeaseAsync;
     private bool _disposed;

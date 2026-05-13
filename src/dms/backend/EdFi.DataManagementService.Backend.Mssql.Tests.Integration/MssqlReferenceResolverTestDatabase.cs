@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;

@@ -5,11 +5,11 @@
 
 using Microsoft.Data.SqlClient;
 
-namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
 
 public static class MssqlTestDatabaseHelper
 {
-    public static bool IsConfigured() => Configuration.MssqlAdminConnectionString is not null;
+    public static bool IsConfigured() => BaselineDatabaseConfiguration.MssqlAdminConnectionString is not null;
 
     public static string GenerateUniqueDatabaseName()
     {
@@ -18,7 +18,7 @@ public static class MssqlTestDatabaseHelper
 
     public static string BuildConnectionString(string databaseName)
     {
-        SqlConnectionStringBuilder builder = new(Configuration.MssqlAdminConnectionString!)
+        SqlConnectionStringBuilder builder = new(BaselineDatabaseConfiguration.MssqlAdminConnectionString!)
         {
             InitialCatalog = databaseName,
         };
@@ -28,7 +28,7 @@ public static class MssqlTestDatabaseHelper
 
     public static void CreateDatabase(string databaseName)
     {
-        using SqlConnection connection = new(Configuration.MssqlAdminConnectionString!);
+        using SqlConnection connection = new(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
         connection.Open();
 
         using SqlCommand command = connection.CreateCommand();
@@ -41,7 +41,7 @@ public static class MssqlTestDatabaseHelper
     {
         SqlConnection.ClearAllPools();
 
-        using SqlConnection connection = new(Configuration.MssqlAdminConnectionString!);
+        using SqlConnection connection = new(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
         connection.Open();
 
         using SqlCommand command = connection.CreateCommand();

@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
 
-internal static class MssqlDatabaseResetSql
+public static class MssqlDatabaseResetSql
 {
     public static string Build(params (string Schema, string Table)[] excludedTables)
     {

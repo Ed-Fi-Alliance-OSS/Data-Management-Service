@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Npgsql;
 using NpgsqlTypes;
