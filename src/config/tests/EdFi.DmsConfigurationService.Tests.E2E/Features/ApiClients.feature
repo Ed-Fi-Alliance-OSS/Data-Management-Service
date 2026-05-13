@@ -106,7 +106,9 @@ Feature: ApiClients endpoints
               And the response body is
                   """
                   {
-                    "id": {id},
+                    "id": {apiClientId},
+                    "applicationId": {applicationId},
+                    "name": "My Custom API Client",
                     "key": "{key}",
                     "secret": "{secret}"
                   }
@@ -557,6 +559,8 @@ Feature: ApiClients endpoints
                   """
                   {
                     "id": {apiClientId},
+                    "applicationId": {applicationId},
+                    "name": "Test Client for Reset",
                     "key": "{key}",
                     "secret": "{secret}"
                   }
