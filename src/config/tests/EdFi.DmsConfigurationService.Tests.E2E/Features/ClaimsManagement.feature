@@ -12,6 +12,9 @@ Feature: ClaimsManagement endpoints
               And the response contains claim set "E2E-NameSpaceBasedClaimSet"
               And the response contains claim set "E2E-NoFurtherAuthRequiredClaimSet"
               And the response contains claim set "E2E-RelationshipsWithEdOrgsOnlyClaimSet"
+              And the response contains claim set "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet"
+              And the response contains claim set "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet"
+              And the response contains claim set "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet"
               And the response contains extension claims "HomographExtension"
               And the response contains extension claims "SampleExtension"
 
@@ -73,4 +76,3 @@ Feature: ClaimsManagement endpoints
                   """
              Then it should respond with 400
               And the response body contains validation errors
-

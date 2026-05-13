@@ -40,6 +40,24 @@ Fragment files must follow this naming pattern:
 - Includes resources: assessments, bellSchedules
 - Authorization: RelationshipsWithEdOrgsOnly strategy
 
+### 003a-edorgsonly-inverted-claimset.json
+**Claim Set Name**: `E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet`
+- Demonstrates inverted education organization relationship-based authorization for GET-many coverage
+- Includes resources: academicWeeks, localEducationAgencies
+- Authorization: RelationshipsWithEdOrgsOnlyInverted strategy
+
+### 003b-edorgsonly-or-inverted-claimset.json
+**Claim Set Name**: `E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet`
+- Demonstrates OR-composition between normal and inverted EdOrg-only strategies
+- Includes resources: academicWeeks, localEducationAgencies
+- Authorization: RelationshipsWithEdOrgsOnly plus RelationshipsWithEdOrgsOnlyInverted
+
+### 003c-edorgsonly-mixed-claimset.json
+**Claim Set Name**: `E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet`
+- Demonstrates the staged DMS-1055 fail-fast behavior for known unsupported mixed GET-many strategies
+- Includes resource: academicWeeks
+- Authorization: RelationshipsWithEdOrgsOnly plus NamespaceBased
+
 ### 004-sample-extension-claimset.json
 **Claim Set Name**: `SampleExtensionResourceClaims`
 - Demonstrates extension resource claims

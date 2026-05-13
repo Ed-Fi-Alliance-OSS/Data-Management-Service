@@ -575,6 +575,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | weekIdentifier | schoolReference           | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 255901001 } | 2023-08-01 | 2023-08-07 | 5                      |
 
+        @relational-backend
         Scenario: 11 Ensure client with access to school 255901001 gets query results for classPeriods
              When a GET request is made to "/ed-fi/academicWeeks"
              Then it should respond with 200
@@ -594,6 +595,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   ]
                   """
 
+        @relational-backend
         Scenario: 12 Ensure client with access to school 255901222 does not get query results for classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
              When a GET request is made to "/ed-fi/academicWeeks"
@@ -707,6 +709,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
              Then it should respond with 403
 
+        @relational-backend
         Scenario: 13.4 Ensure client with access to state education agency 2 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks?weekIdentifier=week 1"
@@ -787,6 +790,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
 
+        @relational-backend
         Scenario: 14.1 Ensure client with access to school 20101 does not gets query results for LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a GET request is made to "/ed-fi/localEducationAgencies"
@@ -884,6 +888,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | weekIdentifier | schoolReference             | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 30101999999 } | 2023-08-01 | 2023-08-07 | 5                      |
 
+        @relational-backend
         Scenario: 19 Ensure client with access to state education agency 3 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3"
              When a GET request is made to "/ed-fi/academicWeeks"
@@ -966,6 +971,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
 
+        @relational-backend
         Scenario: 22 Ensure client can only query authorized LEAs
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """

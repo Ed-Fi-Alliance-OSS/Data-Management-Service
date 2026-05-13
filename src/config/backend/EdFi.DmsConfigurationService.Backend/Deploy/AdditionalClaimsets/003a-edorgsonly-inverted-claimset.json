@@ -1,0 +1,167 @@
+{
+  "name": "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
+  "resourceClaims": [
+    {
+      "id": 1,
+      "name": "ed-fi/localEducationAgencies",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    },
+    {
+      "id": 2,
+      "name": "ed-fi/academicWeeks",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "RelationshipsWithEdOrgsOnlyInverted",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    }
+  ]
+}

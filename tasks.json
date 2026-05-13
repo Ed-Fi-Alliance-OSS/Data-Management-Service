@@ -138,7 +138,7 @@
       "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=Authorization&Category=relational-backend\"`",
       "If failures occur before API requests, inspect the dms-local Docker logs for environment/runtime issues as described in `AGENTS.md`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Formatting and Regression",
