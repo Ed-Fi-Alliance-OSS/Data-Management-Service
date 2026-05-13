@@ -124,6 +124,92 @@ internal static class CrudRoundTripScenario
         returned["firstName"]!.GetValue<string>().Should().Be(putFirstName);
     }
 
+    public static async Task It_upserts_a_student_via_post(ApiIntegrationHarness harness)
+    {
+        const string upsertUniqueId = "smoke-upsert-001";
+        const string firstNameInitial = "Ada";
+        const string firstNameUpdated = "Grace";
+
+        var insertPayload = new JsonObject
+        {
+            ["studentUniqueId"] = upsertUniqueId,
+            ["firstName"] = firstNameInitial,
+        };
+        using var insertContent = new StringContent(
+            insertPayload.ToJsonString(),
+            Encoding.UTF8,
+            "application/json"
+        );
+        using HttpResponseMessage insertResponse = await harness.HttpClient.PostAsync(
+            StudentsEndpoint,
+            insertContent
+        );
+        string insertBody = await insertResponse.Content.ReadAsStringAsync();
+        insertResponse.StatusCode.Should().Be(HttpStatusCode.Created, insertBody);
+        insertResponse.Headers.Location.Should().NotBeNull("the initial POST must return a Location header");
+        insertResponse
+            .TryReadRawEtag(out string insertEtag)
+            .Should()
+            .BeTrue("the initial POST must emit an ETag header");
+
+        string insertLocationPath = insertResponse.Headers.Location!.IsAbsoluteUri
+            ? insertResponse.Headers.Location!.AbsolutePath
+            : insertResponse.Headers.Location!.OriginalString;
+
+        var upsertPayload = new JsonObject
+        {
+            ["studentUniqueId"] = upsertUniqueId,
+            ["firstName"] = firstNameUpdated,
+        };
+        using var upsertContent = new StringContent(
+            upsertPayload.ToJsonString(),
+            Encoding.UTF8,
+            "application/json"
+        );
+        using HttpResponseMessage upsertResponse = await harness.HttpClient.PostAsync(
+            StudentsEndpoint,
+            upsertContent
+        );
+        string upsertBody = await upsertResponse.Content.ReadAsStringAsync();
+        upsertResponse
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.OK,
+                $"POST on an existing natural key must upsert through the update path, not insert a duplicate or fail as conflict. Body: {upsertBody}"
+            );
+        upsertResponse
+            .Headers.Location.Should()
+            .NotBeNull(
+                "the upsert-update POST must return a Location header pointing at the existing document"
+            );
+        string upsertLocationPath = upsertResponse.Headers.Location!.IsAbsoluteUri
+            ? upsertResponse.Headers.Location!.AbsolutePath
+            : upsertResponse.Headers.Location!.OriginalString;
+        upsertLocationPath
+            .Should()
+            .Be(
+                insertLocationPath,
+                "POST upsert must keep the original resource id rather than mint a new one"
+            );
+        upsertResponse
+            .TryReadRawEtag(out string upsertEtag)
+            .Should()
+            .BeTrue("POST upsert-update must emit the new ETag");
+        upsertEtag.Should().NotBe(insertEtag, "POST upsert-update must advance the ETag");
+
+        using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(insertLocationPath);
+        string getBody = await getResponse.Content.ReadAsStringAsync();
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK, getBody);
+        JsonObject returned = JsonNode.Parse(getBody)!.AsObject();
+        returned["studentUniqueId"]!.GetValue<string>().Should().Be(upsertUniqueId);
+        returned["firstName"]!.GetValue<string>().Should().Be(firstNameUpdated);
+
+        int persistedRowCount = await CountStudentRowsAsync(harness, upsertUniqueId);
+        persistedRowCount
+            .Should()
+            .Be(1, "POST upsert-update must not create a duplicate relational row for the same natural key");
+    }
+
     public static async Task It_deletes_a_student(ApiIntegrationHarness harness)
     {
         var payload = new JsonObject { ["studentUniqueId"] = StudentUniqueId, ["firstName"] = FirstName };
@@ -214,7 +300,16 @@ internal static class CrudRoundTripScenario
         using HttpResponseMessage response = await harness.HttpClient.PostAsync(MergeItemsEndpoint, content);
         string body = await response.Content.ReadAsStringAsync();
 
-        response.StatusCode.Should().BeOneOf([HttpStatusCode.Conflict, HttpStatusCode.BadRequest], body);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict, body);
+        JsonObject problem = JsonNode.Parse(body)!.AsObject();
+        problem["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                "urn:ed-fi:api:data-conflict:unresolved-reference",
+                "unresolved references must map to the data-conflict problem type, not generic bad-request"
+            );
+        problem["status"]!.GetValue<int>().Should().Be(409);
         body.Should()
             .Contain("studentReference", "the error body should identify the unresolved reference field");
     }

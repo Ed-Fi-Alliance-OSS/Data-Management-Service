@@ -21,6 +21,10 @@ public sealed class Given_Mssql_CrudRoundTrip : MssqlApiIntegrationTestBase
     public Task It_updates_a_student_via_put() => CrudRoundTripScenario.It_updates_a_student_via_put(Harness);
 
     [Test]
+    public Task It_upserts_a_student_via_post() =>
+        CrudRoundTripScenario.It_upserts_a_student_via_post(Harness);
+
+    [Test]
     public Task It_deletes_a_student() => CrudRoundTripScenario.It_deletes_a_student(Harness);
 
     [Test]
