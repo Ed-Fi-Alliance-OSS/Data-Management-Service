@@ -3,10 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -112,7 +114,7 @@ public static class HydrationBatchBuilder
         switch (keyset)
         {
             case PageKeysetSpec.Single single:
-                AddParameter(command, DocumentIdParameterName, single.DocumentId);
+                AddScalarParameter(command, DocumentIdParameterName, single.DocumentId);
                 break;
 
             case PageKeysetSpec.Query query:
@@ -238,51 +240,83 @@ public static class HydrationBatchBuilder
 
     private static void AddQueryParameters(DbCommand command, PageKeysetSpec.Query query)
     {
-        var requiredParameterNames = GetRequiredParameterNames(query.Plan);
-        ValidateRequiredParameterValues(query.ParameterValues, requiredParameterNames);
+        var requiredParameters = GetRequiredParameters(query.Plan);
+        ValidateRequiredParameterValues(
+            query.ParameterValues,
+            [.. requiredParameters.Select(static parameter => parameter.ParameterName)]
+        );
 
-        foreach (var parameterName in requiredParameterNames)
+        foreach (var parameter in requiredParameters)
         {
-            AddParameter(command, parameterName, query.ParameterValues[parameterName]);
+            AddParameter(command, parameter, query.ParameterValues[parameter.ParameterName]);
         }
     }
 
-    private static string[] GetRequiredParameterNames(PageDocumentIdSqlPlan plan)
+    private static QuerySqlParameter[] GetRequiredParameters(PageDocumentIdSqlPlan plan)
     {
-        List<string> requiredParameterNames = [];
+        List<QuerySqlParameter> requiredParameters = [];
 
-        AddRequiredParameterNames(requiredParameterNames, plan.PageParametersInOrder);
+        AddRequiredParameters(requiredParameters, plan.PageParametersInOrder);
 
         if (plan.TotalCountParametersInOrder is { } totalCountParameters)
         {
-            AddRequiredParameterNames(requiredParameterNames, totalCountParameters);
+            AddRequiredParameters(requiredParameters, totalCountParameters);
         }
 
-        return [.. requiredParameterNames];
+        return [.. requiredParameters];
     }
 
-    private static void AddRequiredParameterNames(
-        List<string> requiredParameterNames,
+    private static void AddRequiredParameters(
+        List<QuerySqlParameter> requiredParameters,
         IReadOnlyList<QuerySqlParameter> parameters
     )
     {
-        foreach (var parameterName in parameters.Select(p => p.ParameterName))
+        foreach (var parameter in parameters)
         {
-            if (!ContainsParameterName(requiredParameterNames, parameterName))
+            if (
+                TryGetRequiredParameter(
+                    requiredParameters,
+                    parameter.ParameterName,
+                    out var existingParameter
+                )
+            )
             {
-                requiredParameterNames.Add(parameterName);
+                if (existingParameter != parameter)
+                {
+                    throw new InvalidOperationException(
+                        "Hydration query keyset cannot bind parameter "
+                            + $"'{parameter.ParameterName}' with conflicting binding metadata."
+                    );
+                }
+
+                continue;
             }
+
+            requiredParameters.Add(parameter);
         }
     }
 
-    private static bool ContainsParameterName(
-        IReadOnlyList<string> parameterNames,
-        string candidateParameterName
+    private static bool TryGetRequiredParameter(
+        IReadOnlyList<QuerySqlParameter> requiredParameters,
+        string candidateParameterName,
+        out QuerySqlParameter parameter
     )
     {
-        return parameterNames.Any(parameterName =>
-            string.Equals(parameterName, candidateParameterName, StringComparison.OrdinalIgnoreCase)
-        );
+        parameter =
+            requiredParameters.FirstOrDefault(candidateParameter =>
+                string.Equals(
+                    candidateParameter.ParameterName,
+                    candidateParameterName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            ) ?? null!;
+
+        if (parameter is not null)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static void ValidateRequiredParameterValues(
@@ -311,12 +345,107 @@ public static class HydrationBatchBuilder
         );
     }
 
-    private static void AddParameter(DbCommand command, string bareName, object? value)
+    private static void AddParameter(DbCommand command, QuerySqlParameter parameter, object? value)
+    {
+        switch (parameter.Binding.Kind)
+        {
+            case QuerySqlParameterBindingKind.Scalar:
+                AddScalarParameter(command, parameter.ParameterName, value);
+                return;
+
+            case QuerySqlParameterBindingKind.PgsqlArray:
+                AddPgsqlArrayParameter(command, parameter.ParameterName, value);
+                return;
+
+            case QuerySqlParameterBindingKind.MssqlStructured:
+                AddMssqlStructuredParameter(command, parameter, value);
+                return;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(parameter),
+                    parameter.Binding.Kind,
+                    "Unsupported query-parameter binding kind."
+                );
+        }
+    }
+
+    private static void AddScalarParameter(DbCommand command, string bareName, object? value)
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = $"@{bareName}";
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
+    }
+
+    private static void AddPgsqlArrayParameter(DbCommand command, string bareName, object? value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = $"@{bareName}";
+        parameter.Value = RequireInt64List(value, bareName).ToArray();
+        command.Parameters.Add(parameter);
+    }
+
+    private static void AddMssqlStructuredParameter(
+        DbCommand command,
+        QuerySqlParameter querySqlParameter,
+        object? value
+    )
+    {
+        var dbParameter = command.CreateParameter();
+        dbParameter.ParameterName = $"@{querySqlParameter.ParameterName}";
+        dbParameter.Value = CreateStructuredInt64Table(
+            querySqlParameter.Binding.StructuredColumnName
+                ?? throw new InvalidOperationException(
+                    $"Structured binding for parameter '{querySqlParameter.ParameterName}' is missing a column name."
+                ),
+            RequireInt64List(value, querySqlParameter.ParameterName)
+        );
+
+        if (dbParameter is not SqlParameter sqlParameter)
+        {
+            throw new InvalidOperationException(
+                "SQL Server structured query-parameter binding requires a SqlParameter instance."
+            );
+        }
+
+        sqlParameter.SqlDbType = SqlDbType.Structured;
+        sqlParameter.TypeName =
+            querySqlParameter.Binding.StructuredTypeName
+            ?? throw new InvalidOperationException(
+                $"Structured binding for parameter '{querySqlParameter.ParameterName}' is missing a type name."
+            );
+
+        command.Parameters.Add(sqlParameter);
+    }
+
+    private static IReadOnlyList<long> RequireInt64List(object? value, string parameterName)
+    {
+        if (value is IReadOnlyList<long> int64Values)
+        {
+            return int64Values;
+        }
+
+        throw new InvalidOperationException(
+            "Hydration query keyset parameter "
+                + $"'{parameterName}' requires an IReadOnlyList<long> runtime value."
+        );
+    }
+
+    private static DataTable CreateStructuredInt64Table(
+        string structuredColumnName,
+        IReadOnlyList<long> int64Values
+    )
+    {
+        DataTable structuredTable = new();
+        structuredTable.Columns.Add(structuredColumnName, typeof(long));
+
+        foreach (var value in int64Values)
+        {
+            structuredTable.Rows.Add(value);
+        }
+
+        return structuredTable;
     }
 
     /// <summary>

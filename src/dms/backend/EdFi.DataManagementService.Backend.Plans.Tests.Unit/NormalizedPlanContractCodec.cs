@@ -125,13 +125,15 @@ internal static class NormalizedPlanContractCodec
             TotalCountSql: plan.TotalCountSql,
             PageParametersInOrder: plan.PageParametersInOrder.Select(parameter => new QuerySqlParameterDto(
                 Role: EncodeQuerySqlParameterRole(parameter.Role),
-                ParameterName: parameter.ParameterName
+                ParameterName: parameter.ParameterName,
+                Binding: EncodeQuerySqlParameterBinding(parameter.Binding)
             )),
             TotalCountParametersInOrder: plan.TotalCountParametersInOrder is null
                 ? null
                 : plan.TotalCountParametersInOrder.Value.Select(parameter => new QuerySqlParameterDto(
                     Role: EncodeQuerySqlParameterRole(parameter.Role),
-                    ParameterName: parameter.ParameterName
+                    ParameterName: parameter.ParameterName,
+                    Binding: EncodeQuerySqlParameterBinding(parameter.Binding)
                 ))
         );
     }
@@ -481,7 +483,11 @@ internal static class NormalizedPlanContractCodec
 
             decodedParameters[index] = new ExternalPlans.QuerySqlParameter(
                 Role: DecodeQuerySqlParameterRole(parameter.Role),
-                ParameterName: parameter.ParameterName
+                ParameterName: parameter.ParameterName,
+                Binding: DecodeQuerySqlParameterBinding(
+                    parameter.Binding,
+                    $"{argumentName}[{index}].{nameof(QuerySqlParameterDto.Binding)}"
+                )
             );
         }
 
@@ -1323,6 +1329,103 @@ internal static class NormalizedPlanContractCodec
             QuerySqlParameterRoleDto.Offset => ExternalPlans.QuerySqlParameterRole.Offset,
             QuerySqlParameterRoleDto.Limit => ExternalPlans.QuerySqlParameterRole.Limit,
             _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unsupported query role DTO."),
+        };
+    }
+
+    private static QuerySqlParameterBindingDto? EncodeQuerySqlParameterBinding(
+        ExternalPlans.QuerySqlParameterBinding binding
+    )
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        if (binding == ExternalPlans.QuerySqlParameterBinding.Scalar)
+        {
+            return null;
+        }
+
+        return new QuerySqlParameterBindingDto(
+            Kind: EncodeQuerySqlParameterBindingKind(binding.Kind),
+            StructuredTypeName: binding.StructuredTypeName,
+            StructuredColumnName: binding.StructuredColumnName
+        );
+    }
+
+    private static ExternalPlans.QuerySqlParameterBinding DecodeQuerySqlParameterBinding(
+        QuerySqlParameterBindingDto? binding,
+        string argumentName
+    )
+    {
+        if (binding is null)
+        {
+            return ExternalPlans.QuerySqlParameterBinding.Scalar;
+        }
+
+        var decodedKind = DecodeQuerySqlParameterBindingKind(binding.Kind);
+
+        return decodedKind switch
+        {
+            ExternalPlans.QuerySqlParameterBindingKind.Scalar => ExternalPlans
+                .QuerySqlParameterBinding
+                .Scalar,
+            ExternalPlans.QuerySqlParameterBindingKind.PgsqlArray => ExternalPlans
+                .QuerySqlParameterBinding
+                .PgsqlArray,
+            ExternalPlans.QuerySqlParameterBindingKind.MssqlStructured =>
+                ExternalPlans.QuerySqlParameterBinding.CreateMssqlStructured(
+                    RequireNonEmpty(
+                        binding.StructuredTypeName!,
+                        $"{argumentName}.{nameof(QuerySqlParameterBindingDto.StructuredTypeName)}"
+                    ),
+                    RequireNonEmpty(
+                        binding.StructuredColumnName!,
+                        $"{argumentName}.{nameof(QuerySqlParameterBindingDto.StructuredColumnName)}"
+                    )
+                ),
+            _ => throw new ArgumentOutOfRangeException(
+                argumentName,
+                decodedKind,
+                "Unsupported query parameter binding kind."
+            ),
+        };
+    }
+
+    private static QuerySqlParameterBindingKindDto EncodeQuerySqlParameterBindingKind(
+        ExternalPlans.QuerySqlParameterBindingKind kind
+    )
+    {
+        return kind switch
+        {
+            ExternalPlans.QuerySqlParameterBindingKind.Scalar => QuerySqlParameterBindingKindDto.Scalar,
+            ExternalPlans.QuerySqlParameterBindingKind.PgsqlArray =>
+                QuerySqlParameterBindingKindDto.PgsqlArray,
+            ExternalPlans.QuerySqlParameterBindingKind.MssqlStructured =>
+                QuerySqlParameterBindingKindDto.MssqlStructured,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(kind),
+                kind,
+                "Unsupported query parameter binding kind."
+            ),
+        };
+    }
+
+    private static ExternalPlans.QuerySqlParameterBindingKind DecodeQuerySqlParameterBindingKind(
+        QuerySqlParameterBindingKindDto kind
+    )
+    {
+        return kind switch
+        {
+            QuerySqlParameterBindingKindDto.Scalar => ExternalPlans.QuerySqlParameterBindingKind.Scalar,
+            QuerySqlParameterBindingKindDto.PgsqlArray => ExternalPlans
+                .QuerySqlParameterBindingKind
+                .PgsqlArray,
+            QuerySqlParameterBindingKindDto.MssqlStructured => ExternalPlans
+                .QuerySqlParameterBindingKind
+                .MssqlStructured,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(kind),
+                kind,
+                "Unsupported query parameter binding kind DTO."
+            ),
         };
     }
 

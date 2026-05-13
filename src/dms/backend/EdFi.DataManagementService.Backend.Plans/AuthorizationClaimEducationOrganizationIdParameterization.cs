@@ -38,6 +38,8 @@ internal sealed record AuthorizationClaimEducationOrganizationIdParameterization
 internal static class AuthorizationClaimEducationOrganizationIdParameterizationFactory
 {
     internal const int MssqlStructuredParameterThreshold = 2000;
+    internal const string MssqlStructuredParameterTypeName = "dms.BigIntTable";
+    internal const string MssqlStructuredParameterColumnName = "Id";
 
     public static AuthorizationClaimEducationOrganizationIdParameterization Create(
         SqlDialect dialect,

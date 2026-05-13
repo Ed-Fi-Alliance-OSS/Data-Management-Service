@@ -874,10 +874,28 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal(expectedPageParameterNames);
+        plan.PageParametersInOrder[0]
+            .Binding.Kind.Should()
+            .Be(
+                dialect switch
+                {
+                    SqlDialect.Mssql => QuerySqlParameterBindingKind.Scalar,
+                    _ => QuerySqlParameterBindingKind.PgsqlArray,
+                }
+            );
         plan.TotalCountParametersInOrder.Should().NotBeNull();
         plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal(expectedTotalCountParameterNames);
+        plan.TotalCountParametersInOrder!.Value[0]
+            .Binding.Kind.Should()
+            .Be(
+                dialect switch
+                {
+                    SqlDialect.Mssql => QuerySqlParameterBindingKind.Scalar,
+                    _ => QuerySqlParameterBindingKind.PgsqlArray,
+                }
+            );
     }
 
     [TestCase(
@@ -1052,6 +1070,15 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal(expectedPageParameterNames);
+        plan.PageParametersInOrder[0]
+            .Binding.Kind.Should()
+            .Be(
+                dialect switch
+                {
+                    SqlDialect.Mssql => QuerySqlParameterBindingKind.Scalar,
+                    _ => QuerySqlParameterBindingKind.PgsqlArray,
+                }
+            );
     }
 
     [Test]
@@ -1084,10 +1111,16 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("ClaimEducationOrganizationIds", "offset", "limit");
+        plan.PageParametersInOrder[0]
+            .Binding.Should()
+            .Be(QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id"));
         plan.TotalCountParametersInOrder.Should().NotBeNull();
         plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("ClaimEducationOrganizationIds");
+        plan.TotalCountParametersInOrder!.Value[0]
+            .Binding.Should()
+            .Be(QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id"));
     }
 
     [Test]

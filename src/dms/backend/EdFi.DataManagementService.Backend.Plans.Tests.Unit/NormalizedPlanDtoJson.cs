@@ -306,10 +306,7 @@ internal static class NormalizedPlanDtoJson
         writer.WriteStartArray();
         foreach (var parameter in value.PageParametersInOrder)
         {
-            writer.WriteStartObject();
-            writer.WriteString("role", PlanJsonCanonicalization.ToQueryParameterRoleToken(parameter.Role));
-            writer.WriteString("parameter_name", parameter.ParameterName);
-            writer.WriteEndObject();
+            WriteQuerySqlParameter(writer, parameter);
         }
         writer.WriteEndArray();
 
@@ -323,15 +320,40 @@ internal static class NormalizedPlanDtoJson
             writer.WriteStartArray();
             foreach (var parameter in value.TotalCountParametersInOrder.Value)
             {
-                writer.WriteStartObject();
-                writer.WriteString(
-                    "role",
-                    PlanJsonCanonicalization.ToQueryParameterRoleToken(parameter.Role)
-                );
-                writer.WriteString("parameter_name", parameter.ParameterName);
-                writer.WriteEndObject();
+                WriteQuerySqlParameter(writer, parameter);
             }
             writer.WriteEndArray();
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteQuerySqlParameter(Utf8JsonWriter writer, QuerySqlParameterDto parameter)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("role", PlanJsonCanonicalization.ToQueryParameterRoleToken(parameter.Role));
+        writer.WriteString("parameter_name", parameter.ParameterName);
+
+        if (parameter.Binding is not null)
+        {
+            writer.WritePropertyName("binding");
+            writer.WriteStartObject();
+            writer.WriteString(
+                "kind",
+                PlanJsonCanonicalization.ToQueryParameterBindingKindToken(parameter.Binding.Kind)
+            );
+
+            if (parameter.Binding.StructuredTypeName is not null)
+            {
+                writer.WriteString("structured_type_name", parameter.Binding.StructuredTypeName);
+            }
+
+            if (parameter.Binding.StructuredColumnName is not null)
+            {
+                writer.WriteString("structured_column_name", parameter.Binding.StructuredColumnName);
+            }
+
+            writer.WriteEndObject();
         }
 
         writer.WriteEndObject();

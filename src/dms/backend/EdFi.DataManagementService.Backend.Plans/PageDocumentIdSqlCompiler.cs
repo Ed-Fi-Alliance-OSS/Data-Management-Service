@@ -73,10 +73,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var requiresDescriptorJoin = rewrittenPredicates.Any(static predicate =>
             predicate.Target is QueryPredicateTarget.DescriptorColumn
         );
-        var filterParameterNamesInOrder = BuildFilterParameterNamesInOrder(
+        var filterParametersInOrder = BuildFilterParametersInOrder(
             rewrittenPredicates,
             authorizationClaimParameterization
         );
+        var filterParameterNamesInOrder = filterParametersInOrder
+            .Select(static parameter => parameter.ParameterName)
+            .ToArray();
         ValidateFilterParameterNamesDoNotCollideWithPaging(
             filterParameterNamesInOrder,
             spec.OffsetParameterName,
@@ -102,7 +105,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 requiresDescriptorJoin
             )
             : null;
-        var filterParametersInOrder = BuildFilterParametersInOrder(filterParameterNamesInOrder);
         var pageParametersInOrder = BuildPageParametersInOrder(
             filterParametersInOrder,
             spec.OffsetParameterName,
@@ -319,42 +321,69 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Builds deterministic filter-parameter names in canonical plan order.
-    /// Executors bind parameters by name, so this ordering does not need to match placeholder appearance per dialect.
-    /// </summary>
-    private static IReadOnlyList<string> BuildFilterParameterNamesInOrder(
-        IReadOnlyList<RewrittenPredicate> predicates,
-        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
-    )
-    {
-        List<string> filterParameterNamesInOrder =
-        [
-            .. predicates.Select(static predicate => predicate.ParameterName),
-        ];
-
-        if (authorizationClaimParameterization is not null)
-        {
-            filterParameterNamesInOrder.AddRange(authorizationClaimParameterization.ParameterNamesInOrder);
-        }
-
-        return filterParameterNamesInOrder;
-    }
-
-    /// <summary>
     /// Builds deterministic filter-parameter metadata in canonical plan order.
     /// Executors bind parameters by name, so this ordering does not need to match placeholder appearance per dialect.
     /// </summary>
     private static IReadOnlyList<QuerySqlParameter> BuildFilterParametersInOrder(
-        IReadOnlyList<string> filterParameterNamesInOrder
+        IReadOnlyList<RewrittenPredicate> predicates,
+        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
     )
     {
-        return
+        List<QuerySqlParameter> filterParametersInOrder =
         [
-            .. filterParameterNamesInOrder.Select(static parameterName => new QuerySqlParameter(
+            .. predicates.Select(static predicate => new QuerySqlParameter(
                 QuerySqlParameterRole.Filter,
-                parameterName
+                predicate.ParameterName
             )),
         ];
+
+        if (authorizationClaimParameterization is not null)
+        {
+            filterParametersInOrder.AddRange(
+                BuildAuthorizationFilterParametersInOrder(authorizationClaimParameterization)
+            );
+        }
+
+        return filterParametersInOrder;
+    }
+
+    private static IReadOnlyList<QuerySqlParameter> BuildAuthorizationFilterParametersInOrder(
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        return authorizationClaimParameterization.Kind switch
+        {
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray =>
+            [
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    authorizationClaimParameterization.BaseParameterName,
+                    QuerySqlParameterBinding.PgsqlArray
+                ),
+            ],
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar =>
+            [
+                .. authorizationClaimParameterization.ParameterNamesInOrder.Select(
+                    static parameterName => new QuerySqlParameter(QuerySqlParameterRole.Filter, parameterName)
+                ),
+            ],
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured =>
+            [
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    authorizationClaimParameterization.BaseParameterName,
+                    QuerySqlParameterBinding.CreateMssqlStructured(
+                        AuthorizationClaimEducationOrganizationIdParameterizationFactory.MssqlStructuredParameterTypeName,
+                        AuthorizationClaimEducationOrganizationIdParameterizationFactory.MssqlStructuredParameterColumnName
+                    )
+                ),
+            ],
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(authorizationClaimParameterization),
+                authorizationClaimParameterization.Kind,
+                "Unsupported authorization claim EdOrg parameterization kind."
+            ),
+        };
     }
 
     /// <summary>
