@@ -1,9 +1,9 @@
 [
   {
     "category": "Strategy Classification",
-    "description": "Implement a DMS-1055 GET-many authorization strategy classifier for the relational read path. Acceptance: `RelationshipsWithEdOrgsOnly` and `RelationshipsWithEdOrgsOnlyInverted` are classified as supported relationship strategies; `NoFurtherAuthorizationRequired` is classified as a no-op; `NamespaceBased`, `OwnershipBased`, all People relationship strategies, and valid `{BasisResource}With...` custom view-based names that resolve to a known resource or descriptor are classified as known-but-not-implemented for GET-many; unknown strategy names, invalid custom view names, and custom view names with unresolved basis resources are classified as security configuration failures. Classification is deterministic and preserves the effective strategy names needed for diagnostics.",
+    "description": "Implement a DMS-1055 GET-many authorization strategy classifier for the relational read path. Acceptance: `RelationshipsWithEdOrgsOnly` and `RelationshipsWithEdOrgsOnlyInverted` are classified as supported relationship strategies; `NoFurtherAuthorizationRequired` is classified as a no-op; `NamespaceBased`, `OwnershipBased`, all People relationship strategies, and valid `{BasisResource}With...` custom view-based names that resolve to a known resource or descriptor are classified as known-but-not-implemented for GET-many; unknown strategy names, invalid custom view names, and custom view names with unresolved basis resources are classified as security configuration failures. Classification is deterministic, preserves the effective strategy names needed for diagnostics, and defines the temporary DMS-1055 501-versus-500 boundaries that later authorization stories will replace.",
     "steps-to-verify": [
-      "Add unit tests for supported, no-op, known unsupported, convention-matching custom view, unresolved custom view, and unknown strategy names.",
+      "Review classifier tests to confirm supported, no-op, known unsupported, convention-matching custom view, unresolved custom view, and unknown strategy names are covered, including the temporary DMS-1055 501-versus-500 mixed-strategy boundaries and effective-schema basis-resource or descriptor resolution for custom view names.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -12,7 +12,7 @@
     "category": "Strategy Registration",
     "description": "Add constants and shared registration support for `RelationshipsWithEdOrgsOnlyInverted`. Acceptance: the strategy name is available through `AuthorizationStrategyNameConstants`; the authorization filter/provider registry recognizes it; GET-many can carry the strategy name into the relational backend; GET-by-id, POST, PUT, and DELETE return an explicit not-implemented result until DMS-1056 rather than falling through to missing-provider 403 behavior.",
     "steps-to-verify": [
-      "Add core unit tests proving inverted strategy provider lookup succeeds and non-GET operations fail intentionally as not implemented.",
+      "Review core registration tests to confirm inverted strategy provider lookup succeeds and non-GET operations fail intentionally as not implemented instead of falling through to legacy 403 behavior.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -21,7 +21,7 @@
     "category": "Request Authorization Context",
     "description": "Introduce a typed request-scoped relational authorization context for GET-many. Acceptance: the context is built from `ClientAuthorizations`, carries `ClaimEducationOrganizationIds` as unique sorted `long` values, and is passed through `RelationalQueryRequest`/`IRelationalQueryRequest` to `RelationalDocumentStoreRepository`; relational GET-many no longer parses EdOrg IDs from `AuthorizationStrategyEvaluator.Filters`; duplicate token EdOrg IDs are removed before SQL generation, threshold selection, logging, and binding.",
     "steps-to-verify": [
-      "Add unit tests for null/empty, duplicate, unsorted, and already-sorted EdOrg claim lists.",
+      "Review request-context tests to confirm null/empty, duplicate, unsorted, and already-sorted EdOrg claim lists produce the expected unique sorted `ClaimEducationOrganizationIds` before SQL generation and threshold selection.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
@@ -29,9 +29,9 @@
   },
   {
     "category": "Middleware Refactor",
-    "description": "Refactor the current authorization filter middleware enough for relational GET-many to reach backend planning with empty EdOrg claims, inverted EdOrg-only strategy names, and known unsupported mixed strategies. Acceptance: relational GET-many does not receive the legacy empty-EdOrg 403 from `AuthorizationFiltersProviderBase.GetRelationshipFilters`; write and single-item paths keep their existing behavior until their implementation stories; the backend, not the middleware, decides between successful filtering, empty page, 501 known-not-implemented, and 500 security configuration failure.",
+    "description": "Refactor the current authorization filter middleware enough for relational GET-many to reach backend planning with empty EdOrg claims, inverted EdOrg-only strategy names, and known unsupported mixed strategies. Acceptance: relational GET-many does not receive the legacy empty-EdOrg 403 from `AuthorizationFiltersProviderBase.GetRelationshipFilters`; write and single-item paths continue on their current behavior except where DMS-1055 now requires an intentional 501 for `RelationshipsWithEdOrgsOnlyInverted`; the backend, not the middleware, decides between successful filtering, empty page, 501 known-not-implemented, and 500 security configuration failure for GET-many.",
     "steps-to-verify": [
-      "Add core middleware/handler tests for relational GET-many with empty EdOrg claims, inverted strategy, unsupported known strategy, and `NoFurtherAuthorizationRequired` mixed with an EdOrg relationship strategy.",
+      "Review core middleware and handler tests to confirm relational GET-many reaches backend planning for empty EdOrg claims, inverted strategy names, unsupported known strategies, and `NoFurtherAuthorizationRequired` mixed with an EdOrg relationship strategy, while non-GET `RelationshipsWithEdOrgsOnlyInverted` requests fail intentionally as not implemented.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -40,7 +40,8 @@
     "category": "Security Configuration Errors",
     "description": "Add the minimal request-time security configuration failure result and response mapping needed by DMS-1055. Acceptance: invalid/missing security metadata, unknown strategy names, unresolvable EdOrg securable paths, and EdOrg relationship strategies with no applicable EdOrg securable elements return HTTP 500 with type `urn:ed-fi:api:system-configuration:security`, title `Security Configuration Error`, detail `A security configuration problem was detected. The request cannot be authorized.`, a correlationId, and logged diagnostic details; normal GET-many denials still return 200 filtered results; known-but-not-implemented strategies still return 501.",
     "steps-to-verify": [
-      "Add response factory and query handler tests for the canonical security configuration ProblemDetails shape.",
+      "Review response factory and query handler tests to confirm the canonical security-configuration ProblemDetails shape is returned for invalid metadata, unknown strategies, unresolvable paths, and no-applicable-EdOrg-element cases.",
+      "Review the failure logging path to confirm security configuration failures emit diagnostic details without changing normal 200 filtered denials or 501 known-not-implemented responses.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
@@ -48,9 +49,10 @@
   },
   {
     "category": "Securable Path Metadata",
-    "description": "Extend the resolved securable element path contract used by mapping sets so each resolved path carries the original JSON path and readable MetaEd name when available. Acceptance: EdOrg paths expose enough metadata for diagnostics and per-element authorization; root-table and child-table EdOrg locations remain represented by a single `ColumnPathStep` with null target table/column; existing mapping set and normalized plan contract tests are updated for the new shape without changing path resolution semantics.",
+    "description": "Extend the resolved securable element path contract and compiled mapping-set output used by GET-many authorization so each resolved path carries the original JSON path and readable MetaEd name when available. Acceptance: EdOrg paths expose enough metadata for diagnostics and per-element authorization; root-table and child-table EdOrg locations remain represented by a single `ColumnPathStep` with null target table/column; compiled mapping sets persist this metadata so GET-many authorization reuses it instead of re-running `ResolveSecurableElementColumnPath` or caching generated authorization SQL per request; existing mapping set and normalized plan contract tests are updated for the new shape without changing path resolution semantics.",
     "steps-to-verify": [
-      "Add/adjust unit tests in the securable element column path resolver for EdOrg root paths, child collection paths, and multiple EdOrg paths with distinct readable names.",
+      "Review the mapping-set and plan contract changes to confirm resolved EdOrg authorization metadata is serialized once and reused by GET-many authorization planning, and that no new cache of rendered authorization SQL is introduced.",
+      "Review resolver tests for EdOrg root paths, child collection paths, and multiple EdOrg paths with distinct readable names.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -59,7 +61,7 @@
     "category": "SQL Parameter Contract",
     "description": "Extend the page-query parameter model and hydration binder to support authorization list parameters. Acceptance: PostgreSQL uses one bigint array parameter named `ClaimEducationOrganizationIds`; SQL Server uses expanded scalar bigint parameters named `ClaimEducationOrganizationIds_0`, `ClaimEducationOrganizationIds_1`, etc. for fewer than 2,000 unique IDs; SQL Server uses one structured parameter named `ClaimEducationOrganizationIds` with type `dms.BigIntTable` and one `Id` column for 2,000 or more unique IDs; provider-specific binding metadata stays out of compiled/AOT plan delegates and is applied in the runtime executor/binder layer.",
     "steps-to-verify": [
-      "Add unit tests for PostgreSQL array metadata, SQL Server 1,999 scalar parameters, SQL Server 2,000 TVP metadata, and duplicate IDs being deduped before threshold selection.",
+      "Review parameter-contract tests to confirm PostgreSQL array metadata, SQL Server 1,999 scalar parameters, SQL Server 2,000 TVP metadata, and duplicate-ID deduplication before threshold selection, with runtime binder metadata carrying `SqlDbType.Structured`, `TypeName`, and the `Id` column shape only at execution time.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
@@ -69,7 +71,7 @@
     "category": "Root EdOrg Authorization SQL",
     "description": "Implement authorization SQL generation for EdOrg securable paths that resolve to the root resource table. Acceptance: `RelationshipsWithEdOrgsOnly` emits an `IN`/`ANY` subquery against `auth.EducationOrganizationIdToEducationOrganizationId` with token IDs matched to `SourceEducationOrganizationId` and the resource column matched to `TargetEducationOrganizationId`; `RelationshipsWithEdOrgsOnlyInverted` swaps Source and Target; multiple EdOrg elements within one strategy are combined with AND; multiple supported relationship strategies are combined with OR; `NoFurtherAuthorizationRequired` contributes no predicate; generated SQL uses subqueries rather than joins so duplicate auth rows cannot duplicate root documents.",
     "steps-to-verify": [
-      "Add SQL shape tests for normal, inverted, normal plus inverted OR, multiple EdOrg elements AND, no-op `NoFurtherAuthorizationRequired`, and duplicate-avoidance `IN` subquery structure.",
+      "Review SQL shape tests for normal, inverted, normal plus inverted OR, multiple EdOrg elements AND, no-op `NoFurtherAuthorizationRequired`, and duplicate-avoidance `IN` subquery structure.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -78,17 +80,17 @@
     "category": "Child EdOrg Authorization SQL",
     "description": "Implement authorization SQL generation for EdOrg securable paths that resolve to child collection tables. Acceptance: root `DocumentId`s are filtered through child-table predicates; for each configured child-table EdOrg path, a document is authorized only when at least one child row exists for that path and no existing child row for that path is unauthorized; documents with no child rows for that configured path are excluded; normal and inverted Source/Target semantics match the root-table implementation; multiple child/root EdOrg elements within one strategy are combined with AND.",
     "steps-to-verify": [
-      "Add SQL shape tests that verify the `EXISTS` plus `NOT EXISTS` child-row semantics for normal and inverted strategies.",
-      "Add an execution-focused unit or integration fixture where one unauthorized child row excludes the whole document and a document with no child rows for the path is excluded.",
+      "Review SQL shape tests that verify the `EXISTS` plus `NOT EXISTS` child-row semantics for normal and inverted strategies.",
+      "Review an execution-focused unit or integration fixture where one unauthorized child row excludes the whole document and a document with no child rows for the path is excluded.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
     "category": "Page Query Integration",
-    "description": "Integrate EdOrg authorization predicates into relational GET-many page keyset planning. Acceptance: authorization filters are applied in the same page `DocumentId` query as normal query predicates; `TotalCountSql` counts only authorized rows; offset/limit are applied after authorization and query predicates; existing descriptor/document UUID query preprocessing still works; generated authorization SQL is not cached separately, while resolved securable paths from the mapping set are reused.",
+    "description": "Integrate EdOrg authorization predicates into relational GET-many page keyset planning. Acceptance: authorization filters are applied in the same page `DocumentId` query as normal query predicates; `TotalCountSql` counts only authorized rows; offset/limit are applied after authorization and query predicates; existing descriptor/document UUID query preprocessing still works; the existing page-query planning/cache path continues to work without introducing a separate cache for generated authorization SQL; resolved securable-path metadata from the mapping set is reused rather than re-resolved per request.",
     "steps-to-verify": [
-      "Add planner/compiler tests for authorization plus API query filters, authorization plus totalCount, and pagination after authorization.",
+      "Review planner and compiler tests for authorization plus API query filters, authorization plus totalCount, pagination after authorization, and continued descriptor/document UUID preprocessing.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
@@ -98,67 +100,56 @@
     "category": "Repository Outcomes",
     "description": "Replace the current relational read guardrail for GET-many with DMS-1055 outcomes. Acceptance: classify strategies before checking empty EdOrg claims; known unsupported mixed strategies return `QueryFailureNotImplemented`/HTTP 501; supported EdOrg relationship strategies with an empty unique EdOrg list return `QuerySuccess` with an empty page and Total-Count 0 when requested; `NoFurtherAuthorizationRequired` alone still returns unfiltered results; `NoFurtherAuthorizationRequired` mixed with EdOrg relationship strategies is ignored as a no-op while EdOrg auth applies; security configuration failures use the new 500 result path.",
     "steps-to-verify": [
-      "Add repository unit tests for each outcome, including the ordering of unsupported-strategy 501 before empty-claims short-circuit.",
+      "Review repository unit tests for each outcome, including the ordering of unsupported-strategy 501 before the empty-claims short-circuit and `NoFurtherAuthorizationRequired` alone versus mixed with EdOrg filtering.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
     "category": "PostgreSQL Integration",
-    "description": "Add PostgreSQL backend integration coverage for EdOrg-only relationship GET-many authorization. Acceptance: normal EdOrg filtering returns only reachable resources; inverted filtering returns bottom-to-top authorized resources; normal plus inverted strategies are ORed; multiple EdOrg securable elements in one strategy are ANDed; duplicate auth rows or multiple matching strategies return each document once; totalCount and pagination are based on the authorized row set; empty EdOrg claims return an empty page and Total-Count 0 when requested; unresolvable/no EdOrg securable paths fail as security configuration errors.",
+    "description": "Add PostgreSQL backend integration coverage for EdOrg-only relationship GET-many authorization. Acceptance: normal EdOrg filtering returns only reachable resources; inverted filtering returns bottom-to-top authorized resources; normal plus inverted strategies are ORed; `NoFurtherAuthorizationRequired` mixed with an EdOrg relationship strategy behaves as a no-op; multiple EdOrg securable elements in one strategy are ANDed; child-table EdOrg securable paths require at least one child row and exclude documents with unauthorized or missing child rows for that path; duplicate auth rows or multiple matching strategies return each document once; totalCount and pagination are based on the authorized row set; empty EdOrg claims return an empty page and Total-Count 0 when requested; unresolvable/no EdOrg securable paths fail as security configuration errors.",
     "steps-to-verify": [
-      "Add focused tests to the PostgreSQL relational backend integration suite using provisioned auth hierarchy data.",
+      "Review focused PostgreSQL integration scenarios using provisioned auth hierarchy data, including child-table EdOrg fixtures, `NoFurtherAuthorizationRequired` mixed-strategy coverage, empty-claim short-circuit behavior, and security-configuration failures.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Authorization\"`"
     ],
     "completed": false
   },
   {
     "category": "SQL Server Integration",
-    "description": "Add SQL Server backend integration coverage for EdOrg-only relationship GET-many authorization and provider-specific parameter binding. Acceptance: normal, inverted, OR, AND, duplicate avoidance, pagination, totalCount, empty claims, and security configuration scenarios match PostgreSQL behavior; 1,999 unique EdOrg IDs bind as expanded scalar parameters; 2,000 unique EdOrg IDs bind as a `dms.BigIntTable` TVP with an `Id` column; duplicate token IDs are deduped before threshold selection.",
+    "description": "Add SQL Server backend integration coverage for EdOrg-only relationship GET-many authorization and provider-specific parameter binding. Acceptance: normal, inverted, OR, `NoFurtherAuthorizationRequired` no-op mixing, AND, child-table EdOrg row semantics, duplicate avoidance, pagination, totalCount, empty claims, and security configuration scenarios match PostgreSQL behavior; 1,999 unique EdOrg IDs bind as expanded scalar parameters; 2,000 unique EdOrg IDs bind as a `dms.BigIntTable` TVP with an `Id` column; duplicate token IDs are deduped before threshold selection.",
     "steps-to-verify": [
-      "Add focused tests to the SQL Server relational backend integration suite, including assertions on scalar-vs-TVP binding behavior.",
+      "Review focused SQL Server integration scenarios, including child-table EdOrg fixtures, `NoFurtherAuthorizationRequired` mixed-strategy coverage, and assertions on 1,999-scalar versus 2,000-TVP binding behavior after deduplication.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Authorization\"`"
     ],
     "completed": false
   },
   {
-    "category": "Unsupported Strategy Coverage",
-    "description": "Add temporary DMS-1055 test coverage for unsupported mixed strategies. Acceptance: GET-many with `NamespaceBased`, `OwnershipBased`, People relationship strategies, or valid convention-matching custom view-based strategies returns HTTP 501 from the relational path; unknown built-in-looking names, invalid custom view names, and custom view names whose basis resource cannot resolve return the security configuration 500 shape; these tests are named/commented so later stories can update them to the final `auth.md` composition semantics.",
+    "category": "E2E Claim Set Fixtures",
+    "description": "Add permanent test-only CMS/DMS claim set artifacts for the DMS-1055 GET-many scenarios. Acceptance: a committed `E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet` fixture is available to the DMS E2E setup without per-test metadata mutation; if additional claim sets are required to exercise normal-plus-inverted OR semantics, `NoFurtherAuthorizationRequired` plus relationship no-op behavior, or a representative known-unsupported mixed-strategy 501 path, they are also committed rather than assembled ad hoc in test code; existing `E2E-RelationshipsWithEdOrgsOnlyClaimSet` behavior is not changed; fixture naming makes the DMS-1055 coverage easy to find and maintain.",
     "steps-to-verify": [
-      "Add backend and core handler tests covering each unsupported/unknown category.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+      "Review `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`, `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/authoritative-composition.json`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/AuthorizationClaimSetNames.cs`, and the claim-set composition README/docs to confirm the inverted and any additional DMS-1055 claim sets are committed and referenced by test setup.",
+      "Run: `dotnet test --no-restore ./src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~ClaimsDataLoader\"`"
     ],
     "completed": false
   },
   {
-    "category": "E2E Claim Set Fixtures",
-    "description": "Add permanent test-only CMS/DMS claim set artifacts for `RelationshipsWithEdOrgsOnlyInverted`. Acceptance: a committed `E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet` fixture is available to the DMS E2E setup without per-test metadata mutation; existing `E2E-RelationshipsWithEdOrgsOnlyClaimSet` behavior is not changed; fixture naming makes the DMS-1055 coverage easy to find and maintain.",
+    "category": "E2E Relational Backend Tags",
+    "description": "Tag all Data Management Service E2E scenarios that are part of the DMS-1055 relational-backend authorization coverage with the scenario-level `@relational-backend` tag. Acceptance: existing overlapping authorization E2Es are only tagged, with no changes to scenario steps, data, or assertions; new DMS-1055 E2E scenarios are created with `@relational-backend` from the start; unrelated legacy authorization scenarios remain out of the relational lane unless their behavior is explicitly implemented by this relational backend story; the relational E2E lane using `Category=@relational-backend` picks up every DMS-1055 E2E scenario.",
     "steps-to-verify": [
-      "Run CMS/DMS fixture setup tests or the smallest claim-set metadata test available.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ClaimSet\"`"
+      "Review `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsOnly.feature` and add only the `@relational-backend` scenario tag to reused GET-many scenarios, including scenarios 11, 12, 13.4, 14.1, 19, and 22 if they remain the DMS-1055 overlap set.",
+      "Review any new or modified DMS-1055 authorization feature files to confirm every new scenario has a scenario-level `@relational-backend` tag and no feature-level tag accidentally pulls unrelated legacy authorization scenarios into the relational lane.",
+      "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=@relational-backend&FullyQualifiedName~Authorization\"`"
     ],
     "completed": false
   },
   {
     "category": "DMS E2E Coverage",
-    "description": "Add focused Data Management Service E2E tests for the DMS-1055 runtime behavior through real token and claim-set wiring. Acceptance: E2E verifies normal EdOrg filtering, inverted filtering, normal plus inverted OR semantics, pagination/Total-Count after authorization, empty EdOrg claims returning 200 with an empty page and Total-Count 0, and a known unsupported mixed strategy returning 501; tests run against the `src/dms/tests/EdFi.DataManagementService.Tests.E2E` Docker stack.",
+    "description": "Add focused Data Management Service E2E tests for the DMS-1055 runtime behavior through real token and claim-set wiring. Acceptance: E2E verifies normal EdOrg filtering, inverted filtering, normal plus inverted OR semantics, `NoFurtherAuthorizationRequired` mixed with an EdOrg relationship strategy behaving as a no-op, pagination/Total-Count after authorization, empty EdOrg claims returning 200 with an empty page and Total-Count 0, and a known unsupported mixed strategy returning 501; every new DMS-1055 scenario has the scenario-level `@relational-backend` tag; the scenarios use the committed DMS-1055 claim-set fixtures plus the existing claim-set reload hooks rather than per-scenario metadata mutation; tests run against the `src/dms/tests/EdFi.DataManagementService.Tests.E2E` Docker stack.",
     "steps-to-verify": [
+      "Review the DMS authorization feature coverage to confirm scenarios exist for normal, inverted, OR, no-op, pagination/Total-Count, empty-claims, and representative unsupported-mixed-strategy behavior using the committed DMS-1055 claim-set fixtures, and that each scenario has `@relational-backend`.",
       "From `src/dms/tests/EdFi.DataManagementService.Tests.E2E`, run: `pwsh ./teardown-local-dms.ps1`",
       "From `src/dms/tests/EdFi.DataManagementService.Tests.E2E`, run: `pwsh ./setup-local-dms.ps1`",
-      "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"FullyQualifiedName~Authorization\"`"
-    ],
-    "completed": false
-  },
-  {
-    "category": "Final Verification",
-    "description": "Run formatting and the focused verification suite for the completed DMS-1055 implementation. Acceptance: changed C# files are formatted with CSharpier; core unit, backend unit, plans unit, PostgreSQL integration, SQL Server integration, and focused DMS E2E tests pass or any environment-only failures are documented with logs; `tasks.json` remains valid JSON and all task `completed` flags stay false until tasks are actually implemented.",
-    "steps-to-verify": [
-      "Run: `dotnet csharpier format src/dms`",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
-      "Run the focused PostgreSQL, SQL Server, and DMS E2E authorization tests added by earlier tasks."
+      "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=@relational-backend&FullyQualifiedName~Authorization\"`"
     ],
     "completed": false
   }
