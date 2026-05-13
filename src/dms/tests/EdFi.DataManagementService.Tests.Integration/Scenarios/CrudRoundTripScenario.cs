@@ -43,7 +43,7 @@ internal static class CrudRoundTripScenario
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created, createBody);
         createResponse.Headers.Location.Should().NotBeNull();
-        TryReadRawEtag(createResponse, out _).Should().BeTrue("a POST create must emit an ETag header");
+        createResponse.TryReadRawEtag(out _).Should().BeTrue("a POST create must emit an ETag header");
 
         string locationPath = createResponse.Headers.Location!.IsAbsoluteUri
             ? createResponse.Headers.Location!.AbsolutePath
@@ -89,7 +89,8 @@ internal static class CrudRoundTripScenario
         string locationPath = createResponse.Headers.Location!.IsAbsoluteUri
             ? createResponse.Headers.Location!.AbsolutePath
             : createResponse.Headers.Location!.OriginalString;
-        TryReadRawEtag(createResponse, out string initialEtag)
+        createResponse
+            .TryReadRawEtag(out string initialEtag)
             .Should()
             .BeTrue("the initial POST must emit an ETag so PUT can If-Match against it");
         string resourceId = locationPath.Split('/')[^1];
@@ -113,7 +114,7 @@ internal static class CrudRoundTripScenario
         using HttpResponseMessage putResponse = await harness.HttpClient.SendAsync(putRequest);
         string putBody = await putResponse.Content.ReadAsStringAsync();
         putResponse.StatusCode.Should().Be(HttpStatusCode.NoContent, putBody);
-        TryReadRawEtag(putResponse, out string putEtag).Should().BeTrue("PUT must return the new ETag");
+        putResponse.TryReadRawEtag(out string putEtag).Should().BeTrue("PUT must return the new ETag");
         putEtag.Should().NotBe(initialEtag, "PUT must advance the ETag");
 
         using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(locationPath);
@@ -179,22 +180,27 @@ internal static class CrudRoundTripScenario
         );
         string firstPageBody = await firstPage.Content.ReadAsStringAsync();
         firstPage.StatusCode.Should().Be(HttpStatusCode.OK, firstPageBody);
-        JsonNode
-            .Parse(firstPageBody)!
-            .AsArray()
-            .Count.Should()
-            .Be(2, "limit=2 returns the first two seeded students");
+        JsonArray firstPageArray = JsonNode.Parse(firstPageBody)!.AsArray();
+        firstPageArray.Count.Should().Be(2, "limit=2 returns the first two seeded students");
 
         using HttpResponseMessage secondPage = await harness.HttpClient.GetAsync(
             $"{StudentsEndpoint}?offset=2&limit=2"
         );
         string secondPageBody = await secondPage.Content.ReadAsStringAsync();
         secondPage.StatusCode.Should().Be(HttpStatusCode.OK, secondPageBody);
-        JsonNode
-            .Parse(secondPageBody)!
-            .AsArray()
-            .Count.Should()
-            .Be(1, "offset=2 leaves only one of three seeded students");
+        JsonArray secondPageArray = JsonNode.Parse(secondPageBody)!.AsArray();
+        secondPageArray.Count.Should().Be(1, "offset=2 leaves only one of three seeded students");
+
+        string[] returnedIds = firstPageArray
+            .Concat(secondPageArray)
+            .Select(node => node!["studentUniqueId"]!.GetValue<string>())
+            .ToArray();
+        returnedIds
+            .Should()
+            .BeEquivalentTo(
+                ids,
+                "the union of the two pages must cover every seeded student without overlap"
+            );
     }
 
     public static async Task It_rejects_create_with_missing_reference(ApiIntegrationHarness harness)
@@ -271,28 +277,6 @@ internal static class CrudRoundTripScenario
 
         int persistedStudentCount = await CountStudentRowsAsync(harness, StudentUniqueId);
         persistedStudentCount.Should().Be(1, "the referenced Student must remain after the rejected DELETE");
-    }
-
-    /// <summary>
-    /// Reads the raw ETag header. <see cref="System.Net.Http.Headers.HttpResponseHeaders.ETag"/>
-    /// requires the strict RFC 7232 quoted form, but DMS emits an opaque
-    /// unquoted value (the API metadata fingerprint), so the strongly typed
-    /// property returns null. Round-tripping through <c>TryGetValues</c>
-    /// preserves whatever DMS actually sent.
-    /// </summary>
-    private static bool TryReadRawEtag(HttpResponseMessage response, out string etag)
-    {
-        if (response.Headers.TryGetValues("ETag", out IEnumerable<string>? values))
-        {
-            string? first = values.FirstOrDefault();
-            if (!string.IsNullOrEmpty(first))
-            {
-                etag = first;
-                return true;
-            }
-        }
-        etag = string.Empty;
-        return false;
     }
 
     private static async Task<int> CountStudentRowsAsync(

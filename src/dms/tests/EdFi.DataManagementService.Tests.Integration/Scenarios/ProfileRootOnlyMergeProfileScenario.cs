@@ -54,7 +54,8 @@ internal static class ProfileRootOnlyMergeProfileScenario
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created, createBody);
         createResponse.Headers.Location.Should().NotBeNull();
-        TryReadRawEtag(createResponse, out _)
+        createResponse
+            .TryReadRawEtag(out _)
             .Should()
             .BeTrue("a profiled POST must emit an ETag header alongside Location");
 
@@ -128,7 +129,8 @@ internal static class ProfileRootOnlyMergeProfileScenario
         string locationPath = seedResponse.Headers.Location!.IsAbsoluteUri
             ? seedResponse.Headers.Location!.AbsolutePath
             : seedResponse.Headers.Location!.OriginalString;
-        TryReadRawEtag(seedResponse, out string seedEtag)
+        seedResponse
+            .TryReadRawEtag(out string seedEtag)
             .Should()
             .BeTrue("the unprofiled seed POST must emit an ETag so the profiled PUT can If-Match against it");
         string resourceId = locationPath.Split('/')[^1];
@@ -226,12 +228,10 @@ internal static class ProfileRootOnlyMergeProfileScenario
         string profileContentType
     )
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, MergeItemsEndpoint);
-        // Setting Content-Type via MediaTypeHeaderValue (rather than a StringContent
-        // constructor parameter) avoids HttpClient defaulting to "; charset=utf-8",
-        // which the profile header regex rejects.
-        request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8);
-        request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(profileContentType);
+        var request = new HttpRequestMessage(HttpMethod.Post, MergeItemsEndpoint)
+        {
+            Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, profileContentType),
+        };
         return await harness.HttpClient.SendAsync(request);
     }
 
@@ -245,24 +245,6 @@ internal static class ProfileRootOnlyMergeProfileScenario
         request.Headers.Accept.Clear();
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(profileContentType));
         return await harness.HttpClient.SendAsync(request);
-    }
-
-    private static bool TryReadRawEtag(HttpResponseMessage response, out string etag)
-    {
-        // DMS emits an opaque, unquoted ETag value that HttpResponseHeaders.ETag
-        // rejects as malformed (it requires RFC 7232 quoting), so route through
-        // TryGetValues to preserve the raw header.
-        if (response.Headers.TryGetValues("ETag", out IEnumerable<string>? values))
-        {
-            string? first = values.FirstOrDefault();
-            if (!string.IsNullOrEmpty(first))
-            {
-                etag = first;
-                return true;
-            }
-        }
-        etag = string.Empty;
-        return false;
     }
 
     private static async Task<(
