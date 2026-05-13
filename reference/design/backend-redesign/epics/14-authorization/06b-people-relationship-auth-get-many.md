@@ -13,6 +13,8 @@ Extend the authorization subquery framework established in [DMS-1055](https://ed
 
 People-related securable elements (Student, Contact, Staff) require transitive joins through intermediate tables when the person reference is indirect (e.g., CourseTranscript -> StudentAcademicRecord -> Student), unlike EducationOrganization columns which are denormalized directly onto whichever table owns the reference. For EducationOrganization securable elements, that table can be the root resource table for non-nested paths or a child collection table for array-nested paths. This ticket adds People transitive-join resolution on top of the framework delivered by DMS-1055.
 
+For the EducationOrganization portion of mixed EdOrg-and-People relationship strategies, DMS-1095 inherits DMS-1055's ODS-parity GET-many subject scope: only root/base EdOrg authorization subjects participate. Child-table EdOrg paths remain out of scope unless a later story explicitly introduces different DMS semantics.
+
 ## Acceptance Criteria
 
 - The following relationship-based strategies are implemented for GET-many:

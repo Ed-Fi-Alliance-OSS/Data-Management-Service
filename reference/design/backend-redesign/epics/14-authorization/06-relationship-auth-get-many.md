@@ -13,13 +13,15 @@ Implement the EdOrg-only relationship-based authorization strategies for the GET
 
 This ticket delivers the complete authorization subquery pipeline (SQL generation, caching, pagination, TVP threshold, OR semantics, inverted strategies) proven end-to-end with the simpler EdOrg case. People-involved strategies are handled in [DMS-1095](https://edfi.atlassian.net/browse/DMS-1095).
 
+Scope note: this story intentionally implements the ODS-parity GET-many slice for root/base EdOrg authorization subjects only. The broader `auth.md` design still resolves and indexes EdOrg/Namespace securable paths on whichever table owns the reference, including child collection tables; those child-table paths are not used as EdOrg relationship GET-many authorization subjects in DMS-1055.
+
 ## Acceptance Criteria
 
 ### EdOrg-only strategies
 
 - The following relationship-based strategies are implemented for GET-many:
-  - RelationshipsWithEdOrgsOnly — includes only EducationOrganization securable elements.
-  - RelationshipsWithEdOrgsOnlyInverted — swaps the Source/Target filtering in the auth.EducationOrganizationIdToEducationOrganizationId table (bottom-to-top instead of top-to-bottom).
+  - RelationshipsWithEdOrgsOnly — includes only root/base EducationOrganization authorization subjects for this ODS-parity slice.
+  - RelationshipsWithEdOrgsOnlyInverted — uses the same root/base subject scope and swaps the Source/Target filtering in the auth.EducationOrganizationIdToEducationOrganizationId table (bottom-to-top instead of top-to-bottom).
 - GET-many results are filtered based on the configured strategy; unauthorized resources are never returned.
 
 ### Shared authorization subquery framework
@@ -29,7 +31,7 @@ This ticket delivers the complete authorization subquery pipeline (SQL generatio
 - NoFurtherAuthorizationRequired is ignored as a no-op when combined with relationship-based strategies.
 - No duplicate results are returned (uses IN subquery approach, not JOIN).
 - Pagination (offset/limit) and total count work correctly with the authorization filter applied.
-- EducationOrganization securable elements can resolve to the root resource table or a child collection table. When the resolved source table is a child collection table, GET-many authorization filters root DocumentIds through child-table predicates. For each configured child-table EdOrg securable path, require at least one existing child row and no unauthorized child row for that path; documents with no child rows for that path are excluded.
+- For ODS parity, DMS-1055 only applies EdOrg relationship GET-many authorization to root/base-table authorization subjects. The authorization predicate joins `auth.EducationOrganizationIdToEducationOrganizationId` back to the aggregate root alias `r`, or base alias `b` for derived resources, only. EdOrg securable paths that resolve solely to child collection tables are not authorization subjects for this story.
 - If the token's unique EdOrgId list is empty, GET-many returns an empty page and totalCount = 0 when requested; it does not return 403.
 - Works for both PostgreSQL and SQL Server. For SQL Server, when the token's EdOrgId list has fewer than 2,000 entries, use a parameterized IN clause; otherwise, use a TVP of type dms.BigIntTable.
 
@@ -70,12 +72,12 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   2. Empty EdOrg token list: for GET-many, return an empty page and totalCount = 0, not 403. Legacy ODS GET-many builds an empty IN as 1 = 0, so no rows match. The current DMS filter-construction
      403 is a write/single-item-style behavior and would be an intentional ODS divergence for GET-many.
 
-  3. EdOrg-only strategy but no EdOrg securable elements: return a 500 security configuration error. ODS throws SecurityConfigurationException when a relationship strategy produces no
+  3. EdOrg-only strategy but no ODS-parity root/base EdOrg authorization subjects: return a 500 security configuration error. ODS throws SecurityConfigurationException when a relationship strategy produces no
      authorization subjects; silently returning all rows is unsafe, and returning no rows hides bad metadata.
 
-  4. Child collection EdOrg columns: do not state that EdOrg securables are always root-table columns. The design says EdOrg/Namespace columns live on whichever table owns the reference. For DMS-1055, implement child-table EdOrg filtering back to root DocumentId. See Answers 2 for the required "every existing child row" semantics.
+  4. Child collection EdOrg columns: out of scope for DMS-1055 ODS parity. DMS may still resolve and index child-table EdOrg paths for the relational model, but GET-many relationship authorization in this story must not require at least one authorized child row, must not check every child row, and must not exclude a root document solely because a configured child collection is empty.
 
-  5. Multiple EdOrg securable elements in one strategy: yes, AND them. ODS builds one relationship strategy as a conjunction of its filters, and the DMS design says the token must have access to all securable elements.
+  5. Multiple root/base EdOrg authorization subjects in one strategy: yes, AND them. ODS builds one relationship strategy as a conjunction of its filters, and the DMS design says the token must have access to all participating securable elements. Child-table EdOrg paths are excluded from the DMS-1055 participating subject set.
 
   6. Normal plus inverted on the same resource: yes, OR them as separate relationship strategies, even if they target the same securable column. The inverted strategy is not redundant; it swaps
      SourceEducationOrganizationId and TargetEducationOrganizationId.
@@ -87,12 +89,12 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   For RelationshipsWithEdOrgsOnly:
 
   authEdOrg.SourceEducationOrganizationId IN/ANY token EdOrg IDs
-  AND authEdOrg.TargetEducationOrganizationId = resource EdOrg column
+  AND authEdOrg.TargetEducationOrganizationId = root/base resource EdOrg column
 
   For RelationshipsWithEdOrgsOnlyInverted:
 
   authEdOrg.TargetEducationOrganizationId IN/ANY token EdOrg IDs
-  AND authEdOrg.SourceEducationOrganizationId = resource EdOrg column
+  AND authEdOrg.SourceEducationOrganizationId = root/base resource EdOrg column
 
   Dialect contract:
 
@@ -123,10 +125,10 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 
   11. Unresolvable EdOrg securable:
 
-  Treat this as a security configuration failure, not as an empty result and not as a silent skip. ODS throws a security configuration exception when a relationship strategy produces no authorization subjects /home/brad/work/ods/Ed-Fi-ODS/Application/EdFi.Ods.Api/Security/AuthorizationStrategies/Relationships/RelationshipsAuthorizationStrategyBase.cs:74. DMS should fail fast with resource, strategy, and securable element
+  Treat an unresolvable root/base EdOrg securable path, or a strategy that produces no root/base EdOrg authorization subjects after excluding child-table paths, as a security configuration failure, not as an empty result and not as a silent skip. ODS throws a security configuration exception when a relationship strategy produces no authorization subjects /home/brad/work/ods/Ed-Fi-ODS/Application/EdFi.Ods.Api/Security/AuthorizationStrategies/Relationships/RelationshipsAuthorizationStrategyBase.cs:74. DMS should fail fast with resource, strategy, and securable element
   details in logs/error text.
 
-  If one path cannot resolve but another valid path for the same securable can, use the valid shortest/canonical path. If none resolve, fail.
+  If one root/base path cannot resolve but another valid root/base path for the same securable can, use the valid shortest/canonical path. Child-only paths do not make the strategy applicable for DMS-1055. If no root/base path resolves, fail.
 
   12. ProblemDetails:
 
@@ -145,7 +147,11 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   - Normal EdOrg filtering returns only rows whose resource EdOrg is reachable from token EdOrg.
   - Inverted filtering swaps Source/Target and returns bottom-to-top authorized rows.
   - Normal plus inverted relationship strategies are ORed.
-  - Multiple EdOrg securable elements within one strategy are ANDed, matching current DMS single-item behavior.
+  - Multiple root/base EdOrg authorization subjects within one strategy are ANDed, matching ODS GET-many behavior.
+  - A resource with a root/base EdOrg subject is filtered through the aggregate root alias `r`, or base alias `b` for derived resources.
+  - A resource with both root/base and child-table EdOrg securable paths authorizes using only the root/base subject for DMS-1055.
+  - A resource whose EdOrg securable paths all resolve to child collection tables fails as a security configuration error for DMS-1055.
+  - Generated SQL does not join child collection tables for EdOrg-only relationship GET-many authorization.
   - Duplicate avoidance: one document returned once when multiple auth rows or strategies match.
   - Pagination and totalCount are applied after authorization filtering.
   - Empty token EdOrg IDs returns an empty page and totalCount = 0 when requested.
@@ -153,7 +159,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   - Duplicate token IDs are deduped before threshold selection.
   - PostgreSQL uses a single array parameter.
   - Unsupported mixed strategies such as NamespaceBased, OwnershipBased, convention-matching custom view-based strategies, and People strategies fail fast with the temporary DMS-1055 501 behavior. These tests must be updated by later strategy stories to assert the final `auth.md` composition semantics, where non-relationship strategies are ANDed with the relationship strategy OR group. NoFurtherAuthorizationRequired is ignored as a no-op when combined with relationship strategies.
-  - Unresolvable/no EdOrg securable path fails as configuration error.
+  - Unresolvable/no root/base EdOrg authorization subject fails as configuration error.
 
 
 ### Questions 2
@@ -192,9 +198,9 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 
   Temporary staging behavior: the 501 response is only for DMS-1055's limited implementation scope and is not the final authorization composition model. As NamespaceBased, OwnershipBased, custom view-based, and People relationship stories are implemented, this fail-fast behavior must be replaced with the final `auth.md` semantics: non-relationship strategies are ANDed with the relationship strategy OR group.
 
-  5. Child-table EdOrg securable semantics: require every existing child row for that securable path to be authorized. Using "any matching child row" can authorize a document while reconstitution still returns unauthorized child rows. The SQL shape should require at least one child row for the configured securable path and no unauthorized child row for that path.
+  5. Child-table EdOrg securable semantics: out of scope for DMS-1055 ODS parity. GET-many relationship authorization in this story must not use child-table predicates, must not require every existing child row to be authorized, and must not use "any matching child row" semantics. Only root/base EdOrg authorization subjects participate.
 
-  6. Child-table path with no child rows: exclude the document from GET-many results. That is an authorization non-match for the document's data shape, not a configuration error. A configuration error applies when the securable path cannot be resolved from metadata, or when the configured strategy has no applicable EdOrg securable elements.
+  6. Child-table path with no child rows: do not exclude the document for DMS-1055. Since child-table EdOrg paths are not authorization subjects for this story, an empty child collection has no direct effect on GET-many relationship authorization. A configuration error applies when the configured strategy has no applicable root/base EdOrg authorization subjects.
 
   7. Richer securable-path metadata: yes. It is acceptable to extend compiled mapping-set/runtime contracts so each resolved path carries the original JSON path and a readable/MetaEd name alongside ResolvedSecurableElementPath. This supports diagnostics, security configuration errors, and per-element handling without reverse-mapping from physical columns.
 
@@ -243,7 +249,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   - detail: `A security configuration problem was detected. The request cannot be authorized.`
 
   If the shared DMS-1099 implementation is not available yet, add the minimal request-time mapping needed for DMS-1055 security configuration failures and keep it compatible with DMS-1099. This applies to
-  invalid/missing security metadata, unresolvable EdOrg securable paths, and relationship strategies with no applicable EdOrg securable elements.
+  invalid/missing security metadata, unresolvable root/base EdOrg securable paths, and relationship strategies with no applicable root/base EdOrg authorization subjects.
 
   Normal GET-many authorization denial still returns 200 with filtered results, possibly empty. Unsupported-but-known strategies outside DMS-1055 scope still return 501 Not Implemented.
 
@@ -258,3 +264,9 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
      current hydration path only carries name/value and binds generic parameters in src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs:239; that is not enough for SQL
      Server TVPs. The existing RelationalParameter.ConfigureParameter pattern in src/dms/backend/EdFi.DataManagementService.Backend/RelationalCommandAccess.cs:43 is a useful precedent, but keep
      delegates out of AOT/compiled plan contracts.
+
+### Implementation Notes
+
+All new DMS E2E scenarios added for this story must be tagged for the relational backend with the scenario-level `@relational-backend` tag.
+
+One of the last implementation steps should be to switch all existing E2E tests that already cover this story's behavior from the legacy backend to the relational backend by adding the same scenario-level `@relational-backend` tag. No other changes to those existing E2E tests should be necessary for them to pass.

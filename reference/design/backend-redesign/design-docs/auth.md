@@ -22,6 +22,8 @@ PrimaryAssociations are modified frequently. Determining whether a Contact is ac
 
 SecurableElements are the resource's fields that can participate in an authorization decision, such as the EducationOrganization and Student/Contact/Staff IDs.
 
+SecurableElements are candidate metadata. An authorization strategy first derives the operation-specific authorization subjects from those candidates. For ODS-parity EdOrg relationship GET-many authorization, participating EdOrg subjects are only those whose resolved column is on the aggregate root table, or on the base table for derived resources. Child collection EdOrg securable paths may still be resolved and indexed, but they are not used as GET-many relationship authorization subjects.
+
 Note that DMS already makes these fields available in the ApiSchema.json. Consider `CourseTranscript`:
 
 ```json
@@ -51,11 +53,11 @@ In this example, we will authorize CRUD operations for the `CourseTranscript` re
 - EducationOrganizationId
 - StudentUSI
 
-The `RelationshipsWithEdOrgsAndPeople` strategy states that securableElements related to EdOrgs or People participate in the authorization decision. If CourseTranscript had a `Namespace` securableElement, it would be ignored by this strategy. Similarly, if we used the `RelationshipsWithEdOrgsOnly` strategy, the `StudentUSI` securableElement would be ignored.
+The `RelationshipsWithEdOrgsAndPeople` strategy states that authorization subjects related to EdOrgs or People participate in the authorization decision. If CourseTranscript had a `Namespace` securableElement, it would be ignored by this strategy. Similarly, if we used the `RelationshipsWithEdOrgsOnly` strategy, the `StudentUSI` authorization subject would be ignored.
 
-In this example, we authorize using the RelationshipsWithEdOrgsAndPeople strategy, meaning both securableElements participate in the authorization decision. The token must have access to all securableElements (they are always combined with AND).
+In this example, we authorize using the RelationshipsWithEdOrgsAndPeople strategy, meaning both authorization subjects participate in the authorization decision. The token must have access to all participating authorization subjects (they are always combined with AND).
 
-The strategy logic iterates through the securableElements and constructs a DB view/table name following the convention `auth.EducationOrganizationIdTo{securableElementName}`. For this example, the securableElements are authorized using the following DB views/tables:
+The strategy logic iterates through the participating authorization subjects and constructs a DB view/table name following the convention `auth.EducationOrganizationIdTo{securableElementName}`. For this example, the subjects are authorized using the following DB views/tables:
 
 - auth.EducationOrganizationIdToEducationOrganizationId
 - auth.EducationOrganizationIdToStudentUSI
@@ -115,6 +117,8 @@ ORDER BY
   r.AggregateId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
+This ODS GET-many shape authorizes aggregate root rows. The page query starts from the aggregate root table alias `r`, or base alias `b` for derived resources, and relationship auth joins are applied back to that root/base alias only. ODS does not authorize every child collection row, does not require at least one child row, and does not exclude a root document because a child collection is empty.
+
 When multiple authorization strategies are configured for a given resource, relationship-based strategies are combined with OR, while the remaining strategies are combined with AND. For example: (`RelationshipsWithEdOrgsAndPeopleInverted` OR `RelationshipsWithEdOrgsAndPeople`) AND `NamespaceBased`.
 
 #### Inverted strategies
@@ -164,7 +168,7 @@ The complete list of Relationship-based strategies is:
 - RelationshipsWithStudentsOnly
 - RelationshipsWithStudentsOnlyThroughResponsibility
 
-Excluding the `*Inverted` and `*ThroughResponsibility` strategies, these strategies are very similar; the only difference is which securableElements are included during authorization. For example, the `RelationshipsWithStudentsOnly` strategy ignores any EducationOrganization, Contact, and Staff that might appear in the resource.
+Excluding the `*Inverted` and `*ThroughResponsibility` strategies, these strategies are very similar; the only difference is which authorization subjects are included during authorization. For example, the `RelationshipsWithStudentsOnly` strategy ignores any EducationOrganization, Contact, and Staff subject that might appear in the resource.
 
 The `RelationshipsWithStudentsOnlyThroughResponsibility` strategy uses the `EducationOrganizationIdToStudentUSIThroughResponsibility` view, which uses `StudentEducationOrganizationResponsibilityAssociation` instead of `StudentSchoolAssociation` to establish the relationship.
 
@@ -810,13 +814,15 @@ Notice how ODS joins against the authorization views, whereas the POC above uses
 
 ODS has to use `DISTINCT` to ensure that multiple entries in the auth views don't result in duplicate rows during GET-many. Avoiding the `DISTINCT` clause results in simpler execution plans and performance improvements.
 
+When DMS uses `IN` subqueries instead of ODS joins, it must preserve ODS subject scope. EdOrg relationship GET-many authorization filters root DocumentIds from the aggregate root/base table. It must not generate child-table `EXISTS` / `NOT EXISTS` predicates to prove all child EdOrg rows are authorized.
+
 #### Resolving the DB columns used for authorization
 
 We should avoid joining the people auth views against the resource tables using UniqueIds, as they are nvarchar(32). ODS joins using USIs (bigint); the DMS equivalent is the DocumentId, meaning that auth views that used to return USIs should now return DocumentIds.
 
 However, the person DocumentId column is only available on the resource table when it references the person resource *directly*. `CourseTranscript`, for example, references `Student` transitively through `StudentAcademicRecord`, so the Student DocumentId column isn't available in the `CourseTranscript` table. We must join `StudentAcademicRecord` to reach the Student DocumentId in order to authorize it (as shown in the POC above).
 
-The `Namespace` and `EducationOrganizationId` columns are simpler to get since they are always available in the resource being authorized; no joining is needed.
+The `Namespace` and `EducationOrganizationId` columns are simpler to get because those values are denormalized onto the table that owns the reference, so resolving the physical column does not require traversing through the referenced resource. The resolved owning table may be the aggregate root/base table or a child collection table. Consumers must still apply operation-specific eligibility rules; ODS-parity EdOrg relationship GET-many uses only root/base EdOrg subjects.
 
 We need a helper function that, given the resource that we are trying to authorize, returns the necessary information to construct the SQL authorization check.
 
@@ -873,6 +879,8 @@ The high-level logic is as follows:
 Note that a securableElement might have multiple paths when key unification takes place. In this situation, the function should follow each path and pick the shortest one to minimize the number of joins. Use the canonical column instead of the alias, since the canonical column will be indexed.
 
 When the provided securableElement is a `Namespace` or an `EducationOrganization`, it should extract the column name directly (no need to visit references) because those values are denormalized onto whichever table the reference lives on. For non-nested paths the column is on the root resource table; for array-nested paths (e.g. `$.requiredAssessments[*].assessmentReference.namespace` on `GraduationPlan`, or any of the other DS 5.2 resources that expose a nested namespace securable — `AssessmentAdministration`, `AssessmentBatteryPart`, `ObjectiveAssessment`, `StudentAssessment`, `StudentObjectiveAssessment`) the column is on the child collection table that owns the reference (e.g. `edfi.GraduationPlanRequiredAssessment.RequiredAssessmentAssessment_Namespace`). The index is emitted on whichever table the column is on; no traversal back to the root is required.
+
+This is physical column resolution only. It does not mean every resolved path participates in every authorization operation. For ODS-parity EdOrg relationship GET-many, results whose `sourceTable` is a child collection table are excluded from the relationship authorization subject set.
 
 For example if the `securableElement` is:
 
@@ -1141,6 +1149,8 @@ Resources that have a `Namespace` securableElement should have an index on the c
 
 The auth-index emission also skips creating a `DbIndexKind.Authorization` entry when the resolved `(table, column)` is already the leading column of an existing PrimaryKey or UniqueConstraint index: the unique index already supports the auth equality lookup with no extra storage or write cost. As a consequence, the inventory does not always carry an explicit `DbIndexKind.Authorization` row for every Namespace or EducationOrganization securable element — consumers verifying auth-index coverage must treat PK/UK leading-column membership as equivalent coverage. PrimaryAssociation indexes are not deduped this way because their `INCLUDE` column enables index-only scans that a plain PK/UK doesn't supply.
 
+Emitting an authorization index for a child-table Namespace path does not imply that every authorization operation uses that child table. Index emission follows physical path resolution; runtime authorization subject selection is strategy- and operation-specific.
+
 **Relationship-based strategies**
 The `auth.EducationOrganizationIdToEducationOrganizationId` table should have the following indexes:
 
@@ -1157,6 +1167,8 @@ canonical storage columns on the root table (the form that survives `KeyUnificat
 - `edfi.StudentEducationOrganizationResponsibilityAssociation` should have an index on the `EducationOrganization_EducationOrganizationId` column, include the `Student_DocumentId`
 
 Resources that have an EducationOrganization securableElement should have an index on the corresponding column (use the Derived Relational Model to map from the securable element path to the DB column, on whichever table — root or child collection — the reference lives on). Do not create the index if it is already covered in the list above. Also skip the index when the resolved `(table, column)` is already the leading column of an existing PrimaryKey or UniqueConstraint index — same rationale as the Namespace-based strategy above (and same manifest-contract caveat: no `DbIndexKind.Authorization` inventory entry is emitted in that case).
+
+Emitting an authorization index for a child-table EducationOrganization path does not imply that ODS-parity relationship GET-many authorization uses that child table. Index emission follows physical path resolution; runtime authorization subject selection is strategy- and operation-specific.
 
 There should be an index on all resources that participate in a person join (see the `Resolving the DB columns used for authorization` section above). For example, `CourseTranscript` references `StudentAcademicRecord`, which references `Student` meaning that there should be an index on the following columns:
 
