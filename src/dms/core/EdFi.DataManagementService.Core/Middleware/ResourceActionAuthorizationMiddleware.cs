@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -83,6 +84,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
 
             IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedAction!);
             if (!ValidateAuthorizationStrategies(requestInfo, strategies, actionName, claimSet.Name))
+            {
+                return;
+            }
+
+            if (TryCreateStagedNotImplementedResponse(requestInfo, strategies))
             {
                 return;
             }
@@ -279,6 +285,52 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         }
         return true;
     }
+
+    private static bool TryCreateStagedNotImplementedResponse(
+        RequestInfo requestInfo,
+        IReadOnlyList<string> strategies
+    )
+    {
+        if (IsGetManyRequest(requestInfo))
+        {
+            return false;
+        }
+
+        if (
+            !strategies.Contains(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            return false;
+        }
+
+        var operationLabel = GetOperationLabel(requestInfo);
+        var error =
+            $"Authorization strategy '{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted}' "
+            + $"is not implemented for {operationLabel}. Support is currently limited to GET-many until DMS-1056.";
+
+        requestInfo.FrontendResponse = new FrontendResponse(
+            StatusCode: (int)HttpStatusCode.NotImplemented,
+            Body: new JsonObject
+            {
+                ["error"] = error,
+                ["correlationId"] = requestInfo.FrontendRequest.TraceId.Value,
+            },
+            Headers: []
+        );
+
+        return true;
+    }
+
+    private static bool IsGetManyRequest(RequestInfo requestInfo) =>
+        requestInfo.Method == RequestMethod.GET && !requestInfo.PathComponents.HasDocumentUuidSegment;
+
+    private static string GetOperationLabel(RequestInfo requestInfo) =>
+        requestInfo.Method == RequestMethod.GET && requestInfo.PathComponents.HasDocumentUuidSegment
+            ? "GET-by-id"
+            : requestInfo.Method.ToString();
 
     /// <summary>
     /// Creates an unauthorized (401) response.

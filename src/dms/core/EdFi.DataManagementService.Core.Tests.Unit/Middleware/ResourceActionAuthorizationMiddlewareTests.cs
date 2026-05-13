@@ -29,9 +29,11 @@ public class ResourceActionAuthorizationMiddlewareTests
 {
     private RequestInfo _requestInfo = No.RequestInfo();
 
-    internal static IPipelineStep Middleware()
+    internal static IPipelineStep Middleware(
+        string action = "Create",
+        string expectedAuthStrategy = AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+    )
     {
-        var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
             .Returns([
@@ -41,13 +43,53 @@ public class ResourceActionAuthorizationMiddlewareTests
                     [
                         new ResourceClaim(
                             $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
-                            "Create",
+                            action,
                             [new AuthorizationStrategy(expectedAuthStrategy)]
                         ),
                     ]
                 ),
             ]);
         return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
+    }
+
+    internal static RequestInfo CreateRequestInfo(
+        RequestMethod requestMethod,
+        string path,
+        bool hasDocumentUuidSegment = false
+    )
+    {
+        FrontendRequest frontEndRequest = new(
+            Path: path,
+            Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+            Form: null,
+            Headers: [],
+            QueryParameters: [],
+            TraceId: new TraceId("traceId"),
+            RouteQualifiers: []
+        );
+
+        var documentUuid = hasDocumentUuidSegment
+            ? new DocumentUuid(Guid.Parse("11111111-1111-1111-1111-111111111111"))
+            : new DocumentUuid();
+
+        var requestInfo = new RequestInfo(frontEndRequest, requestMethod, No.ServiceProvider)
+        {
+            ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+            PathComponents = new PathComponents(
+                new ProjectEndpointName("ed-fi"),
+                new EndpointName("schools"),
+                documentUuid,
+                hasDocumentUuidSegment
+            ),
+        };
+
+        requestInfo.ProjectSchema = ApiSchemaDocument("School")
+            .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+        requestInfo.ResourceSchema = new ResourceSchema(
+            requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools")) ?? new JsonObject()
+        );
+
+        return requestInfo;
     }
 
     internal static ApiSchemaDocuments ApiSchemaDocument(string resourceName)
@@ -552,6 +594,60 @@ public class ResourceActionAuthorizationMiddlewareTests
         public void It_returns_the_expected_500_body()
         {
             AssertExpectedServerErrorResponse(_response, "Error while authorizing the request.", "traceId");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_RelationshipsWithEdOrgsOnlyInverted_On_Non_Query_Request
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [TestCase("GET", "Read", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true, "GET-by-id")]
+        [TestCase("POST", "Create", "ed-fi/schools", false, "POST")]
+        [TestCase("PUT", "Update", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true, "PUT")]
+        [TestCase("DELETE", "Delete", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true, "DELETE")]
+        public async Task It_returns_not_implemented(
+            string requestMethodName,
+            string action,
+            string path,
+            bool hasDocumentUuidSegment,
+            string operationLabel
+        )
+        {
+            var requestMethod = Enum.Parse<RequestMethod>(requestMethodName);
+            _requestInfo = CreateRequestInfo(requestMethod, path, hasDocumentUuidSegment);
+
+            await Middleware(action, AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
+                .Execute(_requestInfo, NullNext);
+
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+            _requestInfo
+                .FrontendResponse.Body?["error"]?.GetValue<string>()
+                .Should()
+                .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
+                .And.Contain(operationLabel);
+            _requestInfo.FrontendResponse.Body?["correlationId"]?.GetValue<string>().Should().Be("traceId");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_RelationshipsWithEdOrgsOnlyInverted_On_Get_Many
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
+
+            await Middleware("Read", AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_allows_the_request_to_continue()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }
