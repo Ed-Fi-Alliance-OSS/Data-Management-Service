@@ -276,10 +276,10 @@ Feature: Profile Reference Filtering
               And the system has these "schools"
                   | schoolId | nameOfInstitution         | educationOrganizationCategories                                                                                   | gradeLevels                                                                          |
                   | 99006030 | Nested Reference School   | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ]      |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
               And the system has these "classPeriods"
                   | classPeriodName | schoolReference            |
                   | First Period    | {"schoolId": 99006030}     |
-              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
               And a profile test POST request is made to "/ed-fi/bellSchedules" with
                   """
                   {
