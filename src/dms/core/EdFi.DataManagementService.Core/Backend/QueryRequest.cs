@@ -45,6 +45,9 @@ internal record QueryRequest(
 /// <param name="ResourceInfo">
 /// The qualified resource identifier for the resource being retrieved.
 /// </param>
+/// <param name="AuthorizationContext">
+/// Typed request-scoped authorization inputs for relational GET-many planning/execution.
+/// </param>
 /// <param name="MappingSet">
 /// The resolved runtime mapping set for the active relational request.
 /// </param>
@@ -60,6 +63,7 @@ internal record QueryRequest(
 /// </param>
 internal sealed record RelationalQueryRequest(
     ResourceInfo ResourceInfo,
+    RelationalAuthorizationContext AuthorizationContext,
     MappingSet MappingSet,
     QueryElement[] QueryElements,
     AuthorizationSecurableInfo[] AuthorizationSecurableInfo,
