@@ -624,12 +624,12 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalGetManyAuthorizationStrategyClassificationOutcome.SecurityConfigurationError:
-                return new QueryResult.UnknownFailure(
+                return new QueryResult.QueryFailureSecurityConfiguration([
                     authorizationStrategyClassification.FailureMessage
                         ?? throw new InvalidOperationException(
                             "Security-configuration authorization classification must provide a failure message."
-                        )
-                );
+                        ),
+                ]);
 
             default:
                 throw new InvalidOperationException(

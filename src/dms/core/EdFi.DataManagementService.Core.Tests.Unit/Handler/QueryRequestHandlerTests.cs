@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
@@ -147,6 +148,63 @@ public class QueryRequestHandlerTests
             _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = ToJsonError("FailureMessage", new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_Security_Configuration_Failure : QueryRequestHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string[] ResponseErrors =
+            [
+                "Relational query authorization metadata is invalid for resource 'Ed-Fi.School'. "
+                    + "Strategy 'CustomAuthorizationStrategy' is not a recognized built-in strategy and "
+                    + "does not match the {BasisResource}With... custom-view convention.",
+            ];
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                return Task.FromResult<QueryResult>(
+                    new QueryResult.QueryFailureSecurityConfiguration(ResponseErrors)
+                );
+            }
+        }
+
+        private static readonly string _traceId = "security-config";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = FailureResponse.ForSecurityConfiguration(
+                new TraceId(_traceId),
+                Repository.ResponseErrors
+            );
 
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
             JsonNode

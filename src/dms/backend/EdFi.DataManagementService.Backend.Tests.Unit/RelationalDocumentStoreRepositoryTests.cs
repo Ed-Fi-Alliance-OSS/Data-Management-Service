@@ -1414,7 +1414,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_unknown_failure_when_query_authorization_strategy_metadata_is_invalid()
+    public async Task It_returns_security_configuration_failure_when_query_authorization_strategy_metadata_is_invalid()
     {
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSet(_schoolResourceInfo),
@@ -1428,12 +1428,18 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeOfType<QueryResult.UnknownFailure>();
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().ContainSingle();
         result
-            .As<QueryResult.UnknownFailure>()
-            .FailureMessage.Should()
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors[0]
+            .Should()
             .Contain("CustomAuthorizationStrategy");
-        result.As<QueryResult.UnknownFailure>().FailureMessage.Should().Contain("{BasisResource}With...");
+        result
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors[0]
+            .Should()
+            .Contain("{BasisResource}With...");
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,

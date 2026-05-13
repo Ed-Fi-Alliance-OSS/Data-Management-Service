@@ -55,6 +55,15 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
+            QueryFailureSecurityConfiguration failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: FailureResponse.ForSecurityConfiguration(
+                    requestInfo.FrontendRequest.TraceId,
+                    failure.Errors
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.
             QueryFailureRetryable => new FrontendResponse(

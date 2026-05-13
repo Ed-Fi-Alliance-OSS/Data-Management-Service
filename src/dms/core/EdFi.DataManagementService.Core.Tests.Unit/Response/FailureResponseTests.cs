@@ -80,3 +80,36 @@ public class Given_Failure_Response_For_Data_Conflict
         response["errors"]!.AsArray().Count.Should().Be(0);
     }
 }
+
+[TestFixture]
+[Parallelizable]
+public class Given_Failure_Response_For_Security_Configuration
+{
+    private static readonly TraceId _traceId = new("security-trace");
+
+    [Test]
+    public void It_renders_the_canonical_security_configuration_problem_details_shape()
+    {
+        var response = FailureResponse.ForSecurityConfiguration(
+            _traceId,
+            ["Resource 'Ed-Fi.School' has strategy 'CustomAuthorizationStrategy' with invalid metadata."]
+        );
+
+        response["type"]!.ToString().Should().Be("urn:ed-fi:api:system-configuration:security");
+        response["title"]!.ToString().Should().Be("Security Configuration Error");
+        response["detail"]!
+            .ToString()
+            .Should()
+            .Be("A security configuration problem was detected. The request cannot be authorized.");
+        response["status"]!.GetValue<int>().Should().Be(500);
+        response["correlationId"]!.ToString().Should().Be(_traceId.Value);
+        response["validationErrors"]!.AsObject().Count.Should().Be(0);
+        response["errors"]!
+            .AsArray()
+            .Select(static error => error!.ToString())
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("CustomAuthorizationStrategy");
+    }
+}
