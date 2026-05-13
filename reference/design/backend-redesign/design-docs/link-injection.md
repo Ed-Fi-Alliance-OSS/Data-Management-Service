@@ -300,11 +300,11 @@ A single configuration key controls link emission:
 - **Key**: `DataManagement:ResourceLinks:Enabled`
 - **Default**: `true`
 - **Behavior when `false`**: `link` subtrees are stripped from the reconstituted intermediate
-  document inside the read materializer, immediately before `_etag` is computed. Readable-profile
-  projection runs subsequently and `_etag` is recomputed from the projected body. Because profile
-  projection only removes fields (it never injects `link`), stripping pre-projection is equivalent
-  to stripping post-projection — the served body is link-free in both cases. The auxiliary lookup
-  and plan compilation are unaffected.
+  document at the response boundary, after readable-profile projection and before serialization.
+  `link` is excluded from `_etag` canonicalization in both flag states (the canonical formatter
+  strips `{id, link, _etag, _lastModifiedDate}` recursively before hashing per
+  `design-docs/update-tracking.md` §Serving API metadata), so the strip pass does not change
+  `_etag`. The auxiliary lookup and plan compilation are unaffected.
 
 **Rationale for response-shaping rather than plan-shaping.** Treating the flag as a response
 filter eliminates dual plan shapes, startup plan-fingerprint reconciliation, and the mixed-plan
@@ -351,13 +351,12 @@ participate in `_etag` derivation.
 
 `dms.DocumentCache` stores the fully reconstituted caller-agnostic intermediate document, with
 `link` subtrees already present (since the plan always emits them). The `ResourceLinks:Enabled`
-flag is applied as a strip pass inside the read materializer — after reconstitution and
-immediately before `_etag` is computed. Readable-profile projection (when applicable) runs after
-the materializer returns; `_etag` is recomputed from the projected body via `RefreshEtag` at that
-boundary. Because profile projection only removes fields, strip-then-project yields the same
-served body as project-then-strip. CDC and indexing consumers of `dms.DocumentCache` observe the
-unprojected intermediate (with `link` subtrees); DMS does not maintain a second link-free
-projection.
+flag is applied as a strip pass at the response-serialization boundary, after readable-profile
+projection. `link` is excluded from `_etag` canonicalization in both flag states, so the strip
+pass does not cause `_etag` recomputation or mismatch; the cached materialized full-resource
+`_etag` is reused for both unprofiled and profiled responses. CDC and indexing consumers of
+`dms.DocumentCache` observe the unprojected intermediate (with `link` subtrees); DMS does not
+maintain a second link-free projection.
 
 `dms.DocumentCache` stores the materialized full-resource `_etag` alongside the cached
 `DocumentJson`. That cached `_etag` is computed with `link` excluded from the canonical hash and is

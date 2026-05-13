@@ -111,13 +111,13 @@ Soft dependency:
   hydration SQL, no discriminator column binding, no startup trigger-existence validation, and no
   backfill for reference-target `DocumentUuid`.
 - Feature flag `DataManagement:ResourceLinks:Enabled` (default `true`) controls emission as a
-  **response filter**. When `false`, `link` subtrees are stripped from the reconstituted
-  intermediate document inside the read materializer, immediately before `_etag` is computed.
-  Readable-profile projection runs subsequently and `_etag` is recomputed from the projected body
-  via `RefreshEtag`. Because profile projection only removes fields, the served body is link-free
-  in both flag-on-then-strip and strip-then-project orderings. The auxiliary lookup and plan
-  compilation are unaffected by the flag; flag-off does not reduce database work. No per-resource,
-  per-request, or per-reference override is provided.
+  **response filter**. When `false`, `link` subtrees are stripped from the projected document at
+  the response-serialization boundary, after readable-profile projection. `link` is excluded from
+  `_etag` canonicalization in both flag states (the canonical formatter strips
+  `{id, link, _etag, _lastModifiedDate}` recursively before hashing), so the strip pass does not
+  cause `_etag` recomputation or mismatch. The auxiliary lookup and plan compilation are
+  unaffected by the flag; flag-off does not reduce database work. No per-resource, per-request,
+  or per-reference override is provided.
 - Runtime configuration binds `DataManagement:ResourceLinks` to a dedicated `ResourceLinksOptions`
   type; the story must not assume a nested `AppSettings.DataManagement` object already exists in
   Core.

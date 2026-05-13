@@ -25,15 +25,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-// DMS-1145 task 31 — feature-flag tests. Three assertions per the plan:
+// DMS-1145 task 31 — feature-flag tests. Three assertions per the plan, updated for the
+// canonical-etag contract clarified by DMS-1005 (design-docs/link-injection.md §Cache and Etag):
 //   1. Flag on  -> link present, _etag is canonical SHA-256 of the link-bearing body.
 //   2. Flag off -> link absent, _etag is canonical SHA-256 of the link-free body.
-//   3. Flag flip across restart -> pre-flip _etag does NOT match post-flip body.
+//   3. Flag flip across restart -> _etag MUST match across the flip (etag derives from the
+//      canonical resource-state body, which is link-stripped regardless of served-body shape).
 //
 // "Flip across restart" is simulated by two ordered test methods that share the seeded
 // database fixture but each rebuild their own service provider with the opposite Enabled
 // value for the link-injection options. The first test captures its etag in a static
-// field; the second test asserts divergence.
+// field; the second test asserts equality.
 
 file sealed class ResourceLinksFlagHostApplicationLifetime : IHostApplicationLifetime
 {
@@ -98,9 +100,9 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
         Guid.Parse("bbbbbbbb-3100-0000-0000-000000000002")
     );
 
-    // Captured by the flag-on test, asserted against by the flag-off test to prove
-    // pre-flip _etag does NOT equal post-flip _etag (the design's "flag flip across
-    // restart" divergence requirement).
+    // Captured by the flag-on test, asserted against by the flag-off test to prove the
+    // flag-on _etag equals the flag-off _etag (the design's "flag flip across restart"
+    // canonical-equality requirement; see DMS-1005).
     private static string? _recordedEtagWithFlagEnabled;
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
@@ -175,8 +177,9 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             expectedDocumentUuid: SchoolDocumentUuid.Value
         );
 
-        // _etag matches the canonical SHA-256 recompute of the served body (with id,
-        // _etag, _lastModifiedDate excluded — see RelationalApiMetadataFormatter.FormatEtag).
+        // _etag matches the canonical SHA-256 recompute of the served body (FormatEtag
+        // delegates to ResourceEtagFormatter, which strips {id, link, _etag, _lastModifiedDate}
+        // recursively before hashing).
         string servedEtag = academicWeekDocument["_etag"]!.GetValue<string>();
         servedEtag.Should().Be(RelationalApiMetadataFormatter.FormatEtag(academicWeekDocument));
 
@@ -185,12 +188,12 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
 
     [Test]
     [Order(2)]
-    public async Task It_strips_link_uses_canonical_etag_and_diverges_when_flag_is_disabled()
+    public async Task It_strips_link_and_preserves_canonical_etag_when_flag_is_disabled()
     {
         _recordedEtagWithFlagEnabled
             .Should()
             .NotBeNull(
-                "the flag-on test must run first (it captures the pre-flip etag); check [Order] attributes"
+                "the flag-on test must run first (it captures the flag-on etag); check [Order] attributes"
             );
 
         await using ServiceProvider scopedHost = CreateServiceProvider(flagEnabled: false);
@@ -201,17 +204,20 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
         JsonNode schoolReference = ReferenceLocator.RequireSingle(academicWeekDocument, "$.schoolReference");
         LinkInjectionAssertions.AssertNoLink(schoolReference);
 
-        // _etag still matches canonical SHA-256 of the served (now link-free) body.
+        // _etag matches the canonical SHA-256 of the served body — and the canonical formatter
+        // strips {id, link, _etag, _lastModifiedDate} recursively, so the hash input is the same
+        // whether the body carries link or not.
         string servedEtag = academicWeekDocument["_etag"]!.GetValue<string>();
         servedEtag.Should().Be(RelationalApiMetadataFormatter.FormatEtag(academicWeekDocument));
 
-        // The pre-flip-computed _etag does NOT match post-flip responses. This is the
-        // explicit divergence the design says clients must expect across a flag flip.
+        // Flag toggle MUST NOT change _etag for the same canonical state: the etag derives from
+        // the canonical resource-state body (link-stripped) per design-docs/link-injection.md
+        // §Cache and Etag (clarified by DMS-1005).
         servedEtag
             .Should()
-            .NotBe(
+            .Be(
                 _recordedEtagWithFlagEnabled,
-                "design: pre-flip _etag MUST NOT match post-flip body — clients see the flag flip as an etag change"
+                "design: _etag derives from the canonical resource-state body (link-stripped) per design-docs/link-injection.md — flag toggle MUST NOT change _etag for the same canonical state. See DMS-1005."
             );
     }
 

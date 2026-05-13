@@ -470,11 +470,13 @@ public class Given_RelationalReadMaterializer
 }
 
 /// <summary>
-/// Verifies the strip-pass / etag-recompute ordering at the materializer boundary
-/// (<see cref="RelationalReadMaterializer.InjectApiMetadata"/>): the strip runs first, then
-/// the etag is computed over the served body. A future reorder that computed the etag before
-/// the strip would silently violate the contract that <c>_etag</c> is the SHA-256 of the
-/// served body.
+/// Verifies link emission and etag self-consistency at the materializer boundary
+/// (<see cref="RelationalReadMaterializer.InjectApiMetadata"/>): flag-on responses carry
+/// <c>link</c> on every document reference, flag-off responses do not, and in both cases
+/// the <c>_etag</c> on the response equals <c>FormatEtag(servedBody)</c>. The canonical
+/// formatter strips <c>{id, link, _etag, _lastModifiedDate}</c> recursively before hashing,
+/// so the etag value is link-decoration-independent (see <c>design-docs/link-injection.md</c>
+/// §Cache and Etag, clarified by DMS-1005).
 /// </summary>
 [TestFixture]
 [Parallelizable]
@@ -526,16 +528,15 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             .NotBeNull("link must be emitted when ResourceLinksOptions.Enabled is true");
         result["schoolReference"]!["link"]!["rel"]!.GetValue<string>().Should().Be("School");
 
-        // _etag is the canonical SHA-256 of the served body excluding id/_etag/_lastModifiedDate
-        // (FormatEtag strips those before hashing). Passing the served document back into
-        // FormatEtag must reproduce the same value, proving the etag in the response matches
-        // the body that was actually served (link-bearing).
+        // _etag is the canonical SHA-256 produced by FormatEtag, which strips
+        // {id, link, _etag, _lastModifiedDate} recursively before hashing. Passing the served
+        // document back into FormatEtag must reproduce the same value — etag self-consistency.
         result["_etag"]!
             .GetValue<string>()
             .Should()
             .Be(
                 RelationalApiMetadataFormatter.FormatEtag(result),
-                "etag must be computed over the served (link-bearing) body when links are enabled"
+                "etag must be self-consistent with FormatEtag against the served body (canonical/link-stripped hash)"
             );
     }
 
@@ -547,27 +548,27 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
 
         var result = MaterializeSingleExternalResponse(sut, readPlan);
 
-        // Strip pass ran before etag computation: no link on the reference object.
+        // Strip pass shaped the served body: no link on the reference object.
         result["schoolReference"]!
             ["link"]
             .Should()
             .BeNull("link must be stripped when ResourceLinksOptions.Enabled is false");
 
-        // _etag is the SHA-256 of the served (now link-free) body. Passing it back into
-        // FormatEtag must reproduce the same value — if the etag had been computed BEFORE
-        // the strip (i.e. over a link-bearing body that was then mutated), this assertion
-        // would fail.
+        // _etag is the canonical SHA-256 produced by FormatEtag (which strips
+        // {id, link, _etag, _lastModifiedDate} recursively before hashing). Passing the
+        // served document back into FormatEtag must reproduce the same value — etag
+        // self-consistency.
         result["_etag"]!
             .GetValue<string>()
             .Should()
             .Be(
                 RelationalApiMetadataFormatter.FormatEtag(result),
-                "etag must be computed over the served (link-free) body when links are disabled"
+                "etag must be self-consistent with FormatEtag against the served body (canonical/link-stripped hash)"
             );
     }
 
     [Test]
-    public void It_produces_different_etags_for_enabled_versus_disabled_on_the_same_input()
+    public void It_produces_identical_etags_for_enabled_versus_disabled_on_the_same_input()
     {
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
 
@@ -580,18 +581,19 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             readPlan
         );
 
-        // Sanity: the two bodies differ structurally (one has link, one doesn't).
+        // Sanity: the two served bodies differ structurally (one has link, one doesn't).
         withLink["schoolReference"]!.AsObject().Should().ContainKey("link");
         withoutLink["schoolReference"]!.AsObject().Should().NotContainKey("link");
 
-        // The etags therefore MUST differ — proof the strip ran before the etag computation
-        // rather than after.
+        // The etags MUST be equal: the canonical formatter strips link recursively before
+        // hashing, so the served-body link presence does not participate in the etag value.
+        // See design-docs/link-injection.md §Cache and Etag (clarified by DMS-1005).
         withLink["_etag"]!
             .GetValue<string>()
             .Should()
-            .NotBe(
+            .Be(
                 withoutLink["_etag"]!.GetValue<string>(),
-                "flag-on body and flag-off body differ in shape, so their etags must differ"
+                "_etag derives from the canonical resource-state body (link-stripped); flag toggle MUST NOT change _etag for the same canonical state"
             );
     }
 

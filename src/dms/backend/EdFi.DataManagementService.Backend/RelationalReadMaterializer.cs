@@ -198,18 +198,19 @@ internal sealed class RelationalReadMaterializer(
             );
         }
 
-        // Response-boundary strip pass. The reconstituted intermediate is always link-bearing
-        // (caller-agnostic, per design-docs/link-injection.md §Configuration and §Cache and
-        // Etag), so this is the single point at which ResourceLinksOptions.Enabled is honored
-        // before _etag is computed. No-op when Enabled is true (production default); strips
-        // every reference's link subtree when Enabled is false. The strip-then-etag ordering
-        // guarantees the served body and the etag agree on whether link is present.
+        // Response-boundary strip pass — shapes the served body only when
+        // ResourceLinksOptions.Enabled is false. The reconstituted intermediate is always
+        // link-bearing (caller-agnostic, per design-docs/link-injection.md §Configuration
+        // and §Cache and Etag). Etag value is link-decoration-independent regardless of
+        // whether this strip pass runs: ResourceEtagFormatter canonicalizes by stripping
+        // {id, link, _etag, _lastModifiedDate} from every nested object before hashing
+        // (clarified by DMS-1005).
         DocumentReconstituter.StripReferenceLinks(materializedDocument, readPlan, _linksOptions);
 
         // ETag selection: the design carries a conditional for reusing a cached intermediate
-        // etag when (flag on AND no profile reshape AND cache hit). On this branch that branch
-        // is unreachable — there is no runtime cache — so we always recompute from the served
-        // body. The conditional moves in alongside the runtime-cache follow-on.
+        // etag when (flag on AND no profile reshape AND cache hit). On this branch that
+        // branch is unreachable — there is no runtime cache — so we always recompute via the
+        // canonical formatter. The conditional moves in alongside the runtime-cache follow-on.
         var etag = RelationalApiMetadataFormatter.FormatEtag(materializedDocument);
         documentObject[IdPropertyName] = documentMetadata.DocumentUuid.ToString();
         documentObject[EtagPropertyName] = etag;

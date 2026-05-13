@@ -40,10 +40,12 @@ public static class DocumentReconstituter
     /// on the internal <c>CompiledReconstitutionPlan</c>.
     /// </summary>
     /// <remarks>
-    /// Mutates <paramref name="document"/> in place. Callers should invoke this after the
-    /// readable-profile projection and immediately before serialization — the same boundary
-    /// that sets <c>_etag</c>. Identity fields, <c>_etag</c>, and <c>_lastModifiedDate</c>
-    /// are never touched.
+    /// Shapes the served body only. <c>_etag</c> is link-decoration-independent in both flag
+    /// states — the canonical formatter strips <c>{id, link, _etag, _lastModifiedDate}</c>
+    /// recursively before hashing — so this strip does not change the etag value. Mutates
+    /// <paramref name="document"/> in place. Identity fields, <c>_etag</c>, and
+    /// <c>_lastModifiedDate</c> are never touched. See <c>design-docs/link-injection.md</c>
+    /// §Cache and Etag (clarified by DMS-1005).
     /// </remarks>
     public static void StripReferenceLinks(
         JsonNode? document,

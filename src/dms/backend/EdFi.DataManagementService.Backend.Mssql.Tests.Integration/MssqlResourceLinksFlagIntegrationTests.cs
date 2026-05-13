@@ -26,7 +26,8 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // DMS-1145 task 31 (MSSQL side) — feature-flag tests. Two [Order]-sequenced test methods
 // share the seeded DB; each rebuilds its own service provider with the opposite
 // ResourceLinksOptions.Enabled value. Flag-on test captures the etag; flag-off test
-// asserts both content shape (no link) and cross-restart etag divergence.
+// asserts both content shape (no link) and cross-restart etag equality (etag derives
+// from the canonical resource-state body, link-stripped; clarified by DMS-1005).
 
 file sealed class MssqlResourceLinksFlagAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
 {
@@ -167,12 +168,12 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
 
     [Test]
     [Order(2)]
-    public async Task It_strips_link_uses_canonical_etag_and_diverges_when_flag_is_disabled()
+    public async Task It_strips_link_and_preserves_canonical_etag_when_flag_is_disabled()
     {
         _recordedEtagWithFlagEnabled
             .Should()
             .NotBeNull(
-                "the flag-on test must run first (it captures the pre-flip etag); check [Order] attributes"
+                "the flag-on test must run first (it captures the flag-on etag); check [Order] attributes"
             );
 
         await using ServiceProvider scopedHost = CreateServiceProvider(flagEnabled: false);
@@ -187,9 +188,9 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
 
         servedEtag
             .Should()
-            .NotBe(
+            .Be(
                 _recordedEtagWithFlagEnabled,
-                "design: pre-flip _etag MUST NOT match post-flip body — clients see the flag flip as an etag change"
+                "design: _etag derives from the canonical resource-state body (link-stripped) per design-docs/link-injection.md — flag toggle MUST NOT change _etag for the same canonical state. See DMS-1005."
             );
     }
 
