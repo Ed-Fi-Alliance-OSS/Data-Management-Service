@@ -88,7 +88,7 @@
       "Add SQL assertions proving PostgreSQL uses a single array parameter and SQL Server switches from scalar parameters to the TVP shape at exactly 2,000 unique IDs.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Parameter Binding",

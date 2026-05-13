@@ -107,11 +107,16 @@ public sealed record PageDocumentIdAuthorizationStrategy(
 /// <param name="Strategies">
 /// Effective authorization strategies. Relationship strategies are combined with OR; no-op strategies contribute no SQL.
 /// </param>
+/// <param name="ClaimEducationOrganizationIds">
+/// Token EdOrg ids used to parameterize the authorization predicate. The compiler normalizes these values into
+/// deduplicated ascending order before selecting the dialect-specific parameter shape.
+/// </param>
 /// <param name="ClaimEducationOrganizationIdsParameterName">
 /// Logical parameter name supplying the token EdOrg id list.
 /// </param>
 public sealed record PageDocumentIdAuthorizationSpec(
     IReadOnlyList<PageDocumentIdAuthorizationStrategy> Strategies,
+    IReadOnlyList<long> ClaimEducationOrganizationIds,
     string ClaimEducationOrganizationIdsParameterName =
         RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
 );

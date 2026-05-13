@@ -823,13 +823,13 @@ public class Given_PageDocumentIdSqlCompiler
         SqlDialect.Pgsql,
         "\"auth\".\"EducationOrganizationIdToEducationOrganizationId\"",
         "r.\"SchoolId\" IN (SELECT t0.\"TargetEducationOrganizationId\"",
-        "WHERE t0.\"SourceEducationOrganizationId\" IN (@ClaimEducationOrganizationIds)"
+        "WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)"
     )]
     [TestCase(
         SqlDialect.Mssql,
         "[auth].[EducationOrganizationIdToEducationOrganizationId]",
         "r.[SchoolId] IN (SELECT t0.[TargetEducationOrganizationId]",
-        "WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds)"
+        "WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0)"
     )]
     public void It_should_emit_normal_edorg_authorization_sql_for_page_and_total_count_queries(
         SqlDialect dialect,
@@ -859,24 +859,36 @@ public class Given_PageDocumentIdSqlCompiler
         plan.TotalCountSql.Should().Contain(expectedAuthTableFragment);
         plan.TotalCountSql.Should().Contain(expectedSubjectFragment);
         plan.TotalCountSql.Should().Contain(expectedClaimFilterFragment);
+        var expectedPageParameterNames = dialect switch
+        {
+            SqlDialect.Mssql => new[] { "ClaimEducationOrganizationIds_0", "offset", "limit" },
+            _ => new[] { "ClaimEducationOrganizationIds", "offset", "limit" },
+        };
+
+        var expectedTotalCountParameterNames = dialect switch
+        {
+            SqlDialect.Mssql => new[] { "ClaimEducationOrganizationIds_0" },
+            _ => new[] { "ClaimEducationOrganizationIds" },
+        };
+
         plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
-            .Equal("ClaimEducationOrganizationIds", "offset", "limit");
+            .Equal(expectedPageParameterNames);
         plan.TotalCountParametersInOrder.Should().NotBeNull();
         plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
             .Should()
-            .Equal("ClaimEducationOrganizationIds");
+            .Equal(expectedTotalCountParameterNames);
     }
 
     [TestCase(
         SqlDialect.Pgsql,
         "r.\"SchoolId\" IN (SELECT t0.\"SourceEducationOrganizationId\"",
-        "WHERE t0.\"TargetEducationOrganizationId\" IN (@ClaimEducationOrganizationIds)"
+        "WHERE t0.\"TargetEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)"
     )]
     [TestCase(
         SqlDialect.Mssql,
         "r.[SchoolId] IN (SELECT t0.[SourceEducationOrganizationId]",
-        "WHERE t0.[TargetEducationOrganizationId] IN (@ClaimEducationOrganizationIds)"
+        "WHERE t0.[TargetEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0)"
     )]
     public void It_should_emit_inverted_edorg_authorization_sql_for_page_and_total_count_queries(
         SqlDialect dialect,
@@ -1031,9 +1043,51 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageDocumentIdSql.Should().Contain("ClaimEducationOrganizationIds");
         plan.PageDocumentIdSql.Should().NotContain(" OR ");
         plan.TotalCountSql.Should().Contain("ClaimEducationOrganizationIds");
+        var expectedPageParameterNames = dialect switch
+        {
+            SqlDialect.Mssql => new[] { "ClaimEducationOrganizationIds_0", "offset", "limit" },
+            _ => new[] { "ClaimEducationOrganizationIds", "offset", "limit" },
+        };
+
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal(expectedPageParameterNames);
+    }
+
+    [Test]
+    public void It_should_emit_mssql_structured_claim_parameter_sql_at_the_two_thousand_unique_id_threshold()
+    {
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    CreateClaimEducationOrganizationIds(2000),
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        CreateAuthorizationSubject("SchoolId")
+                    )
+                )
+            )
+        );
+
+        plan.PageDocumentIdSql.Should()
+            .Contain(
+                "WHERE t0.[SourceEducationOrganizationId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)"
+            );
+        plan.TotalCountSql.Should()
+            .Contain(
+                "WHERE t0.[SourceEducationOrganizationId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)"
+            );
         plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("ClaimEducationOrganizationIds", "offset", "limit");
+        plan.TotalCountParametersInOrder.Should().NotBeNull();
+        plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("ClaimEducationOrganizationIds");
     }
 
     [Test]
@@ -1199,10 +1253,12 @@ public class Given_PageDocumentIdSqlCompiler
 
     private static PageDocumentIdAuthorizationSpec CreateAuthorizationSpec(
         params PageDocumentIdAuthorizationStrategy[] strategies
-    )
-    {
-        return new PageDocumentIdAuthorizationSpec(strategies);
-    }
+    ) => CreateAuthorizationSpec([1L], strategies);
+
+    private static PageDocumentIdAuthorizationSpec CreateAuthorizationSpec(
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        params PageDocumentIdAuthorizationStrategy[] strategies
+    ) => new(strategies, claimEducationOrganizationIds);
 
     private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategy(
         PageDocumentIdAuthorizationStrategyKind kind,
@@ -1233,5 +1289,17 @@ public class Given_PageDocumentIdSqlCompiler
             aliasColumn,
             new ColumnStorage.UnifiedAlias(canonicalColumn, presenceColumn)
         );
+    }
+
+    private static IReadOnlyList<long> CreateClaimEducationOrganizationIds(int count)
+    {
+        long[] claimEducationOrganizationIds = new long[count];
+
+        for (var index = 0; index < count; index++)
+        {
+            claimEducationOrganizationIds[index] = index + 1L;
+        }
+
+        return claimEducationOrganizationIds;
     }
 }
