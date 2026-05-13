@@ -43,8 +43,9 @@ internal static class FixtureContextLoader
     {
         string fixtureDirectory = FixtureRepositoryPaths.ResolveFixtureDirectory(key);
 
-        IReadOnlyList<string> apiSchemaFiles = ReadApiSchemaFileList(fixtureDirectory);
-        IReadOnlyList<string> sourceDialects = ReadDialectsList(fixtureDirectory);
+        (IReadOnlyList<string> apiSchemaFiles, IReadOnlyList<string> sourceDialects) = ReadFixtureManifest(
+            fixtureDirectory
+        );
         IReadOnlyList<string> resolvedSourcePaths = ResolveSourcePaths(fixtureDirectory, apiSchemaFiles);
 
         (string materializedDirectory, IReadOnlyList<string> materializedFilePaths) =
@@ -62,7 +63,9 @@ internal static class FixtureContextLoader
         return new FixtureContext(key, materializedDirectory, profileXmlDirectory, resources);
     }
 
-    private static IReadOnlyList<string> ReadApiSchemaFileList(string fixtureDirectory)
+    private static (IReadOnlyList<string> ApiSchemaFiles, IReadOnlyList<string> Dialects) ReadFixtureManifest(
+        string fixtureDirectory
+    )
     {
         string manifestPath = Path.Combine(fixtureDirectory, "fixture.json");
         if (!File.Exists(manifestPath))
@@ -97,33 +100,24 @@ internal static class FixtureContextLoader
             files.Add(relativePath);
         }
 
-        return files;
-    }
-
-    private static IReadOnlyList<string> ReadDialectsList(string fixtureDirectory)
-    {
-        string manifestPath = Path.Combine(fixtureDirectory, "fixture.json");
-        using FileStream stream = File.OpenRead(manifestPath);
-        using JsonDocument document = JsonDocument.Parse(stream);
-
+        var dialects = new List<string>();
         if (
-            !document.RootElement.TryGetProperty("dialects", out JsonElement dialectsElement)
-            || dialectsElement.ValueKind != JsonValueKind.Array
+            document.RootElement.TryGetProperty("dialects", out JsonElement dialectsElement)
+            && dialectsElement.ValueKind == JsonValueKind.Array
         )
         {
-            return [];
-        }
-
-        var dialects = new List<string>(dialectsElement.GetArrayLength());
-        foreach (JsonElement entry in dialectsElement.EnumerateArray())
-        {
-            string? dialect = entry.GetString();
-            if (!string.IsNullOrWhiteSpace(dialect))
+            dialects.Capacity = dialectsElement.GetArrayLength();
+            foreach (JsonElement entry in dialectsElement.EnumerateArray())
             {
-                dialects.Add(dialect);
+                string? dialect = entry.GetString();
+                if (!string.IsNullOrWhiteSpace(dialect))
+                {
+                    dialects.Add(dialect);
+                }
             }
         }
-        return dialects;
+
+        return (files, dialects);
     }
 
     private static IReadOnlyList<string> ResolveSourcePaths(
