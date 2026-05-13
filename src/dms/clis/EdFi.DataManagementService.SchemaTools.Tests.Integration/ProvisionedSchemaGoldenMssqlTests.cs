@@ -37,7 +37,9 @@ public class Given_Provisioned_Mssql_Database_When_Introspecting_Schema
 
         if (emitExitCode != 0)
         {
-            Assert.Fail($"ddl emit failed (exit code {emitExitCode}).\nstdout: {emitOutput}\nstderr: {emitError}");
+            Assert.Fail(
+                $"ddl emit failed (exit code {emitExitCode}).\nstdout: {emitOutput}\nstderr: {emitError}"
+            );
         }
 
         var sqlFilePath = Path.Combine(_ddlOutputDir, "mssql.sql");
@@ -111,7 +113,9 @@ public class Given_Provisioned_Mssql_Database_When_Introspecting_Schema
     {
         if (!_isConfigured)
         {
-            Assert.Ignore("MSSQL is not configured. Set MssqlAdmin connection string in appsettings.Test.json.");
+            Assert.Ignore(
+                "MSSQL is not configured. Set MssqlAdmin connection string in appsettings.Test.json."
+            );
         }
 
         if (!File.Exists(_expectedManifestPath))

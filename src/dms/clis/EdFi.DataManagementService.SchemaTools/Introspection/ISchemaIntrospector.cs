@@ -20,8 +20,5 @@ public interface ISchemaIntrospector
     /// Database schemas to include (e.g., "dms", "edfi", "auth"). Only objects in these
     /// schemas are returned. System schemas are excluded by omission.
     /// </param>
-    ProvisionedSchemaManifest Introspect(
-        string connectionString,
-        IReadOnlyList<string> schemaAllowlist
-    );
+    ProvisionedSchemaManifest Introspect(string connectionString, IReadOnlyList<string> schemaAllowlist);
 }

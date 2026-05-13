@@ -209,7 +209,6 @@ public class Given_Provisioning_Rerun_On_Same_Database
                 "the schema manifest after the second provisioning should be identical to the first"
             );
     }
-
 }
 
 [TestFixture]

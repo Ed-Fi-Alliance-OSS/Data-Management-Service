@@ -29,7 +29,9 @@ public class Given_Provisioned_Pgsql_Database_When_Introspecting_Schema
 
         if (emitExitCode != 0)
         {
-            Assert.Fail($"ddl emit failed (exit code {emitExitCode}).\nstdout: {emitOutput}\nstderr: {emitError}");
+            Assert.Fail(
+                $"ddl emit failed (exit code {emitExitCode}).\nstdout: {emitOutput}\nstderr: {emitError}"
+            );
         }
 
         var sqlFilePath = Path.Combine(_ddlOutputDir, "pgsql.sql");
@@ -40,11 +42,16 @@ public class Given_Provisioned_Pgsql_Database_When_Introspecting_Schema
         var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
         PostgresTestDatabaseHelper.CreateDatabase(_databaseName);
 
-        var (psqlExitCode, psqlOutput, psqlError) = ProvisionTestHelper.RunPsql(connectionString, sqlFilePath);
+        var (psqlExitCode, psqlOutput, psqlError) = ProvisionTestHelper.RunPsql(
+            connectionString,
+            sqlFilePath
+        );
 
         if (psqlExitCode != 0)
         {
-            Assert.Fail($"psql failed (exit code {psqlExitCode}).\nstdout: {psqlOutput}\nstderr: {psqlError}");
+            Assert.Fail(
+                $"psql failed (exit code {psqlExitCode}).\nstdout: {psqlOutput}\nstderr: {psqlError}"
+            );
         }
 
         // Discover schemas created by the DDL

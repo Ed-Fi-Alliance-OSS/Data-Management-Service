@@ -56,10 +56,7 @@ public static class TokenHelper
         var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
 
         // Basic authentication: base64(key:secret)
-        var credentials = OAuthClientCredentialsEncoder.CreateBasicSchemeParameter(
-            clientKey,
-            clientSecret
-        );
+        var credentials = OAuthClientCredentialsEncoder.CreateBasicSchemeParameter(clientKey, clientSecret);
         request.Headers.Authorization = new AuthenticationHeaderValue($"Basic", credentials);
 
         var requestContent = new FormUrlEncodedContent(

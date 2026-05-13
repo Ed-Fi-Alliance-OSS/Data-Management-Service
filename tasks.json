@@ -150,6 +150,6 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
       "Run the focused PostgreSQL, SQL Server, and relational-backend E2E authorization commands from the preceding tasks."
     ],
-    "completed": false
+    "completed": true
   }
 ]
