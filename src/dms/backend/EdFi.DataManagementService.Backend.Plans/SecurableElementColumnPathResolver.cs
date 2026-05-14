@@ -53,9 +53,6 @@ internal static class SecurableElementColumnPathResolver
                 static grouping => grouping.ToArray(),
                 StringComparer.Ordinal
             );
-        var resolvedEdOrgNames = resolvedEdOrgCandidates
-            .ResolvedCandidates.Select(static candidate => candidate.ReadableName)
-            .ToHashSet(StringComparer.Ordinal);
 
         foreach (var edOrgElement in securableElements.EducationOrganization)
         {
@@ -80,13 +77,11 @@ internal static class SecurableElementColumnPathResolver
             }
         }
 
-        foreach (var unresolvedEdOrgElement in resolvedEdOrgCandidates.UnresolvedElements)
-        {
-            if (!resolvedEdOrgNames.Contains(unresolvedEdOrgElement.MetaEdName))
-            {
-                unresolvedPaths.Add(unresolvedEdOrgElement.JsonPath);
-            }
-        }
+        unresolvedPaths.AddRange(
+            resolvedEdOrgCandidates
+                .UnresolvedElements.Select(static element => element.JsonPath)
+                .Distinct(StringComparer.Ordinal)
+        );
 
         foreach (string ns in securableElements.Namespace)
         {
