@@ -313,7 +313,8 @@ internal static class SecurableElementColumnPathResolver
             return;
         }
 
-        // Filter out array-nested paths; the resolver only handles root-table paths.
+        // Person path traversal currently follows only root-table bindings.
+        // EdOrg/Namespace resolution intentionally handles both root and child tables.
         var rootLevelPaths = new List<string>();
         foreach (var p in personPaths)
         {
@@ -584,8 +585,8 @@ internal static class SecurableElementColumnPathResolver
 
     /// <summary>
     /// Returns <c>true</c> if the JSON path contains an array wildcard (<c>[*]</c>),
-    /// indicating it traverses into a child table. The resolver currently only
-    /// supports root-table paths, so array-nested paths are skipped.
+    /// indicating it traverses into a child table. Person path traversal uses this
+    /// to skip paths that require child-table traversal.
     /// </summary>
     private static bool IsArrayNestedPath(string jsonPath)
     {

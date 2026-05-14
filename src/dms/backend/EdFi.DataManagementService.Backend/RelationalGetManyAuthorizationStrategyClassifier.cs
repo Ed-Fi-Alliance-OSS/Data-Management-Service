@@ -54,6 +54,29 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
 {
     private const string CustomViewConvention = "{BasisResource}With...";
     private const string StandardProjectName = "Ed-Fi";
+    private static readonly IReadOnlyDictionary<
+        string,
+        RelationalGetManyAuthorizationStrategyKind
+    > _knownButNotImplementedStrategyKindsByName = new Dictionary<
+        string,
+        RelationalGetManyAuthorizationStrategyKind
+    >(StringComparer.Ordinal)
+    {
+        [AuthorizationStrategyNameConstants.NamespaceBased] =
+            RelationalGetManyAuthorizationStrategyKind.NamespaceBased,
+        [AuthorizationStrategyNameConstants.OwnershipBased] =
+            RelationalGetManyAuthorizationStrategyKind.OwnershipBased,
+        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople] =
+            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
+        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted] =
+            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
+        [AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly] =
+            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+        [AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly] =
+            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+        [AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility] =
+            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
+    };
 
     public static RelationalGetManyAuthorizationStrategyClassification Classify(
         MappingSet mappingSet,
@@ -102,70 +125,24 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
                     );
                     continue;
 
-                case AuthorizationStrategyNameConstants.NamespaceBased:
-                    knownButNotImplementedStrategies.Add(
-                        new RelationalGetManyKnownButNotImplementedStrategy(
-                            strategyName,
-                            RelationalGetManyAuthorizationStrategyKind.NamespaceBased
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.OwnershipBased:
-                    knownButNotImplementedStrategies.Add(
-                        new RelationalGetManyKnownButNotImplementedStrategy(
-                            strategyName,
-                            RelationalGetManyAuthorizationStrategyKind.OwnershipBased
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople:
-                    knownButNotImplementedStrategies.Add(
-                        new RelationalGetManyKnownButNotImplementedStrategy(
-                            strategyName,
-                            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted:
-                    knownButNotImplementedStrategies.Add(
-                        new RelationalGetManyKnownButNotImplementedStrategy(
-                            strategyName,
-                            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly:
-                    knownButNotImplementedStrategies.Add(
-                        new RelationalGetManyKnownButNotImplementedStrategy(
-                            strategyName,
-                            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithPeopleOnly
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly:
-                    knownButNotImplementedStrategies.Add(
-                        new RelationalGetManyKnownButNotImplementedStrategy(
-                            strategyName,
-                            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithStudentsOnly
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility:
-                    knownButNotImplementedStrategies.Add(
-                        new RelationalGetManyKnownButNotImplementedStrategy(
-                            strategyName,
-                            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility
-                        )
-                    );
-                    continue;
-
                 default:
+                    if (
+                        _knownButNotImplementedStrategyKindsByName.TryGetValue(
+                            strategyName,
+                            out var knownButNotImplementedKind
+                        )
+                    )
+                    {
+                        knownButNotImplementedStrategies.Add(
+                            new RelationalGetManyKnownButNotImplementedStrategy(
+                                strategyName,
+                                knownButNotImplementedKind
+                            )
+                        );
+
+                        continue;
+                    }
+
                     var customViewStrategyResolution = ResolveCustomViewStrategy(mappingSet, strategyName);
 
                     if (customViewStrategyResolution.Outcome is CustomViewStrategyResolutionOutcome.Resolved)
