@@ -41,7 +41,7 @@
   },
   {
     "category": "Security ProblemDetails",
-    "description": "Add the canonical request-time security-configuration failure surface for relational GET-many authorization metadata errors. Acceptance: query results can represent a security configuration failure separately from generic `UnknownFailure`; `QueryRequestHandler` maps it to HTTP 500 with `Content-Type: application/problem+json`; the body uses `type: urn:ed-fi:api:system-configuration:security`, `title: Security Configuration Error`, `detail: A security configuration problem was detected. The request cannot be authorized.`, `status: 500`, `correlationId`, and an `errors` array carrying actionable diagnostics such as the affected resource, strategy name, and unresolved securable path or basis-resource details; normal GET-many authorization denial still returns 200 with filtered results; known unsupported DMS-1055 strategies still return 501.",
+    "description": "Add the canonical request-time security-configuration failure surface for relational GET-many authorization metadata errors. Acceptance: query results can represent a security configuration failure separately from generic `UnknownFailure`; `QueryRequestHandler` maps it to HTTP 500 with `Content-Type: application/problem+json`; the body uses the ODS-parity `type: urn:ed-fi:api:system:configuration:security`, `title: Security Configuration Error`, `detail: A security configuration problem was detected. The request cannot be authorized.`, `status: 500`, `correlationId`, and an `errors` array carrying actionable diagnostics such as the affected resource, strategy name, and unresolved securable path or basis-resource details; normal GET-many authorization denial still returns 200 with filtered results; known unsupported DMS-1055 strategies still return 501.",
     "steps-to-verify": [
       "Add unit tests for the new `FailureResponse` helper or equivalent ProblemDetails mapping.",
       "Add `QueryRequestHandler` tests for security configuration 500, known unsupported 501, and normal empty successful pages.",
@@ -59,6 +59,18 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Same-Name EdOrg Subjects",
+    "description": "Fix DMS-1055 root/base EdOrg subject selection when multiple configured securable elements share the same `metaEdName`. Issue: `RelationalEdOrgAuthorizationSubjectSelector` currently collapses candidates by readable name, so real DS 5.2 resources such as `CourseOffering`, `SectionAttendanceTakenEvent`, and `StudentSchoolAttendanceEvent` can lose one of two distinct root/base `SchoolId` subjects and authorize on only one path instead of ANDing both. Acceptance: subject selection keys the keep/drop decision by configured securable element/path rather than only `metaEdName`; if two distinct root/base EdOrg paths with the same name both resolve, both subjects are retained and later combined with AND; the existing DMS-1055 root-plus-child behavior still keeps only the applicable root/base subject when a child-table path shares that same name; an unresolved sibling path still does not hide a valid shortest/canonical root/base candidate for the same configured element.",
+    "steps-to-verify": [
+      "Add subject-selector unit coverage for two distinct root/base EdOrg securable elements that share one `metaEdName`, proving both subjects are retained, plus a regression proving root-plus-child same-name duplicates still keep only the root/base subject.",
+      "Add repository or integration regression coverage for a real-authoritative or focused fixture resource with duplicate root/base `SchoolId` subjects so GET-many requires authorization on both paths rather than only one.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~Authorization`"
+    ],
+    "completed": false
   },
   {
     "category": "Authorization Path Caching",
@@ -151,5 +163,16 @@
       "Run the focused PostgreSQL, SQL Server, and relational-backend E2E authorization commands from the preceding tasks."
     ],
     "completed": true
+  },
+  {
+    "category": "Security Metadata Failure Surface",
+    "description": "High: Return the canonical security-configuration 500 when a relational GET-many request matches a resource claim/action whose authorization-strategy list is empty, and align all DMS security-configuration ProblemDetails responses with the ODS-parity URN. Issue: `ResourceActionAuthorizationMiddleware.ValidateAuthorizationStrategies` still turns that misconfiguration into a 403 Authorization Denied response, which hides incomplete security metadata as an access denial; the current DMS canonical helper/tests also use a non-ODS hyphenated system-configuration type. Acceptance: DMS uses `type: urn:ed-fi:api:system:configuration:security` for every canonical security-configuration ProblemDetails response; for the DMS-1055 relational GET-many lane, a matched claim/action with zero authorization strategies returns HTTP 500 with `Content-Type: application/problem+json`, `title: Security Configuration Error`, `detail: A security configuration problem was detected. The request cannot be authorized.`, the request correlationId, and an `errors` entry stating that no authorization strategies were defined for the matched claim/resource action; explicit `NoFurtherAuthorizationRequired` remains a valid strategy that reaches the backend; true access denials caused by no matching claim or no matching action remain 403.",
+    "steps-to-verify": [
+      "Update `FailureResponse.ForSecurityConfiguration` and existing handler/response tests to assert the ODS-parity `urn:ed-fi:api:system:configuration:security` type instead of the current hyphenated system-configuration type.",
+      "Add middleware or request-pipeline unit tests for a relational GET-many request whose matched claim/action has zero authorization strategies, asserting the canonical 500 security-configuration ProblemDetails body and error text.",
+      "Add regression tests proving relational GET-many still proceeds when the matched action uses `NoFurtherAuthorizationRequired`, and that missing-claim or missing-action denials still return 403.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests`"
+    ],
+    "completed": false
   }
 ]

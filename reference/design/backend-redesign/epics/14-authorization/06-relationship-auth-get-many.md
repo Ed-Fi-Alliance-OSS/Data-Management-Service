@@ -270,3 +270,5 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 All new DMS E2E scenarios added for this story must be tagged for the relational backend with the scenario-level `@relational-backend` tag.
 
 One of the last implementation steps should be to switch all existing E2E tests that already cover this story's behavior from the legacy backend to the relational backend by adding the same scenario-level `@relational-backend` tag. No other changes to those existing E2E tests should be necessary for them to pass.
+
+Use docker to create a MSSQL container from a local image for testing.
