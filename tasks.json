@@ -226,7 +226,7 @@
       "Run from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`: `pwsh ./teardown-local-dms.ps1` then `pwsh ./setup-local-dms.ps1`.",
       "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"FullyQualifiedName~RelationshipsWithEdOrgsOnlyRelational\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Page Authorization Model",

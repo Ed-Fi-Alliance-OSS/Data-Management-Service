@@ -42,36 +42,56 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
 
         @relational-backend
         Scenario: Normal and inverted strategies are ORed for GET-many authorization
-            # Use broader setup access only to seed the state/LEA/school/academicWeek graph.
-            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
+            # Use broader setup access only to seed two independent state/LEA/school hierarchies.
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101, 3, 301, 30101"
               And the system has these "stateEducationAgencies"
                   | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
-                  | 2                      | Test state        | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#State" }] |
+                  | 2                      | Test state 2      | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#State" }] |
+                  | 3                      | Test state 3      | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#State" }] |
               And the system has these "localEducationAgencies"
                   | localEducationAgencyId | nameOfInstitution | stateEducationAgencyReference   | categories                                                                                                               | localEducationAgencyCategoryDescriptor                       |
-                  | 201                    | Test LEA          | { "stateEducationAgencyId": 2 } | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
+                  | 201                    | Test LEA 201      | { "stateEducationAgencyId": 2 } | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
+                  | 301                    | Test LEA 301      | { "stateEducationAgencyId": 3 } | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
               And the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
-                  | 20101    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | { "localEducationAgencyId": 201} |
-              And the system has these "academicWeeks"
-                  | weekIdentifier | schoolReference       | beginDate  | endDate    | totalInstructionalDays |
-                  | week 1         | { "schoolId": 20101 } | 2023-08-01 | 2023-08-07 | 5                      |
-            # Switch to the query token under test; EdOrg 2 can authorize the row only through the inverted strategy.
-            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet" is authorized with educationOrganizationIds "2"
-             When a GET request is made to "/ed-fi/academicWeeks"
+                  | 20101    | Test school 20101 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | { "localEducationAgencyId": 201} |
+                  | 30101    | Test school 30101 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | { "localEducationAgencyId": 301} |
+            # Switch to the query token under test.
+            # State claim 2 authorizes LEA 201 only through normal top-down access.
+            # School claim 30101 authorizes LEA 301 only through inverted bottom-up access.
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet" is authorized with educationOrganizationIds "2, 30101"
+             When a GET request is made to "/ed-fi/localEducationAgencies"
              Then it should respond with 200
               And the response body is
                   """
                   [
                       {
                           "id": "{id}",
-                          "weekIdentifier": "week 1",
-                          "beginDate": "2023-08-01",
-                          "endDate": "2023-08-07",
-                          "totalInstructionalDays": 5,
-                          "schoolReference": {
-                              "schoolId": 20101
-                          }
+                          "localEducationAgencyId": 201,
+                          "nameOfInstitution": "Test LEA 201",
+                          "stateEducationAgencyReference": {
+                              "stateEducationAgencyId": 2
+                          },
+                          "categories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                              }
+                          ],
+                          "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+                      },
+                      {
+                          "id": "{id}",
+                          "localEducationAgencyId": 301,
+                          "nameOfInstitution": "Test LEA 301",
+                          "stateEducationAgencyReference": {
+                              "stateEducationAgencyId": 3
+                          },
+                          "categories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                              }
+                          ],
+                          "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
                       }
                   ]
                   """
