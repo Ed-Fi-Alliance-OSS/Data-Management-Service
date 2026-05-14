@@ -195,5 +195,71 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalGetManyAuthorizationStrategyClassifier`"
     ],
     "completed": true
+  },
+  {
+    "category": "Custom View Strategy Validation",
+    "description": "Medium: Fix invalid custom-view strategy names that only match a real basis resource by delimiter position or name length. Issue: `RelationalGetManyAuthorizationStrategyClassifier.ResolveCustomViewStrategy` checks the position of `With` but does not verify the strategy name starts with the candidate `resource.ResourceName`, so names such as `PotatoWithSomething` can resolve as a same-length basis resource like `School` and return DMS-1055's known-but-not-implemented 501 instead of the required security-configuration 500. Acceptance: custom-view classification accepts only effective-schema resources or descriptors whose full resource name is an ordinal prefix immediately followed by `With`; malformed names whose prefix is not an effective-schema resource or descriptor produce the canonical security-configuration failure; valid custom-view names still classify as known-but-not-implemented 501; the earlier longest-prefix behavior for real basis names containing `With` remains intact.",
+    "steps-to-verify": [
+      "Update `RelationalGetManyAuthorizationStrategyClassifier.ResolveCustomViewStrategy` to require `strategyName.StartsWith(resource.ResourceName + \"With\", StringComparison.Ordinal)` or an equivalent ordinal full-prefix parse before accepting a resource or descriptor basis; do not accept a candidate solely because `With` occurs at `resource.ResourceName.Length`.",
+      "Add a regression test where the bad basis prefix has the same character length as a real resource, such as `PotatoWithSomething` or `BogussWithSomething` versus `School`, and assert the security-configuration 500 classification path.",
+      "Add or retain tests proving a valid `{BasisResource}With...` strategy still returns the known-but-not-implemented 501 classification and that basis names containing `With` still resolve to the full basis name.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalGetManyAuthorizationStrategyClassifier`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Readable Profile Query Projection",
+    "description": "Medium: Correct the readable-profile authorization regression test expectation for `_etag`. Issue: `RelationalDocumentStoreRepositoryTests` around the readable-profile query result path appears to expect projected JSON to recompute `_etag`, but the production query projection path returns the projected JSON unchanged and should not synthesize or recompute `_etag` for authorized GET-many results. Acceptance: the test asserts the repository returns the exact projected JSON produced by the projection path, including the unchanged `_etag` value or absence of `_etag`; no production change is made solely to satisfy a recomputed `_etag` expectation; existing readable-profile filtering and authorization behavior remain covered.",
+    "steps-to-verify": [
+      "Update the new test near `RelationalDocumentStoreRepositoryTests.cs:1777` so its fixture data and assertions match unchanged projected JSON rather than a recomputed `_etag`.",
+      "Add an assertion that distinguishes this from recomputation, such as preserving a deliberately non-recomputed projected `_etag` sentinel value and/or preserving the projected document instance exactly.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalDocumentStoreRepositoryTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "E2E Authorization Coverage",
+    "description": "Low: Strengthen `RelationshipsWithEdOrgsOnlyRelational.feature` coverage so the normal-plus-inverted scenario actually requires inverted access. Issue: the scenario around line 42 uses token EdOrg 2, which already authorizes `schoolId=20101` through the normal top-down `RelationshipsWithEdOrgsOnly` strategy, so a normal-only implementation can pass while inverted OR behavior is broken. Acceptance: the feature uses a row/token/document combination where at least one expected document is not reachable through the normal strategy and is reachable through `RelationshipsWithEdOrgsOnlyInverted`, or splits the table into explicit normal-only and inverted-only cases; a normal-only implementation would fail the inverted case; scenario names and expected rows make the authorization direction clear.",
+    "steps-to-verify": [
+      "Revise `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsOnlyRelational.feature` so at least one row can only pass through inverted Source/Target authorization; avoid using token EdOrg 2 with `schoolId=20101` as the only OR proof because that is already authorized top-down.",
+      "If a single scenario table becomes ambiguous, split it into separate normal-only and inverted-only scenarios with distinct token EdOrg and resource EdOrg combinations.",
+      "Run from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`: `pwsh ./teardown-local-dms.ps1` then `pwsh ./setup-local-dms.ps1`.",
+      "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"FullyQualifiedName~RelationshipsWithEdOrgsOnlyRelational\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Page Authorization Model",
+    "description": "Low: Remove dead `NoFurtherAuthorizationRequired` surface from the lower-level page-document authorization contract after confirming it has no remaining runtime responsibility. Issue: the strategy classifier consumes `NoFurtherAuthorizationRequired` as a no-op before repository mapping, and `RelationalDocumentStoreRepository` only maps relationship strategies into page authorization specs, leaving `PageDocumentIdQueryModels` and compiler normalization support for no-further-auth as unused runtime surface. Acceptance: `NoFurtherAuthorizationRequired` handling stays centralized before page planning; page-document query models represent only authorization predicates that can affect generated SQL; compiler and normalization code no longer carry a no-op page authorization branch; repository/classifier tests still prove `NoFurtherAuthorizationRequired` alone grants no-filter GET-many access after claim/action authorization and mixed relationship cases continue to apply only the relationship predicates.",
+    "steps-to-verify": [
+      "Confirm `NoFurtherAuthorizationRequired` is no longer needed by lower-level page-document compilation, then remove the unused model member from `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs` and any compiler normalization branches that only support that no-op member.",
+      "Update affected plan compiler tests to assert absence of no-op authorization SQL, and keep classifier/repository tests for the actual no-further-auth behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~PageDocumentId`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalGetManyAuthorizationStrategyClassifier`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authorization Subject SQL De-Dupe",
+    "description": "Low: De-duplicate exact physical EdOrg authorization subjects at the SQL-subject boundary. Issue: duplicate selected subjects that resolve to the same physical `(Table, Column)` can produce redundant AND subqueries, while distinct logical references that land on different physical columns must remain separate. Acceptance: `RelationalDocumentStoreRepository.QueryDocuments` maps selected EdOrg subjects to `PageDocumentIdAuthorizationSubject` values and applies `DistinctBy(static subject => (subject.Table, subject.Column))`; de-duplication is not moved into metadata subject selection and is not based on `ReadableName`, `JsonPath`, or `MetaEdName`; normal and inverted strategies remain separate OR branches and are not deduplicated away; duplicate physical subjects compile to one authorization predicate per strategy, while two different columns still compile to two predicates.",
+    "steps-to-verify": [
+      "Update the authorization subject mapping in `RelationalDocumentStoreRepository.cs` around the `selectedEdOrgSubjects.Subjects.Select(...)` projection to de-duplicate only by physical `(Table, Column)` after metadata selection has completed.",
+      "Add a focused regression test where duplicate selected subjects with the same table and column compile to one authorization subject predicate per strategy.",
+      "Add a companion regression test where two selected subjects with different physical columns still compile to two authorization predicates combined with AND inside a strategy.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalDocumentStoreRepositoryTests`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~PageDocumentId`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Follow-Up Regression",
+    "description": "Low: Re-run focused formatting and regression checks after the DMS-1055 code-review follow-ups are implemented. Issue: the existing `Formatting and Regression` task was completed before these new incomplete review tasks were added. Acceptance: all C# files touched by the follow-ups are formatted; classifier, repository, page-document authorization, and E2E authorization coverage relevant to the review findings pass",
+    "steps-to-verify": [
+      "Run: `dotnet csharpier format ./src/dms`",
+      "Run the focused unit-test commands listed by the `Custom View Strategy Validation`, `Readable Profile Query Projection`, `Page Authorization Model`, and `Authorization Subject SQL De-Dupe` tasks.",
+      "For E2E changes, run from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`: `pwsh ./teardown-local-dms.ps1` then `pwsh ./setup-local-dms.ps1`. Use docker to create a MSSQL container from a local image for testing.",
+      "Run the focused E2E command listed by the `E2E Authorization Coverage` task."
+    ],
+    "completed": false
   }
 ]
