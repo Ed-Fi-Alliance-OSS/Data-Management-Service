@@ -1773,7 +1773,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     [TestCase(true)]
     [TestCase(false)]
-    public async Task It_short_circuits_supported_query_authorization_with_empty_edorg_claims_before_subject_selection(
+    public async Task It_validates_supported_query_authorization_subjects_before_short_circuiting_empty_edorg_claims(
         bool totalCount
     )
     {
@@ -1792,7 +1792,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().ContainSingle();
+        result
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors[0]
+            .Should()
+            .Contain("$.classPeriods[*].classPeriodReference.schoolId");
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors[0].Should().Contain("ClassPeriod");
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
         A.CallTo(() =>

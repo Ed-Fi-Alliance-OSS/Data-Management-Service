@@ -607,14 +607,6 @@ public sealed class RelationalDocumentStoreRepository(
                 break;
 
             case RelationalGetManyAuthorizationStrategyClassificationOutcome.SupportedRelationshipStrategies:
-                if (relationalQueryRequest.AuthorizationContext.ClaimEducationOrganizationIds.Count == 0)
-                {
-                    return new QueryResult.QuerySuccess(
-                        [],
-                        relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
-                    );
-                }
-
                 var selectedEdOrgSubjects = RelationalEdOrgAuthorizationSubjectSelector.Select(
                     mappingSet,
                     resource,
@@ -636,6 +628,14 @@ public sealed class RelationalDocumentStoreRepository(
                                 "EdOrg authorization subject selection must provide a failure message for security-configuration errors."
                             ),
                     ]);
+                }
+
+                if (relationalQueryRequest.AuthorizationContext.ClaimEducationOrganizationIds.Count == 0)
+                {
+                    return new QueryResult.QuerySuccess(
+                        [],
+                        relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+                    );
                 }
 
                 pageQueryAuthorization = CreatePageDocumentIdAuthorizationSpec(
