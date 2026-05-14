@@ -306,6 +306,7 @@ Feature: Profile Reference Filtering
         # fields at the document root"). This scenario therefore only asserts the
         # DMS-1145 link-preservation contract on the nested classPeriodReference.
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 05 IncludeOnly profile preserves link on classPeriods[*].classPeriodReference
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/bellSchedules/{id}" with profile "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly" for resource "BellSchedule"
