@@ -657,13 +657,13 @@ jobs:
         run: docker rm -f dms-ci-mssql
 
   run-e2e-tests:
-    name: Run ${{ matrix.queryhandler }} E2E Tests (IdentityProvider ${{ matrix.identityprovider }})
+    name: Run PostgreSQL Relational E2E (${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         identityprovider: [keycloak, self-contained]
-        queryhandler: [postgresql]
+        shard: [1, 2, 3, 4]
     permissions:
       contents: read
     defaults:
@@ -729,19 +729,18 @@ jobs:
       - name: Add Kafka hostname to /etc/hosts
         run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
 
-      - name: Run ${{ matrix.queryhandler }} relational - IdentityProvider (${{ matrix.identityprovider }}) E2E Tests
+      - name: Run Relational E2E (IdentityProvider ${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
         id: relational_e2e
         if: success()
-        continue-on-error: true
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend'
+          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-${{ matrix.shard }}'
 
       - name: Export Relational Docker Logs
         if: always() && steps.relational_e2e.outcome == 'failure'
         run: |
-          $logDir = "${{ github.workspace }}/logs/relational"
+          $logDir = "${{ github.workspace }}/logs/relational-shard-${{ matrix.shard }}"
           Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
@@ -762,27 +761,21 @@ jobs:
         if: always() && steps.relational_e2e.outcome == 'failure'
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: ${{ matrix.queryhandler }}-${{ matrix.identityprovider }}-relational-test-logs
+          name: postgresql-${{ matrix.identityprovider }}-relational-shard-${{ matrix.shard }}-test-logs
           path: |
-            ${{ github.workspace }}/logs/relational
+            ${{ github.workspace }}/logs/relational-shard-${{ matrix.shard }}
           retention-days: 10
 
       - name: Upload Relational Test Results
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
-        if: always() && hashFiles('TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx') != ''
+        if: always() && hashFiles(format('TestResults/EdFi.DataManagementService.Tests.E2E.relational-shard-{0}.trx', matrix.shard)) != ''
         with:
-          name: E2E Test Results (${{ matrix.identityprovider }}, relational)
-          path: TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx
+          name: E2E Test Results (${{ matrix.identityprovider }}, relational, shard ${{ matrix.shard }})
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.relational-shard-${{ matrix.shard }}.trx
           path-replace-backslashes: "true"
           reporter: dotnet-trx
           list-tests: failed
           use-actions-summary: "true"
-
-      - name: Fail if the E2E lane failed
-        if: always() && steps.relational_e2e.outcome == 'failure'
-        run: |
-          Write-Host "Relational lane outcome: ${{ steps.relational_e2e.outcome }}"
-          throw "Relational E2E lane failed."
 
   run-instance-management-e2e-tests:
     name: Run Instance Management E2E Tests (Route Qualifiers)
