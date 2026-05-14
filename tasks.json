@@ -260,7 +260,7 @@
       "For E2E changes, run from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`: `pwsh ./teardown-local-dms.ps1` then `pwsh ./setup-local-dms.ps1`. Use docker to create a MSSQL container from a local image for testing.",
       "Run the focused E2E command listed by the `E2E Authorization Coverage` task."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Review Readability Follow-Up",
