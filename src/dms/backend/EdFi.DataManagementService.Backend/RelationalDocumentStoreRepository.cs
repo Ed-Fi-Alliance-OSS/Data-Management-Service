@@ -750,8 +750,20 @@ public sealed class RelationalDocumentStoreRepository(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
+        // Specify both flags explicitly: `new HydrationExecutionOptions()` on a `record struct`
+        // invokes the synthesized parameterless ctor (zero-inits both fields to false) — the
+        // defaults declared on the primary ctor parameters are NOT applied. The query path
+        // needs descriptor projection AND the document-reference auxiliary lookup on.
         var hydratedPage = await _documentHydrator
-            .HydrateAsync(readPlan, plannedQuery, new HydrationExecutionOptions(), default)
+            .HydrateAsync(
+                readPlan,
+                plannedQuery,
+                new HydrationExecutionOptions(
+                    IncludeDescriptorProjection: true,
+                    IncludeDocumentReferenceLookup: true
+                ),
+                default
+            )
             .ConfigureAwait(false);
 
         return BuildQuerySuccess(relationalQueryRequest, resource, readPlan, hydratedPage);
