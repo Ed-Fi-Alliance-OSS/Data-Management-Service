@@ -174,6 +174,8 @@ public static partial class JsonTestUtilities
                     {
                         item.Remove("_etag");
                     }
+
+                    RemoveLinkSubtrees(item);
                 }
             }
         }
@@ -189,6 +191,45 @@ public static partial class JsonTestUtilities
             {
                 (responseJson as JsonObject)?.Remove("_etag");
             }
+
+            RemoveLinkSubtrees(jsonObject);
+        }
+    }
+
+    /// <summary>
+    /// Recursively removes server-generated <c>link</c> subtree objects (<c>{ rel, href }</c>)
+    /// from a response node. DMS emits <c>link</c> on every fully-defined document reference when
+    /// <c>DataManagement:ResourceLinks:Enabled</c> is <c>true</c> (the production default).
+    /// Pre-existing tests assert full response-body equality against fixtures authored before
+    /// link injection; rather than updating every fixture, we strip <c>link</c> here so the
+    /// comparison succeeds. Tests that explicitly assert link emission use path-based step
+    /// definitions which read the raw response directly and are unaffected by this scrub.
+    /// </summary>
+    private static void RemoveLinkSubtrees(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                if (
+                    obj["link"] is JsonObject linkObj
+                    && linkObj.Count == 2
+                    && linkObj["rel"] is JsonValue
+                    && linkObj["href"] is JsonValue
+                )
+                {
+                    obj.Remove("link");
+                }
+                foreach (var kvp in obj.ToList())
+                {
+                    RemoveLinkSubtrees(kvp.Value);
+                }
+                break;
+            case JsonArray array:
+                foreach (var item in array)
+                {
+                    RemoveLinkSubtrees(item);
+                }
+                break;
         }
     }
 
