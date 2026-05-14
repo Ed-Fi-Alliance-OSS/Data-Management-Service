@@ -437,13 +437,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             );
         }
 
-        var effectiveStrategies = authorization
-            .Strategies.Where(static strategy =>
-                strategy.Kind is not PageDocumentIdAuthorizationStrategyKind.NoFurtherAuthorizationRequired
-            )
-            .ToArray();
+        var normalizedStrategies = authorization.Strategies.ToArray();
 
-        foreach (var strategy in effectiveStrategies)
+        foreach (var strategy in normalizedStrategies)
         {
             ArgumentNullException.ThrowIfNull(strategy.Subjects);
 
@@ -464,11 +460,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             }
         }
 
-        return effectiveStrategies.Length == 0
+        return normalizedStrategies.Length == 0
             ? null
             : authorization with
             {
-                Strategies = effectiveStrategies,
+                Strategies = normalizedStrategies,
             };
     }
 

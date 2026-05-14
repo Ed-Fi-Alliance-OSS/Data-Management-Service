@@ -237,7 +237,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~PageDocumentId`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalGetManyAuthorizationStrategyClassifier`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authorization Subject SQL De-Dupe",
@@ -259,6 +259,20 @@
       "Run the focused unit-test commands listed by the `Custom View Strategy Validation`, `Readable Profile Query Projection`, `Page Authorization Model`, and `Authorization Subject SQL De-Dupe` tasks.",
       "For E2E changes, run from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`: `pwsh ./teardown-local-dms.ps1` then `pwsh ./setup-local-dms.ps1`. Use docker to create a MSSQL container from a local image for testing.",
       "Run the focused E2E command listed by the `E2E Authorization Coverage` task."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Readability Follow-Up",
+    "description": "Low: Apply the remaining code-review readability fixes for DMS-1055 relational authorization. Issue: `HydrationBatchBuilder.TryGetRequiredParameter` uses `FirstOrDefault(...) ?? null!`, which hides the nullable intent; `RelationshipsWithEdOrgsOnlyRelational.feature` uses broad authorization to seed data before switching to the narrow claim set under test, which makes scenario intent harder to read; the same feature uses lowercase `#school` descriptor values even though these scenarios are not intended to test descriptor case-insensitivity. Acceptance: `TryGetRequiredParameter` removes the null-forgiving coalesce by declaring the out value nullable, preferably with `[NotNullWhen(true)]`, and returns `parameter is not null`; the relational EdOrg-only E2E setup distinguishes seed/admin context from the query authorization context or otherwise makes the broad setup auth explicit without changing tested behavior; school category descriptors in this feature use canonical `#School` casing unless a scenario is explicitly about descriptor case-insensitive behavior.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs` so `TryGetRequiredParameter` has nullable-aware output instead of `?? null!`, and add `System.Diagnostics.CodeAnalysis` only if needed for `[NotNullWhen(true)]`.",
+      "Revise `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsOnlyRelational.feature` so setup authorization and query authorization are clearly separated in the scenario text or implemented through a setup-only/admin seeding step.",
+      "Align the `EducationOrganizationCategoryDescriptor` school values in that feature to canonical `uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School` casing.",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~HydrationBatchBuilder`",
+      "Run from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`: `pwsh ./teardown-local-dms.ps1` then `pwsh ./setup-local-dms.ps1`.",
+      "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"FullyQualifiedName~RelationshipsWithEdOrgsOnlyRelational\"`"
     ],
     "completed": false
   }

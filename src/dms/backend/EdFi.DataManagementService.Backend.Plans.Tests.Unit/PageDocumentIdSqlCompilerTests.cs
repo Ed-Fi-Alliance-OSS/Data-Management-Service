@@ -1036,9 +1036,7 @@ public class Given_PageDocumentIdSqlCompiler
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public void It_should_ignore_no_further_authorization_required_when_mixed_with_relationship_strategies(
-        SqlDialect dialect
-    )
+    public void It_should_treat_an_empty_authorization_strategy_list_as_no_authorization(SqlDialect dialect)
     {
         var compiler = new PageDocumentIdSqlCompiler(dialect);
         var plan = compiler.Compile(
@@ -1046,39 +1044,19 @@ public class Given_PageDocumentIdSqlCompiler
                 [],
                 [],
                 includeTotalCountSql: true,
-                authorization: CreateAuthorizationSpec(
-                    CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.NoFurtherAuthorizationRequired
-                    ),
-                    CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                        CreateAuthorizationSubject("SchoolId")
-                    )
-                )
+                authorization: CreateAuthorizationSpec(claimEducationOrganizationIds: [])
             )
         );
 
-        plan.PageDocumentIdSql.Should().Contain("ClaimEducationOrganizationIds");
-        plan.PageDocumentIdSql.Should().NotContain(" OR ");
-        plan.TotalCountSql.Should().Contain("ClaimEducationOrganizationIds");
-        var expectedPageParameterNames = dialect switch
-        {
-            SqlDialect.Mssql => new[] { "ClaimEducationOrganizationIds_0", "offset", "limit" },
-            _ => new[] { "ClaimEducationOrganizationIds", "offset", "limit" },
-        };
-
         plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
-            .Equal(expectedPageParameterNames);
-        plan.PageParametersInOrder[0]
-            .Binding.Kind.Should()
-            .Be(
-                dialect switch
-                {
-                    SqlDialect.Mssql => QuerySqlParameterBindingKind.Scalar,
-                    _ => QuerySqlParameterBindingKind.PgsqlArray,
-                }
-            );
+            .Equal("offset", "limit");
+        plan.PageDocumentIdSql.Should().NotContain("ClaimEducationOrganizationIds");
+        plan.TotalCountSql.Should().NotContain("ClaimEducationOrganizationIds");
+        plan.TotalCountParametersInOrder.Should().NotBeNull();
+        plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .BeEmpty();
     }
 
     [Test]

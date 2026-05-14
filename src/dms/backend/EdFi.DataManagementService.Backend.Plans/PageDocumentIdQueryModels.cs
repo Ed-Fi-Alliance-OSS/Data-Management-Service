@@ -67,11 +67,6 @@ public sealed record QueryValuePredicate(
 public enum PageDocumentIdAuthorizationStrategyKind
 {
     /// <summary>
-    /// Contributes no SQL and is ignored when mixed with supported relationship strategies.
-    /// </summary>
-    NoFurtherAuthorizationRequired,
-
-    /// <summary>
     /// Filters the auth hierarchy from source token EdOrg ids down to target resource EdOrg ids.
     /// </summary>
     RelationshipsWithEdOrgsOnly,
@@ -105,7 +100,7 @@ public sealed record PageDocumentIdAuthorizationStrategy(
 /// Optional DMS-1055 authorization inputs for page-<c>DocumentId</c> query compilation.
 /// </summary>
 /// <param name="Strategies">
-/// Effective authorization strategies. Relationship strategies are combined with OR; no-op strategies contribute no SQL.
+/// Effective relationship authorization strategies. Strategies are combined with OR.
 /// </param>
 /// <param name="ClaimEducationOrganizationIds">
 /// Token EdOrg ids used to parameterize the authorization predicate. The compiler normalizes these values into
