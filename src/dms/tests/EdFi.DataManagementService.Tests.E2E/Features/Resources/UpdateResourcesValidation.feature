@@ -18,6 +18,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-184 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 01 Put an existing document (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -121,6 +122,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-188 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 05 Update a document with modification of an identity field (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -146,6 +148,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-189 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 06  Put an empty request object (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -168,6 +171,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-190 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 07 Put an empty JSON body (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -200,6 +204,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-191 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 08 Update a document with mismatch between URL and id (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -227,6 +232,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-192 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 09 Update a document with a blank id (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -254,6 +260,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-193 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 10 Update a document with an invalid id format (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -310,6 +317,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-195 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 12 Put an existing document with null optional value (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -338,6 +346,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-196 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 13 Put an existing document with a string that is too long (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -371,6 +380,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-197 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 14 Update a document with a value that is too short (Resource)
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
@@ -406,6 +416,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-198 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 15 Update a document with a duplicated value (Resource)
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
@@ -439,6 +450,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-199 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 16 Verify clients cannot update a resource with a duplicate descriptor
              When a PUT request is made to "/ed-fi/schools/{id}" with
                   """
@@ -483,6 +495,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-200 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 17 Verify clients cannot upadate a resource with a duplicate resource reference
              When a PUT request is made to "/ed-fi/bellschedules/{id}" with
                   """
@@ -1108,6 +1121,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-221 @IdempotentUpdate @relational-backend
+        @relational-ci-shard-1
         Scenario: 23 Update with identical payload should not make database changes
             # This test verifies that updating a resource with an identical payload doesn't cause any database changes
              When a GET request is made to "/ed-fi/educationContents/{id}"
