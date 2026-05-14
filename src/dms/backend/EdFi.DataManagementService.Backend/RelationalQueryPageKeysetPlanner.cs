@@ -89,7 +89,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             static column => column.ColumnName,
             static column => column
         );
-        var authorizationClaimParameterization = CreateAuthorizationClaimParameterization(authorization);
+        var authorizationClaimParameterization = authorization?.ClaimEducationOrganizationIdParameterization;
         var parameterNamesByIndex = DeriveParameterNames(preprocessingResult.QueryElementsInOrder);
         var predicates = new QueryValuePredicate[preprocessingResult.QueryElementsInOrder.Count];
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal)
@@ -144,17 +144,6 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
 
         return new PageKeysetSpec.Query(sqlPlan, parameterValues);
     }
-
-    private AuthorizationClaimEducationOrganizationIdParameterization? CreateAuthorizationClaimParameterization(
-        PageDocumentIdAuthorizationSpec? authorization
-    ) =>
-        authorization is null
-            ? null
-            : AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
-                dialect,
-                authorization.ClaimEducationOrganizationIds,
-                authorization.ClaimEducationOrganizationIdsParameterName
-            );
 
     private static void AddAuthorizationParameterValues(
         IDictionary<string, object?> parameterValues,

@@ -607,6 +607,14 @@ public sealed class RelationalDocumentStoreRepository(
                 break;
 
             case RelationalGetManyAuthorizationStrategyClassificationOutcome.SupportedRelationshipStrategies:
+                if (relationalQueryRequest.AuthorizationContext.ClaimEducationOrganizationIds.Count == 0)
+                {
+                    return new QueryResult.QuerySuccess(
+                        [],
+                        relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+                    );
+                }
+
                 var selectedEdOrgSubjects = RelationalEdOrgAuthorizationSubjectSelector.Select(
                     mappingSet,
                     resource,
@@ -630,18 +638,11 @@ public sealed class RelationalDocumentStoreRepository(
                     ]);
                 }
 
-                if (relationalQueryRequest.AuthorizationContext.ClaimEducationOrganizationIds.Count == 0)
-                {
-                    return new QueryResult.QuerySuccess(
-                        [],
-                        relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
-                    );
-                }
-
                 pageQueryAuthorization = CreatePageDocumentIdAuthorizationSpec(
                     authorizationStrategyClassification.SupportedStrategies,
                     selectedEdOrgSubjects,
-                    relationalQueryRequest.AuthorizationContext
+                    relationalQueryRequest.AuthorizationContext,
+                    mappingSet.Key.Dialect
                 );
                 break;
 
@@ -1035,7 +1036,8 @@ public sealed class RelationalDocumentStoreRepository(
     private static PageDocumentIdAuthorizationSpec CreatePageDocumentIdAuthorizationSpec(
         IReadOnlyList<RelationalGetManySupportedAuthorizationStrategy> supportedStrategies,
         RelationalEdOrgAuthorizationSubjectSelection selectedEdOrgSubjects,
-        RelationalAuthorizationContext authorizationContext
+        RelationalAuthorizationContext authorizationContext,
+        SqlDialect dialect
     )
     {
         ArgumentNullException.ThrowIfNull(supportedStrategies);
@@ -1060,9 +1062,16 @@ public sealed class RelationalDocumentStoreRepository(
             )),
         ];
 
+        var authorizationClaimParameterization =
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                dialect,
+                authorizationContext.ClaimEducationOrganizationIds,
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            );
+
         return new PageDocumentIdAuthorizationSpec(
             authorizationStrategies,
-            authorizationContext.ClaimEducationOrganizationIds
+            authorizationClaimParameterization
         );
     }
 

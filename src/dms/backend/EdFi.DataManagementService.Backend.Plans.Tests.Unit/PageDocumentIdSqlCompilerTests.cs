@@ -845,6 +845,7 @@ public class Given_PageDocumentIdSqlCompiler
                 [],
                 includeTotalCountSql: true,
                 authorization: CreateAuthorizationSpec(
+                    dialect,
                     CreateAuthorizationStrategy(
                         PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject("SchoolId")
@@ -921,6 +922,7 @@ public class Given_PageDocumentIdSqlCompiler
                 [],
                 includeTotalCountSql: true,
                 authorization: CreateAuthorizationSpec(
+                    dialect,
                     CreateAuthorizationStrategy(
                         PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
                         CreateAuthorizationSubject("SchoolId")
@@ -946,6 +948,7 @@ public class Given_PageDocumentIdSqlCompiler
                 [],
                 includeTotalCountSql: true,
                 authorization: CreateAuthorizationSpec(
+                    dialect,
                     CreateAuthorizationStrategy(
                         PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject("SchoolId")
@@ -977,6 +980,7 @@ public class Given_PageDocumentIdSqlCompiler
                 [],
                 includeTotalCountSql: true,
                 authorization: CreateAuthorizationSpec(
+                    dialect,
                     CreateAuthorizationStrategy(
                         PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject("SchoolId"),
@@ -1017,6 +1021,7 @@ public class Given_PageDocumentIdSqlCompiler
                 [],
                 includeTotalCountSql: true,
                 authorization: CreateAuthorizationSpec(
+                    dialect,
                     CreateAuthorizationStrategy(
                         PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject(
@@ -1069,6 +1074,7 @@ public class Given_PageDocumentIdSqlCompiler
                 [],
                 includeTotalCountSql: true,
                 authorization: CreateAuthorizationSpec(
+                    SqlDialect.Mssql,
                     CreateClaimEducationOrganizationIds(2000),
                     CreateAuthorizationStrategy(
                         PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
@@ -1263,13 +1269,32 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     private static PageDocumentIdAuthorizationSpec CreateAuthorizationSpec(
+        SqlDialect dialect,
         params PageDocumentIdAuthorizationStrategy[] strategies
-    ) => CreateAuthorizationSpec([1L], strategies);
+    ) => CreateAuthorizationSpec(dialect, [1L], strategies);
 
     private static PageDocumentIdAuthorizationSpec CreateAuthorizationSpec(
         IReadOnlyList<long> claimEducationOrganizationIds,
         params PageDocumentIdAuthorizationStrategy[] strategies
-    ) => new(strategies, claimEducationOrganizationIds);
+    ) => CreateAuthorizationSpec(SqlDialect.Pgsql, claimEducationOrganizationIds, strategies);
+
+    private static PageDocumentIdAuthorizationSpec CreateAuthorizationSpec(
+        SqlDialect dialect,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        params PageDocumentIdAuthorizationStrategy[] strategies
+    )
+    {
+        var parameterization =
+            strategies.Length == 0
+                ? null
+                : AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                    dialect,
+                    claimEducationOrganizationIds,
+                    RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+                );
+
+        return new PageDocumentIdAuthorizationSpec(strategies, parameterization);
+    }
 
     private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategy(
         PageDocumentIdAuthorizationStrategyKind kind,

@@ -102,18 +102,14 @@ public sealed record PageDocumentIdAuthorizationStrategy(
 /// <param name="Strategies">
 /// Effective relationship authorization strategies. Strategies are combined with OR.
 /// </param>
-/// <param name="ClaimEducationOrganizationIds">
-/// Token EdOrg ids used to parameterize the authorization predicate. The compiler normalizes these values into
-/// deduplicated ascending order before selecting the dialect-specific parameter shape.
-/// </param>
-/// <param name="ClaimEducationOrganizationIdsParameterName">
-/// Logical parameter name supplying the token EdOrg id list.
+/// <param name="ClaimEducationOrganizationIdParameterization">
+/// Dialect-specific claim EdOrg parameterization shared by SQL emission and runtime binding. Required when
+/// <paramref name="Strategies" /> is non-empty; ignored when the strategy list is empty.
 /// </param>
 public sealed record PageDocumentIdAuthorizationSpec(
     IReadOnlyList<PageDocumentIdAuthorizationStrategy> Strategies,
-    IReadOnlyList<long> ClaimEducationOrganizationIds,
-    string ClaimEducationOrganizationIdsParameterName =
-        RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+    AuthorizationClaimEducationOrganizationIdParameterization? ClaimEducationOrganizationIdParameterization =
+        null
 );
 
 /// <summary>

@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <summary>
 /// Runtime parameterization shape for DMS-1055 claim EdOrg ids.
 /// </summary>
-internal enum AuthorizationClaimEducationOrganizationIdParameterizationKind
+public enum AuthorizationClaimEducationOrganizationIdParameterizationKind
 {
     PgsqlArray,
     MssqlScalar,
@@ -25,7 +25,7 @@ internal enum AuthorizationClaimEducationOrganizationIdParameterizationKind
 /// <param name="BaseParameterName">The logical base parameter name.</param>
 /// <param name="ClaimEducationOrganizationIds">Deduplicated claim EdOrg ids sorted ascending.</param>
 /// <param name="ParameterNamesInOrder">Concrete SQL parameter names in deterministic binding order.</param>
-internal sealed record AuthorizationClaimEducationOrganizationIdParameterization(
+public sealed record AuthorizationClaimEducationOrganizationIdParameterization(
     AuthorizationClaimEducationOrganizationIdParameterizationKind Kind,
     string BaseParameterName,
     IReadOnlyList<long> ClaimEducationOrganizationIds,
@@ -35,7 +35,7 @@ internal sealed record AuthorizationClaimEducationOrganizationIdParameterization
 /// <summary>
 /// Builds the DMS-1055 claim EdOrg authorization parameterization for the target SQL dialect.
 /// </summary>
-internal static class AuthorizationClaimEducationOrganizationIdParameterizationFactory
+public static class AuthorizationClaimEducationOrganizationIdParameterizationFactory
 {
     internal const int MssqlStructuredParameterThreshold = 2000;
     internal const string MssqlStructuredParameterTypeName = "dms.BigIntTable";

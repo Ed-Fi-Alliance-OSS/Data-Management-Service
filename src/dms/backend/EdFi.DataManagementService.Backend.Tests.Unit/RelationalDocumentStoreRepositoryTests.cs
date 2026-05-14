@@ -1699,6 +1699,40 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_short_circuits_supported_query_authorization_with_empty_edorg_claims_before_subject_selection(
+        bool totalCount
+    )
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithChildOnlyEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: totalCount,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: []
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
     [Test]
     public async Task It_applies_readable_profile_projection_to_authorized_query_results()
     {
@@ -1884,7 +1918,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
-            ]
+            ],
+            claimEducationOrganizationIds: [500L]
         );
 
         var result = await _sut.QueryDocuments(queryRequest);
