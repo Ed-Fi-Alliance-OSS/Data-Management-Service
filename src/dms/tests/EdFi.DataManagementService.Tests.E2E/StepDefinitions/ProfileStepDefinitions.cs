@@ -94,7 +94,7 @@ public class ProfileStepDefinitions(
             int profileId = await ProfileAwareAuthorizationProvider.CreateProfile(
                 profileName,
                 profileXml,
-                SystemAdministrator.Token
+                await SystemAdministrator.GetToken()
             );
 
             ProfileTestData.RegisterProfile(profileName, profileId);
@@ -209,7 +209,7 @@ public class ProfileStepDefinitions(
             "profiletest@example.com",
             namespacePrefixes,
             educationOrganizationIds,
-            SystemAdministrator.Token,
+            await SystemAdministrator.GetToken(),
             claimSetName,
             profileNames
         );
@@ -345,7 +345,7 @@ public class ProfileStepDefinitions(
             "descriptor@test.com",
             "uri://ed-fi.org, uri://sample.ed-fi.org",
             "",
-            SystemAdministrator.Token,
+            await SystemAdministrator.GetToken(),
             "EdFiSandbox"
         );
 
@@ -364,7 +364,7 @@ public class ProfileStepDefinitions(
             "entity@test.com",
             "uri://ed-fi.org",
             "",
-            SystemAdministrator.Token,
+            await SystemAdministrator.GetToken(),
             "E2E-NoFurtherAuthRequiredClaimSet"
         );
 
@@ -383,7 +383,7 @@ public class ProfileStepDefinitions(
             "seeddata@test.com",
             "uri://ed-fi.org, uri://sample.ed-fi.org, uri://tpdm.ed-fi.org, uri://homograph.ed-fi.org",
             "",
-            SystemAdministrator.Token,
+            await SystemAdministrator.GetToken(),
             "E2E-NoFurtherAuthRequiredClaimSet"
         );
 

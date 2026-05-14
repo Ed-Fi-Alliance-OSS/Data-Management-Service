@@ -48,7 +48,8 @@ public static class ProfileSetupHooks
         logger.log.Information("===== ProfileSetupHooks: Creating test profiles =====");
 
         // SystemAdministrator should already be registered by SetupHooks (Order = 10000)
-        if (string.IsNullOrEmpty(SystemAdministrator.Token))
+        string systemAdministratorToken = await SystemAdministrator.GetToken();
+        if (string.IsNullOrEmpty(systemAdministratorToken))
         {
             throw new InvalidOperationException(
                 "SystemAdministrator.Token is not available. Ensure SetupHooks.BeforeTestRun runs before ProfileSetupHooks."
@@ -69,7 +70,7 @@ public static class ProfileSetupHooks
                 int profileId = await ProfileAwareAuthorizationProvider.CreateProfile(
                     name,
                     xml,
-                    SystemAdministrator.Token
+                    systemAdministratorToken
                 );
 
                 ProfileTestData.RegisterProfile(name, profileId);

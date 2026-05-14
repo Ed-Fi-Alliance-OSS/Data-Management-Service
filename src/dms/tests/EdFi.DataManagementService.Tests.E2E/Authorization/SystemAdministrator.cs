@@ -10,7 +10,11 @@ namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 public static class SystemAdministrator
 {
     public const string DefaultClientSecret = "ValidSystemAdministratorSecret123456!Abcd";
+    private static readonly TimeSpan TokenRefreshBuffer = TimeSpan.FromMinutes(2);
     private static string _token = string.Empty;
+    private static DateTimeOffset _tokenExpiresAt = DateTimeOffset.MinValue;
+    private static string _clientId = string.Empty;
+    private static string _clientSecret = string.Empty;
     private static readonly SemaphoreSlim _registrationLock = new(1, 1);
 
     public static string Token
@@ -30,8 +34,12 @@ public static class SystemAdministrator
         await _registrationLock.WaitAsync();
         try
         {
-            // If we already have a valid token for this client, reuse it
-            if (!string.IsNullOrEmpty(Token))
+            bool clientChanged = clientId != _clientId || clientSecret != _clientSecret;
+            _clientId = clientId;
+            _clientSecret = clientSecret;
+
+            // If we already have a valid token for this client, reuse it.
+            if (!clientChanged && HasUsableToken())
             {
                 return;
             }
@@ -54,23 +62,59 @@ public static class SystemAdministrator
 
             var tokenResult = await _client.PostAsync("connect/token", tokenRequestFormContent);
 
-            if (tokenResult.IsSuccessStatusCode)
-            {
-                var body = await tokenResult.Content.ReadAsStringAsync();
-                var document = JsonDocument.Parse(body);
-                Token = document.RootElement.GetProperty("access_token").GetString() ?? "";
-            }
-            else
+            if (!tokenResult.IsSuccessStatusCode)
             {
                 var errorBody = await tokenResult.Content.ReadAsStringAsync();
                 throw new InvalidOperationException(
                     $"Failed to obtain token for client '{clientId}'. Status: {tokenResult.StatusCode}, Error: {errorBody}"
                 );
             }
+
+            var body = await tokenResult.Content.ReadAsStringAsync();
+            var document = JsonDocument.Parse(body);
+            Token = document.RootElement.GetProperty("access_token").GetString() ?? "";
+            int expiresInSeconds = document.RootElement.TryGetProperty(
+                "expires_in",
+                out JsonElement expiresIn
+            )
+                ? expiresIn.GetInt32()
+                : 1800;
+            _tokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds);
         }
         finally
         {
             _registrationLock.Release();
         }
     }
+
+    public static async Task<string> GetToken()
+    {
+        await _registrationLock.WaitAsync();
+        try
+        {
+            if (HasUsableToken())
+            {
+                return Token;
+            }
+
+            if (string.IsNullOrEmpty(_clientId) || string.IsNullOrEmpty(_clientSecret))
+            {
+                throw new InvalidOperationException(
+                    "SystemAdministrator must be registered before requesting a token."
+                );
+            }
+
+            Token = string.Empty;
+        }
+        finally
+        {
+            _registrationLock.Release();
+        }
+
+        await Register(_clientId, _clientSecret);
+        return Token;
+    }
+
+    private static bool HasUsableToken() =>
+        !string.IsNullOrEmpty(Token) && DateTimeOffset.UtcNow.Add(TokenRefreshBuffer) < _tokenExpiresAt;
 }

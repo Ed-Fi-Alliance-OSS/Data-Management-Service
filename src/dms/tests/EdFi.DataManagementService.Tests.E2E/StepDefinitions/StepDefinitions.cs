@@ -125,9 +125,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string claimSetName = "E2E-NoFurtherAuthRequiredClaimSet"
         )
         {
+            string systemAdministratorToken = await SystemAdministrator.GetToken();
+
             // Clear the DMS claimset cache before setting a new authorization context
             // This ensures test isolation when scenarios have different auth contexts
-            await ClearDmsClaimsetCache();
+            await ClearDmsClaimsetCache(systemAdministratorToken);
 
             await AuthorizationDataProvider.CreateClientCredentials(
                 Guid.NewGuid().ToString(),
@@ -135,7 +137,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 "cmb@example.com",
                 namespacePrefixes,
                 educationOrganizationIds,
-                SystemAdministrator.Token,
+                systemAdministratorToken,
                 claimSetName
             );
 
@@ -144,14 +146,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         // Helper method to clear the DMS claimset cache
-        private async Task ClearDmsClaimsetCache()
+        private async Task ClearDmsClaimsetCache(string systemAdministratorToken)
         {
             try
             {
                 // Create authorization header - using Bearer token for DMS
                 var headers = new List<KeyValuePair<string, string>>
                 {
-                    new("Authorization", $"Bearer {SystemAdministrator.Token}"),
+                    new("Authorization", $"Bearer {systemAdministratorToken}"),
                 };
 
                 var dmsResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
@@ -914,7 +916,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var content = new StringContent(claimsJson, System.Text.Encoding.UTF8, "application/json");
 
             // Get SystemAdministrator auth header for CMS request
-            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {SystemAdministrator.Token}");
+            httpClient.DefaultRequestHeaders.Add(
+                "Authorization",
+                $"Bearer {await SystemAdministrator.GetToken()}"
+            );
 
             var response = await httpClient.PostAsync(
                 $"http://localhost:{AppSettings.ConfigServicePort}/config/management/upload-claims",
@@ -946,7 +951,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 {
                     Headers = new Dictionary<string, string>
                     {
-                        { "Authorization", $"Bearer {SystemAdministrator.Token}" },
+                        { "Authorization", $"Bearer {await SystemAdministrator.GetToken()}" },
                     },
                 }
             )!;
@@ -969,7 +974,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 {
                     Headers = new Dictionary<string, string>
                     {
-                        { "Authorization", $"Bearer {SystemAdministrator.Token}" },
+                        { "Authorization", $"Bearer {await SystemAdministrator.GetToken()}" },
                     },
                 }
             )!;
@@ -984,14 +989,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a POST request is made to CMS {string}")]
         public async Task WhenAPOSTRequestIsMadeToCMS(string endpoint)
         {
-            // Get system administrator token for CMS API access
-            if (string.IsNullOrEmpty(SystemAdministrator.Token))
-            {
-                await SystemAdministrator.Register(
-                    "SystemAdministratorClient",
-                    SystemAdministrator.DefaultClientSecret
-                );
-            }
+            string systemAdministratorToken = await SystemAdministrator.GetToken();
 
             // Use HttpClient to call CMS management API
             using var httpClient = new HttpClient
@@ -1000,7 +998,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             };
 
             httpClient.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", SystemAdministrator.Token);
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", systemAdministratorToken);
 
             // POST with empty body for reload-claims endpoint
             using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
