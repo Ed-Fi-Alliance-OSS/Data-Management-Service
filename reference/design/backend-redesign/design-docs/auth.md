@@ -22,7 +22,7 @@ PrimaryAssociations are modified frequently. Determining whether a Contact is ac
 
 SecurableElements are the resource's fields that can participate in an authorization decision, such as the EducationOrganization and Student/Contact/Staff IDs.
 
-SecurableElements are candidate metadata. An authorization strategy first derives the operation-specific authorization subjects from those candidates. For ODS-parity EdOrg relationship GET-many authorization, participating EdOrg subjects are only those whose resolved column is on the aggregate root table, or on the base table for derived resources. Child collection EdOrg securable paths may still be resolved and indexed, but they are not used as GET-many relationship authorization subjects.
+SecurableElements are candidate metadata. An authorization strategy first derives the operation-specific authorization subjects from those candidates. For ODS-parity EdOrg relationship GET-many authorization, participating EdOrg subjects are only those whose resolved column is on the DMS concrete aggregate root table. DMS does not generate an ODS-style separate base-table alias for this GET-many path; applicable base/superclass EdOrg values are materialized on the concrete resource root table. Child collection EdOrg securable paths may still be resolved and indexed, but they are not used as GET-many relationship authorization subjects.
 
 Note that DMS already makes these fields available in the ApiSchema.json. Consider `CourseTranscript`:
 
@@ -117,7 +117,7 @@ ORDER BY
   r.AggregateId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-This ODS GET-many shape authorizes aggregate root rows. The page query starts from the aggregate root table alias `r`, or base alias `b` for derived resources, and relationship auth joins are applied back to that root/base alias only. ODS does not authorize every child collection row, does not require at least one child row, and does not exclude a root document because a child collection is empty.
+This ODS GET-many shape authorizes aggregate root rows. In DMS page SQL, the query starts from the concrete aggregate root table alias `r`, and relationship auth joins are applied back to that root alias only. DMS does not generate a separate base alias `b` for derived/subclass resources in this path. ODS does not authorize every child collection row, does not require at least one child row, and does not exclude a root document because a child collection is empty.
 
 When multiple authorization strategies are configured for a given resource, relationship-based strategies are combined with OR, while the remaining strategies are combined with AND. For example: (`RelationshipsWithEdOrgsAndPeopleInverted` OR `RelationshipsWithEdOrgsAndPeople`) AND `NamespaceBased`.
 
@@ -814,7 +814,7 @@ Notice how ODS joins against the authorization views, whereas the POC above uses
 
 ODS has to use `DISTINCT` to ensure that multiple entries in the auth views don't result in duplicate rows during GET-many. Avoiding the `DISTINCT` clause results in simpler execution plans and performance improvements.
 
-When DMS uses `IN` subqueries instead of ODS joins, it must preserve ODS subject scope. EdOrg relationship GET-many authorization filters root DocumentIds from the aggregate root/base table. It must not generate child-table `EXISTS` / `NOT EXISTS` predicates to prove all child EdOrg rows are authorized.
+When DMS uses `IN` subqueries instead of ODS joins, it must preserve ODS subject scope. EdOrg relationship GET-many authorization filters root DocumentIds from the concrete aggregate root table. It must not generate child-table `EXISTS` / `NOT EXISTS` predicates to prove all child EdOrg rows are authorized.
 
 #### Resolving the DB columns used for authorization
 
@@ -822,7 +822,7 @@ We should avoid joining the people auth views against the resource tables using 
 
 However, the person DocumentId column is only available on the resource table when it references the person resource *directly*. `CourseTranscript`, for example, references `Student` transitively through `StudentAcademicRecord`, so the Student DocumentId column isn't available in the `CourseTranscript` table. We must join `StudentAcademicRecord` to reach the Student DocumentId in order to authorize it (as shown in the POC above).
 
-The `Namespace` and `EducationOrganizationId` columns are simpler to get because those values are denormalized onto the table that owns the reference, so resolving the physical column does not require traversing through the referenced resource. The resolved owning table may be the aggregate root/base table or a child collection table. Consumers must still apply operation-specific eligibility rules; ODS-parity EdOrg relationship GET-many uses only root/base EdOrg subjects.
+The `Namespace` and `EducationOrganizationId` columns are simpler to get because those values are denormalized onto the table that owns the reference, so resolving the physical column does not require traversing through the referenced resource. The resolved owning table may be the concrete aggregate root table or a child collection table. Consumers must still apply operation-specific eligibility rules; ODS-parity EdOrg relationship GET-many uses only concrete root-table EdOrg subjects.
 
 We need a helper function that, given the resource that we are trying to authorize, returns the necessary information to construct the SQL authorization check.
 

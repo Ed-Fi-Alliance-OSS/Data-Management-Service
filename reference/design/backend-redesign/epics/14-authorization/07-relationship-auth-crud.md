@@ -21,7 +21,7 @@ Implement the relationship-based authorization strategies for the GET-by-id, POS
   - Second, authorize using the new values from the request body (only if the resource allows updates to its identifying values; abort if unauthorized).
   Both checks are batched in the same roundtrip as reference resolution and reconstitution.
 - DELETE: An authorization check is executed against the stored values before deletion. If unauthorized, the delete does not happen and a 403 Forbidden response is returned.
-- Each strategy type correctly determines which securable elements participate. For EducationOrganization subjects, use the ODS-parity root/base subject scope established by [DMS-1055](https://edfi.atlassian.net/browse/DMS-1055); child-table EdOrg predicates are not introduced by this story unless explicitly added by a later design change.
+- Each strategy type correctly determines which securable elements participate. For EducationOrganization subjects, use the ODS-parity DMS concrete root-table subject scope established by [DMS-1055](https://edfi.atlassian.net/browse/DMS-1055); child-table EdOrg predicates are not introduced by this story unless explicitly added by a later design change.
 - Inverted strategies correctly swap Source/Target filtering in EXISTS subqueries.
 - This story replaces the temporary DMS-1055 501 Not Implemented behavior for relationship-based GET-by-id, POST, PUT, and DELETE operations, including RelationshipsWithEdOrgsOnlyInverted.
 - When multiple relationship-based strategies are configured for the same resource, they are combined with OR semantics (the EXISTS clauses for each strategy are wrapped in parentheses and combined with OR).

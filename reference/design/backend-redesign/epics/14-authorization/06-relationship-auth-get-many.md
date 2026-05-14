@@ -13,15 +13,15 @@ Implement the EdOrg-only relationship-based authorization strategies for the GET
 
 This ticket delivers the complete authorization subquery pipeline (SQL generation, caching, pagination, TVP threshold, OR semantics, inverted strategies) proven end-to-end with the simpler EdOrg case. People-involved strategies are handled in [DMS-1095](https://edfi.atlassian.net/browse/DMS-1095).
 
-Scope note: this story intentionally implements the ODS-parity GET-many slice for root/base EdOrg authorization subjects only. The broader `auth.md` design still resolves and indexes EdOrg/Namespace securable paths on whichever table owns the reference, including child collection tables; those child-table paths are not used as EdOrg relationship GET-many authorization subjects in DMS-1055.
+Scope note: this story intentionally implements the ODS-parity GET-many slice for DMS concrete root-table EdOrg authorization subjects only. The broader `auth.md` design still resolves and indexes EdOrg/Namespace securable paths on whichever table owns the reference, including child collection tables; those child-table paths are not used as EdOrg relationship GET-many authorization subjects in DMS-1055.
 
 ## Acceptance Criteria
 
 ### EdOrg-only strategies
 
 - The following relationship-based strategies are implemented for GET-many:
-  - RelationshipsWithEdOrgsOnly — includes only root/base EducationOrganization authorization subjects for this ODS-parity slice.
-  - RelationshipsWithEdOrgsOnlyInverted — uses the same root/base subject scope and swaps the Source/Target filtering in the auth.EducationOrganizationIdToEducationOrganizationId table (bottom-to-top instead of top-to-bottom).
+  - RelationshipsWithEdOrgsOnly — includes only DMS concrete root-table EducationOrganization authorization subjects for this ODS-parity slice.
+  - RelationshipsWithEdOrgsOnlyInverted — uses the same concrete root-table subject scope and swaps the Source/Target filtering in the auth.EducationOrganizationIdToEducationOrganizationId table (bottom-to-top instead of top-to-bottom).
 - GET-many results are filtered based on the configured strategy; unauthorized resources are never returned.
 
 ### Shared authorization subquery framework
@@ -31,7 +31,7 @@ Scope note: this story intentionally implements the ODS-parity GET-many slice fo
 - NoFurtherAuthorizationRequired is ignored as a no-op when combined with relationship-based strategies.
 - No duplicate results are returned (uses IN subquery approach, not JOIN).
 - Pagination (offset/limit) and total count work correctly with the authorization filter applied.
-- For ODS parity, DMS-1055 only applies EdOrg relationship GET-many authorization to root/base-table authorization subjects. The authorization predicate joins `auth.EducationOrganizationIdToEducationOrganizationId` back to the aggregate root alias `r`, or base alias `b` for derived resources, only. EdOrg securable paths that resolve solely to child collection tables are not authorization subjects for this story.
+- For ODS parity, DMS-1055 only applies EdOrg relationship GET-many authorization to DMS concrete root-table authorization subjects. The authorization predicate joins `auth.EducationOrganizationIdToEducationOrganizationId` back to the concrete aggregate root alias `r` only. DMS does not generate an ODS-style separate base alias `b` for this GET-many path; applicable base/superclass EdOrg values are materialized on the concrete resource root table. EdOrg securable paths that resolve solely to child collection tables are not authorization subjects for this story.
 - If the token's unique EdOrgId list is empty, GET-many returns an empty page and totalCount = 0 when requested; it does not return 403.
 - Works for both PostgreSQL and SQL Server. For SQL Server, when the token's EdOrgId list has fewer than 2,000 entries, use a parameterized IN clause; otherwise, use a TVP of type dms.BigIntTable.
 
@@ -72,12 +72,12 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   2. Empty EdOrg token list: for GET-many, return an empty page and totalCount = 0, not 403. Legacy ODS GET-many builds an empty IN as 1 = 0, so no rows match. The current DMS filter-construction
      403 is a write/single-item-style behavior and would be an intentional ODS divergence for GET-many.
 
-  3. EdOrg-only strategy but no ODS-parity root/base EdOrg authorization subjects: return a 500 security configuration error. ODS throws SecurityConfigurationException when a relationship strategy produces no
+  3. EdOrg-only strategy but no ODS-parity concrete root-table EdOrg authorization subjects: return a 500 security configuration error. ODS throws SecurityConfigurationException when a relationship strategy produces no
      authorization subjects; silently returning all rows is unsafe, and returning no rows hides bad metadata.
 
   4. Child collection EdOrg columns: out of scope for DMS-1055 ODS parity. DMS may still resolve and index child-table EdOrg paths for the relational model, but GET-many relationship authorization in this story must not require at least one authorized child row, must not check every child row, and must not exclude a root document solely because a configured child collection is empty.
 
-  5. Multiple root/base EdOrg authorization subjects in one strategy: yes, AND them. ODS builds one relationship strategy as a conjunction of its filters, and the DMS design says the token must have access to all participating securable elements. Child-table EdOrg paths are excluded from the DMS-1055 participating subject set.
+  5. Multiple concrete root-table EdOrg authorization subjects in one strategy: yes, AND them. ODS builds one relationship strategy as a conjunction of its filters, and the DMS design says the token must have access to all participating securable elements. Child-table EdOrg paths are excluded from the DMS-1055 participating subject set.
 
   6. Normal plus inverted on the same resource: yes, OR them as separate relationship strategies, even if they target the same securable column. The inverted strategy is not redundant; it swaps
      SourceEducationOrganizationId and TargetEducationOrganizationId.
@@ -89,12 +89,12 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   For RelationshipsWithEdOrgsOnly:
 
   authEdOrg.SourceEducationOrganizationId IN/ANY token EdOrg IDs
-  AND authEdOrg.TargetEducationOrganizationId = root/base resource EdOrg column
+  AND authEdOrg.TargetEducationOrganizationId = concrete root-table resource EdOrg column
 
   For RelationshipsWithEdOrgsOnlyInverted:
 
   authEdOrg.TargetEducationOrganizationId IN/ANY token EdOrg IDs
-  AND authEdOrg.SourceEducationOrganizationId = root/base resource EdOrg column
+  AND authEdOrg.SourceEducationOrganizationId = concrete root-table resource EdOrg column
 
   Dialect contract:
 
@@ -125,10 +125,10 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 
   11. Unresolvable EdOrg securable:
 
-  Treat an unresolvable root/base EdOrg securable path, or a strategy that produces no root/base EdOrg authorization subjects after excluding child-table paths, as a security configuration failure, not as an empty result and not as a silent skip. ODS throws a security configuration exception when a relationship strategy produces no authorization subjects /home/brad/work/ods/Ed-Fi-ODS/Application/EdFi.Ods.Api/Security/AuthorizationStrategies/Relationships/RelationshipsAuthorizationStrategyBase.cs:74. DMS should fail fast with resource, strategy, and securable element
+  Treat an unresolvable concrete root-table EdOrg securable path, or a strategy that produces no concrete root-table EdOrg authorization subjects after excluding child-table paths, as a security configuration failure, not as an empty result and not as a silent skip. ODS throws a security configuration exception when a relationship strategy produces no authorization subjects /home/brad/work/ods/Ed-Fi-ODS/Application/EdFi.Ods.Api/Security/AuthorizationStrategies/Relationships/RelationshipsAuthorizationStrategyBase.cs:74. DMS should fail fast with resource, strategy, and securable element
   details in logs/error text.
 
-  If one root/base path cannot resolve but another valid root/base path for the same securable can, use the valid shortest/canonical path. Child-only paths do not make the strategy applicable for DMS-1055. If no root/base path resolves, fail.
+  If one concrete root-table path cannot resolve but another valid concrete root-table path for the same securable can, use the valid shortest/canonical path. Child-only paths do not make the strategy applicable for DMS-1055. If no concrete root-table path resolves, fail.
 
   12. ProblemDetails:
 
@@ -147,9 +147,9 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   - Normal EdOrg filtering returns only rows whose resource EdOrg is reachable from token EdOrg.
   - Inverted filtering swaps Source/Target and returns bottom-to-top authorized rows.
   - Normal plus inverted relationship strategies are ORed.
-  - Multiple root/base EdOrg authorization subjects within one strategy are ANDed, matching ODS GET-many behavior.
-  - A resource with a root/base EdOrg subject is filtered through the aggregate root alias `r`, or base alias `b` for derived resources.
-  - A resource with both root/base and child-table EdOrg securable paths authorizes using only the root/base subject for DMS-1055.
+  - Multiple concrete root-table EdOrg authorization subjects within one strategy are ANDed, matching ODS GET-many behavior.
+  - A resource with a concrete root-table EdOrg subject is filtered through the aggregate root alias `r`; DMS does not generate a separate base-table alias for derived/subclass resources in this path.
+  - A resource with both concrete root-table and child-table EdOrg securable paths authorizes using only the concrete root-table subject for DMS-1055.
   - A resource whose EdOrg securable paths all resolve to child collection tables fails as a security configuration error for DMS-1055.
   - Generated SQL does not join child collection tables for EdOrg-only relationship GET-many authorization.
   - Duplicate avoidance: one document returned once when multiple auth rows or strategies match.
@@ -159,7 +159,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   - Duplicate token IDs are deduped before threshold selection.
   - PostgreSQL uses a single array parameter.
   - Unsupported mixed strategies such as NamespaceBased, OwnershipBased, convention-matching custom view-based strategies, and People strategies fail fast with the temporary DMS-1055 501 behavior. These tests must be updated by later strategy stories to assert the final `auth.md` composition semantics, where non-relationship strategies are ANDed with the relationship strategy OR group. NoFurtherAuthorizationRequired is ignored as a no-op when combined with relationship strategies.
-  - Unresolvable/no root/base EdOrg authorization subject fails as configuration error.
+  - Unresolvable/no concrete root-table EdOrg authorization subject fails as configuration error.
 
 
 ### Questions 2
@@ -198,9 +198,9 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 
   Temporary staging behavior: the 501 response is only for DMS-1055's limited implementation scope and is not the final authorization composition model. As NamespaceBased, OwnershipBased, custom view-based, and People relationship stories are implemented, this fail-fast behavior must be replaced with the final `auth.md` semantics: non-relationship strategies are ANDed with the relationship strategy OR group.
 
-  5. Child-table EdOrg securable semantics: out of scope for DMS-1055 ODS parity. GET-many relationship authorization in this story must not use child-table predicates, must not require every existing child row to be authorized, and must not use "any matching child row" semantics. Only root/base EdOrg authorization subjects participate.
+  5. Child-table EdOrg securable semantics: out of scope for DMS-1055 ODS parity. GET-many relationship authorization in this story must not use child-table predicates, must not require every existing child row to be authorized, and must not use "any matching child row" semantics. Only concrete root-table EdOrg authorization subjects participate.
 
-  6. Child-table path with no child rows: do not exclude the document for DMS-1055. Since child-table EdOrg paths are not authorization subjects for this story, an empty child collection has no direct effect on GET-many relationship authorization. A configuration error applies when the configured strategy has no applicable root/base EdOrg authorization subjects.
+  6. Child-table path with no child rows: do not exclude the document for DMS-1055. Since child-table EdOrg paths are not authorization subjects for this story, an empty child collection has no direct effect on GET-many relationship authorization. A configuration error applies when the configured strategy has no applicable concrete root-table EdOrg authorization subjects.
 
   7. Richer securable-path metadata: yes. It is acceptable to extend compiled mapping-set/runtime contracts so each resolved path carries the original JSON path and a readable/MetaEd name alongside ResolvedSecurableElementPath. This supports diagnostics, security configuration errors, and per-element handling without reverse-mapping from physical columns.
 
@@ -249,7 +249,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   - detail: `A security configuration problem was detected. The request cannot be authorized.`
 
   If the shared DMS-1099 implementation is not available yet, add the minimal request-time mapping needed for DMS-1055 security configuration failures and keep it compatible with DMS-1099. This applies to
-  invalid/missing security metadata, unresolvable root/base EdOrg securable paths, and relationship strategies with no applicable root/base EdOrg authorization subjects.
+  invalid/missing security metadata, unresolvable concrete root-table EdOrg securable paths, and relationship strategies with no applicable concrete root-table EdOrg authorization subjects.
 
   Normal GET-many authorization denial still returns 200 with filtered results, possibly empty. Unsupported-but-known strategies outside DMS-1055 scope still return 501 Not Implemented.
 

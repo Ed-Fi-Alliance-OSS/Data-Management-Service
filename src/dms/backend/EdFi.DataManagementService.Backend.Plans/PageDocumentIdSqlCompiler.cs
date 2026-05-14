@@ -817,7 +817,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         {
             throw new InvalidOperationException(
                 $"Authorization subject table '{subject.Table}' does not match query root table '{rootTable}'. "
-                    + "DMS-1055 query authorization currently supports only root/base-table subjects in the page query compiler."
+                    + "DMS-1055 query authorization currently supports only concrete root-table subjects in the page query compiler."
             );
         }
 

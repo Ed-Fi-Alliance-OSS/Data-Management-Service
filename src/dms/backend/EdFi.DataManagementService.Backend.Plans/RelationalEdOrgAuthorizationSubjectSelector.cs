@@ -53,7 +53,7 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
 
         foreach (var elementResolution in elementResolutions)
         {
-            var selectedCandidate = SelectPreferredRootBaseCandidate(
+            var selectedCandidate = SelectPreferredConcreteRootCandidate(
                 rootTable,
                 elementResolution.ResolvedCandidates
             );
@@ -114,7 +114,7 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
         );
     }
 
-    private static ResolvedEdOrgSecurableElementCandidate? SelectPreferredRootBaseCandidate(
+    private static ResolvedEdOrgSecurableElementCandidate? SelectPreferredConcreteRootCandidate(
         DbTableName rootTable,
         IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> candidates
     )
@@ -180,7 +180,7 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
                 : $"Configured elements: [{string.Join(", ", configuredDetails)}].";
 
         return $"Relational query authorization metadata is invalid for resource '{MappingSetResourceLookupExtensions.FormatResource(resource)}'. "
-            + $"Effective GET-many strategies [{FormatStrategyNames(strategyNames)}] require at least one applicable root/base EducationOrganization authorization subject, "
+            + $"Effective GET-many strategies [{FormatStrategyNames(strategyNames)}] require at least one applicable concrete root-table EducationOrganization authorization subject, "
             + $"but none were found in mapping set '{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'. "
             + $"{resolvedDetailText} {configuredDetailText}";
     }

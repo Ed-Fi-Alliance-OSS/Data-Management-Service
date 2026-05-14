@@ -1008,7 +1008,7 @@ public class Given_PageDocumentIdSqlCompiler
         "[edfi].[CourseTranscript]",
         "r.[StudentAcademicRecord_EducationOrganizationId]"
     )]
-    public void It_should_bind_authorization_subjects_to_the_root_alias_for_derived_resource_subject_columns(
+    public void It_should_bind_reference_derived_authorization_subject_columns_to_the_root_alias(
         SqlDialect dialect,
         string expectedRootTableFragment,
         string expectedSubjectFragment

@@ -78,10 +78,10 @@ public enum PageDocumentIdAuthorizationStrategyKind
 }
 
 /// <summary>
-/// One root/base-table EdOrg authorization subject used by DMS-1055 query compilation.
+/// One concrete root-table EdOrg authorization subject used by DMS-1055 query compilation.
 /// </summary>
 /// <param name="Table">The table owning the authorization subject column.</param>
-/// <param name="Column">The root/base-table EdOrg subject column.</param>
+/// <param name="Column">The concrete root-table EdOrg subject column.</param>
 public sealed record PageDocumentIdAuthorizationSubject(DbTableName Table, DbColumnName Column);
 
 /// <summary>
@@ -89,7 +89,7 @@ public sealed record PageDocumentIdAuthorizationSubject(DbTableName Table, DbCol
 /// </summary>
 /// <param name="Kind">The supported relationship authorization kind.</param>
 /// <param name="Subjects">
-/// The participating root/base-table EdOrg authorization subjects. Multiple subjects are combined with AND.
+/// The participating concrete root-table EdOrg authorization subjects. Multiple subjects are combined with AND.
 /// </param>
 public sealed record PageDocumentIdAuthorizationStrategy(
     PageDocumentIdAuthorizationStrategyKind Kind,

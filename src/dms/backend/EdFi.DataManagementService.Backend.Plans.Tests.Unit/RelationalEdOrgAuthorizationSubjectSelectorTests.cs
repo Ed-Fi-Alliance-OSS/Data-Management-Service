@@ -20,7 +20,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
     private static readonly string[] _strategyNames = ["RelationshipsWithEdOrgsOnly"];
 
     [Test]
-    public void It_should_select_the_root_subject_for_a_derived_resource_fixture()
+    public void It_should_select_the_root_subject_for_a_reference_derived_column_fixture()
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
 
@@ -39,6 +39,25 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             .Subjects[0]
             .Column.Should()
             .Be(new DbColumnName("StudentAcademicRecord_EducationOrganizationId"));
+    }
+
+    [Test]
+    public void It_should_select_the_concrete_root_subject_for_a_subclass_resource_fixture()
+    {
+        (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
+
+        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+            mappingSet,
+            new QualifiedResourceName("Ed-Fi", "School"),
+            _strategyNames
+        );
+
+        result.Outcome.Should().Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success);
+        result.Subjects.Should().ContainSingle();
+        result.Subjects[0].ReadableName.Should().Be("SchoolId");
+        result.Subjects[0].JsonPath.Should().Be("$.schoolId");
+        result.Subjects[0].Table.Should().Be(new DbTableName(_edfiSchema, "School"));
+        result.Subjects[0].Column.Should().Be(new DbColumnName("SchoolId"));
     }
 
     [Test]
