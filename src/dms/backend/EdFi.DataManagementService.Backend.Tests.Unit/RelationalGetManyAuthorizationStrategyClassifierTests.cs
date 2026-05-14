@@ -42,6 +42,31 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
     }
 
     [Test]
+    public void It_deduplicates_supported_edorg_strategies_by_kind()
+    {
+        var classification = Classify(
+            CreateMappingSet(_queryResource),
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+        );
+
+        classification
+            .Outcome.Should()
+            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SupportedRelationshipStrategies);
+        classification
+            .SupportedStrategies.Select(static strategy => strategy.Kind)
+            .Should()
+            .Equal(
+                RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted
+            );
+        classification.KnownButNotImplementedStrategies.Should().BeEmpty();
+        classification.FailureMessage.Should().BeNull();
+    }
+
+    [Test]
     public void It_treats_no_further_authorization_required_as_a_no_op_when_supported_strategies_exist()
     {
         var classification = Classify(

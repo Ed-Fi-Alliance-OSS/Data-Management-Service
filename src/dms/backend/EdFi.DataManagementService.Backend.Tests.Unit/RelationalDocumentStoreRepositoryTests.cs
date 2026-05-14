@@ -1513,6 +1513,78 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_deduplicates_duplicate_supported_query_authorization_strategies_before_compiling_query_authorization()
+    {
+        static int CountOrdinalOccurrences(string value, string text) =>
+            value.Split(text, StringSplitOptions.None).Length - 1;
+
+        var documentUuid = new DocumentUuid(Guid.Parse("93939393-1111-2222-3333-555555555555"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [300L]
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 91L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Duplicate supported EdOrg strategies should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        var pageDocumentIdSql = capturedKeyset.Plan.PageDocumentIdSql;
+
+        CountOrdinalOccurrences(
+                pageDocumentIdSql,
+                "\"auth\".\"EducationOrganizationIdToEducationOrganizationId\""
+            )
+            .Should()
+            .Be(1);
+        CountOrdinalOccurrences(pageDocumentIdSql, "r.\"LocalEducationAgencyId\" IN (SELECT").Should().Be(1);
+        pageDocumentIdSql.Should().NotContain(" OR ");
+    }
+
+    [Test]
     public async Task It_deduplicates_duplicate_physical_root_edorg_subjects_before_compiling_query_authorization()
     {
         static int CountOrdinalOccurrences(string value, string text) =>

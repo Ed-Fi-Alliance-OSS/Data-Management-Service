@@ -65,7 +65,19 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
         ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
 
         List<RelationalGetManySupportedAuthorizationStrategy> supportedStrategies = [];
+        HashSet<RelationalGetManyAuthorizationStrategyKind> supportedStrategyKinds = [];
         List<RelationalGetManyKnownButNotImplementedStrategy> knownButNotImplementedStrategies = [];
+
+        void AddSupportedStrategy(
+            RelationalGetManyAuthorizationStrategyKind kind,
+            AuthorizationStrategyEvaluator evaluator
+        )
+        {
+            if (supportedStrategyKinds.Add(kind))
+            {
+                supportedStrategies.Add(new(kind, evaluator));
+            }
+        }
 
         foreach (var evaluator in authorizationStrategyEvaluators)
         {
@@ -77,20 +89,16 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
                     continue;
 
                 case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly:
-                    supportedStrategies.Add(
-                        new RelationalGetManySupportedAuthorizationStrategy(
-                            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                            evaluator
-                        )
+                    AddSupportedStrategy(
+                        RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        evaluator
                     );
                     continue;
 
                 case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted:
-                    supportedStrategies.Add(
-                        new RelationalGetManySupportedAuthorizationStrategy(
-                            RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
-                            evaluator
-                        )
+                    AddSupportedStrategy(
+                        RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                        evaluator
                     );
                     continue;
 
