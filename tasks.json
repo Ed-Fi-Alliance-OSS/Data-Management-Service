@@ -205,7 +205,7 @@
       "Add or retain tests proving a valid `{BasisResource}With...` strategy still returns the known-but-not-implemented 501 classification and that basis names containing `With` still resolve to the full basis name.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalGetManyAuthorizationStrategyClassifier`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Readable Profile Query Projection",

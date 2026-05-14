@@ -151,6 +151,18 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
     }
 
     [Test]
+    public void It_rejects_same_length_non_prefix_custom_view_names_as_security_configuration_errors()
+    {
+        var classification = Classify(CreateMappingSet(_queryResource), "PotatoWithSomething");
+
+        classification
+            .Outcome.Should()
+            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SecurityConfigurationError);
+        classification.FailureMessage.Should().Contain("Potato");
+        classification.FailureMessage.Should().NotContain("known-but-not-implemented");
+    }
+
+    [Test]
     public void It_rejects_custom_view_names_with_unknown_basis_resources_as_security_configuration_errors()
     {
         var classification = Classify(CreateMappingSet(_queryResource), "UnknownBasisWithSomething");

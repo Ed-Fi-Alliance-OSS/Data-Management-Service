@@ -291,10 +291,7 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
             .. mappingSet
                 .Model.EffectiveSchema.ResourceKeysInIdOrder.Select(static entry => entry.Resource)
                 .Where(resource =>
-                    withDelimiterIndexes.Contains(resource.ResourceName.Length)
-                    && strategyName
-                        .AsSpan(resource.ResourceName.Length)
-                        .StartsWith("With", StringComparison.Ordinal)
+                    strategyName.StartsWith($"{resource.ResourceName}With", StringComparison.Ordinal)
                 ),
         ];
 
