@@ -4,7 +4,7 @@ Feature: Resources "Delete" Reference Conflict validations
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
-        @API-176 @relational-backend
+        @API-176
         Scenario: 01 Verify response when deleting a referenced school
             Given the system has these "schools" references
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -33,7 +33,7 @@ Feature: Resources "Delete" Reference Conflict validations
                     }
                   """
 
-        @API-177 @relational-backend
+        @API-177
         Scenario: 02 Verify response when deleting a referenced schoolyeartype
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -62,7 +62,7 @@ Feature: Resources "Delete" Reference Conflict validations
                     }
                   """
 
-        @API-178 @relational-backend
+        @API-178
         Scenario: 03 Verify response when deleting a referenced student
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -90,4 +90,3 @@ Feature: Resources "Delete" Reference Conflict validations
                         "errors": []
                     }
                   """
-

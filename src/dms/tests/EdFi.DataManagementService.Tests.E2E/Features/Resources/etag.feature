@@ -3,7 +3,7 @@ Feature: ETag validations
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
-        @API-260 @relational-backend
+        @API-260
         Scenario: 01 Ensure that clients can retrieve an ETag in the response header
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -27,7 +27,6 @@ Feature: ETag validations
                     "_etag": "{etag}"
                   }
                   """
-        @relational-backend
         Scenario: 02 Ensure that clients can pass an IfMatch in the request header
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -51,7 +50,6 @@ Feature: ETag validations
                   }
                   """
              Then it should respond with 204
-        @relational-backend
         Scenario: 03 Ensure that clients can pass an IfMatch in the request header and ignore _etag in request body
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -76,7 +74,6 @@ Feature: ETag validations
                   }
                   """
              Then it should respond with 204
-        @relational-backend
         Scenario: 04 Ensure that clients cannot pass a different If-Match in the request header
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -113,7 +110,6 @@ Feature: ETag validations
                       ]
                   }
                   """
-        @relational-backend
         Scenario: 05 Ensure that clients cannot pass a different ETag in the If-Match header to delete a resource
             Given a POST request is made to "/ed-fi/students" with
                   """
@@ -139,7 +135,6 @@ Feature: ETag validations
                       ]
                   }
                   """
-        @relational-backend
         Scenario: 06 Ensure that clients can pass an ETag to delete a resource
             Given a POST request is made to "/ed-fi/students" with
                   """

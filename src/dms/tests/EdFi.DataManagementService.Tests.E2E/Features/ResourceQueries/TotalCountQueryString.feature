@@ -56,7 +56,7 @@ Feature: TotalCount Response Header for GET Requests
              Then it should respond with 200
               And the response headers does not include total-count
 
-        @API-143 @relational-backend
+        @API-143
         Scenario: 08 Ensure results can be limited and totalCount matches the actual number of existing records
              When a GET request is made to "/ed-fi/schools?totalCount=true&limit=2"
              Then getting less schools than the total-count
