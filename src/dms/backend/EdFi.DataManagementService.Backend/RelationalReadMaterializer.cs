@@ -62,6 +62,15 @@ public interface IRelationalReadMaterializer
     JsonNode Materialize(RelationalReadMaterializationRequest request);
 
     IReadOnlyList<MaterializedDocument> MaterializePage(RelationalReadPageMaterializationRequest request);
+
+    /// <summary>
+    /// Final response-shaping pass: strips the <c>link</c> subtree from every document-reference
+    /// object when <see cref="ResourceLinksOptions.Enabled"/> is <see langword="false"/>; no-op
+    /// otherwise. Invoked by the repository wrapper after readable-profile projection so the
+    /// flag governs the served body without affecting intermediate caching or <c>_etag</c>.
+    /// Safe to call unconditionally — mutates <paramref name="document"/> in place.
+    /// </summary>
+    void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan);
 }
 
 internal sealed class RelationalReadMaterializer(
@@ -119,20 +128,25 @@ internal sealed class RelationalReadMaterializer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // When the request carries a MappingSet, use the resolver-aware overload — the
-        // reconstituted intermediate is always link-bearing (caller-agnostic). The
-        // ResourceLinksOptions.Enabled flag is honored at the response-serialization
-        // boundary via StripReferenceLinks in InjectApiMetadata, not by suppressing
-        // emission here. Legacy callers without a MappingSet fall back to the no-link
-        // overload.
-        var reconstitutedDocuments = request.MappingSet is { } mappingSet
-            ? DocumentReconstituter.ReconstitutePage(
-                request.ReadPlan,
-                request.HydratedPage,
-                mappingSet,
-                _slugResolver
-            )
-            : DocumentReconstituter.ReconstitutePage(request.ReadPlan, request.HydratedPage);
+        // The resolver-aware (link-bearing) overload runs only for ExternalResponse reads —
+        // StoredDocument-mode reads are internal read-modify-write fetches per
+        // RelationalGetRequestContracts.cs:22 and must not carry server-only `link`
+        // decorations (otherwise profile write merge can copy them back into the request
+        // body via ProfileWriteValidationMiddleware.MergeNestedObjectStrippedFields). Legacy
+        // ExternalResponse callers without a MappingSet also fall back to the no-link
+        // overload. The ResourceLinksOptions.Enabled flag is honored as the final response-
+        // shaping pass via StripReferenceLinks, invoked by the repository wrapper after
+        // readable-profile projection.
+        var reconstitutedDocuments =
+            request.ReadMode == RelationalGetRequestReadMode.ExternalResponse
+            && request.MappingSet is { } mappingSet
+                ? DocumentReconstituter.ReconstitutePage(
+                    request.ReadPlan,
+                    request.HydratedPage,
+                    mappingSet,
+                    _slugResolver
+                )
+                : DocumentReconstituter.ReconstitutePage(request.ReadPlan, request.HydratedPage);
 
         if (reconstitutedDocuments.Count != request.HydratedPage.DocumentMetadata.Count)
         {
@@ -159,7 +173,7 @@ internal sealed class RelationalReadMaterializer(
         ];
     }
 
-    private JsonNode ApplyReadMode(
+    private static JsonNode ApplyReadMode(
         JsonNode materializedDocument,
         DocumentMetadataRow documentMetadata,
         ResourceReadPlan readPlan,
@@ -182,13 +196,22 @@ internal sealed class RelationalReadMaterializer(
         };
     }
 
-    private JsonNode InjectApiMetadata(
+    public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(readPlan);
+
+        DocumentReconstituter.StripReferenceLinks(document, readPlan, _linksOptions);
+    }
+
+    private static JsonNode InjectApiMetadata(
         JsonNode materializedDocument,
         DocumentMetadataRow documentMetadata,
         ResourceReadPlan readPlan
     )
     {
         ArgumentNullException.ThrowIfNull(materializedDocument);
+        ArgumentNullException.ThrowIfNull(readPlan);
 
         if (materializedDocument is not JsonObject documentObject)
         {
@@ -197,19 +220,10 @@ internal sealed class RelationalReadMaterializer(
             );
         }
 
-        // Response-boundary strip pass — shapes the served body only when
-        // ResourceLinksOptions.Enabled is false. The reconstituted intermediate is always
-        // link-bearing (caller-agnostic, per design-docs/link-injection.md §Configuration
-        // and §Cache and Etag). Etag value is link-decoration-independent regardless of
-        // whether this strip pass runs: ResourceEtagFormatter canonicalizes by stripping
-        // {id, link, _etag, _lastModifiedDate} from every nested object before hashing
-        // (clarified by DMS-1005).
-        DocumentReconstituter.StripReferenceLinks(materializedDocument, readPlan, _linksOptions);
-
-        // ETag selection: the design carries a conditional for reusing a cached intermediate
-        // etag when (flag on AND no profile reshape AND cache hit). On this branch that
-        // branch is unreachable — there is no runtime cache — so we always recompute via the
-        // canonical formatter. The conditional moves in alongside the runtime-cache follow-on.
+        // ETag is computed over the link-bearing intermediate — the canonical formatter
+        // already strips {id, link, _etag, _lastModifiedDate} recursively before hashing
+        // (per DMS-1005), so the etag value is link-decoration-independent regardless of
+        // whether the response-boundary strip pass runs later in the repository wrapper.
         var etag = RelationalApiMetadataFormatter.FormatEtag(materializedDocument);
         documentObject[IdPropertyName] = documentMetadata.DocumentUuid.ToString();
         documentObject[EtagPropertyName] = etag;

@@ -102,14 +102,26 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         resolver.Calls.Should().BeEmpty();
     }
 
-    [Test]
-    public void It_does_not_emit_link_when_FK_is_present_but_lookup_map_misses()
+    // Parameterized over the binding's TargetResource shape (concrete School vs abstract
+    // EducationOrganization) to satisfy the discrete acceptance criterion in
+    // `06a-link-injection-implementation.md` §Unit tests: "concrete reference with non-null FK
+    // but auxiliary-lookup miss (no link)" + "abstract reference with auxiliary-lookup miss (no
+    // link)". The miss-suppression gate inside EmitReferenceLink fires before the binding's
+    // TargetResource is consulted, so both shapes structurally exercise the same code path —
+    // the parameterization formalizes the coverage rather than introducing a new branch.
+    [TestCase("Ed-Fi", "School", TestName = "concrete_reference_FK_present_lookup_miss")]
+    [TestCase("Ed-Fi", "EducationOrganization", TestName = "abstract_reference_FK_present_lookup_miss")]
+    public void It_does_not_emit_link_when_FK_is_present_but_lookup_map_misses(
+        string targetProjectName,
+        string targetResourceName
+    )
     {
         var resolver = new StubSlugResolver(_expectedSlug);
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: SchoolDocumentId,
             lookupRows: [], // no rows: lookup miss
-            resolver: resolver
+            resolver: resolver,
+            targetResource: new QualifiedResourceName(targetProjectName, targetResourceName)
         );
 
         result["schoolReference"]!["schoolId"]!.GetValue<int>().Should().Be(255901);
@@ -171,14 +183,6 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         resolver.Calls.Should().ContainSingle().Which.Should().Be(concreteSubclassResourceKeyId);
         result["schoolReference"]!["link"]!["rel"]!.GetValue<string>().Should().Be("School");
     }
-
-    // NOTE: an abstract-reference + lookup-miss test was considered but is functionally
-    // identical to the concrete-reference + lookup-miss test above
-    // (It_does_not_emit_link_when_FK_is_present_but_lookup_map_misses) — the miss-suppression
-    // gate fires inside EmitReferenceLink before the resolver runs, regardless of whether
-    // the binding's TargetResource is abstract or concrete. The abstract-vs-concrete code
-    // path only diverges on a HIT, which is covered by
-    // It_resolves_concrete_subclass_for_abstract_reference_via_ResourceKeyId above.
 
     [Test]
     public void It_resolves_two_references_targeting_the_same_DocumentId_via_a_single_lookup_row()
@@ -256,10 +260,11 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
     private static JsonNode ReconstituteSingleDocument(
         long? schoolDocumentIdFk,
         IReadOnlyList<(long DocumentId, Guid DocumentUuid, short ResourceKeyId)> lookupRows,
-        IDocumentLinkSlugResolver resolver
+        IDocumentLinkSlugResolver resolver,
+        QualifiedResourceName? targetResource = null
     )
     {
-        var readPlan = BuildReadPlan();
+        var readPlan = BuildReadPlan(targetResource ?? _schoolResource);
         var hydratedPage = BuildHydratedPage(schoolDocumentIdFk, lookupRows);
 
         var results = DocumentReconstituter.ReconstitutePage(
@@ -273,7 +278,9 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         return results[0];
     }
 
-    private static ResourceReadPlan BuildReadPlan()
+    private static ResourceReadPlan BuildReadPlan() => BuildReadPlan(_schoolResource);
+
+    private static ResourceReadPlan BuildReadPlan(QualifiedResourceName targetResource)
     {
         var rootTable = BuildRootTableModel();
         var model = new RelationalResourceModel(
@@ -289,7 +296,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
                     ReferenceObjectPath: _schoolReferencePath,
                     Table: rootTable.Table,
                     FkColumn: new DbColumnName("School_DocumentId"),
-                    TargetResource: _schoolResource,
+                    TargetResource: targetResource,
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
@@ -310,7 +317,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
                 new ReferenceIdentityProjectionBinding(
                     IsIdentityComponent: true,
                     ReferenceObjectPath: _schoolReferencePath,
-                    TargetResource: _schoolResource,
+                    TargetResource: targetResource,
                     FkColumnOrdinal: 1,
                     IdentityFieldOrdinalsInOrder:
                     [

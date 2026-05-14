@@ -71,6 +71,7 @@ internal sealed class RecordingMssqlDocumentHydrator(
     public async Task<HydratedPage> HydrateAsync(
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken ct
     )
     {
@@ -81,7 +82,15 @@ internal sealed class RecordingMssqlDocumentHydrator(
         await using var connection = new SqlConnection(selectedInstance.ConnectionString);
         await connection.OpenAsync(ct);
 
-        return await HydrationExecutor.ExecuteAsync(connection, plan, keyset, SqlDialect.Mssql, null, ct);
+        return await HydrationExecutor.ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            SqlDialect.Mssql,
+            transaction: null,
+            executionOptions,
+            ct
+        );
     }
 }
 
@@ -109,6 +118,9 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
         _recorder.RecordPageMaterialization(materializedDocuments);
         return materializedDocuments;
     }
+
+    public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan) =>
+        _inner.StripReferenceLinks(document, readPlan);
 }
 
 internal sealed class IntegrationFixtureSlugResolver : IDocumentLinkSlugResolver

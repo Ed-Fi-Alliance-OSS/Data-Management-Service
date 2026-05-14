@@ -111,12 +111,13 @@ Soft dependency:
   hydration SQL, no discriminator column binding, no startup trigger-existence validation, and no
   backfill for reference-target `DocumentUuid`.
 - Feature flag `DataManagement:ResourceLinks:Enabled` (default `true`) controls emission as a
-  **response filter**. When `false`, `link` subtrees are stripped from the reconstituted
-  intermediate document inside the read materializer, immediately before `_etag` is computed;
-  readable-profile projection runs subsequently in the repository layer and does not recompute
-  `_etag`. Strip-before-projection is functionally equivalent to strip-after-projection because
-  profile projection only removes fields and never injects `link`. `link` is excluded from
-  `_etag` canonicalization in both flag states (the canonical formatter strips
+  **response filter**. When `false`, `link` subtrees are stripped from the served body as the
+  final response-shaping pass in the repository wrapper — after the materializer injects API
+  metadata (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection (when
+  applicable) runs, immediately before the body is returned to the caller. The materializer's
+  reconstituted intermediate is always link-bearing (caller-agnostic), `_etag` is computed once
+  over that intermediate, and the strip pass mutates only the served projection. `link` is
+  excluded from `_etag` canonicalization in both flag states (the canonical formatter strips
   `{id, link, _etag, _lastModifiedDate}` recursively before hashing), so the strip pass does not
   cause `_etag` recomputation or mismatch. The auxiliary lookup and plan compilation are
   unaffected by the flag; flag-off does not reduce database work. No per-resource, per-request,
@@ -129,10 +130,10 @@ Soft dependency:
   dms.Document.ContentLastModifiedAt`). `dms.DocumentCache` stores cached `ContentVersion`
   alongside the materialized `_etag/_lastModifiedDate`.
 - `dms.DocumentCache` stores the fully reconstituted caller-agnostic intermediate document with
-  `link` subtrees already present. The `ResourceLinks:Enabled` strip pass runs on the
-  reconstituted intermediate inside the read materializer immediately before `_etag` is
-  computed; readable-profile projection runs after the materializer returns and does not
-  recompute `_etag`.
+  `link` subtrees already present. The `ResourceLinks:Enabled` strip pass runs as the final
+  response-shaping pass in the repository wrapper, after the materializer's `_etag` injection
+  and after readable-profile projection. `_etag` is computed once inside the materializer over
+  the link-bearing intermediate and survives both projection and strip unchanged.
 - `_etag` is a resource-state validator, not a response-decoration validator. It is computed with
   `link` excluded from canonicalization whether links are present or stripped. Use the cached
   materialized full-resource `_etag` for both unprofiled and profiled responses. Readable-profile
@@ -247,17 +248,17 @@ Soft dependency:
    (flag flips take effect at next process restart; hot-reload via `IOptionsMonitor<T>` is not a
    V1 requirement). The options type is consumed only at the response-serialization boundary, not
    in the plan compiler or reconstitution engine.
-6. Read-materializer strip pass: apply the `ResourceLinks:Enabled` strip pass to the
-   reconstituted intermediate document inside the read materializer, immediately before
-   `_etag` is computed. Readable-profile projection runs subsequently in the repository layer
-   and does not recompute `_etag`. Strip-before-projection is functionally equivalent to
-   strip-after-projection because profile projection only removes fields and never injects
-   `link`. The strip removes exactly the `link` subtree on reference objects; other
-   server-generated fields (`_etag`, `_lastModifiedDate`) are untouched. `link` is excluded
-   from `_etag` canonicalization in both flag states, so the strip pass does not cause `_etag`
-   recomputation or mismatch. Use the cached materialized full-resource `_etag` for both
-   unprofiled and profiled responses; readable profile projection does not create a separate
-   ETag surface per `design-docs/update-tracking.md` §Serving API metadata.
+6. Response-boundary strip pass: apply the `ResourceLinks:Enabled` strip pass as the final
+   response-shaping pass in the repository wrapper — after the materializer injects API
+   metadata (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection (when
+   applicable) runs, immediately before the body is returned to the caller. The materializer's
+   reconstituted intermediate is always link-bearing (caller-agnostic) and `_etag` is computed
+   once over that intermediate. The strip removes exactly the `link` subtree on reference
+   objects; other server-generated fields (`_etag`, `_lastModifiedDate`) are untouched. `link`
+   is excluded from `_etag` canonicalization in both flag states, so the strip pass does not
+   cause `_etag` recomputation or mismatch. Use the cached materialized full-resource `_etag`
+   for both unprofiled and profiled responses; readable profile projection does not create a
+   separate ETag surface per `design-docs/update-tracking.md` §Serving API metadata.
 7. When `dms.DocumentCache` is provisioned: extend it to store cached `ContentVersion` alongside
    the materialized `_etag/_lastModifiedDate` so the two-input freshness check
    (`cached ContentVersion == dms.Document.ContentVersion AND cached LastModifiedAt ==

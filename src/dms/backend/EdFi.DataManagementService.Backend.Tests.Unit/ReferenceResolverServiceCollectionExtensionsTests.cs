@@ -6,7 +6,6 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -291,6 +290,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         public Task<HydratedPage> HydrateAsync(
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
+            HydrationExecutionOptions executionOptions,
             CancellationToken ct
         )
         {

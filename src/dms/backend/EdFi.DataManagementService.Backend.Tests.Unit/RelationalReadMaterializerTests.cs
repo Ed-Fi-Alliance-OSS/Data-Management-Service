@@ -470,13 +470,15 @@ public class Given_RelationalReadMaterializer
 }
 
 /// <summary>
-/// Verifies link emission and etag self-consistency at the materializer boundary
-/// (<see cref="RelationalReadMaterializer.InjectApiMetadata"/>): flag-on responses carry
-/// <c>link</c> on every document reference, flag-off responses do not, and in both cases
-/// the <c>_etag</c> on the response equals <c>FormatEtag(servedBody)</c>. The canonical
-/// formatter strips <c>{id, link, _etag, _lastModifiedDate}</c> recursively before hashing,
-/// so the etag value is link-decoration-independent (see <c>design-docs/link-injection.md</c>
-/// §Cache and Etag, clarified by DMS-1005).
+/// Verifies link emission and etag self-consistency at the materializer boundary: the
+/// reconstituted intermediate is always link-bearing (caller-agnostic) and the <c>_etag</c>
+/// on the response equals <c>FormatEtag(servedBody)</c>. The canonical formatter strips
+/// <c>{id, link, _etag, _lastModifiedDate}</c> recursively before hashing, so the etag value
+/// is link-decoration-independent (see <c>design-docs/link-injection.md</c> §Cache and Etag,
+/// clarified by DMS-1005). The <see cref="ResourceLinksOptions.Enabled"/> flag-off strip pass
+/// is exercised separately via <see cref="IRelationalReadMaterializer.StripReferenceLinks"/>
+/// because the materializer no longer applies it as part of <c>Materialize</c> — the
+/// repository wrapper drives the strip after readable-profile projection.
 /// </summary>
 [TestFixture]
 [Parallelizable]
@@ -514,18 +516,20 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     );
 
     [Test]
-    public void It_computes_etag_over_the_link_bearing_body_when_links_enabled()
+    public void It_emits_link_bearing_intermediate_with_self_consistent_etag()
     {
         var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = true });
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
 
         var result = MaterializeSingleExternalResponse(sut, readPlan);
 
-        // Link is present on the reference object.
+        // The reconstituted intermediate is always link-bearing (caller-agnostic) regardless
+        // of ResourceLinksOptions.Enabled — the flag is honored by the response-boundary
+        // strip pass in the repository wrapper, not inside the materializer.
         result["schoolReference"]!
             ["link"]
             .Should()
-            .NotBeNull("link must be emitted when ResourceLinksOptions.Enabled is true");
+            .NotBeNull("materializer must emit link-bearing intermediate");
         result["schoolReference"]!["link"]!["rel"]!.GetValue<string>().Should().Be("School");
 
         // _etag is the canonical SHA-256 produced by FormatEtag, which strips
@@ -541,60 +545,36 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     }
 
     [Test]
-    public void It_computes_etag_over_the_link_free_body_when_links_disabled()
+    public void It_strips_link_subtrees_via_StripReferenceLinks_when_links_disabled()
     {
         var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = false });
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
-
         var result = MaterializeSingleExternalResponse(sut, readPlan);
 
-        // Strip pass shaped the served body: no link on the reference object.
-        result["schoolReference"]!
-            ["link"]
-            .Should()
-            .BeNull("link must be stripped when ResourceLinksOptions.Enabled is false");
+        // Precondition: the materialized intermediate carries link even when the flag is off.
+        result["schoolReference"]!["link"].Should().NotBeNull("strip is a separate post-projection pass");
 
-        // _etag is the canonical SHA-256 produced by FormatEtag (which strips
-        // {id, link, _etag, _lastModifiedDate} recursively before hashing). Passing the
-        // served document back into FormatEtag must reproduce the same value — etag
-        // self-consistency.
-        result["_etag"]!
-            .GetValue<string>()
+        sut.StripReferenceLinks(result, readPlan);
+
+        result["schoolReference"]!
+            .AsObject()
             .Should()
-            .Be(
-                RelationalApiMetadataFormatter.FormatEtag(result),
-                "etag must be self-consistent with FormatEtag against the served body (canonical/link-stripped hash)"
-            );
+            .NotContainKey("link", "StripReferenceLinks must remove the link subtree when Enabled is false");
     }
 
     [Test]
-    public void It_produces_identical_etags_for_enabled_versus_disabled_on_the_same_input()
+    public void It_does_not_strip_link_subtrees_via_StripReferenceLinks_when_links_enabled()
     {
+        var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = true });
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+        var result = MaterializeSingleExternalResponse(sut, readPlan);
 
-        var withLink = MaterializeSingleExternalResponse(
-            CreateMaterializer(new ResourceLinksOptions { Enabled = true }),
-            readPlan
-        );
-        var withoutLink = MaterializeSingleExternalResponse(
-            CreateMaterializer(new ResourceLinksOptions { Enabled = false }),
-            readPlan
-        );
+        sut.StripReferenceLinks(result, readPlan);
 
-        // Sanity: the two served bodies differ structurally (one has link, one doesn't).
-        withLink["schoolReference"]!.AsObject().Should().ContainKey("link");
-        withoutLink["schoolReference"]!.AsObject().Should().NotContainKey("link");
-
-        // The etags MUST be equal: the canonical formatter strips link recursively before
-        // hashing, so the served-body link presence does not participate in the etag value.
-        // See design-docs/link-injection.md §Cache and Etag (clarified by DMS-1005).
-        withLink["_etag"]!
-            .GetValue<string>()
+        result["schoolReference"]!
+            ["link"]
             .Should()
-            .Be(
-                withoutLink["_etag"]!.GetValue<string>(),
-                "_etag derives from the canonical resource-state body (link-stripped); flag toggle MUST NOT change _etag for the same canonical state"
-            );
+            .NotBeNull("StripReferenceLinks must be a no-op when ResourceLinksOptions.Enabled is true");
     }
 
     /// <summary>
@@ -738,6 +718,85 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             .AsObject()
             .Should()
             .NotContainKey("link", "no-link overload must omit the link property entirely");
+    }
+
+    /// <summary>
+    /// Pins the StoredDocument-mode contract: a read with
+    /// <see cref="RelationalGetRequestReadMode.StoredDocument"/> must route to the no-link
+    /// reconstitution overload even when the caller supplies a <see cref="MappingSet"/> and a
+    /// populated <see cref="HydratedDocumentReferenceLookup"/>. StoredDocument is the internal
+    /// read-modify-write shape (see <c>RelationalGetRequestContracts.cs:22</c>); a leaking
+    /// server-only <c>link</c> subtree would be copied back into the request body by
+    /// <c>ProfileWriteValidationMiddleware.MergeNestedObjectStrippedFields</c>. The throwing
+    /// resolver below converts any silent routing slip into a loud test failure.
+    /// </summary>
+    [Test]
+    public void It_does_not_emit_link_on_stored_document_mode_even_when_mapping_set_and_lookup_are_passed()
+    {
+        var sut = new RelationalReadMaterializer(
+            new ThrowingSlugResolver(),
+            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true })
+        );
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+        object?[] row = [1L, (object?)SchoolDocumentId, 255901];
+        var metadata = new DocumentMetadataRow(
+            DocumentId: 1L,
+            DocumentUuid: AcademicWeekDocumentUuid,
+            ContentVersion: 1L,
+            IdentityVersion: 1L,
+            ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+        );
+        var hydratedPage = new HydratedPage(
+            TotalCount: null,
+            DocumentMetadata: [metadata],
+            TableRowsInDependencyOrder: [new HydratedTableRows(readPlan.Model.Root, [row])],
+            DescriptorRowsInPlanOrder: []
+        )
+        {
+            DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+            ]),
+        };
+
+        // StoredDocument-mode request with both MappingSet AND DocumentReferenceLookup populated.
+        // The materializer must route to the no-link overload anyway — the throwing resolver
+        // converts any invocation into a loud failure.
+        Action act = () =>
+            sut.MaterializePage(
+                new RelationalReadPageMaterializationRequest(
+                    readPlan,
+                    hydratedPage,
+                    RelationalGetRequestReadMode.StoredDocument
+                )
+                {
+                    MappingSet = BuildMappingSet(),
+                }
+            );
+
+        act.Should()
+            .NotThrow(
+                "StoredDocument-mode reads must route to the no-link overload — never invoke the slug resolver"
+            );
+
+        var materialized = sut.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                hydratedPage,
+                RelationalGetRequestReadMode.StoredDocument
+            )
+            {
+                MappingSet = BuildMappingSet(),
+            }
+        );
+        materialized.Should().ContainSingle();
+        materialized[0].Document["schoolReference"]!
+            .AsObject()
+            .Should()
+            .NotContainKey(
+                "link",
+                "StoredDocument-mode reads must never carry server-generated link decorations"
+            );
     }
 
     /// <summary>

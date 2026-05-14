@@ -114,8 +114,9 @@ public static class DocumentReconstituter
     /// <see cref="LinkEmissionContext"/> is always built when a <see cref="MappingSet"/> and
     /// resolver are in scope — the reconstituted intermediate is caller-agnostic and
     /// link-bearing per <c>design-docs/link-injection.md</c> §Configuration and §Cache and Etag.
-    /// <c>ResourceLinksOptions.Enabled = false</c> is honored at the response-serialization
-    /// boundary via <see cref="StripReferenceLinks"/>, not by suppressing emission here.
+    /// <c>ResourceLinksOptions.Enabled = false</c> is honored by the final response-shaping
+    /// pass in the repository wrapper via <see cref="StripReferenceLinks"/>, not by suppressing
+    /// emission here.
     /// </summary>
     public static IReadOnlyList<JsonNode> ReconstitutePage(
         ResourceReadPlan readPlan,

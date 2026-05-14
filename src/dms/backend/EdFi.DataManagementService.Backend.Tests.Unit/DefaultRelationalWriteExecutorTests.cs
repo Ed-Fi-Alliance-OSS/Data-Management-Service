@@ -4777,6 +4777,11 @@ public class Given_Default_Relational_Write_Executor
                 )),
             ];
         }
+
+        public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan)
+        {
+            // No-op recording double — write executor paths never invoke the strip pass.
+        }
     }
 
     // ── Top-level collection profile routing tests ──────────────────────────

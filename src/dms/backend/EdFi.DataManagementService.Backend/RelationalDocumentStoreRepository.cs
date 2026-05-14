@@ -751,7 +751,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         var hydratedPage = await _documentHydrator
-            .HydrateAsync(readPlan, plannedQuery, default)
+            .HydrateAsync(readPlan, plannedQuery, new HydrationExecutionOptions(), default)
             .ConfigureAwait(false);
 
         return BuildQuerySuccess(relationalQueryRequest, resource, readPlan, hydratedPage);
@@ -966,8 +966,20 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        // StoredDocument-mode reads do not emit `link`, so the auxiliary document-reference
+        // lookup is wasted work — opt out via IncludeDocumentReferenceLookup: false. Descriptor
+        // URIs are still needed for both read modes.
+        var hydrationExecutionOptions = new HydrationExecutionOptions(
+            IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
+                == RelationalGetRequestReadMode.ExternalResponse
+        );
         var hydratedPage = await _documentHydrator
-            .HydrateAsync(readPlan, new PageKeysetSpec.Single(existingDocument.DocumentId), default)
+            .HydrateAsync(
+                readPlan,
+                new PageKeysetSpec.Single(existingDocument.DocumentId),
+                hydrationExecutionOptions,
+                default
+            )
             .ConfigureAwait(false);
 
         if (hydratedPage.DocumentMetadata.Count == 0)
@@ -1024,6 +1036,12 @@ public sealed class RelationalDocumentStoreRepository(
                 projectionContext.IdentityPropertyNames
             );
         }
+
+        // Final response-shaping pass — strips `link` subtrees when ResourceLinksOptions.Enabled
+        // is false. Runs after readable-profile projection so the flag governs the served body,
+        // not the cached intermediate. No-op when Enabled is true. See
+        // design-docs/link-injection.md §Feature Flag and §Cache and Etag.
+        _readMaterializer.StripReferenceLinks(edfiDoc, readPlan);
 
         return new GetResult.GetSuccess(
             new DocumentUuid(documentMetadata.DocumentUuid),
@@ -1135,6 +1153,8 @@ public sealed class RelationalDocumentStoreRepository(
                     projectionContext.IdentityPropertyNames
                 );
             }
+
+            _readMaterializer.StripReferenceLinks(projectedOrUnchangedDocument, readPlan);
 
             edfiDocs.Add(projectedOrUnchangedDocument);
         }
