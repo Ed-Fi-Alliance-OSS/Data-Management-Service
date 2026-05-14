@@ -58,6 +58,7 @@ Feature: Profile Reference Filtering
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 IncludeOnly reference profile is currently unsupported on read
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-IncludeOnly" for resource "School"
@@ -120,6 +121,7 @@ Feature: Profile Reference Filtering
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 ExcludeOnly profile excludes configured reference properties on read
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-ExcludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-ExcludeOnly" for resource "School"
@@ -182,6 +184,7 @@ Feature: Profile Reference Filtering
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 IncludeOnly reference write profile is currently unsupported on write
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-IncludeOnly" for resource "School" with body
@@ -217,6 +220,7 @@ Feature: Profile Reference Filtering
              And the response body should have error message "is not supported by this host"
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 ExcludeOnly reference write profile excludes configured reference members
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-ExcludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-ExcludeOnly" for resource "School" with body

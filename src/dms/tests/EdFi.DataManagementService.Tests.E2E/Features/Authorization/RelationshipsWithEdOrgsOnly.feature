@@ -13,6 +13,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Ensure client can create a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -43,6 +44,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
              Then it should respond with 201 or 200
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 Ensure client can update a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -131,6 +133,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Ensure client can not create a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -185,6 +188,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 Ensure client can not update a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -380,6 +384,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 07 Ensure client can get the bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -437,6 +442,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 08 Ensure client can delete a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -624,6 +630,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 13.1 Ensure client with access to state education agency 2 can post and put classPeriods for school 20201
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a POST request is made to "/ed-fi/academicWeeks" with
@@ -721,6 +728,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 13.5 Ensure client with access to state education agency 2 can get by id school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks/{id}"
@@ -740,6 +748,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 13.6 Ensure client with access to state education agency 2 can delete school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a DELETE request is made to "/ed-fi/academicWeeks/{id}"
@@ -904,6 +913,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district |
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 20 Ensure client can create an LEA
              When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -921,6 +931,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
              Then it should respond with 201
                   
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 21 Ensure client can retrieve an LEA
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -992,6 +1003,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 23 Ensure client can update an LEA
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -1026,6 +1038,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
              Then it should respond with 204
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 24 Ensure client can delete an LEA
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """

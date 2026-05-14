@@ -26,6 +26,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | "12"            | Unauthorized student | student-ln  | 2008-01-01 |
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Ensure client can create a StudentSchoolAssociation
              When a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -59,6 +60,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              Then it should respond with 403
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Ensure client can retrieve a StudentSchoolAssociation
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -153,6 +155,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 06 Ensure client can update a StudentSchoolAssociation
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -243,6 +246,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              Then it should respond with 403
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 09 Ensure client can delete a StudentSchoolAssociation
             Given  a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -281,6 +285,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "2255901001"
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 10 Ensure client can create a Student
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -294,6 +299,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              Then it should respond with 201
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 11 Ensure client can retrieve a Student
              When a GET request is made to "/ed-fi/students/{StudentId}"
              Then it should respond with 200
@@ -336,6 +342,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 15 Ensure client can update a Student
              When a PUT request is made to "/ed-fi/students/{StudentId}" with
                   """
@@ -376,6 +383,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              Then it should respond with 403
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 18 Ensure client can delete a Student
             Given a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
 
@@ -404,6 +412,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "3255901001, 3255902001"
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 19 Ensure client can create a Student-securable
              When a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """
@@ -1387,6 +1396,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
 
     Rule: Edge cases are properly authorized
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 42 Ensure client can CRUD a PostSecondaryEvent using the NoFurtherAuthorizationRequired strategy
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "7255901001, 7255902001"
               And the system has these "schools"
@@ -1451,6 +1461,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              Then it should respond with 204
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 43 Ensure client without education organization access can CRUD a PostSecondaryEvent using the NoFurtherAuthorizationRequired strategy
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "8255901001, 8255902001"
               And the system has these "schools"

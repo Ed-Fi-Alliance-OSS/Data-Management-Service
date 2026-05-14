@@ -7,21 +7,25 @@ Feature: OWASP critical attack path protections
                   | 1001     | Security School   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 SQL injection payload in query string numeric field is rejected
              When a GET request is made to "/ed-fi/schools?schoolId=9999' OR 1=1--"
              Then it should respond with 400
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 01a SQL injection payload in query string numeric field is rejected
              When a GET request is made to "/ed-fi/schools?OR 1=1--schoolId=9999"
              Then it should respond with 400
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 01b SQL injection payload in query string numeric field is rejected
              When a GET request is made to "/ed-fi/schools?+OR+1%3D1+--schoolId=9999"
              Then it should respond with 400
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 SQL injection payload in JSON body numeric field is rejected
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -43,6 +47,7 @@ Feature: OWASP critical attack path protections
              Then it should respond with 400
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 CSRF style forged browser request without bearer token is rejected
             Given there is no Authorization header
              When an unauthenticated POST request is made to "/ed-fi/schools" with header "Origin" value "https://malicious.attacker" and
@@ -65,11 +70,13 @@ Feature: OWASP critical attack path protections
              Then it should respond with 401
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 Path traversal attempts are not resolved as files
              When a GET request is made to "/../appsettings.json"
              Then it should respond with 404
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 05 X-Forwarded-Proto spoofing does not bypass authentication
             Given there is no Authorization header
              When an unauthenticated POST request is made to "/ed-fi/schools" with header "X-Forwarded-Proto" value "https" and
@@ -92,6 +99,7 @@ Feature: OWASP critical attack path protections
              Then it should respond with 401
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 06 X-Forwarded-Host spoofing does not bypass authentication
             Given there is no Authorization header
              When an unauthenticated POST request is made to "/ed-fi/schools" with header "X-Forwarded-Host" value "trusted.local" and
@@ -117,6 +125,7 @@ Feature: OWASP critical attack path protections
         # so the rejected request actually fails the signature validation before expiry is evaluated.
         # A pure expired-token check would need an issued token to naturally lapse (or a configurable IdP).
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 06a Expired JWT is rejected
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And the token is expired
@@ -128,6 +137,7 @@ Feature: OWASP critical attack path protections
         # This scenario validates that authentication is enforced on all unauthenticated requests
         # regardless of any Host-like header value — it does NOT verify server-side Host validation.
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 07 Unauthenticated request with Host header is rejected by authentication
             Given there is no Authorization header
              When an unauthenticated POST request is made to "/ed-fi/schools" with header "Host" value "trusted.local" and
@@ -150,6 +160,7 @@ Feature: OWASP critical attack path protections
              Then it should respond with 401
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 08 Allowed CORS origin receives Access-Control-Allow-Origin
              When a security GET request is made to "/ed-fi/schools" with header "Origin" value "http://localhost:8082"
              Then it should respond with 200
@@ -161,12 +172,14 @@ Feature: OWASP critical attack path protections
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 09 Disallowed CORS origin does not receive Access-Control-Allow-Origin
              When a security GET request is made to "/ed-fi/schools" with header "Origin" value "https://malicious.attacker"
              Then it should respond with 200
               And the response header "Access-Control-Allow-Origin" is not present
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 10 Malformed JSON request body is rejected
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -198,6 +211,7 @@ Feature: OWASP critical attack path protections
         # Real browser CORS preflights are unauthenticated; the assertion (no allow-origin for
         # disallowed origins) is independent of auth and is still correct here.
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 12 Disallowed CORS preflight does not return allow-origin header
              When an "OPTIONS" request is made to "/ed-fi/schools" with headers
                   | Key                           | Value                |
@@ -209,6 +223,7 @@ Feature: OWASP critical attack path protections
         # Note: the bearer token is included by the step helper; TRACE rejection (404/405) is
         # enforced at the routing layer regardless of auth state.
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 13 Unsupported TRACE method is not enabled
              When an "TRACE" request is made to "/ed-fi/schools" with headers
                   | Key    | Value |
@@ -279,6 +294,7 @@ Feature: OWASP critical attack path protections
              Then it should respond with 403
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 16a Deleting a referenced student returns conflict
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And the system has these "schools"
@@ -294,6 +310,7 @@ Feature: OWASP critical attack path protections
              Then it should respond with 409
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 17 CSRF style forged browser cookie request without bearer token is rejected
             Given there is no Authorization header
              When an unauthenticated POST request is made to "/ed-fi/schools" with header "Cookie" value "sessionid=forged-session-id" and
@@ -316,6 +333,7 @@ Feature: OWASP critical attack path protections
              Then it should respond with 401
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 18 SQL injection payload in string query field is treated as data
              When a GET request is made to "/ed-fi/schools?nameOfInstitution=%27%20OR%20%271%27%3D%271"
              Then it should respond with 200
@@ -325,6 +343,7 @@ Feature: OWASP critical attack path protections
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 19 CSRF style browser form post without bearer token is rejected
             Given there is no Authorization header
              When an unauthenticated Form URL Encoded POST request is made to "/ed-fi/schools" with

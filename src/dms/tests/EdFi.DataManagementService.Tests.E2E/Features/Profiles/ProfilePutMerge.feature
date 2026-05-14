@@ -100,6 +100,7 @@ Feature: Profile PUT Merge Functionality
                   | uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade                   |
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 PUT with collection item filter preserves filtered-out items from existing document
             # First create the school with all grade levels using IncludeAll profile (all ARE saved)
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeAll" for resource "School" with body

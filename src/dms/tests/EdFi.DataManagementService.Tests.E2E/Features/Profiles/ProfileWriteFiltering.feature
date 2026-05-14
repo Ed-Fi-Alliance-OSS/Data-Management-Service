@@ -98,6 +98,7 @@ Feature: Profile Write Filtering
              And the response body should not contain fields "webSite, shortNameOfInstitution"
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 POST with ExcludeOnly write profile preserves non-excluded fields
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-ExcludeOnly" for resource "School" with body
                   """

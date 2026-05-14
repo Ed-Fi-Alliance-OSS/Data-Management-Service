@@ -6,6 +6,7 @@ Feature: Profile XML File Definition Validation
     Rule: Profiles loaded from XML files behave consistently with invalid definitions
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Profile with non-existent resource from XML file is rejected on use
             Given a profile "Test-Profile-With-Unexisting-Resource" is created from XML file "Profiles/TestXmls/InvalidProfiles.xml"
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-With-Unexisting-Resource" and namespacePrefixes "uri://ed-fi.org"
@@ -35,6 +36,7 @@ Feature: Profile XML File Definition Validation
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 Profile with non-existent property from XML file is rejected on use
             Given a profile "Test-Profile-With-Unexisting-Property" is created from XML file "Profiles/TestXmls/InvalidProfiles.xml"
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-With-Unexisting-Property" and namespacePrefixes "uri://ed-fi.org"
@@ -64,6 +66,7 @@ Feature: Profile XML File Definition Validation
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Profile with non-existent resource from XML file is rejected on write
             Given a profile "Test-Profile-With-Unexisting-Resource" is created from XML file "Profiles/TestXmls/InvalidProfiles.xml"
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-With-Unexisting-Resource" and namespacePrefixes "uri://ed-fi.org"
@@ -92,6 +95,7 @@ Feature: Profile XML File Definition Validation
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 Profile with non-existent property from XML file is rejected on write
             Given a profile "Test-Profile-With-Unexisting-Property" is created from XML file "Profiles/TestXmls/InvalidProfiles.xml"
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-With-Unexisting-Property" and namespacePrefixes "uri://ed-fi.org"

@@ -31,6 +31,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
 
     Rule: StudentEducationOrganizationResponsibilityAssociation CRUD is properly authorized
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Ensure client can create a StudentEducationOrganizationResponsibilityAssociation
              When a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """

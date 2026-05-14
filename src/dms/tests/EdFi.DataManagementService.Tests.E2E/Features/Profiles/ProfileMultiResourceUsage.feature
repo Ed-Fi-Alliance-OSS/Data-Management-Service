@@ -13,6 +13,7 @@ Feature: Multi-Resource Profile Usage
                   | uri://ed-fi.org/StudentCharacteristicDescriptor#504            |
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 GET on both resources included in the profile succeeds
              When a GET request is made to "/ed-fi/schools" with profile "E2E-Test-Student-And-School-IncludeAll" for resource "School"
              Then the profile response status is 200
@@ -20,6 +21,7 @@ Feature: Multi-Resource Profile Usage
              Then the profile response status is 200
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 POST on both resources included in the profile succeeds
              When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-Student-And-School-IncludeAll" for resource "School" with body
                   """
@@ -47,6 +49,7 @@ Feature: Multi-Resource Profile Usage
              Then the profile response status is 201
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 GET on resource not included in the profile returns 400
              When a GET request is made to "/ed-fi/staffs" with profile "E2E-Test-Student-And-School-IncludeAll" for resource "Staff"
              Then the profile response status is 400
@@ -55,6 +58,7 @@ Feature: Multi-Resource Profile Usage
               And the response body errors should match regex "(?i)Resource 'Staff' is not accessible through the 'e2e-test-student-and-school-includeall' profile specified by the content type\."
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 POST on resource not included in the profile returns 400
              When a POST request is made to "/ed-fi/staffs" with profile "E2E-Test-Student-And-School-IncludeAll" for resource "Staff" with body
                   """
@@ -70,6 +74,7 @@ Feature: Multi-Resource Profile Usage
               And the response body errors should match regex "(?i)Resource 'Staff' is not accessible through the 'e2e-test-student-and-school-includeall' profile specified by the content type\."
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: 05 Accept/Content-Type negotiation for all included resources
              When a GET request is made to "/ed-fi/schools" with Accept header "application/vnd.ed-fi.school.e2e-test-student-and-school-includeall.readable+json"
              Then the profile response status is 200
