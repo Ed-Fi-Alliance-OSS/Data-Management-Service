@@ -259,6 +259,28 @@ public class MetadataModuleTests
 
         var postProperties = ResolveJsonResponseSchemaProperties(doc, pathItem, "post", "201");
         postProperties.Should().ContainKeys("applicationId", "name", "key", "secret");
+
+        var apiClientByIdPath = "/v2/apiClients/{clientId}".TrimEnd('/').ToLowerInvariant();
+        pathMap
+            .Should()
+            .ContainKey(apiClientByIdPath, "path /v2/apiClients/{clientId} should exist in OpenAPI spec");
+        var pathItemById = pathMap[apiClientByIdPath];
+
+        var getByIdProperties = ResolveJsonResponseSchemaProperties(doc, pathItemById, "get", "200");
+        getByIdProperties.Should().ContainKey("name");
+        getByIdProperties.Should().ContainKey("clientUuid");
+
+        var resetCredentialPath = "/v2/apiClients/{id}/reset-credential".TrimEnd('/').ToLowerInvariant();
+        pathMap
+            .Should()
+            .ContainKey(
+                resetCredentialPath,
+                "path /v2/apiClients/{id}/reset-credential should exist in OpenAPI spec"
+            );
+        var pathItemResetCred = pathMap[resetCredentialPath];
+
+        var resetCredProperties = ResolveJsonResponseSchemaProperties(doc, pathItemResetCred, "put", "200");
+        resetCredProperties.Should().ContainKeys("applicationId", "name", "key", "secret");
     }
 
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)
