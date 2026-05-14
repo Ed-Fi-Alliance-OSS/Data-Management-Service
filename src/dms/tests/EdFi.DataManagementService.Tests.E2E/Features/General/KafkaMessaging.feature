@@ -3,6 +3,7 @@ Feature: Kafka Messaging
 
         @kafka
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 01 Test Kafka connectivity
             Given Kafka should be reachable
              Then Kafka consumer should be able to connect to topic "edfi.dms.document"

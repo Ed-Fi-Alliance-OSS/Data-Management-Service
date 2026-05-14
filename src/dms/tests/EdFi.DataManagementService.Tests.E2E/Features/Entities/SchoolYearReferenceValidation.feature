@@ -24,6 +24,7 @@ Feature: School Year Reference Validation
 
         @API-057
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 01 Try creating a resource using a valid school year
              When a POST request is made to "/ed-fi/calendars" with
                   """
@@ -43,6 +44,7 @@ Feature: School Year Reference Validation
 
         @API-058
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 02 Try creating a resource using an invalid school year
              When a POST request is made to "/ed-fi/calendars" with
                   """
@@ -78,6 +80,7 @@ Feature: School Year Reference Validation
 
         @API-059
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 03 Try creating a CalendarDate using a valid Calendar reference
              When a POST request is made to "/ed-fi/calendarDates" with
                   """
@@ -99,6 +102,7 @@ Feature: School Year Reference Validation
 
         @API-060
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 04 Try creating a CalendarDate using an invalid Calendar reference with an invalid School year
              When a POST request is made to "/ed-fi/calendarDates" with
                   """

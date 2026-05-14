@@ -11,6 +11,7 @@ Feature: Equality Constraint Validation
 
         @API-001
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 01 Post a valid bell schedule no equality constraint violations.
             Given the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -49,6 +50,7 @@ Feature: Equality Constraint Validation
 
         @API-002
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 02 Post an invalid bell schedule with equality constraint violations.
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -99,6 +101,7 @@ Feature: Equality Constraint Validation
 
         @API-003
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 03 Making a Post request when value does not match the same value in an array
              When a POST request is made to "/ed-fi/sections" with
                   """
@@ -143,6 +146,7 @@ Feature: Equality Constraint Validation
 
         @API-004
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 04 Making a Post request when a value matches the first scenario in an array but not the second
              When a POST request is made to "/ed-fi/sections" with
                   """
@@ -193,6 +197,7 @@ Feature: Equality Constraint Validation
 
         @API-005
         @relational-backend
+        @relational-ci-shard-4
         Scenario: 05 Making a Post request when value does not match the same value in a single other reference
              When a POST request is made to "/ed-fi/sections" with
                   """
