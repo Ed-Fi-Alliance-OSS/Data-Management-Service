@@ -82,19 +82,20 @@ Feature: JWT Token Introspection
 
   Rule: Resource API accepts a valid token
 
-    @API-229
+    @API-229 @relational-backend
     Scenario: Accept a Resource endpoint GET request where the token is valid
       Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
       When a GET request is made to "/ed-fi/academicWeeks"
       Then it should respond with 200
 
+    @relational-backend
     Scenario: Reject a Resource endpoint GET request where the token signature is manipulated
       Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
       And the token signature is manipulated
       When a GET request is made to "/ed-fi/academicWeeks"
       Then it should respond with 401
 
-    @DMS-823
+    @DMS-823 @relational-backend
     Scenario: Verify JWT token contains dmsInstanceIds claim
       Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
       Then the JWT token should contain the dmsInstanceIds claim
@@ -216,6 +217,7 @@ Feature: JWT Token Introspection
         }
         """
 
+    @relational-backend
     Scenario: 02 Missing token in request body returns bad request error
       When a POST request is made to "/oauth/token_info" with
         """
@@ -236,6 +238,7 @@ Feature: JWT Token Introspection
         }
         """
 
+    @relational-backend
     Scenario: 03 Token mismatch between Authorization header and request body returns bad request error
       When a POST request is made to "/oauth/token_info" with
         """

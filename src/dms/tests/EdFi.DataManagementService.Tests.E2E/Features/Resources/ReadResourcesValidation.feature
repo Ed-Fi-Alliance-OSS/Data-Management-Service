@@ -36,7 +36,7 @@ Feature: Resources "Read" Operation validations
              When a GET request is made to "/ed-fi/schools/{id}"
              Then it should respond with 404
 
-        @API-182
+        @API-182 @relational-backend
         Scenario: 02 Verify response code 200 when trying to get a student with a correct ID
             Given a POST request is made to "/ed-fi/students" with
                   """
