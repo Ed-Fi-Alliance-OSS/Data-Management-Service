@@ -202,6 +202,16 @@ Feature: The Discovery API provides information about the application version, s
                       "prefix": "Profiles"
                     },
                     {
+                      "name": "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly",
+                      "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-BellSchedule-ClassPeriods-IncludeOnly/resources-spec.json",
+                      "prefix": "Profiles"
+                    },
+                    {
+                      "name": "E2E-Test-Profile-Resource-References-IncludeOnly-Read",
+                      "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-Profile-Resource-References-IncludeOnly-Read/resources-spec.json",
+                      "prefix": "Profiles"
+                    },
+                    {
                       "name": "Test-Profile-Resource-Non-Creatable",
                       "endpointUri": "{BASE_URL}/metadata/specifications/profiles/Test-Profile-Resource-Non-Creatable/resources-spec.json",
                       "prefix": "Profiles"
