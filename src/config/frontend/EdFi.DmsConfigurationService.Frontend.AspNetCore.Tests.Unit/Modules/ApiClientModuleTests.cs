@@ -331,6 +331,41 @@ public class ApiClientModuleTests
         }
 
         [Test]
+        public async Task It_returns_name_and_applicationId_in_post_response()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var insertResponse = await client.PostAsync(
+                "/v2/apiClients",
+                new StringContent(
+                    """
+                    {
+                      "applicationId": 1,
+                      "name": "Test API Client",
+                      "isApproved": true,
+                      "dmsInstanceIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            var responseContent = await insertResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseContent);
+
+            actualResponse!["id"]!.GetValue<long>().Should().Be(1L);
+            actualResponse!["name"]!.GetValue<string>().Should().Be("Test API Client");
+            actualResponse!["applicationId"]!.GetValue<long>().Should().Be(1L);
+            actualResponse!["key"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            actualResponse!["secret"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        }
+
+        [Test]
         public async Task It_returns_success_response_for_reset_credential()
         {
             // Arrange
@@ -348,6 +383,8 @@ public class ApiClientModuleTests
             var actualResponse = JsonNode.Parse(responseContent);
 
             actualResponse!["id"]!.GetValue<long>().Should().Be(1);
+            actualResponse!["applicationId"]!.GetValue<long>().Should().Be(1L);
+            actualResponse!["name"]!.GetValue<string>().Should().Be("Test API Client");
             actualResponse!["key"]!.GetValue<string>().Should().NotBeNullOrEmpty();
             actualResponse!["secret"]!.GetValue<string>().Should().Be("new-secret-12345");
         }
@@ -1139,6 +1176,8 @@ public class ApiClientModuleTests
             var actualResponse = JsonNode.Parse(responseContent);
 
             actualResponse!["id"]!.GetValue<long>().Should().Be(1);
+            actualResponse!["applicationId"]!.GetValue<long>().Should().Be(1L);
+            actualResponse!["name"]!.GetValue<string>().Should().Be("Test API Client");
             actualResponse!["key"]!.GetValue<string>().Should().Be("test-client-id");
             actualResponse!["secret"]!.GetValue<string>().Should().Be("new-secret-67890");
         }

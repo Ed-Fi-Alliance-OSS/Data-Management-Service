@@ -227,6 +227,62 @@ public class MetadataModuleTests
             .BeTrue("GET /v2/profiles parameter 'name' schema should include string");
     }
 
+    [Test]
+    public async Task OpenApi_ApiClient_Response_Schemas_Expose_Story_Fields()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/openapi/v1.json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = System.Text.Json.JsonDocument.Parse(json);
+        var pathMap = doc
+            .RootElement.GetProperty("paths")
+            .EnumerateObject()
+            .ToDictionary(p => p.Name.TrimEnd('/').ToLowerInvariant(), p => p.Value);
+
+        var apiClientsPath = "/v2/apiClients".TrimEnd('/').ToLowerInvariant();
+        pathMap.Should().ContainKey(apiClientsPath, "path /v2/apiClients should exist in OpenAPI spec");
+        var pathItem = pathMap[apiClientsPath];
+
+        // Assert
+        var getProperties = ResolveJsonResponseSchemaProperties(doc, pathItem, "get", "200");
+        getProperties.Should().ContainKey("name");
+        getProperties.Should().ContainKey("clientUuid");
+
+        var postProperties = ResolveJsonResponseSchemaProperties(doc, pathItem, "post", "201");
+        postProperties.Should().ContainKeys("applicationId", "name", "key", "secret");
+
+        var apiClientByIdPath = "/v2/apiClients/{clientId}".TrimEnd('/').ToLowerInvariant();
+        pathMap
+            .Should()
+            .ContainKey(apiClientByIdPath, "path /v2/apiClients/{clientId} should exist in OpenAPI spec");
+        var pathItemById = pathMap[apiClientByIdPath];
+
+        var getByIdProperties = ResolveJsonResponseSchemaProperties(doc, pathItemById, "get", "200");
+        getByIdProperties.Should().ContainKey("name");
+        getByIdProperties.Should().ContainKey("clientUuid");
+
+        var resetCredentialPath = "/v2/apiClients/{id}/reset-credential".TrimEnd('/').ToLowerInvariant();
+        pathMap
+            .Should()
+            .ContainKey(
+                resetCredentialPath,
+                "path /v2/apiClients/{id}/reset-credential should exist in OpenAPI spec"
+            );
+        var pathItemResetCred = pathMap[resetCredentialPath];
+
+        var resetCredProperties = ResolveJsonResponseSchemaProperties(doc, pathItemResetCred, "put", "200");
+        resetCredProperties.Should().ContainKeys("applicationId", "name", "key", "secret");
+    }
+
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)
     {
         return type.ValueKind switch
@@ -239,5 +295,58 @@ public class MetadataModuleTests
                 ),
             _ => false,
         };
+    }
+
+    private static Dictionary<string, System.Text.Json.JsonElement> ResolveJsonResponseSchemaProperties(
+        System.Text.Json.JsonDocument doc,
+        System.Text.Json.JsonElement pathItem,
+        string method,
+        string statusCode
+    )
+    {
+        pathItem
+            .TryGetProperty(method, out var operation)
+            .Should()
+            .BeTrue($"{method.ToUpperInvariant()} should exist");
+        operation
+            .GetProperty("responses")
+            .TryGetProperty(statusCode, out var response)
+            .Should()
+            .BeTrue($"{method.ToUpperInvariant()} should define a {statusCode} response");
+        response.TryGetProperty("content", out var content).Should().BeTrue("response should define content");
+        content
+            .TryGetProperty("application/json", out var jsonContent)
+            .Should()
+            .BeTrue("response should define application/json content");
+        jsonContent.TryGetProperty("schema", out var schema).Should().BeTrue("content should define schema");
+
+        var objectSchema = ResolveObjectSchema(doc, schema);
+        objectSchema
+            .TryGetProperty("properties", out var properties)
+            .Should()
+            .BeTrue("schema should define properties");
+
+        return properties.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
+    }
+
+    private static System.Text.Json.JsonElement ResolveObjectSchema(
+        System.Text.Json.JsonDocument doc,
+        System.Text.Json.JsonElement schema
+    )
+    {
+        if (schema.TryGetProperty("type", out var type) && TypeIncludes(type, "array"))
+        {
+            schema.TryGetProperty("items", out var items).Should().BeTrue("array schema should define items");
+            return ResolveObjectSchema(doc, items);
+        }
+
+        if (schema.TryGetProperty("$ref", out var reference))
+        {
+            var referenceParts = reference.GetString()!.Split('/');
+            var schemaName = referenceParts[^1];
+            return doc.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(schemaName);
+        }
+
+        return schema;
     }
 }

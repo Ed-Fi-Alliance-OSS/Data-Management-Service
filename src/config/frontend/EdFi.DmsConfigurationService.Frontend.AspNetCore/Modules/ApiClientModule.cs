@@ -23,13 +23,19 @@ public class ApiClientModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredPost("/v2/apiClients/", InsertApiClient);
+        endpoints
+            .MapSecuredPost("/v2/apiClients/", InsertApiClient)
+            .Produces<ApiClientCredentialsResponse>(201);
         endpoints.MapSecuredPut($"/v2/apiClients/{{id}}", UpdateApiClient);
         endpoints.MapSecuredDelete($"/v2/apiClients/{{id}}", DeleteApiClient);
-        endpoints.MapSecuredPut($"/v2/apiClients/{{id}}/reset-credential", ResetCredential);
+        endpoints
+            .MapSecuredPut($"/v2/apiClients/{{id}}/reset-credential", ResetCredential)
+            .Produces<ApiClientCredentialsResponse>(200);
         // Limited access endpoints - accessible by service accounts for internal DMS operations
-        endpoints.MapLimitedAccess("/v2/apiClients/", GetAll);
-        endpoints.MapLimitedAccess("/v2/apiClients/{clientId}", GetByClientId);
+        endpoints.MapLimitedAccess("/v2/apiClients/", GetAll).Produces<List<ApiClientResponse>>(200);
+        endpoints
+            .MapLimitedAccess("/v2/apiClients/{clientId}", GetByClientId)
+            .Produces<ApiClientResponse>(200);
     }
 
     private async Task<IResult> InsertApiClient(
@@ -158,6 +164,8 @@ public class ApiClientModule : IEndpointModule
                             new ApiClientCredentialsResponse
                             {
                                 Id = success.Id,
+                                ApplicationId = command.ApplicationId,
+                                Name = command.Name,
                                 Key = clientId,
                                 Secret = clientSecret,
                             }
@@ -637,6 +645,8 @@ public class ApiClientModule : IEndpointModule
                     new ApiClientCredentialsResponse
                     {
                         Id = id,
+                        ApplicationId = apiClient.ApplicationId,
+                        Name = apiClient.Name,
                         Key = apiClient.ClientId,
                         Secret = resetSuccess.ClientSecret,
                     }
