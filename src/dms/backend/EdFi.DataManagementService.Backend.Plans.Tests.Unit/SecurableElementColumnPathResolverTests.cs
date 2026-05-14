@@ -1093,7 +1093,7 @@ public class Given_SecurableElementColumnPathResolver
         }
 
         [Test]
-        public void It_should_keep_a_valid_path_when_an_unresolvable_sibling_shares_the_same_metaed_name()
+        public void It_should_report_only_the_unresolved_path_when_a_valid_sibling_shares_the_same_metaed_name()
         {
             var rootTable = CreateRootTable(
                 Table("TestResource"),
@@ -1145,13 +1145,11 @@ public class Given_SecurableElementColumnPathResolver
             );
 
             var concrete = CreateConcrete(1, "Ed-Fi", "TestResource", model, securableElements);
-            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
-            results.Should().ContainSingle();
-            results[0].Kind.Should().Be(SecurableElementKind.EducationOrganization);
-            results[0].Steps.Should().ContainSingle();
-            results[0].Steps[0].SourceTable.Should().Be(rootTable.Table);
-            results[0].Steps[0].SourceColumnName.Should().Be(Col("SchoolReference_SchoolId"));
+            var exception = act.Should().Throw<InvalidOperationException>().Which;
+            exception.Message.Should().Contain("$.missingSchoolReference.schoolId");
+            exception.Message.Should().NotContain("$.schoolReference.schoolId");
         }
 
         [Test]
