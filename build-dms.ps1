@@ -270,7 +270,13 @@ function Get-E2ETestResultSuffix {
         $TestFilter
     )
 
+    $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
+
     if ($UseRelationalBackend) {
+        if ($normalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*relational-ci-shard-(\d+)\b') {
+            return "relational-shard-$($Matches[1])"
+        }
+
         return "relational"
     }
 
