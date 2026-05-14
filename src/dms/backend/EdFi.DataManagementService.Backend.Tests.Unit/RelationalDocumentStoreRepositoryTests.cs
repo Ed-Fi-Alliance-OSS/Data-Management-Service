@@ -1710,7 +1710,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             """
             {
               "id": "17171717-1111-2222-3333-444444444444",
-              "_etag": "\"91\"",
+              "_etag": "\"authorized-projected-etag-1\"",
               "_lastModifiedDate": "2026-04-11T17:30:45Z",
               "schoolId": 255901,
               "nameOfInstitution": "Lincoln High"
@@ -1721,15 +1721,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
             """
             {
               "id": "18181818-1111-2222-3333-555555555555",
-              "_etag": "\"92\"",
+              "_etag": "\"authorized-projected-etag-2\"",
               "_lastModifiedDate": "2026-04-11T17:30:45Z",
               "schoolId": 255902,
               "nameOfInstitution": "Roosevelt High"
             }
             """
         )!;
-        var expectedFirstProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedFirst);
-        var expectedSecondProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedSecond);
         PageKeysetSpec.Query capturedKeyset = null!;
 
         A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
@@ -1774,8 +1772,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         success.EdfiDocs.Should().HaveCount(2);
         success.EdfiDocs[0].Should().BeSameAs(projectedFirst);
         success.EdfiDocs[1].Should().BeSameAs(projectedSecond);
-        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be(expectedFirstProjectedEtag);
-        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be(expectedSecondProjectedEtag);
+        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be("\"authorized-projected-etag-1\"");
+        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be("\"authorized-projected-etag-2\"");
         capturedKeyset.ParameterValues["schoolId"].Should().Be(255901L);
         capturedKeyset
             .ParameterValues[RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds]
