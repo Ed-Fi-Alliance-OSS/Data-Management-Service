@@ -48,41 +48,15 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
             .SelectMany(static resolution => resolution.ResolvedCandidates)
             .ToArray();
 
-        var resolvedCandidatesByName = resolvedCandidates
-            .GroupBy(static candidate => candidate.ReadableName, StringComparer.Ordinal)
-            .ToDictionary(
-                static grouping => grouping.Key,
-                static grouping => grouping.ToArray(),
-                StringComparer.Ordinal
-            );
-
-        var unresolvedElementsByName = elementResolutions
-            .Where(static resolution => resolution.ResolvedCandidates.Count == 0)
-            .Select(static resolution => resolution.Element)
-            .GroupBy(static element => element.MetaEdName, StringComparer.Ordinal)
-            .ToDictionary(
-                static grouping => grouping.Key,
-                static grouping => grouping.ToArray(),
-                StringComparer.Ordinal
-            );
-
         List<RelationalEdOrgAuthorizationSubject> subjects = [];
         List<EdOrgSecurableElement> unresolvedWithoutSelectedSubject = [];
 
-        foreach (
-            var metaEdName in configuredElements
-                .Select(static element => element.MetaEdName)
-                .Distinct(StringComparer.Ordinal)
-        )
+        foreach (var elementResolution in elementResolutions)
         {
-            var selectedCandidate = resolvedCandidatesByName.TryGetValue(metaEdName, out var candidates)
-                ? candidates
-                    .Where(candidate => candidate.Step.SourceTable == rootTable)
-                    .OrderBy(static candidate => candidate.JsonPath.Length)
-                    .ThenBy(static candidate => candidate.JsonPath, StringComparer.Ordinal)
-                    .ThenBy(static candidate => candidate.Step.SourceColumnName.Value, StringComparer.Ordinal)
-                    .FirstOrDefault()
-                : null;
+            var selectedCandidate = SelectPreferredRootBaseCandidate(
+                rootTable,
+                elementResolution.ResolvedCandidates
+            );
 
             if (selectedCandidate is not null)
             {
@@ -98,9 +72,9 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
                 continue;
             }
 
-            if (unresolvedElementsByName.TryGetValue(metaEdName, out var unresolvedElements))
+            if (elementResolution.ResolvedCandidates.Count == 0)
             {
-                unresolvedWithoutSelectedSubject.AddRange(unresolvedElements);
+                unresolvedWithoutSelectedSubject.Add(elementResolution.Element);
             }
         }
 
@@ -138,6 +112,21 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
                 configuredElements
             )
         );
+    }
+
+    private static ResolvedEdOrgSecurableElementCandidate? SelectPreferredRootBaseCandidate(
+        DbTableName rootTable,
+        IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> candidates
+    )
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+
+        return candidates
+            .Where(candidate => candidate.Step.SourceTable == rootTable)
+            .OrderBy(static candidate => candidate.JsonPath.Length)
+            .ThenBy(static candidate => candidate.JsonPath, StringComparer.Ordinal)
+            .ThenBy(static candidate => candidate.Step.SourceColumnName.Value, StringComparer.Ordinal)
+            .FirstOrDefault();
     }
 
     private static string BuildUnresolvedFailureMessage(

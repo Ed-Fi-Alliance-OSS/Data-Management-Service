@@ -42,6 +42,29 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
     }
 
     [Test]
+    public void It_should_retain_distinct_root_subjects_that_share_a_metaed_name()
+    {
+        (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
+
+        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+            mappingSet,
+            new QualifiedResourceName("Ed-Fi", "CourseOffering"),
+            _strategyNames
+        );
+
+        result.Outcome.Should().Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success);
+        result.Subjects.Should().HaveCount(2);
+        result
+            .Subjects.Select(static subject => subject.JsonPath)
+            .Should()
+            .BeEquivalentTo("$.schoolReference.schoolId", "$.sessionReference.schoolId");
+        result
+            .Subjects.Select(static subject => subject.Table)
+            .Should()
+            .OnlyContain(static table => table == Table("CourseOffering"));
+    }
+
+    [Test]
     public void It_should_prefer_the_root_candidate_when_root_and_child_paths_share_a_metaed_name()
     {
         var rootTable = CreateRootTable(
@@ -151,6 +174,83 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         result.Subjects[0].ReadableName.Should().Be("SchoolId");
         result.Subjects[0].Table.Should().Be(rootTable.Table);
         result.Subjects[0].Column.Should().Be(Col("SchoolReference_SchoolId"));
+    }
+
+    [Test]
+    public void It_should_fail_when_a_distinct_same_name_subject_is_unresolved()
+    {
+        var rootTable = CreateRootTable(
+            Table("CourseOffering"),
+            [
+                new DbColumnModel(
+                    Col("SchoolReference_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    Col("SchoolReference_SchoolId"),
+                    ColumnKind.Scalar,
+                    null,
+                    false,
+                    Path("$.schoolReference.schoolId"),
+                    null
+                ),
+            ]
+        );
+
+        var model = CreateModelWithTables(
+            "CourseOffering",
+            rootTable,
+            [],
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    Path("$.schoolReference"),
+                    rootTable.Table,
+                    Col("SchoolReference_DocumentId"),
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    [
+                        new ReferenceIdentityBinding(
+                            Path("$.schoolReference.schoolId"),
+                            Path("$.schoolReference.schoolId"),
+                            Col("SchoolReference_SchoolId")
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                "CourseOffering",
+                model,
+                new ResourceSecurableElements(
+                    [
+                        new EdOrgSecurableElement("$.schoolReference.schoolId", "SchoolId"),
+                        new EdOrgSecurableElement("$.sessionReference.schoolId", "SchoolId"),
+                    ],
+                    [],
+                    [],
+                    [],
+                    []
+                )
+            )
+        );
+
+        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+            mappingSet,
+            new QualifiedResourceName("Ed-Fi", "CourseOffering"),
+            _strategyNames
+        );
+
+        result
+            .Outcome.Should()
+            .Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
+        result.FailureMessage.Should().Contain("RelationshipsWithEdOrgsOnly");
+        result.FailureMessage.Should().Contain("$.sessionReference.schoolId");
     }
 
     [Test]
