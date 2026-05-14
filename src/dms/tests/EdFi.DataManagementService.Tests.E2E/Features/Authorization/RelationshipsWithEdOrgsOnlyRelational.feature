@@ -4,6 +4,7 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
     Rule: Query scenarios use the relational backend authorization lane
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: Inverted strategy allows school claims to query parent local education agencies
             # Use broader setup access only to seed the state/LEA/school hierarchy for this scenario.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
@@ -41,6 +42,7 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: Normal and inverted strategies are ORed for GET-many authorization
             # Use broader setup access only to seed two independent state/LEA/school hierarchies.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101, 3, 301, 30101"
@@ -97,6 +99,7 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: Empty education organization claims return an empty page with total count zero
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -120,6 +123,7 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: Paging and total count are applied after relational authorization filtering
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001, 255901222"
               And the system has these "schools"
@@ -157,6 +161,7 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
                   """
 
         @relational-backend
+        @relational-ci-shard-3
         Scenario: Known unsupported mixed strategies return not implemented for GET-many
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
