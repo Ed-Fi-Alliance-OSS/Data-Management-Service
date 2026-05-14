@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -299,24 +300,18 @@ public static class HydrationBatchBuilder
     private static bool TryGetRequiredParameter(
         IReadOnlyList<QuerySqlParameter> requiredParameters,
         string candidateParameterName,
-        out QuerySqlParameter parameter
+        [NotNullWhen(true)] out QuerySqlParameter? parameter
     )
     {
-        parameter =
-            requiredParameters.FirstOrDefault(candidateParameter =>
-                string.Equals(
-                    candidateParameter.ParameterName,
-                    candidateParameterName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            ) ?? null!;
+        parameter = requiredParameters.FirstOrDefault(candidateParameter =>
+            string.Equals(
+                candidateParameter.ParameterName,
+                candidateParameterName,
+                StringComparison.OrdinalIgnoreCase
+            )
+        );
 
-        if (parameter is not null)
-        {
-            return true;
-        }
-
-        return false;
+        return parameter is not null;
     }
 
     private static void ValidateRequiredParameterValues(

@@ -5,6 +5,7 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
 
         @relational-backend
         Scenario: Inverted strategy allows school claims to query parent local education agencies
+            # Use broader setup access only to seed the state/LEA/school hierarchy for this scenario.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
               And the system has these "stateEducationAgencies"
                   | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
@@ -14,7 +15,8 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
                   | 201                    | Test LEA          | { "stateEducationAgencyId": 2 } | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
               And the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
-                  | 20101    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 201} |
+                  | 20101    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | { "localEducationAgencyId": 201} |
+            # Switch to the narrower inverted claim set under test before issuing the query.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet" is authorized with educationOrganizationIds "20101"
              When a GET request is made to "/ed-fi/localEducationAgencies"
              Then it should respond with 200
@@ -40,6 +42,7 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
 
         @relational-backend
         Scenario: Normal and inverted strategies are ORed for GET-many authorization
+            # Use broader setup access only to seed the state/LEA/school/academicWeek graph.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
               And the system has these "stateEducationAgencies"
                   | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
@@ -49,10 +52,11 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
                   | 201                    | Test LEA          | { "stateEducationAgencyId": 2 } | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
               And the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
-                  | 20101    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 201} |
+                  | 20101    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | { "localEducationAgencyId": 201} |
               And the system has these "academicWeeks"
                   | weekIdentifier | schoolReference       | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 20101 } | 2023-08-01 | 2023-08-07 | 5                      |
+            # Switch to the query token under test; EdOrg 2 can authorize the row only through the inverted strategy.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks"
              Then it should respond with 200
@@ -77,7 +81,7 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
-                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
               And the system has these "academicWeeks"
                   | weekIdentifier | schoolReference           | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 255901001 } | 2023-08-01 | 2023-08-07 | 5                      |
@@ -100,8 +104,8 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001, 255901222"
               And the system has these "schools"
                   | schoolId  | nameOfInstitution      | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
-                  | 255901001 | Authorized school one  | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
-                  | 255901222 | Unauthorized school    | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+                  | 255901001 | Authorized school one  | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901222 | Unauthorized school    | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
               And the system has these "academicWeeks"
                   | weekIdentifier | schoolReference             | beginDate  | endDate    | totalInstructionalDays |
                   | week unauth     | { "schoolId": 255901222 }   | 2023-08-01 | 2023-08-07 | 5                      |
@@ -137,7 +141,7 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
-                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
               And the system has these "academicWeeks"
                   | weekIdentifier | schoolReference           | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 255901001 } | 2023-08-01 | 2023-08-07 | 5                      |
