@@ -17,6 +17,7 @@ Feature: Read a Descriptor
              Then it should respond with 201 or 200
 
         @API-027 @relational-backend
+        @relational-ci-shard-2
         Scenario: 01 Verify retrieving a single descriptor by ID
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
@@ -34,11 +35,14 @@ Feature: Read a Descriptor
                   """
 
         @API-028
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 02 Verify response code 404 when ID does not exist
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/124c8513-fade-4ce2-ab71-0e40e148de5b"
              Then it should respond with 404
 
         @API-029 @relational-backend
+        @relational-ci-shard-2
         Scenario: 03 Read a descriptor that only contains required attributes
             Given a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
@@ -61,6 +65,7 @@ Feature: Read a Descriptor
                   """
 
         @API-030 @relational-backend
+        @relational-ci-shard-2
         Scenario: 04 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Test"
              Then it should respond with 200
@@ -70,6 +75,7 @@ Feature: Read a Descriptor
                   """
 
         @API-031 @relational-backend
+        @relational-ci-shard-2
         Scenario: 05 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
              When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DoesNotExistDescriptor"
              Then it should respond with 200
@@ -79,6 +85,7 @@ Feature: Read a Descriptor
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 06 Ensure clients cannot retrieve a descriptor by requesting a valid namespace with valid codeValue attached
         # Descriptors are referenced in resources by attaching the namespace and codeValue like so: uri://ed-fi.org/DisabilityDescriptor#Blindness
         # but you cannot search for a descriptor by using this combination.
@@ -99,6 +106,8 @@ Feature: Read a Descriptor
                   """
 
         @API-032
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 07 Verify response code 404 when ID is not valid
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
              Then it should respond with 400
@@ -119,6 +128,8 @@ Feature: Read a Descriptor
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 08 Get a Descriptor using a resource not configured in claims
              When a GET request is made to "/ed-fi/academicHonorCategoryDescriptors"
              Then it should respond with 403
@@ -136,6 +147,7 @@ Feature: Read a Descriptor
                   """
 
         @DMS-994 @relational-backend
+        @relational-ci-shard-2
         Scenario: 09 Read and query a descriptor through the relational backend with readable profile projection
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200

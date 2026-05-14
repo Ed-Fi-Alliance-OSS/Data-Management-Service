@@ -31,6 +31,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
     Rule: staffEducationOrganizationAssignmentAssociations CRUD is properly authorized
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Ensure client can authorize create a staffSchoolAssociations when the staff is assigned to the school using staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with

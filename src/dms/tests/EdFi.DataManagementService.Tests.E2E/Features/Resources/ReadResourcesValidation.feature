@@ -37,6 +37,7 @@ Feature: Resources "Read" Operation validations
              Then it should respond with 404
 
         @API-182 @relational-backend
+        @relational-ci-shard-1
         Scenario: 02 Verify response code 200 when trying to get a student with a correct ID
             Given a POST request is made to "/ed-fi/students" with
                   """

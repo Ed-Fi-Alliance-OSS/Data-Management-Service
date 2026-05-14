@@ -31,12 +31,16 @@ Feature: Profile Resolution
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 01 Single profile without Accept header applies implicitly
             When a GET request is made to "/ed-fi/schools/{id}" without profile header
             Then the profile response status is 200
              And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
              And the response body should not contain fields "shortNameOfInstitution"
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 02 Single profile can also be applied explicitly with Accept header
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
@@ -70,17 +74,23 @@ Feature: Profile Resolution
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 03 Multiple profiles without Accept header returns 403
             When a GET request is made to "/ed-fi/schools/{id}" without profile header
             Then the profile response status is 403
              And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 04 Multiple profiles with explicit Accept header for first profile succeeds
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
              And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
              And the response body should not contain fields "shortNameOfInstitution"
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 05 Multiple profiles with explicit Accept header for second profile succeeds
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly-Alt" for resource "School"
             Then the profile response status is 200
@@ -115,6 +125,8 @@ Feature: Profile Resolution
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 06 No profile assigned returns all fields
             When a GET request is made to "/ed-fi/schools/{id}" without profile header
             Then the profile response status is 200

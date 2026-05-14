@@ -4,12 +4,16 @@ Feature: CMS to DMS ClaimSet Synchronization
     to the Data Management Service (DMS). Each upload to CMS completely replaces all existing claimsets,
               and DMS can reload these claimsets to synchronize its state with CMS.
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Initial State Verification - View claimsets in DMS and verify baseline claimsets are present
              When a GET request is made to DMS management endpoint "/management/view-claimsets"
              Then the DMS view claimsets should be successful
               And the DMS view claimsets response should contain "SISVendor"
               And the DMS view claimsets response should contain "EdFiSandbox"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 Upload Complete Claimset to CMS → Sync to DMS - Upload TestClaimSet1 with Student access, reload DMS, verify only new claimset present
              When a claim set is uploaded to CMS that grants "Student" access to "TestClaimSet1"
              Then the claim set upload to CMS should be successful
@@ -20,6 +24,8 @@ Feature: CMS to DMS ClaimSet Synchronization
               And the DMS view claimsets response should contain "TestClaimSet1"
               And system claim sets should have empty resource claims
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Upload Different Complete Claimset to CMS → Sync to DMS - Upload TestClaimSet2 with School access, reload DMS, verify only TestClaimSet2 present
              When a claim set is uploaded to CMS that grants "School" access to "TestClaimSet2"
              Then the claim set upload to CMS should be successful
@@ -29,6 +35,8 @@ Feature: CMS to DMS ClaimSet Synchronization
              Then the DMS view claimsets should be successful
               And the DMS view claimsets response should contain "TestClaimSet2"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 Upload Multiple Claimsets - both TestClaimSetA and TestClaimSetB, reload DMS, verify TestClaimSetB
              When a claim set is uploaded to CMS that grants "Student" access to "TestClaimSetA"
              Then the claim set upload to CMS should be successful
@@ -45,6 +53,8 @@ Feature: CMS to DMS ClaimSet Synchronization
               And the DMS view claimsets response should contain "TestClaimSetB"
               And the DMS view claimsets response should not contain "TestClaimSetA"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 05 Reset CMS to Original → Sync to DMS - Reset CMS with reload-claims, reload DMS, verify original state restored
              When a POST request is made to CMS "/management/reload-claims"
              Then the CMS reload should be successful

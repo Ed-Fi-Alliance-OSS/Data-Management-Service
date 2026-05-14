@@ -5,6 +5,8 @@ Feature: CorrleationId
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @API-061
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 01 Ensure the response will contain provided correlation id
             # Note: this requires that the .env file used to startup the DMS container has the following setting:
             # CORRELATION_ID_HEADER=correlationid

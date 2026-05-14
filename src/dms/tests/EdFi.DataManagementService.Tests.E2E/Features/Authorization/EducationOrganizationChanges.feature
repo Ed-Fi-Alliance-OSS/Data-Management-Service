@@ -33,6 +33,8 @@ Feature: EducationOrganizationChanges Authorization
                   | staffSchoolAssociationId1   | { "staffUniqueId": "s0001" } | { "schoolId": 255901001 } | "uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education" |
 
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Ensure client can access the Student ,the Contact and the Staff with a  Grand Bend ISD School 255901
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a GET request is made to "/ed-fi/schools/{SchoolId1}"
@@ -448,6 +450,8 @@ Feature: EducationOrganizationChanges Authorization
                   | _storeResultingIdInVariable | staffUniqueId | firstName | lastSurname |
                   | StaffId1                    | s0001         | peterson  | Buck        |
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 08 Ensure client can  access the Student  when a School updated to new LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
@@ -501,6 +505,8 @@ Feature: EducationOrganizationChanges Authorization
                       }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 09 Ensure client can  access the contact  when a School updated to new LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with

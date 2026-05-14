@@ -6,6 +6,8 @@ Feature: Profile OpenAPI Specification Filtering
         Background:
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Profile OpenAPI spec includes only covered resources
              When a GET request is made to "/metadata/specifications/profiles/E2E-Test-School-IncludeOnly/resources-spec.json"
              Then the profile response status is 200
@@ -16,12 +18,16 @@ Feature: Profile OpenAPI Specification Filtering
               And the OpenAPI spec should contain tag "Schools"
               And the OpenAPI spec should not contain tag "Students"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 Profile OpenAPI spec includes readable and writable schemas
              When a GET request is made to "/metadata/specifications/profiles/E2E-Test-School-IncludeOnly/resources-spec.json"
              Then the profile response status is 200
               And the OpenAPI spec should contain schema "edFi_school_readable"
               And the OpenAPI spec should contain schema "edFi_school_writable"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Profile OpenAPI spec filters operations correctly
              When a GET request is made to "/metadata/specifications/profiles/E2E-Test-School-IncludeOnly/resources-spec.json"
              Then the profile response status is 200
@@ -31,10 +37,14 @@ Feature: Profile OpenAPI Specification Filtering
               And the OpenAPI spec path "/ed-fi/schools/{id}" should have operation "put"
               And the OpenAPI spec path "/ed-fi/schools/{id}" should have operation "delete"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 Non-existent profile returns 404
              When a GET request is made to "/metadata/specifications/profiles/NonExistentProfile/resources-spec.json"
              Then the profile response status is 404
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 05 Metadata specifications list includes profile entries
              When a GET request is made to "/metadata/specifications"
              Then the profile response status is 200

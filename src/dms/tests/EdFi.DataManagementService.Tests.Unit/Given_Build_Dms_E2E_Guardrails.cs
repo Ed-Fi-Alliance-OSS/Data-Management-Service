@@ -156,6 +156,50 @@ public class Given_Build_Dms_E2E_Guardrails
             );
     }
 
+    [Test]
+    public async Task It_accepts_a_relational_filter_combined_with_a_shard_filter()
+    {
+        var result = await RunBuildDmsE2ETest(
+            """
+            USE_RELATIONAL_BACKEND=true
+            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
+            """,
+            "Category=@relational-backend&Category=@relational-ci-shard-2"
+        );
+
+        // The script bails out before docker / dotnet are available in this unit context,
+        // so it will not exit 0, but the filter itself must not be rejected by the lane assertion.
+        result.Output.Should().NotContain("Relational E2E environment");
+        result.Output.Should().NotContain("cannot use");
+    }
+
+    [Test]
+    public void It_derives_shard_suffix_from_relational_ci_shard_filter()
+    {
+        var suffixDefinition = ExtractFunctionBody("Get-E2ETestResultSuffix");
+
+        suffixDefinition
+            .Should()
+            .Contain("relational-ci-shard-")
+            .And.Contain("relational-shard-")
+            .And.Contain("ConvertTo-NormalizedTestFilter");
+    }
+
+    private string ExtractFunctionBody(string functionName)
+    {
+        int startIndex = _buildScriptContents.IndexOf($"function {functionName}", StringComparison.Ordinal);
+        startIndex.Should().BeGreaterThan(-1, $"function '{functionName}' must exist in build-dms.ps1");
+
+        int nextFunctionIndex = _buildScriptContents.IndexOf(
+            "\nfunction ",
+            startIndex + 1,
+            StringComparison.Ordinal
+        );
+
+        int endIndex = nextFunctionIndex == -1 ? _buildScriptContents.Length : nextFunctionIndex;
+        return _buildScriptContents.Substring(startIndex, endIndex - startIndex);
+    }
+
     private async Task<BuildScriptResult> RunBuildDmsE2ETest(
         string environmentFileContents,
         string? testFilter = null

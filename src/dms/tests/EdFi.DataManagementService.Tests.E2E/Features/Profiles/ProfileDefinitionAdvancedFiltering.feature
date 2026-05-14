@@ -41,6 +41,8 @@ Feature: Profile Definition Advanced Filtering
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 01 IncludeAll profile returns all populated fields and child collection members
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeAll" for resource "School"
             Then the profile response status is 200
@@ -75,6 +77,8 @@ Feature: Profile Definition Advanced Filtering
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 02 IncludeOnly profile returns only included resource properties
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
@@ -82,6 +86,8 @@ Feature: Profile Definition Advanced Filtering
              And the response body should contain fields "id, schoolId, nameOfInstitution, webSite"
              And the response body should not contain fields "shortNameOfInstitution"
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 03 ExcludeOnly profile excludes configured resource properties
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-ExcludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-ExcludeOnly" for resource "School"
@@ -119,6 +125,8 @@ Feature: Profile Definition Advanced Filtering
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 04 IncludeOnly collection filter keeps only configured items
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-GradeLevelFilter" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-GradeLevelFilter" for resource "School"
@@ -126,6 +134,8 @@ Feature: Profile Definition Advanced Filtering
              And the "gradeLevels" collection should have 1 item
              And the "gradeLevels" collection item at index 0 should have "gradeLevelDescriptor" value "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 05 ExcludeOnly collection filter excludes configured items
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-GradeLevelExcludeFilter" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-GradeLevelExcludeFilter" for resource "School"
@@ -210,6 +220,8 @@ Feature: Profile Definition Advanced Filtering
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 06 IncludeOnly profile keeps School address fields configured for School
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-EdOrgs-Resources-Child-Collection-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools?schoolId=99005006" with profile "Test-Profile-EdOrgs-Resources-Child-Collection-IncludeOnly" for resource "School"
@@ -217,6 +229,8 @@ Feature: Profile Definition Advanced Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 07 IncludeOnly profile keeps LocalEducationAgency address fields configured for LocalEducationAgency
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-EdOrgs-Resources-Child-Collection-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/localEducationAgencies?localEducationAgencyId=99005007" with profile "Test-Profile-EdOrgs-Resources-Child-Collection-IncludeOnly" for resource "LocalEducationAgency"
@@ -224,6 +238,8 @@ Feature: Profile Definition Advanced Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 08 ExcludeOnly profile excludes LocalEducationAgency address fields configured for exclusion
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-EdOrgs-Resources-Child-Collection-ExcludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/localEducationAgencies?localEducationAgencyId=99005007" with profile "Test-Profile-EdOrgs-Resources-Child-Collection-ExcludeOnly" for resource "LocalEducationAgency"
@@ -231,6 +247,8 @@ Feature: Profile Definition Advanced Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 09 ExcludeOnly profile keeps School address fields not configured for exclusion
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-EdOrgs-Resources-Child-Collection-ExcludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools?schoolId=99005006" with profile "Test-Profile-EdOrgs-Resources-Child-Collection-ExcludeOnly" for resource "School"
@@ -299,20 +317,32 @@ Feature: Profile Definition Advanced Filtering
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 10 IncludeAll derived association setup is currently blocked by authorization strategy
             Then it should respond with 403
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 11 IncludeOnly derived association setup is currently blocked by authorization strategy
             Then it should respond with 403
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 12 ExcludeOnly derived association setup is currently blocked by authorization strategy
             Then it should respond with 403
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 13 IncludeOnly derived association write setup is currently blocked by authorization strategy
             Then it should respond with 403
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 14 ExcludeOnly derived association write setup is currently blocked by authorization strategy
             Then it should respond with 403
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 15 IncludeAll derived association write setup is currently blocked by authorization strategy
             Then it should respond with 403

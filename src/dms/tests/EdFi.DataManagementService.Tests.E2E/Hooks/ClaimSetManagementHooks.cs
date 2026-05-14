@@ -204,7 +204,10 @@ public class ClaimSetManagementHooks(
                 $"No SystemAdministrator token found, registering new admin client: {clientId}"
             );
             await SystemAdministrator.Register(clientId, clientSecret);
+            return;
         }
+
+        await SystemAdministrator.GetToken();
     }
 
     /// <summary>
@@ -212,7 +215,7 @@ public class ClaimSetManagementHooks(
     /// </summary>
     private async Task ReloadDmsClaimsets()
     {
-        List<KeyValuePair<string, string>> headers = CreateAuthHeaders();
+        List<KeyValuePair<string, string>> headers = await CreateAuthHeaders();
 
         // Increased timeout for CI environments
         var options = new APIRequestContextOptions
@@ -259,7 +262,10 @@ public class ClaimSetManagementHooks(
         };
 
         httpClient.DefaultRequestHeaders.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", SystemAdministrator.Token);
+            new System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer",
+                await SystemAdministrator.GetToken()
+            );
 
         // POST with empty body for reload-claims endpoint
         using StringContent content = new("{}", System.Text.Encoding.UTF8, "application/json");
@@ -279,7 +285,7 @@ public class ClaimSetManagementHooks(
     /// </summary>
     private async Task VerifyDmsCacheState()
     {
-        var headers = CreateAuthHeaders();
+        var headers = await CreateAuthHeaders();
 
         var options = new APIRequestContextOptions
         {
@@ -309,14 +315,10 @@ public class ClaimSetManagementHooks(
     /// <summary>
     /// Creates authorization headers with the system administrator bearer token.
     /// </summary>
-    private static List<KeyValuePair<string, string>> CreateAuthHeaders()
+    private static async Task<List<KeyValuePair<string, string>>> CreateAuthHeaders()
     {
-        List<KeyValuePair<string, string>> headers = [];
-        if (!string.IsNullOrEmpty(SystemAdministrator.Token))
-        {
-            headers.Add(new("Authorization", $"Bearer {SystemAdministrator.Token}"));
-        }
-        return headers;
+        string systemAdministratorToken = await SystemAdministrator.GetToken();
+        return [new("Authorization", $"Bearer {systemAdministratorToken}")];
     }
 
     private async Task<IAPIRequestContext> GetApiRequestContextAsync()

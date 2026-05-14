@@ -54,8 +54,8 @@ public partial class Given_Relational_Provisioning_Helper
         );
 
         result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("must be dedicated");
-        result.Output.Should().Contain("POSTGRES_DB_NAME");
+        result.NormalizedOutput.Should().Contain("must be dedicated");
+        result.NormalizedOutput.Should().Contain("POSTGRES_DB_NAME");
     }
 
     [Test]
@@ -72,7 +72,7 @@ public partial class Given_Relational_Provisioning_Helper
         );
 
         result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("must stay separate from DATABASE_CONNECTION_STRING");
+        result.NormalizedOutput.Should().Contain("must stay separate from DATABASE_CONNECTION_STRING");
     }
 
     [Test]
@@ -88,8 +88,8 @@ public partial class Given_Relational_Provisioning_Helper
         );
 
         result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("reserved PostgreSQL system database");
-        result.Output.Should().Contain("postgres");
+        result.NormalizedOutput.Should().Contain("reserved PostgreSQL system database");
+        result.NormalizedOutput.Should().Contain("postgres");
     }
 
     private async Task<ScriptResult> RunProvisioningHelper(string environmentFileContents)
@@ -119,14 +119,19 @@ public partial class Given_Relational_Provisioning_Helper
                 WorkingDirectory = repositoryRoot.FullName,
             };
 
+            startInfo.Environment["NO_COLOR"] = "1";
+            startInfo.Environment["TERM"] = "dumb";
+
             startInfo.ArgumentList.Add("-NoLogo");
             startInfo.ArgumentList.Add("-NoProfile");
-            startInfo.ArgumentList.Add("-File");
-            startInfo.ArgumentList.Add(scriptPath);
-            startInfo.ArgumentList.Add("-EnvironmentFile");
-            startInfo.ArgumentList.Add(environmentFilePath);
-            startInfo.ArgumentList.Add("-Configuration");
-            startInfo.ArgumentList.Add("Release");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            // -Command prelude: stop on errors, set PlainText rendering, and use NormalView for
+            // errors so ConciseView's pipe-prefix line wrapping does not break substring assertions.
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add(
+                $"$ErrorActionPreference='Stop'; $PSStyle.OutputRendering='PlainText'; $ErrorView='NormalView'; "
+                    + $"& '{scriptPath}' -EnvironmentFile '{environmentFilePath}' -Configuration Release"
+            );
 
             using var process = Process.Start(startInfo);
             process.Should().NotBeNull();
@@ -136,7 +141,8 @@ public partial class Given_Relational_Provisioning_Helper
 
             await process.WaitForExitAsync();
 
-            return new ScriptResult(process.ExitCode, await standardOutputTask + await standardErrorTask);
+            string raw = await standardOutputTask + await standardErrorTask;
+            return new ScriptResult(process.ExitCode, raw, NormalizePowerShellOutput(raw));
         }
         finally
         {
@@ -164,8 +170,22 @@ public partial class Given_Relational_Provisioning_Helper
             );
     }
 
+    private static string NormalizePowerShellOutput(string output)
+    {
+        var withoutAnsi = AnsiEscapeRegex().Replace(output, "");
+        var normalizedLines = withoutAnsi.Replace("\r\n", "\n").Replace('\r', '\n');
+
+        return WhitespaceRegex().Replace(normalizedLines, " ").Trim();
+    }
+
     [GeneratedRegex(@"-U\s+postgres\b", RegexOptions.CultureInvariant)]
     private static partial Regex HardcodedPostgresUserRegex();
 
-    private sealed record ScriptResult(int ExitCode, string Output);
+    [GeneratedRegex(@"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", RegexOptions.CultureInvariant)]
+    private static partial Regex AnsiEscapeRegex();
+
+    [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
+    private static partial Regex WhitespaceRegex();
+
+    private sealed record ScriptResult(int ExitCode, string Output, string NormalizedOutput);
 }

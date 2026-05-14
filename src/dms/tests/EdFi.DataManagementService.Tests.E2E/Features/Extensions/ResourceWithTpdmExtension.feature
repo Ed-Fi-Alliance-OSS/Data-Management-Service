@@ -9,6 +9,8 @@ Feature: Resource with Tpdm extension
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution |
                   | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                 |
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 01 Ensure clients can create a resource with tpdm extension reference
              When a POST request is made to "/ed-fi/postSecondaryInstitutions" with
                   """
@@ -77,6 +79,8 @@ Feature: Resource with Tpdm extension
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 02 Ensure clients can get a resource with query
              When a POST request is made to "/ed-fi/postSecondaryInstitutions" with
                   """
@@ -147,6 +151,8 @@ Feature: Resource with Tpdm extension
                   }]
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 03 Ensure clients can not create a resource when tpdm extension reference is unavailable
              When a POST request is made to "/ed-fi/schools" with
                   """
