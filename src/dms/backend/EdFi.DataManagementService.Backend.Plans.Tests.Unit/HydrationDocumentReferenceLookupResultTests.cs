@@ -250,6 +250,48 @@ public class Given_HydrationExecutor_With_Document_Reference_Lookup
     }
 
     [Test]
+    public async Task It_leaves_lookup_null_when_execution_option_opts_out_even_if_plan_has_lookup()
+    {
+        // Write-path callers (current-state load, committed readback) pass
+        // IncludeDocumentReferenceLookup: false. The batch builder omits the lookup SQL, and
+        // the executor must not try to advance past a result set that was never emitted.
+        var lookupPlan = Given_HydrationReader_With_Document_Reference_Lookup_Result_Sets.BuildLookupPlan();
+
+        var command = new RecordingDbCommand(
+            HydrationDescriptorResultTestHelper.CreateReader(
+                CreateDocumentMetadataTable(
+                    (
+                        42L,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        44L,
+                        45L,
+                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                    )
+                ),
+                CreateRootTableRows((42L, 255901)),
+                CreateChildTableRows((100L, 42L, 0, "Springfield"))
+            )
+        );
+
+        var connection = new RecordingDbConnection(command);
+
+        var result = await HydrationExecutor.ExecuteAsync(
+            connection,
+            BuildTestReadPlan(SqlDialect.Pgsql, descriptorProjectionPlans: null, lookupPlan),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: true,
+                IncludeDocumentReferenceLookup: false
+            ),
+            CancellationToken.None
+        );
+
+        result.DocumentReferenceLookup.Should().BeNull();
+    }
+
+    [Test]
     public async Task It_leaves_lookup_null_when_plan_property_is_null()
     {
         var command = new RecordingDbCommand(

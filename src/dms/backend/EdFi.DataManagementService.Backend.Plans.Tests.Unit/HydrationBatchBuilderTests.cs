@@ -630,6 +630,45 @@ public class Given_HydrationBatchBuilder_With_Document_Reference_Lookup_Plan
 
         AssertAppearsInOrder(batch, FirstDescriptorSqlMarker, SecondDescriptorSqlMarker, LookupSqlMarker);
     }
+
+    [Test]
+    public void It_should_omit_lookup_sql_when_execution_option_opts_out_even_if_plan_has_lookup()
+    {
+        // Write-path callers (current-state load, committed readback) pass
+        // IncludeDocumentReferenceLookup: false because they never consume the lookup result.
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, BuildDescriptorPlans(), BuildLookupPlan()),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: true,
+                IncludeDocumentReferenceLookup: false
+            )
+        );
+
+        batch.Should().NotContain(LookupSqlMarker);
+        batch.Should().Contain(FirstDescriptorSqlMarker);
+        batch.Should().Contain(SecondDescriptorSqlMarker);
+    }
+
+    [Test]
+    public void It_should_omit_both_descriptor_and_lookup_when_execution_options_opt_out_of_both()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, BuildDescriptorPlans(), BuildLookupPlan()),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: false,
+                IncludeDocumentReferenceLookup: false
+            )
+        );
+
+        batch.Should().NotContain(LookupSqlMarker);
+        batch.Should().NotContain(FirstDescriptorSqlMarker);
+        batch.Should().NotContain(SecondDescriptorSqlMarker);
+        batch.Should().Contain("SELECT child columns FROM child;");
+    }
 }
 
 internal static class HydrationBatchBuilderTestHelper

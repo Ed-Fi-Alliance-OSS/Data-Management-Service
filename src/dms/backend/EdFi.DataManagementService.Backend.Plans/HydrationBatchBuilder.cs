@@ -103,8 +103,12 @@ public static class HydrationBatchBuilder
             }
         }
 
-        // 7. Document-reference auxiliary lookup (gated by plan property — no separate flag).
-        if (plan.DocumentReferenceLookup is { } documentReferenceLookup)
+        // 7. Document-reference auxiliary lookup (gated by plan property AND the caller-supplied
+        //    execution option — write-path callers that discard the lookup result opt out).
+        if (
+            executionOptions.IncludeDocumentReferenceLookup
+            && plan.DocumentReferenceLookup is { } documentReferenceLookup
+        )
         {
             writer.AppendLine(EnsureTrailingSemicolon(documentReferenceLookup.SelectByKeysetSql));
             writer.AppendLine();

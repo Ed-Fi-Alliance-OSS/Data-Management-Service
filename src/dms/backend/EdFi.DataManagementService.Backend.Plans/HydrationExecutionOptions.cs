@@ -12,4 +12,14 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// When <see langword="true"/>, append descriptor URI projection result sets.
 /// Session-scoped current-state loads can disable this when they only need storage rows.
 /// </param>
-public readonly record struct HydrationExecutionOptions(bool IncludeDescriptorProjection = true);
+/// <param name="IncludeDocumentReferenceLookup">
+/// When <see langword="true"/>, append the document-reference auxiliary lookup result set
+/// (only if the plan carries a <c>DocumentReferenceLookup</c>). Read paths that emit
+/// <c>link.rel</c>/<c>link.href</c> need this; write-path callers that load current state
+/// or read back a committed write can disable it because the lookup result never reaches
+/// link emission for them.
+/// </param>
+public readonly record struct HydrationExecutionOptions(
+    bool IncludeDescriptorProjection = true,
+    bool IncludeDocumentReferenceLookup = true
+);

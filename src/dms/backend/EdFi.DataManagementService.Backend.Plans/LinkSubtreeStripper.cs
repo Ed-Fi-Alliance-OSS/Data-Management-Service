@@ -11,9 +11,12 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <summary>
 /// Structural, plan-aware strip pass that removes the <c>link</c> property from every
 /// document-reference object reachable from a <see cref="CompiledReconstitutionPlan"/>'s
-/// <see cref="TableReconstitutionPlan.ReferenceBindingsInOrder"/>. Used by the response-side
-/// boundary (after readable-profile projection, before serialization) when
-/// <see cref="ResourceLinksOptions.Enabled"/> is <see langword="false"/>.
+/// <see cref="TableReconstitutionPlan.ReferenceBindingsInOrder"/>. Invoked inside the read
+/// materializer immediately before <c>_etag</c> is computed when
+/// <see cref="ResourceLinksOptions.Enabled"/> is <see langword="false"/>; readable-profile
+/// projection runs subsequently in the repository layer. Strip-before-projection is
+/// functionally equivalent to strip-after-projection because profile projection only
+/// removes fields and never injects <c>link</c>.
 /// </summary>
 /// <remarks>
 /// Walks each compiled reference path segment-by-segment from the document root, branching

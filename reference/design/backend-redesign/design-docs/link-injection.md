@@ -301,10 +301,10 @@ A single configuration key controls link emission:
 - **Default**: `true`
 - **Behavior when `false`**: `link` subtrees are stripped from the reconstituted intermediate
   document inside the read materializer, immediately before `_etag` is computed. Readable-profile
-  projection runs subsequently and `_etag` is recomputed from the projected body. Because profile
-  projection only removes fields (it never injects `link`), stripping pre-projection is equivalent
-  to stripping post-projection — the served body is link-free in both cases. `link` is excluded
-  from `_etag` canonicalization in both flag states (the canonical formatter strips
+  projection runs subsequently in the repository layer and does not recompute `_etag`. Because
+  profile projection only removes fields (it never injects `link`), stripping pre-projection is
+  equivalent to stripping post-projection — the served body is link-free in both cases. `link`
+  is excluded from `_etag` canonicalization in both flag states (the canonical formatter strips
   `{id, link, _etag, _lastModifiedDate}` recursively before hashing per
   `design-docs/update-tracking.md` §Serving API metadata), so the strip pass does not change
   `_etag`. The auxiliary lookup and plan compilation are unaffected.
@@ -356,13 +356,13 @@ participate in `_etag` derivation.
 `link` subtrees already present (since the plan always emits them). The `ResourceLinks:Enabled`
 flag is applied as a strip pass inside the read materializer — after reconstitution and
 immediately before `_etag` is computed. Readable-profile projection (when applicable) runs after
-the materializer returns; `_etag` is recomputed from the projected body via `RefreshEtag` at that
-boundary. Because profile projection only removes fields, strip-then-project yields the same
-served body as project-then-strip. `link` is excluded from `_etag` canonicalization in both flag
-states, so the strip pass does not cause `_etag` recomputation or mismatch; the cached
-materialized full-resource `_etag` is reused for both unprofiled and profiled responses. CDC and
-indexing consumers of `dms.DocumentCache` observe the unprojected intermediate (with `link`
-subtrees); DMS does not maintain a second link-free projection.
+the materializer returns and does not recompute `_etag`: the value set by the materializer
+survives projection unchanged because the canonical formatter excludes `link`/`_etag`/
+`_lastModifiedDate` from hashing. Because profile projection only removes fields, strip-then-
+project yields the same served body as project-then-strip. The cached materialized full-resource
+`_etag` is reused for both unprofiled and profiled responses. CDC and indexing consumers of
+`dms.DocumentCache` observe the unprojected intermediate (with `link` subtrees); DMS does not
+maintain a second link-free projection.
 
 `dms.DocumentCache` stores the materialized full-resource `_etag` alongside the cached
 `DocumentJson`. That cached `_etag` is computed with `link` excluded from the canonical hash and is

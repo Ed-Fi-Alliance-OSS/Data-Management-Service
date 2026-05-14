@@ -200,10 +200,14 @@ public static class HydrationExecutor
             }
         }
 
-        // 5. Document-reference auxiliary lookup (only when the plan carries one — no separate flag).
+        // 5. Document-reference auxiliary lookup (gated by plan property AND the caller-supplied
+        //    execution option — write-path callers opt out because they discard the result).
         HydratedDocumentReferenceLookup? documentReferenceLookup = null;
 
-        if (plan.DocumentReferenceLookup is { } documentReferenceLookupPlan)
+        if (
+            executionOptions.IncludeDocumentReferenceLookup
+            && plan.DocumentReferenceLookup is { } documentReferenceLookupPlan
+        )
         {
             if (!await reader.NextResultAsync(ct))
             {

@@ -55,7 +55,10 @@ internal sealed class RelationalCommittedRepresentationReader(
                 writeSession.Transaction,
                 readPlan,
                 new PageKeysetSpec.Single(persistedTarget.DocumentId),
-                new HydrationExecutionOptions(IncludeDescriptorProjection: true),
+                new HydrationExecutionOptions(
+                    IncludeDescriptorProjection: true,
+                    IncludeDocumentReferenceLookup: false
+                ),
                 cancellationToken
             )
             .ConfigureAwait(false);
