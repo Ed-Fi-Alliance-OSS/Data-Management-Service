@@ -11,7 +11,6 @@ Feature: TotalCount Response Header for GET Requests
                   | 255901045 | UT Austin Extended Campus                     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"} ]  | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
         @API-136
-        @relational-backend
         Scenario: 01 Validate totalCount value when there are no matching schools in the Database
              When a GET request is made to "/ed-fi/schools?totalCount=true&nameOfInstitution=does+not+exist"
              Then it should respond with 200
@@ -23,21 +22,18 @@ Feature: TotalCount Response Header for GET Requests
                   """
 
         @API-137
-        @relational-backend
         Scenario: 02 Validate totalCount is not included when there are no existing schools in the Database and value equals to false
              When a GET request is made to "/ed-fi/schools?totalCount=false"
              Then it should respond with 200
               And the response headers does not include total-count
 
         @API-138
-        @relational-backend
         Scenario: 03 Validate totalCount is not included when is not included in the URL
              When a GET request is made to "/ed-fi/schools"
              Then it should respond with 200
               And the response headers does not include total-count
 
         @API-140
-        @relational-backend
         Scenario: 05 Ensure that schools return the total count
              When a GET request is made to "/ed-fi/schools?totalCount=true"
              Then it should respond with 200
@@ -49,14 +45,12 @@ Feature: TotalCount Response Header for GET Requests
                   """
 
         @API-141
-        @relational-backend
         Scenario: 06 Validate totalCount Header is not included when equals to false
              When a GET request is made to "/ed-fi/schools?totalCount=false"
              Then it should respond with 200
               And the response headers does not include total-count
 
         @API-142
-        @relational-backend
         Scenario: 07 Validate totalCount is not included when it is not present in the URL
              When a GET request is made to "/ed-fi/schools"
              Then it should respond with 200

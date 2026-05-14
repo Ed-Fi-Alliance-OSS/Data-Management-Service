@@ -706,7 +706,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
-        @relational-backend
         Scenario: 29 Ensure client can delete a Student-securable
             Given a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """

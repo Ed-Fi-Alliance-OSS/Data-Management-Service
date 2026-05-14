@@ -114,7 +114,6 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
 
         @API-147
-        @relational-backend
         Scenario Outline: 12 Ensure clients can not GET information when filtering by limit and offset using invalid values
             # Some of these are "SQL Injection" style attacks
              When a GET request is made to "/ed-fi/schools?offset=<value>"
@@ -141,7 +140,6 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | '0)'                     |
                   | '1%27'                   |
 
-        @relational-backend
         Scenario Outline: 13 Ensure clients can not GET information when filtering by out of tange limit values
              When a GET request is made to "/ed-fi/schools?offset=0&limit=<value>"
              Then it should respond with 400

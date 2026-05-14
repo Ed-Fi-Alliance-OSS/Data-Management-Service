@@ -535,7 +535,6 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
         Scenario: 20 Ensure client can DELETE staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
