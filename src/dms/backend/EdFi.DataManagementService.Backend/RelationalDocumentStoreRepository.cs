@@ -1044,10 +1044,12 @@ public sealed class RelationalDocumentStoreRepository(
 
         IReadOnlyList<PageDocumentIdAuthorizationSubject> authorizationSubjects =
         [
-            .. selectedEdOrgSubjects.Subjects.Select(static subject => new PageDocumentIdAuthorizationSubject(
-                subject.Table,
-                subject.Column
-            )),
+            .. selectedEdOrgSubjects
+                .Subjects.Select(static subject => new PageDocumentIdAuthorizationSubject(
+                    subject.Table,
+                    subject.Column
+                ))
+                .DistinctBy(static subject => (subject.Table, subject.Column)),
         ];
 
         IReadOnlyList<PageDocumentIdAuthorizationStrategy> authorizationStrategies =

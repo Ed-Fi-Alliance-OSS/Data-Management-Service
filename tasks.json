@@ -249,7 +249,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalDocumentStoreRepositoryTests`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~PageDocumentId`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Review Follow-Up Regression",
