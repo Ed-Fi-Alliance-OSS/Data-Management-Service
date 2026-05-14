@@ -129,6 +129,28 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
     }
 
     [Test]
+    public void It_resolves_the_longest_matching_basis_resource_prefix_when_the_basis_name_contains_with()
+    {
+        var classification = Classify(
+            CreateMappingSet(
+                _queryResource,
+                new("Ed-Fi", "ExitWithdrawTypeDescriptor"),
+                new("Ed-Fi", "Exit")
+            ),
+            "ExitWithdrawTypeDescriptorWithSomething"
+        );
+
+        classification
+            .Outcome.Should()
+            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.KnownButNotImplemented);
+        classification.KnownButNotImplementedStrategies.Should().ContainSingle();
+        classification
+            .KnownButNotImplementedStrategies[0]
+            .BasisResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "ExitWithdrawTypeDescriptor"));
+    }
+
+    [Test]
     public void It_rejects_custom_view_names_with_unknown_basis_resources_as_security_configuration_errors()
     {
         var classification = Classify(CreateMappingSet(_queryResource), "UnknownBasisWithSomething");
@@ -138,6 +160,21 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
             .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SecurityConfigurationError);
         classification.FailureMessage.Should().Contain("UnknownBasis");
         classification.FailureMessage.Should().Contain("schema-hash/Pgsql/v1");
+    }
+
+    [Test]
+    public void It_reports_the_full_unknown_basis_resource_name_when_it_contains_with()
+    {
+        var classification = Classify(
+            CreateMappingSet(_queryResource),
+            "ExitWithdrawTypeDescriptorWithSomething"
+        );
+
+        classification
+            .Outcome.Should()
+            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SecurityConfigurationError);
+        classification.FailureMessage.Should().Contain("ExitWithdrawTypeDescriptor");
+        classification.FailureMessage.Should().NotContain("basis resource 'Exit'");
     }
 
     [Test]

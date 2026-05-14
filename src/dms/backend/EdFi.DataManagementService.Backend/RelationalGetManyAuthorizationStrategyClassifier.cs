@@ -259,9 +259,25 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
         string strategyName
     )
     {
-        var withDelimiterIndex = strategyName.IndexOf("With", StringComparison.Ordinal);
+        List<int> withDelimiterIndexes = [];
 
-        if (withDelimiterIndex <= 0 || withDelimiterIndex >= strategyName.Length - "With".Length)
+        for (
+            var withDelimiterIndex = strategyName.IndexOf("With", StringComparison.Ordinal);
+            withDelimiterIndex >= 0;
+            withDelimiterIndex = strategyName.IndexOf(
+                    "With",
+                    withDelimiterIndex + "With".Length,
+                    StringComparison.Ordinal
+                )
+        )
+        {
+            if (withDelimiterIndex > 0 && withDelimiterIndex < strategyName.Length - "With".Length)
+            {
+                withDelimiterIndexes.Add(withDelimiterIndex);
+            }
+        }
+
+        if (withDelimiterIndexes.Count == 0)
         {
             return new CustomViewStrategyResolution(
                 CustomViewStrategyResolutionOutcome.NotCustomViewConvention,
@@ -270,19 +286,22 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
             );
         }
 
-        var basisResourceName = strategyName[..withDelimiterIndex];
-
-        List<QualifiedResourceName> candidateResources =
+        List<QualifiedResourceName> matchingBasisResources =
         [
             .. mappingSet
                 .Model.EffectiveSchema.ResourceKeysInIdOrder.Select(static entry => entry.Resource)
                 .Where(resource =>
-                    string.Equals(resource.ResourceName, basisResourceName, StringComparison.Ordinal)
+                    withDelimiterIndexes.Contains(resource.ResourceName.Length)
+                    && strategyName
+                        .AsSpan(resource.ResourceName.Length)
+                        .StartsWith("With", StringComparison.Ordinal)
                 ),
         ];
 
-        if (candidateResources.Count == 0)
+        if (matchingBasisResources.Count == 0)
         {
+            var basisResourceName = strategyName[..withDelimiterIndexes.Max()];
+
             return new CustomViewStrategyResolution(
                 CustomViewStrategyResolutionOutcome.UnknownBasisResource,
                 basisResourceName,
@@ -290,10 +309,21 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
             );
         }
 
+        var longestMatchingBasisResourceNameLength = matchingBasisResources.Max(static resource =>
+            resource.ResourceName.Length
+        );
+
+        List<QualifiedResourceName> preferredBasisResourceCandidates =
+        [
+            .. matchingBasisResources.Where(resource =>
+                resource.ResourceName.Length == longestMatchingBasisResourceNameLength
+            ),
+        ];
+
         return new CustomViewStrategyResolution(
             CustomViewStrategyResolutionOutcome.Resolved,
-            basisResourceName,
-            ResolvePreferredBasisResource(mappingSet, candidateResources)
+            preferredBasisResourceCandidates[0].ResourceName,
+            ResolvePreferredBasisResource(mappingSet, preferredBasisResourceCandidates)
         );
     }
 

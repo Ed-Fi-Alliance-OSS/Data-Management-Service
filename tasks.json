@@ -194,6 +194,6 @@
       "Add regression tests proving malformed names with no valid basis-resource prefix still return the security-configuration failure path, and that standard `Ed-Fi` homographs remain preferred over extensions.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalGetManyAuthorizationStrategyClassifier`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
