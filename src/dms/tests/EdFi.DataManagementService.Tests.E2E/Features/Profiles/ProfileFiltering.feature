@@ -32,6 +32,7 @@ Feature: Profile Response Filtering
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 01 GET by ID with IncludeOnly profile returns only included fields
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
@@ -39,6 +40,7 @@ Feature: Profile Response Filtering
              And the response body should not contain fields "shortNameOfInstitution, educationOrganizationCategories, gradeLevels"
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 02 GET by ID with IncludeOnly profile preserves identity fields
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
@@ -73,6 +75,7 @@ Feature: Profile Response Filtering
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 03 GET by ID with ExcludeOnly profile excludes specified fields
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-ExcludeOnly" for resource "School"
             Then the profile response status is 200
@@ -80,6 +83,7 @@ Feature: Profile Response Filtering
              And the response body should contain fields "id, schoolId, nameOfInstitution"
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 04 GET by ID with ExcludeOnly profile includes non-excluded fields
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-ExcludeOnly" for resource "School"
             Then the profile response status is 200
@@ -114,6 +118,7 @@ Feature: Profile Response Filtering
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 05 GET by ID with IncludeAll profile returns all fields
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeAll" for resource "School"
             Then the profile response status is 200
@@ -167,6 +172,7 @@ Feature: Profile Response Filtering
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 06 Query with IncludeOnly profile filters all items in array
             When a GET request is made to "/ed-fi/schools?schoolId=99000104" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
@@ -202,6 +208,7 @@ Feature: Profile Response Filtering
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 07 Profiled GET and query preserve the full-resource etag
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}"
@@ -221,6 +228,7 @@ Feature: Profile Response Filtering
              And the response body path "0._etag" should equal variable "fullSchoolEtag"
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 08 Profiled PUT succeeds with a profiled If-Match and returns the full-resource etag
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
@@ -254,6 +262,7 @@ Feature: Profile Response Filtering
              And the response body path "shortNameOfInstitution" should have value "PETS-UPD"
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 09 Hidden field changes invalidate a stale profiled etag
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200

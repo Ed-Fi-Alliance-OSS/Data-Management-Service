@@ -14,6 +14,7 @@ Feature: Descriptor CaseInsensitive Validation
                   | uri://ed-fi.org/CourseGpaApplicabilityDescriptor#Applicable          |
               
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 1 Ensure clients can create objectiveAssessments with case-insensitive descriptor values
              When a POST request is made to "/ed-fi/assessments" with
                   """

@@ -18,6 +18,7 @@ Feature: Update a Descriptor
 
         @API-033
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 01 Put an existing descriptor
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -48,6 +49,7 @@ Feature: Update a Descriptor
 
         @API-034
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 02 Put an existing descriptor with optional properties removed
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -72,6 +74,7 @@ Feature: Update a Descriptor
 
         @API-035
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 03 Update a descriptor with a string that is too long
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -131,6 +134,7 @@ Feature: Update a Descriptor
 
         @API-037
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 05 Update a descriptor with spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -168,6 +172,7 @@ Feature: Update a Descriptor
 
         @API-038
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 06 Update a descriptor with leading spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -199,6 +204,7 @@ Feature: Update a Descriptor
 
         @API-039
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 07 Update a descriptor with trailing spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -230,6 +236,7 @@ Feature: Update a Descriptor
 
         @API-040
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 08 Put an existing descriptor with an extra property (overpost)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -257,6 +264,7 @@ Feature: Update a Descriptor
 
         @API-041
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 09 Update a descriptor that does not exist
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/00000000-0000-4000-a000-000000000000" with
@@ -312,6 +320,7 @@ Feature: Update a Descriptor
 
         @API-043
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 11  Put an empty request descriptor
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -335,6 +344,7 @@ Feature: Update a Descriptor
 
         @API-044
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 12 Put an empty JSON body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -371,6 +381,7 @@ Feature: Update a Descriptor
 
         @API-045
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 13 Update a descriptor with mismatch between URL and id
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -401,6 +412,7 @@ Feature: Update a Descriptor
 
         @API-046
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 14 Update a descriptor with a blank id
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -431,6 +443,7 @@ Feature: Update a Descriptor
 
         @API-047
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 15 Update a descriptor with an invalid id format in the body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -461,6 +474,7 @@ Feature: Update a Descriptor
 
         @API-048
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 16 Update a descriptor with duplicate properties
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -493,6 +507,7 @@ Feature: Update a Descriptor
 
         @API-049
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 17 Ensure clients cannot update a descriptor omitting any of the required values
              When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
                   """
@@ -590,6 +605,7 @@ Feature: Update a Descriptor
 
         @API-052
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 20 Verify response code 400 when ID is not valid
              When a PUT request is made to "/ed-fi/disabilityDescriptors/00112233445566" with
                   """

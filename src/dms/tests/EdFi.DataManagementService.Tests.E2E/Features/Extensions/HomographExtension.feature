@@ -6,6 +6,7 @@ Feature: Homograph extension resources
     Rule: Homograph Extension Resources
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 01 Ensure clients can create/update/get/delete a school in homograph extension
       # POST request to create a school
              When a POST request is made to "/homograph/schools/" with
@@ -60,6 +61,7 @@ Feature: Homograph extension resources
              Then it should respond with 404
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 02 Ensure clients can create/update/get/delete a student in homograph extension
       # POST request to create a schoolYearType
             Given a POST request is made to "/homograph/schoolYearTypes/" with

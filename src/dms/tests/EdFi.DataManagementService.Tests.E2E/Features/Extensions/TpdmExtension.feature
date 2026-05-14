@@ -5,6 +5,7 @@ Feature: Tpdm extension resources and descriptors
 
     Rule: Descriptors
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 01 Ensure clients can create a descriptor
              When a POST request is made to "/tpdm/accreditationStatusDescriptors" with
                   """
@@ -37,6 +38,7 @@ Feature: Tpdm extension resources and descriptors
                   }
                   """
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 02 Ensure clients can update a descriptor
              When a POST request is made to "/tpdm/accreditationStatusDescriptors" with
                   """
@@ -77,6 +79,7 @@ Feature: Tpdm extension resources and descriptors
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 03 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
             Given a POST request is made to "/tpdm/accreditationStatusDescriptors" with
                   """
@@ -108,6 +111,7 @@ Feature: Tpdm extension resources and descriptors
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 04 Ensure clients can delete a descriptor
             Given a POST request is made to "/tpdm/accreditationStatusDescriptors" with
                   """
@@ -141,6 +145,7 @@ Feature: Tpdm extension resources and descriptors
     Rule: Resources
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 05 Ensure clients can create a resource
              When a POST request is made to "/tpdm/candidates" with
                   """
@@ -170,6 +175,7 @@ Feature: Tpdm extension resources and descriptors
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 06 Ensure clients can update a resource
              When a POST request is made to "/tpdm/candidates" with
                   """
@@ -204,6 +210,7 @@ Feature: Tpdm extension resources and descriptors
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 07 Ensure clients can query a resource
             Given a POST request is made to "/tpdm/candidates" with
                   """
@@ -231,6 +238,7 @@ Feature: Tpdm extension resources and descriptors
                   """
 
         @relational-backend
+        @relational-ci-shard-2
         Scenario: 08 Ensure clients can delete a resource
             Given a POST request is made to "/tpdm/candidates" with
                   """
