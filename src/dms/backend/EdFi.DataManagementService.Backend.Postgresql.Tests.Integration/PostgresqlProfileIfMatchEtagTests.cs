@@ -188,6 +188,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
 
         var request = new RelationalQueryRequest(
             ResourceInfo: PostgresqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: PostgresqlProfileRootTableOnlyMergeSupport
