@@ -34,6 +34,10 @@ public sealed record AuthorizationClaimEducationOrganizationIdParameterization(
 
 /// <summary>
 /// Builds the DMS-1055 claim EdOrg authorization parameterization for the target SQL dialect.
+/// Normalization is repeated here defensively even though request-scoped relational authorization
+/// contexts are normalized when created. Some callers can pass claim lists directly, and dialect
+/// selection, SQL Server TVP thresholding, and generated parameter names must always use a
+/// deduplicated, deterministic list.
 /// </summary>
 public static class AuthorizationClaimEducationOrganizationIdParameterizationFactory
 {
