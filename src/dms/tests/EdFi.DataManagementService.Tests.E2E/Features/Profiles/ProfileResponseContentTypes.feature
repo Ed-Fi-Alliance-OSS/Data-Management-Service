@@ -31,6 +31,7 @@ Feature: Profile Response Content Types
                   }
                   """
 
+        @relational-backend
         Scenario: 01 GET collection with profile returns profile content type
              When a GET request is made to "/ed-fi/schools?schoolId=99002001" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 200
@@ -41,6 +42,7 @@ Feature: Profile Response Content Types
                   }
                   """
 
+        @relational-backend
         Scenario: 02 GET item by id with profile returns profile content type
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 200
@@ -51,6 +53,7 @@ Feature: Profile Response Content Types
                   }
                   """
 
+        @relational-backend
         Scenario: 03 GET with explicit profile returns content type including profile and readable suffix
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 200
@@ -61,6 +64,7 @@ Feature: Profile Response Content Types
                   }
                   """
 
+        @relational-backend
         Scenario: 04 GET collection with explicit profile returns profile-specific media type
              When a GET request is made to "/ed-fi/schools?schoolId=99002001" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 200
@@ -71,6 +75,7 @@ Feature: Profile Response Content Types
                   }
                   """
 
+        @relational-backend
         Scenario: 05 GET item by id with profile Accept header and media-type parameters succeeds
              When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.e2e-test-school-includeonly.readable+json; charset=utf-8"
              Then the profile response status is 200
@@ -81,6 +86,7 @@ Feature: Profile Response Content Types
                   }
                   """
 
+        @relational-backend
         Scenario: 06 GET collection with profile Accept header and media-type parameters succeeds
              When a GET request is made to "/ed-fi/schools?schoolId=99002001" with Accept header "application/vnd.ed-fi.school.e2e-test-school-includeonly.readable+json; q=1.0"
              Then the profile response status is 200

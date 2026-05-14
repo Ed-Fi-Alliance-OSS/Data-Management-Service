@@ -34,6 +34,7 @@ Feature: Read a Descriptor
                   """
 
         @API-028
+        @relational-backend
         Scenario: 02 Verify response code 404 when ID does not exist
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/124c8513-fade-4ce2-ab71-0e40e148de5b"
              Then it should respond with 404
@@ -99,6 +100,7 @@ Feature: Read a Descriptor
                   """
 
         @API-032
+        @relational-backend
         Scenario: 07 Verify response code 404 when ID is not valid
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
              Then it should respond with 400
@@ -119,6 +121,7 @@ Feature: Read a Descriptor
                   }
                   """
 
+        @relational-backend
         Scenario: 08 Get a Descriptor using a resource not configured in claims
              When a GET request is made to "/ed-fi/academicHonorCategoryDescriptors"
              Then it should respond with 403

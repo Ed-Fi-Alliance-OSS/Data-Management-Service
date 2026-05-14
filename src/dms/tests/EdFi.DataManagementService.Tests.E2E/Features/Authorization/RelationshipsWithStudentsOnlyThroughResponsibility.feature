@@ -30,6 +30,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   | "Career and Technical Education" | uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education | {"educationOrganizationId": 1255901002} |
 
     Rule: StudentEducationOrganizationResponsibilityAssociation CRUD is properly authorized
+        @relational-backend
         Scenario: 01 Ensure client can create a StudentEducationOrganizationResponsibilityAssociation
              When a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """

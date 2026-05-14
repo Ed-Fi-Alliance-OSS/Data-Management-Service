@@ -40,17 +40,20 @@ Feature: Profile Collection Item Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 01 Collection filter includes only matching items
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-GradeLevelFilter" for resource "School"
              Then the profile response status is 200
               And the "gradeLevels" collection should only contain items where "gradeLevelDescriptor" is "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
 
+        @relational-backend
         Scenario: 02 Collection filter excludes non-matching items
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-GradeLevelFilter" for resource "School"
              Then the profile response status is 200
               And the "gradeLevels" collection should not contain items where "gradeLevelDescriptor" is "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
               And the "gradeLevels" collection should not contain items where "gradeLevelDescriptor" is "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"
 
+        @relational-backend
         Scenario: 03 Collection filter reduces item count
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-GradeLevelFilter" for resource "School"
              Then the profile response status is 200
@@ -92,11 +95,13 @@ Feature: Profile Collection Item Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 04 ExcludeOnly filter excludes matching items
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-GradeLevelExcludeFilter" for resource "School"
              Then the profile response status is 200
               And the "gradeLevels" collection should not contain items where "gradeLevelDescriptor" is "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
 
+        @relational-backend
         Scenario: 05 ExcludeOnly filter includes non-matching items
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-GradeLevelExcludeFilter" for resource "School"
              Then the profile response status is 200
@@ -135,6 +140,7 @@ Feature: Profile Collection Item Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 06 Collection filter applies to all items in query results
              When a GET request is made to "/ed-fi/schools?schoolId=99000403" with profile "E2E-Test-School-GradeLevelFilter" for resource "School"
              Then the profile response status is 200
@@ -172,6 +178,7 @@ Feature: Profile Collection Item Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 07 Collection becomes empty when no items match filter
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-GradeLevelFilter" for resource "School"
              Then the profile response status is 200
@@ -303,6 +310,7 @@ Feature: Profile Collection Item Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 08 IncludeOnly nested filter profile is currently unsupported on read
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-Nested-Child-Collection-Filtered-To-IncludeOnly-Specific-Types-and-Descriptors" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/studentAssessments/{id}" with profile "Test-Profile-Resource-Nested-Child-Collection-Filtered-To-IncludeOnly-Specific-Types-and-Descriptors" for resource "StudentAssessment"
@@ -310,6 +318,7 @@ Feature: Profile Collection Item Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
         Scenario: 09 ExcludeOnly nested filter profile is currently unsupported on read
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-Nested-Child-Collection-Filtered-To-ExcludeOnly-Specific-Types-and-Descriptors" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/studentAssessments/{id}" with profile "Test-Profile-Resource-Nested-Child-Collection-Filtered-To-ExcludeOnly-Specific-Types-and-Descriptors" for resource "StudentAssessment"
@@ -317,6 +326,7 @@ Feature: Profile Collection Item Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
         Scenario: 10 IncludeOnly nested filter profile is currently unsupported on write
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-Nested-Child-Collection-Filtered-To-IncludeOnly-Specific-Types-and-Descriptors" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/studentAssessments/{id}" with profile "Test-Profile-Resource-Nested-Child-Collection-Filtered-To-IncludeOnly-Specific-Types-and-Descriptors" for resource "StudentAssessment" with body
@@ -363,6 +373,7 @@ Feature: Profile Collection Item Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
         Scenario: 11 ExcludeOnly nested filter profile is currently unsupported on write
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-Nested-Child-Collection-Filtered-To-ExcludeOnly-Specific-Types-and-Descriptors" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/studentAssessments/{id}" with profile "Test-Profile-Resource-Nested-Child-Collection-Filtered-To-ExcludeOnly-Specific-Types-and-Descriptors" for resource "StudentAssessment" with body

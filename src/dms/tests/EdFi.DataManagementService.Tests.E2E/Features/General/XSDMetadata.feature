@@ -1,5 +1,6 @@
 Feature: XSD Metadata Endpoint
 
+        @relational-backend
         Scenario: 01 Ensure clients can retrieve XSD endpoint information
              When a GET request is made to "/metadata/xsd"
              Then it should respond with 200
@@ -32,6 +33,7 @@ Feature: XSD Metadata Endpoint
                       }
                     ]
                   """
+        @relational-backend
         Scenario: 02 Ensure clients can retrieve Core schema (Ed-Fi) files for the data model
              When a GET request is made to "/metadata/xsd/ed-fi/files"
              Then it should respond with 200
@@ -67,6 +69,7 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/ed-fi/SchemaAnnotation.xsd"
                     ]
                   """
+        @relational-backend
         Scenario: 03 Ensure clients can retrieve Extension (Sample) blended with Core schema files for the data model
              When a GET request is made to "/metadata/xsd/sample/files"
              Then it should respond with 200
@@ -112,6 +115,7 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentTranscript-Extension.xsd"
                     ]
                   """
+        @relational-backend
         Scenario: 04 Ensure clients can retrieve Extension (Homograph) blended with Core schema files for the data model
              When a GET request is made to "/metadata/xsd/homograph/files"
              Then it should respond with 200
@@ -147,6 +151,7 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/homograph/SchemaAnnotation.xsd"
                     ]
                   """
+        @relational-backend
         Scenario: 05 Ensure clients can retrieve Extension (TPDM) blended with Core schema files for the data model
              When a GET request is made to "/metadata/xsd/tpdm/files"
              Then it should respond with 200
@@ -189,6 +194,7 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/tpdm/TPDM-EXTENSION-Interchange-Survey-Extension.xsd"
                     ]
                   """
+        @relational-backend
         Scenario: 06 Ensure clients can retrieve XSD content of TPDM Extension
              When a GET request is made to "/metadata/xsd/tpdm/EdFi.TPDM.ApiSchema.xsd.TPDM-EXTENSION-Interchange-Survey-Extension.xsd"
              Then it should respond with 200
@@ -226,6 +232,7 @@ Feature: XSD Metadata Endpoint
                       </xs:element>
                     </xs:schema>
                   """
+        @relational-backend
         Scenario: 07 Ensure clients can retrieve XSD content of Sample Extension
              When a GET request is made to "/metadata/xsd/sample/EdFi.Sample.ApiSchema.xsd.Sample-EXTENSION-Interchange-StudentProgram-Extension.xsd"
              Then it should respond with 200
@@ -258,6 +265,7 @@ Feature: XSD Metadata Endpoint
                     </xs:element>
                     </xs:schema>
                   """
+        @relational-backend
         Scenario: 08 Ensure clients can retrieve XSD content of Core
              When a GET request is made to "/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Survey.xsd"
              Then it should respond with 200

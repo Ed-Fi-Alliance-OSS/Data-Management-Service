@@ -31,6 +31,7 @@ Feature: Profile Header Validation
                   }
                   """
 
+        @relational-backend
         Scenario: 01 Malformed profile header returns 400
              When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.invalid"
              Then the profile response status is 400
@@ -40,6 +41,7 @@ Feature: Profile Header Validation
               And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
               And the response body errors should match regex "(?i)The format of the profile-based content type header was invalid\."
 
+        @relational-backend
         Scenario: 02 Profile header with wrong resource name returns 400
              When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.student.e2e-test-school-includeonly.readable+json"
              Then the profile response status is 400
@@ -49,6 +51,7 @@ Feature: Profile Header Validation
               And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
               And the response body errors should match regex "(?i)The resource specified by the profile-based content type \('student'\) does not match the requested resource \('School'\)\."
 
+        @relational-backend
         Scenario: 03 Profile header with writable usage for GET returns 400
              When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.e2e-test-school-includeonly.writable+json"
              Then the profile response status is 400
@@ -194,6 +197,7 @@ Feature: Profile Header Validation
                   }
                   """
 
+        @relational-backend
         Scenario: 08 Using profile header on app without profiles succeeds
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 200
@@ -228,6 +232,7 @@ Feature: Profile Header Validation
                   }
                   """
 
+        @relational-backend
         Scenario: 09 Using nonexistent profile returns 406
              When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.nonexistent-profile.readable+json"
              Then the profile response status is 406
@@ -265,6 +270,7 @@ Feature: Profile Header Validation
                   }
                   """
 
+        @relational-backend
         Scenario: 10 Valid profile header for correct resource succeeds
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 200

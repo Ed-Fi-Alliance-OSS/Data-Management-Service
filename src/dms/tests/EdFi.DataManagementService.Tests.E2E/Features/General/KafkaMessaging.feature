@@ -2,6 +2,7 @@ Feature: Kafka Messaging
     This feature demonstrates a simple Kafka testing approach. *Note* running these tests locally require a specific hosts entry: 127.0.0.1 dms-kafka1
 
         @kafka
+        @relational-backend
         Scenario: 01 Test Kafka connectivity
             Given Kafka should be reachable
              Then Kafka consumer should be able to connect to topic "edfi.dms.document"

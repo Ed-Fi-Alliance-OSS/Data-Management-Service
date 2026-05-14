@@ -52,6 +52,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
 
         @API-121
+        @relational-backend
         Scenario: 02 Ensure clients can get information when filtering by limit and offset greater than the total
              When a GET request is made to "/ed-fi/schools?offset=600&limit=5"
              Then it should respond with 200
@@ -61,6 +62,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
 
         @API-122
+        @relational-backend
         Scenario: 03 Ensure clients can GET information when querying using an offset without providing any limit in the query string
              When a GET request is made to "/ed-fi/schools?offset=4"
              Then it should respond with 200
@@ -86,6 +88,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
 
         @API-123
+        @relational-backend
         Scenario: 04 Ensure clients can GET information when filtering with limits and properties
              When a GET request is made to "/ed-fi/schools?nameOfInstitution=School+5&limit=2"
              Then it should respond with 200
@@ -111,6 +114,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
 
         @API-147
+        @relational-backend
         Scenario Outline: 12 Ensure clients can not GET information when filtering by limit and offset using invalid values
             # Some of these are "SQL Injection" style attacks
              When a GET request is made to "/ed-fi/schools?offset=<value>"
@@ -137,6 +141,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | '0)'                     |
                   | '1%27'                   |
 
+        @relational-backend
         Scenario Outline: 13 Ensure clients can not GET information when filtering by out of tange limit values
              When a GET request is made to "/ed-fi/schools?offset=0&limit=<value>"
              Then it should respond with 400

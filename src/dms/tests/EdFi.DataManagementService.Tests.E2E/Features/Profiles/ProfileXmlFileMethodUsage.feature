@@ -5,6 +5,7 @@ Feature: Profile XML File Method Usage
 
     Rule: Assigned profiles that do not support the method fall back to standard behavior
 
+        @relational-backend
         Scenario: Read-only assigned profile does not block standard POST without profile header
             Given a profile "Test-Profile-Resource-ReadOnly" is created from XML file "Profiles/TestXmls/Profiles.xml"
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-ReadOnly" and namespacePrefixes "uri://ed-fi.org"
@@ -31,6 +32,7 @@ Feature: Profile XML File Method Usage
                   """
              Then the profile response status is 201
 
+        @relational-backend
         Scenario: Write-only assigned profile does not block standard GET without profile header
             Given a profile "Test-Profile-Resource-WriteOnly" is created from XML file "Profiles/TestXmls/Profiles.xml"
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
@@ -61,6 +63,7 @@ Feature: Profile XML File Method Usage
 
     Rule: Read-only profile allows GET and rejects POST
 
+        @relational-backend
         Scenario: 01 Read-only profile allows GET and rejects POST
             Given a profile "Test-Profile-Resource-ReadOnly" is created from XML file "Profiles/TestXmls/Profiles.xml"
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
@@ -137,6 +140,7 @@ Feature: Profile XML File Method Usage
 
     Rule: Write-only profile rejects GET
 
+        @relational-backend
         Scenario: 02 Write-only profile rejects GET
             Given a profile "Test-Profile-Resource-WriteOnly" is created from XML file "Profiles/TestXmls/Profiles.xml"
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"

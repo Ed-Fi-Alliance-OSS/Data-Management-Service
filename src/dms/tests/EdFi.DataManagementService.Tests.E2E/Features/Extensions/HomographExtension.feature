@@ -5,6 +5,7 @@ Feature: Homograph extension resources
 
     Rule: Homograph Extension Resources
 
+        @relational-backend
         Scenario: 01 Ensure clients can create/update/get/delete a school in homograph extension
       # POST request to create a school
              When a POST request is made to "/homograph/schools/" with
@@ -58,6 +59,7 @@ Feature: Homograph extension resources
              When a GET request is made to "/homograph/schools/{id}"
              Then it should respond with 404
 
+        @relational-backend
         Scenario: 02 Ensure clients can create/update/get/delete a student in homograph extension
       # POST request to create a schoolYearType
             Given a POST request is made to "/homograph/schoolYearTypes/" with

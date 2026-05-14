@@ -31,6 +31,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
     Rule: staffEducationOrganizationAssignmentAssociations CRUD is properly authorized
 
+        @relational-backend
         Scenario: 01 Ensure client can authorize create a staffSchoolAssociations when the staff is assigned to the school using staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
@@ -534,6 +535,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 204
 
+        @relational-backend
         Scenario: 20 Ensure client can DELETE staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with

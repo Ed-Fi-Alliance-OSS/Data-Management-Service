@@ -38,12 +38,14 @@ Feature: Profile Extension Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 01 Extension IncludeOnly profile returns only specified extension properties
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Extension-IncludeOnly" for resource "School"
             Then the profile response status is 200
              And the response body should contain path "_ext.sample.isExemplary"
              And the response body should not contain path "_ext.sample.cteProgramService"
 
+        @relational-backend
         Scenario: 02 Extension IncludeOnly profile preserves the isExemplary value
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Extension-IncludeOnly" for resource "School"
             Then the profile response status is 200
@@ -84,11 +86,13 @@ Feature: Profile Extension Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 03 Extension ExcludeOnly profile excludes specified extension properties
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Extension-ExcludeOnly" for resource "School"
             Then the profile response status is 200
              And the response body should not contain path "_ext.sample.isExemplary"
 
+        @relational-backend
         Scenario: 04 Extension ExcludeOnly profile includes non-excluded extension properties
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Extension-ExcludeOnly" for resource "School"
             Then the profile response status is 200
@@ -130,6 +134,7 @@ Feature: Profile Extension Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 05 Parent IncludeOnly profile without extension rule excludes _ext entirely
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly-NoExtensionRule" for resource "School"
              Then the profile response status is 200
@@ -172,6 +177,7 @@ Feature: Profile Extension Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 06 Parent ExcludeOnly profile without extension rule includes _ext
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-ExcludeOnly-NoExtensionRule" for resource "School"
              Then the profile response status is 200
@@ -179,6 +185,7 @@ Feature: Profile Extension Filtering
               And the response body should contain path "_ext.sample.isExemplary"
               And the response body should contain path "_ext.sample.cteProgramService"
 
+        @relational-backend
         Scenario: 07 Parent ExcludeOnly profile excludes specified core properties but keeps extensions
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-ExcludeOnly-NoExtensionRule" for resource "School"
              Then the profile response status is 200

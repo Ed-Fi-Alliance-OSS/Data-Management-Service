@@ -57,6 +57,7 @@ Feature: Profile Reference Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 01 IncludeOnly reference profile is currently unsupported on read
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-IncludeOnly" for resource "School"
@@ -118,6 +119,7 @@ Feature: Profile Reference Filtering
                   }
                   """
 
+        @relational-backend
         Scenario: 02 ExcludeOnly profile excludes configured reference properties on read
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-ExcludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-ExcludeOnly" for resource "School"

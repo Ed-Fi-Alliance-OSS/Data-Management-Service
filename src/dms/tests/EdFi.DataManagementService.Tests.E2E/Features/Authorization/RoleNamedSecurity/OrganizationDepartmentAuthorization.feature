@@ -10,6 +10,7 @@ Feature: OrganizationDepartment Authorization
                   | orgDepId                    | 255901101                | Test Office       | {"educationOrganizationId": 255901}  | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department" }] |
 
     Rule: When the client is authorized
+        @relational-backend
         Scenario: 01 Ensure authorized client can create a OrganizationDepartment
              When a POST request is made to "/ed-fi/organizationDepartments" with
                   """
@@ -28,6 +29,7 @@ Feature: OrganizationDepartment Authorization
                   """
              Then it should respond with 201
 
+        @relational-backend
         Scenario: 02.1 Ensure authorized client can get a OrganizationDepartment by id
              When a GET request is made to "/ed-fi/organizationDepartments/{orgDepId}"
              Then it should respond with 200
@@ -69,6 +71,7 @@ Feature: OrganizationDepartment Authorization
                   ]
                   """
 
+        @relational-backend
         Scenario: 03 Ensure authorized client can update a OrganizationDepartment
              When a PUT request is made to "/ed-fi/organizationDepartments/{orgDepId}" with
                   """
@@ -88,6 +91,7 @@ Feature: OrganizationDepartment Authorization
                   """
              Then it should respond with 204
 
+        @relational-backend
         Scenario: 04 Ensure authorized client can delete a OrganizationDepartment
              When a DELETE request is made to "/ed-fi/organizationDepartments/{orgDepId}"
              Then it should respond with 204

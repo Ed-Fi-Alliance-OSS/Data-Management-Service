@@ -18,6 +18,7 @@ Feature: Create Reference Validation
                   | 123      | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
         @API-079
+        @relational-backend
         Scenario: 01 Ensure clients cannot create a resource with a non existing reference
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -51,6 +52,7 @@ Feature: Create Reference Validation
               And it should respond with 409
 
         @API-080
+        @relational-backend
         Scenario: 02 Ensure clients cannot create a resource with correct information but an invalid value belonging to the reference
              When a POST request is made to "/ed-fi/studentCTEProgramAssociations" with
                   """
@@ -92,6 +94,7 @@ Feature: Create Reference Validation
               And it should respond with 409
 
         @API-081
+        @relational-backend
         Scenario: 03 Ensure clients cannot create a resource using a reference that is out of range of the existing values
              When a POST request is made to "/ed-fi/graduationPlans" with
                   """
@@ -125,6 +128,7 @@ Feature: Create Reference Validation
                   """
 
         @API-082
+        @relational-backend
         Scenario: 04 Ensure clients cannot create a resource using an invalid reference inside of another reference
             Given the system has these "students"
                   | studentUniqueId | firstName | lastSurname | birthDate    |
@@ -164,6 +168,7 @@ Feature: Create Reference Validation
                   """
 
         @API-083
+        @relational-backend
         Scenario: 05 Verify clients cannot update a resource with a bad academicWeeks reference
             Given the system has these "AcademicWeeks" references
                   | weekIdentifier | nameOfInstitution | schoolReference   | beginDate    | endDate      | totalInstructionalDays |

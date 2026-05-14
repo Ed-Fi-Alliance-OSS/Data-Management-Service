@@ -14,6 +14,7 @@ Feature: Resources "Create" Operation validations
     Rule: Resources
 
         @API-152 @POST
+        @relational-backend
         Scenario: 01 Post an empty request object (Resource)
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -35,6 +36,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-153 @POST
+        @relational-backend
         Scenario: 02 Post using an empty JSON body (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -71,6 +73,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-154 @POST
+        @relational-backend
         Scenario: 03 Create a document with spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -103,6 +106,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-155 @POST
+        @relational-backend
         Scenario: 04 Create a document with leading spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -135,6 +139,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-156 @POST
+        @relational-backend
         Scenario: 05 Create a document with trailing spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -167,6 +172,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-157 @POST
+        @relational-backend
         Scenario: 07 Create a document with a required, non-identity, property's value containing leading and trailing white spaces (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -180,6 +186,7 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 201
 
         @API-158 @POST
+        @relational-backend
         Scenario: 08 Create a document with optional property's value containing only white spaces (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -195,6 +202,7 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 200
 
         @API-159 @POST
+        @relational-backend
         Scenario: 09 Create a document with id property (Resource)
             # The ID used does not need to exist: any ID is invalid here
              When a POST request is made to "/ed-fi/academicWeeks" with
@@ -351,6 +359,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-163 @POST
+        @relational-backend
         Scenario: 13 Post a request with a value that is too short (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -383,6 +392,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-164 @POST
+        @relational-backend
         Scenario: 14 Post a request with a value that is too long (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -415,6 +425,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-165 @POST
+        @relational-backend
         Scenario: 15 Create a document that is missing multiple required properties (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -450,6 +461,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-166 @POST
+        @relational-backend
         Scenario: 16 Post a new document (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
@@ -475,6 +487,7 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 200
 
         @API-167 @POST
+        @relational-backend
         Scenario: 17 Post a request with a duplicated value (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
@@ -507,6 +520,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-168 @POST
+        @relational-backend
         Scenario: 18 Create a document with empty value in identity fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -536,6 +550,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-169 @POST
+        @relational-backend
         Scenario: 19 Create a document with leading and trailing spaces in required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -549,6 +564,7 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 201 or 200
 
         @API-170 @POST
+        @relational-backend
         Scenario: 20 Create a document with just spaces in required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -578,6 +594,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-171 @POST
+        @relational-backend
         Scenario: 21 Create a document with empty required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -706,6 +723,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-175 @POST
+        @relational-backend
         Scenario: 27 Post an invalid document missing a comma (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -737,6 +755,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
+        @relational-backend
         Scenario: 28 Ensure the location header has correct path when a path base is provided
              When a POST request is made to "/ed-fi/students" with path base "api"
                   """
@@ -765,6 +784,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
+        @relational-backend
         Scenario: 29 Ensure prunning of an empty collection
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
@@ -797,6 +817,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
+        @relational-backend
         Scenario: 30 Insert the same school after deletion
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -837,6 +858,7 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 201
 
+        @relational-backend
         Scenario: 31 When posting a resource with decimal overflow
              When a POST request is made to "/ed-fi/staffs" with
                   """
@@ -865,6 +887,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
+        @relational-backend
         Scenario: 32 When posting a resource with decimal as int
              When a POST request is made to "/ed-fi/staffs" with
                   """
@@ -878,6 +901,7 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 201
 
+        @relational-backend
         Scenario: 33 When posting a resource with decimal overflow as string
              When a POST request is made to "/ed-fi/staffs" with
                   """
@@ -906,6 +930,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
+        @relational-backend
         Scenario: 34 Post and Put a request with slash-formatted dates that get coerced to ISO-8601 format (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """

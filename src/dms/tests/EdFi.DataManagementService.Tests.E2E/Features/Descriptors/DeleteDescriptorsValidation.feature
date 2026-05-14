@@ -15,11 +15,13 @@ Feature: Delete a Descriptor
                   """
 
         @API-022
+        @relational-backend
         Scenario: 01 Verify deleting a specific descriptor by ID
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
 
         @API-023
+        @relational-backend
         Scenario: 02 Verify error handling when deleting a descriptor using a invalid id
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
              Then it should respond with 400
@@ -41,18 +43,21 @@ Feature: Delete a Descriptor
                   """
 
         @API-024
+        @relational-backend
         Scenario: 03 Verify error handling when trying to delete an item that has already been deleted
             Given a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 
         @API-025
+        @relational-backend
         Scenario: 04 Verify response code when trying to read a deleted resource
             Given a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 
         @API-026
+        @relational-backend
         Scenario: 05 Ensure clients cannot delete a descriptor that is being used by other Resources
             Given the system has these "schools"
                   | schoolId | nameOfInstitution             | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |

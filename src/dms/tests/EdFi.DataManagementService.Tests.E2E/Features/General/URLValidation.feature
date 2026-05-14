@@ -22,6 +22,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-067
+        @relational-backend
         Scenario: 01 Ensure clients cannot retrieve information when the data model name is missing
              When a GET request is made to "/schools"
              Then it should respond with 404
@@ -45,6 +46,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-068
+        @relational-backend
         Scenario: 02 Ensure clients cannot create a resource when the data model name is missing
              When a POST request is made to "/schools" with
                   """
@@ -84,6 +86,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-069
+        @relational-backend
         Scenario: 03 Ensure clients cannot update a resource when the data model name is missing
              When a PUT request is made to "/schools/{id}" with
                   """
@@ -124,6 +127,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-070
+        @relational-backend
         Scenario: 04 Ensure clients cannot delete a resource when the data model name is missing
              When a DELETE request is made to "/schools/{id}"
              Then it should respond with 404
@@ -147,6 +151,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-071
+        @relational-backend
         Scenario: 05 Ensure clients cannot retrieve a resource when endpoint is not pluralized
              When a GET request is made to "/ed-fi/school"
              Then it should respond with 404
@@ -170,6 +175,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-072
+        @relational-backend
         Scenario: 06 Ensure clients cannot create a resource when endpoint is not pluralized
              When a POST request is made to "/ed-fi/school" with
                   """
@@ -209,6 +215,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-073
+        @relational-backend
         Scenario: 07 Ensure clients cannot update a resource when endpoint does not end in plural
              When a PUT request is made to "/ed-fi/school/00000000-0000-4000-a000-000000000000" with
                   """
@@ -248,6 +255,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-074
+        @relational-backend
         Scenario: 08 Ensure clients cannot delete a resource when endpoint does not end in plural
              When a DELETE request is made to "/ed-fi/school/00000000-0000-4000-a000-000000000000"
              Then it should respond with 404
@@ -271,6 +279,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-075
+        @relational-backend
         Scenario: 09 Ensure clients cannot create a resource adding an ID as a path variable
              When a POST request is made to "/ed-fi/schools/00000000-0000-4000-a000-000000000000" with
                   """
@@ -312,6 +321,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-077
+        @relational-backend
         Scenario: 10 Ensure PUT requests require an Id value
              When a PUT request is made to "/ed-fi/schools/" with
                   """
@@ -353,6 +363,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-078
+        @relational-backend
         Scenario: 11 Ensure DELETE requests require an Id value
              When a DELETE request is made to "/ed-fi/schools/"
              Then it should respond with 405
@@ -415,6 +426,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-251
+        @relational-backend
         Scenario: 14 Ensure clients validate identifier on GET requests
              When a GET request is made to "/ed-fi/schools/ffc0a272"
              Then it should respond with 400
@@ -492,6 +504,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @DMS-816
+        @relational-backend
         Scenario: 18 Ensure clients get 404 for completely invalid path with prefix before data model
              When a POST request is made to "/ed-fi/notExisting" with
                   """
@@ -523,6 +536,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @DMS-816
+        @relational-backend
         Scenario: 19 Ensure clients get 404 for misspelled resource endpoint
              When a POST request is made to "/ed-fi/gradeLevelDescriptorz" with
                   """
@@ -554,6 +568,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @DMS-816
+        @relational-backend
         Scenario: 20 Ensure clients get 404 for arbitrary non-existent path
              When a GET request is made to "/foo/bar"
              Then it should respond with 404
@@ -577,6 +592,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @DMS-816
+        @relational-backend
         Scenario: 21 Ensure clients get 404 for PUT on non-existent path with ID
              When a PUT request is made to "/invalid/path/00000000-0000-4000-a000-000000000000" with
                   """

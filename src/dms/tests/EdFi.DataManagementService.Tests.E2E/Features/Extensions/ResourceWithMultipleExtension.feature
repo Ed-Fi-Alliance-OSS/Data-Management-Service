@@ -9,6 +9,7 @@ Feature: Resource with multiple extensions
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution |
                   | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                 |
 
+        @relational-backend
         Scenario: 01 Ensure clients can create a resource with tpdm extension reference
              When a POST request is made to "/ed-fi/postSecondaryInstitutions" with
                   """
@@ -98,6 +99,7 @@ Feature: Resource with multiple extensions
                   }
                   """
 
+    @relational-backend
     Scenario: 02 Ensure clients can not create a resource when tpdm extension reference is unavailable
              When a POST request is made to "/ed-fi/schools" with
              """
@@ -125,6 +127,7 @@ Feature: Resource with multiple extensions
              """
              Then it should respond with 409
 
+      @relational-backend
       Scenario: 03 Ensure clients can not create a resource when sample extension reference is unavailable
              When a POST request is made to "/ed-fi/schools" with
              """

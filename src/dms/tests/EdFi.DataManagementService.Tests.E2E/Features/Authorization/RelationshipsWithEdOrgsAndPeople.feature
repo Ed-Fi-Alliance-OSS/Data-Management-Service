@@ -25,6 +25,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | "11"            | Authorized student   | student-ln  | 2008-01-01 |
                   | "12"            | Unauthorized student | student-ln  | 2008-01-01 |
 
+        @relational-backend
         Scenario: 01 Ensure client can create a StudentSchoolAssociation
              When a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -57,6 +58,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-backend
         Scenario: 03 Ensure client can retrieve a StudentSchoolAssociation
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -150,6 +152,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   """
 
+        @relational-backend
         Scenario: 06 Ensure client can update a StudentSchoolAssociation
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -239,6 +242,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/StudentSchoolAssociations/{id}"
              Then it should respond with 403
 
+        @relational-backend
         Scenario: 09 Ensure client can delete a StudentSchoolAssociation
             Given  a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -276,6 +280,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   |                             | { "studentUniqueId": "22" } | { "schoolId": 2255901002 } | "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary" | 2023-08-01 | "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary" | "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew" |
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "2255901001"
 
+        @relational-backend
         Scenario: 10 Ensure client can create a Student
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -288,6 +293,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 201
 
+        @relational-backend
         Scenario: 11 Ensure client can retrieve a Student
              When a GET request is made to "/ed-fi/students/{StudentId}"
              Then it should respond with 200
@@ -329,6 +335,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   """
 
+        @relational-backend
         Scenario: 15 Ensure client can update a Student
              When a PUT request is made to "/ed-fi/students/{StudentId}" with
                   """
@@ -368,6 +375,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-backend
         Scenario: 18 Ensure client can delete a Student
             Given a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
 
@@ -395,6 +403,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | 3255902001                 | Authorized PSI    | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"} ] |
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "3255901001, 3255902001"
 
+        @relational-backend
         Scenario: 19 Ensure client can create a Student-securable
              When a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """
@@ -697,6 +706,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-backend
         Scenario: 29 Ensure client can delete a Student-securable
             Given a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """
@@ -1377,6 +1387,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
 
     Rule: Edge cases are properly authorized
+        @relational-backend
         Scenario: 42 Ensure client can CRUD a PostSecondaryEvent using the NoFurtherAuthorizationRequired strategy
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "7255901001, 7255902001"
               And the system has these "schools"
@@ -1440,6 +1451,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/PostSecondaryEvents/{id}"
              Then it should respond with 204
 
+        @relational-backend
         Scenario: 43 Ensure client without education organization access can CRUD a PostSecondaryEvent using the NoFurtherAuthorizationRequired strategy
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "8255901001, 8255902001"
               And the system has these "schools"
