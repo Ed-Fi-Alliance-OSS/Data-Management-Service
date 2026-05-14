@@ -215,7 +215,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   1. Should DMS-1055 introduce a typed token authorization context for relational GET-many, or keep parsing EdOrg IDs from AuthorizationStrategyEvaluator.Filters? I prefer a typed context so dedupe/sort/TVP binding is not coupled to legacy filter providers.
   2. For empty EdOrg claims, should the implementation short-circuit in C# to an empty page/count 0, or should it still generate SQL with a 1 = 0 authorization predicate?
   3. How should we distinguish custom view-based strategy names from truly unknown strategy names before DMS-1062? For example, should {BasisResource}With... be treated as “known but not implemented” and return 501, while non-matching unknown names remain a 500 security configuration error?
-  4. For security configuration failures in this story, should we use the current generic 500 response path, or add the urn:ed-fi:api:system-configuration:security ProblemDetails shape ahead of DMS-1099?
+  4. For security configuration failures in this story, should we use the current generic 500 response path, or add the urn:ed-fi:api:system:configuration:security ProblemDetails shape ahead of DMS-1099?
   5. Should we add a permanent CMS/E2E claim set for RelationshipsWithEdOrgsOnlyInverted, or create/patch that claim metadata only inside focused tests? I did not find an existing E2E inverted claim set.
   6. For non-GET operations configured with RelationshipsWithEdOrgsOnlyInverted before DMS-1056, should DMS-1055 force an explicit 501, or is it enough that GET-many works and other operations remain on the current failure path?
   7. Is it acceptable to add provider-specific parameter metadata to the query/runtime parameter model for SQL Server TVPs, while keeping actual SqlParameter construction in the executor layer?
@@ -244,7 +244,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   4. Use the canonical security-configuration ProblemDetails shape now.
      DMS-1055 should not introduce a new ProblemDetails shape or encode a generic 500 response for security configuration failures. Use the canonical 500 shape from `auth.md`:
 
-  - type: `urn:ed-fi:api:system-configuration:security`
+  - type: `urn:ed-fi:api:system:configuration:security`
   - title: `Security Configuration Error`
   - detail: `A security configuration problem was detected. The request cannot be authorized.`
 

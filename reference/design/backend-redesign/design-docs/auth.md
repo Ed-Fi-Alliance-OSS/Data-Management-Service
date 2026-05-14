@@ -1424,7 +1424,7 @@ The stored resource has a null `CreatedByOwnershipTokenId`, making it permanentl
 
 These indicate a misconfiguration in the security metadata and should not occur under normal conditions. DMS should return these when the authorization metadata is inconsistent or incomplete.
 
-**Type**: `urn:ed-fi:api:system-configuration:security`
+**Type**: `urn:ed-fi:api:system:configuration:security`
 
 **Title**: `Security Configuration Error`
 

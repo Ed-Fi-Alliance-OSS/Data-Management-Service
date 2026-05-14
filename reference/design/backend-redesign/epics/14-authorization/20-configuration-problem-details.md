@@ -11,23 +11,23 @@ Implement request-time 500 "Security Configuration Error" ProblemDetails respons
 
 ## Acceptance Criteria
 - When a request targets a resource for which no claim set or security metadata has been configured, the system returns a 500 response with:
-    - Type: urn:ed-fi:api:system-configuration:security
+    - Type: urn:ed-fi:api:system:configuration:security
     - Title: Security Configuration Error
     - Detail: A security configuration problem was detected. The request cannot be authorized.
     - Error: No security metadata has been configured for this resource.
 - When the caller's claim matches a resource but no authorization strategies are defined for the requested action, the system returns a 500 response with:
-    - Type: urn:ed-fi:api:system-configuration:security
+    - Type: urn:ed-fi:api:system:configuration:security
     - Title: Security Configuration Error
     - Detail: A security configuration problem was detected. The request cannot be authorized.
     - Error: No authorization strategies were defined for the requested action '{action}' against resource URIs ['{uri1}', '{uri2}'] matched by the caller's claim
     '{claimName}'.
 - When the configured authorization strategy name does not correspond to any known strategy implementation, the system returns a 500 response with:
-    - Type: urn:ed-fi:api:system-configuration:security
+    - Type: urn:ed-fi:api:system:configuration:security
     - Title: Security Configuration Error
     - Detail: A security configuration problem was detected. The request cannot be authorized.
     - Error: Could not find authorization strategy implementations for the following strategy names: '{strategyName1}', '{strategyName2}'.
 - When a custom view-based strategy references a basis entity property that does not exist on the authorization subject entity, the system returns a 500 response with:
-    - Type: urn:ed-fi:api:system-configuration:security
+    - Type: urn:ed-fi:api:system:configuration:security
     - Title: Security Configuration Error
     - Detail: A security configuration problem was detected. The request cannot be authorized.
     - Error: Unable to find a property on the authorization subject entity type '{targetEntityName}' corresponding to the '{propertyName}' property on the custom authorization view's basis entity type '{basisEntityName}' in order to perform authorization. Should a different authorization strategy be used?
