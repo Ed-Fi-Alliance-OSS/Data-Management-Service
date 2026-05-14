@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -20,6 +21,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 using static EdFi.DataManagementService.Core.UtilityService;
+using RelationalWriteSeamFixture = EdFi.DataManagementService.Core.Tests.Unit.Handler.RelationalWriteSeamFixture;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -29,11 +31,13 @@ public class ResourceActionAuthorizationMiddlewareTests
 {
     private RequestInfo _requestInfo = No.RequestInfo();
 
-    internal static IPipelineStep Middleware(
-        string action = "Create",
-        string expectedAuthStrategy = AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
-    )
+    internal static IPipelineStep Middleware(string action = "Create", params string[] expectedAuthStrategies)
     {
+        string[] authorizationStrategies =
+            expectedAuthStrategies.Length == 0
+                ? [AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired]
+                : expectedAuthStrategies;
+
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
             .Returns([
@@ -44,7 +48,11 @@ public class ResourceActionAuthorizationMiddlewareTests
                         new ResourceClaim(
                             $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
                             action,
-                            [new AuthorizationStrategy(expectedAuthStrategy)]
+                            [
+                                .. authorizationStrategies.Select(
+                                    static strategy => new AuthorizationStrategy(strategy)
+                                ),
+                            ]
                         ),
                     ]
                 ),
@@ -55,7 +63,9 @@ public class ResourceActionAuthorizationMiddlewareTests
     internal static RequestInfo CreateRequestInfo(
         RequestMethod requestMethod,
         string path,
-        bool hasDocumentUuidSegment = false
+        bool hasDocumentUuidSegment = false,
+        string endpointName = "schools",
+        string resourceName = "School"
     )
     {
         FrontendRequest frontEndRequest = new(
@@ -77,16 +87,17 @@ public class ResourceActionAuthorizationMiddlewareTests
             ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
             PathComponents = new PathComponents(
                 new ProjectEndpointName("ed-fi"),
-                new EndpointName("schools"),
+                new EndpointName(endpointName),
                 documentUuid,
                 hasDocumentUuidSegment
             ),
         };
 
-        requestInfo.ProjectSchema = ApiSchemaDocument("School")
+        requestInfo.ProjectSchema = ApiSchemaDocument(resourceName)
             .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
         requestInfo.ResourceSchema = new ResourceSchema(
-            requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools")) ?? new JsonObject()
+            requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
+                ?? new JsonObject()
         );
 
         return requestInfo;
@@ -124,7 +135,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         body["correlationId"].Should().BeNull();
     }
 
-    internal static IPipelineStep NoAuthStrategyMiddleware()
+    internal static IPipelineStep NoAuthStrategyMiddleware(string action = "Create")
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
@@ -135,7 +146,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                     [
                         new ResourceClaim(
                             $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
-                            "Create",
+                            action,
                             []
                         ),
                     ]
@@ -648,6 +659,129 @@ public class ResourceActionAuthorizationMiddlewareTests
         public void It_allows_the_request_to_continue()
         {
             _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Get_Many_With_No_Authorization_Strategies
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await NoAuthStrategyMiddleware("Read").Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_security_configuration_problem_details()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            _requestInfo
+                .FrontendResponse.Body?["type"]?.GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:system:configuration:security");
+            _requestInfo
+                .FrontendResponse.Body?["title"]?.GetValue<string>()
+                .Should()
+                .Be("Security Configuration Error");
+            _requestInfo
+                .FrontendResponse.Body?["detail"]?.GetValue<string>()
+                .Should()
+                .Be("A security configuration problem was detected. The request cannot be authorized.");
+            _requestInfo
+                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+                .Should()
+                .Be(
+                    "No authorization strategies were defined for the requested action 'Read' against resource ['School'] matched by the caller's claim 'SIS-Vendor'."
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Get_Many_With_NoFurtherAuthorizationRequired
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await Middleware("Read", AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired)
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_allows_the_request_to_continue()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo
+                .ResourceActionAuthStrategies.Should()
+                .Equal(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Get_Many_With_No_Matching_Claim : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(
+                RequestMethod.GET,
+                "ed-fi/stateDescriptors",
+                endpointName: "stateDescriptors",
+                resourceName: "StateDescriptor"
+            );
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await Middleware("Read", AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired)
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_still_returns_forbidden()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Get_Many_With_No_Matching_Action
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await Middleware("Create", AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired)
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_still_returns_forbidden()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
         }
     }
 }

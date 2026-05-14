@@ -280,7 +280,18 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         if (strategies.Count == 0)
         {
             string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
-            CreateNoStrategiesResponse(requestInfo, actionName, resourceClaimName, claimSetName);
+            if (IsRelationalGetManyRequest(requestInfo))
+            {
+                CreateNoStrategiesSecurityConfigurationResponse(
+                    requestInfo,
+                    actionName,
+                    resourceClaimName,
+                    claimSetName
+                );
+                return false;
+            }
+
+            CreateNoStrategiesForbiddenResponse(requestInfo, actionName, resourceClaimName, claimSetName);
             return false;
         }
         return true;
@@ -326,6 +337,9 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
 
     private static bool IsGetManyRequest(RequestInfo requestInfo) =>
         requestInfo.Method == RequestMethod.GET && !requestInfo.PathComponents.HasDocumentUuidSegment;
+
+    private static bool IsRelationalGetManyRequest(RequestInfo requestInfo) =>
+        requestInfo.MappingSet is not null && IsGetManyRequest(requestInfo);
 
     private static string GetOperationLabel(RequestInfo requestInfo) =>
         requestInfo.Method == RequestMethod.GET && requestInfo.PathComponents.HasDocumentUuidSegment
@@ -390,7 +404,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// <summary>
     /// Creates a forbidden response for missing authorization strategies.
     /// </summary>
-    private static void CreateNoStrategiesResponse(
+    private static void CreateNoStrategiesForbiddenResponse(
         RequestInfo requestInfo,
         string actionName,
         string resourceClaimName,
@@ -402,6 +416,26 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             Body: FailureResponse.ForForbidden(
                 traceId: requestInfo.FrontendRequest.TraceId,
                 errors:
+                [
+                    $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaimName}'] matched by the caller's claim '{claimSetName}'.",
+                ]
+            ),
+            Headers: [],
+            ContentType: "application/problem+json"
+        );
+    }
+
+    private static void CreateNoStrategiesSecurityConfigurationResponse(
+        RequestInfo requestInfo,
+        string actionName,
+        string resourceClaimName,
+        string claimSetName
+    )
+    {
+        requestInfo.FrontendResponse = new FrontendResponse(
+            StatusCode: (int)HttpStatusCode.InternalServerError,
+            Body: FailureResponse.ForSecurityConfiguration(
+                requestInfo.FrontendRequest.TraceId,
                 [
                     $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaimName}'] matched by the caller's claim '{claimSetName}'.",
                 ]

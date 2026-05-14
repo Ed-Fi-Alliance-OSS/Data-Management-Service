@@ -95,7 +95,7 @@ public class Given_Failure_Response_For_Security_Configuration
             ["Resource 'Ed-Fi.School' has strategy 'CustomAuthorizationStrategy' with invalid metadata."]
         );
 
-        response["type"]!.ToString().Should().Be("urn:ed-fi:api:system-configuration:security");
+        response["type"]!.ToString().Should().Be("urn:ed-fi:api:system:configuration:security");
         response["title"]!.ToString().Should().Be("Security Configuration Error");
         response["detail"]!
             .ToString()

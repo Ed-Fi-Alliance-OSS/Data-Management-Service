@@ -184,7 +184,7 @@
       "Add regression tests proving relational GET-many still proceeds when the matched action uses `NoFurtherAuthorizationRequired`, and that missing-claim or missing-action denials still return 403.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Custom View Strategy Parsing",

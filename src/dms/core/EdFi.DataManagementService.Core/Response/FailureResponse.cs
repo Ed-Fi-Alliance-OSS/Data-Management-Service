@@ -37,7 +37,7 @@ public static class FailureResponse
     private static readonly string _resourceKeySeedValidationErrorType =
         $"{_typePrefix}:resource-key-seed-validation-error";
     private static readonly string _securityConfigurationType =
-        $"{_typePrefix}:system-configuration:security";
+        $"{_typePrefix}:system:configuration:security";
     private static readonly string _tagMismatchRequestTypePrefix = $"{_typePrefix}:optimistic-lock-failed";
     private static readonly string _dataPolicyEnforcedType = $"{_typePrefix}:data-policy-enforced";
 
