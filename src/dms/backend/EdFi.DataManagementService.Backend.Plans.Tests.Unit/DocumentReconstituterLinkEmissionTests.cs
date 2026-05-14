@@ -54,8 +54,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: SchoolDocumentId,
             lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
-            resolver: resolver,
-            options: new ResourceLinksOptions { Enabled = true }
+            resolver: resolver
         );
 
         var link = result["schoolReference"]!["link"].Should().BeOfType<JsonObject>().Subject;
@@ -72,8 +71,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: SchoolDocumentId,
             lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
-            resolver: resolver,
-            options: new ResourceLinksOptions { Enabled = true }
+            resolver: resolver
         );
 
         var href = result["schoolReference"]!["link"]!["href"]!.GetValue<string>();
@@ -94,8 +92,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: null,
             lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
-            resolver: resolver,
-            options: new ResourceLinksOptions { Enabled = true }
+            resolver: resolver
         );
 
         // Identity-field reconstitution still emits schoolReference even with a null FK, but
@@ -112,37 +109,12 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: SchoolDocumentId,
             lookupRows: [], // no rows: lookup miss
-            resolver: resolver,
-            options: new ResourceLinksOptions { Enabled = true }
+            resolver: resolver
         );
 
         result["schoolReference"]!["schoolId"]!.GetValue<int>().Should().Be(255901);
         result["schoolReference"]!["link"].Should().BeNull();
         resolver.Calls.Should().BeEmpty();
-    }
-
-    [Test]
-    public void It_emits_link_even_when_ResourceLinksOptions_Enabled_is_false()
-    {
-        // Per design-docs/link-injection.md §Configuration and §Cache and Etag, the
-        // reconstituted intermediate is caller-agnostic and always link-bearing when a
-        // MappingSet, slug resolver, and lookup row are in scope. The flag is honored at
-        // the response-serialization boundary via DocumentReconstituter.StripReferenceLinks,
-        // not by suppressing emission here — so a future runtime DocumentCache always sees
-        // the link-bearing shape regardless of the per-deployment flag value.
-        var resolver = new StubSlugResolver(_expectedSlug);
-        var result = ReconstituteSingleDocument(
-            schoolDocumentIdFk: SchoolDocumentId,
-            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
-            resolver: resolver,
-            options: new ResourceLinksOptions { Enabled = false }
-        );
-
-        var link = result["schoolReference"]!["link"].Should().BeOfType<JsonObject>().Subject;
-        link["rel"]!.GetValue<string>().Should().Be("School");
-        link["href"]!.GetValue<string>().Should().Be($"/ed-fi/schools/{SchoolDocumentUuid.ToString("D")}");
-        resolver.Calls.Should().ContainSingle();
-        resolver.Calls[0].Should().Be(SchoolResourceKeyId);
     }
 
     [Test]
@@ -172,13 +144,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         );
 
         Action act = () =>
-            DocumentReconstituter.ReconstitutePage(
-                readPlan,
-                hydratedPage,
-                BuildMappingSet(),
-                resolver,
-                new ResourceLinksOptions { Enabled = true }
-            );
+            DocumentReconstituter.ReconstitutePage(readPlan, hydratedPage, BuildMappingSet(), resolver);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("boom*");
     }
@@ -199,8 +165,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: SchoolDocumentId,
             lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, concreteSubclassResourceKeyId)],
-            resolver: resolver,
-            options: new ResourceLinksOptions { Enabled = true }
+            resolver: resolver
         );
 
         resolver.Calls.Should().ContainSingle().Which.Should().Be(concreteSubclassResourceKeyId);
@@ -229,8 +194,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
             readPlan,
             hydratedPage,
             BuildMappingSet(),
-            resolver,
-            new ResourceLinksOptions { Enabled = true }
+            resolver
         );
 
         results.Should().HaveCount(2);
@@ -292,8 +256,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
     private static JsonNode ReconstituteSingleDocument(
         long? schoolDocumentIdFk,
         IReadOnlyList<(long DocumentId, Guid DocumentUuid, short ResourceKeyId)> lookupRows,
-        IDocumentLinkSlugResolver resolver,
-        ResourceLinksOptions options
+        IDocumentLinkSlugResolver resolver
     )
     {
         var readPlan = BuildReadPlan();
@@ -303,8 +266,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
             readPlan,
             hydratedPage,
             BuildMappingSet(),
-            resolver,
-            options
+            resolver
         );
 
         results.Should().ContainSingle();

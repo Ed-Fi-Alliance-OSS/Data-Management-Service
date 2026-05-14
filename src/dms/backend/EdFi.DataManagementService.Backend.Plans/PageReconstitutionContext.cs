@@ -153,11 +153,7 @@ internal sealed class RowNode
 /// on the test-only context build path; non-null when production callers want
 /// <c>link.rel</c> / <c>link.href</c> emission on document references.
 /// </summary>
-internal sealed record LinkEmissionContext(
-    MappingSet MappingSet,
-    IDocumentLinkSlugResolver SlugResolver,
-    ResourceLinksOptions Options
-);
+internal sealed record LinkEmissionContext(MappingSet MappingSet, IDocumentLinkSlugResolver SlugResolver);
 
 /// <summary>
 /// One entry in the page-scoped <c>DocumentId → (DocumentUuid, ResourceKeyId)</c> map sourced

@@ -152,8 +152,13 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
     }
 
     [Test]
-    public async Task It_emits_link_when_caller_is_source_readable_but_target_denied()
+    public async Task It_emits_link_when_caller_has_no_per_reference_auth_gate()
     {
+        // The relational query path currently has no per-reference auth seam, so a true
+        // source-readable / target-denied caller cannot be constructed on this branch.
+        // This test pins the present behavior: a normal AcademicWeek read emits the link.
+        // The full source-readable / target-denied acceptance test is deferred until the
+        // per-reference authorization seam exists (tracked in link-injection.md).
         JsonNode academicWeekDocument = await QuerySingleAcademicWeekAsync();
 
         JsonNode schoolReference = ReferenceLocator.RequireSingle(academicWeekDocument, "$.schoolReference");

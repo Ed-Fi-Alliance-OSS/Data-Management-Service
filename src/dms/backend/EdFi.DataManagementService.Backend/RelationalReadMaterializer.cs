@@ -130,8 +130,7 @@ internal sealed class RelationalReadMaterializer(
                 request.ReadPlan,
                 request.HydratedPage,
                 mappingSet,
-                _slugResolver,
-                _linksOptions
+                _slugResolver
             )
             : DocumentReconstituter.ReconstitutePage(request.ReadPlan, request.HydratedPage);
 

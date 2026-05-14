@@ -160,7 +160,7 @@ public class OdsParityContractTests
     }
 
     /// <summary>
-    /// Drives <see cref="DocumentReconstituter.ReconstitutePage(ResourceReadPlan, HydratedPage, MappingSet, IDocumentLinkSlugResolver, ResourceLinksOptions)"/>
+    /// Drives <see cref="DocumentReconstituter.ReconstitutePage(ResourceReadPlan, HydratedPage, MappingSet, IDocumentLinkSlugResolver)"/>
     /// with the minimal plan + hydrated-page shape needed to emit a link at the parity case's
     /// reference path. The reference's identity field is omitted from the projection (the
     /// parity contract is on link.rel/link.href only — identity fields keep their canonical
@@ -185,8 +185,7 @@ public class OdsParityContractTests
             readPlan,
             hydratedPage,
             BuildMappingSet(),
-            new StubSlugResolver(slug),
-            new ResourceLinksOptions { Enabled = true }
+            new StubSlugResolver(slug)
         );
         documents.Should().ContainSingle();
         return documents[0];

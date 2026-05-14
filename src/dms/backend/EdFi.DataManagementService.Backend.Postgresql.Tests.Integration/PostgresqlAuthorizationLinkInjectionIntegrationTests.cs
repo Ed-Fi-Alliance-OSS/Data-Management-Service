@@ -169,13 +169,13 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
     }
 
     [Test]
-    public async Task It_emits_link_when_caller_is_source_readable_but_target_denied()
+    public async Task It_emits_link_when_caller_has_no_per_reference_auth_gate()
     {
-        // "Target-denied" caller is conceptual on this branch — the relational query
-        // path has no per-reference auth gate to deny against. A normal AcademicWeek
-        // read therefore emits the link, and there is no architectural seam through
-        // which target authorization could suppress it. This test guards against
-        // future regressions that might add such a seam.
+        // The relational query path currently has no per-reference auth seam, so a true
+        // source-readable / target-denied caller cannot be constructed on this branch.
+        // This test pins the present behavior: a normal AcademicWeek read emits the link.
+        // The full source-readable / target-denied acceptance test is deferred until the
+        // per-reference authorization seam exists (tracked in link-injection.md).
         JsonNode academicWeekDocument = await QuerySingleAcademicWeekAsync();
 
         JsonNode schoolReference = ReferenceLocator.RequireSingle(academicWeekDocument, "$.schoolReference");

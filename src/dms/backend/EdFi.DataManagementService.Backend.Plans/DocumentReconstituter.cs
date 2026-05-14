@@ -92,8 +92,7 @@ public static class DocumentReconstituter
     /// This overload is the test-only / link-injection-disabled path: it builds the context
     /// without a <see cref="LinkEmissionContext"/>, so document-reference <c>link</c> objects
     /// are never written. Production callers that want link injection should use the overload
-    /// taking <see cref="MappingSet"/>, <see cref="IDocumentLinkSlugResolver"/>, and
-    /// <see cref="ResourceLinksOptions"/>.
+    /// taking <see cref="MappingSet"/> and <see cref="IDocumentLinkSlugResolver"/>.
     /// </remarks>
     public static IReadOnlyList<JsonNode> ReconstitutePage(
         ResourceReadPlan readPlan,
@@ -111,11 +110,10 @@ public static class DocumentReconstituter
 
     /// <summary>
     /// Reconstitutes all documents from a hydrated page with link injection driven by the
-    /// supplied <see cref="MappingSet"/>, <see cref="IDocumentLinkSlugResolver"/>, and
-    /// <see cref="ResourceLinksOptions"/>. The <see cref="LinkEmissionContext"/> is always
-    /// built when a <see cref="MappingSet"/> and resolver are in scope — the reconstituted
-    /// intermediate is caller-agnostic and link-bearing per
-    /// <c>design-docs/link-injection.md</c> §Configuration and §Cache and Etag.
+    /// supplied <see cref="MappingSet"/> and <see cref="IDocumentLinkSlugResolver"/>. The
+    /// <see cref="LinkEmissionContext"/> is always built when a <see cref="MappingSet"/> and
+    /// resolver are in scope — the reconstituted intermediate is caller-agnostic and
+    /// link-bearing per <c>design-docs/link-injection.md</c> §Configuration and §Cache and Etag.
     /// <c>ResourceLinksOptions.Enabled = false</c> is honored at the response-serialization
     /// boundary via <see cref="StripReferenceLinks"/>, not by suppressing emission here.
     /// </summary>
@@ -123,18 +121,16 @@ public static class DocumentReconstituter
         ResourceReadPlan readPlan,
         HydratedPage hydratedPage,
         MappingSet mappingSet,
-        IDocumentLinkSlugResolver slugResolver,
-        ResourceLinksOptions linksOptions
+        IDocumentLinkSlugResolver slugResolver
     )
     {
         ArgumentNullException.ThrowIfNull(readPlan);
         ArgumentNullException.ThrowIfNull(hydratedPage);
         ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(slugResolver);
-        ArgumentNullException.ThrowIfNull(linksOptions);
 
         var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
-        var linkEmission = new LinkEmissionContext(mappingSet, slugResolver, linksOptions);
+        var linkEmission = new LinkEmissionContext(mappingSet, slugResolver);
         var pageReconstitutionContext = PageReconstitutionContext.Build(
             compiledPlan,
             hydratedPage,

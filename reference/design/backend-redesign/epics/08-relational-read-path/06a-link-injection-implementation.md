@@ -182,7 +182,10 @@ Soft dependency:
   rendering is normalized before comparison because DMS emits `"D"` format and ODS emits `"N"`.
 - Source-readable / target-denied test: caller can read the source resource but fails a direct GET
   against the target under the active authorization strategy; fully-defined references still emit
-  `link`.
+  `link`. (Deferred: the relational query path has no per-reference authorization seam on this
+  branch, so a true target-denied caller cannot be constructed. Tracked as a follow-on once the
+  seam exists; the placeholder test `It_emits_link_when_caller_has_no_per_reference_auth_gate`
+  pins the present behavior.)
 - Caller-agnostic cache test: two callers who can both read the same source document — one
   authorized for the target, one not — receive the same cached intermediate JSON and the same
   full-resource `_etag`; profile projection and flag-off stripping do not change the validator.
@@ -258,8 +261,10 @@ Soft dependency:
    `link` is a response decoration excluded from the canonical resource-state hash.
 8. Tests: add unit, fixture, integration, contract, and E2E tests per the acceptance criteria.
    Include feature-flag-on and flag-off coverage; a flag-flip-across-restart regression;
-   source-readable / target-denied authorization coverage; the caller-agnostic cache test; an ODS
-   baseline parity check scoped to document references; and the profile-preservation E2E scenario
+   source-readable / target-denied authorization coverage (deferred — see the bullet above; the
+   placeholder test pins present behavior until the per-reference auth seam exists); the
+   caller-agnostic cache test; an ODS baseline parity check scoped to document references; and the
+   profile-preservation E2E scenario
    in `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Profiles/ProfileReferenceFiltering.feature`
    relocated from `../07-relational-write-path/01d-profile-namespace-and-server-generated-fields.md`.
 
