@@ -266,12 +266,14 @@ internal static class DescriptorRuntimeScenario
             ),
         ];
 
-        // Seeded in a different namespace so the namespace-scoped assertions below prove
-        // the predicate excludes it rather than relying on a clean database for proof.
+        // Seeded in a different namespace, deliberately re-using descriptors[1].CodeValue so the
+        // namespace-scoped assertions below prove the predicate excludes other-namespace rows both
+        // standalone (?namespace=X) and when combined with codeValue (?namespace=X&codeValue=Y),
+        // rather than relying on globally unique field values to mask a dropped namespace predicate.
         DescriptorValues otherNamespaceDescriptor = CreateDescriptorValues(
             "query-other-namespace",
             otherNamespaceName,
-            codeValue: "DMS-1025-Other-Foxtrot",
+            codeValue: descriptors[1].CodeValue,
             description: "DMS-1025 query description foxtrot",
             effectiveBeginDate: "2025-03-04",
             effectiveEndDate: "2025-11-30"
@@ -289,18 +291,16 @@ internal static class DescriptorRuntimeScenario
             harness,
             $"{DescriptorEndpoint}?namespace={Escape(namespaceName)}"
         );
-        namespaceMatches.Count.Should().Be(descriptors.Length);
+        namespaceMatches
+            .Count.Should()
+            .Be(
+                descriptors.Length,
+                "namespace filter must return exactly the in-namespace seed count, excluding the other-namespace distractor"
+            );
         namespaceMatches
             .Select(node => node!["codeValue"]!.GetValue<string>())
             .Should()
             .BeEquivalentTo(descriptors.Select(descriptor => descriptor.CodeValue));
-        namespaceMatches
-            .Select(node => node!["codeValue"]!.GetValue<string>())
-            .Should()
-            .NotContain(
-                otherNamespaceDescriptor.CodeValue,
-                "namespace filter must exclude descriptors in other namespaces"
-            );
 
         JsonArray otherNamespaceMatches = await GetJsonArrayAsync(
             harness,
@@ -679,26 +679,20 @@ internal static class DescriptorRuntimeScenario
 
     private static async Task WaitForNextWireSecondAsync(string previousWireTimestamp)
     {
-        // The UTC second must always tick within ~1s; bound the wait so a frozen clock fails the test instead of hanging.
-        TimeSpan deadline = TimeSpan.FromSeconds(5);
-        DateTimeOffset start = DateTimeOffset.UtcNow;
-        while (
-            string.Equals(
-                DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
-                previousWireTimestamp,
-                StringComparison.Ordinal
-            )
-        )
+        // _lastModifiedDate is stamped by the database clock (Postgres now() / MSSQL GETUTCDATE()) at second
+        // precision. Anchor the wait on the wire timestamp itself so any subsequent DB-side stamp must land
+        // in a later second, even if the test process clock is slightly ahead of the database clock.
+        DateTimeOffset wireSecond = DateTimeOffset.ParseExact(
+            previousWireTimestamp,
+            "yyyy-MM-ddTHH:mm:ssZ",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal
+        );
+        DateTimeOffset target = wireSecond + TimeSpan.FromMilliseconds(1100);
+        TimeSpan remaining = target - DateTimeOffset.UtcNow;
+        if (remaining > TimeSpan.Zero)
         {
-            (DateTimeOffset.UtcNow - start)
-                .Should()
-                .BeLessThan(
-                    deadline,
-                    "the UTC second must advance past {0} within {1}",
-                    previousWireTimestamp,
-                    deadline
-                );
-            await Task.Delay(25);
+            await Task.Delay(remaining);
         }
     }
 
