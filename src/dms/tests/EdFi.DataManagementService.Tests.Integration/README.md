@@ -104,6 +104,7 @@ effective schema.
 | --- | --- | --- |
 | `FocusedStableKeyUpdateSemantics` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics/` | Stable-key update semantics for a single resource shape. |
 | `ProfileRootOnlyMerge` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-root-only-merge/` | Profile-aware merges that stay on the root resource table. |
+| `DescriptorRuntime` | `src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/descriptor-runtime/` | Descriptor runtime CRUD, metadata, query, paging, and descriptor-reference coverage with the full shared descriptor query contract. |
 | `ProfileSeparateTableMerge` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-separate-table-merge/` | Profile-aware merges that span a separate child table. |
 | `ProfileNestedAndRootExtensionChildren` | `src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-nested-and-root-extension-children/` | Nested children plus root-level extension children under a profile. |
 | `ProfileCollectionAlignedExtension` | `src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension/` | Extension scope aligned to a profile-visible collection. |
