@@ -24,16 +24,20 @@ internal static class DescriptorRuntimeScenario
     {
         DescriptorValues descriptor = CreateDescriptorValues("create-read");
 
-        (string locationPath, string etag) = await CreateDescriptorAsync(harness, descriptor);
+        (string locationPath, string postEtag) = await CreateDescriptorAsync(harness, descriptor);
 
         locationPath.Should().NotBeNullOrWhiteSpace("a descriptor POST must return a Location header");
-        etag.Should().NotBeNullOrWhiteSpace("a descriptor POST must emit an ETag header");
+        postEtag.Should().NotBeNullOrWhiteSpace("a descriptor POST must emit an ETag header");
 
         JsonObject returned = await GetJsonObjectAsync(harness, locationPath);
         AssertDescriptorFields(returned, descriptor);
         returned["id"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
         returned["_etag"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
         returned["_lastModifiedDate"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        returned["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(postEtag, "POST ETag header must match the subsequent GET _etag");
     }
 
     public static async Task It_updates_descriptor_non_identity_fields_and_advances_metadata(
@@ -41,12 +45,13 @@ internal static class DescriptorRuntimeScenario
     )
     {
         DescriptorValues initial = CreateDescriptorValues("changed-put");
-        (string locationPath, string initialEtag) = await CreateDescriptorAsync(harness, initial);
+        (string locationPath, string initialPostEtag) = await CreateDescriptorAsync(harness, initial);
 
         JsonObject created = await GetJsonObjectAsync(harness, locationPath);
         string resourceId = created["id"]!.GetValue<string>();
         string initialGetEtag = created["_etag"]!.GetValue<string>();
         string initialLastModifiedDate = created["_lastModifiedDate"]!.GetValue<string>();
+        initialPostEtag.Should().Be(initialGetEtag, "POST ETag header must match the initial GET _etag");
         DocumentMetadata initialMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
 
         DescriptorValues updated = initial with
@@ -61,20 +66,21 @@ internal static class DescriptorRuntimeScenario
             locationPath,
             resourceId,
             updated,
-            initialEtag
+            initialPostEtag
         );
         string putBody = await putResponse.Content.ReadAsStringAsync();
 
         putResponse.StatusCode.Should().Be(HttpStatusCode.NoContent, putBody);
         putResponse.TryReadRawEtag(out string putEtag).Should().BeTrue("PUT must return the new ETag");
-        putEtag.Should().NotBe(initialEtag, "changed descriptor content must advance the ETag");
+        putEtag.Should().NotBe(initialPostEtag, "changed descriptor content must advance the ETag");
 
         JsonObject returned = await GetJsonObjectAsync(harness, locationPath);
         AssertDescriptorFields(returned, updated);
-        returned["_etag"]!
-            .GetValue<string>()
+        string updatedGetEtag = returned["_etag"]!.GetValue<string>();
+        updatedGetEtag
             .Should()
             .NotBe(initialGetEtag, "changed descriptor PUT must advance the GET response _etag");
+        putEtag.Should().Be(updatedGetEtag, "PUT ETag header must match the subsequent GET _etag");
         returned["_lastModifiedDate"]!
             .GetValue<string>()
             .Should()
@@ -98,12 +104,13 @@ internal static class DescriptorRuntimeScenario
     public static async Task It_preserves_metadata_for_unchanged_descriptor_put(ApiIntegrationHarness harness)
     {
         DescriptorValues descriptor = CreateDescriptorValues("unchanged-put");
-        (string locationPath, string initialEtag) = await CreateDescriptorAsync(harness, descriptor);
+        (string locationPath, string initialPostEtag) = await CreateDescriptorAsync(harness, descriptor);
 
         JsonObject created = await GetJsonObjectAsync(harness, locationPath);
         string resourceId = created["id"]!.GetValue<string>();
         string initialGetEtag = created["_etag"]!.GetValue<string>();
         string initialLastModifiedDate = created["_lastModifiedDate"]!.GetValue<string>();
+        initialPostEtag.Should().Be(initialGetEtag, "POST ETag header must match the initial GET _etag");
         DocumentMetadata initialMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
 
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
@@ -111,7 +118,7 @@ internal static class DescriptorRuntimeScenario
             locationPath,
             resourceId,
             descriptor,
-            initialEtag
+            initialPostEtag
         );
         string putBody = await putResponse.Content.ReadAsStringAsync();
 
@@ -122,12 +129,14 @@ internal static class DescriptorRuntimeScenario
             .BeTrue("unchanged descriptor PUT must return the current ETag");
         putEtag
             .Should()
-            .Be(initialEtag, "unchanged descriptor content should preserve the representation ETag");
+            .Be(initialPostEtag, "unchanged descriptor content should preserve the representation ETag");
 
         JsonObject afterNoOpPut = await GetJsonObjectAsync(harness, locationPath);
         AssertDescriptorFields(afterNoOpPut, descriptor);
-        afterNoOpPut["_etag"]!.GetValue<string>().Should().Be(initialGetEtag);
+        string afterNoOpGetEtag = afterNoOpPut["_etag"]!.GetValue<string>();
+        afterNoOpGetEtag.Should().Be(initialGetEtag);
         afterNoOpPut["_lastModifiedDate"]!.GetValue<string>().Should().Be(initialLastModifiedDate);
+        putEtag.Should().Be(afterNoOpGetEtag, "no-op PUT ETag header must match the subsequent GET _etag");
 
         DocumentMetadata afterNoOpPutMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
         afterNoOpPutMetadata
@@ -165,6 +174,9 @@ internal static class DescriptorRuntimeScenario
 
         JsonObject created = await GetJsonObjectAsync(harness, locationPath);
         string resourceId = created["id"]!.GetValue<string>();
+        string initialGetEtag = created["_etag"]!.GetValue<string>();
+        string initialLastModifiedDate = created["_lastModifiedDate"]!.GetValue<string>();
+        DocumentMetadata initialMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
         DescriptorValues changedIdentity = mutateIdentity(descriptor);
 
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
@@ -187,6 +199,34 @@ internal static class DescriptorRuntimeScenario
             .Be(
                 "Identity of resource 'Ed-Fi.SchoolTypeDescriptor' cannot be changed. "
                     + "Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
+            );
+
+        JsonObject afterRejection = await GetJsonObjectAsync(harness, locationPath);
+        AssertDescriptorFields(afterRejection, descriptor);
+        afterRejection["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(initialGetEtag, "rejected identity-change PUT must not advance the GET _etag");
+        afterRejection["_lastModifiedDate"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                initialLastModifiedDate,
+                "rejected identity-change PUT must not advance the GET _lastModifiedDate"
+            );
+
+        DocumentMetadata afterRejectionMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
+        afterRejectionMetadata
+            .ContentVersion.Should()
+            .Be(
+                initialMetadata.ContentVersion,
+                "rejected identity-change PUT must not stamp content version"
+            );
+        afterRejectionMetadata
+            .ContentLastModifiedAt.Should()
+            .Be(
+                initialMetadata.ContentLastModifiedAt,
+                "rejected identity-change PUT must not stamp content modified time"
             );
     }
 
@@ -324,12 +364,38 @@ internal static class DescriptorRuntimeScenario
     {
         DescriptorValues descriptor = CreateDescriptorValues("reference-resolution");
         string descriptorUri = $"{descriptor.Namespace}#{descriptor.CodeValue}";
+
+        var payloadWithoutDescriptor = new JsonObject
+        {
+            ["profileRootOnlyMergeItemId"] = 1025,
+            ["displayName"] = "DMS-1025 descriptor reference resolution",
+        };
+
+        using HttpResponseMessage missingFieldResponse = await PostJsonAsync(
+            harness,
+            MergeItemsEndpoint,
+            payloadWithoutDescriptor
+        );
+        string missingFieldBody = await missingFieldResponse.Content.ReadAsStringAsync();
+
+        missingFieldResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest, missingFieldBody);
+        JsonObject missingFieldProblem = JsonNode.Parse(missingFieldBody)!.AsObject();
+        missingFieldProblem["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:bad-request:data-validation-failed");
+        missingFieldBody
+            .Should()
+            .Contain(
+                "primarySchoolTypeDescriptor is required.",
+                "a required-descriptor schema must reject a payload that omits the descriptor field"
+            );
+
         var payload = new JsonObject
         {
             ["profileRootOnlyMergeItemId"] = 1025,
             ["displayName"] = "DMS-1025 descriptor reference resolution",
             ["primarySchoolTypeDescriptor"] = descriptorUri,
-            ["secondarySchoolTypeDescriptor"] = descriptorUri,
         };
 
         using HttpResponseMessage rejectedResponse = await PostJsonAsync(
@@ -359,6 +425,19 @@ internal static class DescriptorRuntimeScenario
             .Be(
                 HttpStatusCode.Created,
                 $"the rejected write must not create the resource before descriptor resolution succeeds. Body: {createdBody}"
+            );
+        createdResponse.Headers.Location.Should().NotBeNull();
+
+        JsonObject persistedMergeItem = await GetJsonObjectAsync(
+            harness,
+            ToPath(createdResponse.Headers.Location!)
+        );
+        persistedMergeItem["primarySchoolTypeDescriptor"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                descriptorUri,
+                "the persisted required-descriptor reference must round-trip the resolved descriptor URI"
             );
     }
 

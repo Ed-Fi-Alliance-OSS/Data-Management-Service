@@ -8,62 +8,16 @@
     "description": "Descriptor runtime fixture: profile-root-only-merge with a full descriptor query contract for integration tests.",
     "abstractResources": {},
     "caseInsensitiveEndpointNameMapping": {
-      "students": "students",
       "schooltypedescriptors": "schoolTypeDescriptors",
       "profilerootonlymergeitems": "profileRootOnlyMergeItems"
     },
     "educationOrganizationHierarchy": {},
     "educationOrganizationTypes": [],
     "resourceNameMapping": {
-      "Student": "students",
       "SchoolTypeDescriptor": "schoolTypeDescriptors",
       "ProfileRootOnlyMergeItem": "profileRootOnlyMergeItems"
     },
     "resourceSchemas": {
-      "students": {
-        "resourceName": "Student",
-        "isDescriptor": false,
-        "isResourceExtension": false,
-        "isSubclass": false,
-        "isSchoolYearEnumeration": false,
-        "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [],
-        "equalityConstraints": [],
-        "identityJsonPaths": [
-          "$.studentUniqueId"
-        ],
-        "documentPathsMapping": {
-          "StudentUniqueId": {
-            "isReference": false,
-            "isPartOfIdentity": true,
-            "isRequired": true,
-            "path": "$.studentUniqueId"
-          },
-          "FirstName": {
-            "isReference": false,
-            "isPartOfIdentity": false,
-            "isRequired": true,
-            "path": "$.firstName"
-          }
-        },
-        "jsonSchemaForInsert": {
-          "type": "object",
-          "properties": {
-            "studentUniqueId": {
-              "type": "string",
-              "maxLength": 32
-            },
-            "firstName": {
-              "type": "string",
-              "maxLength": 75
-            }
-          },
-          "required": [
-            "studentUniqueId",
-            "firstName"
-          ]
-        }
-      },
       "schoolTypeDescriptors": {
         "resourceName": "SchoolTypeDescriptor",
         "isDescriptor": true,
@@ -205,12 +159,7 @@
         "isSchoolYearEnumeration": false,
         "allowIdentityUpdates": false,
         "arrayUniquenessConstraints": [],
-        "equalityConstraints": [
-          {
-            "sourceJsonPath": "$.primarySchoolTypeDescriptor",
-            "targetJsonPath": "$.secondarySchoolTypeDescriptor"
-          }
-        ],
+        "equalityConstraints": [],
         "identityJsonPaths": [
           "$.profileRootOnlyMergeItemId"
         ],
@@ -227,49 +176,14 @@
             "isRequired": false,
             "path": "$.displayName"
           },
-          "ProfileScope.ClearableText": {
-            "isReference": false,
-            "isPartOfIdentity": false,
-            "isRequired": false,
-            "path": "$.profileScope.clearableText"
-          },
-          "ProfileScope.PreservedText": {
-            "isReference": false,
-            "isPartOfIdentity": false,
-            "isRequired": false,
-            "path": "$.profileScope.preservedText"
-          },
-          "StudentReference": {
-            "isReference": true,
-            "isDescriptor": false,
-            "isPartOfIdentity": false,
-            "isRequired": false,
-            "projectName": "Ed-Fi",
-            "resourceName": "Student",
-            "referenceJsonPaths": [
-              {
-                "identityJsonPath": "$.studentUniqueId",
-                "referenceJsonPath": "$.studentReference.studentUniqueId"
-              }
-            ]
-          },
           "PrimarySchoolTypeDescriptor": {
             "isReference": true,
             "isDescriptor": true,
             "isPartOfIdentity": false,
-            "isRequired": false,
+            "isRequired": true,
             "projectName": "Ed-Fi",
             "resourceName": "SchoolTypeDescriptor",
             "path": "$.primarySchoolTypeDescriptor"
-          },
-          "SecondarySchoolTypeDescriptor": {
-            "isReference": true,
-            "isDescriptor": true,
-            "isPartOfIdentity": false,
-            "isRequired": false,
-            "projectName": "Ed-Fi",
-            "resourceName": "SchoolTypeDescriptor",
-            "path": "$.secondarySchoolTypeDescriptor"
           }
         },
         "jsonSchemaForInsert": {
@@ -282,40 +196,14 @@
               "type": "string",
               "maxLength": 100
             },
-            "profileScope": {
-              "type": "object",
-              "properties": {
-                "clearableText": {
-                  "type": "string",
-                  "maxLength": 100
-                },
-                "preservedText": {
-                  "type": "string",
-                  "maxLength": 100
-                }
-              }
-            },
-            "studentReference": {
-              "type": "object",
-              "properties": {
-                "studentUniqueId": {
-                  "type": "string",
-                  "maxLength": 32
-                }
-              },
-              "required": ["studentUniqueId"]
-            },
             "primarySchoolTypeDescriptor": {
-              "type": "string",
-              "maxLength": 306
-            },
-            "secondarySchoolTypeDescriptor": {
               "type": "string",
               "maxLength": 306
             }
           },
           "required": [
-            "profileRootOnlyMergeItemId"
+            "profileRootOnlyMergeItemId",
+            "primarySchoolTypeDescriptor"
           ]
         }
       }
