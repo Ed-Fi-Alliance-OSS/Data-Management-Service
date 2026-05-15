@@ -45,6 +45,8 @@ internal static class DescriptorRuntimeScenario
 
         JsonObject created = await GetJsonObjectAsync(harness, locationPath);
         string resourceId = created["id"]!.GetValue<string>();
+        string initialGetEtag = created["_etag"]!.GetValue<string>();
+        string initialLastModifiedDate = created["_lastModifiedDate"]!.GetValue<string>();
         DocumentMetadata initialMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
 
         DescriptorValues updated = initial with
@@ -69,6 +71,17 @@ internal static class DescriptorRuntimeScenario
 
         JsonObject returned = await GetJsonObjectAsync(harness, locationPath);
         AssertDescriptorFields(returned, updated);
+        returned["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(initialGetEtag, "changed descriptor PUT must advance the GET response _etag");
+        returned["_lastModifiedDate"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(
+                initialLastModifiedDate,
+                "changed descriptor PUT must advance the GET response _lastModifiedDate"
+            );
 
         DocumentMetadata updatedMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
         updatedMetadata
@@ -183,9 +196,17 @@ internal static class DescriptorRuntimeScenario
         DescriptorValues[] descriptors =
         [
             CreateDescriptorValues(
+                "query-charlie",
+                namespaceName,
+                codeValue: "DMS-1025-Query-Charlie",
+                description: "DMS-1025 query description charlie",
+                effectiveBeginDate: "2025-03-03",
+                effectiveEndDate: "2025-10-31"
+            ),
+            CreateDescriptorValues(
                 "query-alpha",
                 namespaceName,
-                codeValue: "DMS-1025-Query-A",
+                codeValue: "DMS-1025-Query-Alpha",
                 description: "DMS-1025 query description alpha",
                 effectiveBeginDate: "2025-03-01",
                 effectiveEndDate: "2025-08-31"
@@ -193,24 +214,18 @@ internal static class DescriptorRuntimeScenario
             CreateDescriptorValues(
                 "query-bravo",
                 namespaceName,
-                codeValue: "DMS-1025-Query-B",
+                codeValue: "DMS-1025-Query-Bravo",
                 description: "DMS-1025 query description bravo",
                 effectiveBeginDate: "2025-03-02",
                 effectiveEndDate: "2025-09-30"
             ),
-            CreateDescriptorValues(
-                "query-charlie",
-                namespaceName,
-                codeValue: "DMS-1025-Query-C",
-                description: "DMS-1025 query description charlie",
-                effectiveBeginDate: "2025-03-03",
-                effectiveEndDate: "2025-10-31"
-            ),
         ];
 
-        foreach (DescriptorValues descriptor in descriptors)
+        string[] insertionOrderIds = new string[descriptors.Length];
+        for (int i = 0; i < descriptors.Length; i++)
         {
-            await CreateDescriptorAsync(harness, descriptor);
+            (string descriptorPath, _) = await CreateDescriptorAsync(harness, descriptors[i]);
+            insertionOrderIds[i] = descriptorPath.Split('/')[^1];
         }
 
         JsonArray namespaceMatches = await GetJsonArrayAsync(
@@ -223,6 +238,7 @@ internal static class DescriptorRuntimeScenario
             .Should()
             .BeEquivalentTo(descriptors.Select(descriptor => descriptor.CodeValue));
 
+        await AssertSingleQueryMatchAsync(harness, namespaceName, "id", insertionOrderIds[1], descriptors[1]);
         await AssertSingleQueryMatchAsync(
             harness,
             namespaceName,
@@ -259,6 +275,23 @@ internal static class DescriptorRuntimeScenario
             descriptors[1]
         );
 
+        using HttpResponseMessage totalCountResponse = await harness.HttpClient.GetAsync(
+            $"{DescriptorEndpoint}?namespace={Escape(namespaceName)}&totalCount=true"
+        );
+        string totalCountBody = await totalCountResponse.Content.ReadAsStringAsync();
+        totalCountResponse.StatusCode.Should().Be(HttpStatusCode.OK, totalCountBody);
+        totalCountResponse
+            .Headers.TryGetValues("Total-Count", out IEnumerable<string>? totalCountHeader)
+            .Should()
+            .BeTrue("totalCount=true must emit the Total-Count response header");
+        totalCountHeader!
+            .Single()
+            .Should()
+            .Be(
+                descriptors.Length.ToString(CultureInfo.InvariantCulture),
+                "Total-Count must reflect the namespace-scoped match count"
+            );
+
         JsonArray firstPage = await GetJsonArrayAsync(
             harness,
             $"{DescriptorEndpoint}?namespace={Escape(namespaceName)}&offset=0&limit=2"
@@ -268,18 +301,21 @@ internal static class DescriptorRuntimeScenario
             $"{DescriptorEndpoint}?namespace={Escape(namespaceName)}&offset=2&limit=2"
         );
 
-        firstPage.Count.Should().Be(2, "limit=2 returns the first two descriptors in DocumentId ASC order");
-        secondPage.Count.Should().Be(1, "offset=2 skips the first two descriptors in DocumentId ASC order");
-
         string[] firstPageIds = firstPage.Select(node => node!["id"]!.GetValue<string>()).ToArray();
         string[] secondPageIds = secondPage.Select(node => node!["id"]!.GetValue<string>()).ToArray();
-        firstPageIds.Should().NotIntersectWith(secondPageIds, "page windows must not overlap");
 
-        firstPage
-            .Concat(secondPage)
-            .Select(node => node!["codeValue"]!.GetValue<string>())
+        firstPageIds
             .Should()
-            .BeEquivalentTo(descriptors.Select(descriptor => descriptor.CodeValue));
+            .Equal(
+                new[] { insertionOrderIds[0], insertionOrderIds[1] },
+                "limit=2 must return the first two descriptors in DocumentId ASC (insertion) order, not codeValue order"
+            );
+        secondPageIds
+            .Should()
+            .Equal(
+                new[] { insertionOrderIds[2] },
+                "offset=2 must return the remaining descriptor in DocumentId ASC (insertion) order"
+            );
     }
 
     public static async Task It_requires_descriptor_reference_resolution_before_resource_write(
