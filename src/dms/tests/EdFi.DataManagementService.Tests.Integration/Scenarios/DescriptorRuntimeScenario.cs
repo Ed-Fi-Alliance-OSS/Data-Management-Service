@@ -148,8 +148,8 @@ internal static class DescriptorRuntimeScenario
             .GetValue<string>()
             .Should()
             .Be(
-                "Identity of resource 'Ed-Fi.SchoolTypeDescriptor' cannot be changed. "
-                    + "Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
+                "Identifying values for the SchoolTypeDescriptor resource cannot be changed. "
+                    + "Delete and recreate the resource item instead."
             );
     }
 
@@ -199,16 +199,37 @@ internal static class DescriptorRuntimeScenario
             .Should()
             .BeEquivalentTo(descriptors.Select(descriptor => descriptor.CodeValue));
 
-        await AssertSingleQueryMatchAsync(harness, "codeValue", descriptors[1].CodeValue, descriptors[1]);
-        await AssertSingleQueryMatchAsync(harness, "description", descriptors[2].Description, descriptors[2]);
         await AssertSingleQueryMatchAsync(
             harness,
+            namespaceName,
+            "codeValue",
+            descriptors[1].CodeValue,
+            descriptors[1]
+        );
+        await AssertSingleQueryMatchAsync(
+            harness,
+            namespaceName,
+            "shortDescription",
+            descriptors[0].ShortDescription,
+            descriptors[0]
+        );
+        await AssertSingleQueryMatchAsync(
+            harness,
+            namespaceName,
+            "description",
+            descriptors[2].Description,
+            descriptors[2]
+        );
+        await AssertSingleQueryMatchAsync(
+            harness,
+            namespaceName,
             "effectiveBeginDate",
             descriptors[0].EffectiveBeginDate,
             descriptors[0]
         );
         await AssertSingleQueryMatchAsync(
             harness,
+            namespaceName,
             "effectiveEndDate",
             descriptors[1].EffectiveEndDate,
             descriptors[1]
@@ -352,6 +373,7 @@ internal static class DescriptorRuntimeScenario
 
     private static async Task AssertSingleQueryMatchAsync(
         ApiIntegrationHarness harness,
+        string namespaceName,
         string queryField,
         string value,
         DescriptorValues expected
@@ -359,7 +381,7 @@ internal static class DescriptorRuntimeScenario
     {
         JsonArray matches = await GetJsonArrayAsync(
             harness,
-            $"{DescriptorEndpoint}?{queryField}={Escape(value)}"
+            $"{DescriptorEndpoint}?namespace={Escape(namespaceName)}&{queryField}={Escape(value)}"
         );
 
         matches.Count.Should().Be(1, $"{queryField} should uniquely identify the seeded descriptor");
