@@ -162,12 +162,7 @@ internal sealed class RelationalReadMaterializer(
                 (documentMetadata, index) =>
                     new MaterializedDocument(
                         documentMetadata,
-                        ApplyReadMode(
-                            reconstitutedDocuments[index],
-                            documentMetadata,
-                            request.ReadPlan,
-                            request.ReadMode
-                        )
+                        ApplyReadMode(reconstitutedDocuments[index], documentMetadata, request.ReadMode)
                     )
             ),
         ];
@@ -176,7 +171,6 @@ internal sealed class RelationalReadMaterializer(
     private static JsonNode ApplyReadMode(
         JsonNode materializedDocument,
         DocumentMetadataRow documentMetadata,
-        ResourceReadPlan readPlan,
         RelationalGetRequestReadMode readMode
     )
     {
@@ -185,8 +179,7 @@ internal sealed class RelationalReadMaterializer(
             RelationalGetRequestReadMode.StoredDocument => materializedDocument,
             RelationalGetRequestReadMode.ExternalResponse => InjectApiMetadata(
                 materializedDocument,
-                documentMetadata,
-                readPlan
+                documentMetadata
             ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(readMode),
@@ -206,12 +199,10 @@ internal sealed class RelationalReadMaterializer(
 
     private static JsonNode InjectApiMetadata(
         JsonNode materializedDocument,
-        DocumentMetadataRow documentMetadata,
-        ResourceReadPlan readPlan
+        DocumentMetadataRow documentMetadata
     )
     {
         ArgumentNullException.ThrowIfNull(materializedDocument);
-        ArgumentNullException.ThrowIfNull(readPlan);
 
         if (materializedDocument is not JsonObject documentObject)
         {

@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// <c>StoredDocument</c> mode (internal read-modify-write fetches) — can disable it because
 /// the lookup result never reaches link emission for them.
 /// </param>
-public readonly record struct HydrationExecutionOptions(
+public sealed record HydrationExecutionOptions(
     bool IncludeDescriptorProjection = true,
     bool IncludeDocumentReferenceLookup = true
 );

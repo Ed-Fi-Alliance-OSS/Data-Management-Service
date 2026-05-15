@@ -503,7 +503,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateDocumentMetadataRow(documentUuid, 346L, 94L),
             (346L, "Eastside Elementary")
         );
-        HydrationExecutionOptions capturedExecutionOptions = default;
+        HydrationExecutionOptions? capturedExecutionOptions = null;
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
@@ -529,7 +529,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         await _sut.GetDocumentById(getRequest);
 
-        capturedExecutionOptions
+        capturedExecutionOptions.Should().NotBeNull();
+        capturedExecutionOptions!
             .IncludeDocumentReferenceLookup.Should()
             .BeFalse(
                 "StoredDocument-mode GETs do not emit link, so the auxiliary FK lookup must be suppressed at hydration time"
@@ -557,7 +558,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateDocumentMetadataRow(documentUuid, 347L, 95L),
             (347L, "Northwood High")
         );
-        HydrationExecutionOptions capturedExecutionOptions = default;
+        HydrationExecutionOptions? capturedExecutionOptions = null;
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
@@ -583,7 +584,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         await _sut.GetDocumentById(getRequest);
 
-        capturedExecutionOptions
+        capturedExecutionOptions.Should().NotBeNull();
+        capturedExecutionOptions!
             .IncludeDocumentReferenceLookup.Should()
             .BeTrue("ExternalResponse-mode GETs emit link, so the auxiliary FK lookup must run");
     }

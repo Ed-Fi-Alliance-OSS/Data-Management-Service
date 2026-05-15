@@ -205,7 +205,7 @@ public static partial class JsonTestUtilities
     /// comparison succeeds. Tests that explicitly assert link emission use path-based step
     /// definitions which read the raw response directly and are unaffected by this scrub.
     /// </summary>
-    private static void RemoveLinkSubtrees(JsonNode? node)
+    internal static void RemoveLinkSubtrees(JsonNode? node)
     {
         switch (node)
         {

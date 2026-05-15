@@ -654,6 +654,113 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_reject_DocumentReferenceLookup_when_SourcesInOrder_is_missing_a_binding_required_source()
+    {
+        // Compile a valid two-binding plan (School + Calendar), then drop the Calendar
+        // source from SourcesInOrder while leaving the model's DocumentReferenceBindings
+        // untouched. Per-source validation still passes for the surviving School entry,
+        // so the gap surfaces only via the coverage check.
+        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var schoolSource = validReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single(source =>
+            source.FkColumn.Value == "School_DocumentId"
+        );
+        var mutatedReadPlan = validReadPlan with
+        {
+            DocumentReferenceLookup = validReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [schoolSource],
+            },
+        };
+
+        Action act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*document-reference lookup plan is missing authoritative source for table*FK column 'Calendar_DocumentId'*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_when_SourcesInOrder_contains_a_source_not_backed_by_any_binding()
+    {
+        // Compile a valid single-binding plan (School), then append a second source
+        // (Calendar_DocumentId) that has no corresponding DocumentReferenceBinding in
+        // the model. The strayed source is still a valid DocumentFk column, so per-
+        // source kind validation passes; the bindings-coverage check is the only path
+        // that flags it.
+        var unboundFkModel = CreateProjectionMetadataResourceModelWithUnboundDocumentFkColumn();
+        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(unboundFkModel);
+        var schoolSource = validReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single();
+        var mutatedReadPlan = validReadPlan with
+        {
+            DocumentReferenceLookup = validReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder =
+                [
+                    schoolSource,
+                    new DocumentReferenceLookupSource(
+                        Table: unboundFkModel.Root.Table,
+                        FkColumn: new DbColumnName("Calendar_DocumentId")
+                    ),
+                ],
+            },
+        };
+
+        Action act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*document-reference lookup plan source at index '1'*FK column 'Calendar_DocumentId' does not correspond to any authoritative DocumentReferenceBinding*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_when_SourcesInOrder_dependency_order_is_swapped()
+    {
+        // Compile a valid two-binding plan (School first, Calendar second per the
+        // compiler's TableDependencyOrdinal+FkColumnOrdinal sort), then swap the two
+        // entries. Each entry still corresponds to an authoritative binding and per-
+        // source validation passes, so the order mismatch surfaces only via the
+        // ordering check against the bindings-derived expected sequence.
+        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var orderedSources = validReadPlan.DocumentReferenceLookup!.SourcesInOrder;
+        orderedSources.Length.Should().Be(2);
+        var mutatedReadPlan = validReadPlan with
+        {
+            DocumentReferenceLookup = validReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [orderedSources[1], orderedSources[0]],
+            },
+        };
+
+        Action act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*document-reference lookup plan source at index '0' targets table*FK column 'Calendar_DocumentId'*authoritative dependency-order requires table*FK column 'School_DocumentId'*"
+            );
+    }
+
+    [Test]
     public void It_should_emit_exact_pgsql_DescriptorProjection_sql_for_projection_metadata_resources()
     {
         AssertDescriptorProjectionPlan(
@@ -3509,6 +3616,23 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         return model with
         {
             DocumentReferenceBindings = [binding],
+        };
+    }
+
+    // Returns a model whose root table retains both `School_DocumentId` and `Calendar_DocumentId`
+    // DocumentFk columns from the multi-binding fixture, but only the School DocumentReferenceBinding.
+    // The compiler emits a single-source lookup; test code can then append a stray Calendar source
+    // to SourcesInOrder and rely on the bindings-coverage check to flag it.
+    private static RelationalResourceModel CreateProjectionMetadataResourceModelWithUnboundDocumentFkColumn()
+    {
+        var model = CreateRootMultiBindingReferenceProjectionResourceModel();
+        var schoolBinding = model.DocumentReferenceBindings.Single(binding =>
+            binding.FkColumn.Value == "School_DocumentId"
+        );
+
+        return model with
+        {
+            DocumentReferenceBindings = [schoolBinding],
         };
     }
 

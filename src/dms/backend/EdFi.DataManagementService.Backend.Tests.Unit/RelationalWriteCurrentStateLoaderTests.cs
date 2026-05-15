@@ -181,7 +181,7 @@ public class Given_Relational_Write_Current_State_Loader
         await sut.LoadAsync(request, session);
 
         recordingHydrator.CapturedExecutionOptions.Should().NotBeNull();
-        recordingHydrator.CapturedExecutionOptions!.Value.IncludeDescriptorProjection.Should().BeFalse();
+        recordingHydrator.CapturedExecutionOptions!.IncludeDescriptorProjection.Should().BeFalse();
     }
 
     [Test]
@@ -214,7 +214,7 @@ public class Given_Relational_Write_Current_State_Loader
         await sut.LoadAsync(request, session);
 
         recordingHydrator.CapturedExecutionOptions.Should().NotBeNull();
-        recordingHydrator.CapturedExecutionOptions!.Value.IncludeDescriptorProjection.Should().BeTrue();
+        recordingHydrator.CapturedExecutionOptions!.IncludeDescriptorProjection.Should().BeTrue();
     }
 
     private static RelationalWriteCurrentStateLoadRequest CreateLoadRequest(
