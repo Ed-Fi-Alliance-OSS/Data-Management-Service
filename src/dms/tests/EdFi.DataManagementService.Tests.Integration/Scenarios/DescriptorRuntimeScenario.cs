@@ -172,8 +172,8 @@ internal static class DescriptorRuntimeScenario
             .GetValue<string>()
             .Should()
             .Be(
-                "Identifying values for the SchoolTypeDescriptor resource cannot be changed. "
-                    + "Delete and recreate the resource item instead."
+                "Identity of resource 'Ed-Fi.SchoolTypeDescriptor' cannot be changed. "
+                    + "Descriptor identity fields (Namespace, CodeValue) are immutable on PUT."
             );
     }
 
