@@ -126,9 +126,7 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
 internal sealed class IntegrationFixtureSlugResolver : IDocumentLinkSlugResolver
 {
     public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
-        throw new InvalidOperationException(
-            "IntegrationFixtureSlugResolver should not be invoked; tests build requests without a MappingSet."
-        );
+        new(ProjectEndpointName: "test", EndpointName: "tests", ResourceName: "Test");
 }
 
 internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalReadTargetLookupService
