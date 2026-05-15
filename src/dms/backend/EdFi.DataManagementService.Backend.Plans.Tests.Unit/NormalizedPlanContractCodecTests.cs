@@ -678,6 +678,61 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_roundtrip_non_scalar_query_parameter_binding_metadata()
+    {
+        var queryPlan = new PageDocumentIdSqlPlan(
+            PageDocumentIdSql: "SELECT 1",
+            TotalCountSql: "SELECT COUNT(1)",
+            PageParametersInOrder:
+            [
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    "ClaimEducationOrganizationIds",
+                    QuerySqlParameterBinding.PgsqlArray
+                ),
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    "StructuredClaimEducationOrganizationIds",
+                    QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id")
+                ),
+                new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+            ],
+            TotalCountParametersInOrder:
+            [
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    "ClaimEducationOrganizationIds",
+                    QuerySqlParameterBinding.PgsqlArray
+                ),
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    "StructuredClaimEducationOrganizationIds",
+                    QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id")
+                ),
+            ]
+        );
+
+        var encoded = NormalizedPlanContractCodec.Encode(queryPlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded);
+
+        decoded.PageParametersInOrder[0].Binding.Should().Be(QuerySqlParameterBinding.PgsqlArray);
+        decoded
+            .PageParametersInOrder[1]
+            .Binding.Should()
+            .Be(QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id"));
+        decoded.TotalCountParametersInOrder.Should().NotBeNull();
+        decoded
+            .TotalCountParametersInOrder!.Value[0]
+            .Binding.Should()
+            .Be(QuerySqlParameterBinding.PgsqlArray);
+        decoded
+            .TotalCountParametersInOrder!.Value[1]
+            .Binding.Should()
+            .Be(QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id"));
+    }
+
+    [Test]
     public void It_should_fail_fast_when_model_document_reference_binding_order_is_permuted_relative_to_the_encoded_read_plan()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);

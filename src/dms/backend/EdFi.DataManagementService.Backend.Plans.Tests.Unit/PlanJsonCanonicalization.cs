@@ -45,4 +45,34 @@ internal static class PlanJsonCanonicalization
             ),
         };
     }
+
+    public static string ToQueryParameterBindingKindToken(QuerySqlParameterBindingKind value)
+    {
+        return value switch
+        {
+            QuerySqlParameterBindingKind.Scalar => "scalar",
+            QuerySqlParameterBindingKind.PgsqlArray => "pgsql_array",
+            QuerySqlParameterBindingKind.MssqlStructured => "mssql_structured",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(value),
+                value,
+                "Unsupported query parameter binding kind."
+            ),
+        };
+    }
+
+    public static string ToQueryParameterBindingKindToken(QuerySqlParameterBindingKindDto value)
+    {
+        return value switch
+        {
+            QuerySqlParameterBindingKindDto.Scalar => "scalar",
+            QuerySqlParameterBindingKindDto.PgsqlArray => "pgsql_array",
+            QuerySqlParameterBindingKindDto.MssqlStructured => "mssql_structured",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(value),
+                value,
+                "Unsupported query parameter binding kind DTO."
+            ),
+        };
+    }
 }

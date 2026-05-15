@@ -630,7 +630,24 @@ internal sealed record PageDocumentIdSqlPlanDto
     public ImmutableArray<QuerySqlParameterDto>? TotalCountParametersInOrder { get; init; }
 }
 
-internal sealed record QuerySqlParameterDto(QuerySqlParameterRoleDto Role, string ParameterName);
+internal sealed record QuerySqlParameterDto(
+    QuerySqlParameterRoleDto Role,
+    string ParameterName,
+    QuerySqlParameterBindingDto? Binding = null
+);
+
+internal sealed record QuerySqlParameterBindingDto(
+    QuerySqlParameterBindingKindDto Kind,
+    string? StructuredTypeName = null,
+    string? StructuredColumnName = null
+);
+
+internal enum QuerySqlParameterBindingKindDto
+{
+    Scalar,
+    PgsqlArray,
+    MssqlStructured,
+}
 
 internal enum QuerySqlParameterRoleDto
 {

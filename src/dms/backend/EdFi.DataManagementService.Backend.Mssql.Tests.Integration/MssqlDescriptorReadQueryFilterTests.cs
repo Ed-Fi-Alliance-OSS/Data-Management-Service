@@ -441,6 +441,7 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
 
         var request = new RelationalQueryRequest(
             ResourceInfo: _resourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: queryElements,
             AuthorizationSecurableInfo: _resourceInfo.AuthorizationSecurableInfo,

@@ -84,11 +84,90 @@ public sealed record PageDocumentIdSqlPlan
 }
 
 /// <summary>
+/// Describes how a query parameter should be bound at runtime.
+/// </summary>
+public sealed record QuerySqlParameterBinding
+{
+    public static QuerySqlParameterBinding Scalar { get; } = new(QuerySqlParameterBindingKind.Scalar);
+
+    public static QuerySqlParameterBinding PgsqlArray { get; } = new(QuerySqlParameterBindingKind.PgsqlArray);
+
+    public static QuerySqlParameterBinding CreateMssqlStructured(
+        string structuredTypeName,
+        string structuredColumnName
+    ) => new(QuerySqlParameterBindingKind.MssqlStructured, structuredTypeName, structuredColumnName);
+
+    public QuerySqlParameterBinding(
+        QuerySqlParameterBindingKind Kind,
+        string? StructuredTypeName = null,
+        string? StructuredColumnName = null
+    )
+    {
+        if (Kind is QuerySqlParameterBindingKind.MssqlStructured)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(StructuredTypeName);
+            ArgumentException.ThrowIfNullOrWhiteSpace(StructuredColumnName);
+        }
+        else if (StructuredTypeName is not null || StructuredColumnName is not null)
+        {
+            throw new ArgumentException(
+                $"{nameof(StructuredTypeName)} and {nameof(StructuredColumnName)} are only valid for {nameof(QuerySqlParameterBindingKind.MssqlStructured)}.",
+                nameof(Kind)
+            );
+        }
+
+        this.Kind = Kind;
+        this.StructuredTypeName = StructuredTypeName;
+        this.StructuredColumnName = StructuredColumnName;
+    }
+
+    public QuerySqlParameterBindingKind Kind { get; init; }
+
+    public string? StructuredTypeName { get; init; }
+
+    public string? StructuredColumnName { get; init; }
+}
+
+/// <summary>
+/// Supported query-parameter binding shapes.
+/// </summary>
+public enum QuerySqlParameterBindingKind
+{
+    Scalar,
+    PgsqlArray,
+    MssqlStructured,
+}
+
+/// <summary>
 /// One query-SQL parameter contract entry.
 /// </summary>
 /// <param name="Role">The semantic role of the parameter in the plan.</param>
 /// <param name="ParameterName">The bare SQL parameter name (without <c>@</c>).</param>
-public sealed record QuerySqlParameter(QuerySqlParameterRole Role, string ParameterName);
+/// <param name="Binding">
+/// Optional runtime binding metadata. Defaults to a scalar parameter when omitted.
+/// </param>
+public sealed record QuerySqlParameter
+{
+    public QuerySqlParameter(
+        QuerySqlParameterRole Role,
+        string ParameterName,
+        QuerySqlParameterBinding? Binding = null
+    )
+    {
+        this.Role = Role;
+        this.ParameterName = PlanContractArgumentValidator.RequireNotNull(
+            ParameterName,
+            nameof(ParameterName)
+        );
+        this.Binding = Binding ?? QuerySqlParameterBinding.Scalar;
+    }
+
+    public QuerySqlParameterRole Role { get; init; }
+
+    public string ParameterName { get; init; }
+
+    public QuerySqlParameterBinding Binding { get; init; }
+}
 
 /// <summary>
 /// Classifies the semantic role of a query-SQL parameter in <see cref="PageDocumentIdSqlPlan" />.

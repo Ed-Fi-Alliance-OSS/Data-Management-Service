@@ -62,6 +62,57 @@ public sealed record QueryValuePredicate(
 }
 
 /// <summary>
+/// Supported DMS-1055 authorization strategy kinds for page-<c>DocumentId</c> query compilation.
+/// </summary>
+public enum PageDocumentIdAuthorizationStrategyKind
+{
+    /// <summary>
+    /// Filters the auth hierarchy from source token EdOrg ids down to target resource EdOrg ids.
+    /// </summary>
+    RelationshipsWithEdOrgsOnly,
+
+    /// <summary>
+    /// Filters the auth hierarchy from target token EdOrg ids up to source resource EdOrg ids.
+    /// </summary>
+    RelationshipsWithEdOrgsOnlyInverted,
+}
+
+/// <summary>
+/// One concrete root-table EdOrg authorization subject used by DMS-1055 query compilation.
+/// </summary>
+/// <param name="Table">The table owning the authorization subject column.</param>
+/// <param name="Column">The concrete root-table EdOrg subject column.</param>
+public sealed record PageDocumentIdAuthorizationSubject(DbTableName Table, DbColumnName Column);
+
+/// <summary>
+/// One relationship-based authorization strategy with its participating EdOrg subjects.
+/// </summary>
+/// <param name="Kind">The supported relationship authorization kind.</param>
+/// <param name="Subjects">
+/// The participating concrete root-table EdOrg authorization subjects. Multiple subjects are combined with AND.
+/// </param>
+public sealed record PageDocumentIdAuthorizationStrategy(
+    PageDocumentIdAuthorizationStrategyKind Kind,
+    IReadOnlyList<PageDocumentIdAuthorizationSubject> Subjects
+);
+
+/// <summary>
+/// Optional DMS-1055 authorization inputs for page-<c>DocumentId</c> query compilation.
+/// </summary>
+/// <param name="Strategies">
+/// Effective relationship authorization strategies. Strategies are combined with OR.
+/// </param>
+/// <param name="ClaimEducationOrganizationIdParameterization">
+/// Dialect-specific claim EdOrg parameterization shared by SQL emission and runtime binding. Required when
+/// <paramref name="Strategies" /> is non-empty; ignored when the strategy list is empty.
+/// </param>
+public sealed record PageDocumentIdAuthorizationSpec(
+    IReadOnlyList<PageDocumentIdAuthorizationStrategy> Strategies,
+    AuthorizationClaimEducationOrganizationIdParameterization? ClaimEducationOrganizationIdParameterization =
+        null
+);
+
+/// <summary>
 /// Input specification for compiling page-<c>DocumentId</c> query SQL.
 /// </summary>
 /// <param name="RootTable">The resource root table queried for <c>DocumentId</c>.</param>
@@ -74,11 +125,16 @@ public sealed record QueryValuePredicate(
 /// <param name="IncludeTotalCountSql">
 /// Indicates whether the compiler should include total-count SQL in the emitted plan.
 /// </param>
+/// <param name="Authorization">
+/// Optional DMS-1055 authorization inputs. When present, relationship predicates are applied to both page and
+/// total-count SQL.
+/// </param>
 public sealed record PageDocumentIdQuerySpec(
     DbTableName RootTable,
     IReadOnlyList<QueryValuePredicate> Predicates,
     IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> UnifiedAliasMappingsByColumn,
     string OffsetParameterName = "offset",
     string LimitParameterName = "limit",
-    bool IncludeTotalCountSql = false
+    bool IncludeTotalCountSql = false,
+    PageDocumentIdAuthorizationSpec? Authorization = null
 );

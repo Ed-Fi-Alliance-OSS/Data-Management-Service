@@ -1,0 +1,498 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "authorizationandresources": "authorizationAndResources",
+      "authorizationchildonlyresources": "authorizationChildOnlyResources",
+      "authorizationrootchildresources": "authorizationRootChildResources"
+    },
+    "compatibleDsRange": "5.2.0",
+    "description": "",
+    "domains": [],
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "isExtensionProject": true,
+    "projectEndpointName": "authz",
+    "projectName": "Authz",
+    "projectVersion": "1.0.0",
+    "resourceNameMapping": {
+      "AuthorizationAndResource": "authorizationAndResources",
+      "AuthorizationChildOnlyResource": "authorizationChildOnlyResources",
+      "AuthorizationRootChildResource": "authorizationRootChildResources"
+    },
+    "resourceSchemas": {
+      "authorizationAndResources": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "commonExtensionOverrides": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {
+          "AuthorizationAndId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.authorizationAndId",
+            "type": "number"
+          },
+          "Name": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.name",
+            "type": "string"
+          },
+          "PrimarySchool": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.primarySchoolReference.schoolId",
+                "type": "number"
+              }
+            ],
+            "resourceName": "School"
+          },
+          "SecondarySchool": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.secondarySchoolReference.schoolId",
+                "type": "number"
+              }
+            ],
+            "resourceName": "School"
+          }
+        },
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": ["$.authorizationAndId"],
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Synthetic authorization multi-root resource.",
+          "properties": {
+            "authorizationAndId": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "name": {
+              "maxLength": 75,
+              "type": "string"
+            },
+            "primarySchoolReference": {
+              "additionalProperties": false,
+              "properties": {
+                "schoolId": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": ["schoolId"],
+              "type": "object"
+            },
+            "secondarySchoolReference": {
+              "additionalProperties": false,
+              "properties": {
+                "schoolId": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": ["schoolId"],
+              "type": "object"
+            }
+          },
+          "required": [
+            "authorizationAndId",
+            "name",
+            "primarySchoolReference",
+            "secondarySchoolReference"
+          ],
+          "title": "Authz.AuthorizationAndResource",
+          "type": "object"
+        },
+        "numericJsonPaths": [
+          "$.authorizationAndId",
+          "$.primarySchoolReference.schoolId",
+          "$.secondarySchoolReference.schoolId"
+        ],
+        "queryFieldMapping": {
+          "authorizationAndId": [
+            {
+              "path": "$.authorizationAndId",
+              "type": "number"
+            }
+          ],
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "name": [
+            {
+              "path": "$.name",
+              "type": "string"
+            }
+          ]
+        },
+        "resourceName": "AuthorizationAndResource",
+        "securableElements": {
+          "Contact": [],
+          "EducationOrganization": [
+            {
+              "jsonPath": "$.primarySchoolReference.schoolId",
+              "metaEdName": "PrimarySchoolId"
+            },
+            {
+              "jsonPath": "$.secondarySchoolReference.schoolId",
+              "metaEdName": "SecondarySchoolId"
+            }
+          ],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
+        }
+      },
+      "authorizationRootChildResources": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$.classPeriods[*].classPeriodReference.classPeriodName",
+              "$.classPeriods[*].classPeriodReference.schoolId"
+            ]
+          }
+        ],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "commonExtensionOverrides": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {
+          "AuthorizationRootChildId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.authorizationRootChildId",
+            "type": "number"
+          },
+          "ClassPeriod": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.classPeriodName",
+                "referenceJsonPath": "$.classPeriods[*].classPeriodReference.classPeriodName",
+                "type": "string"
+              },
+              {
+                "identityJsonPath": "$.schoolReference.schoolId",
+                "referenceJsonPath": "$.classPeriods[*].classPeriodReference.schoolId",
+                "type": "number"
+              }
+            ],
+            "resourceName": "ClassPeriod"
+          },
+          "Name": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.name",
+            "type": "string"
+          },
+          "School": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.schoolReference.schoolId",
+                "type": "number"
+              }
+            ],
+            "resourceName": "School"
+          }
+        },
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": ["$.authorizationRootChildId"],
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Synthetic authorization root-plus-child resource.",
+          "properties": {
+            "authorizationRootChildId": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "classPeriods": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "classPeriodReference": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "classPeriodName": {
+                        "maxLength": 60,
+                        "type": "string"
+                      },
+                      "schoolId": {
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["classPeriodName", "schoolId"],
+                    "type": "object"
+                  }
+                },
+                "required": ["classPeriodReference"],
+                "type": "object"
+              },
+              "minItems": 0,
+              "type": "array",
+              "uniqueItems": false
+            },
+            "name": {
+              "maxLength": 75,
+              "type": "string"
+            },
+            "schoolReference": {
+              "additionalProperties": false,
+              "properties": {
+                "schoolId": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": ["schoolId"],
+              "type": "object"
+            }
+          },
+          "required": ["authorizationRootChildId", "name", "schoolReference"],
+          "title": "Authz.AuthorizationRootChildResource",
+          "type": "object"
+        },
+        "numericJsonPaths": [
+          "$.authorizationRootChildId",
+          "$.classPeriods[*].classPeriodReference.schoolId",
+          "$.schoolReference.schoolId"
+        ],
+        "queryFieldMapping": {
+          "authorizationRootChildId": [
+            {
+              "path": "$.authorizationRootChildId",
+              "type": "number"
+            }
+          ],
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "name": [
+            {
+              "path": "$.name",
+              "type": "string"
+            }
+          ],
+          "schoolId": [
+            {
+              "path": "$.schoolReference.schoolId",
+              "type": "number"
+            }
+          ]
+        },
+        "resourceName": "AuthorizationRootChildResource",
+        "securableElements": {
+          "Contact": [],
+          "EducationOrganization": [
+            {
+              "jsonPath": "$.schoolReference.schoolId",
+              "metaEdName": "SchoolId"
+            },
+            {
+              "jsonPath": "$.classPeriods[*].classPeriodReference.schoolId",
+              "metaEdName": "SchoolId"
+            }
+          ],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
+        }
+      },
+      "authorizationChildOnlyResources": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$.classPeriods[*].classPeriodReference.classPeriodName",
+              "$.classPeriods[*].classPeriodReference.schoolId"
+            ]
+          }
+        ],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "commonExtensionOverrides": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {
+          "AuthorizationChildOnlyId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.authorizationChildOnlyId",
+            "type": "number"
+          },
+          "ClassPeriod": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.classPeriodName",
+                "referenceJsonPath": "$.classPeriods[*].classPeriodReference.classPeriodName",
+                "type": "string"
+              },
+              {
+                "identityJsonPath": "$.schoolReference.schoolId",
+                "referenceJsonPath": "$.classPeriods[*].classPeriodReference.schoolId",
+                "type": "number"
+              }
+            ],
+            "resourceName": "ClassPeriod"
+          },
+          "Name": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.name",
+            "type": "string"
+          }
+        },
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": ["$.authorizationChildOnlyId"],
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Synthetic authorization child-only resource.",
+          "properties": {
+            "authorizationChildOnlyId": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "classPeriods": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "classPeriodReference": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "classPeriodName": {
+                        "maxLength": 60,
+                        "type": "string"
+                      },
+                      "schoolId": {
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["classPeriodName", "schoolId"],
+                    "type": "object"
+                  }
+                },
+                "required": ["classPeriodReference"],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": false
+            },
+            "name": {
+              "maxLength": 75,
+              "type": "string"
+            }
+          },
+          "required": ["authorizationChildOnlyId", "name", "classPeriods"],
+          "title": "Authz.AuthorizationChildOnlyResource",
+          "type": "object"
+        },
+        "numericJsonPaths": [
+          "$.authorizationChildOnlyId",
+          "$.classPeriods[*].classPeriodReference.schoolId"
+        ],
+        "queryFieldMapping": {
+          "authorizationChildOnlyId": [
+            {
+              "path": "$.authorizationChildOnlyId",
+              "type": "number"
+            }
+          ],
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "name": [
+            {
+              "path": "$.name",
+              "type": "string"
+            }
+          ]
+        },
+        "resourceName": "AuthorizationChildOnlyResource",
+        "securableElements": {
+          "Contact": [],
+          "EducationOrganization": [
+            {
+              "jsonPath": "$.classPeriods[*].classPeriodReference.schoolId",
+              "metaEdName": "SchoolId"
+            }
+          ],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
+        }
+      }
+    }
+  }
+}

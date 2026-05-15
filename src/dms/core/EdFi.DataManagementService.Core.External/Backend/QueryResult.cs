@@ -36,6 +36,12 @@ public record QueryResult
     public record QueryFailureNotImplemented(string FailureMessage) : QueryResult();
 
     /// <summary>
+    /// A failure because security configuration metadata for the query is invalid.
+    /// </summary>
+    /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
+    public record QueryFailureSecurityConfiguration(string[] Errors) : QueryResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

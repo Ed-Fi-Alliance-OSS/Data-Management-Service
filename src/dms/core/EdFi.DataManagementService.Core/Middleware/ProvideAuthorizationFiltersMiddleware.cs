@@ -51,6 +51,25 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 return;
             }
 
+            if (IsRelationalGetManyRequest(requestInfo))
+            {
+                // Relational GET-many now classifies strategy names in the backend planner,
+                // so middleware must preserve raw names and avoid premature provider failures.
+                requestInfo.AuthorizationStrategyEvaluators =
+                [
+                    .. requestInfo.ResourceActionAuthStrategies.Select(
+                        static authorizationStrategy => new AuthorizationStrategyEvaluator(
+                            authorizationStrategy,
+                            [],
+                            FilterOperator.Or
+                        )
+                    ),
+                ];
+
+                await next();
+                return;
+            }
+
             List<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators = [];
             foreach (string authorizationStrategy in requestInfo.ResourceActionAuthStrategies)
             {
@@ -118,4 +137,9 @@ internal class ProvideAuthorizationFiltersMiddleware(
 
         await next();
     }
+
+    private static bool IsRelationalGetManyRequest(RequestInfo requestInfo) =>
+        requestInfo.MappingSet is not null
+        && requestInfo.Method == RequestMethod.GET
+        && !requestInfo.PathComponents.HasDocumentUuidSegment;
 }

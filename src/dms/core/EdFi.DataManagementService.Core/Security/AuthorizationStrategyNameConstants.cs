@@ -8,8 +8,12 @@ namespace EdFi.DataManagementService.Core.Security;
 public static class AuthorizationStrategyNameConstants
 {
     public const string NamespaceBased = "NamespaceBased";
+    public const string OwnershipBased = "OwnershipBased";
     public const string RelationshipsWithEdOrgsOnly = "RelationshipsWithEdOrgsOnly";
+    public const string RelationshipsWithEdOrgsOnlyInverted = "RelationshipsWithEdOrgsOnlyInverted";
     public const string RelationshipsWithEdOrgsAndPeople = "RelationshipsWithEdOrgsAndPeople";
+    public const string RelationshipsWithEdOrgsAndPeopleInverted = "RelationshipsWithEdOrgsAndPeopleInverted";
+    public const string RelationshipsWithPeopleOnly = "RelationshipsWithPeopleOnly";
     public const string RelationshipsWithStudentsOnly = "RelationshipsWithStudentsOnly";
     public const string RelationshipsWithStudentsOnlyThroughResponsibility =
         "RelationshipsWithStudentsOnlyThroughResponsibility";

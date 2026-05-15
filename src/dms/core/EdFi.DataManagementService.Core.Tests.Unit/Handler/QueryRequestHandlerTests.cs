@@ -14,6 +14,8 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -146,6 +148,63 @@ public class QueryRequestHandlerTests
             _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = ToJsonError("FailureMessage", new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_Security_Configuration_Failure : QueryRequestHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string[] ResponseErrors =
+            [
+                "Relational query authorization metadata is invalid for resource 'Ed-Fi.School'. "
+                    + "Strategy 'CustomAuthorizationStrategy' is not a recognized built-in strategy and "
+                    + "does not match the {BasisResource}With... custom-view convention.",
+            ];
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                return Task.FromResult<QueryResult>(
+                    new QueryResult.QueryFailureSecurityConfiguration(ResponseErrors)
+                );
+            }
+        }
+
+        private static readonly string _traceId = "security-config";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = FailureResponse.ForSecurityConfiguration(
+                new TraceId(_traceId),
+                Repository.ResponseErrors
+            );
 
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
@@ -423,6 +482,25 @@ public class QueryRequestHandlerTests
             [],
             []
         );
+        private readonly QueryElement[] _queryElements =
+        [
+            new("schoolId", [new JsonPath("$.schoolReference.schoolId")], "255901", "integer"),
+            new("studentUniqueId", [new JsonPath("$.studentUniqueId")], "800000001", "string"),
+        ];
+        private readonly PaginationParameters _paginationParameters = new(
+            Limit: 25,
+            Offset: 10,
+            TotalCount: true,
+            MaximumPageSize: 500
+        );
+        private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
+        [
+            new(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                [new AuthorizationFilter.EducationOrganization("255901")],
+                FilterOperator.Or
+            ),
+        ];
 
         [SetUp]
         public async Task Setup()
@@ -457,6 +535,23 @@ public class QueryRequestHandlerTests
                 ),
                 WasExplicitlySpecified: true
             );
+            _requestInfo.QueryElements = _queryElements;
+            _requestInfo.PaginationParameters = _paginationParameters;
+            _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
+            _requestInfo.ClientAuthorizations = new ClientAuthorizations(
+                TokenId: "token-id",
+                ClientId: "client-id",
+                ClaimSetName: "claim-set",
+                EducationOrganizationIds:
+                [
+                    new EducationOrganizationId(255902),
+                    new EducationOrganizationId(255901),
+                    new EducationOrganizationId(255902),
+                    new EducationOrganizationId(255900),
+                ],
+                NamespacePrefixes: [],
+                DmsInstanceIds: []
+            );
 
             var (queryHandler, serviceProvider) = Handler(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
@@ -468,7 +563,15 @@ public class QueryRequestHandlerTests
         {
             _repository.CapturedRequest.Should().NotBeNull();
             _repository.CapturedRequest!.MappingSet.Should().BeSameAs(_mappingSet);
+            _repository
+                .CapturedRequest.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(255900L, 255901L, 255902L);
             _repository.CapturedRequest.ResourceInfo.Should().BeSameAs(_requestInfo.ResourceInfo);
+            _repository.CapturedRequest.QueryElements.Should().BeSameAs(_queryElements);
+            _repository.CapturedRequest.PaginationParameters.Should().BeSameAs(_paginationParameters);
+            _repository
+                .CapturedRequest.AuthorizationStrategyEvaluators.Should()
+                .BeSameAs(_authorizationStrategyEvaluators);
             _repository
                 .CapturedRequest.ResourceInfo.Should()
                 .BeEquivalentTo(
@@ -501,6 +604,14 @@ public class QueryRequestHandlerTests
             _requestInfo
                 .FrontendResponse.ContentType.Should()
                 .Be("application/vnd.ed-fi.student.readableprofile.readable+json");
+        }
+
+        [Test]
+        public void It_centralizes_the_claim_education_organization_parameter_name()
+        {
+            RelationalAuthorizationParameterNameConstants
+                .ClaimEducationOrganizationIds.Should()
+                .Be(nameof(RelationalAuthorizationContext.ClaimEducationOrganizationIds));
         }
     }
 
@@ -599,6 +710,48 @@ public class QueryRequestHandlerTests
                 .Contain("uri")
                 .And.Contain("namespace")
                 .And.Contain("codeValue");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Relational_Query_Request_With_No_EdOrg_Claims : QueryRequestHandlerTests
+    {
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IRelationalQueryRequest? CapturedRequest { get; private set; }
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                CapturedRequest = queryRequest as IRelationalQueryRequest;
+
+                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
+            }
+        }
+
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.MappingSet = _mappingSet;
+
+            var (queryHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_preserves_an_empty_claim_education_organization_list()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository
+                .CapturedRequest!.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .BeEmpty();
         }
     }
 }

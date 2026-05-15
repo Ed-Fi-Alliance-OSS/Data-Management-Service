@@ -20,6 +20,7 @@ Implement the view-based authorization strategy for the GET-many scenario per:
 - The custom auth view outputs DocumentId (not natural keys/USIs), and the join uses DocumentId accordingly.
 - GET-many results are filtered so that only resources matching the custom auth view are returned.
 - View-based strategies are combined with AND semantics — they act as additional filter criteria applied alongside other AND strategies (Namespace-based, Ownership-based).
+- This story replaces the temporary DMS-1055 GET-many 501 Not Implemented behavior for convention-matching custom view-based strategies. Custom view-based strategies are applied as AND filters with the relationship strategy OR group instead of causing the unsupported mixed-strategy failure.
 - View-based strategies execute before relationship-based (OR) strategies, and their order relative to Namespace-based follows the order configured in CMS.
 - When authorization fails (no matching rows), the result set is simply empty — no error is thrown for GET-many; the filter naturally excludes unauthorized resources.
 - When the custom auth view does not exist or returns invalid columns, DMS returns HTTP 500 with `type: urn:ed-fi:api:system` (same as ODS behavior). See `auth.md` §"View-based authorization strategy".

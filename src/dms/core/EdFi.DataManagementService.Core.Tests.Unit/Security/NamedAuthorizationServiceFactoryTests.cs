@@ -37,6 +37,7 @@ public class NamedAuthorizationServiceFactoryTests
             services.AddTransient<RelationshipsWithStudentsOnlyValidator>();
             services.AddTransient<RelationshipsWithStudentsOnlyThroughResponsibilityValidator>();
             services.AddTransient<RelationshipsWithEdOrgsOnlyFiltersProvider>();
+            services.AddTransient<RelationshipsWithEdOrgsOnlyInvertedFiltersProvider>();
             services.AddTransient<RelationshipsWithEdOrgsAndPeopleFiltersProvider>();
             services.AddTransient<RelationshipsWithStudentsOnlyFiltersProvider>();
             services.AddTransient<RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider>();
@@ -237,6 +238,7 @@ public class NamedAuthorizationServiceFactoryTests
             services.AddTransient<NoFurtherAuthorizationRequiredFiltersProvider>();
             services.AddTransient<NamespaceBasedFiltersProvider>();
             services.AddTransient<RelationshipsWithEdOrgsOnlyFiltersProvider>();
+            services.AddTransient<RelationshipsWithEdOrgsOnlyInvertedFiltersProvider>();
 
             serviceProvider = services.BuildServiceProvider();
 
@@ -287,6 +289,28 @@ public class NamedAuthorizationServiceFactoryTests
                 new ClientAuthorizations("", "", "", [new EducationOrganizationId(255901)], [], [])
             );
             filters.Should().NotBeNull();
+            filters.Filters.Should().NotBeEmpty();
+            filters.Operator.Should().Be(FilterOperator.Or);
+            filters.Filters[0].GetType().Name.Should().Be("EducationOrganization");
+            filters.Filters[0].Value.Should().Be("255901");
+        }
+
+        [Test]
+        public void Should_Return_RelationshipsWithEdOrgsOnlyInvertedFiltersProvider()
+        {
+            var handler =
+                handlerProvider!.GetByName<IAuthorizationFiltersProvider>(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                    serviceProvider!
+                ) as RelationshipsWithEdOrgsOnlyInvertedFiltersProvider;
+            handler.Should().NotBeNull();
+            var filters = handler!.GetFilters(
+                new ClientAuthorizations("", "", "", [new EducationOrganizationId(255901)], [], [])
+            );
+            filters.Should().NotBeNull();
+            filters
+                .AuthorizationStrategyName.Should()
+                .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
             filters.Filters.Should().NotBeEmpty();
             filters.Operator.Should().Be(FilterOperator.Or);
             filters.Filters[0].GetType().Name.Should().Be("EducationOrganization");

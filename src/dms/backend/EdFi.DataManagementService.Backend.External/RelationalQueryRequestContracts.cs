@@ -4,8 +4,39 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.External;
+
+public static class RelationalAuthorizationParameterNameConstants
+{
+    public const string ClaimEducationOrganizationIds = nameof(
+        RelationalAuthorizationContext.ClaimEducationOrganizationIds
+    );
+}
+
+/// <summary>
+/// Typed request-scoped authorization inputs for relational GET-many planning/execution.
+/// </summary>
+/// <param name="ClaimEducationOrganizationIds">
+/// Unique token EdOrg claim ids sorted ascending for deterministic planning/binding.
+/// </param>
+public sealed record RelationalAuthorizationContext(IReadOnlyList<long> ClaimEducationOrganizationIds)
+{
+    public static RelationalAuthorizationContext Create(ClientAuthorizations clientAuthorizations)
+    {
+        ArgumentNullException.ThrowIfNull(clientAuthorizations);
+
+        return new RelationalAuthorizationContext([
+            .. clientAuthorizations
+                .EducationOrganizationIds.Select(static educationOrganizationId =>
+                    educationOrganizationId.Value
+                )
+                .Distinct()
+                .Order(),
+        ]);
+    }
+}
 
 /// <summary>
 /// Backend-local relational query request.
@@ -14,6 +45,11 @@ namespace EdFi.DataManagementService.Backend.External;
 /// </summary>
 public interface IRelationalQueryRequest : IQueryRequest
 {
+    /// <summary>
+    /// Typed request-scoped authorization inputs for relational GET-many planning/execution.
+    /// </summary>
+    RelationalAuthorizationContext AuthorizationContext { get; }
+
     /// <summary>
     /// The resolved runtime mapping set for the active relational request.
     /// Relational GET-many only executes after mapping-set resolution.

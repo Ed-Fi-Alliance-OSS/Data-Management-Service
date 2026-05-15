@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -83,6 +84,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
 
             IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedAction!);
             if (!ValidateAuthorizationStrategies(requestInfo, strategies, actionName, claimSet.Name))
+            {
+                return;
+            }
+
+            if (TryCreateStagedNotImplementedResponse(requestInfo, strategies))
             {
                 return;
             }
@@ -274,11 +280,71 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         if (strategies.Count == 0)
         {
             string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
-            CreateNoStrategiesResponse(requestInfo, actionName, resourceClaimName, claimSetName);
+            if (IsRelationalGetManyRequest(requestInfo))
+            {
+                CreateNoStrategiesSecurityConfigurationResponse(
+                    requestInfo,
+                    actionName,
+                    resourceClaimName,
+                    claimSetName
+                );
+                return false;
+            }
+
+            CreateNoStrategiesForbiddenResponse(requestInfo, actionName, resourceClaimName, claimSetName);
             return false;
         }
         return true;
     }
+
+    private static bool TryCreateStagedNotImplementedResponse(
+        RequestInfo requestInfo,
+        IReadOnlyList<string> strategies
+    )
+    {
+        if (IsGetManyRequest(requestInfo))
+        {
+            return false;
+        }
+
+        if (
+            !strategies.Contains(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            return false;
+        }
+
+        var operationLabel = GetOperationLabel(requestInfo);
+        var error =
+            $"Authorization strategy '{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted}' "
+            + $"is not implemented for {operationLabel}. Support is currently limited to GET-many until DMS-1056.";
+
+        requestInfo.FrontendResponse = new FrontendResponse(
+            StatusCode: (int)HttpStatusCode.NotImplemented,
+            Body: new JsonObject
+            {
+                ["error"] = error,
+                ["correlationId"] = requestInfo.FrontendRequest.TraceId.Value,
+            },
+            Headers: []
+        );
+
+        return true;
+    }
+
+    private static bool IsGetManyRequest(RequestInfo requestInfo) =>
+        requestInfo.Method == RequestMethod.GET && !requestInfo.PathComponents.HasDocumentUuidSegment;
+
+    private static bool IsRelationalGetManyRequest(RequestInfo requestInfo) =>
+        requestInfo.MappingSet is not null && IsGetManyRequest(requestInfo);
+
+    private static string GetOperationLabel(RequestInfo requestInfo) =>
+        requestInfo.Method == RequestMethod.GET && requestInfo.PathComponents.HasDocumentUuidSegment
+            ? "GET-by-id"
+            : requestInfo.Method.ToString();
 
     /// <summary>
     /// Creates an unauthorized (401) response.
@@ -338,7 +404,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// <summary>
     /// Creates a forbidden response for missing authorization strategies.
     /// </summary>
-    private static void CreateNoStrategiesResponse(
+    private static void CreateNoStrategiesForbiddenResponse(
         RequestInfo requestInfo,
         string actionName,
         string resourceClaimName,
@@ -350,6 +416,26 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             Body: FailureResponse.ForForbidden(
                 traceId: requestInfo.FrontendRequest.TraceId,
                 errors:
+                [
+                    $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaimName}'] matched by the caller's claim '{claimSetName}'.",
+                ]
+            ),
+            Headers: [],
+            ContentType: "application/problem+json"
+        );
+    }
+
+    private static void CreateNoStrategiesSecurityConfigurationResponse(
+        RequestInfo requestInfo,
+        string actionName,
+        string resourceClaimName,
+        string claimSetName
+    )
+    {
+        requestInfo.FrontendResponse = new FrontendResponse(
+            StatusCode: (int)HttpStatusCode.InternalServerError,
+            Body: FailureResponse.ForSecurityConfiguration(
+                requestInfo.FrontendRequest.TraceId,
                 [
                     $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaimName}'] matched by the caller's claim '{claimSetName}'.",
                 ]

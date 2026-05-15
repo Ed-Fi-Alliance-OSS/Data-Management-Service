@@ -38,6 +38,9 @@ The following fragment files must be present in the mounted volume (`/app/additi
 - `001-namespace-claimset.json` (E2E-NameSpaceBasedClaimSet)
 - `002-nofurtherauth-claimset.json` (E2E-NoFurtherAuthRequiredClaimSet)
 - `003-edorgsonly-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyClaimSet)
+- `003a-edorgsonly-inverted-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet)
+- `003b-edorgsonly-or-inverted-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet)
+- `003c-edorgsonly-mixed-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet)
 - `004-sample-extension-claimset.json` (SampleExtensionResourceClaims)
 - `005-homograph-extension-claimset.json` (HomographExtensionResourceClaims)
 
@@ -131,4 +134,3 @@ If working with older test configurations, update the following environment vari
 - `DMS_CONFIG_USE_CLAIMS_PATH=true` + `DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS=true` → `DMS_CONFIG_CLAIMS_SOURCE=Hybrid`
 - `DMS_CONFIG_CLAIMS_PATH` → `DMS_CONFIG_CLAIMS_DIRECTORY`
 - `DMS_CONFIG_DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING` → `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING`
-

@@ -235,6 +235,9 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             "EdFiAPIPublisherReader",
             "E2E-NoFurtherAuthRequiredClaimSet",
             "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+            "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
+            "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
+            "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
         };
 
         // Act
@@ -293,7 +296,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         );
 
         // All claim sets in the default Claims.json are system reserved
-        Assert.That(systemReservedCount, Is.EqualTo(16));
+        Assert.That(systemReservedCount, Is.EqualTo(19));
     }
 
     [Test]
@@ -306,8 +309,8 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         Assert.That(result, Is.TypeOf<ClaimsDataLoadResult.Success>());
         var success = (ClaimsDataLoadResult.Success)result;
 
-        // We expect 16 claim sets from the embedded Claims.json
-        Assert.That(success.ClaimSetsLoaded, Is.EqualTo(16));
+        // We expect 19 claim sets from the embedded Claims.json
+        Assert.That(success.ClaimSetsLoaded, Is.EqualTo(19));
         Assert.That(success.HierarchyLoaded, Is.True);
     }
 
@@ -669,11 +672,11 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
                 );
                 Assert.That(tempCustomExists, Is.False);
 
-                // Verify standard claims are restored (16 from embedded)
+                // Verify standard claims are restored (19 from embedded)
                 var standardClaimCount = await connection.ExecuteScalarAsync<int>(
                     "SELECT COUNT(*) FROM dmscs.ClaimSet WHERE IsSystemReserved = true"
                 );
-                Assert.That(standardClaimCount, Is.EqualTo(16));
+                Assert.That(standardClaimCount, Is.EqualTo(19));
 
                 // Verify hierarchy includes embedded base claims
                 var hierarchyResult = await _claimsHierarchyRepository.GetClaimsHierarchy();
@@ -706,7 +709,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             Assert.That(initialResult, Is.TypeOf<ClaimsDataLoadResult.Success>());
 
             var (initialClaimSetCount, initialHierarchyCount) = await GetClaimsTableCountsAsync();
-            Assert.That(initialClaimSetCount, Is.EqualTo(16));
+            Assert.That(initialClaimSetCount, Is.EqualTo(19));
             Assert.That(initialHierarchyCount, Is.EqualTo(1));
 
             // Create a filesystem mode loader (simulating configuration change)

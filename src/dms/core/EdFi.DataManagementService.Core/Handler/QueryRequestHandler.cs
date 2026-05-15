@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -54,6 +55,15 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
+            QueryFailureSecurityConfiguration failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: FailureResponse.ForSecurityConfiguration(
+                    requestInfo.FrontendRequest.TraceId,
+                    failure.Errors
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.
             QueryFailureRetryable => new FrontendResponse(
@@ -102,6 +112,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
         return requestInfo.MappingSet is not null
             ? new RelationalQueryRequest(
                 ResourceInfo: requestInfo.ResourceInfo,
+                AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
                 MappingSet: requestInfo.MappingSet,
                 QueryElements: requestInfo.QueryElements,
                 AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo,

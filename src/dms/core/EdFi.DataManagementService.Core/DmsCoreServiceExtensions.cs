@@ -95,6 +95,7 @@ public static class DmsCoreServiceExtensions
             .AddTransient<RelationshipsWithStudentsOnlyValidator>()
             .AddTransient<RelationshipsWithStudentsOnlyThroughResponsibilityValidator>()
             .AddTransient<RelationshipsWithEdOrgsOnlyFiltersProvider>()
+            .AddTransient<RelationshipsWithEdOrgsOnlyInvertedFiltersProvider>()
             .AddTransient<RelationshipsWithEdOrgsAndPeopleFiltersProvider>()
             .AddTransient<NoFurtherAuthorizationRequiredFiltersProvider>()
             .AddTransient<RelationshipsWithStudentsOnlyFiltersProvider>()

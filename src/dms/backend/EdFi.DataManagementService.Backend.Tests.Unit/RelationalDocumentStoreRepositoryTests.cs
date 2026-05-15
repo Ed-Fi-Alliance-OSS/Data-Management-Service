@@ -1341,7 +1341,688 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_not_implemented_when_query_authorization_requires_filtering()
+    public async Task It_executes_supported_query_authorization_with_root_edorg_filtering()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("91919191-1111-2222-3333-444444444444"));
+        var mappingSet = CreateQuerySupportedMappingSet(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "schoolId",
+                "$.localEducationAgencyId",
+                "number",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("LocalEducationAgencyId"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("schoolId", "$.localEducationAgencyId", "255901", "number")],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [200L, 100L, 100L]
+        );
+        var hydratedPage = new HydratedPage(
+            7,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 91L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Authorized relational query execution should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        var success = (QueryResult.QuerySuccess)result;
+        success.TotalCount.Should().Be(7);
+        success.EdfiDocs.Should().HaveCount(1);
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(documentUuid.Value.ToString());
+        capturedKeyset.ParameterValues["schoolId"].Should().Be(255901L);
+        capturedKeyset
+            .ParameterValues[RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds]
+            .Should()
+            .BeAssignableTo<IReadOnlyList<long>>()
+            .Which.Should()
+            .Equal(100L, 200L);
+        capturedKeyset
+            .Plan.PageParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal(
+                "schoolId",
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds,
+                "offset",
+                "limit"
+            );
+        capturedKeyset.Plan.PageDocumentIdSql.Should().Contain("LocalEducationAgencyId");
+        capturedKeyset.Plan.PageDocumentIdSql.Should().Contain("TargetEducationOrganizationId");
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("SourceEducationOrganizationId")
+            .And.Contain("@ClaimEducationOrganizationIds");
+        capturedKeyset.Plan.TotalCountSql.Should().NotBeNull();
+        capturedKeyset.Plan.TotalCountSql.Should().Contain("@ClaimEducationOrganizationIds");
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_executes_supported_inverted_query_authorization_with_root_edorg_filtering()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("92929292-1111-2222-3333-555555555555"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+                ),
+            ],
+            claimEducationOrganizationIds: [300L]
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 91L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Authorized inverted relational query execution should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedKeyset
+            .ParameterValues[RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds]
+            .Should()
+            .BeAssignableTo<IReadOnlyList<long>>()
+            .Which.Should()
+            .Equal(300L);
+        capturedKeyset
+            .Plan.PageParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal(
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds,
+                "offset",
+                "limit"
+            );
+        capturedKeyset.Plan.PageDocumentIdSql.Should().Contain("LocalEducationAgencyId");
+        capturedKeyset.Plan.PageDocumentIdSql.Should().Contain("SourceEducationOrganizationId");
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("TargetEducationOrganizationId")
+            .And.Contain("@ClaimEducationOrganizationIds");
+        capturedKeyset.Plan.TotalCountSql.Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_deduplicates_duplicate_supported_query_authorization_strategies_before_compiling_query_authorization()
+    {
+        static int CountOrdinalOccurrences(string value, string text) =>
+            value.Split(text, StringSplitOptions.None).Length - 1;
+
+        var documentUuid = new DocumentUuid(Guid.Parse("93939393-1111-2222-3333-555555555555"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [300L]
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 91L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Duplicate supported EdOrg strategies should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        var pageDocumentIdSql = capturedKeyset.Plan.PageDocumentIdSql;
+
+        CountOrdinalOccurrences(
+                pageDocumentIdSql,
+                "\"auth\".\"EducationOrganizationIdToEducationOrganizationId\""
+            )
+            .Should()
+            .Be(1);
+        CountOrdinalOccurrences(pageDocumentIdSql, "r.\"LocalEducationAgencyId\" IN (SELECT").Should().Be(1);
+        pageDocumentIdSql.Should().NotContain(" OR ");
+    }
+
+    [Test]
+    public async Task It_deduplicates_duplicate_physical_root_edorg_subjects_before_compiling_query_authorization()
+    {
+        static int CountOrdinalOccurrences(string value, string text) =>
+            value.Split(text, StringSplitOptions.None).Length - 1;
+
+        var resourceInfo = CreateResourceInfo("TestResource");
+        var documentUuid = new DocumentUuid(Guid.Parse("72727272-1111-2222-3333-444444444444"));
+        var mappingSet = CreateQuerySupportedMappingSetWithDuplicatePhysicalRootEdOrgSubjects(resourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "TestResource")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [300L],
+            resourceInfo: resourceInfo
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 91L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Duplicate physical EdOrg subjects should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        var pageDocumentIdSql = capturedKeyset.Plan.PageDocumentIdSql;
+
+        CountOrdinalOccurrences(
+                pageDocumentIdSql,
+                "\"auth\".\"EducationOrganizationIdToEducationOrganizationId\""
+            )
+            .Should()
+            .Be(1);
+        CountOrdinalOccurrences(pageDocumentIdSql, "r.\"SchoolId\" IN (SELECT").Should().Be(1);
+        pageDocumentIdSql
+            .Should()
+            .Contain("WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
+    }
+
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+        "TargetEducationOrganizationId",
+        "SourceEducationOrganizationId"
+    )]
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+        "SourceEducationOrganizationId",
+        "TargetEducationOrganizationId"
+    )]
+    public async Task It_requires_authorization_on_both_same_name_root_edorg_subjects_for_course_offering_queries(
+        string authorizationStrategyName,
+        string expectedSubjectFragment,
+        string expectedClaimFilterFragment
+    )
+    {
+        var resourceInfo = CreateResourceInfo("CourseOffering");
+        var documentUuid = new DocumentUuid(Guid.Parse("83838383-1111-2222-3333-666666666666"));
+        var mappingSet = CreateQuerySupportedMappingSetWithSameNameRootEdOrgSubjects(resourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "CourseOffering")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(authorizationStrategyName),
+            ],
+            claimEducationOrganizationIds: [300L],
+            resourceInfo: resourceInfo
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 91L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L, 255902L],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Same-name root EdOrg authorization should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedKeyset.Plan.PageDocumentIdSql.Should().Contain(" AND ");
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain(
+                $"r.\"CourseOffering_SchoolReferenceSchoolId\" IN (SELECT t0.\"{expectedSubjectFragment}\""
+            )
+            .And.Contain($"WHERE t0.\"{expectedClaimFilterFragment}\" = ANY(@ClaimEducationOrganizationIds)");
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain(
+                $"r.\"CourseOffering_SessionReferenceSchoolId\" IN (SELECT t1.\"{expectedSubjectFragment}\""
+            )
+            .And.Contain($"WHERE t1.\"{expectedClaimFilterFragment}\" = ANY(@ClaimEducationOrganizationIds)");
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_short_circuits_supported_query_authorization_with_empty_edorg_claims(bool totalCount)
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: totalCount,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: []
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_validates_supported_query_authorization_subjects_before_short_circuiting_empty_edorg_claims(
+        bool totalCount
+    )
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithChildOnlyEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: totalCount,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: []
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().ContainSingle();
+        result
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors[0]
+            .Should()
+            .Contain("$.classPeriods[*].classPeriodReference.schoolId");
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors[0].Should().Contain("ClassPeriod");
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_applies_readable_profile_projection_to_authorized_query_results()
+    {
+        var firstDocumentUuid = new DocumentUuid(Guid.Parse("17171717-1111-2222-3333-444444444444"));
+        var secondDocumentUuid = new DocumentUuid(Guid.Parse("18181818-1111-2222-3333-555555555555"));
+        var mappingSet = CreateQuerySupportedMappingSet(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "schoolId",
+                "$.localEducationAgencyId",
+                "number",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("LocalEducationAgencyId"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var projectionContext = new ReadableProfileProjectionContext(
+            new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("nameOfInstitution")],
+                [],
+                [],
+                []
+            ),
+            new HashSet<string> { "schoolId" }
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("schoolId", "$.localEducationAgencyId", "255901", "number")],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            readableProfileProjectionContext: projectionContext,
+            claimEducationOrganizationIds: [500L]
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [
+                CreateDocumentMetadataRow(firstDocumentUuid, 345L, 91L),
+                CreateDocumentMetadataRow(secondDocumentUuid, 678L, 92L),
+            ],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L],
+                        [678L, 255902L],
+                    ]
+                ),
+            ],
+            []
+        );
+        var materializedFirst = JsonNode.Parse(
+            """
+            {
+              "id": "17171717-1111-2222-3333-444444444444",
+              "_etag": "\"91\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High",
+              "webSite": "https://example.com/lincoln"
+            }
+            """
+        )!;
+        var materializedSecond = JsonNode.Parse(
+            """
+            {
+              "id": "18181818-1111-2222-3333-555555555555",
+              "_etag": "\"92\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255902,
+              "nameOfInstitution": "Roosevelt High",
+              "webSite": "https://example.com/roosevelt"
+            }
+            """
+        )!;
+        var projectedFirst = JsonNode.Parse(
+            """
+            {
+              "id": "17171717-1111-2222-3333-444444444444",
+              "_etag": "\"authorized-projected-etag-1\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High"
+            }
+            """
+        )!;
+        var projectedSecond = JsonNode.Parse(
+            """
+            {
+              "id": "18181818-1111-2222-3333-555555555555",
+              "_etag": "\"authorized-projected-etag-2\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255902,
+              "nameOfInstitution": "Roosevelt High"
+            }
+            """
+        )!;
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Authorized readable-profile query execution should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(hydratedPage.DocumentMetadata[0], materializedFirst),
+                new MaterializedDocument(hydratedPage.DocumentMetadata[1], materializedSecond),
+            ]);
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    A<JsonNode>._,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .ReturnsLazily(
+                (JsonNode reconstitutedDocument, ContentTypeDefinition _, IReadOnlySet<string> _) =>
+                    reconstitutedDocument["id"]!.GetValue<string>() switch
+                    {
+                        "17171717-1111-2222-3333-444444444444" => projectedFirst,
+                        "18181818-1111-2222-3333-555555555555" => projectedSecond,
+                        _ => throw new AssertionException(
+                            "Unexpected authorized readable profile projection request."
+                        ),
+                    }
+            );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        var success = (QueryResult.QuerySuccess)result;
+        success.TotalCount.Should().BeNull();
+        success.EdfiDocs.Should().HaveCount(2);
+        success.EdfiDocs[0].Should().BeSameAs(projectedFirst);
+        success.EdfiDocs[1].Should().BeSameAs(projectedSecond);
+        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be("\"authorized-projected-etag-1\"");
+        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be("\"authorized-projected-etag-2\"");
+        capturedKeyset.ParameterValues["schoolId"].Should().Be(255901L);
+        capturedKeyset
+            .ParameterValues[RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds]
+            .Should()
+            .BeAssignableTo<IReadOnlyList<long>>()
+            .Which.Should()
+            .Equal(500L);
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    materializedFirst,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    materializedSecond,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_failure_when_supported_query_authorization_has_only_child_table_edorg_subjects()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithChildOnlyEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [500L]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().ContainSingle();
+        result
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors[0]
+            .Should()
+            .Contain("$.classPeriods[*].classPeriodReference.schoolId");
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors[0].Should().Contain("ClassPeriod");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_not_implemented_when_query_authorization_includes_known_out_of_scope_strategies()
     {
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSet(_schoolResourceInfo),
@@ -1352,20 +2033,58 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
             ]
         );
 
         var result = await _sut.QueryDocuments(queryRequest);
 
+        result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>();
         result
-            .Should()
-            .BeEquivalentTo(
-                new QueryResult.QueryFailureNotImplemented(
-                    "Relational query authorization is not implemented for resource 'Ed-Fi.School' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported."
+            .As<QueryResult.QueryFailureNotImplemented>()
+            .FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+        result
+            .As<QueryResult.QueryFailureNotImplemented>()
+            .FailureMessage.Should()
+            .Contain($"{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
                 )
-            );
-        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            )
             .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_failure_when_query_authorization_strategy_metadata_is_invalid()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().ContainSingle();
+        result
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors[0]
+            .Should()
+            .Contain("CustomAuthorizationStrategy");
+        result
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors[0]
+            .Should()
+            .Contain("{BasisResource}With...");
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -4088,6 +4807,383 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
     }
 
+    private static MappingSet CreateQuerySupportedMappingSetWithRootEdOrgSubject(ResourceInfo resourceInfo)
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("LocalEducationAgencyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    new JsonPathExpression("$.localEducationAgencyId", []),
+                    null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var resourceModel = new RelationalResourceModel(
+            Resource: resourceKey.Resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return CreateAuthorizationAwareQuerySupportedMappingSet(
+            resourceInfo,
+            resourceModel,
+            new ResourceSecurableElements(
+                [new EdOrgSecurableElement("$.localEducationAgencyId", "LocalEducationAgencyId")],
+                [],
+                [],
+                [],
+                []
+            )
+        );
+    }
+
+    private static MappingSet CreateQuerySupportedMappingSetWithDuplicatePhysicalRootEdOrgSubjects(
+        ResourceInfo resourceInfo
+    )
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "TestResource"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_TestResource",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    new JsonPathExpression("$.schoolId", []),
+                    null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var resourceModel = new RelationalResourceModel(
+            Resource: resourceKey.Resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return CreateAuthorizationAwareQuerySupportedMappingSet(
+            resourceInfo,
+            resourceModel,
+            new ResourceSecurableElements(
+                [
+                    new EdOrgSecurableElement("$.schoolId", "SchoolId"),
+                    new EdOrgSecurableElement("$.schoolId", "SchoolReferenceSchoolId"),
+                ],
+                [],
+                [],
+                [],
+                []
+            )
+        );
+    }
+
+    private static MappingSet CreateQuerySupportedMappingSetWithSameNameRootEdOrgSubjects(
+        ResourceInfo resourceInfo
+    )
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "CourseOffering"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_CourseOffering",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("CourseOffering_SchoolReferenceSchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    new JsonPathExpression("$.schoolReference.schoolId", []),
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("CourseOffering_SessionReferenceSchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    new JsonPathExpression("$.sessionReference.schoolId", []),
+                    null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var resourceModel = new RelationalResourceModel(
+            Resource: resourceKey.Resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return CreateAuthorizationAwareQuerySupportedMappingSet(
+            resourceInfo,
+            resourceModel,
+            new ResourceSecurableElements(
+                [
+                    new EdOrgSecurableElement("$.schoolReference.schoolId", "SchoolId"),
+                    new EdOrgSecurableElement("$.sessionReference.schoolId", "SchoolId"),
+                ],
+                [],
+                [],
+                [],
+                []
+            )
+        );
+    }
+
+    private static MappingSet CreateQuerySupportedMappingSetWithChildOnlyEdOrgSubject(
+        ResourceInfo resourceInfo
+    )
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var childTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolClassPeriod"),
+            new JsonPathExpression(
+                "$.classPeriods[*]",
+                [new JsonPathSegment.Property("classPeriods"), new JsonPathSegment.AnyArrayElement()]
+            ),
+            new TableKey(
+                "PK_SchoolClassPeriod",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.Scalar)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ClassPeriod_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "ClassPeriod")
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ClassPeriod_SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+            ],
+            []
+        );
+
+        var resourceModel = new RelationalResourceModel(
+            Resource: resourceKey.Resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable, childTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    new JsonPathExpression(
+                        "$.classPeriods[*].classPeriodReference",
+                        [
+                            new JsonPathSegment.Property("classPeriods"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("classPeriodReference"),
+                        ]
+                    ),
+                    childTable.Table,
+                    new DbColumnName("ClassPeriod_DocumentId"),
+                    new QualifiedResourceName("Ed-Fi", "ClassPeriod"),
+                    [
+                        new ReferenceIdentityBinding(
+                            new JsonPathExpression("$.schoolReference.schoolId", []),
+                            new JsonPathExpression("$.classPeriods[*].classPeriodReference.schoolId", []),
+                            new DbColumnName("ClassPeriod_SchoolId")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
+
+        return CreateAuthorizationAwareQuerySupportedMappingSet(
+            resourceInfo,
+            resourceModel,
+            new ResourceSecurableElements(
+                [new EdOrgSecurableElement("$.classPeriods[*].classPeriodReference.schoolId", "SchoolId")],
+                [],
+                [],
+                [],
+                []
+            )
+        );
+    }
+
+    private static MappingSet CreateAuthorizationAwareQuerySupportedMappingSet(
+        ResourceInfo resourceInfo,
+        RelationalResourceModel resourceModel,
+        ResourceSecurableElements securableElements
+    )
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var concreteResourceModel = new ConcreteResourceModel(
+            resourceKey,
+            ResourceStorageKind.RelationalTables,
+            resourceModel
+        )
+        {
+            SecurableElements = securableElements,
+        };
+        var readPlan = CreateReadPlan(resourceModel, resourceModel.Root);
+        var resource = resourceKey.Resource;
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(concreteResourceModel),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [resource] = readPlan,
+            },
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        )
+        {
+            QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
+            {
+                [resource] = new RelationalQueryCapability(
+                    new RelationalQuerySupport.Supported(),
+                    new Dictionary<string, SupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase),
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
+                ),
+            },
+        };
+    }
+
     private static MappingSet CreateQuerySupportedMappingSet(
         ResourceInfo resourceInfo,
         params SupportedRelationalQueryField[] supportedFields
@@ -4251,16 +5347,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
         bool totalCount,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
         ReadableProfileProjectionContext? readableProfileProjectionContext = null,
+        IReadOnlyList<long>? claimEducationOrganizationIds = null,
         ResourceInfo? resourceInfo = null
     )
     {
         authorizationStrategyEvaluators ??= [];
+        claimEducationOrganizationIds ??= [];
         resourceInfo ??= _schoolResourceInfo;
 
         var queryRequest = A.Fake<IRelationalQueryRequest>();
         A.CallTo(() => queryRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => queryRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);
+        A.CallTo(() => queryRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext(claimEducationOrganizationIds));
         A.CallTo(() => queryRequest.AuthorizationSecurableInfo)
             .Returns(Array.Empty<AuthorizationSecurableInfo>());
         A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns(authorizationStrategyEvaluators);
@@ -4345,8 +5445,17 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private static DerivedRelationalModelSet CreateDerivedModelSet(
         RelationalResourceModel resourceModel,
         ResourceKeyEntry resourceKey
+    ) =>
+        CreateDerivedModelSet(
+            new ConcreteResourceModel(resourceKey, resourceModel.StorageKind, resourceModel)
+        );
+
+    private static DerivedRelationalModelSet CreateDerivedModelSet(
+        ConcreteResourceModel concreteResourceModel
     )
     {
+        var resourceKey = concreteResourceModel.ResourceKey;
+
         return new DerivedRelationalModelSet(
             EffectiveSchema: new EffectiveSchemaInfo(
                 ApiSchemaFormatVersion: "1.0",
@@ -4365,10 +5474,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             [
                 new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
             ],
-            ConcreteResourcesInNameOrder:
-            [
-                new ConcreteResourceModel(resourceKey, resourceModel.StorageKind, resourceModel),
-            ],
+            ConcreteResourcesInNameOrder: [concreteResourceModel],
             AbstractIdentityTablesInNameOrder: [],
             AbstractUnionViewsInNameOrder: [],
             IndexesInCreateOrder: [],

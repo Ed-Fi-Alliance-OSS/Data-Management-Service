@@ -118,31 +118,28 @@ public static class CliTestHelper
         // Navigate from test bin to backend Fixtures
         // Path: .../clis/SchemaTools.Tests.Integration/bin/Debug/net10.0/
         // Go up 5 levels to reach .../dms/, then down to backend/Fixtures
-        var fixturesDir = Path.Combine(
-            assemblyDir,
-            "..",
-            "..",
-            "..",
-            "..",
-            "..",
-            "backend",
-            "Fixtures"
-        );
+        var fixturesDir = Path.Combine(assemblyDir, "..", "..", "..", "..", "..", "backend", "Fixtures");
 
         return
         [
-            Path.GetFullPath(Path.Combine(fixturesDir,
-                "authoritative",
-                "ds-5.2",
-                "inputs",
-                "ds-5.2-api-schema-authoritative.json"
-            )),
-            Path.GetFullPath(Path.Combine(fixturesDir,
-                "authoritative",
-                "sample",
-                "inputs",
-                "sample-api-schema-authoritative.json"
-            )),
+            Path.GetFullPath(
+                Path.Combine(
+                    fixturesDir,
+                    "authoritative",
+                    "ds-5.2",
+                    "inputs",
+                    "ds-5.2-api-schema-authoritative.json"
+                )
+            ),
+            Path.GetFullPath(
+                Path.Combine(
+                    fixturesDir,
+                    "authoritative",
+                    "sample",
+                    "inputs",
+                    "sample-api-schema-authoritative.json"
+                )
+            ),
         ];
     }
 

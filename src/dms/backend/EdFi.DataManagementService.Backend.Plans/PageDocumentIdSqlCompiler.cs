@@ -31,6 +31,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
 
+    private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
     private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
 
@@ -64,22 +65,33 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             spec.Predicates,
             spec.UnifiedAliasMappingsByColumn
         );
+        var authorization = NormalizeAuthorization(spec.Authorization);
+        var authorizationClaimParameterization = authorization?.ClaimEducationOrganizationIdParameterization;
         var requiresDocumentUuidJoin = rewrittenPredicates.Any(static predicate =>
             predicate.Target is QueryPredicateTarget.DocumentUuid
         );
         var requiresDescriptorJoin = rewrittenPredicates.Any(static predicate =>
             predicate.Target is QueryPredicateTarget.DescriptorColumn
         );
-        ValidateFilterParameterNamesDoNotCollideWithPaging(
+        var filterParametersInOrder = BuildFilterParametersInOrder(
             rewrittenPredicates,
+            authorizationClaimParameterization
+        );
+        var filterParameterNamesInOrder = filterParametersInOrder
+            .Select(static parameter => parameter.ParameterName)
+            .ToArray();
+        ValidateFilterParameterNamesDoNotCollideWithPaging(
+            filterParameterNamesInOrder,
             spec.OffsetParameterName,
             spec.LimitParameterName
         );
-        ValidateFilterParameterNamesAreUnique(rewrittenPredicates);
+        ValidateFilterParameterNamesAreUnique(filterParameterNamesInOrder);
 
         var pageSql = BuildPageDocumentIdSql(
             spec,
             rewrittenPredicates,
+            authorization,
+            authorizationClaimParameterization,
             requiresDocumentUuidJoin,
             requiresDescriptorJoin
         );
@@ -87,11 +99,12 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             ? BuildTotalCountSql(
                 spec.RootTable,
                 rewrittenPredicates,
+                authorization,
+                authorizationClaimParameterization,
                 requiresDocumentUuidJoin,
                 requiresDescriptorJoin
             )
             : null;
-        var filterParametersInOrder = BuildFilterParametersInOrder(rewrittenPredicates);
         var pageParametersInOrder = BuildPageParametersInOrder(
             filterParametersInOrder,
             spec.OffsetParameterName,
@@ -234,12 +247,12 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// Ensures filter-parameter names do not collide with paging parameter names.
     /// </summary>
     private static void ValidateFilterParameterNamesDoNotCollideWithPaging(
-        IReadOnlyList<RewrittenPredicate> predicates,
+        IReadOnlyList<string> filterParameterNames,
         string offsetParameterName,
         string limitParameterName
     )
     {
-        foreach (var parameterName in predicates.Select(p => p.ParameterName))
+        foreach (var parameterName in filterParameterNames)
         {
             if (string.Equals(parameterName, offsetParameterName, StringComparison.OrdinalIgnoreCase))
             {
@@ -284,10 +297,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// <summary>
     /// Ensures filter-parameter names are unique (case-insensitive).
     /// </summary>
-    private static void ValidateFilterParameterNamesAreUnique(IReadOnlyList<RewrittenPredicate> predicates)
+    private static void ValidateFilterParameterNamesAreUnique(IReadOnlyList<string> filterParameterNames)
     {
-        var duplicateGroups = predicates
-            .Select(predicate => predicate.ParameterName)
+        var duplicateGroups = filterParameterNames
             .GroupBy(static parameterName => parameterName, StringComparer.OrdinalIgnoreCase)
             .Where(static group => group.Count() > 1)
             .Select(static group =>
@@ -313,20 +325,65 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// Executors bind parameters by name, so this ordering does not need to match placeholder appearance per dialect.
     /// </summary>
     private static IReadOnlyList<QuerySqlParameter> BuildFilterParametersInOrder(
-        IReadOnlyList<RewrittenPredicate> predicates
+        IReadOnlyList<RewrittenPredicate> predicates,
+        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
     )
     {
-        var filterParametersInOrder = new QuerySqlParameter[predicates.Count];
-
-        for (var index = 0; index < predicates.Count; index++)
-        {
-            filterParametersInOrder[index] = new QuerySqlParameter(
+        List<QuerySqlParameter> filterParametersInOrder =
+        [
+            .. predicates.Select(static predicate => new QuerySqlParameter(
                 QuerySqlParameterRole.Filter,
-                predicates[index].ParameterName
+                predicate.ParameterName
+            )),
+        ];
+
+        if (authorizationClaimParameterization is not null)
+        {
+            filterParametersInOrder.AddRange(
+                BuildAuthorizationFilterParametersInOrder(authorizationClaimParameterization)
             );
         }
 
         return filterParametersInOrder;
+    }
+
+    private static IReadOnlyList<QuerySqlParameter> BuildAuthorizationFilterParametersInOrder(
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        return authorizationClaimParameterization.Kind switch
+        {
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray =>
+            [
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    authorizationClaimParameterization.BaseParameterName,
+                    QuerySqlParameterBinding.PgsqlArray
+                ),
+            ],
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar =>
+            [
+                .. authorizationClaimParameterization.ParameterNamesInOrder.Select(
+                    static parameterName => new QuerySqlParameter(QuerySqlParameterRole.Filter, parameterName)
+                ),
+            ],
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured =>
+            [
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    authorizationClaimParameterization.BaseParameterName,
+                    QuerySqlParameterBinding.CreateMssqlStructured(
+                        AuthorizationClaimEducationOrganizationIdParameterizationFactory.MssqlStructuredParameterTypeName,
+                        AuthorizationClaimEducationOrganizationIdParameterizationFactory.MssqlStructuredParameterColumnName
+                    )
+                ),
+            ],
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(authorizationClaimParameterization),
+                authorizationClaimParameterization.Kind,
+                "Unsupported authorization claim EdOrg parameterization kind."
+            ),
+        };
     }
 
     /// <summary>
@@ -356,12 +413,207 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         return [.. filterParametersInOrder];
     }
 
+    private PageDocumentIdAuthorizationSpec? NormalizeAuthorization(
+        PageDocumentIdAuthorizationSpec? authorization
+    )
+    {
+        if (authorization is null)
+        {
+            return null;
+        }
+
+        ArgumentNullException.ThrowIfNull(authorization.Strategies);
+
+        if (authorization.Strategies.Any(static strategy => strategy is null))
+        {
+            throw new ArgumentException(
+                $"{nameof(PageDocumentIdAuthorizationSpec.Strategies)} must not contain null entries.",
+                nameof(authorization)
+            );
+        }
+
+        var normalizedStrategies = authorization.Strategies.ToArray();
+
+        foreach (var strategy in normalizedStrategies)
+        {
+            ArgumentNullException.ThrowIfNull(strategy.Subjects);
+
+            if (strategy.Subjects.Any(static subject => subject is null))
+            {
+                throw new ArgumentException(
+                    $"{nameof(PageDocumentIdAuthorizationStrategy.Subjects)} must not contain null entries.",
+                    nameof(authorization)
+                );
+            }
+
+            if (strategy.Subjects.Count == 0)
+            {
+                throw new ArgumentException(
+                    $"Authorization strategy '{strategy.Kind}' requires at least one authorization subject.",
+                    nameof(authorization)
+                );
+            }
+        }
+
+        if (normalizedStrategies.Length == 0)
+        {
+            return null;
+        }
+
+        ArgumentNullException.ThrowIfNull(authorization.ClaimEducationOrganizationIdParameterization);
+        ValidateAuthorizationClaimParameterization(
+            authorization.ClaimEducationOrganizationIdParameterization
+        );
+
+        return authorization with
+        {
+            Strategies = normalizedStrategies,
+        };
+    }
+
+    private void ValidateAuthorizationClaimParameterization(
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        PlanSqlWriterExtensions.ValidateBareParameterName(
+            authorizationClaimParameterization.BaseParameterName,
+            $"{nameof(PageDocumentIdAuthorizationSpec.ClaimEducationOrganizationIdParameterization)}.{nameof(AuthorizationClaimEducationOrganizationIdParameterization.BaseParameterName)}"
+        );
+        ArgumentNullException.ThrowIfNull(authorizationClaimParameterization.ClaimEducationOrganizationIds);
+        ArgumentNullException.ThrowIfNull(authorizationClaimParameterization.ParameterNamesInOrder);
+
+        if (authorizationClaimParameterization.ClaimEducationOrganizationIds.Count == 0)
+        {
+            throw new ArgumentException(
+                "Authorization claim EdOrg parameterization requires at least one claim EdOrg id.",
+                nameof(authorizationClaimParameterization)
+            );
+        }
+
+        if (authorizationClaimParameterization.ParameterNamesInOrder.Count == 0)
+        {
+            throw new ArgumentException(
+                "Authorization claim EdOrg parameterization requires at least one parameter name.",
+                nameof(authorizationClaimParameterization)
+            );
+        }
+
+        foreach (var parameterName in authorizationClaimParameterization.ParameterNamesInOrder)
+        {
+            PlanSqlWriterExtensions.ValidateBareParameterName(
+                parameterName,
+                $"{nameof(PageDocumentIdAuthorizationSpec.ClaimEducationOrganizationIdParameterization)}.{nameof(AuthorizationClaimEducationOrganizationIdParameterization.ParameterNamesInOrder)}"
+            );
+        }
+
+        ValidateAuthorizationClaimParameterizationMatchesDialect(authorizationClaimParameterization);
+        ValidateAuthorizationClaimParameterizationShape(authorizationClaimParameterization);
+    }
+
+    private void ValidateAuthorizationClaimParameterizationMatchesDialect(
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        switch (_dialect)
+        {
+            case SqlDialect.Pgsql:
+                if (
+                    authorizationClaimParameterization.Kind
+                    is not AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray
+                )
+                {
+                    throw CreateAuthorizationClaimParameterizationDialectMismatchException(
+                        authorizationClaimParameterization.Kind
+                    );
+                }
+
+                return;
+
+            case SqlDialect.Mssql:
+                if (
+                    authorizationClaimParameterization.Kind
+                    is not AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar
+                        and not AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured
+                )
+                {
+                    throw CreateAuthorizationClaimParameterizationDialectMismatchException(
+                        authorizationClaimParameterization.Kind
+                    );
+                }
+
+                return;
+
+            default:
+                throw new NotSupportedException(
+                    $"Page document-id SQL compilation does not support SQL dialect '{_dialect}'."
+                );
+        }
+    }
+
+    private static void ValidateAuthorizationClaimParameterizationShape(
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        switch (authorizationClaimParameterization.Kind)
+        {
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray:
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured:
+                if (
+                    authorizationClaimParameterization.ParameterNamesInOrder.Count is not 1
+                    || !string.Equals(
+                        authorizationClaimParameterization.ParameterNamesInOrder[0],
+                        authorizationClaimParameterization.BaseParameterName,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    throw new ArgumentException(
+                        "Array and structured authorization claim EdOrg parameterizations require exactly the base parameter name.",
+                        nameof(authorizationClaimParameterization)
+                    );
+                }
+
+                return;
+
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar:
+                if (
+                    authorizationClaimParameterization.ParameterNamesInOrder.Count
+                    != authorizationClaimParameterization.ClaimEducationOrganizationIds.Count
+                )
+                {
+                    throw new ArgumentException(
+                        "SQL Server scalar authorization claim EdOrg parameterizations require one parameter name per claim EdOrg id.",
+                        nameof(authorizationClaimParameterization)
+                    );
+                }
+
+                return;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(authorizationClaimParameterization),
+                    authorizationClaimParameterization.Kind,
+                    "Unsupported authorization claim EdOrg parameterization kind."
+                );
+        }
+    }
+
+    private ArgumentException CreateAuthorizationClaimParameterizationDialectMismatchException(
+        AuthorizationClaimEducationOrganizationIdParameterizationKind kind
+    ) =>
+        new(
+            $"Authorization claim EdOrg parameterization kind '{kind}' is not supported by SQL dialect '{_dialect}'.",
+            nameof(kind)
+        );
+
     /// <summary>
     /// Emits canonical SQL for page-<c>DocumentId</c> selection.
     /// </summary>
     private string BuildPageDocumentIdSql(
         PageDocumentIdQuerySpec spec,
         IReadOnlyList<RewrittenPredicate> predicates,
+        PageDocumentIdAuthorizationSpec? authorization,
+        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
         bool requiresDocumentUuidJoin,
         bool requiresDescriptorJoin
     )
@@ -378,7 +630,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         AppendDocumentJoin(writer, requiresDocumentUuidJoin);
         AppendDescriptorJoin(writer, requiresDescriptorJoin);
-        AppendWhereClause(writer, predicates);
+        AppendWhereClause(
+            writer,
+            spec.RootTable,
+            predicates,
+            authorization,
+            authorizationClaimParameterization
+        );
 
         writer.Append($"ORDER BY {_rootAlias}.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
 
@@ -394,6 +652,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private string BuildTotalCountSql(
         DbTableName rootTable,
         IReadOnlyList<RewrittenPredicate> predicates,
+        PageDocumentIdAuthorizationSpec? authorization,
+        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
         bool requiresDocumentUuidJoin,
         bool requiresDescriptorJoin
     )
@@ -408,7 +668,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         AppendDocumentJoin(writer, requiresDocumentUuidJoin);
         AppendDescriptorJoin(writer, requiresDescriptorJoin);
-        AppendWhereClause(writer, predicates);
+        AppendWhereClause(writer, rootTable, predicates, authorization, authorizationClaimParameterization);
         writer.AppendLine(";");
 
         return writer.ToString();
@@ -457,12 +717,190 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// <summary>
     /// Emits a deterministic multi-line <c>WHERE</c> clause.
     /// </summary>
-    private void AppendWhereClause(SqlWriter writer, IReadOnlyList<RewrittenPredicate> predicates)
+    private void AppendWhereClause(
+        SqlWriter writer,
+        DbTableName rootTable,
+        IReadOnlyList<RewrittenPredicate> predicates,
+        PageDocumentIdAuthorizationSpec? authorization,
+        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
+    )
     {
+        var predicateCount = predicates.Count + (authorization is null ? 0 : 1);
+
         writer.AppendWhereClause(
-            predicates.Count,
-            (predicateWriter, index) => AppendPredicateSql(predicateWriter, predicates[index])
+            predicateCount,
+            (predicateWriter, index) =>
+            {
+                if (index < predicates.Count)
+                {
+                    AppendPredicateSql(predicateWriter, predicates[index]);
+                    return;
+                }
+
+                AppendAuthorizationSql(
+                    predicateWriter,
+                    rootTable,
+                    authorization!,
+                    authorizationClaimParameterization
+                        ?? throw new InvalidOperationException(
+                            "Authorization SQL emission requires a claim EdOrg parameterization when authorization strategies are present."
+                        )
+                );
+            }
         );
+    }
+
+    private static void AppendAuthorizationSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationSpec authorization,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        var aliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
+
+        for (var strategyIndex = 0; strategyIndex < authorization.Strategies.Count; strategyIndex++)
+        {
+            if (strategyIndex > 0)
+            {
+                writer.Append(" OR ");
+            }
+
+            writer.Append("(");
+            AppendAuthorizationStrategySql(
+                writer,
+                rootTable,
+                authorization.Strategies[strategyIndex],
+                authorizationClaimParameterization,
+                aliasAllocator
+            );
+            writer.Append(")");
+        }
+    }
+
+    private static void AppendAuthorizationStrategySql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationStrategy strategy,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        PlanSqlTableAliasAllocator aliasAllocator
+    )
+    {
+        for (var subjectIndex = 0; subjectIndex < strategy.Subjects.Count; subjectIndex++)
+        {
+            if (subjectIndex > 0)
+            {
+                writer.Append(" AND ");
+            }
+
+            AppendAuthorizationSubjectSql(
+                writer,
+                rootTable,
+                strategy.Kind,
+                strategy.Subjects[subjectIndex],
+                authorizationClaimParameterization,
+                aliasAllocator.AllocateNext()
+            );
+        }
+    }
+
+    private static void AppendAuthorizationSubjectSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationStrategyKind strategyKind,
+        PageDocumentIdAuthorizationSubject subject,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        string authAlias
+    )
+    {
+        if (!subject.Table.Equals(rootTable))
+        {
+            throw new InvalidOperationException(
+                $"Authorization subject table '{subject.Table}' does not match query root table '{rootTable}'. "
+                    + "DMS-1055 query authorization currently supports only concrete root-table subjects in the page query compiler."
+            );
+        }
+
+        var (resourceEdOrgColumn, claimFilterColumn) = strategyKind switch
+        {
+            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly => (
+                AuthNames.TargetEdOrgId,
+                AuthNames.SourceEdOrgId
+            ),
+            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted => (
+                AuthNames.SourceEdOrgId,
+                AuthNames.TargetEdOrgId
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(strategyKind),
+                strategyKind,
+                "Unsupported authorization strategy kind."
+            ),
+        };
+
+        writer.Append($"{_rootAlias}.");
+        writer.AppendQuoted(subject.Column.Value);
+        writer.Append(" IN (SELECT ");
+        writer.Append($"{authAlias}.");
+        writer.AppendQuoted(resourceEdOrgColumn.Value);
+        writer.Append(" FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(AuthNames.EdOrgIdToEdOrgId));
+        writer.Append($" {authAlias} WHERE {authAlias}.");
+        writer.AppendQuoted(claimFilterColumn.Value);
+        AppendClaimFilterSql(writer, authorizationClaimParameterization);
+        writer.Append(")");
+    }
+
+    private static void AppendClaimFilterSql(
+        SqlWriter writer,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        switch (authorizationClaimParameterization.Kind)
+        {
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray:
+                writer.Append(" = ANY(");
+                writer.AppendParameter(authorizationClaimParameterization.BaseParameterName);
+                writer.Append(")");
+                return;
+
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar:
+                writer.Append(" IN (");
+
+                for (
+                    var parameterIndex = 0;
+                    parameterIndex < authorizationClaimParameterization.ParameterNamesInOrder.Count;
+                    parameterIndex++
+                )
+                {
+                    if (parameterIndex > 0)
+                    {
+                        writer.Append(", ");
+                    }
+
+                    writer.AppendParameter(
+                        authorizationClaimParameterization.ParameterNamesInOrder[parameterIndex]
+                    );
+                }
+
+                writer.Append(")");
+                return;
+
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured:
+                writer.Append(" IN (SELECT ");
+                writer.AppendQuoted("Id");
+                writer.Append(" FROM ");
+                writer.AppendParameter(authorizationClaimParameterization.BaseParameterName);
+                writer.Append(")");
+                return;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(authorizationClaimParameterization),
+                    authorizationClaimParameterization.Kind,
+                    "Unsupported authorization claim EdOrg parameterization kind."
+                );
+        }
     }
 
     /// <summary>

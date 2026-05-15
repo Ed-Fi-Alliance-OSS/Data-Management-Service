@@ -1612,6 +1612,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 "E2E-NameSpaceBasedClaimSet",
                 "E2E-NoFurtherAuthRequiredClaimSet",
                 "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
             };
 
             // Find and verify system claim sets

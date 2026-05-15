@@ -176,6 +176,7 @@ file static class MssqlProfileIfMatchEtagTestSupport
 
         var request = new RelationalQueryRequest(
             ResourceInfo: MssqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: MssqlProfileRootTableOnlyMergeSupport

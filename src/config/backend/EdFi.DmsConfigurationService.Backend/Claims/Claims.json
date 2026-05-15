@@ -13,6 +13,18 @@
       "isSystemReserved": true
     },
     {
+      "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
+      "isSystemReserved": true
+    },
+    {
+      "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
+      "isSystemReserved": true
+    },
+    {
+      "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
+      "isSystemReserved": true
+    },
+    {
       "claimSetName": "SISVendor",
       "isSystemReserved": true
     },
