@@ -374,6 +374,7 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
 
         RelationalQueryRequest request = new(
             ResourceInfo: _courseResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _courseResourceInfo.AuthorizationSecurableInfo,

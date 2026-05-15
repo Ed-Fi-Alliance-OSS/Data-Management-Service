@@ -379,6 +379,7 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
 
         RelationalQueryRequest request = new(
             ResourceInfo: _academicWeekResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,

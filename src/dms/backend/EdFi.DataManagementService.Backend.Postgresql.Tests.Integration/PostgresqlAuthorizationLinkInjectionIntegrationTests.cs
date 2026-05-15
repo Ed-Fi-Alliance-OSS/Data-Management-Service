@@ -412,6 +412,7 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
 
         RelationalQueryRequest request = new(
             ResourceInfo: _academicWeekResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,

@@ -471,6 +471,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
 
         RelationalQueryRequest request = new(
             ResourceInfo: _bellScheduleResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _bellScheduleResourceInfo.AuthorizationSecurableInfo,

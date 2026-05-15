@@ -345,6 +345,7 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
 
         RelationalQueryRequest request = new(
             ResourceInfo: _parentResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _parentResourceInfo.AuthorizationSecurableInfo,

@@ -1520,7 +1520,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1606,7 +1613,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1689,7 +1703,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1760,7 +1781,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1841,7 +1869,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1903,6 +1938,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -1944,6 +1980,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -2054,7 +2091,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         )!;
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -2153,6 +2197,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -2190,6 +2235,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )

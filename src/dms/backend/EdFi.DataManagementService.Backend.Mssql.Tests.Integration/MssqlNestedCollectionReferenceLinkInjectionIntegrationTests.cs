@@ -458,6 +458,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
 
         RelationalQueryRequest request = new(
             ResourceInfo: _bellScheduleResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _bellScheduleResourceInfo.AuthorizationSecurableInfo,

@@ -392,6 +392,7 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
 
         RelationalQueryRequest request = new(
             ResourceInfo: _academicWeekResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,

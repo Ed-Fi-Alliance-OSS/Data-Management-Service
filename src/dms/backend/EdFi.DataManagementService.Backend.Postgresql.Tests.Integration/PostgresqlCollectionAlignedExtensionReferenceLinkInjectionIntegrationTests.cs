@@ -353,6 +353,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
 
         RelationalQueryRequest request = new(
             ResourceInfo: _parentResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _parentResourceInfo.AuthorizationSecurableInfo,

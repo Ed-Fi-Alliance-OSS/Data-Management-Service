@@ -386,6 +386,7 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
 
         RelationalQueryRequest request = new(
             ResourceInfo: _academicWeekResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,

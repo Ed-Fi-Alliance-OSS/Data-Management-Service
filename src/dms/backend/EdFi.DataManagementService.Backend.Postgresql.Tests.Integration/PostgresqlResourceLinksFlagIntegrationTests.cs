@@ -422,6 +422,7 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
 
         RelationalQueryRequest request = new(
             ResourceInfo: _academicWeekResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,

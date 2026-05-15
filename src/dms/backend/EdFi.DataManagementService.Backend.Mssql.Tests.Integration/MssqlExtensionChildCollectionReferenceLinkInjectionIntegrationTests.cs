@@ -395,6 +395,7 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
 
         RelationalQueryRequest request = new(
             ResourceInfo: _schoolResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
             AuthorizationSecurableInfo: _schoolResourceInfo.AuthorizationSecurableInfo,
