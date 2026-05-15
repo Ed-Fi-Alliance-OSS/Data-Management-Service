@@ -156,6 +156,8 @@ SELECT
   ) THEN 1 ELSE 0 END AS IsAuthorized
 ```
 
+Note that these strategies only invert the check for EducationOrganization securable elements. For RelationshipsWithEdOrgsAndPeopleInverted, person securable elements are still authorized top-to-bottom.
+
 #### List of Relationship-based strategies
 
 The complete list of Relationship-based strategies is:
@@ -170,7 +172,7 @@ The complete list of Relationship-based strategies is:
 
 Excluding the `*Inverted` and `*ThroughResponsibility` strategies, these strategies are very similar; the only difference is which authorization subjects are included during authorization. For example, the `RelationshipsWithStudentsOnly` strategy ignores any EducationOrganization, Contact, and Staff subject that might appear in the resource.
 
-The `RelationshipsWithStudentsOnlyThroughResponsibility` strategy uses the `EducationOrganizationIdToStudentUSIThroughResponsibility` view, which uses `StudentEducationOrganizationResponsibilityAssociation` instead of `StudentSchoolAssociation` to establish the relationship.
+`*Inverted`, `*ThroughResponsibility`, and `*IncludingDeletes` strategies are similar to their non-suffixed equivalents; the only difference is that these strategies may choose to add a suffix to the view name (known as `pathModifier`) that gets used to authorize the securable element, for example, the `RelationshipsWithStudentsOnlyThroughResponsibility` strategy uses the `EducationOrganizationIdToStudentUSIThroughResponsibility` view, which uses `StudentEducationOrganizationResponsibilityAssociation` instead of `StudentSchoolAssociation` to establish the relationship.
 
 ### View-based authorization strategy
 
@@ -303,7 +305,9 @@ When updating a resource, we first authorize against the values that are current
 
 As of today, all fields that are securable elements must be part of the resource's identity (except for the custom view-based strategy; more info below), meaning that if a resource is POSTed with an uninitialized securable element, it will fail validation because it is a required field.
 
-However, there is also a validation in the authorization layer that ensures these fields are initialized when creating and retrieving a resource. This validation might seem redundant, but it serves as an additional check in case some securable elements become nullable one day. The view-based strategy allows using nullable fields as securable elements, so the validation is not redundant in that scenario.
+However, there is also a validation in the authorization layer that ensures these fields are initialized when creating and retrieving a resource. This validation may seem redundant, but it serves as an additional check in case a securable element is configured based on an optional field, such as by setting an override (e.g., the `StudentAssessment` override). The view-based strategy allows using nullable fields as securable elements, so the validation is not redundant in that scenario.
+
+As of today, authorization checks can only be applied on the resource/descriptor root table, meaning that authorization checks do not apply to collection items or fields that have been added through extensions (an extension top-level resource can have authorization on its own root resource/table).
 
 ## What needs to be done in DMS
 
@@ -979,7 +983,7 @@ Custom views that return descriptors (such as the `TransportationTypeDescriptorW
 
 This function overload should also allow passing an abstract resource (such as `EducationOrganization` or `GeneralStudentProgramAssociation`) as the basis resource.
 
-Tests cover the following scenarios:
+We should have tests that cover at least the following scenarios:
   - The Basis resource is a directly referenced descriptor
     - Assign `TransportationTypeDescriptorWithABus` to `StudentTransportation`
   - The Basis resource is an indirectly referenced descriptor
