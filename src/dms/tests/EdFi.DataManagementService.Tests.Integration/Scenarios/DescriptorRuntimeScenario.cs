@@ -61,6 +61,10 @@ internal static class DescriptorRuntimeScenario
             EffectiveBeginDate = "2025-02-03",
             EffectiveEndDate = "2025-12-30",
         };
+
+        // _lastModifiedDate is stamped at second precision, so wait for the UTC second to tick before the PUT.
+        await WaitForNextWireSecondAsync(initialLastModifiedDate);
+
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
             harness,
             locationPath,
@@ -550,6 +554,20 @@ internal static class DescriptorRuntimeScenario
             Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
             ToDateTimeOffset(reader.GetValue(1))
         );
+    }
+
+    private static async Task WaitForNextWireSecondAsync(string previousWireTimestamp)
+    {
+        while (
+            string.Equals(
+                DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+                previousWireTimestamp,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            await Task.Delay(25);
+        }
     }
 
     private static JsonObject CreateDescriptorPayload(DescriptorValues descriptor) =>
