@@ -391,6 +391,83 @@ internal static class DescriptorRuntimeScenario
             );
     }
 
+    public static async Task It_deletes_a_descriptor(ApiIntegrationHarness harness)
+    {
+        DescriptorValues descriptor = CreateDescriptorValues("delete");
+
+        (string locationPath, _) = await CreateDescriptorAsync(harness, descriptor);
+
+        JsonObject created = await GetJsonObjectAsync(harness, locationPath);
+        string resourceId = created["id"]!.GetValue<string>();
+        (await CountDocumentRowsAsync(harness, resourceId))
+            .Should()
+            .Be(1, "the descriptor document row must exist before DELETE");
+
+        using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(locationPath);
+        string deleteBody = await deleteResponse.Content.ReadAsStringAsync();
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent, deleteBody);
+
+        using HttpResponseMessage getAfterDelete = await harness.HttpClient.GetAsync(locationPath);
+        getAfterDelete
+            .StatusCode.Should()
+            .Be(HttpStatusCode.NotFound, "GET after a successful DELETE must return 404");
+
+        (await CountDocumentRowsAsync(harness, resourceId))
+            .Should()
+            .Be(0, "descriptor DELETE must remove the dms.Document row");
+    }
+
+    public static async Task It_rejects_descriptor_delete_when_referenced(ApiIntegrationHarness harness)
+    {
+        DescriptorValues descriptor = CreateDescriptorValues("referenced-delete");
+        string descriptorUri = $"{descriptor.Namespace}#{descriptor.CodeValue}";
+        (string descriptorLocationPath, _) = await CreateDescriptorAsync(harness, descriptor);
+
+        var mergeItemPayload = new JsonObject
+        {
+            ["profileRootOnlyMergeItemId"] = 1025,
+            ["displayName"] = "DMS-1025 descriptor referenced-delete",
+            ["primarySchoolTypeDescriptor"] = descriptorUri,
+        };
+        using HttpResponseMessage mergeItemCreate = await PostJsonAsync(
+            harness,
+            MergeItemsEndpoint,
+            mergeItemPayload
+        );
+        string mergeItemBody = await mergeItemCreate.Content.ReadAsStringAsync();
+        mergeItemCreate.StatusCode.Should().Be(HttpStatusCode.Created, mergeItemBody);
+
+        using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(
+            descriptorLocationPath
+        );
+        string deleteBody = await deleteResponse.Content.ReadAsStringAsync();
+        deleteResponse
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.Conflict,
+                "deleting a descriptor referenced by an existing resource must be rejected"
+            );
+
+        JsonObject problem = JsonNode.Parse(deleteBody)!.AsObject();
+        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:dependent-item-exists");
+        problem["title"]!.GetValue<string>().Should().Be("Dependent Item Exists");
+        problem["status"]!.GetValue<int>().Should().Be(409);
+        problem["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Contain(
+                "ProfileRootOnlyMergeItem",
+                "the conflict detail must identify the dependent resource by PascalCase resource name"
+            );
+
+        using HttpResponseMessage descriptorAfterDelete = await harness.HttpClient.GetAsync(
+            descriptorLocationPath
+        );
+        descriptorAfterDelete
+            .StatusCode.Should()
+            .Be(HttpStatusCode.OK, "the referenced descriptor must remain after the rejected DELETE");
+    }
+
     public static async Task It_requires_descriptor_reference_resolution_before_resource_write(
         ApiIntegrationHarness harness
     )
@@ -558,6 +635,21 @@ internal static class DescriptorRuntimeScenario
 
         matches.Count.Should().Be(1, $"{queryField} should uniquely identify the seeded descriptor");
         AssertDescriptorFields(matches[0]!.AsObject(), expected);
+    }
+
+    private static async Task<int> CountDocumentRowsAsync(ApiIntegrationHarness harness, string documentUuid)
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*) FROM "dms"."Document" WHERE "DocumentUuid" = @documentUuid
+            """;
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = "@documentUuid";
+        parameter.Value = Guid.Parse(documentUuid);
+        command.Parameters.Add(parameter);
+
+        object? result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
     private static async Task<DocumentMetadata> ReadDocumentMetadataAsync(

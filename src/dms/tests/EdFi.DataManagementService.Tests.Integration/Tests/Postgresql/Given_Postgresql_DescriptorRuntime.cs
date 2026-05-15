@@ -34,6 +34,13 @@ public sealed class Given_Postgresql_DescriptorRuntime : PostgresqlApiIntegratio
         DescriptorRuntimeScenario.It_filters_and_pages_descriptor_queries(Harness);
 
     [Test]
+    public Task It_deletes_a_descriptor() => DescriptorRuntimeScenario.It_deletes_a_descriptor(Harness);
+
+    [Test]
+    public Task It_rejects_descriptor_delete_when_referenced() =>
+        DescriptorRuntimeScenario.It_rejects_descriptor_delete_when_referenced(Harness);
+
+    [Test]
     public Task It_requires_descriptor_reference_resolution_before_resource_write() =>
         DescriptorRuntimeScenario.It_requires_descriptor_reference_resolution_before_resource_write(Harness);
 }
