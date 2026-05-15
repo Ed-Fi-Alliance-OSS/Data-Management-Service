@@ -132,8 +132,8 @@ internal static class DescriptorRuntimeScenario
     {
         await AssertDescriptorIdentityChangeRejectedAsync(
             harness,
-            CreateDescriptorValues("identity-code-value-change"),
-            static descriptor => descriptor with { CodeValue = $"{descriptor.CodeValue}-changed" }
+            CreateDescriptorValues("identity-code-value-change", codeValue: "DMS-1025-code-a"),
+            static descriptor => descriptor with { CodeValue = "DMS-1025-code-b" }
         );
         await AssertDescriptorIdentityChangeRejectedAsync(
             harness,
