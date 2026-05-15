@@ -89,6 +89,8 @@ internal static class DescriptorRuntimeScenario
 
         JsonObject created = await GetJsonObjectAsync(harness, locationPath);
         string resourceId = created["id"]!.GetValue<string>();
+        string initialGetEtag = created["_etag"]!.GetValue<string>();
+        string initialLastModifiedDate = created["_lastModifiedDate"]!.GetValue<string>();
         DocumentMetadata initialMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
 
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
@@ -109,6 +111,11 @@ internal static class DescriptorRuntimeScenario
             .Should()
             .Be(initialEtag, "unchanged descriptor content should preserve the representation ETag");
 
+        JsonObject afterNoOpPut = await GetJsonObjectAsync(harness, locationPath);
+        AssertDescriptorFields(afterNoOpPut, descriptor);
+        afterNoOpPut["_etag"]!.GetValue<string>().Should().Be(initialGetEtag);
+        afterNoOpPut["_lastModifiedDate"]!.GetValue<string>().Should().Be(initialLastModifiedDate);
+
         DocumentMetadata afterNoOpPutMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
         afterNoOpPutMetadata
             .ContentVersion.Should()
@@ -123,12 +130,29 @@ internal static class DescriptorRuntimeScenario
 
     public static async Task It_rejects_descriptor_identity_changes(ApiIntegrationHarness harness)
     {
-        DescriptorValues descriptor = CreateDescriptorValues("identity-change");
+        await AssertDescriptorIdentityChangeRejectedAsync(
+            harness,
+            CreateDescriptorValues("identity-code-value-change"),
+            static descriptor => descriptor with { CodeValue = $"{descriptor.CodeValue}-changed" }
+        );
+        await AssertDescriptorIdentityChangeRejectedAsync(
+            harness,
+            CreateDescriptorValues("identity-namespace-change"),
+            static descriptor => descriptor with { Namespace = CreateNamespace("identity-namespace-changed") }
+        );
+    }
+
+    private static async Task AssertDescriptorIdentityChangeRejectedAsync(
+        ApiIntegrationHarness harness,
+        DescriptorValues descriptor,
+        Func<DescriptorValues, DescriptorValues> mutateIdentity
+    )
+    {
         (string locationPath, string initialEtag) = await CreateDescriptorAsync(harness, descriptor);
 
         JsonObject created = await GetJsonObjectAsync(harness, locationPath);
         string resourceId = created["id"]!.GetValue<string>();
-        DescriptorValues changedIdentity = descriptor with { CodeValue = $"{descriptor.CodeValue}-changed" };
+        DescriptorValues changedIdentity = mutateIdentity(descriptor);
 
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
             harness,
