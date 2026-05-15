@@ -237,6 +237,7 @@ internal static class DescriptorRuntimeScenario
     public static async Task It_filters_and_pages_descriptor_queries(ApiIntegrationHarness harness)
     {
         string namespaceName = CreateNamespace("query");
+        string otherNamespaceName = CreateNamespace("other");
         DescriptorValues[] descriptors =
         [
             CreateDescriptorValues(
@@ -265,6 +266,18 @@ internal static class DescriptorRuntimeScenario
             ),
         ];
 
+        // Seeded in a different namespace so the namespace-scoped assertions below prove
+        // the predicate excludes it rather than relying on a clean database for proof.
+        DescriptorValues otherNamespaceDescriptor = CreateDescriptorValues(
+            "query-other-namespace",
+            otherNamespaceName,
+            codeValue: "DMS-1025-Other-Foxtrot",
+            description: "DMS-1025 query description foxtrot",
+            effectiveBeginDate: "2025-03-04",
+            effectiveEndDate: "2025-11-30"
+        );
+        await CreateDescriptorAsync(harness, otherNamespaceDescriptor);
+
         string[] insertionOrderIds = new string[descriptors.Length];
         for (int i = 0; i < descriptors.Length; i++)
         {
@@ -281,6 +294,22 @@ internal static class DescriptorRuntimeScenario
             .Select(node => node!["codeValue"]!.GetValue<string>())
             .Should()
             .BeEquivalentTo(descriptors.Select(descriptor => descriptor.CodeValue));
+        namespaceMatches
+            .Select(node => node!["codeValue"]!.GetValue<string>())
+            .Should()
+            .NotContain(
+                otherNamespaceDescriptor.CodeValue,
+                "namespace filter must exclude descriptors in other namespaces"
+            );
+
+        JsonArray otherNamespaceMatches = await GetJsonArrayAsync(
+            harness,
+            $"{DescriptorEndpoint}?namespace={Escape(otherNamespaceName)}"
+        );
+        otherNamespaceMatches
+            .Count.Should()
+            .Be(1, "querying the other namespace must return only the descriptor seeded there");
+        AssertDescriptorFields(otherNamespaceMatches[0]!.AsObject(), otherNamespaceDescriptor);
 
         await AssertSingleQueryMatchAsync(harness, namespaceName, "id", insertionOrderIds[1], descriptors[1]);
         await AssertSingleQueryMatchAsync(
@@ -558,6 +587,9 @@ internal static class DescriptorRuntimeScenario
 
     private static async Task WaitForNextWireSecondAsync(string previousWireTimestamp)
     {
+        // The UTC second must always tick within ~1s; bound the wait so a frozen clock fails the test instead of hanging.
+        TimeSpan deadline = TimeSpan.FromSeconds(5);
+        DateTimeOffset start = DateTimeOffset.UtcNow;
         while (
             string.Equals(
                 DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
@@ -566,6 +598,14 @@ internal static class DescriptorRuntimeScenario
             )
         )
         {
+            (DateTimeOffset.UtcNow - start)
+                .Should()
+                .BeLessThan(
+                    deadline,
+                    "the UTC second must advance past {0} within {1}",
+                    previousWireTimestamp,
+                    deadline
+                );
             await Task.Delay(25);
         }
     }
