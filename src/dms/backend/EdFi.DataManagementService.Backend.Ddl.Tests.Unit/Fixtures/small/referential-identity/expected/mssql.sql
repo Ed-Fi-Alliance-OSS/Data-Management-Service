@@ -170,6 +170,7 @@ CREATE TABLE [dms].[DocumentCache]
     [ResourceName] nvarchar(256) NOT NULL,
     [ResourceVersion] nvarchar(32) NOT NULL,
     [Etag] nvarchar(64) NOT NULL,
+    [ContentVersion] bigint NOT NULL,
     [LastModifiedAt] datetime2(7) NOT NULL,
     [DocumentJson] nvarchar(max) NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentCache_ComputedAt] DEFAULT (sysutcdatetime()),
@@ -1148,11 +1149,15 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_EdOrgDependentResource_PropagateIdentity]
 ON [edfi].[EdOrgDependentResource]
-INSTEAD OF UPDATE
+AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
     IF (UPDATE([EducationOrganization_DocumentId]) OR UPDATE([EdOrgDependentResourceId]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
+    AND EXISTS (
+        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
+        WHERE (i.[EducationOrganization_DocumentId] <> d.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND d.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND d.[EducationOrganization_DocumentId] IS NULL)) OR (CAST(i.[EdOrgDependentResourceId] AS varbinary(max)) <> CAST(d.[EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceId] IS NULL AND d.[EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceId] IS NOT NULL AND d.[EdOrgDependentResourceId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL))
+    )
     BEGIN
         UPDATE r
         SET r.[EdOrgDependentResourceReference_EdOrgDependentResourceId] = i.[EdOrgDependentResourceId], r.[EdOrgDependentResourceReference_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId]
@@ -1163,11 +1168,6 @@ BEGIN
         AND ((r.[EdOrgDependentResourceReference_EdOrgDependentResourceId] = d.[EdOrgDependentResourceId]) OR (r.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL AND d.[EdOrgDependentResourceId] IS NULL)) AND ((r.[EdOrgDependentResourceReference_EducationOrganizationId] = d.[EducationOrganization_EducationOrganizationId]) OR (r.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
 
     END
-
-    UPDATE t
-    SET t.[EducationOrganization_DocumentId] = i.[EducationOrganization_DocumentId], t.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganization_EducationOrganizationId], t.[EdOrgDependentResourceId] = i.[EdOrgDependentResourceId]
-    FROM [edfi].[EdOrgDependentResource] t
-    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
 END;
 GO
 
@@ -1236,11 +1236,15 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationIdentity_PropagateIdentity]
 ON [edfi].[EducationOrganizationIdentity]
-INSTEAD OF UPDATE
+AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
     IF (UPDATE([EducationOrganizationId]))
+    AND EXISTS (
+        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
+        WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL))
+    )
     BEGIN
         UPDATE r
         SET r.[EducationOrganization_EducationOrganizationId] = i.[EducationOrganizationId]
@@ -1251,11 +1255,6 @@ BEGIN
         AND ((r.[EducationOrganization_EducationOrganizationId] = d.[EducationOrganizationId]) OR (r.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NULL));
 
     END
-
-    UPDATE t
-    SET t.[EducationOrganizationId] = i.[EducationOrganizationId], t.[Discriminator] = i.[Discriminator]
-    FROM [edfi].[EducationOrganizationIdentity] t
-    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
 END;
 GO
 
@@ -1324,11 +1323,15 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_ResourceA_PropagateIdentity]
 ON [edfi].[ResourceA]
-INSTEAD OF UPDATE
+AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
     IF (UPDATE([StudentReference_DocumentId]) OR UPDATE([ResourceAId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    AND EXISTS (
+        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
+        WHERE (i.[StudentReference_DocumentId] <> d.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND d.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND d.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(d.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND d.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND d.[ResourceAId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL))
+    )
     BEGIN
         UPDATE r
         SET r.[ResourceAReference_ResourceAId] = i.[ResourceAId], r.[StudentUniqueId_Unified] = i.[StudentReference_StudentUniqueId]
@@ -1339,11 +1342,6 @@ BEGIN
         AND ((r.[ResourceAReference_ResourceAId] = d.[ResourceAId]) OR (r.[ResourceAReference_ResourceAId] IS NULL AND d.[ResourceAId] IS NULL)) AND ((r.[StudentUniqueId_Unified] = d.[StudentReference_StudentUniqueId]) OR (r.[StudentUniqueId_Unified] IS NULL AND d.[StudentReference_StudentUniqueId] IS NULL));
 
     END
-
-    UPDATE t
-    SET t.[StudentReference_DocumentId] = i.[StudentReference_DocumentId], t.[StudentReference_StudentUniqueId] = i.[StudentReference_StudentUniqueId], t.[ResourceAId] = i.[ResourceAId]
-    FROM [edfi].[ResourceA] t
-    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
 END;
 GO
 
@@ -1412,11 +1410,15 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_ResourceB_PropagateIdentity]
 ON [edfi].[ResourceB]
-INSTEAD OF UPDATE
+AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
     IF (UPDATE([StudentReference_DocumentId]) OR UPDATE([ResourceBId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    AND EXISTS (
+        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
+        WHERE (i.[StudentReference_DocumentId] <> d.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND d.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND d.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(d.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND d.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND d.[ResourceBId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL))
+    )
     BEGIN
         UPDATE r
         SET r.[ResourceBReference_ResourceBId] = i.[ResourceBId], r.[StudentUniqueId_Unified] = i.[StudentReference_StudentUniqueId]
@@ -1427,11 +1429,6 @@ BEGIN
         AND ((r.[ResourceBReference_ResourceBId] = d.[ResourceBId]) OR (r.[ResourceBReference_ResourceBId] IS NULL AND d.[ResourceBId] IS NULL)) AND ((r.[StudentUniqueId_Unified] = d.[StudentReference_StudentUniqueId]) OR (r.[StudentUniqueId_Unified] IS NULL AND d.[StudentReference_StudentUniqueId] IS NULL));
 
     END
-
-    UPDATE t
-    SET t.[StudentReference_DocumentId] = i.[StudentReference_DocumentId], t.[StudentReference_StudentUniqueId] = i.[StudentReference_StudentUniqueId], t.[ResourceBId] = i.[ResourceBId]
-    FROM [edfi].[ResourceB] t
-    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
 END;
 GO
 
@@ -1564,11 +1561,15 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_School_PropagateIdentity]
 ON [edfi].[School]
-INSTEAD OF UPDATE
+AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
     IF (UPDATE([EducationOrganizationId]) OR UPDATE([NameOfInstitution]) OR UPDATE([SchoolId]))
+    AND EXISTS (
+        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
+        WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(d.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND d.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND d.[NameOfInstitution] IS NULL)) OR (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL))
+    )
     BEGIN
         UPDATE r
         SET r.[SchoolReference_SchoolId] = i.[SchoolId]
@@ -1579,11 +1580,6 @@ BEGIN
         AND ((r.[SchoolReference_SchoolId] = d.[SchoolId]) OR (r.[SchoolReference_SchoolId] IS NULL AND d.[SchoolId] IS NULL));
 
     END
-
-    UPDATE t
-    SET t.[EducationOrganizationId] = i.[EducationOrganizationId], t.[NameOfInstitution] = i.[NameOfInstitution], t.[SchoolId] = i.[SchoolId]
-    FROM [edfi].[School] t
-    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
 END;
 GO
 
@@ -1662,11 +1658,15 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_Student_PropagateIdentity]
 ON [edfi].[Student]
-INSTEAD OF UPDATE
+AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
     IF (UPDATE([FirstName]) OR UPDATE([StudentUniqueId]))
+    AND EXISTS (
+        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
+        WHERE (CAST(i.[FirstName] AS varbinary(max)) <> CAST(d.[FirstName] AS varbinary(max)) OR (i.[FirstName] IS NULL AND d.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND d.[FirstName] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL))
+    )
     BEGIN
         UPDATE r
         SET r.[StudentReference_StudentUniqueId] = i.[StudentUniqueId]
@@ -1685,11 +1685,6 @@ BEGIN
         AND ((r.[StudentReference_StudentUniqueId] = d.[StudentUniqueId]) OR (r.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NULL));
 
     END
-
-    UPDATE t
-    SET t.[FirstName] = i.[FirstName], t.[StudentUniqueId] = i.[StudentUniqueId]
-    FROM [edfi].[Student] t
-    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
 END;
 GO
 

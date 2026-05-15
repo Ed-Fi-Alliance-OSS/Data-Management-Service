@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS "dms"."DocumentCache"
     "ResourceName" varchar(256) NOT NULL,
     "ResourceVersion" varchar(32) NOT NULL,
     "Etag" varchar(64) NOT NULL,
+    "ContentVersion" bigint NOT NULL,
     "LastModifiedAt" timestamp with time zone NOT NULL,
     "DocumentJson" jsonb NOT NULL,
     "ComputedAt" timestamp with time zone NOT NULL DEFAULT now(),

@@ -370,6 +370,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 $"{_dialect.RenderColumnDefinition(Col("ResourceVersion"), StringType(32), false)},"
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Etag"), StringType(64), false)},");
+            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("ContentVersion"), "bigint", false)},");
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("LastModifiedAt"), DateTimeType, false)},"
             );

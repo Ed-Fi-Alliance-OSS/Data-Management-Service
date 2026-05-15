@@ -558,8 +558,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(Quote(trigger.Table));
         var mssqlTriggerEvent = trigger.Parameters switch
         {
-            TriggerKindParameters.IdentityPropagationFallback => "INSTEAD OF UPDATE",
             TriggerKindParameters.DocumentStamping => "AFTER INSERT, UPDATE, DELETE",
+            TriggerKindParameters.IdentityPropagationFallback => "AFTER UPDATE",
             _ => "AFTER INSERT, UPDATE",
         };
         writer.AppendLine(mssqlTriggerEvent);
@@ -1482,9 +1482,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits an UPDATE + INSERT upsert for abstract identity maintenance.
-    /// SQL Server rejects MERGE when the target table has an INSTEAD OF UPDATE
-    /// trigger, which can happen once identity propagation fallback triggers are
-    /// derived for abstract identity tables.
     /// When <paramref name="isInsert"/> is true, scopes to all <c>inserted</c> rows;
     /// otherwise scopes to the <c>@changedDocs</c> value-diff workset.
     /// </summary>
@@ -1617,14 +1614,49 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
 
         var documentIdCol = Quote(DocumentIdColumn);
-        var tableKeyColumns = GetKeyColumnsForDocumentStamping(tableModel, trigger.Name.Value);
-        var updatableColumns = GetWritableStoredNonKeyColumns(tableModel, trigger.Name.Value);
 
-        // Identity propagation happens before the owning row update. The ON UPDATE NO ACTION
-        // FKs are emitted as DocumentId-only on MSSQL (identity columns excluded), so neither
-        // the child nor the parent UPDATE violates the FK constraint.
+        // AFTER UPDATE trigger: SQL Server has already applied the owning row update by
+        // the time this body runs. We propagate identity-column changes to referrer
+        // tables. The ON UPDATE NO ACTION FKs are emitted as DocumentId-only on MSSQL
+        // (identity columns excluded), so the parent UPDATE does not violate the FK,
+        // and the referrer UPDATE that follows reconciles the stored projected
+        // identity columns.
+        //
+        // Guard: the trigger fires on every UPDATE statement against the owning table,
+        // including the abstract-identity upsert's zero-row UPDATE phase. Without a
+        // value-diff gate, each referrer UPDATE below would itself fire any
+        // identity-propagation triggers on the referrer's table and cascade through
+        // the schema, easily exceeding SQL Server's 32-level trigger nesting limit.
+        // The IF EXISTS short-circuits the entire body when no identity column
+        // actually changed, which makes the inner UPDATEs (and their cascades) run
+        // only when there is real work to do.
         writer.Append("IF (");
         EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
+        writer.AppendLine(")");
+        writer.AppendLine("AND EXISTS (");
+        using (writer.Indent())
+        {
+            writer.Append("SELECT 1 FROM inserted i INNER JOIN deleted d ON i.");
+            writer.Append(documentIdCol);
+            writer.Append(" = d.");
+            writer.AppendLine(documentIdCol);
+            writer.Append("WHERE ");
+            for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
+            {
+                if (i > 0)
+                {
+                    writer.Append(" OR ");
+                }
+                EmitMssqlColumnValueDiffPredicate(
+                    writer,
+                    tableModel,
+                    "i",
+                    "d",
+                    trigger.IdentityProjectionColumns[i]
+                );
+            }
+            writer.AppendLine();
+        }
         writer.AppendLine(")");
         writer.AppendLine("BEGIN");
 
@@ -1694,30 +1726,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
 
         writer.AppendLine("END");
-        writer.AppendLine();
-
-        writer.AppendLine("UPDATE t");
-        writer.Append("SET ");
-        for (int i = 0; i < updatableColumns.Count; i++)
-        {
-            if (i > 0)
-            {
-                writer.Append(", ");
-            }
-
-            var quotedColumn = Quote(updatableColumns[i]);
-            writer.Append("t.");
-            writer.Append(quotedColumn);
-            writer.Append(" = i.");
-            writer.Append(quotedColumn);
-        }
-        writer.AppendLine();
-        writer.Append("FROM ");
-        writer.Append(Quote(trigger.Table));
-        writer.AppendLine(" t");
-        writer.Append("INNER JOIN inserted i ON ");
-        EmitMssqlJoinConjunction(writer, "t", "i", tableKeyColumns);
-        writer.AppendLine(";");
     }
 
     /// <summary>
@@ -2427,31 +2435,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
 
         return keyColumns;
-    }
-
-    private static IReadOnlyList<DbColumnName> GetWritableStoredNonKeyColumns(
-        DbTableModel tableModel,
-        string triggerName
-    )
-    {
-        var keyColumns = tableModel.Key.Columns.Select(column => column.ColumnName).ToHashSet();
-        var updatableColumns = tableModel
-            .Columns.Where(column =>
-                column.Storage is ColumnStorage.Stored
-                && column.IsWritable
-                && !keyColumns.Contains(column.ColumnName)
-            )
-            .Select(column => column.ColumnName)
-            .ToArray();
-
-        if (updatableColumns.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"IdentityPropagationFallback trigger '{triggerName}' requires at least one writable stored non-key column on table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}'."
-            );
-        }
-
-        return updatableColumns;
     }
 
     private void EmitMssqlJoinConjunction(

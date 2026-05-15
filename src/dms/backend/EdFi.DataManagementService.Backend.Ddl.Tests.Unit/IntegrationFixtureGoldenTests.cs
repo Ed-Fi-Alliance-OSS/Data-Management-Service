@@ -63,3 +63,10 @@ public class Given_FixtureRunner_With_Profile_Nested_And_Root_Extension_Children
 {
     protected override string FixtureName => "profile-nested-and-root-extension-children";
 }
+
+[TestFixture]
+public class Given_FixtureRunner_With_Profile_Collection_Aligned_Extension_With_Doc_Ref_Fixture
+    : IntegrationFixtureGoldenTestBase
+{
+    protected override string FixtureName => "profile-collection-aligned-extension-with-doc-ref";
+}

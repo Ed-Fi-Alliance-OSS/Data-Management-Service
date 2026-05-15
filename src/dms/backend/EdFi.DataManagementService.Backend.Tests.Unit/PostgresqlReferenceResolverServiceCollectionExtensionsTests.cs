@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Old.Postgresql;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 
@@ -100,9 +101,18 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
+        services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
+        services.AddOptions<ResourceLinksOptions>();
+
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
+    }
+
+    private sealed class NoLinkSlugResolver : IDocumentLinkSlugResolver
+    {
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+            throw new InvalidOperationException("NoLinkSlugResolver is unused in composition-surface tests.");
     }
 
     private sealed class NoOpHostApplicationLifetime : IHostApplicationLifetime

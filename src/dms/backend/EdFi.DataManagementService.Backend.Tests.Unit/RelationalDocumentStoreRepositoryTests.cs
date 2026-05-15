@@ -200,6 +200,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     readPlan,
                     new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -333,6 +334,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -468,6 +470,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     readPlan,
                     new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -480,6 +483,111 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeOfType<GetResult.GetSuccess>();
         capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.StoredDocument);
+    }
+
+    [Test]
+    public async Task It_opts_out_of_document_reference_lookup_for_stored_document_mode_get_requests()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-eeeeeeeeeeee"));
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            RelationalGetRequestReadMode.StoredDocument
+        );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 346L, 94L),
+            (346L, "Eastside Elementary")
+        );
+        HydrationExecutionOptions? capturedExecutionOptions = null;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(346L, documentUuid));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(346L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedExecutionOptions = call.GetArgument<HydrationExecutionOptions>(2))
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Returns(JsonNode.Parse("""{"name":"Eastside Elementary"}""")!);
+
+        await _sut.GetDocumentById(getRequest);
+
+        capturedExecutionOptions.Should().NotBeNull();
+        capturedExecutionOptions!
+            .IncludeDocumentReferenceLookup.Should()
+            .BeFalse(
+                "StoredDocument-mode GETs do not emit link, so the auxiliary FK lookup must be suppressed at hydration time"
+            );
+        capturedExecutionOptions
+            .IncludeDescriptorProjection.Should()
+            .BeTrue("descriptor URIs are still needed for stored-document materialization");
+    }
+
+    [Test]
+    public async Task It_keeps_document_reference_lookup_on_for_external_response_get_requests()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-ffffffffffff"));
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            RelationalGetRequestReadMode.ExternalResponse
+        );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 347L, 95L),
+            (347L, "Northwood High")
+        );
+        HydrationExecutionOptions? capturedExecutionOptions = null;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(347L, documentUuid));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(347L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedExecutionOptions = call.GetArgument<HydrationExecutionOptions>(2))
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Returns(JsonNode.Parse("""{"name":"Northwood High"}""")!);
+
+        await _sut.GetDocumentById(getRequest);
+
+        capturedExecutionOptions.Should().NotBeNull();
+        capturedExecutionOptions!
+            .IncludeDocumentReferenceLookup.Should()
+            .BeTrue("ExternalResponse-mode GETs emit link, so the auxiliary FK lookup must run");
     }
 
     [Test]
@@ -555,6 +663,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     readPlan,
                     new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -619,6 +728,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -661,6 +771,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -738,7 +849,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         PageKeysetSpec.Query capturedKeyset = null!;
         RelationalReadPageMaterializationRequest capturedReadRequest = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -872,6 +990,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -941,6 +1060,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -1009,6 +1129,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -1045,7 +1166,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1107,6 +1235,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -1210,7 +1339,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
             """
         )!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Returns(hydratedPage);
         A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .Returns([
@@ -1290,6 +1426,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -1330,6 +1467,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -1382,7 +1520,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1468,7 +1613,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1551,7 +1703,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1622,7 +1781,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1703,7 +1869,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -1765,6 +1938,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -1806,6 +1980,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -1916,7 +2091,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
         )!;
         PageKeysetSpec.Query capturedKeyset = null!;
 
-        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call =>
             {
                 capturedKeyset =
@@ -2015,6 +2197,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -2052,6 +2235,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -2089,6 +2273,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -2168,6 +2353,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
@@ -2231,6 +2417,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
                     A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )

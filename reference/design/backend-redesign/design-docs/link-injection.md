@@ -299,9 +299,15 @@ A single configuration key controls link emission:
 
 - **Key**: `DataManagement:ResourceLinks:Enabled`
 - **Default**: `true`
-- **Behavior when `false`**: `link` subtrees are stripped from response bodies after cache read and
-  after readable-profile projection, immediately before serialization. The auxiliary lookup and
-  plan compilation are unaffected.
+- **Behavior when `false`**: `link` subtrees are stripped from the served body as the **final
+  response-shaping pass** in the repository wrapper — after the materializer injects API metadata
+  (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection runs, and immediately
+  before the body is returned to the caller. The materializer's reconstituted intermediate is
+  always link-bearing (caller-agnostic), `_etag` is computed once over that intermediate, and the
+  strip pass mutates only the served projection. `link` is excluded from `_etag` canonicalization
+  in both flag states (the canonical formatter strips `{id, link, _etag, _lastModifiedDate}`
+  recursively before hashing per `design-docs/update-tracking.md` §Serving API metadata), so the
+  strip pass does not change `_etag`. The auxiliary lookup and plan compilation are unaffected.
 
 **Rationale for response-shaping rather than plan-shaping.** Treating the flag as a response
 filter eliminates dual plan shapes, startup plan-fingerprint reconciliation, and the mixed-plan
@@ -347,10 +353,15 @@ participate in `_etag` derivation.
 ## Cache and Etag
 
 `dms.DocumentCache` stores the fully reconstituted caller-agnostic intermediate document, with
-`link` subtrees already present (since the plan always emits them). Readable-profile projection
-runs after cache retrieval; the `ResourceLinks:Enabled` flag is applied as a strip pass on the
-projected document. CDC and indexing consumers of `dms.DocumentCache` therefore observe `link`
-subtrees; DMS does not maintain a second link-free projection.
+`link` subtrees already present (since the plan always emits them). The `ResourceLinks:Enabled`
+flag is applied as the final response-shaping pass in the repository wrapper — after the
+materializer injects `_etag` and after readable-profile projection (when applicable) runs.
+`_etag` is computed once inside the materializer over the link-bearing intermediate and survives
+both projection and strip unchanged because the canonical formatter excludes `link`/`_etag`/
+`_lastModifiedDate` from hashing. The cached materialized full-resource `_etag` is reused for
+both unprofiled and profiled responses. CDC and indexing consumers of `dms.DocumentCache` observe
+the unprojected intermediate (with `link` subtrees); DMS does not maintain a second link-free
+projection.
 
 `dms.DocumentCache` stores the materialized full-resource `_etag` alongside the cached
 `DocumentJson`. That cached `_etag` is computed with `link` excluded from the canonical hash and is
@@ -492,7 +503,10 @@ every surviving reference.
 
 **Source-readable / target-denied test.** Caller can read the source resource but fails a direct
 GET against the target under the active authorization strategy; fully-defined references still
-emit `link`.
+emit `link`. (Deferred: the relational query path has no per-reference authorization seam on the
+DMS-1145 branch, so a true target-denied caller cannot be constructed. Tracked as a follow-on once
+the seam exists; the placeholder test `It_emits_link_when_caller_has_no_per_reference_auth_gate`
+pins the present behavior.)
 
 **Caller-agnostic cache test.** Two callers who can both read the same source document — one
 authorized for the target, one not — receive the same cached intermediate JSON and the same

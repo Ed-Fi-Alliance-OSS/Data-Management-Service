@@ -2489,7 +2489,26 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                         ),
                     ]
                 ),
-            ]
+            ],
+            DocumentReferenceLookup: new DocumentReferenceLookupPlan(
+                SelectByKeysetSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\nFROM (SELECT r.[School_DocumentId] AS [DocumentId] FROM [edfi].[StudentSchoolAssociation] r UNION SELECT r.[Calendar_DocumentId] AS [DocumentId] FROM [edfi].[StudentSchoolAssociation] r) p\nINNER JOIN [dms].[Document] d ON d.[DocumentId] = p.[DocumentId]\nORDER BY d.[DocumentId] ASC;\n",
+                ResultShape: new DocumentReferenceLookupResultShape(
+                    DocumentIdOrdinal: 0,
+                    DocumentUuidOrdinal: 1,
+                    ResourceKeyIdOrdinal: 2
+                ),
+                SourcesInOrder:
+                [
+                    new DocumentReferenceLookupSource(
+                        Table: table,
+                        FkColumn: new DbColumnName("School_DocumentId")
+                    ),
+                    new DocumentReferenceLookupSource(
+                        Table: table,
+                        FkColumn: new DbColumnName("Calendar_DocumentId")
+                    ),
+                ]
+            )
         );
     }
 

@@ -6,11 +6,11 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -171,9 +171,22 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
+        // The Backend's reference-resolver registration tree includes the read materializer,
+        // which depends on Core-owned IDocumentLinkSlugResolver and bound ResourceLinksOptions.
+        // Provide stubs so the composition surface validates end-to-end without pulling in the
+        // full Core DI extension.
+        services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
+        services.AddOptions<ResourceLinksOptions>();
+
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
+    }
+
+    private sealed class NoLinkSlugResolver : IDocumentLinkSlugResolver
+    {
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+            throw new InvalidOperationException("NoLinkSlugResolver is unused in composition-surface tests.");
     }
 
     private sealed class TestReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
@@ -277,6 +290,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         public Task<HydratedPage> HydrateAsync(
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
+            HydrationExecutionOptions executionOptions,
             CancellationToken ct
         )
         {

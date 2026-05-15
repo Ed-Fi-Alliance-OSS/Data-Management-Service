@@ -111,10 +111,17 @@ Soft dependency:
   hydration SQL, no discriminator column binding, no startup trigger-existence validation, and no
   backfill for reference-target `DocumentUuid`.
 - Feature flag `DataManagement:ResourceLinks:Enabled` (default `true`) controls emission as a
-  **response filter**. When `false`, `link` subtrees are stripped from response bodies after cache
-  read and after readable-profile projection, immediately before serialization. The auxiliary
-  lookup and plan compilation are unaffected by the flag; flag-off does not reduce database work.
-  No per-resource, per-request, or per-reference override is provided.
+  **response filter**. When `false`, `link` subtrees are stripped from the served body as the
+  final response-shaping pass in the repository wrapper — after the materializer injects API
+  metadata (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection (when
+  applicable) runs, immediately before the body is returned to the caller. The materializer's
+  reconstituted intermediate is always link-bearing (caller-agnostic), `_etag` is computed once
+  over that intermediate, and the strip pass mutates only the served projection. `link` is
+  excluded from `_etag` canonicalization in both flag states (the canonical formatter strips
+  `{id, link, _etag, _lastModifiedDate}` recursively before hashing), so the strip pass does not
+  cause `_etag` recomputation or mismatch. The auxiliary lookup and plan compilation are
+  unaffected by the flag; flag-off does not reduce database work. No per-resource, per-request,
+  or per-reference override is provided.
 - Runtime configuration binds `DataManagement:ResourceLinks` to a dedicated `ResourceLinksOptions`
   type; the story must not assume a nested `AppSettings.DataManagement` object already exists in
   Core.
@@ -123,9 +130,10 @@ Soft dependency:
   dms.Document.ContentLastModifiedAt`). `dms.DocumentCache` stores cached `ContentVersion`
   alongside the materialized `_etag/_lastModifiedDate`.
 - `dms.DocumentCache` stores the fully reconstituted caller-agnostic intermediate document with
-  `link` subtrees already present. Readable-profile projection runs after cache retrieval; the
-  `ResourceLinks:Enabled` strip pass runs on the projected document immediately before
-  serialization.
+  `link` subtrees already present. The `ResourceLinks:Enabled` strip pass runs as the final
+  response-shaping pass in the repository wrapper, after the materializer's `_etag` injection
+  and after readable-profile projection. `_etag` is computed once inside the materializer over
+  the link-bearing intermediate and survives both projection and strip unchanged.
 - `_etag` is a resource-state validator, not a response-decoration validator. It is computed with
   `link` excluded from canonicalization whether links are present or stripped. Use the cached
   materialized full-resource `_etag` for both unprofiled and profiled responses. Readable-profile
@@ -179,7 +187,10 @@ Soft dependency:
   rendering is normalized before comparison because DMS emits `"D"` format and ODS emits `"N"`.
 - Source-readable / target-denied test: caller can read the source resource but fails a direct GET
   against the target under the active authorization strategy; fully-defined references still emit
-  `link`.
+  `link`. (Deferred: the relational query path has no per-reference authorization seam on this
+  branch, so a true target-denied caller cannot be constructed. Tracked as a follow-on once the
+  seam exists; the placeholder test `It_emits_link_when_caller_has_no_per_reference_auth_gate`
+  pins the present behavior.)
 - Caller-agnostic cache test: two callers who can both read the same source document — one
   authorized for the target, one not — receive the same cached intermediate JSON and the same
   full-resource `_etag`; profile projection and flag-off stripping do not change the validator.
@@ -237,14 +248,17 @@ Soft dependency:
    (flag flips take effect at next process restart; hot-reload via `IOptionsMonitor<T>` is not a
    V1 requirement). The options type is consumed only at the response-serialization boundary, not
    in the plan compiler or reconstitution engine.
-6. Response serializer: apply the `ResourceLinks:Enabled` strip pass to the projected document
-   immediately before serialization, after readable-profile projection. The strip removes exactly
-   the `link` subtree on reference objects; other server-generated fields (`_etag`,
-   `_lastModifiedDate`) are untouched. `link` is excluded from `_etag` canonicalization in both
-   flag states, so the strip pass does not cause `_etag` recomputation or mismatch. Use the
-   cached materialized full-resource `_etag` for both unprofiled and profiled responses; readable
-   profile projection does not create a separate ETag surface per `design-docs/update-tracking.md`
-   §Serving API metadata.
+6. Response-boundary strip pass: apply the `ResourceLinks:Enabled` strip pass as the final
+   response-shaping pass in the repository wrapper — after the materializer injects API
+   metadata (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection (when
+   applicable) runs, immediately before the body is returned to the caller. The materializer's
+   reconstituted intermediate is always link-bearing (caller-agnostic) and `_etag` is computed
+   once over that intermediate. The strip removes exactly the `link` subtree on reference
+   objects; other server-generated fields (`_etag`, `_lastModifiedDate`) are untouched. `link`
+   is excluded from `_etag` canonicalization in both flag states, so the strip pass does not
+   cause `_etag` recomputation or mismatch. Use the cached materialized full-resource `_etag`
+   for both unprofiled and profiled responses; readable profile projection does not create a
+   separate ETag surface per `design-docs/update-tracking.md` §Serving API metadata.
 7. When `dms.DocumentCache` is provisioned: extend it to store cached `ContentVersion` alongside
    the materialized `_etag/_lastModifiedDate` so the two-input freshness check
    (`cached ContentVersion == dms.Document.ContentVersion AND cached LastModifiedAt ==
@@ -255,8 +269,10 @@ Soft dependency:
    `link` is a response decoration excluded from the canonical resource-state hash.
 8. Tests: add unit, fixture, integration, contract, and E2E tests per the acceptance criteria.
    Include feature-flag-on and flag-off coverage; a flag-flip-across-restart regression;
-   source-readable / target-denied authorization coverage; the caller-agnostic cache test; an ODS
-   baseline parity check scoped to document references; and the profile-preservation E2E scenario
+   source-readable / target-denied authorization coverage (deferred — see the bullet above; the
+   placeholder test pins present behavior until the per-reference auth seam exists); the
+   caller-agnostic cache test; an ODS baseline parity check scoped to document references; and the
+   profile-preservation E2E scenario
    in `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Profiles/ProfileReferenceFiltering.feature`
    relocated from `../07-relational-write-path/01d-profile-namespace-and-server-generated-fields.md`.
 

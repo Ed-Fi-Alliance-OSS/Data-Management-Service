@@ -200,7 +200,33 @@ public static class HydrationExecutor
             }
         }
 
-        return new HydratedPage(totalCount, documentMetadata, tableRows, descriptorRows);
+        // 5. Document-reference auxiliary lookup (gated by plan property AND the caller-supplied
+        //    execution option — write-path callers opt out because they discard the result).
+        HydratedDocumentReferenceLookup? documentReferenceLookup = null;
+
+        if (
+            executionOptions.IncludeDocumentReferenceLookup
+            && plan.DocumentReferenceLookup is { } documentReferenceLookupPlan
+        )
+        {
+            if (!await reader.NextResultAsync(ct))
+            {
+                throw new InvalidOperationException(
+                    "Expected document-reference lookup result set but no more result sets available."
+                );
+            }
+
+            documentReferenceLookup = await HydrationReader.ReadDocumentReferenceLookupRowsAsync(
+                reader,
+                documentReferenceLookupPlan,
+                ct
+            );
+        }
+
+        return new HydratedPage(totalCount, documentMetadata, tableRows, descriptorRows)
+        {
+            DocumentReferenceLookup = documentReferenceLookup,
+        };
     }
 
     private static HydratedDescriptorRows[] CreateDescriptorRowsBuffer(int count)

@@ -459,3 +459,6 @@ tmpclaude*
 # Allow ApiSchema.json inside fixture inputs (overrides apiSchema*.json rule)
 !**/Fixtures/**/inputs/ApiSchema*.json
 !**/*IntegrationFixtures/**/inputs/*.ApiSchema.json
+
+# Language server / IDE project metadata cache (C# Dev Kit, Rider, etc.)
+*.lscache

@@ -1034,37 +1034,40 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_IdentityPropagationFallb
     }
 
     [Test]
-    public void It_should_emit_identity_propagation_as_instead_of_update()
+    public void It_should_emit_identity_propagation_as_after_update()
     {
+        // INSTEAD OF UPDATE was rejected by SQL Server: the trigger body's referrer
+        // UPDATE re-enters the owning table's trigger and SQL Server raises error 570
+        // (INSTEAD OF triggers do not support direct recursion). AFTER UPDATE lets the
+        // base row update apply first; the trigger body only needs to reconcile
+        // referrer stored projected identity columns.
         _ddl.Should().Contain("CREATE OR ALTER TRIGGER [edfi].[TR_School_PropagateIdentity]");
         _ddl.Should().Contain("ON [edfi].[School]");
-        _ddl.Should().Contain("INSTEAD OF UPDATE");
-        _ddl.Should().NotContain("AFTER UPDATE");
+        _ddl.Should().Contain("AFTER UPDATE");
+        _ddl.Should().NotContain("INSTEAD OF UPDATE");
     }
 
     [Test]
-    public void It_should_propagate_referrer_identity_columns_before_the_base_update()
+    public void It_should_propagate_referrer_identity_columns_when_identity_changed()
     {
-        var referrerUpdateIndex = _ddl.IndexOf("UPDATE r", StringComparison.Ordinal);
-        var baseUpdateIndex = _ddl.IndexOf("UPDATE t", StringComparison.Ordinal);
-
+        _ddl.Should().Contain("UPDATE r");
         _ddl.Should().Contain("FROM [edfi].[Enrollment] r");
         _ddl.Should().Contain("INNER JOIN deleted d ON r.[School_DocumentId] = d.[DocumentId]");
         _ddl.Should()
             .Contain(
                 "AND ((r.[School_SchoolId] = d.[SchoolId]) OR (r.[School_SchoolId] IS NULL AND d.[SchoolId] IS NULL));"
             );
-        referrerUpdateIndex.Should().BeGreaterOrEqualTo(0);
-        baseUpdateIndex.Should().BeGreaterThan(referrerUpdateIndex);
     }
 
     [Test]
-    public void It_should_apply_the_intercepted_update_to_the_trigger_table_after_propagation()
+    public void It_should_not_emit_a_self_update_block_on_the_trigger_table()
     {
+        // The trigger is AFTER UPDATE: the base row update is already applied by
+        // SQL Server before the body runs. Emitting `UPDATE <self>` here would
+        // re-fire the trigger and (under INSTEAD OF) caused error 570.
+        _ddl.Should().NotContain("FROM [edfi].[School] t");
         _ddl.Should()
-            .Contain("SET t.[SchoolId] = i.[SchoolId], t.[NameOfInstitution] = i.[NameOfInstitution]");
-        _ddl.Should().Contain("FROM [edfi].[School] t");
-        _ddl.Should().Contain("INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];");
+            .NotContain("SET t.[SchoolId] = i.[SchoolId], t.[NameOfInstitution] = i.[NameOfInstitution]");
     }
 }
 

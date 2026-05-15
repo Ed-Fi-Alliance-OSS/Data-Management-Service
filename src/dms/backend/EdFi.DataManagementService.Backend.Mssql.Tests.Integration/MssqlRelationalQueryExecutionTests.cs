@@ -71,6 +71,7 @@ internal sealed class RecordingMssqlDocumentHydrator(
     public async Task<HydratedPage> HydrateAsync(
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken ct
     )
     {
@@ -81,7 +82,15 @@ internal sealed class RecordingMssqlDocumentHydrator(
         await using var connection = new SqlConnection(selectedInstance.ConnectionString);
         await connection.OpenAsync(ct);
 
-        return await HydrationExecutor.ExecuteAsync(connection, plan, keyset, SqlDialect.Mssql, null, ct);
+        return await HydrationExecutor.ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            SqlDialect.Mssql,
+            transaction: null,
+            executionOptions,
+            ct
+        );
     }
 }
 
@@ -90,7 +99,10 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
 {
     private readonly MssqlRelationalQueryExecutionRecorder _recorder =
         recorder ?? throw new ArgumentNullException(nameof(recorder));
-    private readonly IRelationalReadMaterializer _inner = CreateInnerMaterializer();
+    private readonly RelationalReadMaterializer _inner = new(
+        new IntegrationFixtureSlugResolver(),
+        Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions())
+    );
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
@@ -107,22 +119,14 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
         return materializedDocuments;
     }
 
-    private static IRelationalReadMaterializer CreateInnerMaterializer()
-    {
-        var innerType =
-            typeof(RelationalReadMaterializationRequest).Assembly.GetType(
-                "EdFi.DataManagementService.Backend.RelationalReadMaterializer",
-                throwOnError: true
-            )
-            ?? throw new InvalidOperationException(
-                "Could not resolve internal relational read materializer type."
-            );
+    public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan) =>
+        _inner.StripReferenceLinks(document, readPlan);
+}
 
-        return Activator.CreateInstance(innerType, nonPublic: true) as IRelationalReadMaterializer
-            ?? throw new InvalidOperationException(
-                "Could not construct internal relational read materializer."
-            );
-    }
+internal sealed class IntegrationFixtureSlugResolver : IDocumentLinkSlugResolver
+{
+    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+        new(ProjectEndpointName: "test", EndpointName: "tests", ResourceName: "Test");
 }
 
 internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalReadTargetLookupService

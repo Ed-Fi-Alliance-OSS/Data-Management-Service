@@ -111,11 +111,15 @@ GO
 
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Propagation]
 ON [edfi].[School]
-INSTEAD OF UPDATE
+AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
     IF (UPDATE([SchoolId]))
+    AND EXISTS (
+        SELECT 1 FROM inserted i INNER JOIN deleted d ON i.[DocumentId] = d.[DocumentId]
+        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL))
+    )
     BEGIN
         UPDATE r
         SET r.[SchoolId_Unified] = i.[SchoolId]
@@ -126,11 +130,6 @@ BEGIN
         AND ((r.[SchoolId_Unified] = d.[SchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[SchoolId] IS NULL));
 
     END
-
-    UPDATE t
-    SET t.[SchoolId] = i.[SchoolId]
-    FROM [edfi].[School] t
-    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
 END;
 GO
 

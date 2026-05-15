@@ -200,6 +200,16 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_emit_content_version_column_on_document_cache_table()
+    {
+        // Schema-only column added for the cached-vs-canonical freshness check
+        // (cached.ContentVersion == dms.Document.ContentVersion AND
+        //  cached.LastModifiedAt == dms.Document.ContentLastModifiedAt).
+        // Runtime cache reader/writer lands in a follow-on ticket.
+        _ddl.Should().Contain("\"ContentVersion\" bigint NOT NULL");
+    }
+
+    [Test]
     public void It_should_create_document_change_event_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"DocumentChangeEvent\"");
@@ -756,6 +766,14 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     // ── Tables ──────────────────────────────────────────────────────
+
+    [Test]
+    public void It_should_emit_content_version_column_on_document_cache_table()
+    {
+        // Schema-only column added for the cached-vs-canonical freshness check.
+        // Runtime cache reader/writer lands in a follow-on ticket.
+        _ddl.Should().Contain("[ContentVersion] bigint NOT NULL");
+    }
 
     [Test]
     public void It_should_create_all_eight_tables()

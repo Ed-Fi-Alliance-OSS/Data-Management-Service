@@ -55,6 +55,21 @@ public sealed record DescriptorUriRow(long DescriptorId, string Uri);
 public sealed record HydratedDescriptorRows(IReadOnlyList<DescriptorUriRow> Rows);
 
 /// <summary>
+/// One row from the document-reference auxiliary lookup result set.
+/// </summary>
+/// <param name="DocumentId">The internal document identity referenced by hydrated rows.</param>
+/// <param name="DocumentUuid">The public document UUID rendered into <c>link.href</c>.</param>
+/// <param name="ResourceKeyId">The resource-key id used to resolve <c>link.rel</c>.</param>
+public sealed record DocumentReferenceLookupRow(long DocumentId, Guid DocumentUuid, short ResourceKeyId);
+
+/// <summary>
+/// Hydrated rows from the page-batched document-reference auxiliary lookup. Drives the
+/// per-page <c>DocumentId → (DocumentUuid, ResourceKeyId)</c> map used by link injection.
+/// </summary>
+/// <param name="Rows">Lookup rows in result-set order (sorted by <c>DocumentId</c> ascending).</param>
+public sealed record HydratedDocumentReferenceLookup(IReadOnlyList<DocumentReferenceLookupRow> Rows);
+
+/// <summary>
 /// Full hydration result for a page of documents.
 /// </summary>
 /// <param name="TotalCount">
@@ -74,7 +89,16 @@ public sealed record HydratedPage(
     IReadOnlyList<DocumentMetadataRow> DocumentMetadata,
     IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder,
     IReadOnlyList<HydratedDescriptorRows> DescriptorRowsInPlanOrder
-);
+)
+{
+    /// <summary>
+    /// Hydrated rows from the optional document-reference auxiliary lookup. Populated when the
+    /// resource read plan carries a non-null <c>DocumentReferenceLookup</c>; otherwise
+    /// <see langword="null"/>. Drives <c>link.rel</c> / <c>link.href</c> emission in
+    /// reconstitution.
+    /// </summary>
+    public HydratedDocumentReferenceLookup? DocumentReferenceLookup { get; init; }
+}
 
 /// <summary>
 /// Discriminated union specifying how the page keyset is materialized for hydration.

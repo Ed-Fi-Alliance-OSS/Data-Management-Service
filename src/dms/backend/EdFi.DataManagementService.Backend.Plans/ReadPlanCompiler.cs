@@ -18,6 +18,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
     private readonly DescriptorProjectionPlanCompiler _descriptorProjectionPlanCompiler = new(dialect);
+    private readonly DocumentReferenceLookupPlanCompiler _documentReferenceLookupPlanCompiler = new(dialect);
 
     /// <summary>
     /// Returns <see langword="true" /> when the resource uses relational-table storage.
@@ -105,13 +106,19 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             hydrationPlanMetadata.TablesByName,
             hydrationPlanMetadata.ColumnOrdinalsByTable
         );
+        var documentReferenceLookupPlan = _documentReferenceLookupPlanCompiler.Compile(
+            resourceModel,
+            keysetTable,
+            hydrationPlanMetadata.TablesByName
+        );
 
         var readPlan = new ResourceReadPlan(
             Model: resourceModel,
             KeysetTable: keysetTable,
             TablePlansInDependencyOrder: tablePlans,
             ReferenceIdentityProjectionPlansInDependencyOrder: referenceIdentityProjectionPlans,
-            DescriptorProjectionPlansInOrder: descriptorProjectionPlans
+            DescriptorProjectionPlansInOrder: descriptorProjectionPlans,
+            DocumentReferenceLookup: documentReferenceLookupPlan
         );
 
         ReadPlanProjectionContractValidator.ValidateOrThrow(

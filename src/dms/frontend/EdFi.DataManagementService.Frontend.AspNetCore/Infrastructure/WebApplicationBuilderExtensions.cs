@@ -62,6 +62,9 @@ public static class WebApplicationBuilderExtensions
             .Configure<ConfigurationServiceSettings>(
                 webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
             )
+            .Configure<ResourceLinksOptions>(
+                webAppBuilder.Configuration.GetSection("DataManagement:ResourceLinks")
+            )
             .AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
             .AddSingleton<IStartupProcessExit, EnvironmentStartupProcessExit>()
             .AddSingleton<StartupPhaseExecutor>()
