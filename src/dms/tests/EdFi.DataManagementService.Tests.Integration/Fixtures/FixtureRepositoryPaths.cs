@@ -26,6 +26,8 @@ internal static class FixtureRepositoryPaths
             "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics",
         [FixtureKey.ProfileRootOnlyMerge] =
             "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-root-only-merge",
+        [FixtureKey.DescriptorRuntime] =
+            "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/descriptor-runtime",
         [FixtureKey.ProfileSeparateTableMerge] =
             "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-separate-table-merge",
         [FixtureKey.ProfileNestedAndRootExtensionChildren] =
