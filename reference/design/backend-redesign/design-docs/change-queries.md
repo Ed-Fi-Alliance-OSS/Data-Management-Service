@@ -962,6 +962,8 @@ The resource types that get synced first are the most susceptible to this issue 
 
 Additionally, this extraction method is susceptible to the `Unresolved references when not using snapshots` issue described above, meaning it requires retry logic in the synchronization tool.
 
+API publisher already supports reverse paging.
+
 ### How to disable the feature
 
 The feature is enabled by default, and the DB backups used by the Minimal and Populated templates include Change Queries objects.
@@ -1049,7 +1051,7 @@ CREATE TABLE [tracked_changes_edfi].[Grade]
 
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Grade_CreatedAt] DEFAULT (sysutcdatetime())
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Grade_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Grade] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 ```
@@ -1061,6 +1063,8 @@ MSSQL table definition example for the shared `tracked_changes_edfi.Descriptor`:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Descriptor]
 (
+  	[Discriminator] nvarchar(128) NOT NULL,
+
     [Old_Namespace] nvarchar(255) NOT NULL,
     [Old_CodeValue] nvarchar(50) NOT NULL,
 
@@ -1069,8 +1073,8 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
 
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Grade_CreatedAt] DEFAULT (sysutcdatetime())
-    CONSTRAINT [PK_tracked_changes_edfi_Grade] PRIMARY KEY CLUSTERED ([ChangeVersion])
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_CreatedAt] DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_Descriptor] PRIMARY KEY CLUSTERED ([ChangeVersion])
 )
 ```
 
@@ -1168,10 +1172,10 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([GradeTypeDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([StudentSectionAssociation_BeginDate]) OR UPDATE([StudentSectionAssociation_LocalCourseCode]) OR UPDATE([StudentSectionAssociation_SectionIdentifier]) OR UPDATE([StudentSectionAssociation_SessionName]) OR UPDATE([StudentSectionAssociation_StudentUniqueId]))
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [IdentityVersion] bigint NOT NULL);
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[IdentityVersion] INTO @identityChangedDocs ([DocumentId], [IdentityVersion])
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs ([DocumentId], [ContentVersion])
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
@@ -1252,6 +1256,19 @@ BEGIN
 END;
 ```
 
+##### Cascade-ordering requirement for deletes
+
+Because the `_Stamp` trigger's DELETE branch joins `dms.Document` to read `DocumentUuid` and `ContentVersion`, DMS MUST delete the concrete resource row (or the `dms.Descriptor` row for descriptor resources) before deleting the corresponding `dms.Document` row, within the same transaction. If `dms.Document` were deleted first, the `ON DELETE CASCADE` FK from the resource row to `dms.Document(DocumentId)` would remove the resource row inside the same statement, and the resource's `AFTER DELETE` trigger would fire after the parent row is already gone, causing the `INNER JOIN [dms].[Document]` (and the trigger's leading `UPDATE [dms].[Document] SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]`) to match no rows and silently drop the tombstone.
+
+DMS therefore issues two `DELETE` statements per document deletion, in order, within the same transaction:
+
+1. `DELETE FROM "<projectSchema>"."<ResourceTable>" WHERE "DocumentId" = @documentId` (or `DELETE FROM "dms"."Descriptor" WHERE "DocumentId" = @documentId` for descriptor resources). This fires the resource's `_Stamp` trigger while `dms.Document` is still present, so the trigger's `UPDATE` allocates a fresh `ChangeVersion` on the parent and the tombstone `INSERT` reads `DocumentUuid` and the freshly bumped `ContentVersion` via the existing join.
+2. `DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId`. This finalizes the lifecycle and cascades to `dms.DocumentChangeEvent`, `dms.DocumentCache`, and `dms.ReferentialIdentity` as defined in [data-model.md](data-model.md).
+
+The leading trigger `UPDATE` of `dms.Document.ContentVersion` therefore runs against a row that the second statement removes. This is intentional: it gives the tombstone the standard read-after-bump `ChangeVersion`, at the cost of one sequence value and one transient row write per delete.
+
+The `ON DELETE CASCADE` FK from the resource row to `dms.Document` (see [data-model.md](data-model.md)) is retained as a referential-integrity safety net. Any direct `DELETE FROM dms.Document` issued outside the DMS write path will succeed without producing a tombstone; this is acceptable because the supported deletion path is exclusively through DMS.
+
 There is no `*_Stamp` trigger in `dms.Descriptor`, so we will create one that follows the existing convention.
 
 #### Authorization views
@@ -1299,7 +1316,7 @@ FROM
 
 ### /deletes endpoints
 
-Each resource and descriptor will get an accompanying `/deletes` endpoint. The response body should list the identifying fields with the same names used in the resource's `queryFieldMapping` in ApiSchema.json.
+Each resource and descriptor will get an accompanying `/deletes` endpoint, the response body will remain the same as ODS.
 
 An example generated SQL query used to fulfill the `GET grades/deletes` request is:
 
@@ -1345,7 +1362,7 @@ FROM
     AND c.Old_StudentSectionAssociation_StudentUniqueId     = src.StudentSectionAssociation_StudentUniqueId
 WHERE 
   src.StudentSectionAssociation_BeginDate IS NULL -- Exclude entries that were recreated, use any identity column
-  AND c.NewBeginDate IS NULL -- Exclude key changes, use any New_* identity column
+  AND c.New_StudentSectionAssociation_BeginDate IS NULL -- Exclude key changes, use any New_* identity column
   AND (
       c.ChangeVersion >= @MinChangeVersion 
       AND c.ChangeVersion <= @MaxChangeVersion
@@ -1392,7 +1409,7 @@ ORDER BY
 
 ### /keyChanges endpoints
 
-Each resource and descriptor will get an accompanying `/keyChanges` endpoint. The response body should list the identifying fields with the same names used in the resource's `queryFieldMapping` in ApiSchema.json, plus the `Old_*` and `New_*` prefixes.
+Each resource and descriptor will get an accompanying `/keyChanges` endpoint, the response body will remain the same as ODS. 
 
 An example generated SQL query used to fulfill the `GET grades/keyChanges` request is:
 
@@ -1467,7 +1484,7 @@ ORDER BY
   - Emit a new index in `dms.Descriptor` for the Discriminator, CodeValue, Namespace columns
   - Emit a new index in `dms.Document` for the ContentVersion column
 - Add the `ReadChanges` action and authorization strategies to CMS's auth metadata
-- Update resource and descriptor endpoints to filter by Min/Max ChangeVersion.
+- Update resource and descriptor endpoints to add the Min/Max ChangeVersion filter
 - Add the `/deletes` endpoint.
   - Same contract as ODS; there should not be breaking changes.
   - Add cascading deletes tests for abstract resources like StudentProgramAssociations; see ODS-4087.

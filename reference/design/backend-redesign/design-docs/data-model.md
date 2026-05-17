@@ -624,6 +624,7 @@ One row per document; PK is `DocumentId` (shared surrogate key).
 Typical structure:
 
 - `DocumentId BIGINT` **PK/FK** → `dms.Document(DocumentId)` ON DELETE CASCADE
+  - The `ON DELETE CASCADE` action is a referential-integrity safety net, not the primary deletion path. The DMS write path deletes the concrete resource row before deleting the corresponding `dms.Document` row (within the same transaction) so that the resource's `_Stamp` trigger can read `DocumentUuid` and `ContentVersion` from `dms.Document` before the parent row is removed. See [change-queries.md](change-queries.md) §"Cascade-ordering requirement for deletes" for the trigger-side rationale.
 - Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint over the identity **binding/path** columns.
   - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
   - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns; the natural-key unique constraint remains defined over binding columns to preserve API path/presence semantics.
