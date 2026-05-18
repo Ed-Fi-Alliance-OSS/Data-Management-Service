@@ -738,7 +738,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         );
         var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
 
-        var selector = new RelationalEdOrgAuthorizationSubjectSelector();
+        var selector = CreateSelector();
         var firstResult = selector.Select(
             mappingSet,
             resource,
@@ -915,11 +915,8 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         QualifiedResourceName resource,
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
     ) =>
-        new RelationalEdOrgAuthorizationSubjectSelector().Select(
-            mappingSet,
-            resource,
-            CreateSupportedStrategies(configuredAuthorizationStrategies)
-        );
+        CreateSelector()
+            .Select(mappingSet, resource, CreateSupportedStrategies(configuredAuthorizationStrategies));
 
     private static IReadOnlyList<SupportedRelationshipAuthorizationStrategy> CreateSupportedStrategies(
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
@@ -1101,4 +1098,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             >()
         );
     }
+
+    private static RelationalEdOrgAuthorizationSubjectSelector CreateSelector() =>
+        new(new RelationalEdOrgAuthorizationElementResolutionCache());
 }

@@ -33,7 +33,7 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
     IRelationalWriteSessionFactory writeSessionFactory,
-    RelationalEdOrgAuthorizationSubjectSelector? edOrgAuthorizationSubjectSelector = null
+    RelationalEdOrgAuthorizationSubjectSelector edOrgAuthorizationSubjectSelector
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -66,7 +66,7 @@ public sealed class RelationalDocumentStoreRepository(
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
     private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
-        edOrgAuthorizationSubjectSelector ?? new RelationalEdOrgAuthorizationSubjectSelector()
+        edOrgAuthorizationSubjectSelector
     );
 
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)

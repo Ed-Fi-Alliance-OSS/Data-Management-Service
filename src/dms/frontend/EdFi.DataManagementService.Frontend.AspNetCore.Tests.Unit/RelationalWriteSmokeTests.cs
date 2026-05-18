@@ -12,6 +12,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -415,6 +416,8 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton(jwtValidationService);
                 services.AddSingleton<IClaimSetProvider>(claimSetProvider);
                 services.AddSingleton(applicationContextProvider);
+                services.AddSingleton<RelationalEdOrgAuthorizationElementResolutionCache>();
+                services.AddSingleton<RelationalEdOrgAuthorizationSubjectSelector>();
                 services.AddScoped<IDocumentStoreRepository, RelationalDocumentStoreRepository>();
                 services.AddSingleton<IDatabaseFingerprintReader, EffectiveSchemaFingerprintReader>();
                 services.AddSingleton(resourceKeyValidator);

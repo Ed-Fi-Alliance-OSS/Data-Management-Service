@@ -13,11 +13,12 @@ public sealed class RelationshipAuthorizationPlanner
     private readonly RelationalEdOrgAuthorizationSubjectSelector _edOrgAuthorizationSubjectSelector;
 
     public RelationshipAuthorizationPlanner(
-        RelationalEdOrgAuthorizationSubjectSelector? edOrgAuthorizationSubjectSelector = null
+        RelationalEdOrgAuthorizationSubjectSelector edOrgAuthorizationSubjectSelector
     )
     {
         _edOrgAuthorizationSubjectSelector =
-            edOrgAuthorizationSubjectSelector ?? new RelationalEdOrgAuthorizationSubjectSelector();
+            edOrgAuthorizationSubjectSelector
+            ?? throw new ArgumentNullException(nameof(edOrgAuthorizationSubjectSelector));
     }
 
     public RelationshipAuthorizationResult PlanStoredValues(

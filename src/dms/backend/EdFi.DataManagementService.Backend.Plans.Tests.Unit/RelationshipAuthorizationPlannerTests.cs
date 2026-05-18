@@ -61,7 +61,7 @@ public class Given_RelationshipAuthorizationPlannerTests
     public void It_should_plan_stored_specs_with_strategy_or_order_and_subject_and_semantics()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanStoredValues(
             CreateMultipleRootSubjectMappingSet(),
@@ -137,7 +137,7 @@ public class Given_RelationshipAuthorizationPlannerTests
         var resource = new QualifiedResourceName("Ed-Fi", "CourseOffering");
         var writePlan = mappingSet.GetWritePlanOrThrow(resource);
         var rootTablePlan = GetRootTableWritePlan(writePlan);
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanProposedValues(
             mappingSet,
@@ -215,7 +215,7 @@ public class Given_RelationshipAuthorizationPlannerTests
         var configuredAuthorizationStrategies = CreateConfiguredAuthorizationStrategies(
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
         );
-        var selectedSubject = new RelationalEdOrgAuthorizationSubjectSelector()
+        var selectedSubject = CreateSelector()
             .Select(mappingSet, resource, CreateSupportedStrategies(configuredAuthorizationStrategies))
             .Subjects.Single();
         var writePlan = mappingSet.GetWritePlanOrThrow(resource);
@@ -239,7 +239,7 @@ public class Given_RelationshipAuthorizationPlannerTests
                 ),
             ]
         );
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanProposedValues(
             mappingSet,
@@ -287,7 +287,7 @@ public class Given_RelationshipAuthorizationPlannerTests
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
         var resource = new QualifiedResourceName("Ed-Fi", "CourseTranscript");
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanStoredValues(
             mappingSet,
@@ -325,7 +325,7 @@ public class Given_RelationshipAuthorizationPlannerTests
     public void It_should_preserve_relationship_local_order_when_supported_strategies_skip_noop_entries()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanStoredValues(
             CreateMultipleRootSubjectMappingSet(),
@@ -357,7 +357,7 @@ public class Given_RelationshipAuthorizationPlannerTests
     public void It_should_preserve_relationship_local_order_on_subject_selection_failures_after_classification()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanStoredValues(
             CreateMinimalMappingSet(resource),
@@ -404,7 +404,7 @@ public class Given_RelationshipAuthorizationPlannerTests
     public void It_should_map_known_but_not_enabled_outcomes_to_shared_failure_metadata()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanStoredValues(
             CreateMinimalMappingSet(resource),
@@ -432,7 +432,7 @@ public class Given_RelationshipAuthorizationPlannerTests
     public void It_should_return_no_authorization_required_when_no_configured_strategies_are_present()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanStoredValues(
             CreateMinimalMappingSet(resource),
@@ -452,7 +452,7 @@ public class Given_RelationshipAuthorizationPlannerTests
     public void It_should_return_no_further_authorization_required_without_emitting_checks()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanStoredValues(
             CreateMinimalMappingSet(resource),
@@ -478,7 +478,7 @@ public class Given_RelationshipAuthorizationPlannerTests
     public void It_should_preserve_known_but_not_enabled_failures_when_security_configuration_errors_win()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
-        var planner = new RelationshipAuthorizationPlanner();
+        var planner = CreatePlanner();
 
         var result = planner.PlanStoredValues(
             CreateMinimalMappingSet(resource),
@@ -758,4 +758,9 @@ public class Given_RelationshipAuthorizationPlannerTests
             >()
         );
     }
+
+    private static RelationshipAuthorizationPlanner CreatePlanner() => new(CreateSelector());
+
+    private static RelationalEdOrgAuthorizationSubjectSelector CreateSelector() =>
+        new(new RelationalEdOrgAuthorizationElementResolutionCache());
 }

@@ -23,10 +23,7 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
 {
     private readonly RelationalEdOrgAuthorizationElementResolutionCache _elementResolutionCache;
 
-    public RelationalEdOrgAuthorizationSubjectSelector()
-        : this(new RelationalEdOrgAuthorizationElementResolutionCache()) { }
-
-    internal RelationalEdOrgAuthorizationSubjectSelector(
+    public RelationalEdOrgAuthorizationSubjectSelector(
         RelationalEdOrgAuthorizationElementResolutionCache elementResolutionCache
     )
     {

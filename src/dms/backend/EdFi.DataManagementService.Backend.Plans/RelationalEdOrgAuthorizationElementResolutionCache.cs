@@ -14,19 +14,13 @@ internal sealed record RelationalEdOrgAuthorizationElementResolution(
     IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> ResolvedCandidates
 );
 
-internal sealed class RelationalEdOrgAuthorizationElementResolutionCache(
-    Func<
-        ConcreteResourceModel,
-        EdOrgSecurableElement,
-        IReadOnlyList<ResolvedEdOrgSecurableElementCandidate>
-    > resolveCandidates
-)
+public sealed class RelationalEdOrgAuthorizationElementResolutionCache
 {
     private readonly Func<
         ConcreteResourceModel,
         EdOrgSecurableElement,
         IReadOnlyList<ResolvedEdOrgSecurableElementCandidate>
-    > _resolveCandidates = resolveCandidates ?? throw new ArgumentNullException(nameof(resolveCandidates));
+    > _resolveCandidates;
 
     private readonly ConditionalWeakTable<
         MappingSet,
@@ -39,7 +33,18 @@ internal sealed class RelationalEdOrgAuthorizationElementResolutionCache(
     public RelationalEdOrgAuthorizationElementResolutionCache()
         : this(SecurableElementColumnPathResolver.ResolveEducationOrganizationCandidates) { }
 
-    public IReadOnlyList<RelationalEdOrgAuthorizationElementResolution> GetOrResolveAll(
+    internal RelationalEdOrgAuthorizationElementResolutionCache(
+        Func<
+            ConcreteResourceModel,
+            EdOrgSecurableElement,
+            IReadOnlyList<ResolvedEdOrgSecurableElementCandidate>
+        > resolveCandidates
+    )
+    {
+        _resolveCandidates = resolveCandidates ?? throw new ArgumentNullException(nameof(resolveCandidates));
+    }
+
+    internal IReadOnlyList<RelationalEdOrgAuthorizationElementResolution> GetOrResolveAll(
         MappingSet mappingSet,
         QualifiedResourceName resource
     )

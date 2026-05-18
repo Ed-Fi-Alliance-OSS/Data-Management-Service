@@ -326,6 +326,7 @@ public static class WebApplicationBuilderExtensions
 
     private static void ReplaceWithRelationalDocumentStoreRepository(IServiceCollection services)
     {
+        services.TryAddSingleton<RelationalEdOrgAuthorizationElementResolutionCache>();
         services.TryAddSingleton<RelationalEdOrgAuthorizationSubjectSelector>();
         services.TryAddScoped<RelationalDocumentStoreRepository>();
         services.Replace(
@@ -337,6 +338,7 @@ public static class WebApplicationBuilderExtensions
 
     private static void ReplaceWithRelationalQueryHandler(IServiceCollection services)
     {
+        services.TryAddSingleton<RelationalEdOrgAuthorizationElementResolutionCache>();
         services.TryAddSingleton<RelationalEdOrgAuthorizationSubjectSelector>();
         services.TryAddScoped<RelationalDocumentStoreRepository>();
         services.Replace(
