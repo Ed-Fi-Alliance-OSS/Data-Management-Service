@@ -524,7 +524,10 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
             for (var i = 0; i < context.IndexInventory.Count; i++)
             {
-                if (context.IndexInventory[i].Name == existing.Name)
+                if (
+                    context.IndexInventory[i].Name == existing.Name
+                    && context.IndexInventory[i].Table == existing.Table
+                )
                 {
                     context.IndexInventory[i] = widened;
                     break;
@@ -561,18 +564,12 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     /// found.
     /// </summary>
     /// <remarks>
-    /// <para>Array-nested paths (containing <c>[*]</c>) resolve onto the child collection table
+    /// Array-nested paths (containing <c>[*]</c>) resolve onto the child collection table
     /// that owns the nested reference — for example
     /// <c>$.requiredAssessments[*].assessmentReference.namespace</c> on
     /// <c>edfi.GraduationPlan</c> resolves to
     /// <c>edfi.GraduationPlanRequiredAssessment.RequiredAssessmentAssessment_Namespace</c>.
-    /// Non-nested paths still resolve to the root table because their bindings live there.</para>
-    /// <para>This duplicates the EdOrg/Namespace branches of
-    /// <c>EdFi.DataManagementService.Backend.Plans.SecurableElementColumnPathResolver</c>.
-    /// The duplication is intentional: <c>Backend.Plans</c> references <c>Backend.RelationalModel</c>,
-    /// so this pass cannot call the resolver directly without inverting the dependency. A
-    /// follow-up ticket will extract a shared resolver into <c>Backend.RelationalModel</c>
-    /// consumed by both call sites.</para>
+    /// Non-nested paths still resolve to the root table because their bindings live there.
     /// </remarks>
     private static (DbTableName Table, DbColumnName Column) ResolveSecurableElementLocation(
         ConcreteResourceModel concrete,

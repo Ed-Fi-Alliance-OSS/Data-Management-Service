@@ -1203,6 +1203,83 @@ public class Given_Person_Indexes_Are_Built_Twice
 }
 
 /// <summary>
+/// Test fixture asserting that include-widening targets the correct inventory row when two
+/// auth indexes share the same <see cref="DbIndexInfo.Name"/> but live in different schemas.
+/// Auth index names are <c>IX_{TableName}_{Columns}_Auth</c> with no schema prefix, so dialect
+/// uniqueness scoping (per-schema in Pgsql, per-(schema, table) in Mssql) permits same-named
+/// auth indexes in different <c>(schema, table)</c>. The widen branch in
+/// <see cref="DeriveAuthorizationIndexInventoryPass"/> must match by <c>Name</c> AND
+/// <c>Table</c> — matching by <c>Name</c> alone could mutate the first same-named inventory
+/// entry instead of the intended scoped row.
+/// </summary>
+[TestFixture]
+public class Given_Auth_Index_Names_Collide_Across_Schemas
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Pre-seed an Auth-kind index in a non-edfi schema with the SAME name the pass will
+        // emit for edfi.StudentContactAssociation's PA index. The seeded entry is added to the
+        // inventory BEFORE the pass runs, so a Name-only match in the widen loop would update
+        // this row instead of the pass's own emission.
+        var extSchemaTable = new DbTableName(new DbSchemaName("ext"), "StudentContactAssociation");
+        var fkColumn = new DbColumnName("Student_DocumentId");
+        var collidingName = new DbIndexName(
+            ConstraintNaming.BuildAuthorizationIndexName(extSchemaTable, [fkColumn])
+        );
+
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+            {
+                ctx.IndexInventory.Add(
+                    new DbIndexInfo(
+                        collidingName,
+                        extSchemaTable,
+                        KeyColumns: [fkColumn],
+                        IsUnique: false,
+                        Kind: DbIndexKind.Authorization,
+                        IncludeColumns: null
+                    )
+                );
+
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildPersonChainHittingPaCoveredColumn()
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildStudentContactAssociationWithStudentBinding()
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildPlainResource("Student"));
+            })
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_widen_only_the_edfi_scoped_entry()
+    {
+        var edfiEntry = _authIndexes.Single(i =>
+            i.Table.Schema.Value == "edfi"
+            && i.Table.Name == "StudentContactAssociation"
+            && i.KeyColumns[0].Value == "Student_DocumentId"
+        );
+        edfiEntry.IncludeColumns.Should().NotBeNull();
+        edfiEntry.IncludeColumns!.Select(c => c.Value).Should().Equal("Contact_DocumentId", "DocumentId");
+    }
+
+    [Test]
+    public void It_should_leave_the_same_named_entry_in_the_other_schema_untouched()
+    {
+        var extEntry = _authIndexes.Single(i =>
+            i.Table.Schema.Value == "ext" && i.Table.Name == "StudentContactAssociation"
+        );
+        extEntry.IncludeColumns.Should().BeNull();
+        extEntry.Name.Value.Should().Be("IX_StudentContactAssociation_Student_DocumentId_Auth");
+    }
+}
+
+/// <summary>
 /// Test fixture asserting that an FK-support index and an Authorization index can target the
 /// same root-table column without tripping <c>ValidateIndexNameUniqueness</c> in
 /// <see cref="RelationalModelSetBuilderContext.BuildResult"/>. The <c>_Auth</c> suffix on
