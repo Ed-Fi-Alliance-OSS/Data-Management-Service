@@ -32,7 +32,8 @@ public sealed class RelationalDocumentStoreRepository(
     IReadableProfileProjector readableProfileProjector,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
-    IRelationalWriteSessionFactory writeSessionFactory
+    IRelationalWriteSessionFactory writeSessionFactory,
+    RelationalEdOrgAuthorizationSubjectSelector? edOrgAuthorizationSubjectSelector = null
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -64,6 +65,8 @@ public sealed class RelationalDocumentStoreRepository(
         deleteConstraintResolver ?? throw new ArgumentNullException(nameof(deleteConstraintResolver));
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
+    private readonly RelationalEdOrgAuthorizationSubjectSelector _edOrgAuthorizationSubjectSelector =
+        edOrgAuthorizationSubjectSelector ?? new RelationalEdOrgAuthorizationSubjectSelector();
 
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -612,7 +615,7 @@ public sealed class RelationalDocumentStoreRepository(
                 break;
 
             case RelationshipAuthorizationClassificationOutcome.SupportedStrategies:
-                var selectedEdOrgSubjects = RelationalEdOrgAuthorizationSubjectSelector.Select(
+                var selectedEdOrgSubjects = _edOrgAuthorizationSubjectSelector.Select(
                     mappingSet,
                     resource,
                     [
@@ -628,10 +631,16 @@ public sealed class RelationalDocumentStoreRepository(
                 )
                 {
                     return new QueryResult.QueryFailureSecurityConfiguration([
-                        selectedEdOrgSubjects.FailureMessage
-                            ?? throw new InvalidOperationException(
-                                "EdOrg authorization subject selection must provide a failure message for security-configuration errors."
-                            ),
+                        BuildEdOrgSubjectSelectionFailureMessage(
+                            mappingSet,
+                            resource,
+                            [
+                                .. authorizationStrategyClassification.SupportedStrategies.Select(
+                                    static strategy => strategy.ConfiguredStrategy
+                                ),
+                            ],
+                            selectedEdOrgSubjects.SecurityConfigurationFailures
+                        ),
                     ]);
                 }
 
@@ -1136,6 +1145,102 @@ public sealed class RelationalDocumentStoreRepository(
             + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op.";
     }
 
+    private static string BuildEdOrgSubjectSelectionFailureMessage(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
+        ArgumentNullException.ThrowIfNull(failures);
+
+        var unresolvedDetails = failures
+            .Where(static failure =>
+                failure.FailureKind is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+            )
+            .Select(static failure =>
+                FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath)
+            )
+            .Where(static detail => detail is not null)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static detail => detail, StringComparer.Ordinal)
+            .Cast<string>()
+            .ToArray();
+
+        var nonRootCandidateDetails = failures
+            .Where(static failure =>
+                failure.FailureKind is RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+                && failure.Location?.JsonPath is not null
+            )
+            .Select(static failure =>
+            {
+                var location = failure.Location;
+
+                if (location is null || location.Table is null || location.Column is null)
+                {
+                    return null;
+                }
+
+                var detail = FormatSecurableElementDetail(location.ReadableName, location.JsonPath);
+
+                return $"{detail} -> '{location.Table}.{location.Column.Value}'";
+            })
+            .Where(static detail => detail is not null)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static detail => detail, StringComparer.Ordinal)
+            .Cast<string>()
+            .ToArray();
+
+        var configuredDetails = failures
+            .Select(static failure =>
+                FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath)
+            )
+            .Where(static detail => detail is not null)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static detail => detail, StringComparer.Ordinal)
+            .Cast<string>()
+            .ToArray();
+
+        var configuredDetailText =
+            configuredDetails.Length == 0
+                ? "No EducationOrganization securable elements are configured for this resource."
+                : $"Configured elements: [{string.Join(", ", configuredDetails)}].";
+        var nonRootCandidateText =
+            nonRootCandidateDetails.Length == 0
+                ? "No EducationOrganization securable elements resolved to relational columns."
+                : $"Resolved non-root candidates: [{string.Join(", ", nonRootCandidateDetails)}].";
+
+        List<string> detailSections = [];
+
+        if (unresolvedDetails.Length > 0)
+        {
+            detailSections.Add(
+                "require resolvable EducationOrganization securable elements, but the following elements could not be resolved to relational columns in mapping set "
+                    + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}': "
+                    + $"[{string.Join(", ", unresolvedDetails)}]."
+            );
+        }
+
+        if (
+            failures.Any(static failure =>
+                failure.FailureKind is RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+            )
+        )
+        {
+            detailSections.Add(
+                "require at least one applicable concrete root-table EducationOrganization authorization subject, but none were found in mapping set "
+                    + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'. "
+                    + $"{nonRootCandidateText} {configuredDetailText}"
+            );
+        }
+
+        return $"Relational query authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(resource)}'. "
+            + $"Effective GET-many strategies [{FormatStrategyNames(configuredAuthorizationStrategies)}] "
+            + string.Join(" ", detailSections);
+    }
+
     private static string BuildSecurityConfigurationFailureMessage(
         MappingSet mappingSet,
         RelationshipAuthorizationFailureMetadata failure
@@ -1151,12 +1256,47 @@ public sealed class RelationalDocumentStoreRepository(
                 $"Relational query authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
                     + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' is not a recognized built-in strategy and does not match the "
                     + "{BasisResource}With... custom-view convention.",
+            RelationshipAuthorizationFailureKind.UnresolvedSecurableElement =>
+                $"Relational query authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires resolvable EducationOrganization securable elements, "
+                    + $"but element {FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath)} could not be resolved to a relational column.",
+            RelationshipAuthorizationFailureKind.NoApplicableRootSubject =>
+                $"Relational query authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires a concrete root-table EducationOrganization authorization subject, "
+                    + $"but {FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "no configured EducationOrganization securable element"} "
+                    + (
+                        failure.Location?.Table is not null && failure.Location?.Column is not null
+                            ? $"resolved to '{failure.Location.Table}.{failure.Location.Column.Value}' instead of a '{DbTableKind.Root}' table."
+                            : failure.Hint ?? "did not produce a concrete root-table binding."
+                    ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(failure),
                 failure.FailureKind,
                 "Unsupported query-authorization security-configuration failure kind."
             ),
         };
+
+    private static string FormatStrategyNames(
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
+    ) =>
+        string.Join(
+            ", ",
+            configuredAuthorizationStrategies
+                .Select(static strategy => strategy.StrategyName)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
+                .Select(static strategyName => $"'{strategyName}'")
+        );
+
+    private static string? FormatSecurableElementDetail(string? readableName, string? jsonPath)
+    {
+        if (readableName is null && jsonPath is null)
+        {
+            return null;
+        }
+
+        return $"'{readableName ?? "<unknown>"}' at '{jsonPath ?? "<unknown>"}'";
+    }
 
     private QueryResult BuildQuerySuccess(
         IRelationalQueryRequest relationalQueryRequest,

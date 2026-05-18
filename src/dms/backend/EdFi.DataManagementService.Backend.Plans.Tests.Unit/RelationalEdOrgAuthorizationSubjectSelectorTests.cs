@@ -31,7 +31,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
 
-        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+        var result = SelectSubjects(
             mappingSet,
             new QualifiedResourceName("Ed-Fi", "CourseTranscript"),
             _configuredAuthorizationStrategies
@@ -58,7 +58,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
 
-        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+        var result = SelectSubjects(
             mappingSet,
             new QualifiedResourceName("Ed-Fi", "School"),
             _configuredAuthorizationStrategies
@@ -78,22 +78,20 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
 
-        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+        var result = SelectSubjects(
             mappingSet,
             new QualifiedResourceName("Ed-Fi", "CourseOffering"),
             _configuredAuthorizationStrategies
         );
 
         result.Outcome.Should().Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success);
-        result.Subjects.Should().HaveCount(2);
+        result.Subjects.Should().ContainSingle();
         result
-            .Subjects.Select(static subject => subject.Contributors[0].JsonPath)
+            .Subjects[0]
+            .Contributors.Select(static contributor => contributor.JsonPath)
             .Should()
             .BeEquivalentTo("$.schoolReference.schoolId", "$.sessionReference.schoolId");
-        result
-            .Subjects.Select(static subject => subject.Table)
-            .Should()
-            .OnlyContain(static table => table == Table("CourseOffering"));
+        result.Subjects[0].Table.Should().Be(Table("CourseOffering"));
     }
 
     [Test]
@@ -195,7 +193,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             )
         );
 
-        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+        var result = SelectSubjects(
             mappingSet,
             new QualifiedResourceName("Ed-Fi", "TestResource"),
             _configuredAuthorizationStrategies
@@ -273,7 +271,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             )
         );
 
-        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+        var result = SelectSubjects(
             mappingSet,
             new QualifiedResourceName("Ed-Fi", "CourseOffering"),
             _configuredAuthorizationStrategies
@@ -282,8 +280,14 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         result
             .Outcome.Should()
             .Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
-        result.FailureMessage.Should().Contain("RelationshipsWithEdOrgsOnly");
-        result.FailureMessage.Should().Contain("$.sessionReference.schoolId");
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Should()
+            .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.Location?.JsonPath)
+            .Should()
+            .Contain("$.sessionReference.schoolId");
     }
 
     [Test]
@@ -426,7 +430,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             )
         );
 
-        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+        var result = SelectSubjects(
             mappingSet,
             new QualifiedResourceName("Ed-Fi", "TestResource"),
             _configuredAuthorizationStrategies
@@ -437,6 +441,48 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             .Subjects.Select(static subject => subject.Contributors[0].ReadableName)
             .Should()
             .Equal("SchoolId", "LocalEducationAgencyId");
+    }
+
+    [Test]
+    public void It_should_group_multiple_root_contributors_that_resolve_to_the_same_physical_column()
+    {
+        var rootTable = CreateRootTable(
+            Table("TestResource"),
+            [new DbColumnModel(Col("SchoolId"), ColumnKind.Scalar, null, false, Path("$.schoolId"), null)]
+        );
+
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                "TestResource",
+                CreateModelWithTables("TestResource", rootTable, [], []),
+                new ResourceSecurableElements(
+                    [
+                        new EdOrgSecurableElement("$.schoolId", "SchoolId"),
+                        new EdOrgSecurableElement("$.schoolId", "SchoolReferenceSchoolId"),
+                    ],
+                    [],
+                    [],
+                    [],
+                    []
+                )
+            )
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            new QualifiedResourceName("Ed-Fi", "TestResource"),
+            _configuredAuthorizationStrategies
+        );
+
+        result.Outcome.Should().Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success);
+        result.Subjects.Should().ContainSingle();
+        result.Subjects[0].Table.Should().Be(rootTable.Table);
+        result.Subjects[0].Column.Should().Be(Col("SchoolId"));
+        result
+            .Subjects[0]
+            .Contributors.Select(static contributor => contributor.ReadableName)
+            .Should()
+            .Equal("SchoolId", "SchoolReferenceSchoolId");
     }
 
     [Test]
@@ -502,7 +548,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             )
         );
 
-        var result = RelationalEdOrgAuthorizationSubjectSelector.Select(
+        var result = SelectSubjects(
             mappingSet,
             new QualifiedResourceName("Ed-Fi", "TestResource"),
             _configuredAuthorizationStrategies
@@ -511,9 +557,72 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         result
             .Outcome.Should()
             .Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
-        result.FailureMessage.Should().Contain("RelationshipsWithEdOrgsOnly");
-        result.FailureMessage.Should().Contain("$.classPeriods[*].classPeriodReference.schoolId");
-        result.FailureMessage.Should().Contain("TestResourceClassPeriod");
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Should()
+            .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.Location?.JsonPath)
+            .Should()
+            .Contain("$.classPeriods[*].classPeriodReference.schoolId");
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.Location?.Table?.Name)
+            .Should()
+            .Contain("TestResourceClassPeriod");
+    }
+
+    [Test]
+    public void It_should_exclude_root_extension_candidates_from_crud_subjects()
+    {
+        var rootTable = CreateRootTable(Table("TestResource"));
+        var rootExtensionTable = CreateRootExtensionTable(
+            new DbTableName(new DbSchemaName("sample"), "TestResourceExtension"),
+            "$._ext.sample",
+            [
+                new DbColumnModel(
+                    Col("ExtensionSchoolId"),
+                    ColumnKind.Scalar,
+                    null,
+                    false,
+                    Path("$._ext.sample.schoolId"),
+                    null
+                ),
+            ]
+        );
+
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                "TestResource",
+                CreateModelWithTables("TestResource", rootTable, [rootExtensionTable], []),
+                new ResourceSecurableElements(
+                    [new EdOrgSecurableElement("$._ext.sample.schoolId", "ExtensionSchoolId")],
+                    [],
+                    [],
+                    [],
+                    []
+                )
+            )
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            new QualifiedResourceName("Ed-Fi", "TestResource"),
+            _configuredAuthorizationStrategies
+        );
+
+        result
+            .Outcome.Should()
+            .Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.FailureKind)
+            .Should()
+            .OnlyContain(static failureKind =>
+                failureKind == RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+            );
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.Location?.Table?.Name)
+            .Should()
+            .Contain("TestResourceExtension");
     }
 
     [Test]
@@ -580,7 +689,8 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         );
         var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
 
-        var firstResult = RelationalEdOrgAuthorizationSubjectSelector.Select(
+        var selector = new RelationalEdOrgAuthorizationSubjectSelector();
+        var firstResult = selector.Select(
             mappingSet,
             resource,
             CreateConfiguredAuthorizationStrategies(
@@ -588,7 +698,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             )
         );
 
-        var secondResult = RelationalEdOrgAuthorizationSubjectSelector.Select(
+        var secondResult = selector.Select(
             mappingSet,
             resource,
             CreateConfiguredAuthorizationStrategies(
@@ -596,8 +706,14 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             )
         );
 
-        firstResult.FailureMessage.Should().Contain("['RelationshipsWithEdOrgsOnly']");
-        secondResult.FailureMessage.Should().Contain("['RelationshipsWithEdOrgsOnlyInverted']");
+        firstResult
+            .SecurityConfigurationFailures.Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Should()
+            .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
+        secondResult
+            .SecurityConfigurationFailures.Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Should()
+            .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
     }
 
     [Test]
@@ -741,6 +857,17 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
 
     private static JsonPathExpression Path(string canonical) => new(canonical, []);
 
+    private static RelationalEdOrgAuthorizationSubjectSelection SelectSubjects(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
+    ) =>
+        new RelationalEdOrgAuthorizationSubjectSelector().Select(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies
+        );
+
     private static ResourceKeyEntry ResourceKey(short id, string resource) =>
         new(id, new QualifiedResourceName("Ed-Fi", resource), "1.0", false);
 
@@ -754,7 +881,16 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             new TableKey("PK_Test", [new DbKeyColumn(_documentId, ColumnKind.ParentKeyPart)]),
             columns ?? [],
             []
-        );
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [_documentId],
+                [_documentId],
+                [],
+                []
+            ),
+        };
 
     private static DbTableModel CreateChildTable(
         DbTableName table,
@@ -767,7 +903,38 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
             new TableKey("PK_TestChild", [new DbKeyColumn(Col("CollectionItemId"), ColumnKind.Scalar)]),
             columns,
             []
-        );
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [Col("CollectionItemId")],
+                [_documentId],
+                [],
+                []
+            ),
+        };
+
+    private static DbTableModel CreateRootExtensionTable(
+        DbTableName table,
+        string jsonScope,
+        IReadOnlyList<DbColumnModel> columns
+    ) =>
+        new(
+            table,
+            Path(jsonScope),
+            new TableKey("PK_TestRootExtension", [new DbKeyColumn(_documentId, ColumnKind.ParentKeyPart)]),
+            columns,
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.RootExtension,
+                [_documentId],
+                [_documentId],
+                [],
+                []
+            ),
+        };
 
     private static RelationalResourceModel CreateModelWithTables(
         string resource,
