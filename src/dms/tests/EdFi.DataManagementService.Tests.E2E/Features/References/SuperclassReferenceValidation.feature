@@ -166,6 +166,9 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution           | localEducationAgencyCategoryDescriptor                                              | categories                                                                                                                            |
                   | 333                    | Other Education Agency Test | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other local education agency | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"}] |
+              And the system has these "Schools"
+                  | schoolId | nameOfInstitution | localEducationAgencyReference  | educationOrganizationCategories                                                                                       | gradeLevels                                                                     |
+                  | 200      | School Test 99    | {"localEducationAgencyId":333} | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}] |
               And the system has these "programs"
                   | programName          | programTypeDescriptor                              | educationOrganizationReference  | programId |
                   | Career and Technical | "uri://ed-fi.org/ProgramTypeDescriptor#Billingual" | {"educationOrganizationId":333} | "111"     |
