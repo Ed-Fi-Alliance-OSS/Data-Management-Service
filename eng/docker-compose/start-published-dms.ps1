@@ -32,10 +32,6 @@ param (
     [Switch]
     $LoadSeedData,
 
-    # Add extension security metadata
-    [Switch]
-    $AddExtensionSecurityMetadata,
-
     # Add smoke test credentials
     [Switch]
     $AddSmokeTestCredentials,
@@ -51,48 +47,90 @@ param (
 
     # School year range for multi-instance setup (format: StartYear-EndYear, e.g., "2022-2026")
     [string]
-    $SchoolYearRange = ""
+    $SchoolYearRange = "",
+
+    # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
+    # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
+    [Switch]
+    $RemoveBootstrap,
+
+    # Transitional non-bootstrap helper: when no bootstrap manifest is present (DLL-backed startup),
+    # passing this switch sets DMS_CONFIG_CLAIMS_SOURCE=Hybrid and DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
+    # so that extension claimset fragments (e.g. Sample, Homograph) are loaded from the AdditionalClaimsets
+    # directory that is already mounted at /app/additional-claims by published-config.yml.
+    # This flag is intentionally kept until Story 04 moves E2E runtime loading onto the staged bootstrap workspace.
+    [Switch]
+    $AddExtensionSecurityMetadata
 )
 
-
-# Configure environment variables for new claimset loading approach
-if($AddExtensionSecurityMetadata)
-{
-    # Set environment variables for hybrid claimset loading
-    $env:DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING = "true"
+Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+$bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
+$originalLocation = Get-Location
+if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
+    if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
+        # Caller supplied an explicit relative path — resolve against the caller's CWD.
+        $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $originalLocation.Path $EnvironmentFile))
+    }
+    else {
+        # Default value — resolve against the script directory so that invoking the
+        # script from any CWD (e.g. the repo root) still finds eng/docker-compose/.env.
+        $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $EnvironmentFile))
+    }
+}
+try {
+Push-Location $PSScriptRoot
+try {
+    $bootstrapMode = Set-BootstrapStartupEnvironment -SkipArtifactValidation:$d
+}
+catch {
+    if ($d) {
+        Write-Warning "Bootstrap manifest could not be loaded during teardown; continuing anyway. $(Format-LogSafeText ($_.Exception.Message))"
+        $bootstrapMode = $false
+    }
+    else {
+        throw
+    }
+}
+if ($bootstrapMode) {
+    Write-Output "Bootstrap manifest detected. Configured staged claims startup inputs. Schema runtime loading still uses DLL-backed schema packages (Story 04 enables runtime reads of the staged workspace)."
+}
+elseif ($AddExtensionSecurityMetadata) {
+    # Non-bootstrap (DLL-backed) mode: activate Hybrid claims so extension claimset fragments
+    # are loaded from /app/additional-claims (already mounted by published-config.yml).
     $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
     $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
-    Write-Output "Configured environment variables for file-based extension claimset loading"
+    $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
+    Write-Output "Extension Security Metadata: Hybrid claims mode enabled (non-bootstrap DLL-backed startup)."
 }
 
-    # Identity provider configuration
-    Import-Module ./env-utility.psm1 -Force
-    $envValues = ReadValuesFromEnvFile $EnvironmentFile
-    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
-    Write-Output "Identity Provider $IdentityProvider"
-    if($IdentityProvider -eq "keycloak")
-    {
-        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
-        $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
-        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
-        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
-    }
-    elseif ($IdentityProvider -eq "self-contained") {
-        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
-        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
-        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
-        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+# Identity provider configuration
+Import-Module ./env-utility.psm1 -Force
+$envValues = ReadValuesFromEnvFile $EnvironmentFile
+$env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+Write-Output "Identity Provider $IdentityProvider"
+if($IdentityProvider -eq "keycloak")
+{
+    $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
+    $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+    $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
+    $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+}
+elseif ($IdentityProvider -eq "self-contained") {
+    $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
+    $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+    $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
+    $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+}
+
+if (-not $d) {
+    if ($NoDmsInstance -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
+        throw "Parameters -NoDmsInstance and -SchoolYearRange are mutually exclusive. Use -NoDmsInstance for manual instance creation, or use -SchoolYearRange to auto-create instances."
     }
 
-    if (-not $d) {
-        if ($NoDmsInstance -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
-            throw "Parameters -NoDmsInstance and -SchoolYearRange are mutually exclusive. Use -NoDmsInstance for manual instance creation, or use -SchoolYearRange to auto-create instances."
-        }
-
-        if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange) -and $envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and -not $envValues.CONFIG_SERVICE_TENANT) {
-            throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true (the Configuration Service requires the Tenant header)."
-        }
+    if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange) -and $envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and -not $envValues.CONFIG_SERVICE_TENANT) {
+        throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true (the Configuration Service requires the Tenant header)."
     }
+}
 $files = @(
     "-f",
     "postgresql.yml",
@@ -124,6 +162,14 @@ if ($d) {
     if ($v) {
         Write-Output "Shutting down with volume delete"
         docker compose $files --env-file $EnvironmentFile -p dms-published down -v
+
+        if ($RemoveBootstrap) {
+            $bootstrapDir = Get-BootstrapRoot
+            if (Test-Path -LiteralPath $bootstrapDir) {
+                Write-Output "Removing bootstrap workspace at $(Format-LogSafeText $bootstrapDir)"
+                Remove-Item -LiteralPath $bootstrapDir -Recurse -Force
+            }
+        }
     }
     else {
         Write-Output "Shutting down"
@@ -135,7 +181,7 @@ else {
     if (! $existingNetwork) {
         docker network create dms
     }
-	  if($IdentityProvider -eq "keycloak")
+    if($IdentityProvider -eq "keycloak")
     {
         Write-Output "Starting Keycloak first..."
         docker compose $files --env-file $EnvironmentFile -p dms-published up -d keycloak
@@ -281,4 +327,8 @@ else {
     }
 
     Start-Sleep 20
+}
+} finally {
+    Restore-BootstrapEnvSnapshot -Snapshot $bootstrapEnvSnapshot
+    Set-Location $originalLocation
 }

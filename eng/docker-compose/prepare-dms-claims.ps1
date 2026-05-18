@@ -1,0 +1,510 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+[CmdletBinding()]
+param(
+    [string]
+    $ClaimsDirectoryPath
+)
+
+Set-StrictMode -Version Latest
+
+Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+
+$knownExtensionClaims = @{
+    "Sample" = @{
+        FragmentFileName = "004-sample-extension-claimset.json"
+        NamespacePrefix = "uri://sample.ed-fi.org"
+    }
+    "Homograph" = @{
+        FragmentFileName = "005-homograph-extension-claimset.json"
+    }
+}
+
+$baselineFragmentFileNames = [System.Collections.Generic.HashSet[string]]::new(
+    [string[]]@(
+        "001-namespace-claimset.json",
+        "002-nofurtherauth-claimset.json",
+        "003-edorgsonly-claimset.json"
+    ),
+    [System.StringComparer]::OrdinalIgnoreCase
+)
+
+function Read-JsonHashtable {
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $Path,
+
+        [Parameter(Mandatory)]
+        [string]
+        $ArtifactName
+    )
+
+    try {
+        return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable
+    } catch {
+        throw "$(Format-LogSafeText $ArtifactName) '$(Format-LogSafeText $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
+    }
+}
+
+function Get-ValueOrNull {
+    param(
+        $Hashtable,
+
+        [Parameter(Mandatory)]
+        [string]
+        $Key
+    )
+
+    if ($Hashtable -is [System.Collections.IDictionary] -and $Hashtable.Contains($Key)) {
+        return $Hashtable[$Key]
+    }
+
+    return $null
+}
+
+function Add-EffectiveClaimSetName {
+    param(
+        [System.Collections.Generic.HashSet[string]]
+        $ClaimSetNames,
+
+        [string]
+        $Name
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Name)) {
+        $null = $ClaimSetNames.Add($Name)
+    }
+}
+
+function Test-TruthyJsonValue {
+    param(
+        $Value,
+
+        [string]
+        $Path
+    )
+
+    if ($null -eq $Value) {
+        return $false
+    }
+
+    if ($Value -is [bool]) {
+        return $Value
+    }
+
+    try {
+        return [System.Convert]::ToBoolean($Value)
+    } catch {
+        throw "Claimset fragment '$(Format-LogSafeText $Path)' has malformed boolean for 'isParent'."
+    }
+}
+
+function Get-EffectiveClaimSetNames {
+    $repoRoot = Get-BootstrapRepoRoot
+    $claimsPath = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json"
+    $claims = Read-JsonHashtable -Path $claimsPath -ArtifactName "Embedded claims"
+    $claimSetNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    # Embedded Claims.json declares effective claim sets in the top-level claimSets[*].claimSetName list.
+    # Nested claimsHierarchy[*].claimSets[*].name entries are attachments to those claim sets, not definitions.
+    foreach ($claimSet in @((Get-ValueOrNull -Hashtable $claims -Key "claimSets"))) {
+        if ($claimSet -is [System.Collections.IDictionary]) {
+            Add-EffectiveClaimSetName `
+                -ClaimSetNames $claimSetNames `
+                -Name (Get-ValueOrNull -Hashtable $claimSet -Key "claimSetName")
+        }
+    }
+
+    return $claimSetNames
+}
+
+function Add-FragmentInput {
+    param(
+        [System.Collections.Generic.Dictionary[string, string]]
+        $TargetSources,
+
+        [System.Collections.ArrayList]
+        $Fragments,
+
+        [Parameter(Mandatory)]
+        [string]
+        $SourcePath
+    )
+
+    $fileName = [System.IO.Path]::GetFileName($SourcePath)
+    if ($TargetSources.ContainsKey($fileName)) {
+        throw "Claimset fragment filename collision for '$(Format-LogSafeText $fileName)' from '$(Format-LogSafeText $SourcePath)' and '$(Format-LogSafeText ($TargetSources[$fileName]))'."
+    }
+
+    $TargetSources[$fileName] = $SourcePath
+    $null = $Fragments.Add(
+        [pscustomobject]@{
+            SourcePath = $SourcePath
+            FileName = $fileName
+        }
+    )
+}
+
+function Get-UserFragmentFiles {
+    param(
+        [string]
+        $Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return @()
+    }
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $fullPath -PathType Container)) {
+        if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+            throw "ClaimsDirectoryPath must be a directory: $(Format-LogSafeText $fullPath)"
+        }
+
+        throw "ClaimsDirectoryPath directory was not found: $(Format-LogSafeText $fullPath)"
+    }
+
+    $directory = Get-Item -LiteralPath $fullPath
+
+    $claimsetFiles = @(
+        Get-ChildItem -LiteralPath $directory.FullName -File -Filter "*-claimset.json" |
+            Sort-Object -Property FullName
+    )
+
+    $reservedFiles = @($claimsetFiles | Where-Object { $baselineFragmentFileNames.Contains($_.Name) })
+    if ($reservedFiles.Count -gt 0) {
+        $reservedFileNames = @($reservedFiles | ForEach-Object { $_.Name }) -join ", "
+        throw "ClaimsDirectoryPath '$(Format-LogSafeText ($directory.FullName))' contains reserved baseline fragment filename(s): $(Format-LogSafeText $reservedFileNames). Baseline fragment names are reserved."
+    }
+
+    $files = @($claimsetFiles | ForEach-Object { $_.FullName })
+    if ($files.Count -eq 0) {
+        throw "ClaimsDirectoryPath '$(Format-LogSafeText ($directory.FullName))' does not contain any non-baseline *-claimset.json files."
+    }
+
+    return $files
+}
+
+function Add-ExpectedVerificationCheck {
+    param(
+        [System.Collections.Generic.HashSet[string]]
+        $Seen,
+
+        [System.Collections.ArrayList]
+        $Checks,
+
+        [string]
+        $ClaimSetName,
+
+        [string]
+        $ResourceClaim,
+
+        [string]
+        $Action
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ClaimSetName) -or
+        [string]::IsNullOrWhiteSpace($ResourceClaim) -or
+        [string]::IsNullOrWhiteSpace($Action)) {
+        return
+    }
+
+    $key = "$ClaimSetName|$ResourceClaim|$Action"
+    if ($Seen.Add($key)) {
+        $null = $Checks.Add(
+            [ordered]@{
+                claimSetName = $ClaimSetName
+                resourceClaim = $ResourceClaim
+                action = $Action
+            }
+        )
+    }
+}
+
+function Assert-FragmentValidAndExtractChecks {
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $Path,
+
+        [System.Collections.Generic.HashSet[string]]
+        $EffectiveClaimSetNames,
+
+        [System.Collections.Generic.HashSet[string]]
+        $SeenChecks,
+
+        [System.Collections.ArrayList]
+        $ExpectedVerificationChecks
+    )
+
+    $fragment = Read-JsonHashtable -Path $Path -ArtifactName "Claimset fragment"
+    $fragmentName = Get-ValueOrNull -Hashtable $fragment -Key "name"
+
+    $resourceClaims = Get-ValueOrNull -Hashtable $fragment -Key "resourceClaims"
+    if ($null -eq $resourceClaims -or @($resourceClaims).Count -eq 0) {
+        throw "Claimset fragment '$(Format-LogSafeText $Path)' does not contain resourceClaims."
+    }
+
+    $usesTopLevelNameAsClaimSet = $false
+    $implicitVerificationChecks = [System.Collections.ArrayList]::new()
+    foreach ($resourceClaim in @($resourceClaims)) {
+        if ($resourceClaim -isnot [System.Collections.IDictionary]) {
+            throw "Claimset fragment '$(Format-LogSafeText $Path)' has a resourceClaims entry that is not a JSON object."
+        }
+
+        $resourceClaimName = Get-ValueOrNull -Hashtable $resourceClaim -Key "name"
+        if ([string]::IsNullOrWhiteSpace($resourceClaimName)) {
+            throw "Claimset fragment '$(Format-LogSafeText $Path)' has a resourceClaims entry missing 'name'."
+        }
+
+        $isParent = Test-TruthyJsonValue `
+            -Value (Get-ValueOrNull -Hashtable $resourceClaim -Key "isParent") `
+            -Path $Path
+        $claimSets = Get-ValueOrNull -Hashtable $resourceClaim -Key "claimSets"
+        $usesImplicitClaimSetName = -not $isParent -and ($null -eq $claimSets -or @($claimSets).Count -eq 0)
+
+        if ($usesImplicitClaimSetName) {
+            $usesTopLevelNameAsClaimSet = $true
+        }
+
+        foreach ($claimSet in @($claimSets)) {
+            if ($null -eq $claimSet) {
+                continue
+            }
+
+            $claimSetName = Get-ValueOrNull -Hashtable $claimSet -Key "name"
+            if ([string]::IsNullOrWhiteSpace($claimSetName)) {
+                throw "Claimset fragment '$(Format-LogSafeText $Path)' has a claimSets entry missing 'name'."
+            }
+
+            if (-not $EffectiveClaimSetNames.Contains($claimSetName)) {
+                throw "Claimset fragment '$(Format-LogSafeText $Path)' references unknown effective claim set '$(Format-LogSafeText $claimSetName)'."
+            }
+
+            foreach ($action in @((Get-ValueOrNull -Hashtable $claimSet -Key "actions"))) {
+                if ($null -eq $action) {
+                    continue
+                }
+
+                $actionName = Get-ValueOrNull -Hashtable $action -Key "name"
+                if ([string]::IsNullOrWhiteSpace($actionName)) {
+                    throw "Claimset fragment '$(Format-LogSafeText $Path)' has a claimSets actions entry missing 'name'."
+                }
+
+                Add-ExpectedVerificationCheck `
+                    -Seen $SeenChecks `
+                    -Checks $ExpectedVerificationChecks `
+                    -ClaimSetName $claimSetName `
+                    -ResourceClaim $resourceClaimName `
+                    -Action $actionName
+            }
+        }
+
+        if ($usesImplicitClaimSetName) {
+            foreach ($action in @((Get-ValueOrNull -Hashtable $resourceClaim -Key "authorizationStrategyOverridesForCRUD"))) {
+                $actionName = Get-ValueOrNull -Hashtable $action -Key "actionName"
+                if ([string]::IsNullOrWhiteSpace($actionName)) {
+                    throw "Claimset fragment '$(Format-LogSafeText $Path)' has an authorizationStrategyOverridesForCRUD entry missing 'actionName'."
+                }
+
+                $null = $implicitVerificationChecks.Add(
+                    [pscustomobject]@{
+                        ResourceClaim = $resourceClaimName
+                        Action = $actionName
+                    }
+                )
+            }
+        }
+    }
+
+    if ($usesTopLevelNameAsClaimSet) {
+        if ([string]::IsNullOrWhiteSpace($fragmentName)) {
+            throw "Claimset fragment '$(Format-LogSafeText $Path)' is missing top-level name required by non-parent resource claims."
+        }
+
+        if (-not $EffectiveClaimSetNames.Contains($fragmentName)) {
+            throw "Claimset fragment '$(Format-LogSafeText $Path)' uses unknown effective claim set '$(Format-LogSafeText $fragmentName)'."
+        }
+
+        foreach ($implicitVerificationCheck in $implicitVerificationChecks) {
+            Add-ExpectedVerificationCheck `
+                -Seen $SeenChecks `
+                -Checks $ExpectedVerificationChecks `
+                -ClaimSetName $fragmentName `
+                -ResourceClaim $implicitVerificationCheck.ResourceClaim `
+                -Action $implicitVerificationCheck.Action
+        }
+    }
+}
+
+$bootstrapRoot = Get-BootstrapRoot
+$rootManifest = Read-BootstrapManifest
+if ($null -eq $rootManifest -or -not $rootManifest.ContainsKey("schema")) {
+    throw "Bootstrap manifest is missing the schema section. Run prepare-dms-schema.ps1 before prepare-dms-claims.ps1."
+}
+
+$apiSchemaManifestPath = Join-Path $bootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json"
+if (-not (Test-Path -LiteralPath $apiSchemaManifestPath)) {
+    throw "Staged ApiSchema manifest was not found: $(Format-LogSafeText $apiSchemaManifestPath)"
+}
+
+$apiSchemaManifest = Read-JsonHashtable -Path $apiSchemaManifestPath -ArtifactName "ApiSchema manifest"
+$projectsValue = Get-ValueOrNull -Hashtable $apiSchemaManifest -Key "projects"
+if ($null -eq $projectsValue) {
+    throw "Bootstrap ApiSchema manifest is missing 'projects': $(Format-LogSafeText $apiSchemaManifestPath)"
+}
+if ($apiSchemaManifest["projects"] -isnot [System.Collections.IList]) {
+    throw "ApiSchema manifest projects must be a JSON array: $(Format-LogSafeText $apiSchemaManifestPath)"
+}
+$projects = @($projectsValue)
+$extensionProjects = @(
+    $projects |
+        Where-Object {
+            if ($_ -isnot [System.Collections.IDictionary]) {
+                throw "Bootstrap ApiSchema manifest project entry is not a JSON object."
+            }
+            Read-RequiredJsonBoolean `
+                -Hashtable $_ `
+                -Key "isExtensionProject" `
+                -ArtifactContext "Manifest project entry"
+        }
+)
+
+$repoRoot = Get-BootstrapRepoRoot
+$shippedClaimsDirectory = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets"
+$targetSources = [System.Collections.Generic.Dictionary[string, string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase
+)
+$fragments = [System.Collections.ArrayList]::new()
+$namespacePrefixes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+$unmappedExtensionNames = [System.Collections.ArrayList]::new()
+
+foreach ($extensionProject in $extensionProjects) {
+    $projectName = Get-ValueOrNull -Hashtable $extensionProject -Key "projectName"
+    if ([string]::IsNullOrWhiteSpace($projectName)) {
+        throw "Bootstrap ApiSchema manifest project entry is missing 'projectName'."
+    }
+
+    if ($knownExtensionClaims.ContainsKey($projectName)) {
+        $knownExtension = $knownExtensionClaims[$projectName]
+        if ($knownExtension.ContainsKey("FragmentFileName")) {
+            $fragmentPath = Join-Path $shippedClaimsDirectory $knownExtension["FragmentFileName"]
+            if (-not (Test-Path -LiteralPath $fragmentPath -PathType Leaf)) {
+                throw "Shipped claimset fragment was not found for extension '$(Format-LogSafeText $projectName)': $(Format-LogSafeText $fragmentPath)"
+            }
+
+            Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $fragmentPath
+        }
+
+        if ($knownExtension.ContainsKey("NamespacePrefix")) {
+            $null = $namespacePrefixes.Add($knownExtension["NamespacePrefix"])
+        }
+    } else {
+        $null = $unmappedExtensionNames.Add($projectName)
+    }
+}
+
+$userFragmentFiles = @(Get-UserFragmentFiles -Path $ClaimsDirectoryPath)
+if ($unmappedExtensionNames.Count -gt 0 -and $userFragmentFiles.Count -eq 0) {
+    throw "ClaimsDirectoryPath is required for unmapped extension project(s): $(Format-LogSafeText ($unmappedExtensionNames -join ', '))."
+}
+
+foreach ($userFragmentFile in $userFragmentFiles) {
+    Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $userFragmentFile
+}
+
+$effectiveClaimSetNames = Get-EffectiveClaimSetNames
+$expectedVerificationChecks = [System.Collections.ArrayList]::new()
+$seenChecks = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+# Keep the core baseline probe even in Embedded mode; startup readiness owns verifying
+# that CMS applied the embedded base claims before checking staged extension entries.
+Add-ExpectedVerificationCheck `
+    -Seen $seenChecks `
+    -Checks $expectedVerificationChecks `
+    -ClaimSetName "EdFiSandbox" `
+    -ResourceClaim "http://ed-fi.org/identity/claims/domains/edFiTypes" `
+    -Action "Read"
+
+foreach ($fragment in $fragments) {
+    Assert-FragmentValidAndExtractChecks `
+        -Path $fragment.SourcePath `
+        -EffectiveClaimSetNames $effectiveClaimSetNames `
+        -SeenChecks $seenChecks `
+        -ExpectedVerificationChecks $expectedVerificationChecks
+}
+
+$temporaryRoot = Join-Path (Join-Path $bootstrapRoot ".tmp") "claims-$([Guid]::NewGuid().ToString('N'))"
+$finalWorkspace = Join-Path $bootstrapRoot "claims"
+$temporaryMoved = $false
+
+try {
+    New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
+
+    foreach ($fragment in $fragments) {
+        Copy-Item -LiteralPath $fragment.SourcePath -Destination (Join-Path $temporaryRoot $fragment.FileName)
+    }
+
+    $fingerprint = Get-BootstrapWorkspaceFingerprint -Path $temporaryRoot
+    $claimsMode = if ($fragments.Count -eq 0) { "Embedded" } else { "Hybrid" }
+    $claimsSection = [ordered]@{
+        mode = $claimsMode
+        directory = "claims"
+        fingerprint = $fingerprint
+        expectedVerificationChecks = @($expectedVerificationChecks)
+    }
+    $seedSection = [ordered]@{
+        extensionNamespacePrefixes = @($namespacePrefixes | Sort-Object)
+    }
+
+    if (Test-Path -LiteralPath $finalWorkspace) {
+        if (-not $rootManifest.ContainsKey("claims")) {
+            throw (Get-BootstrapWorkspaceMismatchMessage -Reason "manifest claims section missing")
+        }
+
+        $existingClaimsSection = $rootManifest["claims"]
+        if ($existingClaimsSection -isnot [System.Collections.IDictionary]) {
+            throw (Get-BootstrapWorkspaceMismatchMessage -Reason "manifest claims section malformed")
+        }
+        if ($existingClaimsSection["fingerprint"] -ne $fingerprint) {
+            throw (Get-BootstrapWorkspaceMismatchMessage -Reason "claims fingerprint mismatch")
+        }
+
+        $existingFingerprint = Get-BootstrapWorkspaceFingerprint -Path $finalWorkspace
+        if ($existingFingerprint -ne $fingerprint) {
+            throw (Get-BootstrapWorkspaceMismatchMessage -Reason "staged claims content drift")
+        }
+
+        if (-not $rootManifest.ContainsKey("seed")) {
+            throw (Get-BootstrapWorkspaceMismatchMessage -Reason "manifest seed section missing")
+        }
+
+        $existingSeedSection = $rootManifest["seed"]
+        if ($existingSeedSection -isnot [System.Collections.IDictionary]) {
+            throw (Get-BootstrapWorkspaceMismatchMessage -Reason "manifest seed section malformed")
+        }
+
+        $existingPrefixes = @(@($existingSeedSection["extensionNamespacePrefixes"]) | ForEach-Object { [string]$_ } | Sort-Object)
+        $intendedPrefixes = @($seedSection["extensionNamespacePrefixes"] | ForEach-Object { [string]$_ } | Sort-Object)
+        if ((($existingPrefixes -join "`n") -ne ($intendedPrefixes -join "`n"))) {
+            throw (Get-BootstrapWorkspaceMismatchMessage -Reason "seed extensionNamespacePrefixes mismatch")
+        }
+    } else {
+        New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+        Move-Item -LiteralPath $temporaryRoot -Destination $finalWorkspace
+        $temporaryMoved = $true
+    }
+
+    Set-BootstrapManifestSection -Name "claims" -Value $claimsSection
+    Set-BootstrapManifestSection -Name "seed" -Value $seedSection
+
+    Write-Output "Prepared claims workspace at $(Format-LogSafeText $finalWorkspace)"
+    Write-Output "Claims mode: $claimsMode"
+} finally {
+    if (-not $temporaryMoved -and (Test-Path -LiteralPath $temporaryRoot)) {
+        Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+    }
+}

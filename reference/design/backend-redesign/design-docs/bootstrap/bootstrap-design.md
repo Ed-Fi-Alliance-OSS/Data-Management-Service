@@ -523,6 +523,17 @@ prepare-dms-schema.ps1
 > `-ApiSchemaPath` loading can be implemented and retained independently of package publication. Story 00
 > implements that direct filesystem path only; package-backed Modes 1 and 2 belong to Story 06.
 
+> **Implementation note (Story 04 boundary):** The "Docker-hosted DMS" branch of the diagram above —
+> `bind-mount .bootstrap/ApiSchema/ → /app/ApiSchema`, `set USE_API_SCHEMA_PATH=true`,
+> `set API_SCHEMA_PATH=/app/ApiSchema`, clear `SCHEMA_PACKAGES`, and the companion `bootstrap-dms.yml`
+> Docker Compose override — is **not activated by Story 00**. `ContentProvider` still discovers schema from
+> `*.ApiSchema.dll` assemblies; pointing it at a JSON-only staged workspace would cause discovery and XSD
+> content fetch failures. Story 00 stages the workspace and validates the manifest; Story 04 owns the
+> `ContentProvider` update that makes the staged JSON workspace the authoritative runtime source,
+> re-introduces `bootstrap-dms.yml`, and wires `Set-BootstrapStartupEnvironment` to emit the
+> `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` env vars. Until Story 04 lands, Docker-hosted DMS continues to
+> use DLL-backed schema loading (`SCHEMA_PACKAGES` or embedded assembly fallback).
+
 This reuses the existing host-side pattern already present in `eng/preflight-dms-schema-compile.ps1`: the
 host materializes concrete schema files first, then downstream steps operate on those staged files rather
 than re-resolving packages or inferring schema shape from container-only environment variables.
@@ -681,6 +692,11 @@ in `prepare-dms-schema.ps1`, security fragment metadata
 in `prepare-dms-claims.ps1`, and optional seed package metadata in `load-dms-seed-data.ps1`. Built-in seed
 loading participates only when the seed phase has a concrete built-in seed package for the selected
 extension.
+
+Story 00's v1 direct-filesystem claims lookup is intentionally narrow. It maps only extension projects that
+have current shipped security fragments in the repo, such as Sample and Homograph. TPDM and any other direct
+filesystem extension outside that lookup are treated as unmapped: bootstrap requires `-ClaimsDirectoryPath`
+for caller-supplied fragments and does not silently substitute `sample`, `homograph`, or any default mapping.
 
 The bootstrap logic is:
 

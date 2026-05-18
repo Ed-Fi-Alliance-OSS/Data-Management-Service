@@ -12,11 +12,12 @@ instance. See the steps below.
 
 ### Testing locally with docker compose
 
-From the `eng` directory:
+From the repository root:
 
-- If you have stale volumes with old data run `./start-local-dms.ps1 -d -v` to
-  stop services and delete volumes
-- Run `./start-local-dms.ps1 -EnvironmentFile ./.env.e2e`
+- If you have stale volumes with old data run
+  `pwsh eng/docker-compose/start-local-dms.ps1 -d -v` to stop services and
+  delete volumes
+- Run `pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1`
 - You must have the following hosts entry to run kafka tests: `127.0.0.1 dms-kafka1`
 
 ### Testing locally with API in debug mode

@@ -672,37 +672,37 @@ function Start-DockerEnvironment {
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
-            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v
-            ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v
+            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
+            ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
         }
         finally {
             Pop-Location
         }
     }
-        Invoke-Execute {
-            try {
-                Push-Location "$PSScriptRoot/eng/docker-compose"
-                if ($UsePublishedImage) {
-                    if ($LoadSeedData) {
-                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
-                    }
-                    else {
-                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
-                    }
+    Invoke-Execute {
+        try {
+            Push-Location "$PSScriptRoot/eng/docker-compose"
+            if ($UsePublishedImage) {
+                if ($LoadSeedData) {
+                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
                 }
                 else {
-                    if ($LoadSeedData) {
-                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
-                    }
-                    else {
-                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
-                    }
+                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
                 }
             }
-            finally {
-                Pop-Location
+            else {
+                if ($LoadSeedData) {
+                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                }
+                else {
+                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                }
             }
         }
+        finally {
+            Pop-Location
+        }
+    }
 }
 
 function Initialize-RelationalE2EDatabase {

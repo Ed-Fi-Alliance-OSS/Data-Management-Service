@@ -395,6 +395,14 @@ try {
         Write-Host "✓ Network removed" -ForegroundColor Green
     }
     
+    # Remove bootstrap workspace so subsequent setup runs do not trip fingerprint-mismatch fail-fast.
+    $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
+    if (Test-Path -LiteralPath $bootstrapDir) {
+        Write-Host "`nRemoving bootstrap workspace at $bootstrapDir..." -ForegroundColor Yellow
+        Remove-Item -LiteralPath $bootstrapDir -Recurse -Force
+        Write-Host "✓ Bootstrap workspace removed" -ForegroundColor Green
+    }
+
     if ($verificationFailed) {
         Write-Host "`nTeardown completed with warnings!" -ForegroundColor Yellow
         Write-Host "Some resources may need manual cleanup." -ForegroundColor Yellow
@@ -404,7 +412,7 @@ try {
         Write-Host "`nTeardown complete!" -ForegroundColor Green
         Write-Host "All resources have been successfully removed." -ForegroundColor Green
     }
-    
+
     Write-Host "To setup this environment again, run: ./setup-local-dms.ps1" -ForegroundColor Cyan
 }
 finally {

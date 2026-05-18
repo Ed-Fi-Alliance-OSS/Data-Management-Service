@@ -16,6 +16,8 @@
 * text eol=lf
 
 *.sh eol=lf
+ApiSchema*.json text eol=lf
+*-claimset.json text eol=lf
 
 ## SOURCE CODE
 *.bat  text eol=crlf
