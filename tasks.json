@@ -126,7 +126,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"Relationship|PageDocumentId|Authorization\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-regressions",

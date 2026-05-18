@@ -733,6 +733,44 @@ public class ResourceActionAuthorizationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Relational_Get_Many_With_Duplicate_Relationship_Strategies
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await Middleware(
+                    "Read",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+                )
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_preserves_raw_strategy_order_for_relational_get_many()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo
+                .ResourceActionAuthStrategies.Should()
+                .Equal(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Relational_Get_Many_With_No_Matching_Claim : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]

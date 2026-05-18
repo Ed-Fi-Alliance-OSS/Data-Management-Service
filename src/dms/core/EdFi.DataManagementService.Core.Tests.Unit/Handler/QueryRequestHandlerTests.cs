@@ -495,10 +495,16 @@ public class QueryRequestHandlerTests
         );
         private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
         [
+            new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, [], FilterOperator.Or),
             new(
                 AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                [new AuthorizationFilter.EducationOrganization("255901")],
+                [new AuthorizationFilter.EducationOrganization("999999")],
                 FilterOperator.Or
+            ),
+            new(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                [new AuthorizationFilter.EducationOrganization("111111")],
+                FilterOperator.And
             ),
         ];
 
@@ -581,6 +587,16 @@ public class QueryRequestHandlerTests
                 .CapturedRequest.AuthorizationStrategyEvaluators.Should()
                 .BeSameAs(_authorizationStrategyEvaluators);
             _repository
+                .CapturedRequest.AuthorizationStrategyEvaluators.Select(static evaluator =>
+                    evaluator.AuthorizationStrategyName
+                )
+                .Should()
+                .Equal(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                );
+            _repository
                 .CapturedRequest.ResourceInfo.Should()
                 .BeEquivalentTo(
                     new ResourceInfo(
@@ -604,6 +620,22 @@ public class QueryRequestHandlerTests
             _repository
                 .CapturedRequest.ReadableProfileProjectionContext.IdentityPropertyNames.Should()
                 .Equal("studentUniqueId", "schoolReference");
+        }
+
+        [Test]
+        public void It_builds_relational_authorization_context_from_client_authorizations_instead_of_strategy_filters()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository
+                .CapturedRequest!.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(255900L, 255901L, 255902L);
+            _repository
+                .CapturedRequest.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .NotContain(111111L)
+                .And.NotContain(999999L);
+            _repository
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal("uri://sample-a.org", "uri://sample-b.org");
         }
 
         [Test]

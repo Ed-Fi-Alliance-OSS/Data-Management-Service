@@ -33,3 +33,9 @@ Task completed: shared-core-unit-coverage. Story: reference/design/backend-redes
 Decisions: backfilled core-only tests for People/Student known-but-not-enabled classification, zero-EdOrg no-subject failures, and planner result mapping for no-auth/no-further/mixed staged+config outcomes; kept coverage on shared contracts/types rather than GET-many adapters.
 Files changed: tasks.json; progress.txt; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationStrategyClassifierTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalEdOrgAuthorizationSubjectSelectorTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs
 Blockers/notes: none. Remaining open work is GET-many adapter/request-pipeline coverage and integration regressions.
+
+2026-05-18
+Task completed: get-many-adapter-coverage. Story: reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/01-relationship-crud-auth-core.md
+Decisions: hardened request-pipeline coverage at claimset->middleware->query-request seams; explicitly preserved duplicate/no-op relationship strategy order for relational GET-many; proved RelationalAuthorizationContext sources EdOrg claims/namespaces from ClientAuthorizations rather than evaluator filters.
+Files changed: tasks.json; progress.txt; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ProvideAuthorizationFiltersMiddlewareTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ResourceActionAuthorizationMiddlewareTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/QueryRequestHandlerTests.cs
+Blockers/notes: none. Remaining open work is integration regression execution for PostgreSQL, SQL Server, and focused DMS E2E.

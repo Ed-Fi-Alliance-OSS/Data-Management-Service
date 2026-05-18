@@ -65,6 +65,8 @@ public class ProvideAuthorizationFiltersMiddlewareTests
             _requestInfo.PathComponents = CreateGetManyPathComponents();
             _requestInfo.ResourceActionAuthStrategies =
             [
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                 AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                 AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
                 AuthorizationStrategyNameConstants.NamespaceBased,
