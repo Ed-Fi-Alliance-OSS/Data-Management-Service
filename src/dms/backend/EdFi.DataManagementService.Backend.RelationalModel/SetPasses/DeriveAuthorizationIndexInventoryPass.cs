@@ -145,13 +145,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         );
 
         var resourceLookup = PersonJoinPathResolver.BuildResourceLookup(context.ConcreteResourcesInNameOrder);
-        EmitPersonJoinIndexes(
-            context,
-            authIndexLookup,
-            pkUkLeadingColumns,
-            resourceLookup,
-            resourcesWithResolvedSecurable
-        );
+        EmitPersonJoinIndexes(context, authIndexLookup, resourceLookup, resourcesWithResolvedSecurable);
     }
 
     /// <summary>
@@ -273,6 +267,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         {
             var anyResolved = false;
 
+            // ResolveSecurableElementLocation throws on miss; reaching the next statement means the path resolved.
             foreach (var jsonPath in concrete.SecurableElements.EducationOrganization.Select(e => e.JsonPath))
             {
                 var (table, column) = ResolveSecurableElementLocation(concrete, jsonPath);
@@ -345,7 +340,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     private static void EmitPersonJoinIndexes(
         RelationalModelSetBuilderContext context,
         Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup,
-        HashSet<(DbTableName Table, DbColumnName Column)> pkUkLeadingColumns,
         Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         HashSet<QualifiedResourceName> resourcesWithResolvedSecurable
     )
@@ -363,7 +357,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 concrete.SecurableElements.Student,
                 "Student",
                 authIndexLookup,
-                pkUkLeadingColumns,
                 resourceLookup,
                 ref anyResolved,
                 skippedArrayNestedPaths,
@@ -375,7 +368,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 concrete.SecurableElements.Contact,
                 "Contact",
                 authIndexLookup,
-                pkUkLeadingColumns,
                 resourceLookup,
                 ref anyResolved,
                 skippedArrayNestedPaths,
@@ -387,7 +379,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 concrete.SecurableElements.Staff,
                 "Staff",
                 authIndexLookup,
-                pkUkLeadingColumns,
                 resourceLookup,
                 ref anyResolved,
                 skippedArrayNestedPaths,
@@ -430,7 +421,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         IReadOnlyList<string> personPaths,
         string personResourceName,
         Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup,
-        HashSet<(DbTableName Table, DbColumnName Column)> pkUkLeadingColumns,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         ref bool anyResolved,
         List<string> skippedArrayNestedPaths,
@@ -442,14 +432,13 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
             return;
         }
 
-        var rootLevelPaths = personPaths.Where(p => !p.Contains("[*]", StringComparison.Ordinal)).ToArray();
-
         var shortestPath = PersonJoinPathResolver.ResolveShortestPersonPath(
             subjectResource,
             personPaths,
             personResourceName,
             resourceLookup,
-            skippedArrayNestedPaths
+            skippedArrayNestedPaths,
+            out var rootLevelPaths
         );
 
         if (shortestPath is not null)
@@ -457,17 +446,11 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
             anyResolved = true;
             foreach (var step in shortestPath)
             {
-                AddPersonJoinIndex(
-                    context,
-                    step.SourceTable,
-                    step.SourceColumnName,
-                    authIndexLookup,
-                    pkUkLeadingColumns
-                );
+                AddPersonJoinIndex(context, step.SourceTable, step.SourceColumnName, authIndexLookup);
             }
         }
         else if (
-            rootLevelPaths.Length > 0
+            rootLevelPaths.Count > 0
             && !PersonJoinPathResolver.IsPersonResource(
                 subjectResource.RelationalModel.Resource,
                 personResourceName
@@ -500,8 +483,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         RelationalModelSetBuilderContext context,
         DbTableName sourceTable,
         DbColumnName canonicalFkColumn,
-        Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup,
-        HashSet<(DbTableName Table, DbColumnName Column)> pkUkLeadingColumns
+        Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup
     )
     {
         var key = (sourceTable, canonicalFkColumn);
@@ -537,10 +519,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
             authIndexLookup[key] = widened;
             return;
         }
-
-        // No existing auth index. PK/UK leading-column collisions still emit a separate auth
-        // index — structural PK/UK indexes do not supply INCLUDE (DocumentId).
-        _ = pkUkLeadingColumns;
 
         var index = new DbIndexInfo(
             new DbIndexName(ConstraintNaming.BuildAuthorizationIndexName(sourceTable, [canonicalFkColumn])),

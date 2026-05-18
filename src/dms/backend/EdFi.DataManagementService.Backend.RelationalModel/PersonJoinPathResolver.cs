@@ -66,6 +66,7 @@ public static class PersonJoinPathResolver
     /// <param name="personResourceName">Person resource name — <c>"Student"</c>, <c>"Contact"</c>, or <c>"Staff"</c>.</param>
     /// <param name="resourceLookup">All concrete resources keyed by qualified resource name.</param>
     /// <param name="skippedArrayNestedPaths">Mutable accumulator: array-nested paths (containing <c>[*]</c>) are appended here.</param>
+    /// <param name="rootLevelPaths">Output: the subset of <paramref name="personPaths"/> that are not array-nested, in input order.</param>
     /// <returns>
     /// Shortest column-path chain, or <see langword="null"/> if no non-array-nested path resolved.
     /// </returns>
@@ -74,7 +75,8 @@ public static class PersonJoinPathResolver
         IReadOnlyList<string> personPaths,
         string personResourceName,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
-        List<string> skippedArrayNestedPaths
+        List<string> skippedArrayNestedPaths,
+        out IReadOnlyList<string> rootLevelPaths
     )
     {
         ArgumentNullException.ThrowIfNull(subjectResource);
@@ -85,11 +87,12 @@ public static class PersonJoinPathResolver
 
         if (personPaths.Count == 0)
         {
+            rootLevelPaths = [];
             return null;
         }
 
         // Person path traversal currently follows only root-table bindings.
-        var rootLevelPaths = new List<string>();
+        var rootLevel = new List<string>();
         foreach (var p in personPaths)
         {
             if (IsArrayNestedPath(p))
@@ -98,11 +101,13 @@ public static class PersonJoinPathResolver
             }
             else
             {
-                rootLevelPaths.Add(p);
+                rootLevel.Add(p);
             }
         }
 
-        if (rootLevelPaths.Count == 0)
+        rootLevelPaths = rootLevel;
+
+        if (rootLevel.Count == 0)
         {
             return null;
         }
@@ -112,7 +117,7 @@ public static class PersonJoinPathResolver
 
         IReadOnlyList<ColumnPathStep>? shortestPath = null;
 
-        foreach (var personPath in rootLevelPaths)
+        foreach (var personPath in rootLevel)
         {
             var referencePrefix = ExtractReferencePrefix(personPath);
             if (referencePrefix is null)
@@ -331,7 +336,7 @@ public static class PersonJoinPathResolver
     /// <paramref name="table"/> is a <see cref="ColumnStorage.UnifiedAlias"/>, returns the
     /// canonical column; otherwise returns the column as-is.
     /// </summary>
-    private static DbColumnName ResolveToCanonicalColumn(DbTableModel table, DbColumnName column)
+    public static DbColumnName ResolveToCanonicalColumn(DbTableModel table, DbColumnName column)
     {
         foreach (var col in table.Columns)
         {

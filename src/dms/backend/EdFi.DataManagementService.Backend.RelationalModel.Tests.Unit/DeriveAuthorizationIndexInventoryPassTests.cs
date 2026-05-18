@@ -1099,6 +1099,95 @@ public class Given_Resource_With_Array_Nested_Person_Path_Only
 }
 
 /// <summary>
+/// Test fixture asserting the cross-pass <c>anyResolved</c> carryover: when a resource has a
+/// resolvable Namespace securable AND an array-nested-only Student path, the Namespace
+/// resolution marks the resource as "any resolved," so the array-nested Student path is
+/// silently skipped instead of throwing. Guards the seeding of
+/// <c>resourcesWithResolvedSecurable</c> from <c>EmitSecurableElementIndexes</c> into
+/// <c>EmitPersonJoinIndexes</c>.
+/// </summary>
+[TestFixture]
+public class Given_Resource_With_Resolved_Namespace_And_Array_Nested_Student_Path
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithResolvedNamespaceAndArrayNestedStudentPath()
+                )
+            )
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_not_throw_and_should_emit_the_namespace_auth_index()
+    {
+        _authIndexes
+            .Should()
+            .ContainSingle(i =>
+                i.Table.Name == "NamespaceAndArrayNestedStudentCarrier"
+                && i.KeyColumns[0].Value == "Namespace"
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_any_student_auth_index()
+    {
+        _authIndexes.Should().NotContain(i => i.KeyColumns[0].Value == "Student_DocumentId");
+    }
+}
+
+/// <summary>
+/// Test fixture asserting the cross-kind <c>anyResolved</c> carryover within
+/// <c>EmitPersonJoinIndexes</c>: when a resource resolves a Student path AND has an
+/// array-nested-only Contact path, the Student resolution marks the resource as "any resolved,"
+/// so the array-nested Contact path is silently skipped instead of throwing. Guards the
+/// shared <c>anyResolved</c> across Student / Contact / Staff iterations in the pass.
+/// </summary>
+[TestFixture]
+public class Given_Resource_With_Resolved_Student_And_Array_Nested_Contact_Path
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithResolvedStudentAndArrayNestedContactPath()
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildPlainResource("Student"));
+            })
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_not_throw_and_should_emit_the_student_auth_index()
+    {
+        _authIndexes
+            .Should()
+            .ContainSingle(i =>
+                i.Table.Name == "StudentAndArrayNestedContactCarrier"
+                && i.KeyColumns[0].Value == "Student_DocumentId"
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_any_contact_auth_index()
+    {
+        _authIndexes.Should().NotContain(i => i.KeyColumns[0].Value == "Contact_DocumentId");
+    }
+}
+
+/// <summary>
 /// Test fixture asserting two builds with the same input produce identical authorization
 /// index entries (determinism).
 /// </summary>
@@ -2248,6 +2337,71 @@ internal static class AuthIndexFixtureResources
                     "$.items[*].studentReference.studentUniqueId",
                 ],
                 Contact: [],
+                Staff: []
+            )
+        );
+    }
+
+    /// <summary>
+    /// Subject resource declaring a resolvable Namespace securable element AND an array-nested
+    /// Student securable path. Drives the cross-pass <c>anyResolved</c> carryover from
+    /// <c>EmitSecurableElementIndexes</c> into <c>EmitPersonJoinIndexes</c> — the Namespace
+    /// resolution must mark the resource so the array-nested Student path is silently skipped.
+    /// </summary>
+    public static ConcreteResourceModel BuildResourceWithResolvedNamespaceAndArrayNestedStudentPath() =>
+        BuildResource(
+            "NamespaceAndArrayNestedStudentCarrier",
+            [
+                BuildScalarColumn(new DbColumnName("DocumentId")),
+                BuildScalarColumnWithJsonPath(new DbColumnName("Namespace"), "$.namespace"),
+            ],
+            [],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: ["$.namespace"],
+                Student: ["$.items[*].studentReference.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
+
+    /// <summary>
+    /// Subject resource declaring a resolvable Student securable element AND an array-nested
+    /// Contact securable path. Drives the cross-kind <c>anyResolved</c> carryover within
+    /// <c>EmitPersonJoinIndexes</c> — the Student resolution must mark the resource so the
+    /// array-nested Contact path is silently skipped.
+    /// </summary>
+    public static ConcreteResourceModel BuildResourceWithResolvedStudentAndArrayNestedContactPath()
+    {
+        const string resourceName = "StudentAndArrayNestedContactCarrier";
+        var rootTable = new DbTableName(_edfiSchema, resourceName);
+        var studentFk = new DbColumnName("Student_DocumentId");
+
+        var studentBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
+            Table: rootTable,
+            FkColumn: studentFk,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.studentReference.studentUniqueId"),
+                    studentFk
+                ),
+            ]
+        );
+
+        return BuildResource(
+            resourceName,
+            [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(studentFk)],
+            [studentBinding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.studentReference.studentUniqueId"],
+                Contact: ["$.items[*].contactReference.contactUniqueId"],
                 Staff: []
             )
         );

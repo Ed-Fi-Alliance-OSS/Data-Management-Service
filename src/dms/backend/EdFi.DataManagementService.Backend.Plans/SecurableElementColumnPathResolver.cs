@@ -254,7 +254,7 @@ internal static class SecurableElementColumnPathResolver
             var owningTable = FindTable(model, binding.Table);
             var column = owningTable is null
                 ? identityBinding.Column
-                : ResolveToCanonicalColumn(owningTable, identityBinding.Column);
+                : PersonJoinPathResolver.ResolveToCanonicalColumn(owningTable, identityBinding.Column);
             var candidate = new ColumnPathStep(binding.Table, column, null, null);
 
             if (seenCandidates.Add(candidate))
@@ -279,7 +279,7 @@ internal static class SecurableElementColumnPathResolver
                     continue;
                 }
 
-                var resolved = ResolveToCanonicalColumn(table, column.ColumnName);
+                var resolved = PersonJoinPathResolver.ResolveToCanonicalColumn(table, column.ColumnName);
                 var candidate = new ColumnPathStep(table.Table, resolved, null, null);
 
                 if (seenCandidates.Add(candidate))
@@ -316,16 +316,13 @@ internal static class SecurableElementColumnPathResolver
             return;
         }
 
-        var rootLevelPathsForUnresolved = personPaths
-            .Where(p => !p.Contains("[*]", StringComparison.Ordinal))
-            .ToArray();
-
         var shortestPath = PersonJoinPathResolver.ResolveShortestPersonPath(
             subjectResource,
             personPaths,
             personResourceName,
             resourceLookup,
-            skippedArrayNestedPaths
+            skippedArrayNestedPaths,
+            out var rootLevelPaths
         );
 
         if (shortestPath is not null)
@@ -333,7 +330,7 @@ internal static class SecurableElementColumnPathResolver
             results.Add(new ResolvedSecurableElementPath(kind, shortestPath));
         }
         else if (
-            rootLevelPathsForUnresolved.Length > 0
+            rootLevelPaths.Count > 0
             && !PersonJoinPathResolver.IsPersonResource(
                 subjectResource.RelationalModel.Resource,
                 personResourceName
@@ -343,26 +340,8 @@ internal static class SecurableElementColumnPathResolver
             // Only flag as unresolved when the subject resource is NOT the person resource
             // itself. Person resources (e.g., Contact with $.contactUniqueId) don't need
             // a join chain — their own identity column is the authorization anchor.
-            unresolvedPaths.AddRange(rootLevelPathsForUnresolved);
+            unresolvedPaths.AddRange(rootLevelPaths);
         }
-    }
-
-    /// <summary>
-    /// Resolves a column name to its canonical form through key unification.
-    /// If the column is a <see cref="ColumnStorage.UnifiedAlias"/>, returns the canonical column;
-    /// otherwise returns the column as-is.
-    /// </summary>
-    private static DbColumnName ResolveToCanonicalColumn(DbTableModel table, DbColumnName column)
-    {
-        foreach (var col in table.Columns)
-        {
-            if (col.ColumnName == column && col.Storage is ColumnStorage.UnifiedAlias alias)
-            {
-                return alias.CanonicalColumn;
-            }
-        }
-
-        return column;
     }
 
     private static ResolvedEdOrgSecurableElementCandidate? SelectPreferredSingleStepCandidate(
