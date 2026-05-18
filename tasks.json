@@ -1,0 +1,148 @@
+[
+  {
+    "category": "shared-contracts",
+    "description": "Define the operation-neutral relationship authorization contract layer in Backend.Plans and the request-scoped relational authorization context in Backend.External so shared relationship authorization code no longer depends on GET-many-specific naming or AuthorizationStrategyEvaluator.",
+    "acceptance-criteria": [
+      "Backend.Plans owns configured-strategy, relationship authorization result, subject, check-spec, parameterization, and failure metadata records, and internal Backend adapts legacy evaluator input into those records before planning begins.",
+      "RelationalAuthorizationContext becomes operation-neutral, still normalizes and deterministically sorts ClaimEducationOrganizationIds, and also carries deduped ordinal-sorted NamespacePrefixes without changing current GET-many behavior.",
+      "The shared failure contract includes the cases Slice 1 can emit plus future values such as stored-null and proposed-missing so later slices reuse one taxonomy instead of introducing parallel result shapes.",
+      "Existing relational query request and handler code compiles against the revised contracts while non-GET endpoint behavior and result surfaces remain unchanged in this slice."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.External src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/core",
+      "dotnet build src/dms/EdFi.DataManagementService.sln",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "request-pipeline",
+    "description": "Thread the typed relational authorization context and raw configured strategy order through the core-to-backend request pipeline so duplicate relationship strategies survive intact into the new shared planner.",
+    "acceptance-criteria": [
+      "Relational query request creation builds RelationalAuthorizationContext from ClientAuthorizations instead of re-parsing ClaimEducationOrganizationIds from per-strategy filters.",
+      "The relational request shape preserves raw configured strategy order, duplicate configured strategy names, and NoFurtherAuthorizationRequired entries until the shared classifier determines what is effective.",
+      "Internal Backend creates a Plans-owned configured-strategy record with raw configured index and composition metadata before invoking shared planning code.",
+      "GET-many keeps the current staged behavior for unsupported non-GET relationship operations; Slice 1 does not wire new CRUD execution behavior."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/core src/dms/backend/EdFi.DataManagementService.Backend.External src/dms/backend/EdFi.DataManagementService.Backend",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"ProvideAuthorizationFiltersMiddlewareTests|ResourceActionAuthorizationMiddlewareTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "strategy-classification",
+    "description": "Replace the GET-many-only relationship strategy classifier with an operation-neutral classifier that preserves configured identity and distinguishes supported, staged, no-op, and invalid relationship strategy outcomes.",
+    "acceptance-criteria": [
+      "RelationshipsWithEdOrgsOnly and RelationshipsWithEdOrgsOnlyInverted classify into shared EdOrg relationship strategy entries without deduplicating duplicate configured strategies that must remain separate OR branches.",
+      "Known People relationship strategies, NamespaceBased, OwnershipBased, and convention-matching custom-view strategies whose basis resolves classify deterministically as known-but-not-enabled metadata instead of generic unknown failures.",
+      "Invalid custom-view strategy names, custom-view names whose basis does not resolve, and other invalid security metadata classify as security-configuration failures with deterministic ordering.",
+      "When classification finds both true security-configuration errors and known-but-not-enabled strategies, the classified result preserves both metadata sets while marking security-configuration as the winning downstream outcome.",
+      "NoFurtherAuthorizationRequired remains in the classified result with raw configured index metadata, emits no check spec, and yields an explicit no-further-authorization outcome when it is the only effective strategy.",
+      "Classification preserves both raw configured strategy index and relationship-local order metadata so later CRUD slices can assign dense AUTH1 indexes without losing original configuration identity."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Plans",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "subject-resolution",
+    "description": "Refactor EdOrg subject resolution into an injected cached service that resolves securable-element paths once and then builds CRUD-safe root-table subject metadata for the shared relationship auth core.",
+    "acceptance-criteria": [
+      "The static EdOrg securable-element resolution cache is replaced by a DI-registered singleton or equivalent injected service that caches raw resolution by mapping set or effective schema, resource, and securable element.",
+      "CRUD EdOrg subject selection accepts only DbTableKind.Root bindings, excluding child-table and RootExtension candidates from participating authorization subjects while preserving their metadata for diagnostics.",
+      "Unresolved elements, child-only elements, and no-applicable-root-subject scenarios aggregate typed security-configuration metadata with resource identity, strategy identity, readable securable names, JSON paths, and deterministic ordering.",
+      "When multiple securable elements resolve to the same physical root-table column, the shared model groups them under one predicate or binding while preserving all contributing readable names and paths in deterministic order."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Plans",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "check-specs",
+    "description": "Build shared EdOrg relationship authorization specs that emit stored-value inputs, proposed-value binding locators, no-claims metadata, and dialect-aware claim parameterization from the same strategy and subject model without generating endpoint SQL.",
+    "acceptance-criteria": [
+      "The shared core emits stored-value check inputs for existing root documents and proposed-value check inputs that identify the canonical root TableWritePlan binding location, logical key, table and column binding, and stable parameter seed so later slices can generate single-record EXISTS checks without allocating final SQL parameter names in Slice 1.",
+      "The shared relationship authorization spec model preserves OR composition across configured strategies and AND composition across grouped EdOrg subjects inside one strategy, while same-column contributor dedupe happens only within a single strategy entry.",
+      "Missing proposed root bindings are reported as security-configuration metadata in Slice 1 instead of being deferred to later write-operation slices.",
+      "Normal versus inverted EdOrg hierarchy direction is explicit metadata on the shared spec so downstream SQL generation never branches on raw strategy strings.",
+      "ClaimEducationOrganizationIds parameterization preserves the DMS-1055 contract: deduped and sorted ids, one PostgreSQL bigint-array parameter, SQL Server scalar bigint parameters below 2000 unique ids, and dms.BigIntTable at 2000 or more unique ids.",
+      "The shared core exposes an explicit no-claims result shape for callers to short-circuit before parameterization, and it does not cache or emit operation-specific CRUD SQL in this slice."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "dotnet build src/dms/EdFi.DataManagementService.sln"
+    ],
+    "completed": false
+  },
+  {
+    "category": "get-many-adapter",
+    "description": "Migrate the DMS-1055 GET-many authorization path to consume the shared relationship auth core through a page-query adapter instead of owning separate classifier, subject-selection, and failure-shaping logic.",
+    "acceptance-criteria": [
+      "RelationalDocumentStoreRepository builds PageDocumentIdAuthorizationSpec from shared relationship authorization specs and shared failure metadata rather than from GET-many-only contracts.",
+      "The page-query adapter preserves duplicate configured relationship strategies, OR ordering, and per-strategy identity while deduping repeated physical predicates only after the shared spec has grouped same-column contributors.",
+      "Known-but-not-enabled and security-configuration results from the shared core adapt back to current GET-many query failure surfaces without reintroducing page-query-specific naming into the shared contracts.",
+      "PageDocumentIdAuthorizationSpec remains a page-query adapter with only the minimal order or index fields needed for duplicate-order regression coverage, and non-GET staged behavior remains deferred to later slices."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/core",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "shared-core-unit-coverage",
+    "description": "Backfill focused unit coverage for the operation-neutral relationship auth core so classifier, subject-resolution, failure-metadata, and shared check-spec behavior are locked down before later CRUD slices consume it.",
+    "acceptance-criteria": [
+      "Unit coverage exists for supported and inverted EdOrg classification, known-but-not-enabled strategy classification, invalid custom-view configuration failures, duplicate configured strategies, NoFurtherAuthorizationRequired handling, and aggregated configuration-versus-staged outcomes.",
+      "Unit coverage exists for root-only subject selection, child-only and no-subject configuration failures, same-column contributor grouping, stored versus proposed spec generation, missing proposed binding failures, no-claims handling, and claim parameterization threshold behavior.",
+      "Unit coverage proves the shared spec preserves strategy OR ordering, grouped-subject AND semantics, and duplicate-strategy identity without relying on GET-many-specific types or page-query adapters."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"Relationship|Authorization\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "get-many-adapter-coverage",
+    "description": "Backfill focused request-pipeline and adapter-path coverage for the migrated DMS-1055 GET-many flow so the shared core feeds the existing page-query behavior without reintroducing GET-many-only contracts into the reusable layer.",
+    "acceptance-criteria": [
+      "Focused coverage proves relational request creation sources claim and namespace context from ClientAuthorizations, preserves duplicate configured relationship strategies and raw configured order, and keeps current staged non-GET behavior unchanged in Slice 1.",
+      "Adapter-path coverage proves duplicate strategy order, same-column dedupe after shared grouping, and adaptation back to current PageDocumentIdAuthorizationSpec and query-failure surfaces without copying rich shared-core failure contracts into the page-query model.",
+      "GET-many unit coverage asserts current result-kind or status behavior for known-but-not-enabled, security-configuration, no-further-authorization, and empty-claims outcomes remains aligned with DMS-1055 after the migration."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"ProvideAuthorizationFiltersMiddlewareTests|ResourceActionAuthorizationMiddlewareTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"Relationship|PageDocumentId|Authorization\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-regressions",
+    "description": "Run the minimal existing DMS-1055 PostgreSQL, SQL Server, and focused DMS E2E regression surface needed to prove the migrated GET-many adapter preserved behavior, and add new integration coverage only if the refactor exposes an uncovered adapter-specific risk.",
+    "acceptance-criteria": [
+      "Existing PostgreSQL and SQL Server DMS-1055 backend integration coverage passes against the migrated GET-many path for normal, inverted, OR, empty-claims, and parameterization behavior.",
+      "Any new integration coverage added here is narrowly limited to adapter-specific risks such as duplicate configured strategies, mixed no-op strategies, same-column dedupe, or aggregated configuration failures rather than Slice 2-6 CRUD execution behavior.",
+      "Focused DMS E2E regressions validate real token and claim wiring for the migrated GET-many path after a clean dms-local teardown and setup, without introducing new CRUD scenarios owned by later slices."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj",
+      "pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1",
+      "pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter RelationshipsWithEdOrgsOnly"
+    ],
+    "completed": false
+  }
+]
