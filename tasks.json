@@ -173,7 +173,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorization|PageDocumentIdAuthorizationSpecAdapter\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDocumentStoreRepositoryTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "authorization-context-contracts",

@@ -66,6 +66,7 @@ public sealed class RelationshipAuthorizationPlanner
                 resource,
                 classification.SupportedStrategies,
                 authorizationContext,
+                RelationshipAuthorizationValueSource.Stored,
                 static (rootTable, rootDocumentIdColumn, subjects, strategy) =>
                     new CheckSpecCreationResult(
                         new RelationshipAuthorizationCheckSpec(
@@ -73,6 +74,7 @@ public sealed class RelationshipAuthorizationPlanner
                             strategy.RelationshipLocalOrder,
                             strategy.Direction,
                             RelationshipAuthorizationValueSource.Stored,
+                            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(strategy.Direction),
                             subjects,
                             new RelationshipAuthorizationCheckTarget.Stored(rootTable, rootDocumentIdColumn)
                         ),
@@ -133,6 +135,7 @@ public sealed class RelationshipAuthorizationPlanner
                 resource,
                 classification.SupportedStrategies,
                 authorizationContext,
+                RelationshipAuthorizationValueSource.Proposed,
                 CreateProposedCheckSpecFactory(resource, writePlan)
             ),
             _ => throw new InvalidOperationException(
@@ -146,6 +149,7 @@ public sealed class RelationshipAuthorizationPlanner
         QualifiedResourceName resource,
         IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
         RelationalAuthorizationContext authorizationContext,
+        RelationshipAuthorizationValueSource valueSource,
         CreateCheckSpec createCheckSpec
     )
     {
@@ -161,7 +165,13 @@ public sealed class RelationshipAuthorizationPlanner
         )
         {
             return new RelationshipAuthorizationResult.SecurityConfigurationError([
-                .. OrderFailures(selectedEdOrgSubjects.SecurityConfigurationFailures),
+                .. OrderFailures(
+                    ApplyExecutionMetadata(
+                        selectedEdOrgSubjects.SecurityConfigurationFailures,
+                        supportedStrategies,
+                        valueSource
+                    )
+                ),
             ]);
         }
 
@@ -206,7 +216,7 @@ public sealed class RelationshipAuthorizationPlanner
         {
             return new RelationshipAuthorizationResult.NoClaims(
                 checkSpecs,
-                CreateNoClaimsFailures(resource, supportedStrategies)
+                CreateNoClaimsFailures(resource, supportedStrategies, valueSource)
             );
         }
 
@@ -279,6 +289,7 @@ public sealed class RelationshipAuthorizationPlanner
                         supportedStrategy.RelationshipLocalOrder,
                         supportedStrategy.Direction,
                         RelationshipAuthorizationValueSource.Proposed,
+                        RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(supportedStrategy.Direction),
                         subjects,
                         new RelationshipAuthorizationCheckTarget.Proposed(rootTable, proposedBindings)
                     ),
@@ -304,8 +315,7 @@ public sealed class RelationshipAuthorizationPlanner
                             resource,
                             strategy.ConfiguredStrategy,
                             strategy.RelationshipLocalOrder,
-                            null,
-                            BuildKnownButNotEnabledHint(strategy)
+                            Hint: BuildKnownButNotEnabledHint(strategy)
                         );
                     }
 
@@ -316,10 +326,10 @@ public sealed class RelationshipAuthorizationPlanner
                         resource,
                         strategy.ConfiguredStrategy,
                         strategy.RelationshipLocalOrder,
-                        new RelationshipAuthorizationFailureLocation(
+                        Location: new RelationshipAuthorizationFailureLocation(
                             AuthorizationObjectName: $"{nonNullBasisResource.ProjectName}.{nonNullBasisResource.ResourceName}"
                         ),
-                        BuildKnownButNotEnabledHint(strategy)
+                        Hint: BuildKnownButNotEnabledHint(strategy)
                     );
                 })
             ),
@@ -327,7 +337,8 @@ public sealed class RelationshipAuthorizationPlanner
 
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CreateNoClaimsFailures(
         QualifiedResourceName resource,
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+        RelationshipAuthorizationValueSource valueSource
     ) =>
         [
             .. OrderFailures(
@@ -336,6 +347,8 @@ public sealed class RelationshipAuthorizationPlanner
                     resource,
                     strategy.ConfiguredStrategy,
                     strategy.RelationshipLocalOrder,
+                    ValueSource: valueSource,
+                    AuthObject: RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(strategy.Direction),
                     Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
                 ))
             ),
@@ -356,15 +369,57 @@ public sealed class RelationshipAuthorizationPlanner
             resource,
             supportedStrategy.ConfiguredStrategy,
             supportedStrategy.RelationshipLocalOrder,
-            new RelationshipAuthorizationFailureLocation(
+            ValueSource: RelationshipAuthorizationValueSource.Proposed,
+            AuthObject: RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(supportedStrategy.Direction),
+            Location: new RelationshipAuthorizationFailureLocation(
                 contributor.Kind,
                 contributor.JsonPath,
                 contributor.ReadableName,
                 subject.Table,
                 subject.Column
             ),
-            "Selected root-table authorization subject does not have a matching root write binding."
+            Hint: "Selected root-table authorization subject does not have a matching root write binding."
         ));
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> ApplyExecutionMetadata(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+        RelationshipAuthorizationValueSource valueSource
+    )
+    {
+        var authObjectByStrategyIdentity = supportedStrategies.ToDictionary(
+            static strategy =>
+                (strategy.ConfiguredStrategy.RawConfiguredIndex, strategy.RelationshipLocalOrder),
+            static strategy => RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(strategy.Direction)
+        );
+
+        return
+        [
+            .. failures.Select(failure =>
+            {
+                var rawConfiguredIndex = failure.ConfiguredStrategy?.RawConfiguredIndex;
+                var relationshipLocalOrder = failure.RelationshipLocalOrder;
+
+                if (
+                    rawConfiguredIndex is null
+                    || relationshipLocalOrder is null
+                    || !authObjectByStrategyIdentity.TryGetValue(
+                        (rawConfiguredIndex.Value, relationshipLocalOrder.Value),
+                        out var authObject
+                    )
+                )
+                {
+                    return failure with { ValueSource = failure.ValueSource ?? valueSource };
+                }
+
+                return failure with
+                {
+                    ValueSource = failure.ValueSource ?? valueSource,
+                    AuthObject = failure.AuthObject ?? authObject,
+                };
+            }),
+        ];
+    }
 
     private static string BuildKnownButNotEnabledHint(
         KnownButNotEnabledRelationshipAuthorizationStrategy strategy

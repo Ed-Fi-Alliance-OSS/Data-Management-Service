@@ -127,6 +127,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
             relationshipLocalOrder,
             direction,
             RelationshipAuthorizationValueSource.Stored,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
             subjects,
             new RelationshipAuthorizationCheckTarget.Stored(_rootTable, _documentIdColumn)
         );

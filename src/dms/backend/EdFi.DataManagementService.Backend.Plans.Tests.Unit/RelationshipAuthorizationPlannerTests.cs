@@ -58,6 +58,17 @@ public class Given_RelationshipAuthorizationPlanner
             .CheckSpecs.Select(static checkSpec => checkSpec.ValueSource)
             .Should()
             .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Stored);
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                ),
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Inverted
+                )
+            );
         authorizedResult.CheckSpecs.Select(static checkSpec => checkSpec.Subjects.Count).Should().Equal(2, 2);
         authorizedResult
             .CheckSpecs[0]
@@ -117,6 +128,16 @@ public class Given_RelationshipAuthorizationPlanner
             .CheckSpecs.Select(static checkSpec => checkSpec.ValueSource)
             .Should()
             .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Proposed);
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject)
+            .Should()
+            .OnlyContain(static authObject =>
+                authObject.Equals(
+                    RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                        RelationshipAuthorizationHierarchyDirection.Normal
+                    )
+                )
+            );
         authorizedResult.CheckSpecs.Select(static checkSpec => checkSpec.Subjects.Count).Should().Equal(1, 1);
         authorizedResult.CheckSpecs[0].Subjects[0].Contributors.Should().HaveCount(2);
 
@@ -200,6 +221,18 @@ public class Given_RelationshipAuthorizationPlanner
             .Be(RelationshipAuthorizationFailureKind.MissingProposedRootBinding);
         securityConfigurationError
             .Failures[0]
+            .ValueSource.Should()
+            .Be(RelationshipAuthorizationValueSource.Proposed);
+        securityConfigurationError
+            .Failures[0]
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                )
+            );
+        securityConfigurationError
+            .Failures[0]
             .Location?.JsonPath.Should()
             .Be(selectedSubject.Contributors[0].JsonPath);
         securityConfigurationError
@@ -236,6 +269,15 @@ public class Given_RelationshipAuthorizationPlanner
             .Failures[0]
             .FailureKind.Should()
             .Be(RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds);
+        noClaimsResult.Failures[0].ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        noClaimsResult
+            .Failures[0]
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                )
+            );
         noClaimsResult.Failures[0].ConfiguredStrategy?.RawConfiguredIndex.Should().Be(0);
         noClaimsResult.Failures[0].RelationshipLocalOrder.Should().Be(0);
     }
@@ -302,6 +344,21 @@ public class Given_RelationshipAuthorizationPlanner
             .Failures.Select(static failure => failure.RelationshipLocalOrder)
             .Should()
             .Equal(0, 1);
+        securityConfigurationErrorResult
+            .Failures.Select(static failure => failure.ValueSource)
+            .Should()
+            .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Stored);
+        securityConfigurationErrorResult
+            .Failures.Select(static failure => failure.AuthObject)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                ),
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Inverted
+                )
+            );
     }
 
     [Test]

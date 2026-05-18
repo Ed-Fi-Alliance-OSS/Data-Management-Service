@@ -197,18 +197,17 @@ internal static class RelationshipAuthorizationStrategyClassifier
                     resource,
                     configuredStrategy,
                     relationshipLocalOrder,
-                    new RelationshipAuthorizationFailureLocation(
+                    Location: new RelationshipAuthorizationFailureLocation(
                         AuthorizationObjectName: resolution.BasisResourceName
                     ),
-                    $"Strategy '{configuredStrategy.StrategyName}' matches the {CustomViewConvention} custom-view convention, but its basis resource could not be resolved."
+                    Hint: $"Strategy '{configuredStrategy.StrategyName}' matches the {CustomViewConvention} custom-view convention, but its basis resource could not be resolved."
                 ),
             _ => new RelationshipAuthorizationFailureMetadata(
                 RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy,
                 resource,
                 configuredStrategy,
                 relationshipLocalOrder,
-                null,
-                $"Strategy '{configuredStrategy.StrategyName}' is not a recognized built-in strategy and does not match the {CustomViewConvention} custom-view convention."
+                Hint: $"Strategy '{configuredStrategy.StrategyName}' is not a recognized built-in strategy and does not match the {CustomViewConvention} custom-view convention."
             ),
         };
 

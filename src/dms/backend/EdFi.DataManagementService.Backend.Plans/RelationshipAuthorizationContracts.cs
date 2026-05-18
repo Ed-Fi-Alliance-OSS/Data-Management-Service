@@ -76,6 +76,35 @@ public enum RelationshipAuthorizationValueSource
     Proposed,
 }
 
+public sealed record RelationshipAuthorizationAuthObject(
+    DbTableName Name,
+    DbColumnName SubjectValueColumn,
+    DbColumnName ClaimEducationOrganizationIdColumn
+)
+{
+    public static RelationshipAuthorizationAuthObject CreateEdOrgHierarchy(
+        RelationshipAuthorizationHierarchyDirection direction
+    ) =>
+        direction switch
+        {
+            RelationshipAuthorizationHierarchyDirection.Normal => new RelationshipAuthorizationAuthObject(
+                AuthNames.EdOrgIdToEdOrgId,
+                AuthNames.TargetEdOrgId,
+                AuthNames.SourceEdOrgId
+            ),
+            RelationshipAuthorizationHierarchyDirection.Inverted => new RelationshipAuthorizationAuthObject(
+                AuthNames.EdOrgIdToEdOrgId,
+                AuthNames.SourceEdOrgId,
+                AuthNames.TargetEdOrgId
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(direction),
+                direction,
+                "Unsupported relationship authorization hierarchy direction."
+            ),
+        };
+}
+
 public sealed record RelationshipAuthorizationSubjectContributor(
     SecurableElementKind Kind,
     string JsonPath,
@@ -115,6 +144,7 @@ public sealed record RelationshipAuthorizationCheckSpec(
     int RelationshipLocalOrder,
     RelationshipAuthorizationHierarchyDirection Direction,
     RelationshipAuthorizationValueSource ValueSource,
+    RelationshipAuthorizationAuthObject AuthObject,
     IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
     RelationshipAuthorizationCheckTarget CheckTarget
 );
@@ -146,6 +176,8 @@ public sealed record RelationshipAuthorizationFailureMetadata(
     QualifiedResourceName Resource,
     ConfiguredAuthorizationStrategy? ConfiguredStrategy = null,
     int? RelationshipLocalOrder = null,
+    RelationshipAuthorizationValueSource? ValueSource = null,
+    RelationshipAuthorizationAuthObject? AuthObject = null,
     RelationshipAuthorizationFailureLocation? Location = null,
     string? Hint = null
 );
