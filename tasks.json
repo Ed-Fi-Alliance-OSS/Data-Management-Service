@@ -144,5 +144,50 @@
       "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter RelationshipsWithEdOrgsOnly"
     ],
     "completed": true
+  },
+  {
+    "category": "relationship-core-contracts",
+    "description": "Medium: Preserve explicit relationship-local order metadata in the shared relationship authorization outputs and failures instead of relying on incidental list position, so later CRUD AUTH1 composition and diagnostics can map duplicate OR strategies back to the correct configured relationship entry.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationCheckSpec or its directly associated per-strategy metadata carries explicit RelationshipLocalOrder alongside RawConfiguredIndex for every emitted stored-value and proposed-value check.",
+      "Security-configuration and no-claims failure metadata emitted after supported-strategy planning, including EdOrg subject-selection failures, retain the same RelationshipLocalOrder metadata for the affected configured strategy.",
+      "GET-many adapter and shared-core unit coverage assert duplicate configured relationship strategies continue to preserve both explicit relationship-local order and raw configured index through the shared planner outputs."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorization|PageDocumentIdAuthorizationSpecAdapter\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDocumentStoreRepositoryTests\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "relationship-core-metadata",
+    "description": "Medium: Add explicit auth-object and stored/proposed source metadata to the shared relationship authorization contracts so later CRUD AUTH1 composition and ProblemDetails mapping do not have to re-derive those facts from strategy kind or failure kind.",
+    "acceptance-criteria": [
+      "The shared Slice 1 relationship authorization check contract exposes the EdOrg auth object used by each emitted check, and `RelationshipsWithEdOrgsOnly` plus `RelationshipsWithEdOrgsOnlyInverted` populate that metadata without downstream code branching on raw strategy strings.",
+      "The shared failure metadata contract carries explicit stored/proposed source when applicable, and Slice 1-emitted failure shapes populate value-source and auth-object metadata consistently for cases such as no-claims and missing proposed root bindings while staying extensible for later stored-null and proposed-missing failures.",
+      "Planner and adapter unit coverage proves the added metadata survives through shared planning and GET-many adaptation without changing current result kinds, duplicate-strategy handling, or claim parameterization behavior."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorization|PageDocumentIdAuthorizationSpecAdapter\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDocumentStoreRepositoryTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "authorization-context-contracts",
+    "description": "Medium: Make `RelationalAuthorizationContext` enforce its normalization invariants through its public creation paths instead of only through `Create(ClientAuthorizations)`, so direct callers cannot bypass the deduped/sorted `ClaimEducationOrganizationIds` and ordinal-sorted `NamespacePrefixes` required by the shared relationship-authorization contract.",
+    "acceptance-criteria": [
+      "Creating `RelationalAuthorizationContext` through either direct construction or `Create(ClientAuthorizations)` always yields deduped ascending `ClaimEducationOrganizationIds` and deduped ordinal-sorted `NamespacePrefixes`.",
+      "The shared relational authorization contract no longer exposes a public creation path that can persist unsorted or duplicate claim ids or namespace prefixes into downstream planning.",
+      "Focused unit coverage proves the direct-constructor and `Create(ClientAuthorizations)` paths normalize equivalent unsorted inputs to the same deterministic values without regressing current relational query-request construction."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.External src/dms/core",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"QueryRequestHandlerTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationPlannerTests\""
+    ],
+    "completed": false
   }
 ]

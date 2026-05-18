@@ -24,11 +24,13 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
         var authorizationResult = new RelationshipAuthorizationResult.Authorized(
             [
                 CreateCheckSpec(
+                    4,
                     0,
                     RelationshipAuthorizationHierarchyDirection.Normal,
                     CreateSubject("LocalEducationAgencyId")
                 ),
                 CreateCheckSpec(
+                    7,
                     1,
                     RelationshipAuthorizationHierarchyDirection.Normal,
                     CreateSubject("LocalEducationAgencyId")
@@ -47,6 +49,10 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
         authorizationSpec.Strategies.Should().HaveCount(2);
         authorizationSpec
             .Strategies.Select(static strategy => strategy.RawConfiguredIndex)
+            .Should()
+            .Equal(4, 7);
+        authorizationSpec
+            .Strategies.Select(static strategy => strategy.RelationshipLocalOrder)
             .Should()
             .Equal(0, 1);
         authorizationSpec
@@ -77,6 +83,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
             [
                 CreateCheckSpec(
                     4,
+                    0,
                     RelationshipAuthorizationHierarchyDirection.Inverted,
                     CreateSubject("SchoolId")
                 ),
@@ -99,13 +106,15 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                 new PageDocumentIdAuthorizationStrategy(
                     PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
                     [new PageDocumentIdAuthorizationSubject(_rootTable, new DbColumnName("SchoolId"))],
-                    4
+                    4,
+                    0
                 )
             );
     }
 
     private static RelationshipAuthorizationCheckSpec CreateCheckSpec(
         int rawConfiguredIndex,
+        int relationshipLocalOrder,
         RelationshipAuthorizationHierarchyDirection direction,
         params RelationshipAuthorizationSubject[] subjects
     ) =>
@@ -115,6 +124,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                 RawConfiguredIndex: rawConfiguredIndex,
                 Composition: RelationshipAuthorizationStrategyComposition.And
             ),
+            relationshipLocalOrder,
             direction,
             RelationshipAuthorizationValueSource.Stored,
             subjects,

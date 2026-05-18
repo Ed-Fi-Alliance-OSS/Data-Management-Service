@@ -44,6 +44,10 @@ public class Given_RelationshipAuthorizationPlanner
             .Should()
             .Equal(0, 1);
         authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+        authorizedResult
             .CheckSpecs.Select(static checkSpec => checkSpec.Direction)
             .Should()
             .Equal(
@@ -103,6 +107,10 @@ public class Given_RelationshipAuthorizationPlanner
         authorizedResult.CheckSpecs.Should().HaveCount(2);
         authorizedResult
             .CheckSpecs.Select(static checkSpec => checkSpec.ConfiguredStrategy.RawConfiguredIndex)
+            .Should()
+            .Equal(0, 1);
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.RelationshipLocalOrder)
             .Should()
             .Equal(0, 1);
         authorizedResult
@@ -229,6 +237,71 @@ public class Given_RelationshipAuthorizationPlanner
             .FailureKind.Should()
             .Be(RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds);
         noClaimsResult.Failures[0].ConfiguredStrategy?.RawConfiguredIndex.Should().Be(0);
+        noClaimsResult.Failures[0].RelationshipLocalOrder.Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_preserve_relationship_local_order_when_supported_strategies_skip_noop_entries()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
+        var planner = new RelationshipAuthorizationPlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMultipleRootSubjectMappingSet(),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var authorizedResult = (RelationshipAuthorizationResult.Authorized)result;
+
+        authorizedResult.CheckSpecs.Should().HaveCount(2);
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.ConfiguredStrategy.RawConfiguredIndex)
+            .Should()
+            .Equal(1, 2);
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+    }
+
+    [Test]
+    public void It_should_preserve_relationship_local_order_on_subject_selection_failures_after_classification()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var planner = new RelationshipAuthorizationPlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMinimalMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var securityConfigurationErrorResult =
+            (RelationshipAuthorizationResult.SecurityConfigurationError)result;
+
+        securityConfigurationErrorResult
+            .Failures.Select(static failure => failure.ConfiguredStrategy?.RawConfiguredIndex)
+            .Should()
+            .Equal(1, 2);
+        securityConfigurationErrorResult
+            .Failures.Select(static failure => failure.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
     }
 
     [Test]

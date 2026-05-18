@@ -70,6 +70,7 @@ public sealed class RelationshipAuthorizationPlanner
                     new CheckSpecCreationResult(
                         new RelationshipAuthorizationCheckSpec(
                             strategy.ConfiguredStrategy,
+                            strategy.RelationshipLocalOrder,
                             strategy.Direction,
                             RelationshipAuthorizationValueSource.Stored,
                             subjects,
@@ -151,7 +152,7 @@ public sealed class RelationshipAuthorizationPlanner
         var selectedEdOrgSubjects = _edOrgAuthorizationSubjectSelector.Select(
             mappingSet,
             resource,
-            [.. supportedStrategies.Select(static strategy => strategy.ConfiguredStrategy)]
+            supportedStrategies
         );
 
         if (
@@ -275,6 +276,7 @@ public sealed class RelationshipAuthorizationPlanner
                 : new CheckSpecCreationResult(
                     new RelationshipAuthorizationCheckSpec(
                         supportedStrategy.ConfiguredStrategy,
+                        supportedStrategy.RelationshipLocalOrder,
                         supportedStrategy.Direction,
                         RelationshipAuthorizationValueSource.Proposed,
                         subjects,

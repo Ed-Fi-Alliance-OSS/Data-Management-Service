@@ -112,6 +112,7 @@ public sealed record RelationshipAuthorizationProposedValueBinding(
 
 public sealed record RelationshipAuthorizationCheckSpec(
     ConfiguredAuthorizationStrategy ConfiguredStrategy,
+    int RelationshipLocalOrder,
     RelationshipAuthorizationHierarchyDirection Direction,
     RelationshipAuthorizationValueSource ValueSource,
     IReadOnlyList<RelationshipAuthorizationSubject> Subjects,

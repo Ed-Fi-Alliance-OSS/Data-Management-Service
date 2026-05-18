@@ -50,7 +50,8 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
         return new PageDocumentIdAuthorizationStrategy(
             MapKind(checkSpec.Direction),
             [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],
-            checkSpec.ConfiguredStrategy.RawConfiguredIndex
+            checkSpec.ConfiguredStrategy.RawConfiguredIndex,
+            checkSpec.RelationshipLocalOrder
         );
     }
 
