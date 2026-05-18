@@ -31,10 +31,11 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///     <c>skippedArrayNestedPaths</c>.</description>
 ///   </item>
 ///   <item>
-///     <description>For each root-level path, extract the reference-object prefix (the JSON
-///     path with its final segment dropped) and find a
-///     <see cref="DocumentReferenceBinding"/> on the subject's root table whose
-///     <c>ReferenceObjectPath</c> matches.</description>
+///     <description>For each root-level path, find a
+///     <see cref="DocumentReferenceBinding"/> on the subject's root table that owns an
+///     <see cref="ReferenceIdentityBinding"/> whose <c>ReferenceJsonPath</c> equals the
+///     securable path exactly. A reference-object prefix match alone is not enough — the
+///     full identity path must be present in the binding's <c>IdentityBindings</c>.</description>
 ///   </item>
 ///   <item>
 ///     <description>If the binding's target is the person resource, the chain is a single
@@ -119,13 +120,7 @@ public static class PersonJoinPathResolver
 
         foreach (var personPath in rootLevel)
         {
-            var referencePrefix = ExtractReferencePrefix(personPath);
-            if (referencePrefix is null)
-            {
-                continue;
-            }
-
-            var binding = FindBindingByReferencePrefix(model, rootTable.Table, referencePrefix);
+            var binding = FindBindingByPersonPath(model, rootTable.Table, personPath);
             if (binding is null)
             {
                 continue;
@@ -288,39 +283,28 @@ public static class PersonJoinPathResolver
     }
 
     /// <summary>
-    /// Extracts the reference-object prefix from a securable element JSON path: for
-    /// <c>$.schoolReference.schoolId</c>, returns <c>$.schoolReference</c>. Returns
-    /// <see langword="null"/> when the path has no <c>.</c> after the root <c>$</c>.
+    /// Finds a <see cref="DocumentReferenceBinding"/> on the specified table that owns a
+    /// <see cref="ReferenceIdentityBinding"/> whose <c>ReferenceJsonPath</c> equals
+    /// <paramref name="personPath"/> exactly. Implements the design contract from
+    /// <c>auth.md</c>: the securable element path must match a real <c>referenceJsonPath</c>
+    /// on the resource, not merely share a reference-object prefix.
     /// </summary>
-    private static string? ExtractReferencePrefix(string jsonPath)
-    {
-        var lastDot = jsonPath.LastIndexOf('.');
-        if (lastDot <= 0)
-        {
-            return null;
-        }
-
-        return jsonPath[..lastDot];
-    }
-
-    /// <summary>
-    /// Finds a <see cref="DocumentReferenceBinding"/> on the specified table whose
-    /// <see cref="DocumentReferenceBinding.ReferenceObjectPath"/> matches the reference prefix.
-    /// </summary>
-    private static DocumentReferenceBinding? FindBindingByReferencePrefix(
+    private static DocumentReferenceBinding? FindBindingByPersonPath(
         RelationalResourceModel model,
         DbTableName table,
-        string referencePrefix
+        string personPath
     )
     {
         foreach (var binding in model.DocumentReferenceBindings)
         {
+            if (binding.Table != table)
+            {
+                continue;
+            }
+
             if (
-                binding.Table == table
-                && string.Equals(
-                    binding.ReferenceObjectPath.Canonical,
-                    referencePrefix,
-                    StringComparison.Ordinal
+                binding.IdentityBindings.Any(ib =>
+                    string.Equals(ib.ReferenceJsonPath.Canonical, personPath, StringComparison.Ordinal)
                 )
             )
             {

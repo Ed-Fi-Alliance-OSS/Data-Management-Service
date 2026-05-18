@@ -766,6 +766,46 @@ public class Given_Unresolvable_Person_Securable_Path
 }
 
 /// <summary>
+/// Test fixture asserting that a Student securable path whose reference-object prefix matches an
+/// existing <see cref="DocumentReferenceBinding"/> but whose terminal segment is NOT present in
+/// that binding's <c>IdentityBindings</c> is treated as unresolvable. Guards against the
+/// "prefix-only" matching trap: <c>$.studentReference.badLeaf</c> must not silently resolve like
+/// <c>$.studentReference.studentUniqueId</c> just because <c>$.studentReference</c> exists.
+/// </summary>
+[TestFixture]
+public class Given_Person_Path_Terminal_Does_Not_Match_Identity_Binding
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        _exception = TestExceptions.CaptureException(() =>
+            AuthorizationIndexTestRunner.Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithMismatchedPersonPathTerminal()
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildPlainResource("Student"));
+            })
+        );
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_should_name_the_resource_and_offending_path()
+    {
+        _exception!.Message.Should().Contain("MismatchedPersonPathTerminalCarrier");
+        _exception.Message.Should().Contain("$.studentReference.badLeaf");
+    }
+}
+
+/// <summary>
 /// Test fixture asserting that when a person-hop FK column on the source root table is a
 /// <see cref="ColumnStorage.UnifiedAlias"/>, the emitted auth index keys on the alias's
 /// canonical column (not the alias literal), and the index name uses the canonical column.
@@ -2450,6 +2490,50 @@ internal static class AuthIndexFixtureResources
         );
 
     /// <summary>
+    /// Subject resource whose Student securable path shares a reference-object prefix with an
+    /// existing <see cref="DocumentReferenceBinding"/> (<c>$.studentReference</c> → Student) but
+    /// whose terminal segment (<c>badLeaf</c>) does NOT appear in any of that binding's
+    /// <see cref="ReferenceIdentityBinding.ReferenceJsonPath"/> values. Drives the spec contract
+    /// in <c>auth.md</c>: securable paths must match a real <c>referenceJsonPath</c>, not just a
+    /// reference-object prefix. The pass must treat the path as unresolvable and throw.
+    /// </summary>
+    public static ConcreteResourceModel BuildResourceWithMismatchedPersonPathTerminal()
+    {
+        const string resourceName = "MismatchedPersonPathTerminalCarrier";
+        var rootTable = new DbTableName(_edfiSchema, resourceName);
+        var fkColumn = new DbColumnName("Student_DocumentId");
+
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
+            Table: rootTable,
+            FkColumn: fkColumn,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.studentReference.studentUniqueId"),
+                    fkColumn
+                ),
+            ]
+        );
+
+        return BuildResource(
+            resourceName,
+            [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(fkColumn)],
+            [binding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.studentReference.badLeaf"],
+                Contact: [],
+                Staff: []
+            )
+        );
+    }
+
+    /// <summary>
     /// Subject resource declaring two distinct person securable elements (Student and Contact)
     /// with non-overlapping FK columns. Drives the multi-kind 1-hop case: one auth index emitted
     /// per kind on its own FK column, each INCLUDE <c>DocumentId</c>. Tests using this builder
@@ -2626,6 +2710,11 @@ internal static class AuthIndexFixtureResources
                 new ReferenceIdentityBinding(
                     JsonPathExpressionCompiler.Compile("$.documentId"),
                     JsonPathExpressionCompiler.Compile($"{referenceObjectPath}.documentId"),
+                    fkColumn
+                ),
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile($"{referenceObjectPath}.studentUniqueId"),
                     fkColumn
                 ),
             ]
