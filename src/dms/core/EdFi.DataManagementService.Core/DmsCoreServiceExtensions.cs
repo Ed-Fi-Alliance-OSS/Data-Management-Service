@@ -67,6 +67,8 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>()
             .AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>()
             .AddSingleton<IDmsStartupTask, ValidateStartupInstancesTask>()
+            .AddSingleton<IDmsStartupTask, WarmUpOidcMetadataTask>()
+            .AddSingleton<IDmsStartupTask, CacheClaimSetsTask>()
             // Startup components
             .AddSingleton<IApiSchemaInputNormalizer, ApiSchemaInputNormalizer>()
             .AddSingleton<IEffectiveSchemaHashProvider, EffectiveSchemaHashProvider>()
