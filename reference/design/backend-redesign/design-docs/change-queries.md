@@ -962,7 +962,7 @@ The resource types that get synced first are the most susceptible to this issue 
 
 Additionally, this extraction method is susceptible to the `Unresolved references when not using snapshots` issue described above, meaning it requires retry logic in the synchronization tool.
 
-API publisher already supports reverse paging.
+API publisher already supports reverse paging, but it doesn't support the retry logic needed to solve the `Unresolved references when not using snapshots` issue.
 
 ### How to disable the feature
 
