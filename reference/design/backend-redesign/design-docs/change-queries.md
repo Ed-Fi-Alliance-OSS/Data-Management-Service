@@ -1508,4 +1508,4 @@ ORDER BY
 #### Open questions
 
 - We should introduce the snapshots feature because downstream APIs must implement reverse paging with retry to get equivalent behavior. Should we add it for v1.0 or treat it as a stretch goal? CMS already supports storing derivatives, but DMS has to be updated to use them.
-- Should we allow disabling the feature for v1.0? If so, users would need to tell the DDL emitter whether they want to include the change objects. The API would then check for the existence of the schema on boot and fail fast if the feature is enabled in appsettings.json.
+- Should we allow disabling the feature for v1.0? If so, users would need to tell the DDL emitter whether they want to include the change tracking objects. The API would then check for the existence of the changes schema in the DB on boot and fail fast if the feature is enabled in appsettings.json but the DB objects are missing.
