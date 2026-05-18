@@ -63,7 +63,7 @@ internal static class DescriptorRuntimeScenario
         };
 
         // _lastModifiedDate is stamped at second precision, so wait for the UTC second to tick before the PUT.
-        await WaitForNextWireSecondAsync(initialLastModifiedDate);
+        await WaitForNextWireSecondAsync();
 
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
             harness,
@@ -677,24 +677,11 @@ internal static class DescriptorRuntimeScenario
         );
     }
 
-    private static async Task WaitForNextWireSecondAsync(string previousWireTimestamp)
-    {
-        // _lastModifiedDate is stamped by the database clock (Postgres now() / MSSQL GETUTCDATE()) at second
-        // precision. Anchor the wait on the wire timestamp itself so any subsequent DB-side stamp must land
-        // in a later second, even if the test process clock is slightly ahead of the database clock.
-        DateTimeOffset wireSecond = DateTimeOffset.ParseExact(
-            previousWireTimestamp,
-            "yyyy-MM-ddTHH:mm:ssZ",
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal
-        );
-        DateTimeOffset target = wireSecond + TimeSpan.FromMilliseconds(1100);
-        TimeSpan remaining = target - DateTimeOffset.UtcNow;
-        if (remaining > TimeSpan.Zero)
-        {
-            await Task.Delay(remaining);
-        }
-    }
+    private static Task WaitForNextWireSecondAsync() =>
+        // _lastModifiedDate is stamped by the database clock at second precision. Sleep an unconditional
+        // fixed delay (no test-host clock comparison) so any subsequent DB-side stamp lands in a later
+        // wire second, regardless of any skew between the test host and database container clocks.
+        Task.Delay(TimeSpan.FromMilliseconds(1500));
 
     private static JsonObject CreateDescriptorPayload(DescriptorValues descriptor) =>
         new()
