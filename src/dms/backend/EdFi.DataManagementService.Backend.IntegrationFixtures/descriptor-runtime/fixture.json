@@ -1,0 +1,4 @@
+{
+  "apiSchemaFiles": ["ApiSchema.json"],
+  "dialects": ["pgsql", "mssql"]
+}

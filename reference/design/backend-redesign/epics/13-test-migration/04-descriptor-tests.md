@@ -24,11 +24,14 @@ This story complements the DDL generator harness by validating runtime descripto
   - descriptor PUT with unchanged non-identity fields is a successful no-op that preserves `_etag/_lastModifiedDate/ChangeVersion`,
   - descriptor PUT rejects identity changes (`Namespace`/`CodeValue`),
   - descriptor queries filter correctly on key fields and page deterministically,
+  - descriptor DELETE removes a non-referenced descriptor (204 followed by GET 404) and clears the underlying `dms.Document` row,
+  - descriptor DELETE is rejected with `urn:ed-fi:api:data-conflict:dependent-item-exists` (409) when a non-descriptor resource references it,
   - a descriptor-referencing resource write fails fast when a required descriptor does not exist and succeeds once seeded/created.
 - Where both engines are supported in CI, tests run on PostgreSQL and SQL Server with equivalent assertions.
 
 ## Tasks
 
 1. Add runtime integration tests for descriptor create/update/query behaviors, including unchanged PUT no-op behavior.
-2. Add a “descriptor reference required” test that exercises write-time descriptor resolution and error mapping.
-3. When descriptor seeding is enabled, add an integration test that seeds a small `InterchangeDescriptors` input and verifies descriptors become resolvable.
+2. Add descriptor DELETE coverage: a non-referenced delete (204 + GET 404) and a referenced delete that maps to the `dependent-item-exists` 409.
+3. Add a “descriptor reference required” test that exercises write-time descriptor resolution and error mapping.
+4. When descriptor seeding is enabled, add an integration test that seeds a small `InterchangeDescriptors` input and verifies descriptors become resolvable.
