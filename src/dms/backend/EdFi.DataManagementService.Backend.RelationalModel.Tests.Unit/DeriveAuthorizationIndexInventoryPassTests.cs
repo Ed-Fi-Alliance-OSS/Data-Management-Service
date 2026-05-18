@@ -1598,6 +1598,155 @@ public class Given_The_Canonical_Pass_List
 }
 
 /// <summary>
+/// Test fixture asserting that when a transitive Student securable resolves through an
+/// intermediate resource that is NOT present in the model set, the pass throws
+/// <see cref="InvalidOperationException"/> naming the resource and the offending JSON path.
+/// Guards <c>PersonJoinPathResolver.BfsToPersonResource</c>'s silent <c>continue</c> on a missing
+/// <c>resourceLookup</c> entry: that branch surfaces as a generic "could not resolve" message
+/// rather than a silent zero-index emission.
+/// </summary>
+[TestFixture]
+public class Given_Transitive_Person_Path_With_Missing_Intermediate
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        _exception = TestExceptions.CaptureException(() =>
+            AuthorizationIndexTestRunner.Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithTransitiveStudentReference()
+                );
+                // Intentionally omit BuildStudentAcademicRecordIntermediate so the BFS hits a
+                // resourceLookup miss on the first hop and returns null.
+                ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildPlainResource("Student"));
+            })
+        );
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_should_name_the_resource_and_offending_path()
+    {
+        _exception!.Message.Should().Contain("CourseTranscriptLike");
+        _exception.Message.Should().Contain("$.studentAcademicRecordReference.studentUniqueId");
+    }
+}
+
+/// <summary>
+/// Test fixture asserting that a PA resource whose INCLUDE column is a
+/// <see cref="ColumnStorage.UnifiedAlias"/> emits the auth index's <c>IncludeColumns</c> with
+/// the canonical column (not the alias literal). Companion to
+/// <see cref="Given_PrimaryAssociation_With_UnifiedAlias_Key"/>, which covers aliased KEY
+/// resolution; this fixture exercises the symmetric <c>ResolveCanonical(rootTable,
+/// entry.IncludeColumn)</c> call in <c>EmitPrimaryAssociationIndexes</c>.
+/// </summary>
+[TestFixture]
+public class Given_PrimaryAssociation_With_UnifiedAlias_Include_Column
+{
+    private DbIndexInfo _index = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var result = AuthorizationIndexTestRunner.Build(ctx =>
+            ctx.ConcreteResourcesInNameOrder.Add(
+                AuthIndexFixtureResources.BuildStudentSchoolAssociationWithAliasedIncludeColumn(
+                    canonicalInclude: new DbColumnName("Student_DocumentId_Canonical")
+                )
+            )
+        );
+        _index = result.IndexesInCreateOrder.Single(i => i.Kind == DbIndexKind.Authorization);
+    }
+
+    [Test]
+    public void It_should_use_the_canonical_column_in_the_INCLUDE_columns()
+    {
+        _index.IncludeColumns.Should().NotBeNull();
+        _index.IncludeColumns!.Select(c => c.Value).Should().Equal("Student_DocumentId_Canonical");
+    }
+
+    [Test]
+    public void It_should_not_emit_the_alias_literal_in_the_INCLUDE_columns()
+    {
+        _index.IncludeColumns!.Select(c => c.Value).Should().NotContain("Student_DocumentId");
+    }
+}
+
+/// <summary>
+/// Test fixture asserting that <see cref="SecurableElementLocationResolver"/> applies the
+/// priority + tiebreaker rule (root before child; lex tiebreakers) shared by the DDL
+/// authorization-index pass and the runtime resolver. Anchors the contract that both call sites
+/// pick the same <c>(table, column)</c> for a path with multiple candidates — the latent
+/// drift risk that motivated centralizing the logic in
+/// <see cref="SecurableElementLocationResolver"/>.
+/// </summary>
+[TestFixture]
+public class Given_SecurableElementLocationResolver_with_multi_candidate_path
+{
+    private ConcreteResourceModel _resource = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _resource = AuthIndexFixtureResources.BuildResourceWithMultiCandidateOnSamePath();
+    }
+
+    [Test]
+    public void It_should_collect_two_distinct_candidates()
+    {
+        var candidates = SecurableElementLocationResolver.ResolveAllCandidates(_resource, "$.shared");
+        candidates.Should().HaveCount(2);
+    }
+
+    [Test]
+    public void It_should_prefer_the_root_candidate_over_the_child()
+    {
+        var preferred = SecurableElementLocationResolver.ResolvePreferred(_resource, "$.shared");
+
+        preferred.Should().NotBeNull();
+        preferred!.SourceTable.Should().Be(_resource.RelationalModel.Root.Table);
+        preferred.SourceColumnName.Value.Should().Be("RootShared");
+    }
+
+    [Test]
+    public void It_should_return_null_when_no_candidate_matches()
+    {
+        var preferred = SecurableElementLocationResolver.ResolvePreferred(
+            _resource,
+            "$.path.that.matches.nothing"
+        );
+        preferred.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_emit_the_auth_index_at_the_root_candidate()
+    {
+        // End-to-end agreement check: the pass uses ResolveSecurableElementLocation, which now
+        // delegates to SecurableElementLocationResolver. The auth index must be emitted on the
+        // root scalar location, not the child binding location a first-match-wins scan would
+        // have produced.
+        var modelSet = AuthorizationIndexTestRunner.Build(ctx =>
+            ctx.ConcreteResourcesInNameOrder.Add(
+                AuthIndexFixtureResources.BuildResourceWithMultiCandidateOnSamePath()
+            )
+        );
+
+        var authIndex = modelSet.IndexesInCreateOrder.Single(i => i.Kind == DbIndexKind.Authorization);
+
+        authIndex.Table.Name.Should().Be("MultiCandidateCarrier");
+        authIndex.KeyColumns.Select(c => c.Value).Should().Equal("RootShared");
+    }
+}
+
+/// <summary>
 /// Builds a derived relational model set by injecting a configurable fixture pass that
 /// populates <c>ConcreteResourcesInNameOrder</c>, then runs the pass under test.
 /// </summary>
@@ -2803,4 +2952,115 @@ internal static class AuthIndexFixtureResources
             TargetResource: null,
             new ColumnStorage.UnifiedAlias(canonical, PresenceColumn: null)
         );
+
+    /// <summary>
+    /// <c>StudentSchoolAssociation</c>-shaped resource whose root table carries the PA key
+    /// literally (<c>SchoolId_Unified</c>) but exposes the include column (<c>Student_DocumentId</c>)
+    /// as a <see cref="ColumnStorage.UnifiedAlias"/> over <paramref name="canonicalInclude"/>.
+    /// Drives the alias-resolution branch on the INCLUDE column of <c>EmitPrimaryAssociationIndexes</c>.
+    /// </summary>
+    public static ConcreteResourceModel BuildStudentSchoolAssociationWithAliasedIncludeColumn(
+        DbColumnName canonicalInclude
+    )
+    {
+        var keyLiteral = new DbColumnName("SchoolId_Unified");
+        var includeLiteral = new DbColumnName("Student_DocumentId");
+
+        var columns = new[]
+        {
+            BuildScalarColumn(keyLiteral),
+            BuildScalarColumn(canonicalInclude),
+            BuildAliasColumn(includeLiteral, canonicalInclude),
+        };
+
+        return BuildResourceFromColumns("StudentSchoolAssociation", columns);
+    }
+
+    /// <summary>
+    /// Subject resource with both a root scalar column whose <c>SourceJsonPath</c> matches
+    /// <c>$.shared</c> AND a child-table <see cref="DocumentReferenceBinding"/> whose identity
+    /// binding's <c>ReferenceJsonPath</c> also matches <c>$.shared</c>. Exercises the multi-
+    /// candidate selection path in <see cref="SecurableElementLocationResolver"/> — the root
+    /// scalar (priority 0) must win over the child binding (priority &gt; 0). The
+    /// <see cref="DocumentReferenceBinding"/>s list deliberately places the child binding first
+    /// so a first-match-wins algorithm would pick the wrong location.
+    /// </summary>
+    public static ConcreteResourceModel BuildResourceWithMultiCandidateOnSamePath()
+    {
+        const string resourceName = "MultiCandidateCarrier";
+        var rootTableName = new DbTableName(_edfiSchema, resourceName);
+        var childTableName = new DbTableName(_edfiSchema, "MultiCandidateCarrierItem");
+
+        var rootScalar = new DbColumnName("RootShared");
+        var childFkColumn = new DbColumnName("Item_DocumentId");
+        var childIdentityColumn = new DbColumnName("Item_Shared");
+
+        var rootTable = new DbTableModel(
+            rootTableName,
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                $"PK_{resourceName}",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                BuildScalarColumn(new DbColumnName("DocumentId")),
+                BuildScalarColumnWithJsonPath(rootScalar, "$.shared"),
+            ],
+            []
+        );
+
+        var childTable = new DbTableModel(
+            childTableName,
+            JsonPathExpressionCompiler.Compile("$.items[*]"),
+            new TableKey(
+                $"PK_{resourceName}Item",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                BuildScalarColumn(new DbColumnName("CollectionItemId")),
+                BuildScalarColumn(childFkColumn),
+                BuildScalarColumn(childIdentityColumn),
+            ],
+            []
+        );
+
+        var childBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.items[*].itemReference"),
+            Table: childTableName,
+            FkColumn: childFkColumn,
+            TargetResource: new QualifiedResourceName(EdFi, "Item"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.shared"),
+                    JsonPathExpressionCompiler.Compile("$.shared"),
+                    childIdentityColumn
+                ),
+            ]
+        );
+
+        var qualifiedName = new QualifiedResourceName(EdFi, resourceName);
+        var resourceKey = new ResourceKeyEntry(1, qualifiedName, "1.0.0", false);
+        var relationalModel = new RelationalResourceModel(
+            qualifiedName,
+            _edfiSchema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable, childTable],
+            [childBinding],
+            []
+        );
+
+        return new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)
+        {
+            SecurableElements = new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: ["$.shared"],
+                Student: [],
+                Contact: [],
+                Staff: []
+            ),
+        };
+    }
 }

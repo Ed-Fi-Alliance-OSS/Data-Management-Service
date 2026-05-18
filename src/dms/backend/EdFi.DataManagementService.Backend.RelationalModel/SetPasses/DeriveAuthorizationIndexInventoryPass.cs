@@ -71,8 +71,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaLiteral = false)
     : IRelationalModelSetPass
 {
-    private const string EdFiProjectName = "Ed-Fi";
-
     private static readonly DbColumnName DocumentIdColumn = new("DocumentId");
 
     /// <summary>
@@ -87,28 +85,34 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     private static readonly PrimaryAssociationIndex[] PrimaryAssociationIndexes =
     [
         new(
-            new QualifiedResourceName(EdFiProjectName, "StudentSchoolAssociation"),
+            new QualifiedResourceName(PersonJoinPathResolver.EdFiProjectName, "StudentSchoolAssociation"),
             AuthNames.SchoolIdUnified,
             AuthNames.StudentDocumentId
         ),
         new(
-            new QualifiedResourceName(EdFiProjectName, "StudentContactAssociation"),
+            new QualifiedResourceName(PersonJoinPathResolver.EdFiProjectName, "StudentContactAssociation"),
             AuthNames.StudentDocumentId,
             AuthNames.ContactDocumentId
         ),
         new(
-            new QualifiedResourceName(EdFiProjectName, "StaffEducationOrganizationAssignmentAssociation"),
-            AuthNames.EdOrgEdOrgId,
-            AuthNames.StaffDocumentId
-        ),
-        new(
-            new QualifiedResourceName(EdFiProjectName, "StaffEducationOrganizationEmploymentAssociation"),
+            new QualifiedResourceName(
+                PersonJoinPathResolver.EdFiProjectName,
+                "StaffEducationOrganizationAssignmentAssociation"
+            ),
             AuthNames.EdOrgEdOrgId,
             AuthNames.StaffDocumentId
         ),
         new(
             new QualifiedResourceName(
-                EdFiProjectName,
+                PersonJoinPathResolver.EdFiProjectName,
+                "StaffEducationOrganizationEmploymentAssociation"
+            ),
+            AuthNames.EdOrgEdOrgId,
+            AuthNames.StaffDocumentId
+        ),
+        new(
+            new QualifiedResourceName(
+                PersonJoinPathResolver.EdFiProjectName,
                 "StudentEducationOrganizationResponsibilityAssociation"
             ),
             AuthNames.EdOrgEdOrgId,
@@ -534,12 +538,8 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     }
 
     /// <summary>
-    /// Resolves a securable element JSON path to its <c>(table, column)</c> location on the
-    /// derived relational model. Walks every <see cref="DocumentReferenceBinding"/> (root or
-    /// child) for an identity binding whose <c>ReferenceJsonPath</c> matches the securable path;
-    /// falls back to scanning every table for a scalar column whose <c>SourceJsonPath</c>
-    /// matches (covers root-level scalars such as <c>$.namespace</c>). Throws when no match is
-    /// found.
+    /// Resolves a securable element JSON path to its <c>(table, column)</c> location via the
+    /// shared <see cref="SecurableElementLocationResolver"/>. Throws when no candidate matches.
     /// </summary>
     /// <remarks>
     /// Array-nested paths (containing <c>[*]</c>) resolve onto the child collection table
@@ -547,68 +547,27 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     /// <c>$.requiredAssessments[*].assessmentReference.namespace</c> on
     /// <c>edfi.GraduationPlan</c> resolves to
     /// <c>edfi.GraduationPlanRequiredAssessment.RequiredAssessmentAssessment_Namespace</c>.
-    /// Non-nested paths still resolve to the root table because their bindings live there.
+    /// Non-nested paths resolve to the root table because their bindings/columns live there;
+    /// when both root and child candidates match the same path, the shared resolver's priority
+    /// rule prefers the root.
     /// </remarks>
     private static (DbTableName Table, DbColumnName Column) ResolveSecurableElementLocation(
         ConcreteResourceModel concrete,
         string jsonPath
     )
     {
-        var model = concrete.RelationalModel;
-
-        foreach (var binding in model.DocumentReferenceBindings)
+        var step = SecurableElementLocationResolver.ResolvePreferred(concrete, jsonPath);
+        if (step is null)
         {
-            var identityBinding = binding.IdentityBindings.FirstOrDefault(ib =>
-                string.Equals(ib.ReferenceJsonPath.Canonical, jsonPath, StringComparison.Ordinal)
+            var resource = concrete.ResourceKey.Resource;
+            throw new InvalidOperationException(
+                $"Authorization index emission for '{resource.ProjectName}.{resource.ResourceName}' "
+                    + $"could not resolve securable element JSON path '{jsonPath}' to a column on any table."
             );
-
-            if (identityBinding is null)
-            {
-                continue;
-            }
-
-            var owningTable = FindTableModel(model, binding.Table, concrete);
-            var canonical = ResolveCanonical(owningTable, identityBinding.Column) ?? identityBinding.Column;
-            return (binding.Table, canonical);
         }
 
-        foreach (var table in model.TablesInDependencyOrder)
-        {
-            foreach (var column in table.Columns)
-            {
-                if (
-                    column.SourceJsonPath is not null
-                    && string.Equals(
-                        column.SourceJsonPath.Value.Canonical,
-                        jsonPath,
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    var canonical = ResolveCanonical(table, column.ColumnName) ?? column.ColumnName;
-                    return (table.Table, canonical);
-                }
-            }
-        }
-
-        var resource = concrete.ResourceKey.Resource;
-        throw new InvalidOperationException(
-            $"Authorization index emission for '{resource.ProjectName}.{resource.ResourceName}' "
-                + $"could not resolve securable element JSON path '{jsonPath}' to a column on any table."
-        );
+        return (step.SourceTable, step.SourceColumnName);
     }
-
-    private static DbTableModel FindTableModel(
-        RelationalResourceModel model,
-        DbTableName tableName,
-        ConcreteResourceModel concrete
-    ) =>
-        model.TablesInDependencyOrder.FirstOrDefault(t => t.Table == tableName)
-        ?? throw new InvalidOperationException(
-            $"DocumentReferenceBinding for '{concrete.ResourceKey.Resource.ResourceName}' references "
-                + $"table '{tableName.Schema.Value}.{tableName.Name}' which is not present in "
-                + "TablesInDependencyOrder."
-        );
 
     /// <summary>
     /// Resolves a literal column name on a root table to its canonical storage column by

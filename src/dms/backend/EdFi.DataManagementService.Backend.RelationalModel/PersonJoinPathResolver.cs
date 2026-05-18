@@ -55,7 +55,13 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// </remarks>
 public static class PersonJoinPathResolver
 {
-    private const string EdFiProjectName = "Ed-Fi";
+    /// <summary>
+    /// Canonical project name of the Ed-Fi core data standard. Shared by callers that need to
+    /// match a <see cref="QualifiedResourceName.ProjectName"/> against the core person resources
+    /// (<c>Student</c>, <c>Contact</c>, <c>Staff</c>).
+    /// </summary>
+    public const string EdFiProjectName = "Ed-Fi";
+
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
 
     /// <summary>
@@ -218,14 +224,6 @@ public static class PersonJoinPathResolver
             intermediateResource.RelationalModel.Root.Table,
             _documentIdColumn
         );
-
-        // Defensive: callers don't invoke BFS when the first hop is already the person resource
-        // (they take a direct-hit branch), but mirror the original runtime resolver so behavior
-        // is preserved if an unusual call path lands here.
-        if (IsPersonResource(firstHopBinding.TargetResource, personResourceName))
-        {
-            return [firstStep];
-        }
 
         visited.Add(firstHopBinding.TargetResource);
         queue.Enqueue((firstHopBinding.TargetResource, new List<ColumnPathStep> { firstStep }));

@@ -187,7 +187,8 @@ internal static class SecurableElementColumnPathResolver
 
         return
         [
-            .. ResolveEdOrgOrNamespaceCandidates(subjectResource, edOrgElement.JsonPath)
+            .. SecurableElementLocationResolver
+                .ResolveAllCandidates(subjectResource, edOrgElement.JsonPath)
                 .Select(candidate => new ResolvedEdOrgSecurableElementCandidate(
                     edOrgElement.JsonPath,
                     edOrgElement.MetaEdName,
@@ -200,97 +201,14 @@ internal static class SecurableElementColumnPathResolver
     /// Resolves an EdOrg or Namespace securable element to a single column path step
     /// (<see cref="ColumnPathStep.TargetTable"/> and <see cref="ColumnPathStep.TargetColumnName"/>
     /// are <see langword="null"/> — the auth value lives at <c>SourceTable.SourceColumnName</c>).
-    /// Walks every <see cref="DocumentReferenceBinding"/> (root or child) for an identity binding
-    /// whose <c>ReferenceJsonPath</c> matches; falls back to scanning every table for a scalar
-    /// column whose <c>SourceJsonPath</c> matches. Mirrors
-    /// <c>DeriveAuthorizationIndexInventoryPass.ResolveSecurableElementLocation</c> so the
-    /// runtime mapping and the DDL index pass agree on which (table, column) carries the value
-    /// for both root-level and array-nested paths.
+    /// Delegates to <see cref="SecurableElementLocationResolver"/> so the runtime mapping and the
+    /// DDL index pass (<c>DeriveAuthorizationIndexInventoryPass.ResolveSecurableElementLocation</c>)
+    /// agree on which (table, column) carries the value for both root-level and array-nested paths.
     /// </summary>
     private static ColumnPathStep? ResolveEdOrgOrNamespacePath(
         ConcreteResourceModel resource,
         string securableElementPath
-    )
-    {
-        var candidates = ResolveEdOrgOrNamespaceCandidates(resource, securableElementPath);
-        return candidates.Count == 0
-            ? null
-            : SelectPreferredSingleStepCandidate(resource, candidates, securableElementPath);
-    }
-
-    private static DbTableModel? FindTable(RelationalResourceModel model, DbTableName tableName)
-    {
-        foreach (var t in model.TablesInDependencyOrder)
-        {
-            if (t.Table == tableName)
-            {
-                return t;
-            }
-        }
-
-        return null;
-    }
-
-    private static IReadOnlyList<ColumnPathStep> ResolveEdOrgOrNamespaceCandidates(
-        ConcreteResourceModel resource,
-        string securableElementPath
-    )
-    {
-        var model = resource.RelationalModel;
-        List<ColumnPathStep> candidates = [];
-        HashSet<ColumnPathStep> seenCandidates = [];
-
-        foreach (var binding in model.DocumentReferenceBindings)
-        {
-            var identityBinding = binding.IdentityBindings.FirstOrDefault(ib =>
-                string.Equals(ib.ReferenceJsonPath.Canonical, securableElementPath, StringComparison.Ordinal)
-            );
-
-            if (identityBinding is null)
-            {
-                continue;
-            }
-
-            var owningTable = FindTable(model, binding.Table);
-            var column = owningTable is null
-                ? identityBinding.Column
-                : PersonJoinPathResolver.ResolveToCanonicalColumn(owningTable, identityBinding.Column);
-            var candidate = new ColumnPathStep(binding.Table, column, null, null);
-
-            if (seenCandidates.Add(candidate))
-            {
-                candidates.Add(candidate);
-            }
-        }
-
-        foreach (var table in model.TablesInDependencyOrder)
-        {
-            foreach (var column in table.Columns)
-            {
-                if (
-                    column.SourceJsonPath is null
-                    || !string.Equals(
-                        column.SourceJsonPath.Value.Canonical,
-                        securableElementPath,
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    continue;
-                }
-
-                var resolved = PersonJoinPathResolver.ResolveToCanonicalColumn(table, column.ColumnName);
-                var candidate = new ColumnPathStep(table.Table, resolved, null, null);
-
-                if (seenCandidates.Add(candidate))
-                {
-                    candidates.Add(candidate);
-                }
-            }
-        }
-
-        return candidates;
-    }
+    ) => SecurableElementLocationResolver.ResolvePreferred(resource, securableElementPath);
 
     /// <summary>
     /// Resolves person (Student/Contact/Staff) securable element paths. Delegates the shortest-
@@ -349,46 +267,16 @@ internal static class SecurableElementColumnPathResolver
         IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> candidates
     )
     {
-        return candidates
-            .OrderBy(candidate => GetSingleStepCandidatePriority(subjectResource, candidate.Step))
-            .ThenBy(static candidate => candidate.JsonPath.Length)
-            .ThenBy(static candidate => candidate.JsonPath, StringComparer.Ordinal)
-            .ThenBy(static candidate => candidate.Step.SourceTable.ToString(), StringComparer.Ordinal)
-            .ThenBy(static candidate => candidate.Step.SourceColumnName.Value, StringComparer.Ordinal)
-            .FirstOrDefault();
-    }
-
-    private static ColumnPathStep? SelectPreferredSingleStepCandidate(
-        ConcreteResourceModel subjectResource,
-        IReadOnlyList<ColumnPathStep> candidates,
-        string securableElementPath
-    )
-    {
-        return candidates
-            .OrderBy(candidate => GetSingleStepCandidatePriority(subjectResource, candidate))
-            .ThenBy(_ => securableElementPath.Length)
-            .ThenBy(_ => securableElementPath, StringComparer.Ordinal)
-            .ThenBy(static candidate => candidate.SourceTable.ToString(), StringComparer.Ordinal)
-            .ThenBy(static candidate => candidate.SourceColumnName.Value, StringComparer.Ordinal)
-            .FirstOrDefault();
-    }
-
-    private static int GetSingleStepCandidatePriority(
-        ConcreteResourceModel subjectResource,
-        ColumnPathStep candidate
-    )
-    {
-        if (candidate.SourceTable == subjectResource.RelationalModel.Root.Table)
+        if (candidates.Count == 0)
         {
-            return 0;
+            return null;
         }
 
-        var table = FindTable(subjectResource.RelationalModel, candidate.SourceTable);
-        return table is null ? int.MaxValue : GetJsonScopeDepth(table.JsonScope) + 1;
-    }
+        var preferredStep = SecurableElementLocationResolver.SelectPreferred(
+            subjectResource,
+            candidates.Select(c => c.Step).ToList()
+        );
 
-    private static int GetJsonScopeDepth(JsonPathExpression jsonScope)
-    {
-        return jsonScope.Segments.Count;
+        return preferredStep is null ? null : candidates.First(c => c.Step == preferredStep);
     }
 }
