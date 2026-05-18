@@ -26,67 +26,15 @@ public sealed class RelationshipAuthorizationPlanner
         QualifiedResourceName resource,
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
         RelationalAuthorizationContext authorizationContext
-    )
-    {
-        ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
-        ArgumentNullException.ThrowIfNull(authorizationContext);
-
-        var classification = RelationshipAuthorizationStrategyClassifier.Classify(
+    ) =>
+        PlanValues(
             mappingSet,
             resource,
-            configuredAuthorizationStrategies
+            configuredAuthorizationStrategies,
+            authorizationContext,
+            RelationshipAuthorizationValueSource.Stored,
+            CreateStoredCheckSpec
         );
-
-        return classification.Outcome switch
-        {
-            RelationshipAuthorizationClassificationOutcome.NoAuthorizationRequired =>
-                new RelationshipAuthorizationResult.NoAuthorizationRequired(
-                    configuredAuthorizationStrategies
-                ),
-            RelationshipAuthorizationClassificationOutcome.NoFurtherAuthorizationRequired =>
-                new RelationshipAuthorizationResult.NoFurtherAuthorizationRequired(
-                    classification.NoFurtherAuthorizationRequiredStrategies
-                ),
-            RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled =>
-                new RelationshipAuthorizationResult.KnownButNotEnabled(
-                    CreateKnownButNotEnabledFailures(resource, classification.KnownButNotEnabledStrategies)
-                ),
-            RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError =>
-                new RelationshipAuthorizationResult.SecurityConfigurationError(
-                    CombineAndOrderFailures(
-                        classification.SecurityConfigurationFailures,
-                        CreateKnownButNotEnabledFailures(
-                            resource,
-                            classification.KnownButNotEnabledStrategies
-                        )
-                    )
-                ),
-            RelationshipAuthorizationClassificationOutcome.SupportedStrategies => PlanSupportedStrategies(
-                mappingSet,
-                resource,
-                classification.SupportedStrategies,
-                authorizationContext,
-                RelationshipAuthorizationValueSource.Stored,
-                static (rootTable, rootDocumentIdColumn, subjects, strategy) =>
-                    new CheckSpecCreationResult(
-                        new RelationshipAuthorizationCheckSpec(
-                            strategy.ConfiguredStrategy,
-                            strategy.RelationshipLocalOrder,
-                            strategy.Direction,
-                            RelationshipAuthorizationValueSource.Stored,
-                            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(strategy.Direction),
-                            subjects,
-                            new RelationshipAuthorizationCheckTarget.Stored(rootTable, rootDocumentIdColumn)
-                        ),
-                        []
-                    )
-            ),
-            _ => throw new InvalidOperationException(
-                $"Unsupported relationship authorization classification outcome '{classification.Outcome}'."
-            ),
-        };
-    }
 
     public RelationshipAuthorizationResult PlanProposedValues(
         MappingSet mappingSet,
@@ -96,10 +44,31 @@ public sealed class RelationshipAuthorizationPlanner
         ResourceWritePlan writePlan
     )
     {
+        ArgumentNullException.ThrowIfNull(writePlan);
+
+        return PlanValues(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies,
+            authorizationContext,
+            RelationshipAuthorizationValueSource.Proposed,
+            CreateProposedCheckSpecFactory(resource, writePlan)
+        );
+    }
+
+    private RelationshipAuthorizationResult PlanValues(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        RelationshipAuthorizationValueSource valueSource,
+        CreateCheckSpec createCheckSpec
+    )
+    {
         ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
         ArgumentNullException.ThrowIfNull(authorizationContext);
-        ArgumentNullException.ThrowIfNull(writePlan);
+        ArgumentNullException.ThrowIfNull(createCheckSpec);
 
         var classification = RelationshipAuthorizationStrategyClassifier.Classify(
             mappingSet,
@@ -136,8 +105,8 @@ public sealed class RelationshipAuthorizationPlanner
                 resource,
                 classification.SupportedStrategies,
                 authorizationContext,
-                RelationshipAuthorizationValueSource.Proposed,
-                CreateProposedCheckSpecFactory(resource, writePlan)
+                valueSource,
+                createCheckSpec
             ),
             _ => throw new InvalidOperationException(
                 $"Unsupported relationship authorization classification outcome '{classification.Outcome}'."
@@ -230,6 +199,25 @@ public sealed class RelationshipAuthorizationPlanner
             )
         );
     }
+
+    private static CheckSpecCreationResult CreateStoredCheckSpec(
+        DbTableName rootTable,
+        DbColumnName rootDocumentIdColumn,
+        IReadOnlyList<RelationshipAuthorizationSubject> subjects,
+        SupportedRelationshipAuthorizationStrategy supportedStrategy
+    ) =>
+        new(
+            new RelationshipAuthorizationCheckSpec(
+                supportedStrategy.ConfiguredStrategy,
+                supportedStrategy.RelationshipLocalOrder,
+                supportedStrategy.Direction,
+                RelationshipAuthorizationValueSource.Stored,
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(supportedStrategy.Direction),
+                subjects,
+                new RelationshipAuthorizationCheckTarget.Stored(rootTable, rootDocumentIdColumn)
+            ),
+            []
+        );
 
     private static CreateCheckSpec CreateProposedCheckSpecFactory(
         QualifiedResourceName resource,
