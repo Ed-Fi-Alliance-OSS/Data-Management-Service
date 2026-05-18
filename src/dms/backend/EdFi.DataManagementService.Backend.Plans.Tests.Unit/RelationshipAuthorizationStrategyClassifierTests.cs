@@ -148,6 +148,43 @@ public class Given_RelationshipAuthorizationStrategyClassifier
         classification.SecurityConfigurationFailures.Should().BeEmpty();
     }
 
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+        RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople
+    )]
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+        RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted
+    )]
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+        RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly
+    )]
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+        RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly
+    )]
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+        RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility
+    )]
+    public void It_classifies_known_people_and_student_relationship_strategies_as_known_but_not_enabled(
+        string strategyName,
+        RelationshipAuthorizationStrategyKind expectedKind
+    )
+    {
+        var classification = Classify(CreateMappingSet(_queryResource), strategyName);
+
+        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
+        classification.SupportedStrategies.Should().BeEmpty();
+        classification.NoFurtherAuthorizationRequiredStrategies.Should().BeEmpty();
+        classification.SecurityConfigurationFailures.Should().BeEmpty();
+        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
+        classification.KnownButNotEnabledStrategies[0].Kind.Should().Be(expectedKind);
+        classification.KnownButNotEnabledStrategies[0].ConfiguredStrategy.RawConfiguredIndex.Should().Be(0);
+        classification.KnownButNotEnabledStrategies[0].RelationshipLocalOrder.Should().Be(0);
+    }
+
     [Test]
     public void It_prefers_the_standard_edfi_basis_resource_when_custom_view_homographs_exist()
     {

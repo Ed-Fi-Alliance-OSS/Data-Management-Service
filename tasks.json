@@ -111,7 +111,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"Relationship|Authorization\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "get-many-adapter-coverage",

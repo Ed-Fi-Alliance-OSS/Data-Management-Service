@@ -291,6 +291,55 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
     }
 
     [Test]
+    public void It_should_fail_when_no_edorg_securable_elements_are_configured()
+    {
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                "TestResource",
+                CreateModelWithTables("TestResource", CreateRootTable(Table("TestResource")), [], []),
+                new ResourceSecurableElements([], [], [], [], [])
+            )
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            new QualifiedResourceName("Ed-Fi", "TestResource"),
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+            )
+        );
+
+        result
+            .Outcome.Should()
+            .Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
+        result.Subjects.Should().BeEmpty();
+        result.SecurityConfigurationFailures.Should().HaveCount(2);
+        result
+            .SecurityConfigurationFailures.Select(static failure =>
+                failure.ConfiguredStrategy?.RawConfiguredIndex
+            )
+            .Should()
+            .Equal(0, 1);
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.FailureKind)
+            .Should()
+            .OnlyContain(static failureKind =>
+                failureKind == RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+            );
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.Location?.Kind)
+            .Should()
+            .OnlyContain(static kind => kind == SecurableElementKind.EducationOrganization);
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.Hint)
+            .Should()
+            .OnlyContain(static hint =>
+                hint == "No EducationOrganization securable elements are configured for this resource."
+            );
+    }
+
+    [Test]
     public void It_should_retain_multiple_root_subjects_and_ignore_child_only_candidates()
     {
         var rootTable = CreateRootTable(

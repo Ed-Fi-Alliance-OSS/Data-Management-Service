@@ -259,6 +259,94 @@ public class Given_RelationshipAuthorizationPlanner
             .Be(AuthorizationStrategyNameConstants.NamespaceBased);
     }
 
+    [Test]
+    public void It_should_return_no_authorization_required_when_no_configured_strategies_are_present()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var planner = new RelationshipAuthorizationPlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMinimalMappingSet(resource),
+            resource,
+            [],
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoAuthorizationRequired>();
+
+        var noAuthorizationRequiredResult = (RelationshipAuthorizationResult.NoAuthorizationRequired)result;
+
+        noAuthorizationRequiredResult.ConfiguredStrategies.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_return_no_further_authorization_required_without_emitting_checks()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var planner = new RelationshipAuthorizationPlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMinimalMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoFurtherAuthorizationRequired>();
+
+        var noFurtherAuthorizationRequiredResult =
+            (RelationshipAuthorizationResult.NoFurtherAuthorizationRequired)result;
+
+        noFurtherAuthorizationRequiredResult
+            .ConfiguredStrategies.Select(static strategy => strategy.RawConfiguredIndex)
+            .Should()
+            .Equal(0);
+    }
+
+    [Test]
+    public void It_should_preserve_known_but_not_enabled_failures_when_security_configuration_errors_win()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var planner = new RelationshipAuthorizationPlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMinimalMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.NamespaceBased,
+                "CustomAuthorizationStrategy"
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var securityConfigurationErrorResult =
+            (RelationshipAuthorizationResult.SecurityConfigurationError)result;
+
+        securityConfigurationErrorResult.Failures.Should().HaveCount(2);
+        securityConfigurationErrorResult
+            .Failures[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy);
+        securityConfigurationErrorResult
+            .Failures[0]
+            .ConfiguredStrategy?.StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.NamespaceBased);
+        securityConfigurationErrorResult.Failures[0].RelationshipLocalOrder.Should().Be(0);
+        securityConfigurationErrorResult
+            .Failures[1]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy);
+        securityConfigurationErrorResult
+            .Failures[1]
+            .ConfiguredStrategy?.StrategyName.Should()
+            .Be("CustomAuthorizationStrategy");
+        securityConfigurationErrorResult.Failures[1].RelationshipLocalOrder.Should().Be(1);
+    }
+
     private static MappingSet CreateMultipleRootSubjectMappingSet()
     {
         var rootTable = CreateRootTable(
