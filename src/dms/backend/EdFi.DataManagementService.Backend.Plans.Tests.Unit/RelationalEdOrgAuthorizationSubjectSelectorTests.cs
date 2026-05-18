@@ -742,16 +742,20 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         var firstResult = selector.Select(
             mappingSet,
             resource,
-            CreateConfiguredAuthorizationStrategies(
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+            CreateSupportedStrategies(
+                CreateConfiguredAuthorizationStrategies(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                )
             )
         );
 
         var secondResult = selector.Select(
             mappingSet,
             resource,
-            CreateConfiguredAuthorizationStrategies(
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+            CreateSupportedStrategies(
+                CreateConfiguredAuthorizationStrategies(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+                )
             )
         );
 
@@ -914,8 +918,39 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         new RelationalEdOrgAuthorizationSubjectSelector().Select(
             mappingSet,
             resource,
-            configuredAuthorizationStrategies
+            CreateSupportedStrategies(configuredAuthorizationStrategies)
         );
+
+    private static IReadOnlyList<SupportedRelationshipAuthorizationStrategy> CreateSupportedStrategies(
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
+    ) =>
+        [
+            .. configuredAuthorizationStrategies.Select(
+                static (configuredStrategy, relationshipLocalOrder) =>
+                    configuredStrategy.StrategyName switch
+                    {
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly =>
+                            new SupportedRelationshipAuthorizationStrategy(
+                                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                                RelationshipAuthorizationHierarchyDirection.Normal,
+                                configuredStrategy,
+                                relationshipLocalOrder
+                            ),
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted =>
+                            new SupportedRelationshipAuthorizationStrategy(
+                                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                                RelationshipAuthorizationHierarchyDirection.Inverted,
+                                configuredStrategy,
+                                relationshipLocalOrder
+                            ),
+                        _ => throw new ArgumentOutOfRangeException(
+                            nameof(configuredStrategy),
+                            configuredStrategy.StrategyName,
+                            "Selector tests should pass only supported EdOrg relationship strategies."
+                        ),
+                    }
+            ),
+        ];
 
     private static ResourceKeyEntry ResourceKey(short id, string resource) =>
         new(id, new QualifiedResourceName("Ed-Fi", resource), "1.0", false);

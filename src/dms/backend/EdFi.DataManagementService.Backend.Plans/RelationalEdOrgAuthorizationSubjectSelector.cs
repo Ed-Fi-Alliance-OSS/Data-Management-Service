@@ -34,25 +34,6 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
             elementResolutionCache ?? throw new ArgumentNullException(nameof(elementResolutionCache));
     }
 
-    public RelationalEdOrgAuthorizationSubjectSelection Select(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
-    ) =>
-        Select(
-            mappingSet,
-            resource,
-            [
-                .. configuredAuthorizationStrategies.Select(
-                    static (configuredStrategy, relationshipLocalOrder) =>
-                        new SupportedRelationshipAuthorizationStrategySelection(
-                            configuredStrategy,
-                            relationshipLocalOrder
-                        )
-                ),
-            ]
-        );
-
     internal RelationalEdOrgAuthorizationSubjectSelection Select(
         MappingSet mappingSet,
         QualifiedResourceName resource,

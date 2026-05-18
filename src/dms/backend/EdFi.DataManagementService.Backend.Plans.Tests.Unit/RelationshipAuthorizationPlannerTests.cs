@@ -216,7 +216,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
         );
         var selectedSubject = new RelationalEdOrgAuthorizationSubjectSelector()
-            .Select(mappingSet, resource, configuredAuthorizationStrategies)
+            .Select(mappingSet, resource, CreateSupportedStrategies(configuredAuthorizationStrategies))
             .Subjects.Single();
         var writePlan = mappingSet.GetWritePlanOrThrow(resource);
         var rootTablePlan = GetRootTableWritePlan(writePlan);
@@ -638,6 +638,21 @@ public class Given_RelationshipAuthorizationPlannerTests
                         strategyName,
                         index,
                         RelationshipAuthorizationStrategyComposition.And
+                    )
+            ),
+        ];
+
+    private static IReadOnlyList<SupportedRelationshipAuthorizationStrategy> CreateSupportedStrategies(
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
+    ) =>
+        [
+            .. configuredAuthorizationStrategies.Select(
+                static (configuredStrategy, relationshipLocalOrder) =>
+                    new SupportedRelationshipAuthorizationStrategy(
+                        RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        configuredStrategy,
+                        relationshipLocalOrder
                     )
             ),
         ];
