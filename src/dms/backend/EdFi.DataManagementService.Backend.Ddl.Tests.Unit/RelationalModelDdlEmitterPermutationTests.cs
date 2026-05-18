@@ -766,3 +766,196 @@ internal static class AuthorizationIndexEmissionFixture
         return new ConcreteResourceModel(key, ResourceStorageKind.RelationalTables, model);
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Person-Join Authorization Index DDL Emission Tests (DMS-1094)
+// ═══════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Verifies that the DDL emitter produces the expected CREATE INDEX statements with
+/// <c>INCLUDE</c> clauses for the person-join authorization indexes introduced by DMS-1094:
+/// a single-column INCLUDE for a fresh person-hop index, and a widened multi-column INCLUDE
+/// (in canonical ordinal order) when a person hop collides with a PrimaryAssociation index.
+/// Covers both PostgreSQL and SQL Server dialects.
+/// </summary>
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_PersonJoin_Authorization_Indexes(SqlDialect sqlDialect)
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(sqlDialect);
+        _ddl = new RelationalModelDdlEmitter(dialect).Emit(
+            PersonJoinIndexEmissionFixture.Build(dialect.Rules.Dialect)
+        );
+    }
+
+    [Test]
+    public void It_should_emit_course_transcript_person_join_index_with_INCLUDE_DocumentId()
+    {
+        var (q1, q2) = QuotePair(sqlDialect);
+        var expected =
+            sqlDialect == SqlDialect.Pgsql
+                ? $"CREATE INDEX IF NOT EXISTS {q1}IX_CourseTranscript_StudentAcademicRecord_DocumentId_Auth{q2} ON {q1}edfi{q2}.{q1}CourseTranscript{q2} ({q1}StudentAcademicRecord_DocumentId{q2}) INCLUDE ({q1}DocumentId{q2});"
+                : $"CREATE INDEX {q1}IX_CourseTranscript_StudentAcademicRecord_DocumentId_Auth{q2} ON {q1}edfi{q2}.{q1}CourseTranscript{q2} ({q1}StudentAcademicRecord_DocumentId{q2}) INCLUDE ({q1}DocumentId{q2});";
+
+        _ddl.Should().Contain(expected);
+    }
+
+    [Test]
+    public void It_should_emit_widened_student_contact_pa_index_with_canonical_INCLUDE_ordering()
+    {
+        var (q1, q2) = QuotePair(sqlDialect);
+        var expected =
+            sqlDialect == SqlDialect.Pgsql
+                ? $"CREATE INDEX IF NOT EXISTS {q1}IX_StudentContactAssociation_Student_DocumentId_Auth{q2} ON {q1}edfi{q2}.{q1}StudentContactAssociation{q2} ({q1}Student_DocumentId{q2}) INCLUDE ({q1}Contact_DocumentId{q2}, {q1}DocumentId{q2});"
+                : $"CREATE INDEX {q1}IX_StudentContactAssociation_Student_DocumentId_Auth{q2} ON {q1}edfi{q2}.{q1}StudentContactAssociation{q2} ({q1}Student_DocumentId{q2}) INCLUDE ({q1}Contact_DocumentId{q2}, {q1}DocumentId{q2});";
+
+        _ddl.Should().Contain(expected);
+    }
+
+    private static (string Open, string Close) QuotePair(SqlDialect dialect) =>
+        dialect == SqlDialect.Pgsql ? ("\"", "\"") : ("[", "]");
+}
+
+/// <summary>
+/// Focused <see cref="DerivedRelationalModelSet"/> for the DMS-1094 person-join index DDL
+/// emission tests. Contains a <c>CourseTranscript</c> table with a single-column INCLUDE
+/// person-hop auth index, and a <c>StudentContactAssociation</c> table with a widened PA auth
+/// index whose <c>IncludeColumns</c> already carry the canonical ordinal ordering
+/// (<c>[Contact_DocumentId, DocumentId]</c>) the merge step would produce in
+/// <c>AddPersonJoinIndex</c>.
+/// </summary>
+internal static class PersonJoinIndexEmissionFixture
+{
+    private static readonly DbSchemaName _edfiSchema = new("edfi");
+    private const string EdFi = "Ed-Fi";
+
+    public static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var resources = new List<ConcreteResourceModel>();
+        var indexes = new List<DbIndexInfo>();
+        var resourceKeys = new List<ResourceKeyEntry>();
+
+        var courseTranscript = new QualifiedResourceName(EdFi, "CourseTranscript");
+        var courseTranscriptKey = new ResourceKeyEntry(1, courseTranscript, "1.0.0", false);
+        resourceKeys.Add(courseTranscriptKey);
+        resources.Add(
+            BuildResource(courseTranscript, courseTranscriptKey, ["StudentAcademicRecord_DocumentId"])
+        );
+        indexes.Add(
+            new DbIndexInfo(
+                new DbIndexName("IX_CourseTranscript_StudentAcademicRecord_DocumentId_Auth"),
+                new DbTableName(_edfiSchema, "CourseTranscript"),
+                [new DbColumnName("StudentAcademicRecord_DocumentId")],
+                IsUnique: false,
+                Kind: DbIndexKind.Authorization,
+                IncludeColumns: [new DbColumnName("DocumentId")]
+            )
+        );
+
+        var studentContact = new QualifiedResourceName(EdFi, "StudentContactAssociation");
+        var studentContactKey = new ResourceKeyEntry(2, studentContact, "1.0.0", false);
+        resourceKeys.Add(studentContactKey);
+        resources.Add(
+            BuildResource(studentContact, studentContactKey, ["Student_DocumentId", "Contact_DocumentId"])
+        );
+        indexes.Add(
+            new DbIndexInfo(
+                new DbIndexName("IX_StudentContactAssociation_Student_DocumentId_Auth"),
+                new DbTableName(_edfiSchema, "StudentContactAssociation"),
+                [new DbColumnName("Student_DocumentId")],
+                IsUnique: false,
+                Kind: DbIndexKind.Authorization,
+                IncludeColumns: [new DbColumnName("Contact_DocumentId"), new DbColumnName("DocumentId")]
+            )
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "abc123",
+                (short)resourceKeys.Count,
+                [0xAB, 0xC1],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        EdFi,
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                resourceKeys
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", EdFi, "1.0.0", false, _edfiSchema)],
+            resources,
+            [],
+            [],
+            indexes,
+            []
+        );
+    }
+
+    private static ConcreteResourceModel BuildResource(
+        QualifiedResourceName resource,
+        ResourceKeyEntry key,
+        IReadOnlyList<string> extraColumns
+    )
+    {
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var rootTableName = new DbTableName(_edfiSchema, resource.ResourceName);
+
+        var columns = new List<DbColumnModel>
+        {
+            new(
+                documentIdColumn,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        };
+        foreach (var col in extraColumns)
+        {
+            columns.Add(
+                new DbColumnModel(
+                    new DbColumnName(col),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+            );
+        }
+
+        var rootTable = new DbTableModel(
+            rootTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                $"PK_{resource.ResourceName}",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            columns,
+            []
+        );
+
+        var model = new RelationalResourceModel(
+            resource,
+            _edfiSchema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            [],
+            []
+        );
+        return new ConcreteResourceModel(key, ResourceStorageKind.RelationalTables, model);
+    }
+}
