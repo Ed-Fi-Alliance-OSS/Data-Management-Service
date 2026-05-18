@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
@@ -19,8 +18,6 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Protocols;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 using ResponseCompressionDefaults = Microsoft.AspNetCore.ResponseCompression.ResponseCompressionDefaults;
 
@@ -183,13 +180,12 @@ if (invalidConfigurationException is null)
         "Backend mapping initialization failed. DMS cannot start without compiled backend mappings.",
         () => InitializeBackendMappings(app)
     );
-    await RetrieveAndCacheClaimSets(app);
     await startupPhaseExecutor.RunFatalAsync(
-        DmsStartupPhases.WarmUpOidcMetadataCache,
-        "Retrieving OIDC metadata for the startup cache.",
-        "OIDC metadata cache warm-up completed or was skipped.",
-        "Unable to retrieve OIDC metadata from identity provider. JWT authentication will not function correctly.",
-        () => WarmUpOidcMetadataCache(app),
+        DmsStartupPhases.InitializeAuthMetadata,
+        "Initializing authentication metadata caches (OIDC warm-up and claim sets).",
+        "Authentication metadata initialization completed successfully.",
+        "Authentication metadata initialization failed. JWT authentication will not function correctly.",
+        () => InitializeAuthMetadata(app),
         exitCode: 1
     );
 
@@ -372,42 +368,16 @@ async Task InitializeBackendMappings(WebApplication app)
     app.Logger.LogInformation("Backend mapping initialization completed successfully");
 }
 
-async Task RetrieveAndCacheClaimSets(WebApplication app)
+async Task InitializeAuthMetadata(WebApplication app)
 {
-    app.Logger.LogInformation("Retrieving and caching required claim sets");
-    try
-    {
-        var claimSetProvider = app.Services.GetRequiredService<IClaimSetProvider>();
-        var multiTenancyEnabled = app.Configuration.GetValue<bool>("AppSettings:MultiTenancy");
-
-        if (multiTenancyEnabled)
-        {
-            var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
-            IList<string> tenants = await dmsInstanceProvider.LoadTenants();
-
-            foreach (string tenant in tenants)
-            {
-                app.Logger.LogInformation(
-                    "Caching claim sets for tenant: {TenantName}",
-                    LoggingSanitizer.SanitizeForLogging(tenant)
-                );
-                await claimSetProvider.GetAllClaimSets(tenant);
-            }
-        }
-        else
-        {
-            await claimSetProvider.GetAllClaimSets();
-        }
-    }
-    catch (Exception ex)
-    {
-        // Aim to cache the claim set list during the application's startup
-        // process. However, if caching fails for any reason, we do not prevent
-        // DMS from loading. This approach is intended to optimize the process
-        // of loading claims set list from Configuration service without
-        // impacting the application's availability.
-        app.Logger.LogCritical(ex, "Retrieving and caching required claim sets failure");
-    }
+    app.Logger.LogInformation("Initializing authentication metadata caches at startup");
+    var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
+    await orchestrator.RunByOrderRangeAsync(
+        DmsStartupTaskOrderRanges.AuthInitializationMinimum,
+        DmsStartupTaskOrderRanges.AuthInitializationMaximum,
+        CancellationToken.None
+    );
+    app.Logger.LogInformation("Authentication metadata initialization completed successfully");
 }
 
 async Task InitializeDmsInstances(WebApplication app)
@@ -505,25 +475,6 @@ void LogInstanceDetails(WebApplication app, IList<DmsInstance> instances)
             hasConnectionString
         );
     }
-}
-
-async Task WarmUpOidcMetadataCache(WebApplication app)
-{
-    var bypassAuthorizationEnabled = app.Configuration.GetValue<bool>("AppSettings:BypassAuthorization");
-    if (bypassAuthorizationEnabled)
-    {
-        app.Logger.LogInformation("BypassAuthorization is enabled, skipping OIDC metadata cache warm-up");
-        return;
-    }
-
-    app.Logger.LogInformation("Warming up OIDC metadata cache");
-    var configManager = app.Services.GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>();
-    var config = await configManager.GetConfigurationAsync(CancellationToken.None);
-    app.Logger.LogInformation(
-        "OIDC metadata cache warmed up successfully. Issuer: {Issuer}, SigningKeys: {SigningKeyCount}",
-        config.Issuer,
-        config.SigningKeys.Count
-    );
 }
 
 void RunBootstrapPhase(

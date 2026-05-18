@@ -10,6 +10,8 @@ public static class DmsStartupTaskOrderRanges
     public const int ApiSchemaInitializationMaximum = 299;
     public const int BackendMappingMinimum = 300;
     public const int BackendMappingMaximum = 399;
+    public const int AuthInitializationMinimum = 400;
+    public const int AuthInitializationMaximum = 499;
 }
 
 /// <summary>
@@ -24,6 +26,7 @@ public interface IDmsStartupTask
     /// - 100-199: Schema loading and validation
     /// - 200-299: Schema processing (normalization, hashing)
     /// - 300-399: Backend mapping initialization and instance validation
+    /// - 400-499: Authentication/authorization metadata caches (OIDC, claim sets)
     /// </summary>
     int Order { get; }
 

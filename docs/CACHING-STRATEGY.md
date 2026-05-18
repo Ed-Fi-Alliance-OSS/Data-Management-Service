@@ -125,7 +125,7 @@ built-in stampede protection
 
 **Multi-Tenancy Support:** Yes - one cache entry per tenant
 
-**Warm-up:** Loaded on startup via `RetrieveAndCacheClaimSets()` in `Program.cs`
+**Warm-up:** Loaded on startup by `CacheClaimSetsTask` (Order 410), run by `DmsStartupOrchestrator` during the `InitializeAuthMetadata` phase.
 
 **Cache Operations:**
 
@@ -356,10 +356,11 @@ keys for token validation.
 - **RefreshInterval:** 60 minutes (minimum time between forced refreshes)
 - **AutomaticRefreshInterval:** 24 hours (background refresh interval)
 
-**Warm-up:** Loaded on startup via `WarmUpOidcMetadataCache()` in `Program.cs`.
-The startup will fail if OIDC metadata cannot be retrieved from the identity
-provider, ensuring DMS doesn't accept requests until JWT authentication is
-fully functional. When `BypassAuthorization` is enabled, the warm-up is skipped.
+**Warm-up:** Loaded on startup by `WarmUpOidcMetadataTask` (Order 400), run by
+`DmsStartupOrchestrator` during the `InitializeAuthMetadata` phase. The startup
+will fail if OIDC metadata cannot be retrieved from the identity provider,
+ensuring DMS doesn't accept requests until JWT authentication is fully
+functional. When `BypassAuthorization` is enabled, the warm-up is skipped.
 
 **Invalidation Strategy:**
 
