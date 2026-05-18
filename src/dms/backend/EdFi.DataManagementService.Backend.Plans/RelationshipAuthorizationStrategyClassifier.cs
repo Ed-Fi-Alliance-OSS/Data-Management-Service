@@ -4,24 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Security;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
 internal static class RelationshipAuthorizationStrategyClassifier
 {
     private const string CustomViewConvention = "{BasisResource}With...";
-    private const string NamespaceBased = "NamespaceBased";
-    private const string NoFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
-    private const string OwnershipBased = "OwnershipBased";
-    private const string RelationshipsWithEdOrgsAndPeople = "RelationshipsWithEdOrgsAndPeople";
-    private const string RelationshipsWithEdOrgsAndPeopleInverted =
-        "RelationshipsWithEdOrgsAndPeopleInverted";
-    private const string RelationshipsWithEdOrgsOnly = "RelationshipsWithEdOrgsOnly";
-    private const string RelationshipsWithEdOrgsOnlyInverted = "RelationshipsWithEdOrgsOnlyInverted";
-    private const string RelationshipsWithPeopleOnly = "RelationshipsWithPeopleOnly";
-    private const string RelationshipsWithStudentsOnly = "RelationshipsWithStudentsOnly";
-    private const string RelationshipsWithStudentsOnlyThroughResponsibility =
-        "RelationshipsWithStudentsOnlyThroughResponsibility";
     private const string StandardProjectName = "Ed-Fi";
 
     private static readonly IReadOnlyDictionary<
@@ -31,15 +20,19 @@ internal static class RelationshipAuthorizationStrategyClassifier
         StringComparer.Ordinal
     )
     {
-        [NamespaceBased] = RelationshipAuthorizationStrategyKind.NamespaceBased,
-        [OwnershipBased] = RelationshipAuthorizationStrategyKind.OwnershipBased,
-        [RelationshipsWithEdOrgsAndPeople] =
+        [AuthorizationStrategyNameConstants.NamespaceBased] =
+            RelationshipAuthorizationStrategyKind.NamespaceBased,
+        [AuthorizationStrategyNameConstants.OwnershipBased] =
+            RelationshipAuthorizationStrategyKind.OwnershipBased,
+        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople] =
             RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
-        [RelationshipsWithEdOrgsAndPeopleInverted] =
+        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted] =
             RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
-        [RelationshipsWithPeopleOnly] = RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
-        [RelationshipsWithStudentsOnly] = RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
-        [RelationshipsWithStudentsOnlyThroughResponsibility] =
+        [AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly] =
+            RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+        [AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly] =
+            RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+        [AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility] =
             RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
     };
 
@@ -62,7 +55,13 @@ internal static class RelationshipAuthorizationStrategyClassifier
         {
             var strategyName = configuredStrategy.StrategyName;
 
-            if (string.Equals(strategyName, NoFurtherAuthorizationRequired, StringComparison.Ordinal))
+            if (
+                string.Equals(
+                    strategyName,
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 noFurtherAuthorizationRequiredStrategies.Add(configuredStrategy);
                 continue;
@@ -72,7 +71,7 @@ internal static class RelationshipAuthorizationStrategyClassifier
 
             switch (strategyName)
             {
-                case RelationshipsWithEdOrgsOnly:
+                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly:
                     supportedStrategies.Add(
                         new SupportedRelationshipAuthorizationStrategy(
                             RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
@@ -83,7 +82,7 @@ internal static class RelationshipAuthorizationStrategyClassifier
                     );
                     continue;
 
-                case RelationshipsWithEdOrgsOnlyInverted:
+                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted:
                     supportedStrategies.Add(
                         new SupportedRelationshipAuthorizationStrategy(
                             RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,

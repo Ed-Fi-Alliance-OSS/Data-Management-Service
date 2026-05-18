@@ -6,8 +6,8 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Core.Security;
 using FluentAssertions;
 using NUnit.Framework;
 
