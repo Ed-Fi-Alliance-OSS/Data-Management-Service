@@ -306,12 +306,12 @@ public class KeycloakClientRepository(
             {
                 return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
             }
-            // Delete the existing client
-            await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid);
             await CheckAndCreateClientScopeAsync(scope);
             var scopeExists = await ClientScopeExistsAsync(scope);
             if (scopeExists)
             {
+                // Delete the existing client
+                await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid);
                 var protocolMappers = client.ProtocolMappers.ToList();
                 CheckAndUpdateEducationOrganizationIds(protocolMappers);
                 CheckAndUpdateDmsInstanceIds(protocolMappers, dmsInstanceIds);

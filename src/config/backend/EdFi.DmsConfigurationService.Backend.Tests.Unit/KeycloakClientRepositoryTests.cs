@@ -112,9 +112,10 @@ public class KeycloakClientRepositoryTests
     public class Given_UpdateClientAsync : KeycloakClientRepositoryTests
     {
         [Test]
-        public async Task It_should_update_the_existing_client_enabled_state_in_place()
+        public async Task It_should_recreate_the_client_with_the_requested_enabled_state()
         {
             var clientUuid = Guid.NewGuid().ToString();
+            var recreatedClientUuid = Guid.NewGuid();
             var existingClient = new Client
             {
                 ClientId = "test-client",
@@ -128,14 +129,19 @@ public class KeycloakClientRepositoryTests
             A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", clientUuid)).Returns(existingClient);
             A.CallTo(() => _keycloakClientFacade.GetClientScopesAsync("edfi"))
                 .Returns([new ClientScope { Name = "test-scope" }]);
-            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", clientUuid, A<Client>.Ignored))
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", clientUuid)).Returns(true);
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync("edfi", A<Client>.Ignored)
+                )
                 .Invokes(call =>
                 {
-                    var updatedClient = call.GetArgument<Client>(2);
-                    updatedClient.Should().NotBeNull();
-                    updatedClient!.Enabled.Should().BeFalse();
+                    var recreatedClient = call.GetArgument<Client>(1);
+                    recreatedClient.Should().NotBeNull();
+                    recreatedClient!.Enabled.Should().BeFalse();
+                    recreatedClient.Name.Should().Be("Updated Client");
+                    recreatedClient.DefaultClientScopes.Should().Equal("test-scope");
                 })
-                .Returns(true);
+                .Returns(recreatedClientUuid.ToString());
 
             var result = await _repository.UpdateClientAsync(
                 clientUuid,
@@ -147,9 +153,15 @@ public class KeycloakClientRepositoryTests
             );
 
             result.Should().BeOfType<ClientUpdateResult.Success>();
-            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", clientUuid, A<Client>.Ignored))
+            ((ClientUpdateResult.Success)result).ClientUuid.Should().Be(recreatedClientUuid);
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", clientUuid))
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", clientUuid)).MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync("edfi", A<Client>.Ignored)
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", clientUuid, A<Client>.Ignored))
+                .MustNotHaveHappened();
         }
     }
 }

@@ -370,6 +370,34 @@ public class ApiClientModuleTests
         public async Task It_disables_the_identity_provider_client_when_api_client_is_unapproved_on_insert()
         {
             // Arrange
+            var createdClientUuid = Guid.NewGuid();
+            var disabledClientUuid = Guid.NewGuid();
+
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
+                    )
+                )
+                .Returns(new ClientCreateResult.Success(createdClientUuid));
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        createdClientUuid.ToString(),
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        false
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(disabledClientUuid));
+
             using var client = SetUpClient();
 
             // Act
@@ -412,6 +440,17 @@ public class ApiClientModuleTests
                         "1,2",
                         A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1),
                         false
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.That.Matches(command =>
+                            command.ClientUuid == disabledClientUuid
+                            && command.DmsInstanceIds.Length == 1
+                            && command.DmsInstanceIds[0] == 1
+                        )
                     )
                 )
                 .MustHaveHappenedOnceExactly();

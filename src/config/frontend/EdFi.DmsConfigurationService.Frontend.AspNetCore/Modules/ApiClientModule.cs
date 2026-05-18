@@ -119,8 +119,8 @@ public class ApiClientModule : IEndpointModule
         );
 
         Guid clientUuid;
-        // Create the client in the identity provider first so approval changes can be
-        // applied later without recreating the client UUID.
+        // Create the client in the identity provider first. Some providers recreate the
+        // client during approval updates, so persist the final UUID.
         var clientCreateResult = await clientRepository.CreateClientAsync(
             clientId,
             clientSecret,
@@ -167,6 +167,9 @@ public class ApiClientModule : IEndpointModule
 
             switch (disableClientResult)
             {
+                case ClientUpdateResult.Success disableSuccess:
+                    clientUuid = disableSuccess.ClientUuid;
+                    break;
                 case ClientUpdateResult.FailureUnknown failure:
                     logger.LogError("Failure disabling client {Failure}", failure);
                     await clientRepository.DeleteClientAsync(clientUuid.ToString());
