@@ -233,7 +233,8 @@ public class CacheClaimSetsTaskTests
     }
 
     [TestFixture]
-    public class Given_A_Dependency_Throws_OperationCanceledException : CacheClaimSetsTaskTests
+    public class Given_GetAllClaimSets_Throws_OperationCanceledException_With_Uncanceled_Token
+        : CacheClaimSetsTaskTests
     {
         private CacheClaimSetsTask _task = null!;
 
@@ -242,17 +243,52 @@ public class CacheClaimSetsTaskTests
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
             A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._))
-                .ThrowsAsync(new OperationCanceledException("dependency canceled"));
+                .ThrowsAsync(new TaskCanceledException("dependency canceled (e.g. HttpClient timeout)"));
 
             _task = CreateTask(claimSetProvider, A.Fake<IDmsInstanceProvider>(), multiTenancy: false);
         }
 
         [Test]
-        public async Task It_does_not_swallow_the_cancellation()
+        public async Task It_does_not_throw()
         {
             Func<Task> act = async () => await _task.ExecuteAsync(CancellationToken.None);
 
-            await act.Should().ThrowAsync<OperationCanceledException>();
+            await act.Should().NotThrowAsync();
+        }
+    }
+
+    [TestFixture]
+    public class Given_LoadTenants_Throws_OperationCanceledException_With_Uncanceled_Token
+        : CacheClaimSetsTaskTests
+    {
+        private CacheClaimSetsTask _task = null!;
+        private IClaimSetProvider _claimSetProvider = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _claimSetProvider = A.Fake<IClaimSetProvider>();
+            var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            A.CallTo(() => dmsInstanceProvider.LoadTenants())
+                .ThrowsAsync(new TaskCanceledException("dependency canceled (e.g. HttpClient timeout)"));
+
+            _task = CreateTask(_claimSetProvider, dmsInstanceProvider, multiTenancy: true);
+        }
+
+        [Test]
+        public async Task It_does_not_throw()
+        {
+            Func<Task> act = async () => await _task.ExecuteAsync(CancellationToken.None);
+
+            await act.Should().NotThrowAsync();
+        }
+
+        [Test]
+        public async Task It_does_not_call_get_all_claim_sets()
+        {
+            await _task.ExecuteAsync(CancellationToken.None);
+
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._)).MustNotHaveHappened();
         }
     }
 }

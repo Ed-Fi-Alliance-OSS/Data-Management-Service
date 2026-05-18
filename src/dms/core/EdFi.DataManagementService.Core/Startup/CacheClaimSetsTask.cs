@@ -65,10 +65,17 @@ internal class CacheClaimSetsTask(
                 await _claimSetProvider.GetAllClaimSets();
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             // Pre-caching claim sets is best-effort; a Configuration Service failure
-            // here must not prevent DMS from starting and serving traffic.
+            // here must not prevent DMS from starting and serving traffic. A dependency
+            // that surfaces OperationCanceledException (for example an HttpClient
+            // timeout as TaskCanceledException) is treated as a fetch failure when our
+            // own startup token has not been canceled.
             _logger.LogCritical(ex, "Retrieving and caching required claim sets failure");
         }
     }
