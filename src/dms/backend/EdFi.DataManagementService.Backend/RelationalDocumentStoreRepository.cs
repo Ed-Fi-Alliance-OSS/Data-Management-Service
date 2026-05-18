@@ -65,8 +65,9 @@ public sealed class RelationalDocumentStoreRepository(
         deleteConstraintResolver ?? throw new ArgumentNullException(nameof(deleteConstraintResolver));
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
-    private readonly RelationalEdOrgAuthorizationSubjectSelector _edOrgAuthorizationSubjectSelector =
-        edOrgAuthorizationSubjectSelector ?? new RelationalEdOrgAuthorizationSubjectSelector();
+    private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
+        edOrgAuthorizationSubjectSelector ?? new RelationalEdOrgAuthorizationSubjectSelector()
+    );
 
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -601,83 +602,45 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalQueryRequest.AuthorizationStrategyEvaluators
         );
-        var authorizationStrategyClassification = RelationshipAuthorizationStrategyClassifier.Classify(
+        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
             mappingSet,
             resource,
-            configuredAuthorizationStrategies
+            configuredAuthorizationStrategies,
+            relationalQueryRequest.AuthorizationContext
         );
         PageDocumentIdAuthorizationSpec? pageQueryAuthorization = null;
 
-        switch (authorizationStrategyClassification.Outcome)
+        switch (relationshipAuthorizationResult)
         {
-            case RelationshipAuthorizationClassificationOutcome.NoAuthorizationRequired:
-            case RelationshipAuthorizationClassificationOutcome.NoFurtherAuthorizationRequired:
+            case RelationshipAuthorizationResult.NoAuthorizationRequired:
+            case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
                 break;
 
-            case RelationshipAuthorizationClassificationOutcome.SupportedStrategies:
-                var selectedEdOrgSubjects = _edOrgAuthorizationSubjectSelector.Select(
+            case RelationshipAuthorizationResult.Authorized authorized:
+                pageQueryAuthorization = PageDocumentIdAuthorizationSpecAdapter.Adapt(authorized);
+                break;
+
+            case RelationshipAuthorizationResult.NoClaims:
+                return new QueryResult.QuerySuccess(
+                    [],
+                    relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+                );
+
+            case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
+                return new QueryResult.QueryFailureNotImplemented(
+                    BuildKnownButNotEnabledQueryAuthorizationMessage(resource, knownButNotEnabled.Failures)
+                );
+
+            case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
+                return BuildQueryAuthorizationSecurityConfigurationFailure(
                     mappingSet,
                     resource,
-                    [
-                        .. authorizationStrategyClassification.SupportedStrategies.Select(static strategy =>
-                            strategy.ConfiguredStrategy
-                        ),
-                    ]
+                    securityConfigurationError.Failures
                 );
-
-                if (
-                    selectedEdOrgSubjects.Outcome
-                    is RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError
-                )
-                {
-                    return new QueryResult.QueryFailureSecurityConfiguration([
-                        BuildEdOrgSubjectSelectionFailureMessage(
-                            mappingSet,
-                            resource,
-                            [
-                                .. authorizationStrategyClassification.SupportedStrategies.Select(
-                                    static strategy => strategy.ConfiguredStrategy
-                                ),
-                            ],
-                            selectedEdOrgSubjects.SecurityConfigurationFailures
-                        ),
-                    ]);
-                }
-
-                if (relationalQueryRequest.AuthorizationContext.ClaimEducationOrganizationIds.Count == 0)
-                {
-                    return new QueryResult.QuerySuccess(
-                        [],
-                        relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
-                    );
-                }
-
-                pageQueryAuthorization = CreatePageDocumentIdAuthorizationSpec(
-                    authorizationStrategyClassification.SupportedStrategies,
-                    selectedEdOrgSubjects,
-                    relationalQueryRequest.AuthorizationContext,
-                    mappingSet.Key.Dialect
-                );
-                break;
-
-            case RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled:
-                return new QueryResult.QueryFailureNotImplemented(
-                    BuildKnownButNotEnabledQueryAuthorizationMessage(
-                        resource,
-                        authorizationStrategyClassification.KnownButNotEnabledStrategies
-                    )
-                );
-
-            case RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError:
-                return new QueryResult.QueryFailureSecurityConfiguration([
-                    .. authorizationStrategyClassification.SecurityConfigurationFailures.Select(failure =>
-                        BuildSecurityConfigurationFailureMessage(mappingSet, failure)
-                    ),
-                ]);
 
             default:
                 throw new InvalidOperationException(
-                    $"Unsupported authorization classification outcome '{authorizationStrategyClassification.Outcome}'."
+                    $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
                 );
         }
 
@@ -1068,71 +1031,15 @@ public sealed class RelationalDocumentStoreRepository(
         relationalGetRequest.ReadMode == RelationalGetRequestReadMode.ExternalResponse
         && relationalGetRequest.ReadableProfileProjectionContext is not null;
 
-    private static PageDocumentIdAuthorizationSpec CreatePageDocumentIdAuthorizationSpec(
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
-        RelationalEdOrgAuthorizationSubjectSelection selectedEdOrgSubjects,
-        RelationalAuthorizationContext authorizationContext,
-        SqlDialect dialect
-    )
-    {
-        ArgumentNullException.ThrowIfNull(supportedStrategies);
-        ArgumentNullException.ThrowIfNull(selectedEdOrgSubjects);
-        ArgumentNullException.ThrowIfNull(authorizationContext);
-
-        IReadOnlyList<PageDocumentIdAuthorizationSubject> authorizationSubjects =
-        [
-            .. selectedEdOrgSubjects
-                .Subjects.Select(static subject => new PageDocumentIdAuthorizationSubject(
-                    subject.Table,
-                    subject.Column
-                ))
-                .DistinctBy(static subject => (subject.Table, subject.Column)),
-        ];
-
-        IReadOnlyList<PageDocumentIdAuthorizationStrategy> authorizationStrategies =
-        [
-            .. supportedStrategies.Select(strategy => new PageDocumentIdAuthorizationStrategy(
-                MapPageDocumentIdAuthorizationStrategyKind(strategy.Kind),
-                authorizationSubjects
-            )),
-        ];
-
-        var authorizationClaimParameterization =
-            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
-                dialect,
-                authorizationContext.ClaimEducationOrganizationIds,
-                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
-            );
-
-        return new PageDocumentIdAuthorizationSpec(
-            authorizationStrategies,
-            authorizationClaimParameterization
-        );
-    }
-
-    private static PageDocumentIdAuthorizationStrategyKind MapPageDocumentIdAuthorizationStrategyKind(
-        RelationshipAuthorizationStrategyKind kind
-    ) =>
-        kind switch
-        {
-            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(kind),
-                kind,
-                "Unsupported page-query authorization strategy kind."
-            ),
-        };
-
     private static string BuildKnownButNotEnabledQueryAuthorizationMessage(
         QualifiedResourceName resource,
-        IReadOnlyList<KnownButNotEnabledRelationshipAuthorizationStrategy> knownButNotEnabledStrategies
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures
     )
     {
-        var unsupportedStrategyNames = knownButNotEnabledStrategies
-            .Select(static strategy => strategy.ConfiguredStrategy.StrategyName)
+        var unsupportedStrategyNames = knownButNotEnabledFailures
+            .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Where(static strategyName => strategyName is not null)
+            .Cast<string>()
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
             .Select(static strategyName => $"'{strategyName}'");
@@ -1148,13 +1055,19 @@ public sealed class RelationalDocumentStoreRepository(
     private static string BuildEdOrgSubjectSelectionFailureMessage(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
         ArgumentNullException.ThrowIfNull(failures);
+
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies =
+        [
+            .. failures
+                .Select(static failure => failure.ConfiguredStrategy)
+                .Where(static configuredStrategy => configuredStrategy is not null)
+                .Cast<ConfiguredAuthorizationStrategy>(),
+        ];
 
         var unresolvedDetails = failures
             .Where(static failure =>
@@ -1241,12 +1154,46 @@ public sealed class RelationalDocumentStoreRepository(
             + string.Join(" ", detailSections);
     }
 
+    private static QueryResult.QueryFailureSecurityConfiguration BuildQueryAuthorizationSecurityConfigurationFailure(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(failures);
+
+        if (HasOnlyEdOrgSubjectSelectionFailures(failures))
+        {
+            return new QueryResult.QueryFailureSecurityConfiguration([
+                BuildEdOrgSubjectSelectionFailureMessage(mappingSet, resource, failures),
+            ]);
+        }
+
+        return new QueryResult.QueryFailureSecurityConfiguration([
+            .. failures.Select(failure => BuildSecurityConfigurationFailureMessage(mappingSet, failure)),
+        ]);
+    }
+
+    private static bool HasOnlyEdOrgSubjectSelectionFailures(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    ) =>
+        failures.All(static failure =>
+            failure.FailureKind
+                is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+                    or RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+        );
+
     private static string BuildSecurityConfigurationFailureMessage(
         MappingSet mappingSet,
         RelationshipAuthorizationFailureMetadata failure
     ) =>
         failure.FailureKind switch
         {
+            RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy =>
+                $"Relational query authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Effective GET-many authorization also includes known-but-not-enabled strategy '{failure.ConfiguredStrategy?.StrategyName}', "
+                    + "which is outside the current DMS-1055 EdOrg-only scope.",
             RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource =>
                 $"Relational query authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
                     + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' matches the {{BasisResource}}With... custom-view convention, "

@@ -2243,6 +2243,42 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_security_configuration_failure_when_query_authorization_includes_invalid_and_known_out_of_scope_strategies()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().HaveCount(2);
+        result
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors.Should()
+            .Contain(error => error.Contains("CustomAuthorizationStrategy", StringComparison.Ordinal))
+            .And.Contain(error =>
+                error.Contains(AuthorizationStrategyNameConstants.NamespaceBased, StringComparison.Ordinal)
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_returns_security_configuration_failure_when_query_authorization_strategy_metadata_is_invalid()
     {
         var queryRequest = CreateQueryRequest(
