@@ -124,7 +124,10 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var concreteByName = context.ConcreteResourcesInNameOrder.ToDictionary(c => c.ResourceKey.Resource);
+        // Single source of truth for QualifiedResourceName → ConcreteResourceModel lookup —
+        // shared across PA emission and the Person-join BFS so both branches apply the same
+        // first-wins dup-handling rule documented on BuildResourceLookup.
+        var resourceLookup = PersonJoinPathResolver.BuildResourceLookup(context.ConcreteResourcesInNameOrder);
         var pkUkLeadingColumns = BuildPkUkLeadingColumnSet(context.IndexInventory);
 
         // Shared lookup keyed by (table, leading key column) → emitted auth index.
@@ -132,7 +135,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         // Person-join emission may replace an entry in-place when widening IncludeColumns.
         var authIndexLookup = new Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo>();
 
-        EmitPrimaryAssociationIndexes(context, concreteByName, authIndexLookup);
+        EmitPrimaryAssociationIndexes(context, resourceLookup, authIndexLookup);
 
         // Per-resource resolution outcomes (anything that resolved — EdOrg/Namespace/Person —
         // regardless of whether an index was actually emitted by dedup). Threaded into the
@@ -148,7 +151,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
             resourcesWithResolvedSecurable
         );
 
-        var resourceLookup = PersonJoinPathResolver.BuildResourceLookup(context.ConcreteResourcesInNameOrder);
         EmitPersonJoinIndexes(context, authIndexLookup, resourceLookup, resourcesWithResolvedSecurable);
     }
 
@@ -270,20 +272,56 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         foreach (var concrete in context.ConcreteResourcesInNameOrder)
         {
             var anyResolved = false;
+            var unresolvedPaths = new List<string>();
 
-            // ResolveSecurableElementLocation throws on miss; reaching the next statement means the path resolved.
+            // Aggregate unresolved EdOrg + Namespace paths per resource and throw once at the
+            // end — mirrors EmitPersonJoinIndexes and the runtime resolver
+            // (SecurableElementColumnPathResolver.ResolveAll), so a schema author sees every
+            // drift on the resource in one error rather than one path per re-run.
             foreach (var jsonPath in concrete.SecurableElements.EducationOrganization.Select(e => e.JsonPath))
             {
-                var (table, column) = ResolveSecurableElementLocation(concrete, jsonPath);
+                var step = SecurableElementLocationResolver.ResolvePreferred(concrete, jsonPath);
+                if (step is null)
+                {
+                    unresolvedPaths.Add(jsonPath);
+                    continue;
+                }
                 anyResolved = true;
-                AddSecurableElementIndex(context, table, column, authIndexLookup, pkUkLeadingColumns);
+                AddSecurableElementIndex(
+                    context,
+                    step.SourceTable,
+                    step.SourceColumnName,
+                    authIndexLookup,
+                    pkUkLeadingColumns
+                );
             }
 
             foreach (var namespacePath in concrete.SecurableElements.Namespace)
             {
-                var (table, column) = ResolveSecurableElementLocation(concrete, namespacePath);
+                var step = SecurableElementLocationResolver.ResolvePreferred(concrete, namespacePath);
+                if (step is null)
+                {
+                    unresolvedPaths.Add(namespacePath);
+                    continue;
+                }
                 anyResolved = true;
-                AddSecurableElementIndex(context, table, column, authIndexLookup, pkUkLeadingColumns);
+                AddSecurableElementIndex(
+                    context,
+                    step.SourceTable,
+                    step.SourceColumnName,
+                    authIndexLookup,
+                    pkUkLeadingColumns
+                );
+            }
+
+            if (unresolvedPaths.Count > 0)
+            {
+                var resource = concrete.ResourceKey.Resource;
+                throw new InvalidOperationException(
+                    $"Authorization index emission for '{resource.ProjectName}.{resource.ResourceName}' "
+                        + $"could not resolve securable element JSON path(s): "
+                        + $"{string.Join(", ", unresolvedPaths)}."
+                );
             }
 
             if (anyResolved)
@@ -535,38 +573,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
         context.IndexInventory.Add(index);
         authIndexLookup[key] = index;
-    }
-
-    /// <summary>
-    /// Resolves a securable element JSON path to its <c>(table, column)</c> location via the
-    /// shared <see cref="SecurableElementLocationResolver"/>. Throws when no candidate matches.
-    /// </summary>
-    /// <remarks>
-    /// Array-nested paths (containing <c>[*]</c>) resolve onto the child collection table
-    /// that owns the nested reference — for example
-    /// <c>$.requiredAssessments[*].assessmentReference.namespace</c> on
-    /// <c>edfi.GraduationPlan</c> resolves to
-    /// <c>edfi.GraduationPlanRequiredAssessment.RequiredAssessmentAssessment_Namespace</c>.
-    /// Non-nested paths resolve to the root table because their bindings/columns live there;
-    /// when both root and child candidates match the same path, the shared resolver's priority
-    /// rule prefers the root.
-    /// </remarks>
-    private static (DbTableName Table, DbColumnName Column) ResolveSecurableElementLocation(
-        ConcreteResourceModel concrete,
-        string jsonPath
-    )
-    {
-        var step = SecurableElementLocationResolver.ResolvePreferred(concrete, jsonPath);
-        if (step is null)
-        {
-            var resource = concrete.ResourceKey.Resource;
-            throw new InvalidOperationException(
-                $"Authorization index emission for '{resource.ProjectName}.{resource.ResourceName}' "
-                    + $"could not resolve securable element JSON path '{jsonPath}' to a column on any table."
-            );
-        }
-
-        return (step.SourceTable, step.SourceColumnName);
     }
 
     /// <summary>

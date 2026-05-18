@@ -1747,6 +1747,246 @@ public class Given_SecurableElementLocationResolver_with_multi_candidate_path
 }
 
 /// <summary>
+/// Pins the tied-length first-wins behavior in
+/// <see cref="PersonJoinPathResolver.ResolveShortestPersonPath"/>: when a subject declares two
+/// distinct 1-hop Student references on different FK columns, only the first iterated path
+/// emits an auth index — the second FK column is silently unindexed. Matches the runtime
+/// resolver, which uses the same strict-less-than tiebreaker.
+/// </summary>
+[TestFixture]
+public class Given_Subject_With_Two_Direct_Person_References_Same_Length_Chains
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithTwoDirectStudentReferences()
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildPlainResource("Student"));
+            })
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_emit_exactly_one_auth_index_for_the_first_resolved_path()
+    {
+        // First-wins by strict < tiebreaker: only the path iterated first emits its hop.
+        _authIndexes.Should().ContainSingle(i => i.Table.Name == "TwoDirectStudentRefCarrier");
+    }
+
+    [Test]
+    public void It_should_emit_the_index_on_the_first_FK_column_only()
+    {
+        var index = _authIndexes.Single();
+        index.KeyColumns.Select(c => c.Value).Should().Equal("StudentA_DocumentId");
+        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
+    }
+
+    [Test]
+    public void It_should_not_emit_an_index_for_the_second_FK_column()
+    {
+        _authIndexes.Should().NotContain(i => i.KeyColumns[0].Value == "StudentB_DocumentId");
+    }
+}
+
+/// <summary>
+/// Pins the silent-skip contract for mixed resolvable + unresolvable root-level person paths:
+/// when at least one Student path resolves to a binding, the pass emits its chain and does NOT
+/// flag any sibling unresolved paths as errors. Matches the runtime resolver
+/// (<see cref="SecurableElementColumnPathResolver.ResolveAll"/>): unresolved person paths are
+/// only thrown when <em>no</em> root-level path resolved.
+/// </summary>
+[TestFixture]
+public class Given_Subject_With_Mixed_Resolvable_And_Unresolvable_Root_Person_Paths
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        _exception = TestExceptions.CaptureException(() =>
+            _authIndexes = AuthorizationIndexTestRunner
+                .Build(ctx =>
+                {
+                    ctx.ConcreteResourcesInNameOrder.Add(
+                        AuthIndexFixtureResources.BuildResourceWithMixedResolvableAndUnresolvableStudentPaths()
+                    );
+                    ctx.ConcreteResourcesInNameOrder.Add(
+                        AuthIndexFixtureResources.BuildPlainResource("Student")
+                    );
+                })
+                .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+                .ToArray()
+        );
+    }
+
+    [Test]
+    public void It_should_not_throw()
+    {
+        _exception.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_emit_exactly_one_auth_index_for_the_resolved_path()
+    {
+        _authIndexes.Should().ContainSingle();
+        var index = _authIndexes.Single();
+        index.Table.Name.Should().Be("MixedResolvableStudentCarrier");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("Student_DocumentId");
+        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
+    }
+}
+
+/// <summary>
+/// Pins the global <c>(table, column)</c> dedup contract for descriptor namespace auth
+/// indexes: <c>compiled-mapping-set.md §2.2</c> calls out that descriptor-<c>Namespace</c>
+/// auth indexes land on the shared <c>dms.Descriptor</c> table (e.g.
+/// <c>IX_Descriptor_Namespace_Auth</c>). Multiple descriptor resources all proposing the same
+/// <c>(dms.Descriptor, Namespace)</c> index must collapse to a single emitted entry. Guards
+/// against a future regression that re-keys the dedup lookup (e.g. on
+/// <c>(resource, table, column)</c>) and produces N duplicates whose only error surface is
+/// the manifest-time name-uniqueness validation.
+/// </summary>
+[TestFixture]
+public class Given_Multiple_Descriptor_Resources_With_Namespace_Securable
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildDescriptorResourceWithNamespaceSecurable(
+                        "AcademicSubjectDescriptor"
+                    )
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildDescriptorResourceWithNamespaceSecurable(
+                        "GradeLevelDescriptor"
+                    )
+                );
+            })
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_emit_exactly_one_descriptor_namespace_auth_index()
+    {
+        _authIndexes
+            .Should()
+            .ContainSingle(i => i.Table.Schema.Value == "dms" && i.Table.Name == "Descriptor");
+    }
+
+    [Test]
+    public void It_should_use_the_canonical_dms_descriptor_namespace_name()
+    {
+        var index = _authIndexes.Single();
+        index.Name.Value.Should().Be("IX_Descriptor_Namespace_Auth");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("Namespace");
+    }
+}
+
+/// <summary>
+/// Pins the BFS visited-set safety net in
+/// <see cref="PersonJoinPathResolver"/>: when intermediate resources form a reference cycle
+/// (A → B → A) and one of them carries a binding to the person resource, BFS must terminate
+/// without revisiting and still return the shortest reaching chain. Production schemas don't
+/// produce cycles, but the guard is load-bearing — a regression that dropped <c>visited</c>
+/// would hang the build.
+/// </summary>
+[TestFixture]
+public class Given_Person_Chain_With_Reference_Cycle_Among_Intermediates
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        _exception = TestExceptions.CaptureException(() =>
+            _authIndexes = AuthorizationIndexTestRunner
+                .Build(ctx =>
+                {
+                    foreach (var r in AuthIndexFixtureResources.BuildPersonChainWithCycleAmongIntermediates())
+                    {
+                        ctx.ConcreteResourcesInNameOrder.Add(r);
+                    }
+                })
+                .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+                .ToArray()
+        );
+    }
+
+    [Test]
+    public void It_should_terminate_and_not_throw()
+    {
+        _exception.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_emit_the_chain_reaching_the_student_resource()
+    {
+        // Subject -> CycleA -> Student is the shortest path that exits the cycle into the
+        // person resource. BFS reaches Student in two hops and must terminate.
+        _authIndexes.Should().Contain(i => i.Table.Name == "CycleSubject");
+        _authIndexes.Should().Contain(i => i.Table.Name == "CycleA");
+    }
+}
+
+/// <summary>
+/// Pins the subject-is-person suppression contract: when the subject IS the person resource
+/// (e.g. <c>Ed-Fi.Student</c>), all root-level Student paths bypass the unresolved-paths
+/// reporting in <c>ProcessPersonKind</c> — even paths that would otherwise be schema bugs.
+/// The person resource's own <c>DocumentId</c> is the auth anchor, so the pass does NOT
+/// need a join chain; matching today's runtime behavior, broken sibling paths on a self-
+/// securable resource are silently dropped.
+/// </summary>
+[TestFixture]
+public class Given_Person_Resource_With_Self_And_Broken_Securable_Path
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        _exception = TestExceptions.CaptureException(() =>
+            _authIndexes = AuthorizationIndexTestRunner
+                .Build(ctx =>
+                    ctx.ConcreteResourcesInNameOrder.Add(
+                        AuthIndexFixtureResources.BuildPersonResourceWithSelfAndBrokenSecurablePath()
+                    )
+                )
+                .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+                .ToArray()
+        );
+    }
+
+    [Test]
+    public void It_should_not_throw_on_the_broken_sibling_path()
+    {
+        _exception.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_not_emit_any_person_join_auth_index()
+    {
+        _authIndexes.Should().BeEmpty();
+    }
+}
+
+/// <summary>
 /// Builds a derived relational model set by injecting a configurable fixture pass that
 /// populates <c>ConcreteResourcesInNameOrder</c>, then runs the pass under test.
 /// </summary>
@@ -3063,4 +3303,285 @@ internal static class AuthIndexFixtureResources
             ),
         };
     }
+
+    /// <summary>
+    /// Subject resource with two distinct root-level <see cref="DocumentReferenceBinding"/>s
+    /// to <c>Ed-Fi.Student</c>, each via a separate FK column. Both bindings resolve to a
+    /// 1-hop chain of identical length — the resolver's strict-less-than tiebreaker keeps the
+    /// first iterated path, so only one auth index is emitted.
+    /// </summary>
+    public static ConcreteResourceModel BuildResourceWithTwoDirectStudentReferences()
+    {
+        const string resourceName = "TwoDirectStudentRefCarrier";
+        var rootTable = new DbTableName(_edfiSchema, resourceName);
+        var firstFk = new DbColumnName("StudentA_DocumentId");
+        var secondFk = new DbColumnName("StudentB_DocumentId");
+
+        var firstBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentAReference"),
+            Table: rootTable,
+            FkColumn: firstFk,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.studentAReference.studentUniqueId"),
+                    firstFk
+                ),
+            ]
+        );
+
+        var secondBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentBReference"),
+            Table: rootTable,
+            FkColumn: secondFk,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.studentBReference.studentUniqueId"),
+                    secondFk
+                ),
+            ]
+        );
+
+        return BuildResource(
+            resourceName,
+            [
+                BuildScalarColumn(new DbColumnName("DocumentId")),
+                BuildScalarColumn(firstFk),
+                BuildScalarColumn(secondFk),
+            ],
+            [firstBinding, secondBinding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.studentAReference.studentUniqueId", "$.studentBReference.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
+    }
+
+    /// <summary>
+    /// Subject resource declaring two root-level Student securable paths: one matches a real
+    /// <see cref="DocumentReferenceBinding"/>, the other targets a non-existent reference. The
+    /// resolved path produces an auth index; the unresolved sibling is silently dropped (no
+    /// throw), matching the runtime resolver's "only throw when all paths unresolved" rule.
+    /// </summary>
+    public static ConcreteResourceModel BuildResourceWithMixedResolvableAndUnresolvableStudentPaths()
+    {
+        const string resourceName = "MixedResolvableStudentCarrier";
+        var rootTable = new DbTableName(_edfiSchema, resourceName);
+        var fkColumn = new DbColumnName("Student_DocumentId");
+
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
+            Table: rootTable,
+            FkColumn: fkColumn,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.studentReference.studentUniqueId"),
+                    fkColumn
+                ),
+            ]
+        );
+
+        return BuildResource(
+            resourceName,
+            [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(fkColumn)],
+            [binding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.studentReference.studentUniqueId", "$.legacyStudentReference.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
+    }
+
+    /// <summary>
+    /// Builds a descriptor-shaped <see cref="ConcreteResourceModel"/> rooted on the shared
+    /// <c>dms.Descriptor</c> table with a <c>$.namespace</c> Namespace securable element. Used
+    /// to verify the global <c>(table, column)</c> dedup contract: when multiple descriptor
+    /// resources all carry Namespace securables, the pass collapses to a single
+    /// <c>IX_Descriptor_Namespace_Auth</c> entry.
+    /// </summary>
+    public static ConcreteResourceModel BuildDescriptorResourceWithNamespaceSecurable(
+        string descriptorResourceName
+    )
+    {
+        var dmsSchema = new DbSchemaName("dms");
+        var rootTableName = new DbTableName(dmsSchema, "Descriptor");
+        var qualifiedName = new QualifiedResourceName(EdFi, descriptorResourceName);
+        var resourceKey = new ResourceKeyEntry(1, qualifiedName, "1.0.0", false);
+
+        var rootTable = new DbTableModel(
+            rootTableName,
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                "PK_Descriptor",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                BuildScalarColumn(new DbColumnName("DocumentId")),
+                BuildScalarColumnWithJsonPath(new DbColumnName("Namespace"), "$.namespace"),
+            ],
+            []
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            qualifiedName,
+            dmsSchema,
+            ResourceStorageKind.SharedDescriptorTable,
+            rootTable,
+            [rootTable],
+            [],
+            []
+        );
+
+        return new ConcreteResourceModel(
+            resourceKey,
+            ResourceStorageKind.SharedDescriptorTable,
+            relationalModel
+        )
+        {
+            SecurableElements = new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: ["$.namespace"],
+                Student: [],
+                Contact: [],
+                Staff: []
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Builds a person chain where the intermediates form a reference cycle (CycleA → CycleB
+    /// → CycleA) and CycleA also carries a binding to <c>Ed-Fi.Student</c>. BFS must rely on
+    /// its <c>visited</c> set to avoid infinite enqueueing and still discover the shortest
+    /// chain reaching Student.
+    /// </summary>
+    public static IReadOnlyList<ConcreteResourceModel> BuildPersonChainWithCycleAmongIntermediates()
+    {
+        const string subjectName = "CycleSubject";
+        var subjectRoot = new DbTableName(_edfiSchema, subjectName);
+        var subjectFk = new DbColumnName("CycleA_DocumentId");
+
+        var subjectBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.cycleARef"),
+            Table: subjectRoot,
+            FkColumn: subjectFk,
+            TargetResource: new QualifiedResourceName(EdFi, "CycleA"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.cycleARef.studentUniqueId"),
+                    subjectFk
+                ),
+            ]
+        );
+
+        var subject = BuildResource(
+            subjectName,
+            [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(subjectFk)],
+            [subjectBinding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.cycleARef.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
+
+        // CycleA has two outgoing bindings: one back to CycleB (the cycle) and one direct to
+        // Student. BFS enqueues both targets; CycleB is enqueued, processed, and discovers
+        // CycleA again — the visited set prevents re-enqueueing.
+        var cycleATable = new DbTableName(_edfiSchema, "CycleA");
+        var cycleAToBFk = new DbColumnName("CycleB_DocumentId");
+        var cycleAToStudentFk = new DbColumnName("Student_DocumentId");
+
+        var cycleAToBBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.cycleBRef"),
+            Table: cycleATable,
+            FkColumn: cycleAToBFk,
+            TargetResource: new QualifiedResourceName(EdFi, "CycleB"),
+            IdentityBindings: []
+        );
+
+        var cycleAToStudentBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
+            Table: cycleATable,
+            FkColumn: cycleAToStudentFk,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings: []
+        );
+
+        var cycleA = BuildResource(
+            "CycleA",
+            [
+                BuildScalarColumn(new DbColumnName("DocumentId")),
+                BuildScalarColumn(cycleAToBFk),
+                BuildScalarColumn(cycleAToStudentFk),
+            ],
+            [cycleAToBBinding, cycleAToStudentBinding],
+            ResourceSecurableElements.Empty
+        );
+
+        var cycleBTable = new DbTableName(_edfiSchema, "CycleB");
+        var cycleBToAFk = new DbColumnName("CycleA_DocumentId");
+
+        var cycleBToABinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.cycleARef"),
+            Table: cycleBTable,
+            FkColumn: cycleBToAFk,
+            TargetResource: new QualifiedResourceName(EdFi, "CycleA"),
+            IdentityBindings: []
+        );
+
+        var cycleB = BuildResource(
+            "CycleB",
+            [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(cycleBToAFk)],
+            [cycleBToABinding],
+            ResourceSecurableElements.Empty
+        );
+
+        return [subject, cycleA, cycleB, BuildPlainResource("Student")];
+    }
+
+    /// <summary>
+    /// Builds <c>Ed-Fi.Student</c> with both its self-anchor securable (<c>$.studentUniqueId</c>)
+    /// and a sibling path that doesn't match any binding. The subject-is-person guard in
+    /// <c>ProcessPersonKind</c> suppresses unresolved-path reporting for all root-level paths
+    /// on the person resource, so the broken sibling is silently dropped — pinning today's
+    /// behavior so a future contract change is forced to update this test.
+    /// </summary>
+    public static ConcreteResourceModel BuildPersonResourceWithSelfAndBrokenSecurablePath() =>
+        BuildResource(
+            "Student",
+            [BuildScalarColumn(new DbColumnName("DocumentId"))],
+            [],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.studentUniqueId", "$.nonexistentReference.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
 }
