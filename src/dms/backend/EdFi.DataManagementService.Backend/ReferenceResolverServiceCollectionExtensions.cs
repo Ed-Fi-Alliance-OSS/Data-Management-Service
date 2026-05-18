@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -157,8 +156,7 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteExecutor, DefaultRelationalWriteExecutor>());
-        services.TryAddSingleton<RelationalEdOrgAuthorizationElementResolutionCache>();
-        services.TryAddSingleton<RelationalEdOrgAuthorizationSubjectSelector>();
+        services.AddRelationalRelationshipAuthorizationServices();
 
         return services.AddReferenceResolver<TReferenceResolverAdapterFactory>();
     }

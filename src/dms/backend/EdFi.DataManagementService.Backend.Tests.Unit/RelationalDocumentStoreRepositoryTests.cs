@@ -2218,7 +2218,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_returns_not_implemented_when_query_authorization_includes_known_out_of_scope_strategies()
     {
         var queryRequest = CreateQueryRequest(
-            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
             [],
             totalCount: false,
             authorizationStrategyEvaluators:

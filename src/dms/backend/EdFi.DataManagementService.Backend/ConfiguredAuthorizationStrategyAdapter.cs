@@ -22,24 +22,9 @@ internal static class ConfiguredAuthorizationStrategyAdapter
                 static (authorizationStrategyEvaluator, index) =>
                     new ConfiguredAuthorizationStrategy(
                         authorizationStrategyEvaluator.AuthorizationStrategyName,
-                        index,
-                        MapComposition(authorizationStrategyEvaluator.Operator)
+                        index
                     )
             ),
         ];
     }
-
-    private static RelationshipAuthorizationStrategyComposition MapComposition(
-        FilterOperator filterOperator
-    ) =>
-        filterOperator switch
-        {
-            FilterOperator.Or => RelationshipAuthorizationStrategyComposition.Or,
-            FilterOperator.And => RelationshipAuthorizationStrategyComposition.And,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(filterOperator),
-                filterOperator,
-                "Unsupported authorization strategy composition."
-            ),
-        };
 }

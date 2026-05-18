@@ -6,6 +6,7 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -95,6 +96,10 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalCurrentEtagPreconditionChecker>();
         var deleteEtagPreconditionChecker =
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteEtagPreconditionChecker>();
+        var edOrgAuthorizationElementResolutionCache =
+            scope.ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationElementResolutionCache>();
+        var edOrgAuthorizationSubjectSelector =
+            scope.ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationSubjectSelector>();
         var factory = scope
             .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
             .Should()
@@ -128,6 +133,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeSameAs(currentEtagPreconditionChecker);
+        edOrgAuthorizationElementResolutionCache.Should().NotBeNull();
+        edOrgAuthorizationSubjectSelector.Should().NotBeNull();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);
     }

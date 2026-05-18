@@ -287,12 +287,7 @@ public class Given_RelationshipAuthorizationStrategyClassifier
         ConfiguredAuthorizationStrategy[] configuredAuthorizationStrategies =
         [
             .. strategyNames.Select(
-                static (strategyName, index) =>
-                    new ConfiguredAuthorizationStrategy(
-                        strategyName,
-                        index,
-                        RelationshipAuthorizationStrategyComposition.And
-                    )
+                static (strategyName, index) => new ConfiguredAuthorizationStrategy(strategyName, index)
             ),
         ];
 

@@ -121,8 +121,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
         new(
             new ConfiguredAuthorizationStrategy(
                 StrategyName: "RelationshipsWithEdOrgsOnly",
-                RawConfiguredIndex: rawConfiguredIndex,
-                Composition: RelationshipAuthorizationStrategyComposition.And
+                RawConfiguredIndex: rawConfiguredIndex
             ),
             relationshipLocalOrder,
             direction,

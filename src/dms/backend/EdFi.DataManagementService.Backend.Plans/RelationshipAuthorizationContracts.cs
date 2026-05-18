@@ -7,12 +7,6 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
-public enum RelationshipAuthorizationStrategyComposition
-{
-    Or = 1,
-    And = 2,
-}
-
 public enum RelationshipAuthorizationClassificationOutcome
 {
     NoAuthorizationRequired,
@@ -36,11 +30,7 @@ public enum RelationshipAuthorizationStrategyKind
     CustomViewBased,
 }
 
-public sealed record ConfiguredAuthorizationStrategy(
-    string StrategyName,
-    int RawConfiguredIndex,
-    RelationshipAuthorizationStrategyComposition Composition
-);
+public sealed record ConfiguredAuthorizationStrategy(string StrategyName, int RawConfiguredIndex);
 
 public sealed record SupportedRelationshipAuthorizationStrategy(
     RelationshipAuthorizationStrategyKind Kind,

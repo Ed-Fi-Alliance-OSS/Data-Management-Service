@@ -86,10 +86,15 @@ public sealed class RelationshipAuthorizationPlanner
                 new RelationshipAuthorizationResult.NoFurtherAuthorizationRequired(
                     classification.NoFurtherAuthorizationRequiredStrategies
                 ),
-            RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled =>
-                new RelationshipAuthorizationResult.KnownButNotEnabled(
-                    CreateKnownButNotEnabledFailures(resource, classification.KnownButNotEnabledStrategies)
-                ),
+            RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled => PlanKnownButNotEnabled(
+                mappingSet,
+                resource,
+                classification.SupportedStrategies,
+                classification.KnownButNotEnabledStrategies,
+                authorizationContext,
+                valueSource,
+                createCheckSpec
+            ),
             RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError =>
                 new RelationshipAuthorizationResult.SecurityConfigurationError(
                     CombineAndOrderFailures(
@@ -112,6 +117,48 @@ public sealed class RelationshipAuthorizationPlanner
                 $"Unsupported relationship authorization classification outcome '{classification.Outcome}'."
             ),
         };
+    }
+
+    private RelationshipAuthorizationResult PlanKnownButNotEnabled(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+        IReadOnlyList<KnownButNotEnabledRelationshipAuthorizationStrategy> knownButNotEnabledStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        RelationshipAuthorizationValueSource valueSource,
+        CreateCheckSpec createCheckSpec
+    )
+    {
+        var knownButNotEnabledFailures = CreateKnownButNotEnabledFailures(
+            resource,
+            knownButNotEnabledStrategies
+        );
+
+        if (supportedStrategies.Count == 0)
+        {
+            return new RelationshipAuthorizationResult.KnownButNotEnabled(knownButNotEnabledFailures);
+        }
+
+        var supportedPlanningResult = PlanSupportedStrategies(
+            mappingSet,
+            resource,
+            supportedStrategies,
+            authorizationContext,
+            valueSource,
+            createCheckSpec
+        );
+
+        if (
+            supportedPlanningResult
+            is RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError
+        )
+        {
+            return new RelationshipAuthorizationResult.SecurityConfigurationError(
+                CombineAndOrderFailures(securityConfigurationError.Failures, knownButNotEnabledFailures)
+            );
+        }
+
+        return new RelationshipAuthorizationResult.KnownButNotEnabled(knownButNotEnabledFailures);
     }
 
     private RelationshipAuthorizationResult PlanSupportedStrategies(

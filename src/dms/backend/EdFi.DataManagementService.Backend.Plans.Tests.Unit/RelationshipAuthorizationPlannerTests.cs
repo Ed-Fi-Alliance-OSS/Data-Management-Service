@@ -401,6 +401,60 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_return_security_configuration_errors_before_known_but_not_enabled_staging_when_supported_subject_planning_fails()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMinimalMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.NamespaceBased
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var securityConfigurationErrorResult =
+            (RelationshipAuthorizationResult.SecurityConfigurationError)result;
+
+        securityConfigurationErrorResult.Failures.Should().HaveCount(2);
+        securityConfigurationErrorResult
+            .Failures.Select(static failure => failure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
+                RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
+            );
+        securityConfigurationErrorResult
+            .Failures.Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Should()
+            .Equal(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.NamespaceBased
+            );
+        securityConfigurationErrorResult
+            .Failures.Select(static failure => failure.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+        securityConfigurationErrorResult
+            .Failures[0]
+            .ValueSource.Should()
+            .Be(RelationshipAuthorizationValueSource.Stored);
+        securityConfigurationErrorResult
+            .Failures[0]
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                )
+            );
+    }
+
+    [Test]
     public void It_should_map_known_but_not_enabled_outcomes_to_shared_failure_metadata()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
@@ -633,12 +687,7 @@ public class Given_RelationshipAuthorizationPlannerTests
     ) =>
         [
             .. strategyNames.Select(
-                static (strategyName, index) =>
-                    new ConfiguredAuthorizationStrategy(
-                        strategyName,
-                        index,
-                        RelationshipAuthorizationStrategyComposition.And
-                    )
+                static (strategyName, index) => new ConfiguredAuthorizationStrategy(strategyName, index)
             ),
         ];
 

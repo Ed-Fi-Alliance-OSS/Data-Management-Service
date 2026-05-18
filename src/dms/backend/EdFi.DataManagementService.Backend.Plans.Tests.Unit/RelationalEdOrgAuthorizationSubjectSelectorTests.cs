@@ -19,11 +19,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
     private static readonly DbColumnName _documentId = new("DocumentId");
     private static readonly ConfiguredAuthorizationStrategy[] _configuredAuthorizationStrategies =
     [
-        new(
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-            0,
-            RelationshipAuthorizationStrategyComposition.And
-        ),
+        new(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly, 0),
     ];
 
     [Test]
@@ -897,12 +893,7 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
     ) =>
         [
             .. strategyNames.Select(
-                static (strategyName, index) =>
-                    new ConfiguredAuthorizationStrategy(
-                        strategyName,
-                        index,
-                        RelationshipAuthorizationStrategyComposition.And
-                    )
+                static (strategyName, index) => new ConfiguredAuthorizationStrategy(strategyName, index)
             ),
         ];
 
