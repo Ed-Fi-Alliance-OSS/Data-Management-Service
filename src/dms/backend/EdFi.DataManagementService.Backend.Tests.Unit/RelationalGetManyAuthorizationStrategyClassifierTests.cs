@@ -5,7 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Security;
 using FluentAssertions;
 using NUnit.Framework;
@@ -79,7 +79,7 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
             .Outcome.Should()
             .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SupportedRelationshipStrategies);
         classification
-            .SupportedStrategies.Select(static strategy => strategy.Evaluator.AuthorizationStrategyName)
+            .SupportedStrategies.Select(static strategy => strategy.ConfiguredStrategy.StrategyName)
             .Should()
             .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
         classification.KnownButNotImplementedStrategies.Should().BeEmpty();
@@ -104,7 +104,9 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
             .Should()
             .Equal(RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly);
         classification
-            .KnownButNotImplementedStrategies.Select(static strategy => strategy.StrategyName)
+            .KnownButNotImplementedStrategies.Select(static strategy =>
+                strategy.ConfiguredStrategy.StrategyName
+            )
             .Should()
             .Equal(
                 AuthorizationStrategyNameConstants.NamespaceBased,
@@ -231,19 +233,22 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
         params string[] strategyNames
     )
     {
-        AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators =
+        ConfiguredAuthorizationStrategy[] configuredAuthorizationStrategies =
         [
-            .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
-                strategyName,
-                [],
-                FilterOperator.And
-            )),
+            .. strategyNames.Select(
+                static (strategyName, index) =>
+                    new ConfiguredAuthorizationStrategy(
+                        strategyName,
+                        index,
+                        RelationshipAuthorizationStrategyComposition.And
+                    )
+            ),
         ];
 
         return RelationalGetManyAuthorizationStrategyClassifier.Classify(
             mappingSet,
             _queryResource,
-            authorizationStrategyEvaluators
+            configuredAuthorizationStrategies
         );
     }
 

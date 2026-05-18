@@ -549,7 +549,12 @@ public class QueryRequestHandlerTests
                     new EducationOrganizationId(255902),
                     new EducationOrganizationId(255900),
                 ],
-                NamespacePrefixes: [],
+                NamespacePrefixes:
+                [
+                    new NamespacePrefix("uri://sample-b.org"),
+                    new NamespacePrefix("uri://sample-a.org"),
+                    new NamespacePrefix("uri://sample-b.org"),
+                ],
                 DmsInstanceIds: []
             );
 
@@ -566,6 +571,9 @@ public class QueryRequestHandlerTests
             _repository
                 .CapturedRequest.AuthorizationContext.ClaimEducationOrganizationIds.Should()
                 .Equal(255900L, 255901L, 255902L);
+            _repository
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal("uri://sample-a.org", "uri://sample-b.org");
             _repository.CapturedRequest.ResourceInfo.Should().BeSameAs(_requestInfo.ResourceInfo);
             _repository.CapturedRequest.QueryElements.Should().BeSameAs(_queryElements);
             _repository.CapturedRequest.PaginationParameters.Should().BeSameAs(_paginationParameters);

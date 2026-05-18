@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 
 namespace EdFi.DataManagementService.Backend;
@@ -34,11 +33,11 @@ internal enum RelationalGetManyAuthorizationStrategyKind
 
 internal sealed record RelationalGetManySupportedAuthorizationStrategy(
     RelationalGetManyAuthorizationStrategyKind Kind,
-    AuthorizationStrategyEvaluator Evaluator
+    ConfiguredAuthorizationStrategy ConfiguredStrategy
 );
 
 internal sealed record RelationalGetManyKnownButNotImplementedStrategy(
-    string StrategyName,
+    ConfiguredAuthorizationStrategy ConfiguredStrategy,
     RelationalGetManyAuthorizationStrategyKind Kind,
     QualifiedResourceName? BasisResource = null
 );
@@ -81,11 +80,11 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
     public static RelationalGetManyAuthorizationStrategyClassification Classify(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
 
         List<RelationalGetManySupportedAuthorizationStrategy> supportedStrategies = [];
         HashSet<RelationalGetManyAuthorizationStrategyKind> supportedStrategyKinds = [];
@@ -93,18 +92,18 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
 
         void AddSupportedStrategy(
             RelationalGetManyAuthorizationStrategyKind kind,
-            AuthorizationStrategyEvaluator evaluator
+            ConfiguredAuthorizationStrategy configuredStrategy
         )
         {
             if (supportedStrategyKinds.Add(kind))
             {
-                supportedStrategies.Add(new(kind, evaluator));
+                supportedStrategies.Add(new(kind, configuredStrategy));
             }
         }
 
-        foreach (var evaluator in authorizationStrategyEvaluators)
+        foreach (var configuredStrategy in configuredAuthorizationStrategies)
         {
-            var strategyName = evaluator.AuthorizationStrategyName;
+            var strategyName = configuredStrategy.StrategyName;
 
             switch (strategyName)
             {
@@ -114,14 +113,14 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
                 case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly:
                     AddSupportedStrategy(
                         RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                        evaluator
+                        configuredStrategy
                     );
                     continue;
 
                 case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted:
                     AddSupportedStrategy(
                         RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
-                        evaluator
+                        configuredStrategy
                     );
                     continue;
 
@@ -135,7 +134,7 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
                     {
                         knownButNotImplementedStrategies.Add(
                             new RelationalGetManyKnownButNotImplementedStrategy(
-                                strategyName,
+                                configuredStrategy,
                                 knownButNotImplementedKind
                             )
                         );
@@ -149,7 +148,7 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
                     {
                         knownButNotImplementedStrategies.Add(
                             new RelationalGetManyKnownButNotImplementedStrategy(
-                                strategyName,
+                                configuredStrategy,
                                 RelationalGetManyAuthorizationStrategyKind.CustomViewBased,
                                 customViewStrategyResolution.BasisResource
                             )
@@ -206,7 +205,7 @@ internal static class RelationalGetManyAuthorizationStrategyClassifier
     )
     {
         var unsupportedStrategyNames = knownButNotImplementedStrategies
-            .Select(static strategy => strategy.StrategyName)
+            .Select(static strategy => strategy.ConfiguredStrategy.StrategyName)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
             .Select(static strategyName => $"'{strategyName}'");

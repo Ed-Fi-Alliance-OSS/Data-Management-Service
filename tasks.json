@@ -13,7 +13,7 @@
       "dotnet build src/dms/EdFi.DataManagementService.sln",
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "request-pipeline",

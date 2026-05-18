@@ -16,25 +16,42 @@ public static class RelationalAuthorizationParameterNameConstants
 }
 
 /// <summary>
-/// Typed request-scoped authorization inputs for relational GET-many planning/execution.
+/// Typed request-scoped authorization inputs shared by relational authorization planning and execution.
 /// </summary>
 /// <param name="ClaimEducationOrganizationIds">
 /// Unique token EdOrg claim ids sorted ascending for deterministic planning/binding.
 /// </param>
-public sealed record RelationalAuthorizationContext(IReadOnlyList<long> ClaimEducationOrganizationIds)
+/// <param name="NamespacePrefixes">
+/// Unique namespace prefixes sorted ordinally for deterministic downstream strategy planning.
+/// </param>
+public sealed record RelationalAuthorizationContext(
+    IReadOnlyList<long> ClaimEducationOrganizationIds,
+    IReadOnlyList<string> NamespacePrefixes
+)
 {
+    public RelationalAuthorizationContext(IReadOnlyList<long> ClaimEducationOrganizationIds)
+        : this(ClaimEducationOrganizationIds, []) { }
+
     public static RelationalAuthorizationContext Create(ClientAuthorizations clientAuthorizations)
     {
         ArgumentNullException.ThrowIfNull(clientAuthorizations);
 
-        return new RelationalAuthorizationContext([
-            .. clientAuthorizations
-                .EducationOrganizationIds.Select(static educationOrganizationId =>
-                    educationOrganizationId.Value
-                )
-                .Distinct()
-                .Order(),
-        ]);
+        return new RelationalAuthorizationContext(
+            [
+                .. clientAuthorizations
+                    .EducationOrganizationIds.Select(static educationOrganizationId =>
+                        educationOrganizationId.Value
+                    )
+                    .Distinct()
+                    .Order(),
+            ],
+            [
+                .. clientAuthorizations
+                    .NamespacePrefixes.Select(static namespacePrefix => namespacePrefix.Value)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal),
+            ]
+        );
     }
 }
 
@@ -46,7 +63,7 @@ public sealed record RelationalAuthorizationContext(IReadOnlyList<long> ClaimEdu
 public interface IRelationalQueryRequest : IQueryRequest
 {
     /// <summary>
-    /// Typed request-scoped authorization inputs for relational GET-many planning/execution.
+    /// Typed request-scoped authorization inputs for relational authorization planning/execution.
     /// </summary>
     RelationalAuthorizationContext AuthorizationContext { get; }
 

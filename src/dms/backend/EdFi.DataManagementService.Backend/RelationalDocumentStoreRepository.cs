@@ -594,10 +594,13 @@ public sealed class RelationalDocumentStoreRepository(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
+        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
+            relationalQueryRequest.AuthorizationStrategyEvaluators
+        );
         var authorizationStrategyClassification = RelationalGetManyAuthorizationStrategyClassifier.Classify(
             mappingSet,
             resource,
-            relationalQueryRequest.AuthorizationStrategyEvaluators
+            configuredAuthorizationStrategies
         );
         PageDocumentIdAuthorizationSpec? pageQueryAuthorization = null;
 
@@ -612,7 +615,7 @@ public sealed class RelationalDocumentStoreRepository(
                     resource,
                     [
                         .. authorizationStrategyClassification.SupportedStrategies.Select(static strategy =>
-                            strategy.Evaluator.AuthorizationStrategyName
+                            strategy.ConfiguredStrategy
                         ),
                     ]
                 );

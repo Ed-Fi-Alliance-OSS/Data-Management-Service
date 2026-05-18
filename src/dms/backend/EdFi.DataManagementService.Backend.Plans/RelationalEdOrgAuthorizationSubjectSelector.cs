@@ -13,16 +13,9 @@ internal enum RelationalEdOrgAuthorizationSubjectSelectionOutcome
     SecurityConfigurationError,
 }
 
-internal sealed record RelationalEdOrgAuthorizationSubject(
-    string JsonPath,
-    string ReadableName,
-    DbTableName Table,
-    DbColumnName Column
-);
-
 internal sealed record RelationalEdOrgAuthorizationSubjectSelection(
     RelationalEdOrgAuthorizationSubjectSelectionOutcome Outcome,
-    IReadOnlyList<RelationalEdOrgAuthorizationSubject> Subjects,
+    IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
     string? FailureMessage
 );
 
@@ -34,11 +27,11 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
     public static RelationalEdOrgAuthorizationSubjectSelection Select(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        IReadOnlyList<string> strategyNames
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(strategyNames);
+        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
 
         var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
         var rootTable = concreteResourceModel.RelationalModel.Root.Table;
@@ -48,7 +41,7 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
             .SelectMany(static resolution => resolution.ResolvedCandidates)
             .ToArray();
 
-        List<RelationalEdOrgAuthorizationSubject> subjects = [];
+        List<RelationshipAuthorizationSubject> subjects = [];
         List<EdOrgSecurableElement> unresolvedWithoutSelectedSubject = [];
 
         foreach (var elementResolution in elementResolutions)
@@ -61,11 +54,17 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
             if (selectedCandidate is not null)
             {
                 subjects.Add(
-                    new RelationalEdOrgAuthorizationSubject(
-                        selectedCandidate.JsonPath,
-                        selectedCandidate.ReadableName,
+                    new RelationshipAuthorizationSubject(
+                        resource,
                         selectedCandidate.Step.SourceTable,
-                        selectedCandidate.Step.SourceColumnName
+                        selectedCandidate.Step.SourceColumnName,
+                        [
+                            new RelationshipAuthorizationSubjectContributor(
+                                SecurableElementKind.EducationOrganization,
+                                selectedCandidate.JsonPath,
+                                selectedCandidate.ReadableName
+                            ),
+                        ]
                     )
                 );
 
@@ -86,7 +85,7 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
                 BuildUnresolvedFailureMessage(
                     mappingSet,
                     resource,
-                    strategyNames,
+                    configuredAuthorizationStrategies,
                     unresolvedWithoutSelectedSubject
                 )
             );
@@ -107,7 +106,7 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
             BuildNoApplicableSubjectsFailureMessage(
                 mappingSet,
                 resource,
-                strategyNames,
+                configuredAuthorizationStrategies,
                 resolvedCandidates,
                 configuredElements
             )
@@ -132,7 +131,7 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
     private static string BuildUnresolvedFailureMessage(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
         IReadOnlyList<EdOrgSecurableElement> unresolvedElements
     )
     {
@@ -142,7 +141,7 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
             .OrderBy(static detail => detail, StringComparer.Ordinal);
 
         return $"Relational query authorization metadata is invalid for resource '{MappingSetResourceLookupExtensions.FormatResource(resource)}'. "
-            + $"Effective GET-many strategies [{FormatStrategyNames(strategyNames)}] require resolvable EducationOrganization securable elements, "
+            + $"Effective GET-many strategies [{FormatStrategyNames(configuredAuthorizationStrategies)}] require resolvable EducationOrganization securable elements, "
             + $"but the following elements could not be resolved to relational columns in mapping set "
             + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}': "
             + $"[{string.Join(", ", unresolvedDetails)}].";
@@ -151,7 +150,7 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
     private static string BuildNoApplicableSubjectsFailureMessage(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
         IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> resolvedCandidates,
         IReadOnlyList<EdOrgSecurableElement> configuredElements
     )
@@ -180,16 +179,19 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
                 : $"Configured elements: [{string.Join(", ", configuredDetails)}].";
 
         return $"Relational query authorization metadata is invalid for resource '{MappingSetResourceLookupExtensions.FormatResource(resource)}'. "
-            + $"Effective GET-many strategies [{FormatStrategyNames(strategyNames)}] require at least one applicable concrete root-table EducationOrganization authorization subject, "
+            + $"Effective GET-many strategies [{FormatStrategyNames(configuredAuthorizationStrategies)}] require at least one applicable concrete root-table EducationOrganization authorization subject, "
             + $"but none were found in mapping set '{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'. "
             + $"{resolvedDetailText} {configuredDetailText}";
     }
 
-    private static string FormatStrategyNames(IReadOnlyList<string> strategyNames)
+    private static string FormatStrategyNames(
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
+    )
     {
         return string.Join(
             ", ",
-            strategyNames
+            configuredAuthorizationStrategies
+                .Select(static strategy => strategy.StrategyName)
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
                 .Select(static strategyName => $"'{strategyName}'")
