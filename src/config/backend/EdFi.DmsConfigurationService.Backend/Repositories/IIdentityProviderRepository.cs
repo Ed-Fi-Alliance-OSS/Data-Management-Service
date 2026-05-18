@@ -23,7 +23,8 @@ public interface IIdentityProviderRepository
         string displayName,
         string scope,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null
+        long[]? dmsInstanceIds = null,
+        bool isApproved = true
     );
 
     Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(string clientUuid, string namespacePrefixes);

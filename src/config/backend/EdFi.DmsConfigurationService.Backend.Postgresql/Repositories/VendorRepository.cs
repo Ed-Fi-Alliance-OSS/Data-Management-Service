@@ -391,6 +391,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 string sqlEdOrgs = $"""
                     SELECT
                         v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName,
+                        -- Enabled: application is enabled only if ALL its ApiClients are approved (application-wide)
+                        (SELECT COALESCE(BOOL_AND(ac.IsApproved), true) FROM dmscs.ApiClient ac WHERE ac.ApplicationId = a.Id) AS Enabled,
                         eo.EducationOrganizationId
                     FROM dmscs.vendor v
                     LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId

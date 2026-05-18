@@ -191,7 +191,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -366,6 +367,57 @@ public class ApiClientModuleTests
         }
 
         [Test]
+        public async Task It_disables_the_identity_provider_client_when_api_client_is_unapproved_on_insert()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var insertResponse = await client.PostAsync(
+                "/v2/apiClients",
+                new StringContent(
+                    """
+                    {
+                      "applicationId": 1,
+                      "name": "Disabled Client",
+                      "isApproved": false,
+                      "dmsInstanceIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        "Test Application",
+                        "TestClaimSet",
+                        "uri://test.org",
+                        "1,2",
+                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1)
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        "Test Application",
+                        "TestClaimSet",
+                        "1,2",
+                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1),
+                        false
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
         public async Task It_returns_success_response_for_reset_credential()
         {
             // Arrange
@@ -387,6 +439,46 @@ public class ApiClientModuleTests
             actualResponse!["name"]!.GetValue<string>().Should().Be("Test API Client");
             actualResponse!["key"]!.GetValue<string>().Should().NotBeNullOrEmpty();
             actualResponse!["secret"]!.GetValue<string>().Should().Be("new-secret-12345");
+        }
+
+        [Test]
+        public async Task It_disables_the_identity_provider_client_when_api_client_is_unapproved()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v2/apiClients/1",
+                new StringContent(
+                    """
+                    {
+                      "id": 1,
+                      "applicationId": 1,
+                      "name": "Updated API Client",
+                      "isApproved": false,
+                      "dmsInstanceIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        "Updated API Client",
+                        "TestClaimSet",
+                        "1,2",
+                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1),
+                        false
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -632,7 +724,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -1066,7 +1159,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(

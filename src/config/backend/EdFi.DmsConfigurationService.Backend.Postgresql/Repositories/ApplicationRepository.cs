@@ -222,6 +222,9 @@ public class ApplicationRepository(
             string direction = query.IsDescending ? "DESC" : "ASC";
             string sql = $"""
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
+                       (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true)
+                        FROM dmscs.ApiClient ac2
+                        WHERE ac2.ApplicationId = a.Id) AS Enabled,
                        e.EducationOrganizationId, acd.DmsInstanceId, ap.ProfileId
                 FROM (SELECT * FROM dmscs.Application {filterClause} {orderByClause} {query.BuildPagingClause()}) AS a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
@@ -297,6 +300,9 @@ public class ApplicationRepository(
         {
             string sql = """
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
+                       (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true)
+                        FROM dmscs.ApiClient ac2
+                        WHERE ac2.ApplicationId = a.Id) AS Enabled,
                        e.EducationOrganizationId, acd.DmsInstanceId, ap.ProfileId
                 FROM dmscs.Application a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId

@@ -250,7 +250,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string displayName,
             string scope,
             string educationOrganizationIds,
-            long[]? dmsInstanceIds = null
+            long[]? dmsInstanceIds = null,
+            bool isApproved = true
         )
         {
             try

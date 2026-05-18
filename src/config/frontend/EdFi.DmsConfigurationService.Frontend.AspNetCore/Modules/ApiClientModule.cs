@@ -118,7 +118,9 @@ public class ApiClientModule : IEndpointModule
             clientSecretValidationOptionsAccessor.Value
         );
 
-        // Create client in identity provider FIRST (will rollback on database failure)
+        Guid clientUuid;
+        // Create the client in the identity provider first so approval changes can be
+        // applied later without recreating the client UUID.
         var clientCreateResult = await clientRepository.CreateClientAsync(
             clientId,
             clientSecret,
@@ -145,51 +147,95 @@ public class ApiClientModule : IEndpointModule
                     httpContext.TraceIdentifier
                 );
             case ClientCreateResult.Success clientSuccess:
-                var repositoryResult = await apiClientRepository.InsertApiClient(
-                    command,
-                    new ApiClientCommand
+                clientUuid = clientSuccess.ClientUuid;
+                break;
+            default:
+                logger.LogError("Failure creating client");
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+
+        if (!command.IsApproved)
+        {
+            var disableClientResult = await clientRepository.UpdateClientAsync(
+                clientUuid.ToString(),
+                application.ApplicationName,
+                application.ClaimSetName,
+                string.Join(",", application.EducationOrganizationIds),
+                command.DmsInstanceIds,
+                false
+            );
+
+            switch (disableClientResult)
+            {
+                case ClientUpdateResult.FailureUnknown failure:
+                    logger.LogError("Failure disabling client {Failure}", failure);
+                    await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
+                    logger.LogError(
+                        "Failure disabling client: {FailureMessage}",
+                        SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
+                    );
+                    await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                    return FailureResults.BadGateway(
+                        "Identity provider error during client update",
+                        httpContext.TraceIdentifier
+                    );
+                case ClientUpdateResult.FailureNotFound failureNotFound:
+                    logger.LogError(
+                        "Client not found while disabling client: {Failure}",
+                        SanitizeForLog(failureNotFound.FailureMessage)
+                    );
+                    await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                    return FailureResults.NotFound(
+                        "ApiClient not found in identity provider",
+                        httpContext.TraceIdentifier
+                    );
+            }
+        }
+
+        var repositoryResult = await apiClientRepository.InsertApiClient(
+            command,
+            new ApiClientCommand
+            {
+                ClientId = clientId,
+                ClientUuid = clientUuid,
+                DmsInstanceIds = command.DmsInstanceIds,
+            }
+        );
+
+        switch (repositoryResult)
+        {
+            case ApiClientInsertResult.Success success:
+                var request = httpContext.Request;
+                return Results.Created(
+                    $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                    new ApiClientCredentialsResponse
                     {
-                        ClientId = clientId,
-                        ClientUuid = clientSuccess.ClientUuid,
-                        DmsInstanceIds = command.DmsInstanceIds,
+                        Id = success.Id,
+                        ApplicationId = command.ApplicationId,
+                        Name = command.Name,
+                        Key = clientId,
+                        Secret = clientSecret,
                     }
                 );
-
-                switch (repositoryResult)
-                {
-                    case ApiClientInsertResult.Success success:
-                        var request = httpContext.Request;
-                        return Results.Created(
-                            $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                            new ApiClientCredentialsResponse
-                            {
-                                Id = success.Id,
-                                ApplicationId = command.ApplicationId,
-                                Name = command.Name,
-                                Key = clientId,
-                                Secret = clientSecret,
-                            }
-                        );
-                    case ApiClientInsertResult.FailureApplicationNotFound:
-                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure(
-                                "ApplicationId",
-                                $"Application with ID {command.ApplicationId} not found."
-                            ),
-                        ]);
-                    case ApiClientInsertResult.FailureDmsInstanceNotFound:
-                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
-                        ]);
-                    case ApiClientInsertResult.FailureUnknown failure:
-                        logger.LogError("Failure creating client {Failure}", failure);
-                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        return FailureResults.Unknown(httpContext.TraceIdentifier);
-                }
-
-                break;
+            case ApiClientInsertResult.FailureApplicationNotFound:
+                await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                throw new ValidationException([
+                    new ValidationFailure(
+                        "ApplicationId",
+                        $"Application with ID {command.ApplicationId} not found."
+                    ),
+                ]);
+            case ApiClientInsertResult.FailureDmsInstanceNotFound:
+                await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                throw new ValidationException([
+                    new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
+                ]);
+            case ApiClientInsertResult.FailureUnknown failure:
+                logger.LogError("Failure creating client {Failure}", failure);
+                await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
         logger.LogError("Failure creating client");
@@ -340,7 +386,8 @@ public class ApiClientModule : IEndpointModule
             command.Name,
             application.ClaimSetName,
             string.Join(",", application.EducationOrganizationIds),
-            command.DmsInstanceIds
+            command.DmsInstanceIds,
+            command.IsApproved
         );
 
         switch (clientUpdateResult)
@@ -387,7 +434,8 @@ public class ApiClientModule : IEndpointModule
                                 existingApiClient.Name,
                                 originalApplication.ClaimSetName,
                                 string.Join(",", originalApplication.EducationOrganizationIds),
-                                [.. existingApiClient.DmsInstanceIds]
+                                [.. existingApiClient.DmsInstanceIds],
+                                existingApiClient.IsApproved
                             );
                         }
                         throw new ValidationException([
@@ -406,7 +454,8 @@ public class ApiClientModule : IEndpointModule
                                 existingApiClient.Name,
                                 originalApplication.ClaimSetName,
                                 string.Join(",", originalApplication.EducationOrganizationIds),
-                                [.. existingApiClient.DmsInstanceIds]
+                                [.. existingApiClient.DmsInstanceIds],
+                                existingApiClient.IsApproved
                             );
                         }
                         throw new ValidationException([
@@ -428,7 +477,8 @@ public class ApiClientModule : IEndpointModule
                                 existingApiClient.Name,
                                 originalApplication.ClaimSetName,
                                 string.Join(",", originalApplication.EducationOrganizationIds),
-                                [.. existingApiClient.DmsInstanceIds]
+                                [.. existingApiClient.DmsInstanceIds],
+                                existingApiClient.IsApproved
                             );
                         }
                         throw new ValidationException([
@@ -447,7 +497,8 @@ public class ApiClientModule : IEndpointModule
                                 existingApiClient.Name,
                                 originalApplication.ClaimSetName,
                                 string.Join(",", originalApplication.EducationOrganizationIds),
-                                [.. existingApiClient.DmsInstanceIds]
+                                [.. existingApiClient.DmsInstanceIds],
+                                existingApiClient.IsApproved
                             );
                         }
                         logger.LogError(

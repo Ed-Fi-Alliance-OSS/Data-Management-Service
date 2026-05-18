@@ -430,7 +430,8 @@ Feature: DmsInstances endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [3, 4],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "profileIds": []
+                          "profileIds": [],
+                          "enabled": true
                       }]
                   """
 

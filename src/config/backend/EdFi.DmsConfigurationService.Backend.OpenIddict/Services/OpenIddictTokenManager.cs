@@ -228,6 +228,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     );
                 }
 
+                if (!applicationInfo.IsApproved)
+                {
+                    return new TokenResult.FailureIdentityProvider(
+                        new IdentityProviderError.InvalidClient(
+                            "Invalid client or Invalid client credentials"
+                        )
+                    );
+                }
+
                 _logger.LogDebug(
                     "Application found: {ApplicationId}, Display Name: {DisplayName}",
                     applicationInfo.Id,

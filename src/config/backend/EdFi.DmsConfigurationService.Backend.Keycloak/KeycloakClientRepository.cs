@@ -295,39 +295,38 @@ public class KeycloakClientRepository(
         string displayName,
         string scope,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null
+        long[]? dmsInstanceIds = null,
+        bool isApproved = true
     )
     {
         try
         {
             var client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
+            if (client is null)
+            {
+                return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
+            }
+
             await CheckAndCreateClientScopeAsync(scope);
             var scopeExists = await ClientScopeExistsAsync(scope);
             if (scopeExists)
             {
-                // Delete the existing client
-                await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid);
                 var protocolMappers = client.ProtocolMappers.ToList();
                 CheckAndUpdateEducationOrganizationIds(protocolMappers);
                 CheckAndUpdateDmsInstanceIds(protocolMappers, dmsInstanceIds);
                 Client newClient = new()
                 {
                     ClientId = client.ClientId,
-                    Enabled = true,
+                    Enabled = isApproved,
                     Secret = client.Secret,
                     Name = displayName,
                     ServiceAccountsEnabled = true,
                     DefaultClientScopes = [scope],
                     ProtocolMappers = protocolMappers,
                 };
-                // Re-create the client
-                string? newClientId = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
-                    _realm,
-                    newClient
-                );
-                if (!string.IsNullOrEmpty(newClientId))
+                if (await keycloakClientFacade.UpdateClientAsync(_realm, clientUuid, newClient))
                 {
-                    return new ClientUpdateResult.Success(Guid.Parse(newClientId));
+                    return new ClientUpdateResult.Success(Guid.Parse(clientUuid));
                 }
             }
             else

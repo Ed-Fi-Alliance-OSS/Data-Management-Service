@@ -89,6 +89,7 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
+                          "enabled": true,
                           "dmsInstanceIds": [{dmsInstanceId}],
                           "profileIds": []
                       },
@@ -98,6 +99,7 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
+                          "enabled": true,
                           "dmsInstanceIds": [{dmsInstanceId}],
                           "profileIds": []
                       }]
@@ -112,6 +114,7 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
+                          "enabled": true,
                           "dmsInstanceIds": [{dmsInstanceId}],
                           "profileIds": []
                       },
@@ -121,6 +124,7 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
+                          "enabled": true,
                           "dmsInstanceIds": [{dmsInstanceId}],
                           "profileIds": []
                       },
@@ -130,6 +134,7 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
+                          "enabled": true,
                           "dmsInstanceIds": [{dmsInstanceId}],
                           "profileIds": []
                       },
@@ -139,6 +144,7 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
+                          "enabled": true,
                           "dmsInstanceIds": [{dmsInstanceId}],
                           "profileIds": []
                       },
@@ -148,6 +154,7 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
+                          "enabled": true,
                           "dmsInstanceIds": [{dmsInstanceId}],
                           "profileIds": []
                       }]
@@ -181,7 +188,8 @@ Feature: Applications endpoints
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": []
+                    "profileIds": [],
+                    "enabled": true
                   }
                   """
 
@@ -495,6 +503,7 @@ Feature: Applications endpoints
                     "vendorId": {vendorId},
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
+                    "enabled": true,
                     "dmsInstanceIds": [{dmsInstanceId}],
                     "profileIds": []
                   }
@@ -645,7 +654,8 @@ Feature: Applications endpoints
                     "claimSetName": "Claim21",
                     "educationOrganizationIds": [1, 2, 3],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": [{profileId}]
+                    "profileIds": [{profileId}],
+                    "enabled": true
                   }
                   """
 
@@ -682,7 +692,8 @@ Feature: Applications endpoints
                     "claimSetName": "Claim22Update",
                     "educationOrganizationIds": [],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": [{profileId}]
+                    "profileIds": [{profileId}],
+                    "enabled": true
                   }
                   """
 
@@ -774,7 +785,8 @@ Feature: Applications endpoints
                     "claimSetName": "Claim25",
                     "educationOrganizationIds": [1, 2, 3],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": [{profileId}]
+                    "profileIds": [{profileId}],
+                    "enabled": true
                   }
                   """
 
@@ -811,7 +823,78 @@ Feature: Applications endpoints
                     "claimSetName": "Claim26Update",
                     "educationOrganizationIds": [],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": [{profileId}]
+                    "profileIds": [{profileId}],
+                    "enabled": true
+                  }
+                  """
+
+        Scenario: 27 Ensure application with a disabled API client returns enabled false
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                  "vendorId": {vendorId},
+                  "applicationName": "Disabled Client App",
+                  "claimSetName": "Claim21",
+                  "educationOrganizationIds": [],
+                  "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response headers include
+                  """
+                   {
+                       "location": "/v2/applications/{applicationId}"
+                   }
+                  """
+              And the response body has key and secret
+             When a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Disabled Client",
+                   "isApproved": false,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             Then it should respond with 201
+              And retrieve created key and secret
+             When a GET request is made to "/v2/applications/{applicationId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                   "id": {applicationId},
+                   "applicationName": "Disabled Client App",
+                   "vendorId": {vendorId},
+                   "claimSetName": "Claim21",
+                   "educationOrganizationIds": [],
+                   "enabled": false,
+                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "profileIds": []
+                  }
+                  """
+             When a GET request is made to "/v2/applications?offset=0&limit=100"
+             Then it should respond with 200
+              And the response body contains an object matching
+                  """
+                  {
+                   "id": {applicationId},
+                   "enabled": false
+                  }
+                  """
+             When a token request is attempted with the captured application credentials
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type":"urn:ed-fi:api:security:authentication",
+                    "title":"Authentication Failed",
+                    "status":401,
+                    "validationErrors":{},
+                     "errors": [
+                        "invalid_client. Invalid client or Invalid client credentials"
+                        ]
                   }
                   """
 

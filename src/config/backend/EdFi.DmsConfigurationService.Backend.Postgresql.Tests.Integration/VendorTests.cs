@@ -7,6 +7,8 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -399,6 +401,104 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
                     .ToList();
                 companies.Should().HaveCount(3);
                 companies.Should().ContainInOrder("Beta Inc", "Alpha Systems", "Acme Corp");
+            }
+        }
+
+        [TestFixture]
+        public class Given_VendorApplicationWithDisabledApiClient : VendorTests
+        {
+            private long _vendorId;
+            private long _applicationId;
+
+            private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ApplicationRepository>.Instance,
+                new TestAuditContext()
+            );
+
+            private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ApiClientRepository>.Instance,
+                new TestAuditContext()
+            );
+
+            [SetUp]
+            public async Task Setup()
+            {
+                var vendorResult = await _repository.InsertVendor(
+                    new VendorInsertCommand
+                    {
+                        Company = "Vendor Disabled Test Company",
+                        ContactEmailAddress = "vendordisabled@test.com",
+                        ContactName = "Vendor Disabled Test",
+                        NamespacePrefixes = "VendorDisabledPrefix",
+                    }
+                );
+                vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+                _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+                var appResult = await _applicationRepository.InsertApplication(
+                    new ApplicationInsertCommand
+                    {
+                        ApplicationName = "Vendor Disabled App",
+                        VendorId = _vendorId,
+                        ClaimSetName = "Vendor Claim Set",
+                        EducationOrganizationIds = [],
+                    },
+                    new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                );
+                appResult.Should().BeOfType<ApplicationInsertResult.Success>();
+                _applicationId = (appResult as ApplicationInsertResult.Success)!.Id;
+
+                // InsertApplication auto-creates an ApiClient with IsApproved = true.
+                // Adding a second client with IsApproved = false makes BOOL_AND return false.
+                var clientResult = await _apiClientRepository.InsertApiClient(
+                    new ApiClientInsertCommand
+                    {
+                        ApplicationId = _applicationId,
+                        Name = "Disabled Vendor Client",
+                        IsApproved = false,
+                        DmsInstanceIds = [],
+                    },
+                    new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                );
+                clientResult.Should().BeOfType<ApiClientInsertResult.Success>();
+            }
+
+            [Test]
+            public async Task It_should_return_enabled_false_from_GetVendorApplications()
+            {
+                var result = await _repository.GetVendorApplications(_vendorId);
+                result.Should().BeOfType<VendorApplicationsResult.Success>();
+                var app = ((VendorApplicationsResult.Success)result).ApplicationResponses.Single(a =>
+                    a.Id == _applicationId
+                );
+                app.Enabled.Should().BeFalse();
+            }
+
+            [Test]
+            public async Task It_should_return_enabled_true_when_all_api_clients_are_approved()
+            {
+                // Create a separate application with only the auto-approved client from InsertApplication
+                var appResult = await _applicationRepository.InsertApplication(
+                    new ApplicationInsertCommand
+                    {
+                        ApplicationName = "Vendor All Approved App",
+                        VendorId = _vendorId,
+                        ClaimSetName = "Vendor Claim Set Approved",
+                        EducationOrganizationIds = [],
+                    },
+                    new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                );
+                appResult.Should().BeOfType<ApplicationInsertResult.Success>();
+                var approvedAppId = (appResult as ApplicationInsertResult.Success)!.Id;
+
+                var result = await _repository.GetVendorApplications(_vendorId);
+                result.Should().BeOfType<VendorApplicationsResult.Success>();
+                var app = ((VendorApplicationsResult.Success)result).ApplicationResponses.Single(a =>
+                    a.Id == approvedAppId
+                );
+                app.Enabled.Should().BeTrue();
             }
         }
     }

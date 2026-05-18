@@ -63,7 +63,8 @@ Feature: Authorization
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": []
+                    "profileIds": [],
+                    "enabled": true
                   }
                   """
 

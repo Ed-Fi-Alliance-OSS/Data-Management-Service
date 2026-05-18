@@ -1688,4 +1688,107 @@ public class ApplicationModuleTests
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
+
+    [TestFixture]
+    public class Given_GetApplications_WithEnabledFlag : ApplicationModuleTests
+    {
+        [Test]
+        public async Task It_returns_enabled_true_when_application_is_enabled()
+        {
+            // Arrange
+            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
+                .Returns(
+                    new ApplicationQueryResult.Success([
+                        new ApplicationResponse()
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "ClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DmsInstanceIds = [],
+                            ProfileIds = [],
+                            Enabled = true,
+                        },
+                    ])
+                );
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.GetAsync("/v2/applications?offset=0&limit=25");
+            var body = await response.Content.ReadAsStringAsync();
+            var json = JsonNode.Parse(body)!.AsArray();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            json[0]!["enabled"]!.GetValue<bool>().Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_returns_enabled_false_when_application_is_disabled()
+        {
+            // Arrange
+            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
+                .Returns(
+                    new ApplicationQueryResult.Success([
+                        new ApplicationResponse()
+                        {
+                            Id = 2,
+                            ApplicationName = "Disabled Application",
+                            ClaimSetName = "ClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [],
+                            DmsInstanceIds = [],
+                            ProfileIds = [],
+                            Enabled = false,
+                        },
+                    ])
+                );
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.GetAsync("/v2/applications?offset=0&limit=25");
+            var body = await response.Content.ReadAsStringAsync();
+            var json = JsonNode.Parse(body)!.AsArray();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            json[0]!["enabled"]!.GetValue<bool>().Should().BeFalse();
+        }
+
+        [Test]
+        public async Task It_returns_enabled_false_on_get_by_id_when_application_is_disabled()
+        {
+            // Arrange
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse()
+                        {
+                            Id = 3,
+                            ApplicationName = "Disabled Application",
+                            ClaimSetName = "ClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [],
+                            DmsInstanceIds = [],
+                            ProfileIds = [],
+                            Enabled = false,
+                        }
+                    )
+                );
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.GetAsync("/v2/applications/3");
+            var body = await response.Content.ReadAsStringAsync();
+            var json = JsonNode.Parse(body)!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            json["enabled"]!.GetValue<bool>().Should().BeFalse();
+        }
+    }
 }

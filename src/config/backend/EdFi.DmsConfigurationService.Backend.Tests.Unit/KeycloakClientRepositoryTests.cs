@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.DataModel.Configuration;
 using FakeItEasy;
 using FluentAssertions;
 using Keycloak.Net.Models.Clients;
+using Keycloak.Net.Models.ClientScopes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -104,6 +105,51 @@ public class KeycloakClientRepositoryTests
             var result = await _repository.ResetCredentialsAsync(clientUuid);
 
             result.Should().BeOfType<ClientResetResult.FailureClientNotFound>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_UpdateClientAsync : KeycloakClientRepositoryTests
+    {
+        [Test]
+        public async Task It_should_update_the_existing_client_enabled_state_in_place()
+        {
+            var clientUuid = Guid.NewGuid().ToString();
+            var existingClient = new Client
+            {
+                ClientId = "test-client",
+                Secret = "ExistingSecret123!",
+                Name = "Test Client",
+                Enabled = true,
+                ProtocolMappers = [],
+                DefaultClientScopes = ["test-scope"],
+            };
+
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", clientUuid)).Returns(existingClient);
+            A.CallTo(() => _keycloakClientFacade.GetClientScopesAsync("edfi"))
+                .Returns([new ClientScope { Name = "test-scope" }]);
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", clientUuid, A<Client>.Ignored))
+                .Invokes(call =>
+                {
+                    var updatedClient = call.GetArgument<Client>(2);
+                    updatedClient.Should().NotBeNull();
+                    updatedClient!.Enabled.Should().BeFalse();
+                })
+                .Returns(true);
+
+            var result = await _repository.UpdateClientAsync(
+                clientUuid,
+                "Updated Client",
+                "test-scope",
+                "200,300",
+                [1, 2],
+                false
+            );
+
+            result.Should().BeOfType<ClientUpdateResult.Success>();
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", clientUuid, A<Client>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", clientUuid)).MustNotHaveHappened();
         }
     }
 }
