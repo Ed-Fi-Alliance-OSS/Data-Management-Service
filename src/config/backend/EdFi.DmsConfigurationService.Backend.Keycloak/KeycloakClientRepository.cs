@@ -306,7 +306,8 @@ public class KeycloakClientRepository(
             {
                 return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
             }
-
+            // Delete the existing client
+            await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid);
             await CheckAndCreateClientScopeAsync(scope);
             var scopeExists = await ClientScopeExistsAsync(scope);
             if (scopeExists)
@@ -324,9 +325,14 @@ public class KeycloakClientRepository(
                     DefaultClientScopes = [scope],
                     ProtocolMappers = protocolMappers,
                 };
-                if (await keycloakClientFacade.UpdateClientAsync(_realm, clientUuid, newClient))
+                // Re-create the client
+                string? newClientId = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
+                    _realm,
+                    newClient
+                );
+                if (!string.IsNullOrEmpty(newClientId))
                 {
-                    return new ClientUpdateResult.Success(Guid.Parse(clientUuid));
+                    return new ClientUpdateResult.Success(Guid.Parse(newClientId));
                 }
             }
             else
