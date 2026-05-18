@@ -1665,7 +1665,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_deduplicates_duplicate_supported_query_authorization_strategies_before_compiling_query_authorization()
+    public async Task It_preserves_duplicate_supported_query_authorization_strategies_as_distinct_or_branches()
     {
         static int CountOrdinalOccurrences(string value, string text) =>
             value.Split(text, StringSplitOptions.None).Length - 1;
@@ -1738,9 +1738,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 "\"auth\".\"EducationOrganizationIdToEducationOrganizationId\""
             )
             .Should()
-            .Be(1);
-        CountOrdinalOccurrences(pageDocumentIdSql, "r.\"LocalEducationAgencyId\" IN (SELECT").Should().Be(1);
-        pageDocumentIdSql.Should().NotContain(" OR ");
+            .Be(2);
+        CountOrdinalOccurrences(pageDocumentIdSql, "r.\"LocalEducationAgencyId\" IN (SELECT").Should().Be(2);
+        pageDocumentIdSql.Should().Contain(" OR ");
     }
 
     [Test]

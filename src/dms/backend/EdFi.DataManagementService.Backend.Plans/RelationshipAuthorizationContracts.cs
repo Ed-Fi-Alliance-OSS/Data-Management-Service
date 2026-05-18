@@ -13,10 +13,55 @@ public enum RelationshipAuthorizationStrategyComposition
     And = 2,
 }
 
+public enum RelationshipAuthorizationClassificationOutcome
+{
+    NoAuthorizationRequired,
+    NoFurtherAuthorizationRequired,
+    SupportedStrategies,
+    KnownButNotEnabled,
+    SecurityConfigurationError,
+}
+
+public enum RelationshipAuthorizationStrategyKind
+{
+    RelationshipsWithEdOrgsOnly,
+    RelationshipsWithEdOrgsOnlyInverted,
+    NamespaceBased,
+    OwnershipBased,
+    RelationshipsWithEdOrgsAndPeople,
+    RelationshipsWithEdOrgsAndPeopleInverted,
+    RelationshipsWithPeopleOnly,
+    RelationshipsWithStudentsOnly,
+    RelationshipsWithStudentsOnlyThroughResponsibility,
+    CustomViewBased,
+}
+
 public sealed record ConfiguredAuthorizationStrategy(
     string StrategyName,
     int RawConfiguredIndex,
     RelationshipAuthorizationStrategyComposition Composition
+);
+
+public sealed record SupportedRelationshipAuthorizationStrategy(
+    RelationshipAuthorizationStrategyKind Kind,
+    RelationshipAuthorizationHierarchyDirection Direction,
+    ConfiguredAuthorizationStrategy ConfiguredStrategy,
+    int RelationshipLocalOrder
+);
+
+public sealed record KnownButNotEnabledRelationshipAuthorizationStrategy(
+    RelationshipAuthorizationStrategyKind Kind,
+    ConfiguredAuthorizationStrategy ConfiguredStrategy,
+    int RelationshipLocalOrder,
+    QualifiedResourceName? BasisResource = null
+);
+
+public sealed record RelationshipAuthorizationClassification(
+    RelationshipAuthorizationClassificationOutcome Outcome,
+    IReadOnlyList<SupportedRelationshipAuthorizationStrategy> SupportedStrategies,
+    IReadOnlyList<ConfiguredAuthorizationStrategy> NoFurtherAuthorizationRequiredStrategies,
+    IReadOnlyList<KnownButNotEnabledRelationshipAuthorizationStrategy> KnownButNotEnabledStrategies,
+    IReadOnlyList<RelationshipAuthorizationFailureMetadata> SecurityConfigurationFailures
 );
 
 public enum RelationshipAuthorizationHierarchyDirection
@@ -76,6 +121,7 @@ public sealed record RelationshipAuthorizationFailureMetadata(
     RelationshipAuthorizationFailureKind FailureKind,
     QualifiedResourceName Resource,
     ConfiguredAuthorizationStrategy? ConfiguredStrategy = null,
+    int? RelationshipLocalOrder = null,
     RelationshipAuthorizationFailureLocation? Location = null,
     string? Hint = null
 );

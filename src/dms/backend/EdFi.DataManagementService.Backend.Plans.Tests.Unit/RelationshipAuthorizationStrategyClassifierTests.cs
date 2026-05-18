@@ -5,16 +5,15 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Security;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Tests.Unit;
+namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_RelationalGetManyAuthorizationStrategyClassifier
+public class Given_RelationshipAuthorizationStrategyClassifier
 {
     private static readonly QualifiedResourceName _queryResource = new("Ed-Fi", "School");
 
@@ -29,20 +28,25 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
 
         classification
             .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SupportedRelationshipStrategies);
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
         classification
             .SupportedStrategies.Select(static strategy => strategy.Kind)
             .Should()
             .Equal(
-                RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted
             );
-        classification.KnownButNotImplementedStrategies.Should().BeEmpty();
-        classification.FailureMessage.Should().BeNull();
+        classification
+            .SupportedStrategies.Select(static strategy => strategy.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+        classification.KnownButNotEnabledStrategies.Should().BeEmpty();
+        classification.SecurityConfigurationFailures.Should().BeEmpty();
+        classification.NoFurtherAuthorizationRequiredStrategies.Should().BeEmpty();
     }
 
     [Test]
-    public void It_deduplicates_supported_edorg_strategies_by_kind()
+    public void It_preserves_duplicate_supported_edorg_strategies_as_distinct_or_entries()
     {
         var classification = Classify(
             CreateMappingSet(_queryResource),
@@ -54,20 +58,48 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
 
         classification
             .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SupportedRelationshipStrategies);
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
         classification
             .SupportedStrategies.Select(static strategy => strategy.Kind)
             .Should()
             .Equal(
-                RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted
             );
-        classification.KnownButNotImplementedStrategies.Should().BeEmpty();
-        classification.FailureMessage.Should().BeNull();
+        classification
+            .SupportedStrategies.Select(static strategy => strategy.ConfiguredStrategy.RawConfiguredIndex)
+            .Should()
+            .Equal(0, 1, 2, 3);
+        classification
+            .SupportedStrategies.Select(static strategy => strategy.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1, 2, 3);
     }
 
     [Test]
-    public void It_treats_no_further_authorization_required_as_a_no_op_when_supported_strategies_exist()
+    public void It_emits_an_explicit_no_further_authorization_required_outcome_when_that_is_the_only_effective_strategy()
+    {
+        var classification = Classify(
+            CreateMappingSet(_queryResource),
+            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+        );
+
+        classification
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.NoFurtherAuthorizationRequired);
+        classification.SupportedStrategies.Should().BeEmpty();
+        classification.KnownButNotEnabledStrategies.Should().BeEmpty();
+        classification.SecurityConfigurationFailures.Should().BeEmpty();
+        classification
+            .NoFurtherAuthorizationRequiredStrategies.Select(static strategy => strategy.RawConfiguredIndex)
+            .Should()
+            .Equal(0);
+    }
+
+    [Test]
+    public void It_retains_no_further_authorization_required_metadata_when_supported_strategies_exist()
     {
         var classification = Classify(
             CreateMappingSet(_queryResource),
@@ -77,16 +109,16 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
 
         classification
             .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SupportedRelationshipStrategies);
-        classification
-            .SupportedStrategies.Select(static strategy => strategy.ConfiguredStrategy.StrategyName)
-            .Should()
-            .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
-        classification.KnownButNotImplementedStrategies.Should().BeEmpty();
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
+        classification.NoFurtherAuthorizationRequiredStrategies.Should().ContainSingle();
+        classification.NoFurtherAuthorizationRequiredStrategies[0].RawConfiguredIndex.Should().Be(0);
+        classification.SupportedStrategies.Should().ContainSingle();
+        classification.SupportedStrategies[0].ConfiguredStrategy.RawConfiguredIndex.Should().Be(1);
+        classification.SupportedStrategies[0].RelationshipLocalOrder.Should().Be(0);
     }
 
     [Test]
-    public void It_classifies_known_out_of_scope_mixed_strategies_as_not_implemented()
+    public void It_classifies_known_out_of_scope_mixed_strategies_as_known_but_not_enabled()
     {
         var classification = Classify(
             CreateMappingSet(_queryResource),
@@ -96,27 +128,24 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
             AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
         );
 
-        classification
-            .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.KnownButNotImplemented);
+        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
         classification
             .SupportedStrategies.Select(static strategy => strategy.Kind)
             .Should()
-            .Equal(RelationalGetManyAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly);
+            .Equal(RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly);
         classification
-            .KnownButNotImplementedStrategies.Select(static strategy =>
-                strategy.ConfiguredStrategy.StrategyName
-            )
+            .KnownButNotEnabledStrategies.Select(static strategy => strategy.Kind)
             .Should()
             .Equal(
-                AuthorizationStrategyNameConstants.NamespaceBased,
-                AuthorizationStrategyNameConstants.OwnershipBased
+                RelationshipAuthorizationStrategyKind.NamespaceBased,
+                RelationshipAuthorizationStrategyKind.OwnershipBased
             );
-        classification.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.NamespaceBased);
-        classification.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
         classification
-            .FailureMessage.Should()
-            .Contain($"{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op");
+            .KnownButNotEnabledStrategies.Select(static strategy => strategy.RelationshipLocalOrder)
+            .Should()
+            .Equal(1, 2);
+        classification.NoFurtherAuthorizationRequiredStrategies.Should().ContainSingle();
+        classification.SecurityConfigurationFailures.Should().BeEmpty();
     }
 
     [Test]
@@ -127,12 +156,10 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
             "SchoolWithSomething"
         );
 
+        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
+        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
         classification
-            .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.KnownButNotImplemented);
-        classification.KnownButNotImplementedStrategies.Should().ContainSingle();
-        classification
-            .KnownButNotImplementedStrategies[0]
+            .KnownButNotEnabledStrategies[0]
             .BasisResource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "School"));
     }
@@ -145,48 +172,37 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
             "SchoolCategoryDescriptorWithSomething"
         );
 
+        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
+        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
         classification
-            .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.KnownButNotImplemented);
-        classification.KnownButNotImplementedStrategies.Should().ContainSingle();
-        classification
-            .KnownButNotImplementedStrategies[0]
+            .KnownButNotEnabledStrategies[0]
             .BasisResource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor"));
     }
 
     [Test]
-    public void It_resolves_the_longest_matching_basis_resource_prefix_when_the_basis_name_contains_with()
+    public void It_preserves_known_but_not_enabled_metadata_when_security_configuration_errors_win()
     {
         var classification = Classify(
-            CreateMappingSet(
-                _queryResource,
-                new("Ed-Fi", "ExitWithdrawTypeDescriptor"),
-                new("Ed-Fi", "Exit")
-            ),
-            "ExitWithdrawTypeDescriptorWithSomething"
+            CreateMappingSet(_queryResource),
+            AuthorizationStrategyNameConstants.NamespaceBased,
+            "CustomAuthorizationStrategy"
         );
 
         classification
             .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.KnownButNotImplemented);
-        classification.KnownButNotImplementedStrategies.Should().ContainSingle();
+            .Be(RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError);
+        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
         classification
-            .KnownButNotImplementedStrategies[0]
-            .BasisResource.Should()
-            .Be(new QualifiedResourceName("Ed-Fi", "ExitWithdrawTypeDescriptor"));
-    }
-
-    [Test]
-    public void It_rejects_same_length_non_prefix_custom_view_names_as_security_configuration_errors()
-    {
-        var classification = Classify(CreateMappingSet(_queryResource), "PotatoWithSomething");
-
+            .KnownButNotEnabledStrategies[0]
+            .Kind.Should()
+            .Be(RelationshipAuthorizationStrategyKind.NamespaceBased);
+        classification.SecurityConfigurationFailures.Should().ContainSingle();
         classification
-            .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SecurityConfigurationError);
-        classification.FailureMessage.Should().Contain("Potato");
-        classification.FailureMessage.Should().NotContain("known-but-not-implemented");
+            .SecurityConfigurationFailures[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy);
+        classification.SecurityConfigurationFailures[0].RelationshipLocalOrder.Should().Be(1);
     }
 
     [Test]
@@ -196,24 +212,18 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
 
         classification
             .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SecurityConfigurationError);
-        classification.FailureMessage.Should().Contain("UnknownBasis");
-        classification.FailureMessage.Should().Contain("schema-hash/Pgsql/v1");
-    }
-
-    [Test]
-    public void It_reports_the_full_unknown_basis_resource_name_when_it_contains_with()
-    {
-        var classification = Classify(
-            CreateMappingSet(_queryResource),
-            "ExitWithdrawTypeDescriptorWithSomething"
-        );
-
+            .Be(RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError);
+        classification.SecurityConfigurationFailures.Should().ContainSingle();
         classification
-            .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SecurityConfigurationError);
-        classification.FailureMessage.Should().Contain("ExitWithdrawTypeDescriptor");
-        classification.FailureMessage.Should().NotContain("basis resource 'Exit'");
+            .SecurityConfigurationFailures[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource);
+        classification
+            .SecurityConfigurationFailures[0]
+            .Location.Should()
+            .BeEquivalentTo(
+                new RelationshipAuthorizationFailureLocation(AuthorizationObjectName: "UnknownBasis")
+            );
     }
 
     [Test]
@@ -223,12 +233,16 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
 
         classification
             .Outcome.Should()
-            .Be(RelationalGetManyAuthorizationStrategyClassificationOutcome.SecurityConfigurationError);
-        classification.FailureMessage.Should().Contain("CustomAuthorizationStrategy");
-        classification.FailureMessage.Should().Contain("{BasisResource}With...");
+            .Be(RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError);
+        classification.SecurityConfigurationFailures.Should().ContainSingle();
+        classification
+            .SecurityConfigurationFailures[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy);
+        classification.SecurityConfigurationFailures[0].Hint.Should().Contain("{BasisResource}With...");
     }
 
-    private static RelationalGetManyAuthorizationStrategyClassification Classify(
+    private static RelationshipAuthorizationClassification Classify(
         MappingSet mappingSet,
         params string[] strategyNames
     )
@@ -245,7 +259,7 @@ public class Given_RelationalGetManyAuthorizationStrategyClassifier
             ),
         ];
 
-        return RelationalGetManyAuthorizationStrategyClassifier.Classify(
+        return RelationshipAuthorizationStrategyClassifier.Classify(
             mappingSet,
             _queryResource,
             configuredAuthorizationStrategies
