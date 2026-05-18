@@ -16,8 +16,8 @@ These operations are grouped because they authorize only the already-stored root
 - `RelationshipsWithEdOrgsOnly` and `RelationshipsWithEdOrgsOnlyInverted` for GET-by-id.
 - `RelationshipsWithEdOrgsOnly` and `RelationshipsWithEdOrgsOnlyInverted` for DELETE.
 - Stored-value `EXISTS` checks using concrete root-table EdOrg subjects from Slice 1.
-- Authorization checks batched into the same roundtrip as reconstitution for GET-by-id.
-- Authorization checks batched into the same roundtrip as delete execution for DELETE.
+- GET-by-id authorization and reconstitution under the same observed read boundary. A single statement/command is acceptable but not required.
+- DELETE authorization, `If-Match`, and delete execution under a shared locked transaction/session boundary. A single provider-specific command is acceptable but not required.
 - PostgreSQL and SQL Server SQL generation/execution coverage.
 - Minimal relationship authorization failure mapping compatible with Slice 6 hardening.
 - Extend the GET-by-id and DELETE backend-to-handler result contracts with the explicit temporary not-implemented and security-configuration failure variants needed by this slice.
@@ -37,10 +37,12 @@ These operations are grouped because they authorize only the already-stored root
 
 - Resolve the target document according to the existing GET-by-id flow.
 - If the document does not exist, preserve existing not-found behavior.
-- Preserve the existing `If-None-Match` / not-modified short-circuit from the target-resolution and ETag step; this slice does not add an extra auth-only roundtrip on requests that already stop there.
+- If the existing relational GET-by-id flow has a target-resolution `If-None-Match` / 304 short-circuit, preserve it; this slice must not add an authorization-only roundtrip after a request has already short-circuited. If that short-circuit is not present when Slice 2 starts, conditional GET remains out of scope.
 - If the effective authorization set includes any known-but-not-enabled non-EdOrg strategy kind from Slice 1, fail explicitly through the temporary not-implemented result surface rather than partially authorizing with only the EdOrg subset.
 - If Slice 1 classification/planning returns a security-configuration failure, surface it through an explicit configuration-failure result and stop before running authorization SQL or reconstitution.
-- Before reconstitution, execute the relationship authorization check against stored root-table values.
+- Before reconstitution, execute the relationship authorization check against stored root-table values under the same observed read boundary used for hydration.
+- The read boundary may be implemented as a single statement/CTE, a single provider batch, an explicit read-only transaction/isolation choice, or a `ContentVersion` guard/retry.
+- If a `ContentVersion` guard detects that the target changed between authorization and hydration, retry from target resolution/authorization or fail deterministically; do not hydrate a representation authorized against stale root EdOrg values.
 - If authorization fails, return 403 and do not execute reconstitution.
 - If authorization succeeds, continue with the existing reconstitution behavior.
 
@@ -49,9 +51,10 @@ These operations are grouped because they authorize only the already-stored root
 - Resolve the target document and existing delete preconditions according to the current delete path.
 - If the effective authorization set includes any known-but-not-enabled non-EdOrg strategy kind from Slice 1, fail explicitly through the temporary not-implemented result surface rather than partially authorizing with only the EdOrg subset.
 - If Slice 1 classification/planning returns a security-configuration failure, surface it through an explicit configuration-failure result and stop before delete SQL/precondition execution.
-- Before deleting, execute the relationship authorization check against stored root-table values.
-- If authorization fails, return 403 and do not execute the delete statement, even when an existing-target `If-Match` check would also fail.
-- If authorization succeeds, preserve the existing `If-Match` behavior and execute the existing delete statement in the same transaction/roundtrip shape.
+- After target existence is established, lock or otherwise guard the target `dms.Document` row inside the write transaction/session.
+- Before deleting, execute the relationship authorization check against stored root-table values observed under that same lock/guard.
+- If authorization fails, return 403 before `If-Match` comparison and do not execute the delete statement, even when an existing-target `If-Match` check would also fail.
+- If authorization succeeds, preserve the existing `If-Match` behavior and execute the existing delete statement while the same lock/guarded target context remains valid.
 
 ## Acceptance Criteria
 
@@ -59,15 +62,19 @@ These operations are grouped because they authorize only the already-stored root
 - GET-by-id with `RelationshipsWithEdOrgsOnlyInverted` uses inverted Source/Target hierarchy filtering.
 - GET-by-id with multiple relationship strategies ORs the strategies and keeps each strategy's configured index metadata.
 - GET-by-id with multiple concrete root-table EdOrg subjects inside one strategy ANDs the subjects.
-- GET-by-id preserves the existing `If-None-Match` / not-modified short-circuit; Slice 2 does not add a separate authorization-only roundtrip for requests that stop there.
+- When the existing GET-by-id path already supports an `If-None-Match` / not-modified short-circuit, Slice 2 preserves it and does not add a separate authorization-only roundtrip for requests that stop there. Slice 2 does not implement conditional GET if it is not already present.
+- GET-by-id stored-value authorization and hydration use the same observed read boundary; Slice 2 does not require one database command if a transaction/isolation choice or `ContentVersion` guard/retry proves the same-state behavior.
+- GET-by-id does not authorize against one committed set of root EdOrg values and hydrate a different committed representation for the same response.
 - Unauthorized GET-by-id returns 403 without running reconstitution queries.
 - DELETE for an EdOrg-only relationship resource deletes the document only when the caller has access through at least one configured EdOrg-only relationship strategy.
+- DELETE uses a shared locked transaction/session boundary for stored-value authorization, `If-Match`, and delete execution; Slice 2 does not require one provider-specific authorization/`If-Match`/delete command.
 - If the effective single-record authorization set also contains any known-but-not-enabled non-EdOrg strategy kind from Slice 1, GET-by-id and DELETE fail explicitly as not implemented until the owning strategy story lands; Slice 2 does not partially authorize with only the EdOrg subset.
 - GET-by-id and DELETE backend-to-handler result contracts explicitly model the temporary 501 not-implemented staging surface for known-but-not-enabled mixed strategies instead of routing that case through exceptions or generic unknown failures.
 - Unauthorized DELETE returns 403 without deleting `dms.Document` or resource rows.
 - For existing targets where stored-value relationship authorization and `If-Match` would both fail, DELETE returns 403 rather than 412.
 - Empty EdOrg claims for a single-record stored-value check return 403 rather than the GET-many empty-page behavior.
 - Missing/null stored EdOrg values required for authorization produce the relationship invalid-data failure metadata consumed by Slice 6.
+- When a failed relationship OR group contains mixed failure kinds, the backend result preserves all failed strategy/subject metadata in configured order and carries enough failure-kind detail for Slice 6 to apply the shared ProblemDetails precedence rule, including proposed-value failures emitted by later slices: existing stored-value invalid data, proposed-value element required, then no relationship established.
 - Security-configuration failures from Slice 1 surface as configuration failures, not as 403 authorization denials.
 - GET-by-id and DELETE backend-to-handler result contracts explicitly model security-configuration failures from Slice 1 so handlers can return the canonical 500 security-configuration ProblemDetails rather than generic unknown/system-error responses.
 - PostgreSQL uses `dms.throw_error('AUTH1', ...)` or the established PostgreSQL AUTH1 mechanism for aborting unauthorized batches.
@@ -84,17 +91,22 @@ These operations are grouped because they authorize only the already-stored root
 - AND composition across multiple root-table EdOrg subjects.
 - Supported EdOrg strategy plus known-but-not-enabled non-EdOrg strategy produces the explicit not-implemented staging result instead of partial authorization.
 - GET-by-id and DELETE result/handler mapping for the explicit not-implemented and security-configuration result variants.
-- GET-by-id preserves the existing `If-None-Match` / not-modified short-circuit behavior.
+- If conditional GET support already exists in the relational GET-by-id path, GET-by-id preserves the existing `If-None-Match` / not-modified short-circuit behavior.
+- GET-by-id command composition or guard behavior proves authorization and hydration use the same observed read boundary.
+- DELETE command/session composition proves stored-value authorization runs under the same lock/guarded target context used for `If-Match` and delete execution.
 - DELETE authorization failure takes precedence over existing-target `If-Match` mismatch.
 - Empty EdOrg claim list produces single-record unauthorized behavior.
-- AUTH1 strategy index parsing maps back to the configured strategy metadata.
+- AUTH1 failure-set payload parsing maps the emitted check index and plan-relative strategy/subject ordinals back to the configured strategy metadata.
+- Relationship failure payload mapping preserves all failed OR-strategy entries and failure kinds so Slice 6 can choose the top-level ProblemDetails case without re-querying.
 
 ### Backend integration tests
 
 - PostgreSQL and SQL Server authorized GET-by-id returns reconstituted content.
 - PostgreSQL and SQL Server unauthorized GET-by-id returns 403 and does not run reconstitution.
+- PostgreSQL and SQL Server GET-by-id coverage proves authorization and hydration cannot observe different committed root EdOrg values for one response through the selected read-boundary implementation.
 - PostgreSQL and SQL Server authorized DELETE removes the document.
 - PostgreSQL and SQL Server unauthorized DELETE leaves `dms.Document` and resource rows intact.
+- PostgreSQL and SQL Server DELETE coverage proves authorization, `If-Match`, and delete execution share the selected locked transaction/session boundary.
 - PostgreSQL and SQL Server supported-EdOrg plus known-but-not-enabled mixed strategies fail explicitly as not implemented for GET-by-id and DELETE.
 - Security-configuration failures from Slice 1 surface as canonical 500 security-configuration responses for GET-by-id and DELETE, not as generic unknown/system-error responses.
 - PostgreSQL and SQL Server DELETE returns 403 rather than 412 when stored-value relationship authorization and existing-target `If-Match` both fail.
@@ -106,7 +118,7 @@ These operations are grouped because they authorize only the already-stored root
 
 ## Reviewer Focus
 
-Reviewers should focus on whether the operation-neutral core can be consumed without reintroducing GET-many-specific assumptions, and whether unauthorized requests abort before expensive or mutating work.
+Reviewers should focus on whether the operation-neutral core can be consumed without reintroducing GET-many-specific assumptions, whether GET-by-id authorization and hydration share the same observed read state, and whether unauthorized requests abort before expensive or mutating work.
 
 ## Clarifying Questions and Answers
 
@@ -181,3 +193,16 @@ Reviewers should focus on whether the operation-neutral core can be consumed wit
 2. Relax the Slice 2 DELETE acceptance criteria to a locked transaction/session boundary. One provider-specific authorization/`If-Match`/delete command is preferred when it is natural, but it is not required. The required contract is: after existence is established, lock or otherwise guard the target `dms.Document` row in the write transaction, authorize stored root values observed under that lock, return 403 before `If-Match` comparison when authorization fails, then evaluate `If-Match` and execute the delete while the same lock/guarded target context is still valid. Tests should assert ordering, 403-over-412 precedence, and unchanged rows on authorization failure, not a specific one-command topology.
 3. Apply relationship authorization only to public external GET-by-id materialization: `RelationalGetRequestReadMode.ExternalResponse`. `StoredDocument` reads are internal read-modify-write/current-state fetches and must remain authorization-bypassed because the owning write/update/delete flow performs its own operation-specific authorization before mutation or response. Do not leave that as an accidental side effect of the read mode alone; Slice 2 tasks should make the bypass explicit in the backend-local contract or guard rails, for example with an internal authorization-bypass purpose/reason tied to `StoredDocument`, and tests should prove public GET handlers cannot request the bypass.
 4. Add a nullable-root-EdOrg synthetic backend integration fixture for the stored-null invalid-data case. Do not relax or bypass production DDL constraints for a normal relational fixture, and do not downgrade this to unit-test-only. If the standard selected resource has non-nullable root EdOrg identity columns, use a test-only mapping/security fixture whose root EdOrg authorization subject is nullable, seed the null state directly with SQL, and verify PostgreSQL and SQL Server map the failed stored-value authorization to relationship invalid-data metadata without reconstitution or deletion.
+
+### Questions 7
+
+1. When a failed relationship OR group contains mixed failure kinds, for example one strategy has an existing stored EdOrg value that is null while another strategy simply has no matching relationship, which single ProblemDetails `type` and `detail` should Slice 6 choose?
+
+### Answers 7
+
+1. Use a deterministic failure-kind precedence rule for the failed relationship OR group:
+   1. Existing stored-value invalid data / element uninitialized.
+   2. Proposed-value element required.
+   3. No relationship established / no matching authorization relationship.
+
+   Slice 2 GET-by-id and DELETE can emit stored-value invalid-data and no-relationship failures; the proposed-value precedence slot is defined here for Slice 3, Slice 4, and Slice 6 so they do not invent a parallel rule. Slice 2 must still carry the full failed strategy/subject set in configured order across the backend-to-handler boundary. Slice 6 chooses the top-level ProblemDetails `type`, `detail`, and primary error text from the highest-precedence failure kind present. If multiple failures share that selected precedence, aggregate their readable securable names, strategy identity, and hints using the deterministic ordering rules. Lower-precedence entries must not hide or downgrade the selected top-level type. If any OR strategy succeeds, the operation is authorized and failures from other OR strategies should not surface.
