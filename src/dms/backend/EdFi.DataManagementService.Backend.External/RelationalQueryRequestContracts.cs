@@ -18,19 +18,32 @@ public static class RelationalAuthorizationParameterNameConstants
 /// <summary>
 /// Typed request-scoped authorization inputs shared by relational authorization planning and execution.
 /// </summary>
-/// <param name="ClaimEducationOrganizationIds">
-/// Unique token EdOrg claim ids sorted ascending for deterministic planning/binding.
-/// </param>
-/// <param name="NamespacePrefixes">
-/// Unique namespace prefixes sorted ordinally for deterministic downstream strategy planning.
-/// </param>
-public sealed record RelationalAuthorizationContext(
-    IReadOnlyList<long> ClaimEducationOrganizationIds,
-    IReadOnlyList<string> NamespacePrefixes
-)
+public sealed record RelationalAuthorizationContext
 {
-    public RelationalAuthorizationContext(IReadOnlyList<long> ClaimEducationOrganizationIds)
-        : this(ClaimEducationOrganizationIds, []) { }
+    public RelationalAuthorizationContext(IReadOnlyList<long> claimEducationOrganizationIds)
+        : this(claimEducationOrganizationIds, []) { }
+
+    public RelationalAuthorizationContext(
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> namespacePrefixes
+    )
+    {
+        ArgumentNullException.ThrowIfNull(claimEducationOrganizationIds);
+        ArgumentNullException.ThrowIfNull(namespacePrefixes);
+
+        ClaimEducationOrganizationIds = NormalizeClaimEducationOrganizationIds(claimEducationOrganizationIds);
+        NamespacePrefixes = NormalizeNamespacePrefixes(namespacePrefixes);
+    }
+
+    /// <summary>
+    /// Unique token EdOrg claim ids sorted ascending for deterministic planning/binding.
+    /// </summary>
+    public IReadOnlyList<long> ClaimEducationOrganizationIds { get; }
+
+    /// <summary>
+    /// Unique namespace prefixes sorted ordinally for deterministic downstream strategy planning.
+    /// </summary>
+    public IReadOnlyList<string> NamespacePrefixes { get; }
 
     public static RelationalAuthorizationContext Create(ClientAuthorizations clientAuthorizations)
     {
@@ -38,21 +51,25 @@ public sealed record RelationalAuthorizationContext(
 
         return new RelationalAuthorizationContext(
             [
-                .. clientAuthorizations
-                    .EducationOrganizationIds.Select(static educationOrganizationId =>
-                        educationOrganizationId.Value
-                    )
-                    .Distinct()
-                    .Order(),
+                .. clientAuthorizations.EducationOrganizationIds.Select(static educationOrganizationId =>
+                    educationOrganizationId.Value
+                ),
             ],
             [
-                .. clientAuthorizations
-                    .NamespacePrefixes.Select(static namespacePrefix => namespacePrefix.Value)
-                    .Distinct(StringComparer.Ordinal)
-                    .Order(StringComparer.Ordinal),
+                .. clientAuthorizations.NamespacePrefixes.Select(static namespacePrefix =>
+                    namespacePrefix.Value
+                ),
             ]
         );
     }
+
+    private static IReadOnlyList<long> NormalizeClaimEducationOrganizationIds(
+        IReadOnlyList<long> claimEducationOrganizationIds
+    ) => [.. claimEducationOrganizationIds.Distinct().Order()];
+
+    private static IReadOnlyList<string> NormalizeNamespacePrefixes(
+        IReadOnlyList<string> namespacePrefixes
+    ) => [.. namespacePrefixes.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
 }
 
 /// <summary>

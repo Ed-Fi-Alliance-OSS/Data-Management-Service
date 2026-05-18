@@ -639,6 +639,23 @@ public class QueryRequestHandlerTests
         }
 
         [Test]
+        public void It_normalizes_direct_and_client_authorization_creation_paths_to_the_same_values()
+        {
+            var directlyConstructedContext = new RelationalAuthorizationContext(
+                [255902L, 255901L, 255902L, 255900L],
+                ["uri://sample-b.org", "uri://sample-a.org", "uri://sample-b.org"]
+            );
+
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository
+                .CapturedRequest!.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(directlyConstructedContext.ClaimEducationOrganizationIds);
+            _repository
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal(directlyConstructedContext.NamespacePrefixes);
+        }
+
+        [Test]
         public void It_sets_profile_content_type_for_relational_profile_queries()
         {
             _requestInfo

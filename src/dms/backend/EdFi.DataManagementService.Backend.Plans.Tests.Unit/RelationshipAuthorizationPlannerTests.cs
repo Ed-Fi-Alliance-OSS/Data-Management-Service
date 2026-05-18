@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using FluentAssertions;
 using NUnit.Framework;
@@ -13,10 +14,48 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_RelationshipAuthorizationPlanner
+public class Given_RelationshipAuthorizationPlannerTests
 {
     private static readonly DbSchemaName _edfiSchema = new("edfi");
     private static readonly DbColumnName _documentId = new("DocumentId");
+
+    [Test]
+    public void It_should_normalize_direct_constructor_inputs_the_same_as_client_authorizations_creation()
+    {
+        var directlyConstructedContext = new RelationalAuthorizationContext(
+            [300L, 100L, 300L],
+            ["uri://sample-b.org", "uri://sample-a.org", "uri://sample-b.org"]
+        );
+        var createdContext = RelationalAuthorizationContext.Create(
+            new ClientAuthorizations(
+                TokenId: "token-id",
+                ClientId: "client-id",
+                ClaimSetName: "claim-set",
+                EducationOrganizationIds:
+                [
+                    new EducationOrganizationId(300),
+                    new EducationOrganizationId(100),
+                    new EducationOrganizationId(300),
+                ],
+                NamespacePrefixes:
+                [
+                    new NamespacePrefix("uri://sample-b.org"),
+                    new NamespacePrefix("uri://sample-a.org"),
+                    new NamespacePrefix("uri://sample-b.org"),
+                ],
+                DmsInstanceIds: []
+            )
+        );
+
+        directlyConstructedContext.ClaimEducationOrganizationIds.Should().Equal(100L, 300L);
+        directlyConstructedContext
+            .NamespacePrefixes.Should()
+            .Equal("uri://sample-a.org", "uri://sample-b.org");
+        createdContext
+            .ClaimEducationOrganizationIds.Should()
+            .Equal(directlyConstructedContext.ClaimEducationOrganizationIds);
+        createdContext.NamespacePrefixes.Should().Equal(directlyConstructedContext.NamespacePrefixes);
+    }
 
     [Test]
     public void It_should_plan_stored_specs_with_strategy_or_order_and_subject_and_semantics()
