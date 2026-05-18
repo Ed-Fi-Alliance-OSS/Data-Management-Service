@@ -143,6 +143,6 @@
       "pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1",
       "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter RelationshipsWithEdOrgsOnly"
     ],
-    "completed": false
+    "completed": true
   }
 ]
