@@ -89,21 +89,44 @@ public sealed record RelationshipAuthorizationSubject(
     IReadOnlyList<RelationshipAuthorizationSubjectContributor> Contributors
 );
 
+public abstract record RelationshipAuthorizationCheckTarget
+{
+    private RelationshipAuthorizationCheckTarget() { }
+
+    public sealed record Stored(DbTableName RootTable, DbColumnName DocumentIdColumn)
+        : RelationshipAuthorizationCheckTarget;
+
+    public sealed record Proposed(
+        DbTableName RootTable,
+        IReadOnlyList<RelationshipAuthorizationProposedValueBinding> SubjectBindingsInOrder
+    ) : RelationshipAuthorizationCheckTarget;
+}
+
+public sealed record RelationshipAuthorizationProposedValueBinding(
+    DbTableName Table,
+    DbColumnName Column,
+    int BindingIndex,
+    string LogicalKey,
+    string ParameterSeed
+);
+
 public sealed record RelationshipAuthorizationCheckSpec(
     ConfiguredAuthorizationStrategy ConfiguredStrategy,
     RelationshipAuthorizationHierarchyDirection Direction,
     RelationshipAuthorizationValueSource ValueSource,
     IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
-    string StableParameterSeed
+    RelationshipAuthorizationCheckTarget CheckTarget
 );
 
 public enum RelationshipAuthorizationFailureKind
 {
+    KnownButNotEnabledStrategy,
     InvalidAuthorizationStrategy,
     UnknownCustomViewBasisResource,
     UnresolvedSecurableElement,
     NoApplicableRootSubject,
     NoClaimEducationOrganizationIds,
+    MissingProposedRootBinding,
     StoredValueNull,
     ProposedValueMissing,
 }
