@@ -620,10 +620,10 @@ public class Given_Person_Resource_With_Self_Securable
 }
 
 /// <summary>
-/// Pins multi-chain emission: when a subject declares two Student securable paths that resolve
-/// to <em>distinct</em> join chains (3-hop short vs. 4-hop long, each via its own intermediate
-/// resources), the pass emits auth indexes for <em>every</em> hop of <em>both</em> chains so
-/// independent person references stay covered.
+/// Pins the shortest-wins contract (DMS-1053, auth.md L879): when a subject declares two
+/// Student securable paths that resolve to distinct join chains (3-hop short vs. 4-hop long,
+/// each via its own intermediate resources), the pass emits auth indexes for the hops of the
+/// shorter chain only. The longer chain's hops are not indexed.
 /// </summary>
 [TestFixture]
 public class Given_Resource_Chain_Of_Three_Hops
@@ -646,13 +646,7 @@ public class Given_Resource_Chain_Of_Three_Hops
     }
 
     [Test]
-    public void It_should_emit_indexes_for_every_hop_of_both_chains()
-    {
-        _authIndexes.Should().HaveCount(7);
-    }
-
-    [Test]
-    public void It_should_emit_the_subject_hops_on_both_chains()
+    public void It_should_emit_the_subject_hop_on_the_short_chain_only()
     {
         _authIndexes
             .Should()
@@ -661,7 +655,7 @@ public class Given_Resource_Chain_Of_Three_Hops
             );
         _authIndexes
             .Should()
-            .Contain(i =>
+            .NotContain(i =>
                 i.Table.Name == "ThreeHopChainSubject" && i.KeyColumns[0].Value == "LongHop1_DocumentId"
             );
     }
@@ -675,20 +669,6 @@ public class Given_Resource_Chain_Of_Three_Hops
         _authIndexes
             .Should()
             .Contain(i => i.Table.Name == "ShortHop2" && i.KeyColumns[0].Value == "Student_DocumentId");
-    }
-
-    [Test]
-    public void It_should_emit_every_intermediate_hop_on_the_long_chain()
-    {
-        _authIndexes
-            .Should()
-            .Contain(i => i.Table.Name == "LongHop1" && i.KeyColumns[0].Value == "LongHop2_DocumentId");
-        _authIndexes
-            .Should()
-            .Contain(i => i.Table.Name == "LongHop2" && i.KeyColumns[0].Value == "LongHop3_DocumentId");
-        _authIndexes
-            .Should()
-            .Contain(i => i.Table.Name == "LongHop3" && i.KeyColumns[0].Value == "Student_DocumentId");
     }
 }
 
@@ -1742,56 +1722,6 @@ public class Given_SecurableElementLocationResolver_with_multi_candidate_path
 }
 
 /// <summary>
-/// Pins the tied-length first-wins behavior in
-/// <see cref="PersonJoinPathResolver.ResolveShortestPersonPath"/>: when a subject declares two
-/// distinct 1-hop Student references on different FK columns (two structurally different
-/// chains), the pass emits an auth index for <em>each</em> FK column. Independent person
-/// references stay covered.
-/// </summary>
-[TestFixture]
-public class Given_Subject_With_Two_Direct_Person_References_Same_Length_Chains
-{
-    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
-
-    [SetUp]
-    public void Setup()
-    {
-        _authIndexes = AuthorizationIndexTestRunner
-            .Build(ctx =>
-            {
-                ctx.ConcreteResourcesInNameOrder.Add(
-                    AuthIndexFixtureResources.BuildResourceWithTwoDirectStudentReferences()
-                );
-                ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildPlainResource("Student"));
-            })
-            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
-            .ToArray();
-    }
-
-    [Test]
-    public void It_should_emit_an_auth_index_for_each_FK_column()
-    {
-        _authIndexes.Where(i => i.Table.Name == "TwoDirectStudentRefCarrier").Should().HaveCount(2);
-    }
-
-    [Test]
-    public void It_should_emit_an_index_keyed_on_StudentA_DocumentId()
-    {
-        var index = _authIndexes.Single(i => i.KeyColumns[0].Value == "StudentA_DocumentId");
-        index.Table.Name.Should().Be("TwoDirectStudentRefCarrier");
-        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
-    }
-
-    [Test]
-    public void It_should_emit_an_index_keyed_on_StudentB_DocumentId()
-    {
-        var index = _authIndexes.Single(i => i.KeyColumns[0].Value == "StudentB_DocumentId");
-        index.Table.Name.Should().Be("TwoDirectStudentRefCarrier");
-        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
-    }
-}
-
-/// <summary>
 /// Pins the surface-unresolved-sibling contract (Fix #7, DMS-1094 Round 6): when a Student
 /// path resolves alongside a sibling path that does not bind to any
 /// <see cref="DocumentReferenceBinding"/>, the pass throws on the unresolved sibling rather
@@ -2045,6 +1975,66 @@ public class Given_Intermediate_With_Multiple_Root_Bindings_Only_Securable_Is_Fo
             .NotContain(i =>
                 i.Table.Name == "MultiBindingIntermediate"
                 && i.KeyColumns.Any(c => c.Value == "NonSecurableHop_DocumentId")
+            );
+    }
+}
+
+/// <summary>
+/// Pins the walker's try-alternates-and-pick-shortest contract (DMS-1094 Round 8 Fix #2):
+/// when an intermediate declares multiple Student securables — one going through a detour
+/// resource, one going directly to <c>Ed-Fi.Student</c> — the walker enumerates both
+/// candidates at the hop and selects the shorter continuation. A greedy first-match walker
+/// (Round 7 behavior) would emit indexes for whichever declaration came first in the list,
+/// possibly the longer detour.
+/// </summary>
+[TestFixture]
+public class Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Shortest
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+            {
+                foreach (
+                    var r in AuthIndexFixtureResources.BuildIntermediateWithMultipleSecurablePathsWalkerPicksShortest()
+                )
+                {
+                    ctx.ConcreteResourcesInNameOrder.Add(r);
+                }
+            })
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_emit_the_hop_on_the_shorter_alternate()
+    {
+        // The intermediate's SECOND declared Student securable is the direct hop to
+        // Ed-Fi.Student via DirectStudentHop_DocumentId. With try-alternates + shortest-wins,
+        // the walker picks this branch over the longer detour. A greedy first-match walker
+        // would have picked the detour (listed FIRST) and indexed DetourHop_DocumentId instead.
+        _authIndexes
+            .Should()
+            .Contain(i =>
+                i.Table.Name == "WalkerShortestIntermediate"
+                && i.KeyColumns.Any(c => c.Value == "DirectStudentHop_DocumentId")
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_the_hop_on_the_longer_alternate_when_routing_from_the_subject()
+    {
+        // The detour hop only appears in the auth-index inventory if some subject's resolved
+        // chain routes through it. Under shortest-wins, neither WalkerShortestSubject nor the
+        // intermediate-as-subject picks the detour, so the detour FK is not indexed.
+        _authIndexes
+            .Should()
+            .NotContain(i =>
+                i.Table.Name == "WalkerShortestIntermediate"
+                && i.KeyColumns.Any(c => c.Value == "DetourHop_DocumentId")
             );
     }
 }
@@ -3382,69 +3372,6 @@ internal static class AuthIndexFixtureResources
     }
 
     /// <summary>
-    /// Subject resource with two distinct root-level <see cref="DocumentReferenceBinding"/>s
-    /// to <c>Ed-Fi.Student</c>, each via a separate FK column. Both bindings resolve to a
-    /// 1-hop chain of identical length — the resolver's strict-less-than tiebreaker keeps the
-    /// first iterated path, so only one auth index is emitted.
-    /// </summary>
-    public static ConcreteResourceModel BuildResourceWithTwoDirectStudentReferences()
-    {
-        const string resourceName = "TwoDirectStudentRefCarrier";
-        var rootTable = new DbTableName(_edfiSchema, resourceName);
-        var firstFk = new DbColumnName("StudentA_DocumentId");
-        var secondFk = new DbColumnName("StudentB_DocumentId");
-
-        var firstBinding = new DocumentReferenceBinding(
-            IsIdentityComponent: true,
-            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentAReference"),
-            Table: rootTable,
-            FkColumn: firstFk,
-            TargetResource: new QualifiedResourceName(EdFi, "Student"),
-            IdentityBindings:
-            [
-                new ReferenceIdentityBinding(
-                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
-                    JsonPathExpressionCompiler.Compile("$.studentAReference.studentUniqueId"),
-                    firstFk
-                ),
-            ]
-        );
-
-        var secondBinding = new DocumentReferenceBinding(
-            IsIdentityComponent: true,
-            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentBReference"),
-            Table: rootTable,
-            FkColumn: secondFk,
-            TargetResource: new QualifiedResourceName(EdFi, "Student"),
-            IdentityBindings:
-            [
-                new ReferenceIdentityBinding(
-                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
-                    JsonPathExpressionCompiler.Compile("$.studentBReference.studentUniqueId"),
-                    secondFk
-                ),
-            ]
-        );
-
-        return BuildResource(
-            resourceName,
-            [
-                BuildScalarColumn(new DbColumnName("DocumentId")),
-                BuildScalarColumn(firstFk),
-                BuildScalarColumn(secondFk),
-            ],
-            [firstBinding, secondBinding],
-            new ResourceSecurableElements(
-                EducationOrganization: [],
-                Namespace: [],
-                Student: ["$.studentAReference.studentUniqueId", "$.studentBReference.studentUniqueId"],
-                Contact: [],
-                Staff: []
-            )
-        );
-    }
-
-    /// <summary>
     /// Subject resource declaring two root-level Student securable paths: one matches a real
     /// <see cref="DocumentReferenceBinding"/>, the other targets a non-existent reference. The
     /// resolved path produces an auth index; the unresolved sibling is silently dropped (no
@@ -3756,6 +3683,141 @@ internal static class AuthIndexFixtureResources
         );
 
         return [subject, intermediate, BuildPlainResource("Student")];
+    }
+
+    /// <summary>
+    /// Builds the resources for the
+    /// <c>Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Shortest</c> test. The
+    /// intermediate <c>WalkerShortestIntermediate</c> declares TWO Student securables, listed
+    /// in order: the FIRST (<c>$.detourRef.studentUniqueId</c>) goes through a detour
+    /// resource that itself reaches Student in one more hop (2-step continuation); the SECOND
+    /// (<c>$.studentRef.studentUniqueId</c>) targets <c>Ed-Fi.Student</c> directly (1-step
+    /// continuation). The walker must enumerate both candidates and pick the shorter one.
+    /// </summary>
+    public static IReadOnlyList<ConcreteResourceModel> BuildIntermediateWithMultipleSecurablePathsWalkerPicksShortest()
+    {
+        const string subjectName = "WalkerShortestSubject";
+        var subjectRoot = new DbTableName(_edfiSchema, subjectName);
+        var subjectFk = new DbColumnName("WalkerShortestIntermediate_DocumentId");
+
+        var subjectBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.intermediateRef"),
+            Table: subjectRoot,
+            FkColumn: subjectFk,
+            TargetResource: new QualifiedResourceName(EdFi, "WalkerShortestIntermediate"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.intermediateRef.studentUniqueId"),
+                    subjectFk
+                ),
+            ]
+        );
+
+        var subject = BuildResource(
+            subjectName,
+            [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(subjectFk)],
+            [subjectBinding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.intermediateRef.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
+
+        var intermediateTable = new DbTableName(_edfiSchema, "WalkerShortestIntermediate");
+        var detourFk = new DbColumnName("DetourHop_DocumentId");
+        var directStudentFk = new DbColumnName("DirectStudentHop_DocumentId");
+
+        var detourBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.detourRef"),
+            Table: intermediateTable,
+            FkColumn: detourFk,
+            TargetResource: new QualifiedResourceName(EdFi, "WalkerShortestDetour"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.detourRef.studentUniqueId"),
+                    detourFk
+                ),
+            ]
+        );
+
+        var directStudentBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentRef"),
+            Table: intermediateTable,
+            FkColumn: directStudentFk,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.studentRef.studentUniqueId"),
+                    directStudentFk
+                ),
+            ]
+        );
+
+        var intermediate = BuildResource(
+            "WalkerShortestIntermediate",
+            [
+                BuildScalarColumn(new DbColumnName("DocumentId")),
+                BuildScalarColumn(detourFk),
+                BuildScalarColumn(directStudentFk),
+            ],
+            // Detour binding listed FIRST so a greedy first-match walker would pick it. The
+            // try-alternates walker must enumerate both and pick the shorter (direct) branch.
+            [detourBinding, directStudentBinding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.detourRef.studentUniqueId", "$.studentRef.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
+
+        // WalkerShortestDetour reaches Student in one hop via its own declared securable. With
+        // it in place, intermediate-as-subject's $.detourRef path resolves to a 2-step chain
+        // (I -> Detour -> Student); the direct path's 1-step chain wins shortest.
+        var detourFkOnDetour = new DbColumnName("Student_DocumentId");
+        var detourToStudentBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentRef"),
+            Table: new DbTableName(_edfiSchema, "WalkerShortestDetour"),
+            FkColumn: detourFkOnDetour,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.studentRef.studentUniqueId"),
+                    detourFkOnDetour
+                ),
+            ]
+        );
+
+        var detour = BuildResource(
+            "WalkerShortestDetour",
+            [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(detourFkOnDetour)],
+            [detourToStudentBinding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.studentRef.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
+
+        return [subject, intermediate, detour, BuildPlainResource("Student")];
     }
 
     /// <summary>

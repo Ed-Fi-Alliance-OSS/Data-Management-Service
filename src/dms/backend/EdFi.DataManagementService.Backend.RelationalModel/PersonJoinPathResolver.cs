@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
-/// Resolves the column-path chain from a subject resource to a named person resource
+/// Resolves the shortest column-path chain from a subject resource to a named person resource
 /// (<c>Student</c>, <c>Contact</c>, or <c>Staff</c>) via the subject's Student / Contact /
 /// Staff securable element JSON paths.
 /// </summary>
@@ -25,7 +25,9 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///     covering auth index.</description>
 ///   </item>
 /// </list>
-/// <para>Algorithm (matches <c>design-docs/auth.md</c> § "ResolveSecurableElementColumnPath"):</para>
+/// <para>Algorithm (matches <c>design-docs/auth.md</c> § "ResolveSecurableElementColumnPath",
+/// L879: "the function should follow each path and pick the shortest one to minimize the number
+/// of joins"):</para>
 /// <list type="number">
 ///   <item>
 ///     <description>Partition <c>personPaths</c> into supported (root-level) and array-nested
@@ -44,23 +46,24 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///   </item>
 ///   <item>
 ///     <description>If the binding's target is the person resource, the chain is a single
-///     direct hop. Otherwise, walk transitively: at each intermediate resource, read that
-///     resource's own declared <c>SecurableElements.Student/Contact/Staff</c> for the same
-///     person kind, find the binding whose <c>IdentityBindings.ReferenceJsonPath</c> matches a
-///     declared securable path, and follow it to the next resource. Repeat until the person
-///     resource is reached. Walking arbitrary root bindings (BFS over all references) is
-///     wrong: it can pick a non-securable optional reference as the chain hop, emitting auth
-///     indexes that the runtime resolver does not actually use.</description>
+///     direct hop. Otherwise, walk transitively: at each intermediate resource, enumerate
+///     that resource's own declared <c>SecurableElements.Student/Contact/Staff</c> for the
+///     same person kind, find the binding whose <c>IdentityBindings.ReferenceJsonPath</c>
+///     matches each declared securable path, and recursively resolve the remainder of the
+///     chain through each candidate. Pick the shortest successful continuation. A declared
+///     securable that leads to a cycle or unresolvable target is skipped — alternate
+///     declared securables at the same hop are still tried. Walking arbitrary root bindings
+///     (BFS over all references) is wrong: it can pick a non-securable optional reference
+///     as the chain hop, emitting auth indexes that the runtime resolver does not use.</description>
 ///   </item>
 ///   <item>
-///     <description>Dedupe by structural chain equality. Multiple paths resolving to the same
-///     chain (key-unification alternatives) collapse to one. Paths producing different chains
-///     are independent person references and yield one chain each — callers emit auth indexes
-///     and runtime filter steps per chain.</description>
+///     <description>Among all root-level paths that produced a chain, return the shortest.
+///     Ties break first-wins (input order). This matches the DMS-1053 design contract that
+///     multiple person paths are alternatives, not independent references.</description>
 ///   </item>
 /// </list>
-/// <para>Returns an empty list when no non-array-nested path resolves. Callers decide whether
-/// that — combined with "subject is not the person resource itself" — means "unresolved"
+/// <para>Returns <see langword="null"/> when no non-array-nested path resolves. Callers decide
+/// whether that — combined with "subject is not the person resource itself" — means "unresolved"
 /// (throw) or "OK, subject is the person and its own DocumentId is the anchor" (skip). Use
 /// <see cref="IsPersonResource"/> for that check.</para>
 /// </remarks>
@@ -74,33 +77,33 @@ public static class PersonJoinPathResolver
     public const string EdFiProjectName = "Ed-Fi";
 
     /// <summary>
-    /// Resolves every distinct person-join chain from <paramref name="subjectResource"/> to the
+    /// Resolves the shortest person-join chain from <paramref name="subjectResource"/> to the
     /// named person resource via the supplied securable element JSON paths.
     /// </summary>
     /// <remarks>
-    /// Multiple JSON paths that fold onto the same <c>(table, FK, target, target-column)</c>
-    /// sequence (key-unification alternatives) collapse into a single chain. Paths producing
-    /// structurally different chains are independent person references and yield one chain
-    /// each — callers emit indexes / runtime auth-filter steps per chain.
+    /// Per the DMS-1053 design contract (auth.md L879), multiple root-level person paths are
+    /// alternatives: the function follows each one and returns the shortest resolved chain.
+    /// Equal-length ties break first-wins in input order. Paths that fail to resolve (binding
+    /// not found, target missing from the resource lookup, all declared securables at some
+    /// intermediate cycle or dead-end) are accumulated into
+    /// <paramref name="unresolvedRootLevelPaths"/> for callers to surface.
     /// </remarks>
     /// <param name="subjectResource">Subject resource declaring the person securable element(s).</param>
     /// <param name="personPaths">Securable element JSON paths for one person kind (Student / Contact / Staff).</param>
     /// <param name="personResourceName">Person resource name — <c>"Student"</c>, <c>"Contact"</c>, or <c>"Staff"</c>.</param>
     /// <param name="resourceLookup">All concrete resources keyed by qualified resource name.</param>
     /// <param name="skippedArrayNestedPaths">Mutable accumulator: array-nested paths (containing <c>[*]</c>) are appended here.</param>
-    /// <param name="rootLevelPaths">Output: the subset of <paramref name="personPaths"/> that are not array-nested, in input order.</param>
-    /// <param name="unresolvedRootLevelPaths">Output: root-level paths that did not bind to a <see cref="DocumentReferenceBinding"/>, in input order.</param>
+    /// <param name="unresolvedRootLevelPaths">Output: root-level paths that did not produce a chain, in input order.</param>
     /// <returns>
-    /// All distinct resolved chains (deduped by structural equality), in first-resolution order.
-    /// Empty when no non-array-nested path resolved.
+    /// The shortest resolved chain, or <see langword="null"/> when no non-array-nested path
+    /// resolved.
     /// </returns>
-    public static IReadOnlyList<IReadOnlyList<ColumnPathStep>> ResolveDistinctPersonChains(
+    public static IReadOnlyList<ColumnPathStep>? ResolveShortestPersonChain(
         ConcreteResourceModel subjectResource,
         IReadOnlyList<string> personPaths,
         string personResourceName,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         List<string> skippedArrayNestedPaths,
-        out IReadOnlyList<string> rootLevelPaths,
         out IReadOnlyList<string> unresolvedRootLevelPaths
     )
     {
@@ -110,12 +113,11 @@ public static class PersonJoinPathResolver
         ArgumentNullException.ThrowIfNull(resourceLookup);
         ArgumentNullException.ThrowIfNull(skippedArrayNestedPaths);
 
-        rootLevelPaths = [];
         unresolvedRootLevelPaths = [];
 
         if (personPaths.Count == 0)
         {
-            return [];
+            return null;
         }
 
         // Person path traversal currently follows only root-table bindings.
@@ -132,17 +134,15 @@ public static class PersonJoinPathResolver
             }
         }
 
-        rootLevelPaths = rootLevel;
-
         if (rootLevel.Count == 0)
         {
-            return [];
+            return null;
         }
 
         var model = subjectResource.RelationalModel;
         var rootTable = model.Root;
 
-        var resolvedChains = new List<IReadOnlyList<ColumnPathStep>>();
+        IReadOnlyList<ColumnPathStep>? shortest = null;
         var unresolved = new List<string>();
 
         foreach (var personPath in rootLevel)
@@ -159,15 +159,15 @@ public static class PersonJoinPathResolver
             {
                 unresolved.Add(personPath);
             }
-            else
+            else if (shortest is null || chain.Count < shortest.Count)
             {
-                resolvedChains.Add(chain);
+                shortest = chain;
             }
         }
 
         unresolvedRootLevelPaths = unresolved;
 
-        return resolvedChains.Distinct(ChainEqualityComparer.Instance).ToList();
+        return shortest;
     }
 
     private static IReadOnlyList<ColumnPathStep>? TryResolveOneChain(
@@ -207,34 +207,6 @@ public static class PersonJoinPathResolver
         return WalkToPersonResource(subjectResource, rootTable, binding, personResourceName, resourceLookup);
     }
 
-    private sealed class ChainEqualityComparer : IEqualityComparer<IReadOnlyList<ColumnPathStep>>
-    {
-        public static readonly ChainEqualityComparer Instance = new();
-
-        public bool Equals(IReadOnlyList<ColumnPathStep>? x, IReadOnlyList<ColumnPathStep>? y)
-        {
-            if (ReferenceEquals(x, y))
-            {
-                return true;
-            }
-            if (x is null || y is null)
-            {
-                return false;
-            }
-            return x.SequenceEqual(y);
-        }
-
-        public int GetHashCode(IReadOnlyList<ColumnPathStep> obj)
-        {
-            var hc = new HashCode();
-            foreach (var step in obj)
-            {
-                hc.Add(step);
-            }
-            return hc.ToHashCode();
-        }
-    }
-
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="resource"/> is the core Ed-Fi person
     /// resource named <paramref name="personResourceName"/> (both project and resource names
@@ -264,12 +236,15 @@ public static class PersonJoinPathResolver
     }
 
     /// <summary>
-    /// Walks transitively from the first-hop intermediate to the person resource, following
-    /// each intermediate's own declared <c>SecurableElements.{Student|Contact|Staff}</c> for the
-    /// kind being resolved. The walk is deterministic — at every step it picks the binding whose
-    /// <c>IdentityBindings.ReferenceJsonPath</c> matches a declared securable path on the
-    /// current intermediate. Returns <see langword="null"/> if any step has no usable securable,
-    /// the binding fails to resolve, or a cycle is hit.
+    /// Walks transitively from the first-hop intermediate to the person resource. At each
+    /// intermediate, enumerates the resource's own declared
+    /// <c>SecurableElements.{Student|Contact|Staff}</c> for the kind being resolved, finds the
+    /// <see cref="DocumentReferenceBinding"/> whose <c>IdentityBindings.ReferenceJsonPath</c>
+    /// matches each declared securable path, recursively resolves the remainder of the chain
+    /// through each candidate, and returns the shortest successful continuation. Declared
+    /// securables that lead to a cycle, an unresolvable target, or a dead-end are skipped —
+    /// alternate declared securables at the same hop are still tried. Returns
+    /// <see langword="null"/> when every branch fails.
     /// </summary>
     private static IReadOnlyList<ColumnPathStep>? WalkToPersonResource(
         ConcreteResourceModel subjectResource,
@@ -279,76 +254,135 @@ public static class PersonJoinPathResolver
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup
     )
     {
-        var visited = new HashSet<QualifiedResourceName> { subjectResource.RelationalModel.Resource };
-
-        var firstFkColumn = ResolveToCanonicalColumn(subjectRootTable, firstHopBinding.FkColumn);
-        if (!resourceLookup.TryGetValue(firstHopBinding.TargetResource, out var currentResource))
+        if (!resourceLookup.TryGetValue(firstHopBinding.TargetResource, out var firstTarget))
         {
             return null;
         }
 
-        var path = new List<ColumnPathStep>
+        var visited = new HashSet<QualifiedResourceName>
+        {
+            subjectResource.RelationalModel.Resource,
+            firstHopBinding.TargetResource,
+        };
+
+        var continuation = ShortestContinuationToPersonResource(
+            firstTarget,
+            personResourceName,
+            resourceLookup,
+            visited
+        );
+        if (continuation is null)
+        {
+            return null;
+        }
+
+        var firstFkColumn = ResolveToCanonicalColumn(subjectRootTable, firstHopBinding.FkColumn);
+        var path = new List<ColumnPathStep>(1 + continuation.Count)
         {
             new(
                 subjectRootTable.Table,
                 firstFkColumn,
-                currentResource.RelationalModel.Root.Table,
+                firstTarget.RelationalModel.Root.Table,
                 RelationalNameConventions.DocumentIdColumnName
             ),
         };
+        path.AddRange(continuation);
 
-        visited.Add(firstHopBinding.TargetResource);
+        return path;
+    }
 
-        while (!IsPersonResource(currentResource.RelationalModel.Resource, personResourceName))
+    /// <summary>
+    /// Recursively resolves the shortest tail-of-chain from <paramref name="currentResource"/>
+    /// to the person resource. Returns an empty list when <paramref name="currentResource"/> is
+    /// already the person resource, the shortest non-empty continuation when one exists, or
+    /// <see langword="null"/> when every declared securable at this hop dead-ends.
+    /// <paramref name="visited"/> is mutated for backtracking — each candidate adds its target
+    /// before recursing and removes it after, so distinct branches do not poison each other's
+    /// cycle detection.
+    /// </summary>
+    private static IReadOnlyList<ColumnPathStep>? ShortestContinuationToPersonResource(
+        ConcreteResourceModel currentResource,
+        string personResourceName,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
+        HashSet<QualifiedResourceName> visited
+    )
+    {
+        if (IsPersonResource(currentResource.RelationalModel.Resource, personResourceName))
         {
-            var declaredPaths = SelectPersonSecurablePaths(currentResource, personResourceName);
-            if (declaredPaths.Count == 0)
+            return [];
+        }
+
+        var declaredPaths = SelectPersonSecurablePaths(currentResource, personResourceName);
+        if (declaredPaths.Count == 0)
+        {
+            return null;
+        }
+
+        var currentModel = currentResource.RelationalModel;
+        var currentRoot = currentModel.Root;
+
+        IReadOnlyList<ColumnPathStep>? best = null;
+
+        foreach (var declaredPath in declaredPaths)
+        {
+            if (IsArrayNestedPath(declaredPath))
             {
-                return null;
+                continue;
             }
 
-            var currentModel = currentResource.RelationalModel;
-            var currentRoot = currentModel.Root;
-
-            DocumentReferenceBinding? nextBinding = null;
-            foreach (var declaredPath in declaredPaths)
+            var nextBinding = FindBindingByPersonPath(currentModel, currentRoot.Table, declaredPath);
+            if (nextBinding is null)
             {
-                if (IsArrayNestedPath(declaredPath))
+                continue;
+            }
+
+            if (!visited.Add(nextBinding.TargetResource))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (!resourceLookup.TryGetValue(nextBinding.TargetResource, out var nextResource))
                 {
                     continue;
                 }
 
-                nextBinding = FindBindingByPersonPath(currentModel, currentRoot.Table, declaredPath);
-                if (nextBinding is not null)
+                var tail = ShortestContinuationToPersonResource(
+                    nextResource,
+                    personResourceName,
+                    resourceLookup,
+                    visited
+                );
+                if (tail is null)
                 {
-                    break;
+                    continue;
+                }
+
+                var fkColumn = ResolveToCanonicalColumn(currentRoot, nextBinding.FkColumn);
+                var candidate = new List<ColumnPathStep>(1 + tail.Count)
+                {
+                    new(
+                        currentRoot.Table,
+                        fkColumn,
+                        nextResource.RelationalModel.Root.Table,
+                        RelationalNameConventions.DocumentIdColumnName
+                    ),
+                };
+                candidate.AddRange(tail);
+
+                if (best is null || candidate.Count < best.Count)
+                {
+                    best = candidate;
                 }
             }
-
-            if (nextBinding is null || !visited.Add(nextBinding.TargetResource))
+            finally
             {
-                return null;
+                visited.Remove(nextBinding.TargetResource);
             }
-
-            if (!resourceLookup.TryGetValue(nextBinding.TargetResource, out var nextResource))
-            {
-                return null;
-            }
-
-            var fkColumn = ResolveToCanonicalColumn(currentRoot, nextBinding.FkColumn);
-            path.Add(
-                new ColumnPathStep(
-                    currentRoot.Table,
-                    fkColumn,
-                    nextResource.RelationalModel.Root.Table,
-                    RelationalNameConventions.DocumentIdColumnName
-                )
-            );
-
-            currentResource = nextResource;
         }
 
-        return path;
+        return best;
     }
 
     private static IReadOnlyList<string> SelectPersonSecurablePaths(

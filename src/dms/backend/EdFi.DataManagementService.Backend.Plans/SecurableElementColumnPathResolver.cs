@@ -209,12 +209,14 @@ internal static class SecurableElementColumnPathResolver
     ) => SecurableElementLocationResolver.ResolvePreferred(resource, securableElementPath);
 
     /// <summary>
-    /// Resolves person (Student/Contact/Staff) securable element paths. Delegates the shortest-
-    /// path resolution to <see cref="PersonJoinPathResolver.ResolveDistinctPersonChains"/> —
-    /// one <see cref="ResolvedSecurableElementPath"/> is appended to <paramref name="results"/>
-    /// per distinct chain, supporting independent same-kind person references. The "subject IS
-    /// the person resource" case is the only path where zero resolved chains plus non-empty
-    /// root-level paths is not an error — see <see cref="PersonJoinPathResolver.IsPersonResource"/>.
+    /// Resolves person (Student/Contact/Staff) securable element paths. Delegates the
+    /// shortest-path resolution to
+    /// <see cref="PersonJoinPathResolver.ResolveShortestPersonChain"/> — one
+    /// <see cref="ResolvedSecurableElementPath"/> is appended to <paramref name="results"/>
+    /// per kind: the shortest chain among all declared person paths (auth.md L879). The
+    /// "subject IS the person resource" case is the only path where a null resolved chain
+    /// plus non-empty root-level paths is not an error — see
+    /// <see cref="PersonJoinPathResolver.IsPersonResource"/>.
     /// </summary>
     private static void ResolvePersonPaths(
         ConcreteResourceModel subjectResource,
@@ -232,17 +234,16 @@ internal static class SecurableElementColumnPathResolver
             return;
         }
 
-        var chains = PersonJoinPathResolver.ResolveDistinctPersonChains(
+        var chain = PersonJoinPathResolver.ResolveShortestPersonChain(
             subjectResource,
             personPaths,
             personResourceName,
             resourceLookup,
             skippedArrayNestedPaths,
-            out _,
             out var unresolvedRootLevelPaths
         );
 
-        foreach (var chain in chains)
+        if (chain is not null)
         {
             results.Add(new ResolvedSecurableElementPath(kind, chain));
         }

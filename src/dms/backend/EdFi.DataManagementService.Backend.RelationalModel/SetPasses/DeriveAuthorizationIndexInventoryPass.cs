@@ -455,10 +455,11 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
     /// <summary>
     /// Processes one person kind (Student / Contact / Staff) for a single subject resource.
-    /// Delegates path resolution to <see cref="PersonJoinPathResolver.ResolveDistinctPersonChains"/>
-    /// and emits an auth index per hop of every distinct chain via <see cref="AddPersonJoinIndex"/>.
-    /// Only the source side of each <see cref="ColumnPathStep"/> is consumed — the target side is
-    /// the next resource's <c>DocumentId</c>, which is the next iteration's source.
+    /// Delegates path resolution to <see cref="PersonJoinPathResolver.ResolveShortestPersonChain"/>
+    /// and emits an auth index per hop of the shortest resolved chain via
+    /// <see cref="AddPersonJoinIndex"/>. Only the source side of each
+    /// <see cref="ColumnPathStep"/> is consumed — the target side is the next resource's
+    /// <c>DocumentId</c>, which is the next iteration's source.
     /// </summary>
     private static void ProcessPersonKind(
         RelationalModelSetBuilderContext context,
@@ -477,25 +478,21 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
             return;
         }
 
-        var chains = PersonJoinPathResolver.ResolveDistinctPersonChains(
+        var chain = PersonJoinPathResolver.ResolveShortestPersonChain(
             subjectResource,
             personPaths,
             personResourceName,
             resourceLookup,
             skippedArrayNestedPaths,
-            out _,
             out var unresolvedRootLevelPaths
         );
 
-        if (chains.Count > 0)
+        if (chain is not null)
         {
             anyResolved = true;
-            foreach (var chain in chains)
+            foreach (var step in chain)
             {
-                foreach (var step in chain)
-                {
-                    AddPersonJoinIndex(context, step.SourceTable, step.SourceColumnName, authIndexLookup);
-                }
+                AddPersonJoinIndex(context, step.SourceTable, step.SourceColumnName, authIndexLookup);
             }
         }
 

@@ -553,11 +553,12 @@ public class Given_SecurableElementColumnPathResolver
         }
 
         [Test]
-        public void It_should_emit_one_result_per_distinct_chain()
+        public void It_should_pick_the_shortest_chain_when_alternatives_exist()
         {
-            // Resource has two independent paths to Student: one direct, one through an
-            // intermediate. Both chains are emitted as separate ResolvedSecurableElementPath
-            // entries so the runtime auth filter can join through each independently.
+            // Resource declares two Student securable paths: one direct (1 hop) and one through
+            // an intermediate (2 hops). Per the DMS-1053 design contract (auth.md L879), the
+            // resolver follows each path and returns the shortest — only the direct chain
+            // becomes a ResolvedSecurableElementPath.
             var rootTable = CreateRootTable(
                 Table("TestResource"),
                 [
@@ -652,7 +653,8 @@ public class Given_SecurableElementColumnPathResolver
             );
             var studentModel = CreateModel("Ed-Fi", "Student", studentRoot);
 
-            // Two paths: direct (1 hop) and indirect (2 hops) — distinct chains
+            // Two alternative paths to the same person kind: direct (1 hop) and indirect
+            // (2 hops). Shortest wins.
             var securableElements = new ResourceSecurableElements(
                 [],
                 [],
@@ -684,22 +686,11 @@ public class Given_SecurableElementColumnPathResolver
                 [testConcrete, intermediateConcrete, studentConcrete]
             );
 
-            results.Should().HaveCount(2);
-            results.Should().AllSatisfy(p => p.Kind.Should().Be(SecurableElementKind.Student));
-
-            // Direct chain: 1 hop, FK column Student_DocumentId on TestResource.
-            results
-                .Should()
-                .ContainSingle(p =>
-                    p.Steps.Count == 1 && p.Steps[0].SourceColumnName == Col("Student_DocumentId")
-                );
-
-            // Indirect chain: 2 hops via Intermediate.
-            results
-                .Should()
-                .ContainSingle(p =>
-                    p.Steps.Count == 2 && p.Steps[0].SourceColumnName == Col("Intermediate_DocumentId")
-                );
+            results.Should().HaveCount(1);
+            results[0].Kind.Should().Be(SecurableElementKind.Student);
+            results[0].Steps.Should().HaveCount(1);
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            results[0].Steps[0].TargetTable.Should().Be(Table("Student"));
         }
     }
 
