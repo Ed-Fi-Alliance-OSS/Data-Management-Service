@@ -425,49 +425,69 @@ public class ApiClientModule : IEndpointModule
                 // Update database SECOND - attempt rollback if this fails
                 var repositoryResult = await apiClientRepository.UpdateApiClient(command);
 
+                // Local function: restores Keycloak to original state and syncs the resulting
+                // UUID back to the DB. Keycloak's delete-and-recreate always produces a new UUID,
+                // so ignoring the rollback result would leave DB and Keycloak out of sync.
+                async Task AttemptRollback()
+                {
+                    if (originalApplication is null)
+                    {
+                        return;
+                    }
+                    logger.LogWarning(
+                        "Database update failed for ApiClient {Id}, attempting to rollback identity provider changes",
+                        id
+                    );
+                    var rollbackResult = await identityProviderRepository.UpdateClientAsync(
+                        (command.ClientUuid ?? existingApiClient.ClientUuid).ToString(),
+                        existingApiClient.Name,
+                        originalApplication.ClaimSetName,
+                        string.Join(",", originalApplication.EducationOrganizationIds),
+                        [.. existingApiClient.DmsInstanceIds],
+                        existingApiClient.IsApproved,
+                        identitySettings.Value.ClientRole
+                    );
+                    if (rollbackResult is ClientUpdateResult.Success rollbackSuccess)
+                    {
+                        // Sync the rollback UUID back to DB so they stay consistent
+                        var syncCommand = new ApiClientUpdateCommand
+                        {
+                            Id = id,
+                            ApplicationId = existingApiClient.ApplicationId,
+                            Name = existingApiClient.Name,
+                            IsApproved = existingApiClient.IsApproved,
+                            DmsInstanceIds = [.. existingApiClient.DmsInstanceIds],
+                            ClientUuid = rollbackSuccess.ClientUuid,
+                        };
+                        var syncResult = await apiClientRepository.UpdateApiClient(syncCommand);
+                        if (syncResult is not ApiClientUpdateResult.Success)
+                        {
+                            logger.LogError(
+                                "Failed to sync Keycloak UUID to database after rollback for ApiClient {Id}; state is inconsistent",
+                                id
+                            );
+                        }
+                    }
+                    else
+                    {
+                        logger.LogError(
+                            "Keycloak rollback failed for ApiClient {Id}; state may be inconsistent",
+                            id
+                        );
+                    }
+                }
+
                 switch (repositoryResult)
                 {
                     case ApiClientUpdateResult.Success:
                         return Results.NoContent();
                     case ApiClientUpdateResult.FailureNotFound:
-                        // Attempt to rollback identity provider changes
-                        if (originalApplication != null)
-                        {
-                            logger.LogWarning(
-                                "Database update failed for ApiClient {Id}, attempting to rollback identity provider changes",
-                                id
-                            );
-                            await identityProviderRepository.UpdateClientAsync(
-                                (command.ClientUuid ?? existingApiClient.ClientUuid).ToString(),
-                                existingApiClient.Name,
-                                originalApplication.ClaimSetName,
-                                string.Join(",", originalApplication.EducationOrganizationIds),
-                                [.. existingApiClient.DmsInstanceIds],
-                                existingApiClient.IsApproved,
-                                identitySettings.Value.ClientRole
-                            );
-                        }
+                        await AttemptRollback();
                         throw new ValidationException([
                             new ValidationFailure("Id", $"ApiClient with ID {id} not found."),
                         ]);
                     case ApiClientUpdateResult.FailureApplicationNotFound:
-                        // Attempt to rollback identity provider changes
-                        if (originalApplication != null)
-                        {
-                            logger.LogWarning(
-                                "Database update failed for ApiClient {Id}, attempting to rollback identity provider changes",
-                                id
-                            );
-                            await identityProviderRepository.UpdateClientAsync(
-                                (command.ClientUuid ?? existingApiClient.ClientUuid).ToString(),
-                                existingApiClient.Name,
-                                originalApplication.ClaimSetName,
-                                string.Join(",", originalApplication.EducationOrganizationIds),
-                                [.. existingApiClient.DmsInstanceIds],
-                                existingApiClient.IsApproved,
-                                identitySettings.Value.ClientRole
-                            );
-                        }
+                        await AttemptRollback();
                         throw new ValidationException([
                             new ValidationFailure(
                                 "ApplicationId",
@@ -475,44 +495,12 @@ public class ApiClientModule : IEndpointModule
                             ),
                         ]);
                     case ApiClientUpdateResult.FailureDmsInstanceNotFound:
-                        // Attempt to rollback identity provider changes
-                        if (originalApplication != null)
-                        {
-                            logger.LogWarning(
-                                "Database update failed for ApiClient {Id}, attempting to rollback identity provider changes",
-                                id
-                            );
-                            await identityProviderRepository.UpdateClientAsync(
-                                (command.ClientUuid ?? existingApiClient.ClientUuid).ToString(),
-                                existingApiClient.Name,
-                                originalApplication.ClaimSetName,
-                                string.Join(",", originalApplication.EducationOrganizationIds),
-                                [.. existingApiClient.DmsInstanceIds],
-                                existingApiClient.IsApproved,
-                                identitySettings.Value.ClientRole
-                            );
-                        }
+                        await AttemptRollback();
                         throw new ValidationException([
                             new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
                         ]);
                     case ApiClientUpdateResult.FailureUnknown failure:
-                        // Attempt to rollback identity provider changes
-                        if (originalApplication != null)
-                        {
-                            logger.LogWarning(
-                                "Database update failed for ApiClient {Id}, attempting to rollback identity provider changes",
-                                id
-                            );
-                            await identityProviderRepository.UpdateClientAsync(
-                                (command.ClientUuid ?? existingApiClient.ClientUuid).ToString(),
-                                existingApiClient.Name,
-                                originalApplication.ClaimSetName,
-                                string.Join(",", originalApplication.EducationOrganizationIds),
-                                [.. existingApiClient.DmsInstanceIds],
-                                existingApiClient.IsApproved,
-                                identitySettings.Value.ClientRole
-                            );
-                        }
+                        await AttemptRollback();
                         logger.LogError(
                             "Failure updating client: {Failure}",
                             SanitizeForLog(failure.FailureMessage)
