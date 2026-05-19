@@ -1,0 +1,134 @@
+[
+  {
+    "category": "backend-contracts",
+    "description": "Extend the Slice 2 single-record backend result surface so GET-by-id and DELETE can return structured relationship-authorization denials, the temporary known-but-not-enabled 501 staging result, and Slice 1 security-configuration failures without falling back to UnknownFailure or exceptions.",
+    "acceptance-criteria": [
+      "Get-by-id results explicitly model relationship authorization denials with structured failure metadata and also model the temporary not-implemented and security-configuration variants required by Slice 2.",
+      "Delete results explicitly model relationship authorization denials with structured failure metadata and also model the temporary not-implemented and security-configuration variants required by Slice 2.",
+      "The cross-boundary relationship failure DTO carries only the data Slice 2 and Slice 6 need, including value source, emitted AUTH1 index, configured strategy order and identity, failure kind, contributing securable metadata, auth object or hint metadata, and normalized EdOrg claim context.",
+      "GetByIdHandler and DeleteByIdHandler map the new variants to transitional 403, canonical security-configuration 500, and 501 responses without routing intentional authorization outcomes through exceptions or generic unknown-failure paths, and security-configuration failures take precedence over staged 501 outcomes when both are present."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core.External/Backend/GetResult.cs and src/dms/core/EdFi.DataManagementService.Core.External/Backend/DeleteResult.cs to confirm the new result variants and DTO shape are explicit and symmetric.",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandlerTests|FullyQualifiedName~DeleteByIdHandlerTests\"",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~FailureResponseTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "backend-runtime",
+    "description": "Implement the shared Slice 2 runtime plumbing for stored-value relationship authorization failures and single-record claim parameterization. Define the compact versioned AUTH1 failure-set payload, extract and parse PostgreSQL and SQL Server AUTH1 failures through one shared path, map parsed ordinals back to Slice 1 plan metadata, and preserve the DMS-1055 ClaimEducationOrganizationIds contract used by GET-by-id and DELETE composition.",
+    "acceptance-criteria": [
+      "A stable provider-independent AUTH1 payload grammar exists for the emitted check index plus plan-relative strategy and subject ordinals with short failure-kind codes, without embedding user-readable names, JSON paths, EdOrg claim lists, or other large values.",
+      "PostgreSQL throw_error failures and SQL Server CAST('AUTH1 - ...' AS INT) failures are both extracted and parsed by the same shared parser after provider-specific wrapper handling.",
+      "Malformed, unknown-version, or truncated AUTH1 payloads fail closed and do not silently misclassify authorization failures.",
+      "Mapping from parsed payloads to the external relationship failure DTO preserves all failed OR-strategy entries in configured order, distinguishes stored-null invalid-data from no-relationship failures, and does not require a post-failure database lookup.",
+      "Shared single-record command plumbing continues to use one PostgreSQL bigint array parameter and SQL Server scalar parameters below 2000 unique EdOrg IDs or dms.BigIntTable at 2000 or more, while the CRUD empty-claim path short-circuits before trying to parameterize an empty claim list."
+    ],
+    "steps-to-verify": [
+      "Review the shared parser and payload-mapping tests to confirm versioning, malformed input handling, truncation handling, empty-claim handling, and mixed failure-kind mapping are all covered.",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~AUTH1|FullyQualifiedName~Relationship|FullyQualifiedName~RelationalDocumentStoreRepositoryTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Relationship\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "get-by-id",
+    "description": "Wire EdOrg-only stored-value relationship authorization into the external relational GET-by-id flow. Consume the Slice 1 relationship plan, fail closed for known-but-not-enabled mixed strategies, keep StoredDocument reads on an explicit internal bypass path, and guarantee authorization and hydration share the same observed read boundary without adding authorization work after an existing 304 short-circuit.",
+    "acceptance-criteria": [
+      "GET-by-id preserves the existing missing-target/not-found behavior and does not execute relationship authorization or reconstitution when target resolution finds no document.",
+      "ExternalResponse GET-by-id requests execute EdOrg-only stored-value authorization before reconstitution and never reconstitute a representation when authorization fails.",
+      "StoredDocument GET requests remain authorization-bypassed through an explicit backend-local guard rail tied to the internal read purpose, and public GET handlers cannot accidentally request that bypass.",
+      "If the current GET-by-id path already short-circuits on If-None-Match, Slice 2 preserves that behavior and does not add a later authorization-only command for requests that already stop at 304; if no such short-circuit exists, Slice 2 does not introduce conditional GET behavior in this slice.",
+      "The selected read-boundary implementation guarantees authorization and hydration observe the same committed root EdOrg values, whether implemented as one statement, one provider batch, a read transaction or isolation choice, or a ContentVersion guard and retry path.",
+      "GET-by-id honors normal and inverted EdOrg strategies, ORs multiple configured relationship strategies, ANDs multiple root-table EdOrg subjects within one strategy, treats NoFurtherAuthorizationRequired as a no-op when mixed and as a bypass of relationship SQL when it is the only effective strategy, returns 403 when an EdOrg relationship check is required but the caller has no EdOrg claims, and returns 500 for security-configuration failures or 501 for otherwise-known-but-not-enabled mixed strategies."
+    ],
+    "steps-to-verify": [
+      "Review the GET-by-id repository flow to confirm missing-target requests still short-circuit before authorization, authorization happens before reconstitution, the StoredDocument bypass is explicit, NoFurtherAuthorizationRequired remains a no-op, and any existing 304 short-circuit still exits before authorization work.",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~RelationalReadTargetLookupServiceTests|FullyQualifiedName~RelationalReadMaterializerTests\"",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandlerTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "delete",
+    "description": "Wire EdOrg-only stored-value relationship authorization into the relational DELETE path. After target existence is established, lock or otherwise guard the dms.Document row inside the write transaction or session, run relationship authorization under that same guarded context, preserve 403-over-412 precedence, and execute If-Match and delete only after authorization succeeds.",
+    "acceptance-criteria": [
+      "DELETE preserves the existing missing-target/not-found behavior and does not execute relationship authorization, If-Match comparison, or delete SQL when target existence checks find no document.",
+      "DELETE authorizes stored root-table EdOrg values only after the target exists and while the target document is locked or otherwise guarded inside the write transaction or session.",
+      "When relationship authorization fails for an existing target, DELETE returns 403 before any If-Match comparison and does not delete dms.Document or resource rows.",
+      "When authorization succeeds, existing If-Match behavior and delete execution continue under the same guarded target context so authorization, If-Match, and mutation cannot observe different stored values.",
+      "DELETE honors normal and inverted EdOrg strategies, ORs multiple configured relationship strategies, ANDs multiple root-table EdOrg subjects within one strategy, treats NoFurtherAuthorizationRequired as a no-op when mixed and as a bypass of relationship SQL when it is the only effective strategy, returns 403 when an EdOrg relationship check is required but the caller has no EdOrg claims, and returns 500 for security-configuration failures or 501 for otherwise-known-but-not-enabled mixed strategies.",
+      "The path does not rely on a standalone unlocked authorization command before the current delete sequence."
+    ],
+    "steps-to-verify": [
+      "Review the delete repository flow to confirm missing-target requests still short-circuit before authorization, the target lock or guard is applied only after existence is known, authorization ordering, NoFurtherAuthorizationRequired no-op behavior, If-Match ordering, and delete ordering are all enforced in one shared write session.",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~RelationalCurrentEtagPreconditionCheckerTests|FullyQualifiedName~DescriptorWriteHandlerDeleteTests\"",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DeleteByIdHandlerTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "test-support",
+    "description": "Add the shared authorization fixtures and committed metadata needed by Slice 2 so backend integration and E2E tests can exercise inverted, no-op, mixed-strategy, and stored-null scenarios without ad hoc runtime mutation.",
+    "acceptance-criteria": [
+      "A committed backend integration fixture exists whose root EdOrg authorization subject is nullable so stored-null invalid-data can be seeded directly in PostgreSQL and SQL Server.",
+      "Shared security metadata or fixture setup exists for supported EdOrg-only, no-op-only, supported plus NoFurtherAuthorizationRequired, supported plus known-but-not-enabled mixed-strategy, security-configuration-plus-known-but-not-enabled precedence, and inverted strategy scenarios.",
+      "Any E2E claim-set or authorization metadata added for Slice 2 is committed test data reusable across GET-by-id and DELETE scenarios rather than patched ad hoc inside individual test flows."
+    ],
+    "steps-to-verify": [
+      "Review the backend integration fixture files and E2E authorization artifacts to confirm stored-null, no-op, inverted, and mixed-strategy scenarios can be selected without per-test metadata mutation."
+    ],
+    "completed": false
+  },
+  {
+    "category": "backend-integration",
+    "description": "Add focused PostgreSQL and SQL Server backend integration coverage for GET-by-id relationship authorization, including authorized reads, unauthorized reads that skip reconstitution, inverted strategy behavior, NoFurtherAuthorizationRequired no-op behavior, mixed-strategy 501 handling, security-configuration 500 handling, empty-claims 403 handling, and the selected same-observed-read-boundary proof.",
+    "acceptance-criteria": [
+      "PostgreSQL and SQL Server each have an authorized GET-by-id integration test for an EdOrg-only relationship resource and an unauthorized GET-by-id test that proves reconstitution does not run.",
+      "Both providers have GET-by-id coverage for inverted strategies, strategy OR composition, subject AND composition, no-op-only classification behavior, and supported plus NoFurtherAuthorizationRequired no-op behavior using stored values.",
+      "Both providers have GET-by-id coverage for the staged known-but-not-enabled mixed-strategy result, for security-configuration failures coming from Slice 1 including precedence over staged 501 when both are present, and for empty EdOrg claims returning single-record unauthorized behavior instead of GET-many empty-page behavior.",
+      "The chosen read-boundary implementation is exercised by a targeted integration probe or fixture that demonstrates one GET-by-id response cannot authorize against one committed root EdOrg state and hydrate a different committed state.",
+      "The shared nullable-root-EdOrg fixture or direct-SQL seed proves stored-null invalid-data metadata is surfaced without reconstitution or a post-failure lookup."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Get|FullyQualifiedName~Authorization\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Get|FullyQualifiedName~Authorization\"",
+      "Review the PostgreSQL and SQL Server GET-by-id integration tests to confirm they assert skipped reconstitution or equivalent proof, not only HTTP or result status."
+    ],
+    "completed": false
+  },
+  {
+    "category": "backend-integration",
+    "description": "Add focused PostgreSQL and SQL Server backend integration coverage for DELETE relationship authorization, including authorized deletes, unauthorized deletes that preserve rows, inverted strategy behavior, NoFurtherAuthorizationRequired no-op behavior, mixed-strategy 501 handling, security-configuration 500 handling, invalid stored-data metadata, and the shared lock or guarded-session contract for authorization, If-Match, and delete execution.",
+    "acceptance-criteria": [
+      "PostgreSQL and SQL Server each have an authorized DELETE integration test for an EdOrg-only relationship resource and an unauthorized DELETE test that proves dms.Document and resource rows remain intact.",
+      "Both providers have DELETE coverage for inverted strategies, strategy OR composition, subject AND composition, no-op-only classification behavior, and supported plus NoFurtherAuthorizationRequired no-op behavior using stored values.",
+      "Both providers have DELETE coverage for the staged known-but-not-enabled mixed-strategy result, for security-configuration failures coming from Slice 1 including precedence over staged 501 when both are present, and for 403 rather than 412 when stored-value relationship authorization and existing-target If-Match both fail.",
+      "The chosen write-path locking or guarded-session implementation is exercised by targeted integration coverage that proves authorization, If-Match, and delete execution share the same guarded target context.",
+      "The shared nullable-root-EdOrg fixture or direct-SQL seed proves stored-null invalid-data metadata is emitted without deleting any rows."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Delete|FullyQualifiedName~Authorization|FullyQualifiedName~IfMatch\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Delete|FullyQualifiedName~Authorization|FullyQualifiedName~IfMatch\"",
+      "Review the delete integration tests to confirm they assert unchanged rows on authorization failure instead of only checking HTTP or result status."
+    ],
+    "completed": false
+  },
+  {
+    "category": "e2e",
+    "description": "Add focused DMS E2E coverage for one GET-by-id and one DELETE EdOrg-only relationship authorization path using the relational backend, including at least one unauthorized case with real claim-set and token wiring through the dms-local stack.",
+    "acceptance-criteria": [
+      "The E2E suite includes at least one GET-by-id scenario and one DELETE scenario that exercise the new relational Slice 2 path rather than only GET-many or legacy authorization flows.",
+      "At least one scenario proves an unauthorized caller receives the expected external denial and that the resource remains unreadable or undeleted as appropriate.",
+      "The E2E scenarios use committed claim-set and token wiring already used by the authorization features instead of bypassing authorization in test setup.",
+      "The new scenarios fit the existing EdFi.DataManagementService.Tests.E2E feature and step-definition style without requiring story-specific custom harness code."
+    ],
+    "steps-to-verify": [
+      "cd src/dms/tests/EdFi.DataManagementService.Tests.E2E && pwsh ./setup-local-dms.ps1",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"FullyQualifiedName~Authorization|FullyQualifiedName~ReadResources|FullyQualifiedName~DeleteResources\"",
+      "cd src/dms/tests/EdFi.DataManagementService.Tests.E2E && pwsh ./teardown-local-dms.ps1"
+    ],
+    "completed": false
+  }
+]
