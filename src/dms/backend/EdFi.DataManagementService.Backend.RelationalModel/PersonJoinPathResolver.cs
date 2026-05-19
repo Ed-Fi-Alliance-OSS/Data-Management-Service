@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// Staff securable element JSON paths.
 /// </summary>
 /// <remarks>
-/// <para>Single source of truth for the person-join BFS algorithm. Two call sites consume it:</para>
+/// <para>Single source of truth for the person-join chain algorithm. Two call sites consume it:</para>
 /// <list type="bullet">
 ///   <item>
 ///     <description><c>EdFi.DataManagementService.Backend.Plans.SecurableElementColumnPathResolver</c>
@@ -25,7 +25,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///     covering auth index.</description>
 ///   </item>
 /// </list>
-/// <para>Algorithm:</para>
+/// <para>Algorithm (matches <c>design-docs/auth.md</c> § "ResolveSecurableElementColumnPath"):</para>
 /// <list type="number">
 ///   <item>
 ///     <description>Partition <c>personPaths</c> into supported (root-level) and array-nested
@@ -44,8 +44,13 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///   </item>
 ///   <item>
 ///     <description>If the binding's target is the person resource, the chain is a single
-///     direct hop. Otherwise, run BFS over root-table bindings of intermediate resources
-///     until the person resource is reached.</description>
+///     direct hop. Otherwise, walk transitively: at each intermediate resource, read that
+///     resource's own declared <c>SecurableElements.Student/Contact/Staff</c> for the same
+///     person kind, find the binding whose <c>IdentityBindings.ReferenceJsonPath</c> matches a
+///     declared securable path, and follow it to the next resource. Repeat until the person
+///     resource is reached. Walking arbitrary root bindings (BFS over all references) is
+///     wrong: it can pick a non-securable optional reference as the chain hop, emitting auth
+///     indexes that the runtime resolver does not actually use.</description>
 ///   </item>
 ///   <item>
 ///     <description>Dedupe by structural chain equality. Multiple paths resolving to the same
@@ -199,7 +204,7 @@ public static class PersonJoinPathResolver
             ];
         }
 
-        return BfsToPersonResource(subjectResource, rootTable, binding, personResourceName, resourceLookup);
+        return WalkToPersonResource(subjectResource, rootTable, binding, personResourceName, resourceLookup);
     }
 
     private sealed class ChainEqualityComparer : IEqualityComparer<IReadOnlyList<ColumnPathStep>>
@@ -258,7 +263,15 @@ public static class PersonJoinPathResolver
         return lookup;
     }
 
-    private static IReadOnlyList<ColumnPathStep>? BfsToPersonResource(
+    /// <summary>
+    /// Walks transitively from the first-hop intermediate to the person resource, following
+    /// each intermediate's own declared <c>SecurableElements.{Student|Contact|Staff}</c> for the
+    /// kind being resolved. The walk is deterministic — at every step it picks the binding whose
+    /// <c>IdentityBindings.ReferenceJsonPath</c> matches a declared securable path on the
+    /// current intermediate. Returns <see langword="null"/> if any step has no usable securable,
+    /// the binding fails to resolve, or a cycle is hit.
+    /// </summary>
+    private static IReadOnlyList<ColumnPathStep>? WalkToPersonResource(
         ConcreteResourceModel subjectResource,
         DbTableModel subjectRootTable,
         DocumentReferenceBinding firstHopBinding,
@@ -266,76 +279,89 @@ public static class PersonJoinPathResolver
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup
     )
     {
-        var queue = new Queue<(QualifiedResourceName Resource, List<ColumnPathStep> Path)>();
         var visited = new HashSet<QualifiedResourceName> { subjectResource.RelationalModel.Resource };
 
         var firstFkColumn = ResolveToCanonicalColumn(subjectRootTable, firstHopBinding.FkColumn);
-        if (!resourceLookup.TryGetValue(firstHopBinding.TargetResource, out var intermediateResource))
+        if (!resourceLookup.TryGetValue(firstHopBinding.TargetResource, out var currentResource))
         {
             return null;
         }
 
-        var firstStep = new ColumnPathStep(
-            subjectRootTable.Table,
-            firstFkColumn,
-            intermediateResource.RelationalModel.Root.Table,
-            RelationalNameConventions.DocumentIdColumnName
-        );
+        var path = new List<ColumnPathStep>
+        {
+            new(
+                subjectRootTable.Table,
+                firstFkColumn,
+                currentResource.RelationalModel.Root.Table,
+                RelationalNameConventions.DocumentIdColumnName
+            ),
+        };
 
         visited.Add(firstHopBinding.TargetResource);
-        queue.Enqueue((firstHopBinding.TargetResource, new List<ColumnPathStep> { firstStep }));
 
-        while (queue.Count > 0)
+        while (!IsPersonResource(currentResource.RelationalModel.Resource, personResourceName))
         {
-            var (currentResourceName, currentPath) = queue.Dequeue();
-
-            if (!resourceLookup.TryGetValue(currentResourceName, out var currentResource))
+            var declaredPaths = SelectPersonSecurablePaths(currentResource, personResourceName);
+            if (declaredPaths.Count == 0)
             {
-                continue;
+                return null;
             }
 
             var currentModel = currentResource.RelationalModel;
             var currentRoot = currentModel.Root;
 
-            foreach (var binding in currentModel.DocumentReferenceBindings)
+            DocumentReferenceBinding? nextBinding = null;
+            foreach (var declaredPath in declaredPaths)
             {
-                if (binding.Table != currentRoot.Table)
+                if (IsArrayNestedPath(declaredPath))
                 {
                     continue;
                 }
 
-                if (visited.Contains(binding.TargetResource))
+                nextBinding = FindBindingByPersonPath(currentModel, currentRoot.Table, declaredPath);
+                if (nextBinding is not null)
                 {
-                    continue;
+                    break;
                 }
+            }
 
-                if (!resourceLookup.TryGetValue(binding.TargetResource, out var targetResource))
-                {
-                    continue;
-                }
+            if (nextBinding is null || !visited.Add(nextBinding.TargetResource))
+            {
+                return null;
+            }
 
-                var fkColumn = ResolveToCanonicalColumn(currentRoot, binding.FkColumn);
-                var step = new ColumnPathStep(
+            if (!resourceLookup.TryGetValue(nextBinding.TargetResource, out var nextResource))
+            {
+                return null;
+            }
+
+            var fkColumn = ResolveToCanonicalColumn(currentRoot, nextBinding.FkColumn);
+            path.Add(
+                new ColumnPathStep(
                     currentRoot.Table,
                     fkColumn,
-                    targetResource.RelationalModel.Root.Table,
+                    nextResource.RelationalModel.Root.Table,
                     RelationalNameConventions.DocumentIdColumnName
-                );
+                )
+            );
 
-                var newPath = new List<ColumnPathStep>(currentPath) { step };
-
-                if (IsPersonResource(binding.TargetResource, personResourceName))
-                {
-                    return newPath;
-                }
-
-                visited.Add(binding.TargetResource);
-                queue.Enqueue((binding.TargetResource, newPath));
-            }
+            currentResource = nextResource;
         }
 
-        return null;
+        return path;
     }
+
+    private static IReadOnlyList<string> SelectPersonSecurablePaths(
+        ConcreteResourceModel resource,
+        string personResourceName
+    ) =>
+        personResourceName switch
+        {
+            "Student" => resource.SecurableElements.Student,
+            "Contact" => resource.SecurableElements.Contact,
+            "Staff" => resource.SecurableElements.Staff,
+            _ => [],
+        };
 
     /// <summary>
     /// Finds a <see cref="DocumentReferenceBinding"/> on the specified table that owns a

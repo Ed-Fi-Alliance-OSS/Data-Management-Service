@@ -25471,21 +25471,6 @@
       ]
     },
     {
-      "name": "IX_StudentAssessmentRegistration_ScheduledStudentEdu_04a293a07a",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentAssessmentRegistration"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea"
-      ],
-      "include_columns": [
-        "DocumentId"
-      ]
-    },
-    {
       "name": "IX_StudentAssessmentRegistration_ScheduledStudentEdu_5a48441bdd",
       "table": {
         "schema": "edfi",

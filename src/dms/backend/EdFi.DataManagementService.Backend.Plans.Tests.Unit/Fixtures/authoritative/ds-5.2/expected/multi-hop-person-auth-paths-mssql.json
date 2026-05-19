@@ -12,12 +12,12 @@
       },
       {
         "sourceTable": "edfi.StudentAssessmentRegistration",
-        "sourceColumn": "ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId",
-        "targetTable": "edfi.StudentEducationOrganizationAssessmentAccommodation",
+        "sourceColumn": "StudentEducationOrganizationAssociation_DocumentId",
+        "targetTable": "edfi.StudentEducationOrganizationAssociation",
         "targetColumn": "DocumentId"
       },
       {
-        "sourceTable": "edfi.StudentEducationOrganizationAssessmentAccommodation",
+        "sourceTable": "edfi.StudentEducationOrganizationAssociation",
         "sourceColumn": "Student_DocumentId",
         "targetTable": "edfi.Student",
         "targetColumn": "DocumentId"

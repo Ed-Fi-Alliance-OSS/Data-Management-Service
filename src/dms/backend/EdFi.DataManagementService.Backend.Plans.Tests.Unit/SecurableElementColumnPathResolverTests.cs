@@ -512,8 +512,22 @@ public class Given_SecurableElementColumnPathResolver
                 []
             );
 
+            var sarSecurableElements = new ResourceSecurableElements(
+                [],
+                [],
+                ["$.studentReference.studentUniqueId"],
+                [],
+                []
+            );
+
             var ctConcrete = CreateConcrete(1, "Ed-Fi", "CourseTranscript", ctModel, securableElements);
-            var sarConcrete = CreateConcrete(2, "Ed-Fi", "StudentAcademicRecord", sarModel);
+            var sarConcrete = CreateConcrete(
+                2,
+                "Ed-Fi",
+                "StudentAcademicRecord",
+                sarModel,
+                sarSecurableElements
+            );
             var studentConcrete = CreateConcrete(3, "Ed-Fi", "Student", studentModel);
 
             var results = SecurableElementColumnPathResolver.ResolveAll(
@@ -647,8 +661,22 @@ public class Given_SecurableElementColumnPathResolver
                 []
             );
 
+            var intermediateSecurableElements = new ResourceSecurableElements(
+                [],
+                [],
+                ["$.studentReference.studentUniqueId"],
+                [],
+                []
+            );
+
             var testConcrete = CreateConcrete(1, "Ed-Fi", "TestResource", testModel, securableElements);
-            var intermediateConcrete = CreateConcrete(2, "Ed-Fi", "Intermediate", intermediateModel);
+            var intermediateConcrete = CreateConcrete(
+                2,
+                "Ed-Fi",
+                "Intermediate",
+                intermediateModel,
+                intermediateSecurableElements
+            );
             var studentConcrete = CreateConcrete(3, "Ed-Fi", "Student", studentModel);
 
             var results = SecurableElementColumnPathResolver.ResolveAll(

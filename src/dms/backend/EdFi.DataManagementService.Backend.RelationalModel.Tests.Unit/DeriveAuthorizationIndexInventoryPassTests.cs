@@ -1891,12 +1891,12 @@ public class Given_Multiple_Descriptor_Resources_With_Namespace_Securable
 }
 
 /// <summary>
-/// Pins the BFS visited-set safety net in
-/// <see cref="PersonJoinPathResolver"/>: when intermediate resources form a reference cycle
-/// (A → B → A) and one of them carries a binding to the person resource, BFS must terminate
-/// without revisiting and still return the shortest reaching chain. Production schemas don't
-/// produce cycles, but the guard is load-bearing — a regression that dropped <c>visited</c>
-/// would hang the build.
+/// Pins the deterministic-walk contract in <see cref="PersonJoinPathResolver"/>: at each
+/// intermediate the walk follows only the binding matching that intermediate's declared
+/// Student securable element. Extra non-securable bindings — including ones that form a
+/// binding-level cycle (CycleA ↔ CycleB) — are ignored entirely, so the chain still resolves
+/// straight to <c>Ed-Fi.Student</c>. Defends against regressing to a BFS-over-all-bindings
+/// algorithm that would emit auth indexes for non-securable references.
 /// </summary>
 [TestFixture]
 public class Given_Person_Chain_With_Reference_Cycle_Among_Intermediates
@@ -1930,10 +1930,22 @@ public class Given_Person_Chain_With_Reference_Cycle_Among_Intermediates
     [Test]
     public void It_should_emit_the_chain_reaching_the_student_resource()
     {
-        // Subject -> CycleA -> Student is the shortest path that exits the cycle into the
-        // person resource. BFS reaches Student in two hops and must terminate.
+        // Subject -> CycleA -> Student via CycleA's declared Student securable. The cycle to
+        // CycleB on CycleA is non-securable and is ignored by the deterministic walk.
         _authIndexes.Should().Contain(i => i.Table.Name == "CycleSubject");
         _authIndexes.Should().Contain(i => i.Table.Name == "CycleA");
+    }
+
+    [Test]
+    public void It_should_not_emit_an_auth_index_through_the_non_securable_cycle_binding()
+    {
+        // CycleA's CycleB_DocumentId FK is a non-securable sibling reference; no auth index
+        // should key on it because the walk never follows it.
+        _authIndexes
+            .Should()
+            .NotContain(i =>
+                i.Table.Name == "CycleA" && i.KeyColumns.Any(c => c.Value == "CycleB_DocumentId")
+            );
     }
 }
 
@@ -1976,6 +1988,64 @@ public class Given_Person_Resource_With_Self_And_Broken_Securable_Path
     public void It_should_not_emit_any_person_join_auth_index()
     {
         _authIndexes.Should().BeEmpty();
+    }
+}
+
+/// <summary>
+/// Pins the deterministic-walk contract at an intermediate that has multiple root bindings
+/// leading to the person resource: only the binding matching the intermediate's declared
+/// Student securable element is followed. Without this, a BFS-over-all-bindings algorithm
+/// would emit an auth index keyed on the non-securable sibling FK (e.g. DS 5.2's
+/// <c>ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea</c> hop in
+/// <c>StudentAssessmentRegistrationBatteryPartAssociation</c>'s chain).
+/// </summary>
+[TestFixture]
+public class Given_Intermediate_With_Multiple_Root_Bindings_Only_Securable_Is_Followed
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+            {
+                foreach (
+                    var r in AuthIndexFixtureResources.BuildIntermediateWithMultipleRootBindingsOnlySecurableIsFollowed()
+                )
+                {
+                    ctx.ConcreteResourcesInNameOrder.Add(r);
+                }
+            })
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_emit_an_auth_index_on_the_securable_hop_only()
+    {
+        // The intermediate's declared Student securable is `$.securableRef.studentUniqueId`,
+        // which maps to the SecurableHop_DocumentId FK. The walk must follow this hop.
+        _authIndexes
+            .Should()
+            .Contain(i =>
+                i.Table.Name == "MultiBindingIntermediate"
+                && i.KeyColumns.Any(c => c.Value == "SecurableHop_DocumentId")
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_an_auth_index_through_the_non_securable_sibling_binding()
+    {
+        // The non-securable sibling binding is on NonSecurableHop_DocumentId. A BFS algorithm
+        // walking every root binding would pick this hop first if it appears first in the
+        // binding list — the deterministic walk must ignore it.
+        _authIndexes
+            .Should()
+            .NotContain(i =>
+                i.Table.Name == "MultiBindingIntermediate"
+                && i.KeyColumns.Any(c => c.Value == "NonSecurableHop_DocumentId")
+            );
     }
 }
 
@@ -2503,8 +2573,9 @@ internal static class AuthIndexFixtureResources
     /// Intermediate resource for the transitive-reference fixture. Mirrors a
     /// <c>StudentAcademicRecord</c>-shaped table whose root-level
     /// <see cref="DocumentReferenceBinding"/> points to <c>Ed-Fi.Student</c> via
-    /// <c>$.studentReference</c> on the <c>Student_DocumentId</c> column. Carries no securable
-    /// elements of its own — its only role is to extend the BFS chain by one hop.
+    /// <c>$.studentReference</c> on the <c>Student_DocumentId</c> column. Declares its own
+    /// Student securable so the deterministic person-join walk can follow this intermediate's
+    /// declared reference (per <c>auth.md</c> § "ResolveSecurableElementColumnPath").
     /// </summary>
     public static ConcreteResourceModel BuildStudentAcademicRecordIntermediate()
     {
@@ -2532,7 +2603,13 @@ internal static class AuthIndexFixtureResources
             resourceName,
             [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(fkColumn)],
             [binding],
-            ResourceSecurableElements.Empty
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.studentReference.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
         );
     }
 
@@ -2667,7 +2744,13 @@ internal static class AuthIndexFixtureResources
                 BuildScalarColumn(contactFk),
             ],
             [studentBinding],
-            ResourceSecurableElements.Empty
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.studentReference.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
         );
     }
 
@@ -3046,10 +3129,9 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Builds an intermediate resource with a single root-level
-    /// <see cref="DocumentReferenceBinding"/> pointing to the named target resource. The
-    /// <c>ReferenceObjectPath</c> doesn't matter for person-join BFS (which only inspects
-    /// <see cref="DocumentReferenceBinding.Table"/> and
-    /// <see cref="DocumentReferenceBinding.TargetResource"/>); a generic synthetic path is used.
+    /// <see cref="DocumentReferenceBinding"/> pointing to the named target resource. Declares
+    /// its own Student securable element matching that outgoing binding's identity path so the
+    /// deterministic person-join walk can follow this intermediate's declared reference.
     /// </summary>
     private static ConcreteResourceModel BuildPersonChainHop(
         string resourceName,
@@ -3060,18 +3142,20 @@ internal static class AuthIndexFixtureResources
         var rootTable = new DbTableName(_edfiSchema, resourceName);
         var fkColumn = new DbColumnName(fkColumnName);
 
-        var binding = BuildPersonChainBinding(
-            rootTable,
-            $"$.next{targetResourceName}Reference",
-            fkColumn,
-            targetResourceName
-        );
+        var referenceObjectPath = $"$.next{targetResourceName}Reference";
+        var binding = BuildPersonChainBinding(rootTable, referenceObjectPath, fkColumn, targetResourceName);
 
         return BuildResource(
             resourceName,
             [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(fkColumn)],
             [binding],
-            ResourceSecurableElements.Empty
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: [$"{referenceObjectPath}.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
         );
     }
 
@@ -3459,10 +3543,11 @@ internal static class AuthIndexFixtureResources
     }
 
     /// <summary>
-    /// Builds a person chain where the intermediates form a reference cycle (CycleA → CycleB
-    /// → CycleA) and CycleA also carries a binding to <c>Ed-Fi.Student</c>. BFS must rely on
-    /// its <c>visited</c> set to avoid infinite enqueueing and still discover the shortest
-    /// chain reaching Student.
+    /// Builds a person chain where the intermediate <c>CycleA</c> carries an extra non-securable
+    /// reference back to <c>CycleB</c> (forming a binding-level cycle CycleA ↔ CycleB) alongside
+    /// its real Student-securable reference. Pins the deterministic walk contract: bindings that
+    /// don't match the intermediate's declared person securable are ignored, so the binding-level
+    /// cycle is never traversed and the chain still resolves to <c>Ed-Fi.Student</c>.
     /// </summary>
     public static IReadOnlyList<ConcreteResourceModel> BuildPersonChainWithCycleAmongIntermediates()
     {
@@ -3499,9 +3584,9 @@ internal static class AuthIndexFixtureResources
             )
         );
 
-        // CycleA has two outgoing bindings: one back to CycleB (the cycle) and one direct to
-        // Student. BFS enqueues both targets; CycleB is enqueued, processed, and discovers
-        // CycleA again — the visited set prevents re-enqueueing.
+        // CycleA has two outgoing bindings: one back to CycleB (the binding-level cycle, NOT a
+        // declared securable) and one direct to Student (the declared Student securable). The
+        // walk follows only the declared securable, ignoring the cycle entirely.
         var cycleATable = new DbTableName(_edfiSchema, "CycleA");
         var cycleAToBFk = new DbColumnName("CycleB_DocumentId");
         var cycleAToStudentFk = new DbColumnName("Student_DocumentId");
@@ -3521,7 +3606,14 @@ internal static class AuthIndexFixtureResources
             Table: cycleATable,
             FkColumn: cycleAToStudentFk,
             TargetResource: new QualifiedResourceName(EdFi, "Student"),
-            IdentityBindings: []
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.studentReference.studentUniqueId"),
+                    cycleAToStudentFk
+                ),
+            ]
         );
 
         var cycleA = BuildResource(
@@ -3532,7 +3624,13 @@ internal static class AuthIndexFixtureResources
                 BuildScalarColumn(cycleAToStudentFk),
             ],
             [cycleAToBBinding, cycleAToStudentBinding],
-            ResourceSecurableElements.Empty
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.studentReference.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
         );
 
         var cycleBTable = new DbTableName(_edfiSchema, "CycleB");
@@ -3555,6 +3653,109 @@ internal static class AuthIndexFixtureResources
         );
 
         return [subject, cycleA, cycleB, BuildPlainResource("Student")];
+    }
+
+    /// <summary>
+    /// Builds the subject + intermediate + person resources for the
+    /// <c>Given_Intermediate_With_Multiple_Root_Bindings_Only_Securable_Is_Followed</c> test.
+    /// The intermediate <c>MultiBindingIntermediate</c> declares <c>$.securableRef.studentUniqueId</c>
+    /// as its Student securable and carries TWO root bindings: a non-securable sibling
+    /// (<c>NonSecurableHop_DocumentId</c>, listed FIRST so BFS-over-all-bindings would have
+    /// emitted an index for it) and the securable one (<c>SecurableHop_DocumentId</c>, listed
+    /// SECOND). Both bindings target <c>Ed-Fi.Student</c>. The deterministic walk must follow
+    /// only the securable binding.
+    /// </summary>
+    public static IReadOnlyList<ConcreteResourceModel> BuildIntermediateWithMultipleRootBindingsOnlySecurableIsFollowed()
+    {
+        const string subjectName = "MultiBindingSubject";
+        var subjectRoot = new DbTableName(_edfiSchema, subjectName);
+        var subjectFk = new DbColumnName("MultiBindingIntermediate_DocumentId");
+
+        var subjectBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.intermediateRef"),
+            Table: subjectRoot,
+            FkColumn: subjectFk,
+            TargetResource: new QualifiedResourceName(EdFi, "MultiBindingIntermediate"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.intermediateRef.studentUniqueId"),
+                    subjectFk
+                ),
+            ]
+        );
+
+        var subject = BuildResource(
+            subjectName,
+            [BuildScalarColumn(new DbColumnName("DocumentId")), BuildScalarColumn(subjectFk)],
+            [subjectBinding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.intermediateRef.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
+
+        var intermediateTable = new DbTableName(_edfiSchema, "MultiBindingIntermediate");
+        var nonSecurableFk = new DbColumnName("NonSecurableHop_DocumentId");
+        var securableFk = new DbColumnName("SecurableHop_DocumentId");
+
+        var nonSecurableBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.nonSecurableRef"),
+            Table: intermediateTable,
+            FkColumn: nonSecurableFk,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.nonSecurableRef.studentUniqueId"),
+                    nonSecurableFk
+                ),
+            ]
+        );
+
+        var securableBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.securableRef"),
+            Table: intermediateTable,
+            FkColumn: securableFk,
+            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.studentUniqueId"),
+                    JsonPathExpressionCompiler.Compile("$.securableRef.studentUniqueId"),
+                    securableFk
+                ),
+            ]
+        );
+
+        var intermediate = BuildResource(
+            "MultiBindingIntermediate",
+            [
+                BuildScalarColumn(new DbColumnName("DocumentId")),
+                BuildScalarColumn(nonSecurableFk),
+                BuildScalarColumn(securableFk),
+            ],
+            // Non-securable binding listed FIRST to pin that walk order is determined by the
+            // intermediate's declared securable, not by binding-list ordering.
+            [nonSecurableBinding, securableBinding],
+            new ResourceSecurableElements(
+                EducationOrganization: [],
+                Namespace: [],
+                Student: ["$.securableRef.studentUniqueId"],
+                Contact: [],
+                Staff: []
+            )
+        );
+
+        return [subject, intermediate, BuildPlainResource("Student")];
     }
 
     /// <summary>

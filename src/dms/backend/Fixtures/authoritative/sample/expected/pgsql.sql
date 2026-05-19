@@ -35300,8 +35300,6 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_PlatformTypeDescrip
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ReportingEducationO_e8544f247d" ON "edfi"."StudentAssessmentRegistration" ("ReportingEducationOrganization_DocumentId", "ReportingEducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ScheduledStudentEdu_04a293a07a" ON "edfi"."StudentAssessmentRegistration" ("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea") INCLUDE ("DocumentId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ScheduledStudentEdu_5a48441bdd" ON "edfi"."StudentAssessmentRegistration" ("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea", "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c", "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentEducationOrg_3e71d86255" ON "edfi"."StudentAssessmentRegistration" ("StudentEducationOrganizationAssociation_DocumentId", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified");
