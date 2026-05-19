@@ -66,7 +66,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~RelationalCurrentEtagPreconditionCheckerTests|FullyQualifiedName~DescriptorWriteHandlerDeleteTests\"",
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DeleteByIdHandlerTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "test-support",
