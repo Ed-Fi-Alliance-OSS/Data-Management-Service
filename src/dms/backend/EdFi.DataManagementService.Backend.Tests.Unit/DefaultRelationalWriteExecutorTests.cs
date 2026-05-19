@@ -222,6 +222,48 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_keeps_reference_failures_distinct_from_proposed_relationship_authorization()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference]
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureReference(
+                        [
+                            DocumentReferenceFailure.From(
+                                documentReference,
+                                DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        []
+                    )
+                )
+            );
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_loads_current_state_once_for_existing_document_requests()
     {
         var request = CreateRequest(

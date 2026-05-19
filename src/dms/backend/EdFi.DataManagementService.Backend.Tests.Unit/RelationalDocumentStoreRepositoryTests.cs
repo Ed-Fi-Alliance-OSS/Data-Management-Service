@@ -3304,6 +3304,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -3343,6 +3345,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
+            .MustNotHaveHappened();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }
 
