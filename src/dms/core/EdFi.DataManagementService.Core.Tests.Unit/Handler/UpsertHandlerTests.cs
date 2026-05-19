@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -45,6 +46,47 @@ public class UpsertHandlerTests
 
         return (handler, serviceProvider);
     }
+
+    internal static RelationshipAuthorizationFailure CreateProposedRelationshipFailure() =>
+        new(
+            RelationshipAuthorizationFailureValueSource.Proposed,
+            EmittedAuth1Index: 7,
+            FailedStrategies:
+            [
+                new RelationshipAuthorizationFailedStrategy(
+                    ConfiguredStrategyIndex: 0,
+                    RelationshipLocalOrder: 0,
+                    StrategyName: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    StrategyKind: "RelationshipsWithEdOrgsOnly",
+                    AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                        Name: "auth.EdOrgIdToEdOrgId",
+                        SubjectValueColumn: "TargetEdOrgId",
+                        ClaimEducationOrganizationIdColumn: "SourceEdOrgId"
+                    ),
+                    FailedSubjects:
+                    [
+                        new RelationshipAuthorizationFailedSubject(
+                            SubjectIndex: 0,
+                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+                            RootBinding: new RelationshipAuthorizationRootBinding(
+                                ResourceName: "StudentSchoolAssociation",
+                                TableName: "edfi.StudentSchoolAssociation",
+                                ColumnName: "SchoolId"
+                            ),
+                            SecurableElements:
+                            [
+                                new RelationshipAuthorizationSecurableElement(
+                                    Kind: "EducationOrganization",
+                                    JsonPath: "$.schoolReference.schoolId",
+                                    ReadableName: "SchoolId"
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+            ],
+            ClaimEducationOrganizationIds: [new EducationOrganizationId(255901)]
+        );
 
     [TestFixture]
     [Parallelizable]
@@ -650,6 +692,196 @@ public class UpsertHandlerTests
                 .BeTrue();
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Relationship_Not_Authorized : UpsertHandlerTests
+    {
+        private static readonly string[] _responseErrors =
+        [
+            "The caller is not authorized to create the proposed resource.",
+        ];
+        private static readonly string[] _responseHints =
+        [
+            "Verify the caller has an education organization relationship to the proposed values.",
+        ];
+
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly UpsertFailureRelationshipNotAuthorized Response = new(
+                _responseErrors,
+                CreateProposedRelationshipFailure(),
+                _responseHints
+            );
+
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(Response);
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = No.RequestInfo("relationship-post-403");
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await upsertHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_relationship_denial_to_http_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(static error => error!.ToString())
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(_responseErrors[0]);
+            _requestInfo.FrontendResponse.Body!["detail"]!.ToString().Should().Contain(_responseHints[0]);
+            _requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            _requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
+        }
+
+        [Test]
+        public void It_carries_proposed_value_source_metadata()
+        {
+            Repository
+                .Response.RelationshipFailure.ValueSource.Should()
+                .Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        }
+    }
+
+    [TestFixture(UpsertFailureNotImplementedReason.StrategyNotEnabled)]
+    [TestFixture(UpsertFailureNotImplementedReason.ExistingResourcePostAsUpdate)]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Not_Implemented : UpsertHandlerTests
+    {
+        private readonly UpsertFailureNotImplementedReason _reason;
+        private readonly Repository _repository;
+
+        public Given_A_Repository_That_Returns_Failure_Not_Implemented(
+            UpsertFailureNotImplementedReason reason
+        )
+        {
+            _reason = reason;
+            _repository = new Repository(reason);
+        }
+
+        internal sealed class Repository(UpsertFailureNotImplementedReason reason)
+            : NotImplementedDocumentStoreRepository
+        {
+            public const string ResponseBody =
+                "Relational POST authorization is not implemented for this authorization path.";
+
+            public UpsertFailureNotImplemented Response { get; } = new(ResponseBody, reason);
+
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(Response);
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = No.RequestInfo("relationship-post-501");
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await upsertHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_staged_fail_closed_result_to_http_501()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+
+            var expected = Utility.ToJsonError(Repository.ResponseBody, new TraceId("relationship-post-501"));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+            _requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            _requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
+        }
+
+        [Test]
+        public void It_carries_the_staging_reason()
+        {
+            _repository.Response.Reason.Should().Be(_reason);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Security_Configuration_Failure : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string[] ResponseErrors =
+            [
+                "Resource 'Ed-Fi.StudentSchoolAssociation' has relationship authorization metadata that cannot be resolved.",
+            ];
+
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(new UpsertFailureSecurityConfiguration(ResponseErrors));
+            }
+        }
+
+        private static readonly string _traceId = "relationship-post-500";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await upsertHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_security_configuration_failure_to_the_canonical_http_500()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = FailureResponse.ForSecurityConfiguration(
+                new TraceId(_traceId),
+                Repository.ResponseErrors
+            );
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+            _requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            _requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 

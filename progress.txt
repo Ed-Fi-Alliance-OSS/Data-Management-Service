@@ -1,0 +1,5 @@
+Task completed: contract for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/03-edorg-only-post-create.md
+Key decisions: mirrored GET/DELETE explicit auth-result shape for POST; kept generic UpsertFailureNotAuthorized unchanged; added UpsertFailureNotImplementedReason to distinguish strategy-not-enabled from existing-resource POST-as-update without exposing Backend.Plans types.
+Files changed: src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpsertResult.cs; src/dms/core/EdFi.DataManagementService.Core/Handler/UpsertHandler.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/UpsertHandlerTests.cs; tasks.json; progress.txt
+Verification: dotnet csharpier format changed C# files; dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter UpsertHandler; dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository
+Blockers/next: none; next loop should use new upsert result variants from relational POST planning/orchestration.

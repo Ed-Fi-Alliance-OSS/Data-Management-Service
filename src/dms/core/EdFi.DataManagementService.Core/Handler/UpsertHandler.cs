@@ -177,6 +177,26 @@ internal class UpsertHandler(
                 ),
                 Headers: []
             ),
+            UpsertFailureRelationshipNotAuthorized failure => new(
+                StatusCode: 403,
+                Body: ForForbidden(
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: failure.ErrorMessages,
+                    hints: failure.Hints
+                ),
+                Headers: []
+            ),
+            UpsertFailureNotImplemented failure => new(
+                StatusCode: 501,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            UpsertFailureSecurityConfiguration failure => new(
+                StatusCode: 500,
+                Body: ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, failure.Errors),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             UpsertFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
                 ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
                 requestInfo.FrontendRequest.TraceId
