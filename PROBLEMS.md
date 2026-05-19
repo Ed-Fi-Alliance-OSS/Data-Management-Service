@@ -44,4 +44,4 @@ Environment notes:
 - Initial setup over an existing stack failed while creating the DMS instance. A clean `teardown-local-dms.ps1` followed by `setup-local-dms.ps1` succeeded.
 - The inherited local `NODE_OPTIONS=--experimental-strip-types` makes Playwright's bundled Node fail before API requests. Rerunning test commands with `env -u NODE_OPTIONS` resolves that environment issue.
 
-I did not mark the task complete or commit because the requested broad E2E feedback loop is failing for out-of-scope GET-many behavior.
+I did not mark the task complete because the requested broad E2E feedback loop is failing for out-of-scope GET-many behavior.
