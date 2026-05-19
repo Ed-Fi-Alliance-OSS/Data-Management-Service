@@ -10,10 +10,12 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -3502,6 +3504,417 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_attaches_proposed_relationship_authorization_values_from_finalized_no_profile_root_row()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            selectedBody: JsonNode.Parse("""{"schoolId":111111,"name":"Raw"}""")!
+        );
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(222222),
+                    new FlattenedWriteValue.Literal("From row buffer"),
+                ]
+            )
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+        _noProfilePersister.CapturedMergeResult.Should().NotBeNull();
+
+        var runtimeCheck = _noProfilePersister
+            .CapturedMergeResult!
+            .ProposedRelationshipAuthorizationRuntimeCheck;
+        runtimeCheck.Should().NotBeNull();
+        runtimeCheck!.Strategies.Should().ContainSingle();
+        runtimeCheck.Strategies[0].StrategyOrdinal.Should().Be(0);
+        runtimeCheck.Strategies[0].Subjects.Should().ContainSingle();
+        runtimeCheck.Strategies[0].Subjects[0].SubjectOrdinal.Should().Be(0);
+        runtimeCheck.Strategies[0].Subjects[0].Value.Should().Be(222222);
+        runtimeCheck.Strategies[0].Subjects[0].Binding.BindingIndex.Should().Be(1);
+        runtimeCheck
+            .ClaimEducationOrganizationIdParameterization.ClaimEducationOrganizationIds.Should()
+            .Equal(1234L);
+    }
+
+    [Test]
+    public async Task It_reads_proposed_relationship_authorization_values_from_profile_writable_root_row()
+    {
+        var rawBody = JsonNode.Parse("""{"schoolId":111111,"name":"Raw"}""")!;
+        var writableBody = JsonNode.Parse("""{"schoolId":333333,"name":"Writable"}""")!;
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: rawBody);
+        var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
+        var rootPlan = baseRequest.WritePlan.TablePlansInDependencyOrder[0];
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(333333),
+                    new FlattenedWriteValue.Literal("Writable"),
+                ]
+            )
+        );
+
+        var result = await _sut.ExecuteAsync(
+            baseRequest with
+            {
+                ProfileWriteContext = profileContext,
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(
+                    baseRequest
+                ),
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+        _writeFlattener.CapturedInput.Should().NotBeNull();
+        _writeFlattener.CapturedInput!.SelectedBody.Should().BeSameAs(writableBody);
+        _profileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _profileMergeSynthesizer
+            .CapturedRequest!.ProfileRequest.WritableRequestBody.Should()
+            .BeSameAs(writableBody);
+
+        var runtimeCheck = _noProfilePersister
+            .CapturedMergeResult!
+            .ProposedRelationshipAuthorizationRuntimeCheck;
+        runtimeCheck.Should().NotBeNull();
+        runtimeCheck!.Strategies[0].Subjects[0].Value.Should().Be(333333);
+    }
+
+    [Test]
+    public async Task It_returns_relationship_authorization_failure_for_missing_proposed_root_values_before_persistence()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(null),
+                    new FlattenedWriteValue.Literal("Lincoln High"),
+                ]
+            )
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var notAuthorized = upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
+            .Subject;
+
+        notAuthorized
+            .RelationshipFailure.ValueSource.Should()
+            .Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        notAuthorized
+            .RelationshipFailure.ClaimEducationOrganizationIds.Select(static id => id.Value)
+            .Should()
+            .Equal(1234L);
+        notAuthorized.RelationshipFailure.FailedStrategies.Should().ContainSingle();
+        notAuthorized.RelationshipFailure.FailedStrategies[0].FailedSubjects.Should().ContainSingle();
+        notAuthorized
+            .RelationshipFailure.FailedStrategies[0]
+            .FailedSubjects[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
+        notAuthorized
+            .RelationshipFailure.FailedStrategies[0]
+            .FailedSubjects[0]
+            .RootBinding.ColumnName.Should()
+            .Be("SchoolId");
+        notAuthorized
+            .RelationshipFailure.FailedStrategies[0]
+            .FailedSubjects[0]
+            .SecurableElements.Should()
+            .ContainSingle()
+            .Which.ReadableName.Should()
+            .Be("SchoolId");
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public void It_preserves_strategy_and_subject_order_in_extracted_proposed_runtime_check()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var rootRow = new RootWriteRowBuffer(
+            rootPlan,
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(255901),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ]
+        );
+
+        var result = RelationshipAuthorizationProposedValueExtractor.Extract(
+            CreateTwoStrategyTwoSubjectRelationshipAuthorization(request),
+            rootRow,
+            emittedAuth1Index: 0
+        );
+
+        var ready = result
+            .Should()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
+            .Subject;
+        ready.RuntimeCheck.Strategies.Should().HaveCount(2);
+        ready
+            .RuntimeCheck.Strategies.Select(static strategy => strategy.StrategyOrdinal)
+            .Should()
+            .Equal(0, 1);
+        ready
+            .RuntimeCheck.Strategies.Select(static strategy => strategy.CheckSpec.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+        ready
+            .RuntimeCheck.Strategies.Should()
+            .AllSatisfy(strategy =>
+            {
+                strategy.Subjects.Should().HaveCount(2);
+                strategy.Subjects.Select(static subject => subject.SubjectOrdinal).Should().Equal(0, 1);
+                strategy
+                    .Subjects.Select(static subject => subject.Value)
+                    .Should()
+                    .Equal(255901, "Lincoln High");
+            });
+    }
+
+    [TestCaseSource(nameof(MissingProposedValueCases))]
+    public void It_treats_unbound_proposed_runtime_values_as_proposed_missing(
+        FlattenedWriteValue missingValue
+    )
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var rootRow = new RootWriteRowBuffer(
+            rootPlan,
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                missingValue,
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ]
+        );
+
+        var result = RelationshipAuthorizationProposedValueExtractor.Extract(
+            CreateProposedSchoolIdRelationshipAuthorization(request),
+            rootRow,
+            emittedAuth1Index: 0
+        );
+
+        var notAuthorized = result
+            .Should()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.NotAuthorized>()
+            .Subject;
+        notAuthorized
+            .RelationshipFailure.FailedStrategies[0]
+            .FailedSubjects[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
+    }
+
+    private static IEnumerable<TestCaseData> MissingProposedValueCases()
+    {
+        yield return new TestCaseData(new FlattenedWriteValue.Literal(null)).SetName("null literal");
+        yield return new TestCaseData(new FlattenedWriteValue.Literal(DBNull.Value)).SetName(
+            "DBNull literal"
+        );
+        yield return new TestCaseData(FlattenedWriteValue.UnresolvedRootDocumentId.Instance).SetName(
+            "unresolved root document id"
+        );
+    }
+
+    private static RelationshipAuthorizationResult.Authorized CreateProposedSchoolIdRelationshipAuthorization(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var schoolIdBinding = rootPlan
+            .ColumnBindings.Select(static (binding, index) => (binding, index))
+            .Single(static entry => entry.binding.Column.ColumnName.Value == "SchoolId");
+        var subject = new RelationshipAuthorizationSubject(
+            request.WritePlan.Model.Resource,
+            rootPlan.TableModel.Table,
+            schoolIdBinding.binding.Column.ColumnName,
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    SecurableElementKind.EducationOrganization,
+                    "$.schoolId",
+                    "SchoolId"
+                ),
+            ]
+        );
+        var checkSpec = new RelationshipAuthorizationCheckSpec(
+            new ConfiguredAuthorizationStrategy(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                0
+            ),
+            0,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            RelationshipAuthorizationValueSource.Proposed,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
+            [subject],
+            new RelationshipAuthorizationCheckTarget.Proposed(
+                rootPlan.TableModel.Table,
+                [
+                    new RelationshipAuthorizationProposedValueBinding(
+                        rootPlan.TableModel.Table,
+                        schoolIdBinding.binding.Column.ColumnName,
+                        schoolIdBinding.index,
+                        schoolIdBinding.binding.Column.ColumnName.Value,
+                        schoolIdBinding.binding.ParameterName
+                    ),
+                ]
+            )
+        );
+
+        return new RelationshipAuthorizationResult.Authorized(
+            [checkSpec],
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                request.MappingSet.Key.Dialect,
+                [1234L],
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            )
+        );
+    }
+
+    private static RelationshipAuthorizationResult.Authorized CreateTwoStrategyTwoSubjectRelationshipAuthorization(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var subjects = new[]
+        {
+            CreateRelationshipAuthorizationSubject(request, rootPlan, "SchoolId", "$.schoolId", "SchoolId"),
+            CreateRelationshipAuthorizationSubject(request, rootPlan, "Name", "$.name", "Name"),
+        };
+        var bindings = subjects
+            .Select(subject => CreateProposedValueBinding(rootPlan, subject.Column.Value))
+            .ToArray();
+
+        return new RelationshipAuthorizationResult.Authorized(
+            [
+                CreateProposedCheckSpec(
+                    rootPlan,
+                    subjects,
+                    bindings,
+                    relationshipLocalOrder: 0,
+                    rawConfiguredIndex: 0,
+                    direction: RelationshipAuthorizationHierarchyDirection.Normal
+                ),
+                CreateProposedCheckSpec(
+                    rootPlan,
+                    subjects,
+                    bindings,
+                    relationshipLocalOrder: 1,
+                    rawConfiguredIndex: 1,
+                    direction: RelationshipAuthorizationHierarchyDirection.Inverted
+                ),
+            ],
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                request.MappingSet.Key.Dialect,
+                [1234L],
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            )
+        );
+    }
+
+    private static RelationshipAuthorizationCheckSpec CreateProposedCheckSpec(
+        TableWritePlan rootPlan,
+        IReadOnlyList<RelationshipAuthorizationSubject> subjects,
+        IReadOnlyList<RelationshipAuthorizationProposedValueBinding> bindings,
+        int relationshipLocalOrder,
+        int rawConfiguredIndex,
+        RelationshipAuthorizationHierarchyDirection direction
+    ) =>
+        new(
+            new ConfiguredAuthorizationStrategy(
+                direction is RelationshipAuthorizationHierarchyDirection.Normal
+                    ? AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    : AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                rawConfiguredIndex
+            ),
+            relationshipLocalOrder,
+            direction,
+            RelationshipAuthorizationValueSource.Proposed,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
+            subjects,
+            new RelationshipAuthorizationCheckTarget.Proposed(rootPlan.TableModel.Table, bindings)
+        );
+
+    private static RelationshipAuthorizationSubject CreateRelationshipAuthorizationSubject(
+        RelationalWriteExecutorRequest request,
+        TableWritePlan rootPlan,
+        string columnName,
+        string jsonPath,
+        string readableName
+    )
+    {
+        var binding = rootPlan
+            .ColumnBindings.Select(static (binding, index) => (binding, index))
+            .Single(entry => entry.binding.Column.ColumnName.Value == columnName);
+
+        return new RelationshipAuthorizationSubject(
+            request.WritePlan.Model.Resource,
+            rootPlan.TableModel.Table,
+            binding.binding.Column.ColumnName,
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    SecurableElementKind.EducationOrganization,
+                    jsonPath,
+                    readableName
+                ),
+            ]
+        );
+    }
+
+    private static RelationshipAuthorizationProposedValueBinding CreateProposedValueBinding(
+        TableWritePlan rootPlan,
+        string columnName
+    )
+    {
+        var binding = rootPlan
+            .ColumnBindings.Select(static (binding, index) => (binding, index))
+            .Single(entry => entry.binding.Column.ColumnName.Value == columnName);
+
+        return new RelationshipAuthorizationProposedValueBinding(
+            rootPlan.TableModel.Table,
+            binding.binding.Column.ColumnName,
+            binding.index,
+            binding.binding.Column.ColumnName.Value,
+            binding.binding.ParameterName
+        );
     }
 
     private static BackendProfileWriteContext BuildVisiblePresentRootProfileWriteContext(

@@ -33,6 +33,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalReadMaterializer readMaterializer
 ) : IRelationalWriteExecutor
 {
+    private const int PostRelationshipAuthorizationAuth1Index = 0;
+
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
 
@@ -162,6 +164,7 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             var targetContext = executionRequest.TargetContext;
             RelationalWriteMergeResult mergeResult;
+            RootWriteRowBuffer finalizedRootRow;
 
             // Profile decision sequence — runs before flattening for profile-aware dispatch
             if (request.ProfileWriteContext is not null)
@@ -263,6 +266,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                         emitEmptyExtensionBuffers: true
                     )
                 );
+                finalizedRootRow = profileFlattenedWriteSet.RootRow;
 
                 var profileMergeOutcome = _profileMergeSynthesizer.Synthesize(
                     new RelationalWriteProfileMergeRequest(
@@ -309,6 +313,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                         validateStorageCollapsedCollectionIdentityUniqueness: true
                     )
                 );
+                finalizedRootRow = flattenedWriteSet.RootRow;
 
                 mergeResult = _noProfileMergeSynthesizer.Synthesize(
                     new RelationalWriteNoProfileMergeRequest(
@@ -317,6 +322,44 @@ internal sealed class DefaultRelationalWriteExecutor(
                         currentState
                     )
                 );
+            }
+
+            if (executionRequest.ProposedRelationshipAuthorization is not null)
+            {
+                var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
+                    executionRequest.ProposedRelationshipAuthorization,
+                    finalizedRootRow,
+                    PostRelationshipAuthorizationAuth1Index
+                );
+
+                switch (extractionResult)
+                {
+                    case ProposedRelationshipAuthorizationExtractionResult.Ready ready:
+                        mergeResult = mergeResult with
+                        {
+                            ProposedRelationshipAuthorizationRuntimeCheck = ready.RuntimeCheck,
+                        };
+                        break;
+
+                    case ProposedRelationshipAuthorizationExtractionResult.NotAuthorized notAuthorized:
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return BuildProposedRelationshipAuthorizationFailureResult(
+                            executionRequest.OperationKind,
+                            notAuthorized.RelationshipFailure
+                        );
+
+                    case ProposedRelationshipAuthorizationExtractionResult.InvalidAuthorizationPlan invalid:
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return BuildUnknownFailureResult(
+                            executionRequest.OperationKind,
+                            invalid.FailureMessage
+                        );
+
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unsupported proposed relationship authorization extraction result '{extractionResult.GetType().Name}'."
+                        );
+                }
             }
 
             var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
@@ -593,6 +636,27 @@ internal sealed class DefaultRelationalWriteExecutor(
         };
     }
 
+    private static RelationalWriteExecutorResult BuildProposedRelationshipAuthorizationFailureResult(
+        RelationalWriteOperationKind operationKind,
+        RelationshipAuthorizationFailure relationshipFailure
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureRelationshipNotAuthorized(
+                    BuildRelationshipAuthorizationErrorMessages(relationshipFailure),
+                    relationshipFailure
+                )
+            ),
+            RelationalWriteOperationKind.Put => BuildUnknownFailureResult(
+                operationKind,
+                "Proposed relationship authorization is only supported for POST writes."
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
     private static RelationalWriteExecutorResult BuildValidationFailureResult(
         RelationalWriteOperationKind operationKind,
         WriteValidationFailure[] validationFailures
@@ -608,6 +672,64 @@ internal sealed class DefaultRelationalWriteExecutor(
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
+    }
+
+    private static string[] BuildRelationshipAuthorizationErrorMessages(
+        RelationshipAuthorizationFailure relationshipFailure
+    )
+    {
+        string edOrgIdsFromFilters = string.Join(
+            ", ",
+            relationshipFailure.ClaimEducationOrganizationIds.Select(static id => $"'{id.Value}'")
+        );
+        string[] notAuthorizedProperties =
+        [
+            .. relationshipFailure
+                .FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+                .SelectMany(static subject => GetRelationshipAuthorizationPropertyNames(subject))
+                .Distinct(StringComparer.Ordinal),
+        ];
+
+        if (notAuthorizedProperties.Length == 0)
+        {
+            return
+            [
+                "No relationships have been established between the caller's education organization id claims "
+                    + $"({edOrgIdsFromFilters}) and the requested resource.",
+            ];
+        }
+
+        if (notAuthorizedProperties.Length == 1)
+        {
+            return
+            [
+                "No relationships have been established between the caller's education organization id claims "
+                    + $"({edOrgIdsFromFilters}) and the resource item's {notAuthorizedProperties[0]} value.",
+            ];
+        }
+
+        return
+        [
+            "No relationships have been established between the caller's education organization id claims "
+                + $"({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: "
+                + $"{string.Join(", ", notAuthorizedProperties.Select(static property => $"'{property}'"))}.",
+        ];
+    }
+
+    private static IEnumerable<string> GetRelationshipAuthorizationPropertyNames(
+        RelationshipAuthorizationFailedSubject subject
+    )
+    {
+        if (subject.SecurableElements.Length == 0)
+        {
+            yield return subject.RootBinding.ColumnName;
+            yield break;
+        }
+
+        foreach (var securableElement in subject.SecurableElements)
+        {
+            yield return securableElement.ReadableName;
+        }
     }
 
     private static RelationalWriteExecutorResult BuildProfileCreatabilityRejectionResult(

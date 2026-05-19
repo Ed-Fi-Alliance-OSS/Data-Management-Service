@@ -51,7 +51,8 @@ internal sealed record RelationalWriteMergeResult
 {
     public RelationalWriteMergeResult(
         IEnumerable<RelationalWriteMergedTableState> tablesInDependencyOrder,
-        bool supportsGuardedNoOp
+        bool supportsGuardedNoOp,
+        ProposedRelationshipAuthorizationRuntimeCheck? proposedRelationshipAuthorizationRuntimeCheck = null
     )
     {
         TablesInDependencyOrder = FlattenedWriteContractSupport.ToImmutableArray(
@@ -59,9 +60,12 @@ internal sealed record RelationalWriteMergeResult
             nameof(tablesInDependencyOrder)
         );
         SupportsGuardedNoOp = supportsGuardedNoOp;
+        ProposedRelationshipAuthorizationRuntimeCheck = proposedRelationshipAuthorizationRuntimeCheck;
     }
 
     public ImmutableArray<RelationalWriteMergedTableState> TablesInDependencyOrder { get; init; }
 
     public bool SupportsGuardedNoOp { get; init; }
+
+    public ProposedRelationshipAuthorizationRuntimeCheck? ProposedRelationshipAuthorizationRuntimeCheck { get; init; }
 }
