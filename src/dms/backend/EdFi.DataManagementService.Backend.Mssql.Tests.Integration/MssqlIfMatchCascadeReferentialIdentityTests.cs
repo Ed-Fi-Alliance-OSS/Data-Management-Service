@@ -403,6 +403,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 DocumentUuid: documentUuid,
                 ResourceInfo: resourceInfo,
                 MappingSet: _mappingSet,
+                AuthorizationContext: new RelationalAuthorizationContext([]),
                 ResourceAuthorizationHandler: new MssqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 AuthorizationStrategyEvaluators: [],
                 TraceId: new TraceId(traceId)

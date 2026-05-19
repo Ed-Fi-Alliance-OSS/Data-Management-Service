@@ -41,6 +41,7 @@ internal sealed record RelationalGetRequest(
     DocumentUuid DocumentUuid,
     BaseResourceInfo ResourceInfo,
     MappingSet MappingSet,
+    RelationalAuthorizationContext AuthorizationContext,
     IResourceAuthorizationHandler ResourceAuthorizationHandler,
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     TraceId TraceId,

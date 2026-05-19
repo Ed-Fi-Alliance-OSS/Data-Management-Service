@@ -15,6 +15,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect dialect)
 {
     private const string RootAlias = "r";
+    private const string DocumentAlias = "d";
     private const string TargetCte = "target";
     private const string SubjectFailuresCte = "subject_failures";
     private const string FailedSubjectsCte = "failed_subjects";
@@ -25,6 +26,9 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     private const string FailedColumn = "Failed";
     private const string PayloadColumn = "Payload";
     private const string AuthorizationResultColumn = "AuthorizationResult";
+    private const string ContentVersionColumn = "ContentVersion";
+    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
+    private static readonly DbColumnName _documentIdColumn = new("DocumentId");
 
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
@@ -229,6 +233,10 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
             using (writer.Indent())
             {
+                writer.Append($"{DocumentAlias}.");
+                writer.AppendQuoted(ContentVersionColumn);
+                writer.AppendLine(",");
+
                 for (var columnIndex = 0; columnIndex < rootColumns.Count; columnIndex++)
                 {
                     writer.Append($"{RootAlias}.");
@@ -240,6 +248,14 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.Append("FROM ");
             writer.AppendRelation(new SqlRelationRef.PhysicalTable(storedTarget.RootTable));
             writer.AppendLine($" {RootAlias}");
+            writer.Append("INNER JOIN ");
+            writer.AppendRelation(new SqlRelationRef.PhysicalTable(_documentTable));
+            writer.AppendLine($" {DocumentAlias}");
+            writer.Append($"    ON {DocumentAlias}.");
+            writer.AppendQuoted(_documentIdColumn.Value);
+            writer.Append($" = {RootAlias}.");
+            writer.AppendQuoted(storedTarget.DocumentIdColumn.Value);
+            writer.AppendLine();
             writer.Append("WHERE ");
             writer.Append($"{RootAlias}.");
             writer.AppendQuoted(storedTarget.DocumentIdColumn.Value);
@@ -416,6 +432,8 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
         writer.Append("END AS ");
         writer.AppendQuoted(AuthorizationResultColumn);
+        writer.AppendLine(",");
+        writer.AppendQuoted(ContentVersionColumn);
         writer.AppendLine();
         writer.AppendLine($"FROM {TargetCte};");
     }

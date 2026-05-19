@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -145,6 +146,7 @@ internal class GetByIdHandler(
                 DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                 ResourceInfo: requestInfo.ResourceInfo,
                 MappingSet: requestInfo.MappingSet,
+                AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
                 ResourceAuthorizationHandler: resourceAuthorizationHandler,
                 AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
                 TraceId: requestInfo.FrontendRequest.TraceId,

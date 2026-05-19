@@ -576,6 +576,24 @@ actual: {requestInfo.FrontendResponse.Body}
             );
             _requestInfo.MappingSet = _mappingSet;
             _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
+            _requestInfo.ClientAuthorizations = new ClientAuthorizations(
+                TokenId: "token-id",
+                ClientId: "client-id",
+                ClaimSetName: "claim-set",
+                EducationOrganizationIds:
+                [
+                    new EducationOrganizationId(255902),
+                    new EducationOrganizationId(255901),
+                    new EducationOrganizationId(255902),
+                ],
+                NamespacePrefixes:
+                [
+                    new NamespacePrefix("uri://sample-b.org"),
+                    new NamespacePrefix("uri://sample-a.org"),
+                    new NamespacePrefix("uri://sample-b.org"),
+                ],
+                DmsInstanceIds: []
+            );
             _requestInfo.ProfileContext = new ProfileContext(
                 ProfileName: "ReadableProfile",
                 ContentType: ProfileContentType.Read,
@@ -612,6 +630,12 @@ actual: {requestInfo.FrontendResponse.Body}
             _repository
                 .CapturedRequest.AuthorizationStrategyEvaluators.Should()
                 .BeSameAs(_authorizationStrategyEvaluators);
+            _repository
+                .CapturedRequest.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(255901L, 255902L);
+            _repository
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal("uri://sample-a.org", "uri://sample-b.org");
             _repository.CapturedRequest.ReadableProfileProjectionContext.Should().NotBeNull();
             _repository
                 .CapturedRequest.ReadableProfileProjectionContext!.ContentTypeDefinition.Should()
