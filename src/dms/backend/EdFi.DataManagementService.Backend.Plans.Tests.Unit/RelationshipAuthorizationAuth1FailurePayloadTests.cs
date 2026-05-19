@@ -443,6 +443,199 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should().Contain("IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)");
     }
 
+    [Test]
+    public void It_should_compile_postgresql_proposed_auth1_sql_with_or_strategies_and_and_subjects()
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [200L, 100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateProposedCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId"),
+                        CreateSubject(
+                            "LocalEducationAgencyId",
+                            "$.localEducationAgencyReference.localEducationAgencyId"
+                        )
+                    ),
+                    CreateProposedCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        1,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                    ),
+                    CreateProposedCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Inverted,
+                        1,
+                        2,
+                        CreateSubject(
+                            "EducationServiceCenterId",
+                            "$.educationServiceCenterReference.educationServiceCenterId"
+                        )
+                    ),
+                ],
+                parameterization,
+                8,
+                ReservedParameterNames: ["documentUuid", "resourceKeyId", "schoolId"]
+            )
+        );
+
+        plan.ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal(
+                "relationshipAuthorization_0_0_schoolId",
+                "relationshipAuthorization_0_1_localEducationAgencyId",
+                "relationshipAuthorization_1_0_schoolId",
+                "relationshipAuthorization_2_0_educationServiceCenterId",
+                "ClaimEducationOrganizationIds"
+            );
+        plan.ProposedValueParametersInOrder.Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    new RelationshipAuthorizationProposedValueSqlParameter(
+                        0,
+                        0,
+                        "relationshipAuthorization_0_0_schoolId"
+                    ),
+                    new RelationshipAuthorizationProposedValueSqlParameter(
+                        0,
+                        1,
+                        "relationshipAuthorization_0_1_localEducationAgencyId"
+                    ),
+                    new RelationshipAuthorizationProposedValueSqlParameter(
+                        1,
+                        0,
+                        "relationshipAuthorization_1_0_schoolId"
+                    ),
+                    new RelationshipAuthorizationProposedValueSqlParameter(
+                        2,
+                        0,
+                        "relationshipAuthorization_2_0_educationServiceCenterId"
+                    ),
+                },
+                options => options.WithStrictOrdering()
+            );
+        plan.AuthorizationSql.Should().NotContain("FROM target");
+        plan.AuthorizationSql.Should().Contain("\"dms\".\"throw_error\"('AUTH1'");
+        plan.AuthorizationSql.Should().Contain("CONCAT('1|', '8|', COUNT(1)::text, '|'");
+        plan.AuthorizationSql.Should()
+            .Contain("CASE WHEN @relationshipAuthorization_0_0_schoolId IS NULL THEN 'p' ELSE 'n' END");
+        plan.AuthorizationSql.Should()
+            .Contain("\"TargetEducationOrganizationId\" = @relationshipAuthorization_0_0_schoolId");
+        plan.AuthorizationSql.Should()
+            .Contain("\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "\"SourceEducationOrganizationId\" = @relationshipAuthorization_2_0_educationServiceCenterId"
+            );
+        plan.AuthorizationSql.Should()
+            .Contain("\"TargetEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 0) OR NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 1) OR NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 2)"
+            );
+    }
+
+    [Test]
+    public void It_should_compile_sql_server_proposed_auth1_sql_with_collision_free_parameters()
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Mssql,
+            [200L, 100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Mssql);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateProposedCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                    ),
+                ],
+                parameterization,
+                9,
+                ReservedParameterNames:
+                [
+                    "relationshipAuthorization_0_0_schoolId",
+                    "documentUuid",
+                    "resourceKeyId",
+                ]
+            )
+        );
+
+        plan.ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal(
+                "relationshipAuthorization_0_0_schoolId_2",
+                "ClaimEducationOrganizationIds_0",
+                "ClaimEducationOrganizationIds_1"
+            );
+        plan.ProposedValueParametersInOrder.Should()
+            .ContainSingle()
+            .Which.ParameterName.Should()
+            .Be("relationshipAuthorization_0_0_schoolId_2");
+        plan.AuthorizationSql.Should()
+            .Contain("CAST(CONCAT('AUTH1 - ', (SELECT [Payload] FROM failure_payload)) AS INT)");
+        plan.AuthorizationSql.Should()
+            .Contain("CASE WHEN @relationshipAuthorization_0_0_schoolId_2 IS NULL THEN 'p' ELSE 'n' END");
+        plan.AuthorizationSql.Should()
+            .Contain("[TargetEducationOrganizationId] = @relationshipAuthorization_0_0_schoolId_2");
+        plan.AuthorizationSql.Should()
+            .Contain("IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1)");
+        plan.AuthorizationSql.Should().NotContain("@DocumentId");
+    }
+
+    [Test]
+    public void It_should_reject_mixed_stored_and_proposed_check_batches()
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            0,
+                            0,
+                            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                        ),
+                        CreateProposedCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            1,
+                            1,
+                            CreateSubject(
+                                "LocalEducationAgencyId",
+                                "$.localEducationAgencyReference.localEducationAgencyId"
+                            )
+                        ),
+                    ],
+                    parameterization,
+                    10
+                )
+            );
+
+        compile.Should().Throw<ArgumentException>().WithMessage("*all stored-value or all proposed-value*");
+    }
+
     private static IReadOnlyList<long> CreateClaimEducationOrganizationIds(int count)
     {
         long[] claimEducationOrganizationIds = new long[count];
@@ -478,6 +671,45 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
                 new DbColumnName("DocumentId")
             )
         );
+
+    private static RelationshipAuthorizationCheckSpec CreateProposedCheckSpec(
+        RelationshipAuthorizationHierarchyDirection direction,
+        int configuredStrategyIndex,
+        int relationshipLocalOrder,
+        params RelationshipAuthorizationSubject[] subjects
+    )
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+
+        return new RelationshipAuthorizationCheckSpec(
+            new ConfiguredAuthorizationStrategy(
+                direction is RelationshipAuthorizationHierarchyDirection.Normal
+                    ? AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    : AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                configuredStrategyIndex
+            ),
+            relationshipLocalOrder,
+            direction,
+            RelationshipAuthorizationValueSource.Proposed,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
+            subjects,
+            new RelationshipAuthorizationCheckTarget.Proposed(
+                rootTable,
+                [
+                    .. subjects.Select(
+                        static (subject, bindingIndex) =>
+                            new RelationshipAuthorizationProposedValueBinding(
+                                subject.Table,
+                                subject.Column,
+                                bindingIndex,
+                                subject.Column.Value,
+                                PlanNamingConventions.CamelCaseFirstCharacter(subject.Column.Value)
+                            )
+                    ),
+                ]
+            )
+        );
+    }
 
     private static RelationshipAuthorizationSubject CreateSubject(string columnName, string jsonPath) =>
         new(

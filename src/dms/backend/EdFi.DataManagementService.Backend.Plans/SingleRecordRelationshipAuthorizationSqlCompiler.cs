@@ -10,7 +10,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Compiles stored-value relationship authorization SQL for one already-resolved root document.
+/// Compiles relationship authorization SQL for one stored or proposed root record.
 /// </summary>
 public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect dialect)
 {
@@ -27,11 +27,19 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     private const string PayloadColumn = "Payload";
     private const string AuthorizationResultColumn = "AuthorizationResult";
     private const string ContentVersionColumn = "ContentVersion";
+    private const string ProposedValueParameterPrefix = "relationshipAuthorization";
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
+    private static readonly string[] _defaultReservedParameterNames = ["documentUuid", "resourceKeyId"];
 
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+
+    private sealed record NormalizedSqlSpec(
+        SingleRecordRelationshipAuthorizationSqlSpec Spec,
+        RelationshipAuthorizationCheckTarget CheckTarget,
+        IReadOnlyList<RelationshipAuthorizationProposedValueSqlParameter> ProposedValueParametersInOrder
+    );
 
     public SingleRecordRelationshipAuthorizationSqlPlan Compile(
         SingleRecordRelationshipAuthorizationSqlSpec spec
@@ -40,19 +48,16 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         ArgumentNullException.ThrowIfNull(spec);
 
         var normalizedSpec = NormalizeSpec(spec);
-        var storedTarget = (RelationshipAuthorizationCheckTarget.Stored)
-            normalizedSpec.CheckSpecs[0].CheckTarget;
         var parametersInOrder = BuildParametersInOrder(normalizedSpec);
 
         return new SingleRecordRelationshipAuthorizationSqlPlan(
-            BuildSql(normalizedSpec, storedTarget),
-            parametersInOrder
+            BuildSql(normalizedSpec),
+            parametersInOrder,
+            normalizedSpec.ProposedValueParametersInOrder
         );
     }
 
-    private SingleRecordRelationshipAuthorizationSqlSpec NormalizeSpec(
-        SingleRecordRelationshipAuthorizationSqlSpec spec
-    )
+    private NormalizedSqlSpec NormalizeSpec(SingleRecordRelationshipAuthorizationSqlSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec.CheckSpecs);
         ArgumentNullException.ThrowIfNull(spec.ClaimEducationOrganizationIdParameterization);
@@ -78,41 +83,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             );
         }
 
-        var storedTargets = spec
-            .CheckSpecs.Select(static checkSpec => checkSpec.CheckTarget)
-            .OfType<RelationshipAuthorizationCheckTarget.Stored>()
-            .ToArray();
-
-        if (
-            storedTargets.Length != spec.CheckSpecs.Count
-            || spec.CheckSpecs.Any(static checkSpec =>
-                checkSpec.ValueSource is not RelationshipAuthorizationValueSource.Stored
-            )
-        )
-        {
-            throw new ArgumentException(
-                "Single-record relationship authorization supports only stored-value check specs.",
-                nameof(spec)
-            );
-        }
-
-        var rootTarget = storedTargets[0];
-
-        if (
-            Array.Exists(
-                storedTargets,
-                target =>
-                    !target.RootTable.Equals(rootTarget.RootTable)
-                    || !target.DocumentIdColumn.Equals(rootTarget.DocumentIdColumn)
-            )
-        )
-        {
-            throw new ArgumentException(
-                "Single-record relationship authorization check specs must share one root target.",
-                nameof(spec)
-            );
-        }
-
         if (spec.CheckSpecs.Any(static checkSpec => checkSpec.Subjects.Count == 0))
         {
             throw new ArgumentException(
@@ -121,35 +91,182 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             );
         }
 
+        var rootTarget = NormalizeCheckTargets(spec);
+
         var mismatchedSubject = spec
             .CheckSpecs.SelectMany(static checkSpec => checkSpec.Subjects)
-            .FirstOrDefault(subject => !subject.Table.Equals(rootTarget.RootTable));
+            .FirstOrDefault(subject => !subject.Table.Equals(GetRootTable(rootTarget)));
 
         if (mismatchedSubject is not null)
         {
             throw new ArgumentException(
-                $"Authorization subject table '{mismatchedSubject.Table}' does not match root table '{rootTarget.RootTable}'.",
+                $"Authorization subject table '{mismatchedSubject.Table}' does not match root table '{GetRootTable(rootTarget)}'.",
                 nameof(spec)
             );
         }
 
         ValidateAuthorizationClaimParameterization(spec.ClaimEducationOrganizationIdParameterization);
-        ValidateParameterNameCollisions(spec);
+        var proposedValueParametersInOrder =
+            rootTarget is RelationshipAuthorizationCheckTarget.Proposed
+                ? BuildProposedValueParametersInOrder(spec)
+                : [];
+        ValidateParameterNameCollisions(spec, proposedValueParametersInOrder);
 
-        return spec;
+        return new NormalizedSqlSpec(spec, rootTarget, proposedValueParametersInOrder);
     }
 
-    private static IReadOnlyList<QuerySqlParameter> BuildParametersInOrder(
+    private static RelationshipAuthorizationCheckTarget NormalizeCheckTargets(
         SingleRecordRelationshipAuthorizationSqlSpec spec
     )
     {
-        List<QuerySqlParameter> parameters =
-        [
-            new QuerySqlParameter(QuerySqlParameterRole.Filter, spec.DocumentIdParameterName),
-        ];
+        var storedTargets = spec
+            .CheckSpecs.Select(static checkSpec => checkSpec.CheckTarget)
+            .OfType<RelationshipAuthorizationCheckTarget.Stored>()
+            .ToArray();
+        var proposedTargets = spec
+            .CheckSpecs.Select(static checkSpec => checkSpec.CheckTarget)
+            .OfType<RelationshipAuthorizationCheckTarget.Proposed>()
+            .ToArray();
+
+        if (
+            storedTargets.Length == spec.CheckSpecs.Count
+            && spec.CheckSpecs.All(static checkSpec =>
+                checkSpec.ValueSource is RelationshipAuthorizationValueSource.Stored
+            )
+        )
+        {
+            return NormalizeStoredTargets(storedTargets);
+        }
+
+        if (
+            proposedTargets.Length == spec.CheckSpecs.Count
+            && spec.CheckSpecs.All(static checkSpec =>
+                checkSpec.ValueSource is RelationshipAuthorizationValueSource.Proposed
+            )
+        )
+        {
+            return NormalizeProposedTargets(spec, proposedTargets);
+        }
+
+        throw new ArgumentException(
+            "Single-record relationship authorization check specs must be all stored-value or all proposed-value; mixed batches are not supported.",
+            nameof(spec)
+        );
+    }
+
+    private static RelationshipAuthorizationCheckTarget.Stored NormalizeStoredTargets(
+        IReadOnlyList<RelationshipAuthorizationCheckTarget.Stored> storedTargets
+    )
+    {
+        var rootTarget = storedTargets[0];
+
+        if (
+            storedTargets.Any(target =>
+                !target.RootTable.Equals(rootTarget.RootTable)
+                || !target.DocumentIdColumn.Equals(rootTarget.DocumentIdColumn)
+            )
+        )
+        {
+            throw new ArgumentException(
+                "Single-record relationship authorization stored check specs must share one root target.",
+                nameof(storedTargets)
+            );
+        }
+
+        return rootTarget;
+    }
+
+    private static RelationshipAuthorizationCheckTarget.Proposed NormalizeProposedTargets(
+        SingleRecordRelationshipAuthorizationSqlSpec spec,
+        IReadOnlyList<RelationshipAuthorizationCheckTarget.Proposed> proposedTargets
+    )
+    {
+        var rootTarget = proposedTargets[0];
+
+        if (proposedTargets.Any(target => !target.RootTable.Equals(rootTarget.RootTable)))
+        {
+            throw new ArgumentException(
+                "Single-record relationship authorization proposed check specs must share one root target.",
+                nameof(spec)
+            );
+        }
+
+        for (var strategyOrdinal = 0; strategyOrdinal < spec.CheckSpecs.Count; strategyOrdinal++)
+        {
+            var checkSpec = spec.CheckSpecs[strategyOrdinal];
+            var proposedTarget = proposedTargets[strategyOrdinal];
+
+            if (proposedTarget.SubjectBindingsInOrder.Count != checkSpec.Subjects.Count)
+            {
+                throw new ArgumentException(
+                    $"Proposed relationship authorization check spec '{strategyOrdinal}' has {checkSpec.Subjects.Count} subjects but {proposedTarget.SubjectBindingsInOrder.Count} root bindings.",
+                    nameof(spec)
+                );
+            }
+
+            for (var subjectOrdinal = 0; subjectOrdinal < checkSpec.Subjects.Count; subjectOrdinal++)
+            {
+                var subject = checkSpec.Subjects[subjectOrdinal];
+                var binding = proposedTarget.SubjectBindingsInOrder[subjectOrdinal];
+
+                if (!binding.Table.Equals(rootTarget.RootTable))
+                {
+                    throw new ArgumentException(
+                        $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' targets table '{binding.Table}', but the root target is '{rootTarget.RootTable}'.",
+                        nameof(spec)
+                    );
+                }
+
+                if (!binding.Column.Equals(subject.Column))
+                {
+                    throw new ArgumentException(
+                        $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' targets column '{binding.Column.Value}', but the subject targets column '{subject.Column.Value}'.",
+                        nameof(spec)
+                    );
+                }
+
+                ArgumentException.ThrowIfNullOrWhiteSpace(binding.ParameterSeed);
+            }
+        }
+
+        return rootTarget;
+    }
+
+    private static DbTableName GetRootTable(RelationshipAuthorizationCheckTarget target) =>
+        target switch
+        {
+            RelationshipAuthorizationCheckTarget.Stored stored => stored.RootTable,
+            RelationshipAuthorizationCheckTarget.Proposed proposed => proposed.RootTable,
+            _ => throw new ArgumentOutOfRangeException(nameof(target), target, null),
+        };
+
+    private static IReadOnlyList<QuerySqlParameter> BuildParametersInOrder(NormalizedSqlSpec normalizedSpec)
+    {
+        List<QuerySqlParameter> parameters = [];
+
+        if (normalizedSpec.CheckTarget is RelationshipAuthorizationCheckTarget.Stored)
+        {
+            parameters.Add(
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    normalizedSpec.Spec.DocumentIdParameterName
+                )
+            );
+        }
 
         parameters.AddRange(
-            BuildAuthorizationParametersInOrder(spec.ClaimEducationOrganizationIdParameterization)
+            normalizedSpec.ProposedValueParametersInOrder.Select(
+                static proposedParameter => new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    proposedParameter.ParameterName
+                )
+            )
+        );
+
+        parameters.AddRange(
+            BuildAuthorizationParametersInOrder(
+                normalizedSpec.Spec.ClaimEducationOrganizationIdParameterization
+            )
         );
 
         return parameters;
@@ -192,7 +309,127 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             ),
         };
 
-    private string BuildSql(
+    private static IReadOnlyList<RelationshipAuthorizationProposedValueSqlParameter> BuildProposedValueParametersInOrder(
+        SingleRecordRelationshipAuthorizationSqlSpec spec
+    )
+    {
+        var usedParameterNames = BuildReservedParameterNameSet(spec);
+        List<RelationshipAuthorizationProposedValueSqlParameter> proposedValueParameters = [];
+
+        for (var strategyOrdinal = 0; strategyOrdinal < spec.CheckSpecs.Count; strategyOrdinal++)
+        {
+            var proposedTarget = (RelationshipAuthorizationCheckTarget.Proposed)
+                spec.CheckSpecs[strategyOrdinal].CheckTarget;
+
+            for (
+                var subjectOrdinal = 0;
+                subjectOrdinal < proposedTarget.SubjectBindingsInOrder.Count;
+                subjectOrdinal++
+            )
+            {
+                var binding = proposedTarget.SubjectBindingsInOrder[subjectOrdinal];
+                var candidate = PlanNamingConventions.SanitizeBareParameterName(
+                    $"{ProposedValueParameterPrefix}_{strategyOrdinal}_{subjectOrdinal}_{binding.ParameterSeed}"
+                );
+                var parameterName = AllocateParameterName(candidate, usedParameterNames);
+
+                proposedValueParameters.Add(
+                    new RelationshipAuthorizationProposedValueSqlParameter(
+                        strategyOrdinal,
+                        subjectOrdinal,
+                        parameterName
+                    )
+                );
+            }
+        }
+
+        return proposedValueParameters;
+    }
+
+    private static HashSet<string> BuildReservedParameterNameSet(
+        SingleRecordRelationshipAuthorizationSqlSpec spec
+    )
+    {
+        HashSet<string> usedParameterNames = new(StringComparer.OrdinalIgnoreCase);
+
+        AddReservedParameterName(usedParameterNames, spec.DocumentIdParameterName);
+
+        foreach (var parameterName in _defaultReservedParameterNames)
+        {
+            AddReservedParameterName(usedParameterNames, parameterName);
+        }
+
+        foreach (var parameterName in spec.ReservedParameterNames ?? Array.Empty<string>())
+        {
+            AddReservedParameterName(usedParameterNames, parameterName);
+        }
+
+        AddReservedParameterName(
+            usedParameterNames,
+            spec.ClaimEducationOrganizationIdParameterization.BaseParameterName
+        );
+
+        foreach (var parameterName in spec.ClaimEducationOrganizationIdParameterization.ParameterNamesInOrder)
+        {
+            AddReservedParameterName(usedParameterNames, parameterName);
+        }
+
+        foreach (
+            var binding in spec
+                .CheckSpecs.Select(static checkSpec => checkSpec.CheckTarget)
+                .OfType<RelationshipAuthorizationCheckTarget.Proposed>()
+                .SelectMany(static target => target.SubjectBindingsInOrder)
+        )
+        {
+            AddReservedParameterName(usedParameterNames, binding.ParameterSeed);
+        }
+
+        return usedParameterNames;
+    }
+
+    private static void AddReservedParameterName(HashSet<string> usedParameterNames, string parameterName)
+    {
+        PlanSqlWriterExtensions.ValidateBareParameterName(parameterName, nameof(parameterName));
+        usedParameterNames.Add(parameterName);
+    }
+
+    private static string AllocateParameterName(string candidate, HashSet<string> usedParameterNames)
+    {
+        if (usedParameterNames.Add(candidate))
+        {
+            return candidate;
+        }
+
+        var suffix = 2;
+        var nextCandidate = $"{candidate}_{suffix}";
+
+        while (!usedParameterNames.Add(nextCandidate))
+        {
+            suffix++;
+            nextCandidate = $"{candidate}_{suffix}";
+        }
+
+        return nextCandidate;
+    }
+
+    private string BuildSql(NormalizedSqlSpec normalizedSpec)
+    {
+        return normalizedSpec.CheckTarget switch
+        {
+            RelationshipAuthorizationCheckTarget.Stored storedTarget => BuildStoredSql(
+                normalizedSpec.Spec,
+                storedTarget
+            ),
+            RelationshipAuthorizationCheckTarget.Proposed => BuildProposedSql(normalizedSpec),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(normalizedSpec),
+                normalizedSpec.CheckTarget,
+                null
+            ),
+        };
+    }
+
+    private string BuildStoredSql(
         SingleRecordRelationshipAuthorizationSqlSpec spec,
         RelationshipAuthorizationCheckTarget.Stored storedTarget
     )
@@ -213,7 +450,28 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         writer.AppendLine(",");
         AppendFailurePayloadCte(writer, spec.EmittedAuth1Index);
         writer.AppendLine();
-        AppendFinalSelect(writer, spec.CheckSpecs.Count);
+        AppendFinalSelect(writer, spec.CheckSpecs.Count, includeContentVersion: true, fromTarget: true);
+
+        return writer.ToString();
+    }
+
+    private string BuildProposedSql(NormalizedSqlSpec normalizedSpec)
+    {
+        var writer = new SqlWriter(_sqlDialect);
+
+        writer.AppendLine("WITH");
+        AppendProposedSubjectFailuresCte(writer, normalizedSpec);
+        writer.AppendLine(",");
+        AppendFailedSubjectsCte(writer);
+        writer.AppendLine(",");
+        AppendFailurePayloadCte(writer, normalizedSpec.Spec.EmittedAuth1Index);
+        writer.AppendLine();
+        AppendFinalSelect(
+            writer,
+            normalizedSpec.Spec.CheckSpecs.Count,
+            includeContentVersion: false,
+            fromTarget: false
+        );
 
         return writer.ToString();
     }
@@ -340,7 +598,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             AppendAuthorizationExistsSql(
                 writer,
                 checkSpec,
-                subject.Column,
+                subjectValueWriter => AppendTargetColumn(subjectValueWriter, subject.Column),
                 authorizationClaimParameterization,
                 authAlias
             );
@@ -351,10 +609,99 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         writer.AppendLine($"FROM {TargetCte}");
     }
 
+    private static void AppendProposedSubjectFailuresCte(SqlWriter writer, NormalizedSqlSpec normalizedSpec)
+    {
+        writer
+            .Append($"{SubjectFailuresCte} (")
+            .AppendQuoted(StrategyOrdinalColumn)
+            .Append(", ")
+            .AppendQuoted(SubjectOrdinalColumn)
+            .Append(", ")
+            .AppendQuoted(FailureKindColumn)
+            .Append(", ")
+            .AppendQuoted(FailedColumn)
+            .AppendLine(") AS (");
+
+        using (writer.Indent())
+        {
+            var emittedSubjectIndex = 0;
+
+            for (
+                var strategyOrdinal = 0;
+                strategyOrdinal < normalizedSpec.Spec.CheckSpecs.Count;
+                strategyOrdinal++
+            )
+            {
+                var checkSpec = normalizedSpec.Spec.CheckSpecs[strategyOrdinal];
+
+                for (var subjectOrdinal = 0; subjectOrdinal < checkSpec.Subjects.Count; subjectOrdinal++)
+                {
+                    if (emittedSubjectIndex > 0)
+                    {
+                        writer.AppendLine("UNION ALL");
+                    }
+
+                    var proposedValueParameter = normalizedSpec.ProposedValueParametersInOrder[
+                        emittedSubjectIndex
+                    ];
+
+                    AppendProposedSubjectFailureSelect(
+                        writer,
+                        strategyOrdinal,
+                        subjectOrdinal,
+                        checkSpec,
+                        proposedValueParameter.ParameterName,
+                        normalizedSpec.Spec.ClaimEducationOrganizationIdParameterization
+                    );
+                    emittedSubjectIndex++;
+                }
+            }
+        }
+
+        writer.Append(")");
+    }
+
+    private static void AppendProposedSubjectFailureSelect(
+        SqlWriter writer,
+        int strategyOrdinal,
+        int subjectOrdinal,
+        RelationshipAuthorizationCheckSpec checkSpec,
+        string proposedValueParameterName,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        var authAlias = $"a{strategyOrdinal}_{subjectOrdinal}";
+
+        writer.AppendLine("SELECT");
+
+        using (writer.Indent())
+        {
+            writer.AppendLine($"{strategyOrdinal},");
+            writer.AppendLine($"{subjectOrdinal},");
+            writer.Append("CASE WHEN ");
+            writer.AppendParameter(proposedValueParameterName);
+            writer.Append(" IS NULL THEN 'p' ELSE 'n' END,");
+            writer.AppendLine();
+            writer.Append("CASE WHEN ");
+            writer.AppendParameter(proposedValueParameterName);
+            writer.Append(" IS NULL OR NOT EXISTS (");
+            AppendAuthorizationExistsSql(
+                writer,
+                checkSpec,
+                subjectValueWriter => subjectValueWriter.AppendParameter(proposedValueParameterName),
+                authorizationClaimParameterization,
+                authAlias
+            );
+            writer.AppendLine(") THEN 1 ELSE 0 END");
+        }
+
+        writer.AppendLine();
+    }
+
     private static void AppendAuthorizationExistsSql(
         SqlWriter writer,
         RelationshipAuthorizationCheckSpec checkSpec,
-        DbColumnName subjectColumn,
+        Action<SqlWriter> appendSubjectValue,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
@@ -364,7 +711,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         writer.Append($" {authAlias} WHERE {authAlias}.");
         writer.AppendQuoted(checkSpec.AuthObject.SubjectValueColumn.Value);
         writer.Append(" = ");
-        AppendTargetColumn(writer, subjectColumn);
+        appendSubjectValue(writer);
         writer.Append($" AND {authAlias}.");
         writer.AppendQuoted(checkSpec.AuthObject.ClaimEducationOrganizationIdColumn.Value);
         AppendClaimFilterSql(writer, authorizationClaimParameterization);
@@ -416,7 +763,12 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         writer.Append(")");
     }
 
-    private void AppendFinalSelect(SqlWriter writer, int strategyCount)
+    private void AppendFinalSelect(
+        SqlWriter writer,
+        int strategyCount,
+        bool includeContentVersion,
+        bool fromTarget
+    )
     {
         writer.AppendLine("SELECT CASE");
 
@@ -432,10 +784,22 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
         writer.Append("END AS ");
         writer.AppendQuoted(AuthorizationResultColumn);
-        writer.AppendLine(",");
-        writer.AppendQuoted(ContentVersionColumn);
+
+        if (includeContentVersion)
+        {
+            writer.AppendLine(",");
+            writer.AppendQuoted(ContentVersionColumn);
+        }
+
         writer.AppendLine();
-        writer.AppendLine($"FROM {TargetCte};");
+
+        if (fromTarget)
+        {
+            writer.AppendLine($"FROM {TargetCte};");
+            return;
+        }
+
+        writer.AppendLine(";");
     }
 
     private static void AppendPostgresqlFailurePayloadSql(SqlWriter writer, int emittedAuth1Index)
@@ -641,8 +1005,19 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         }
     }
 
-    private static void ValidateParameterNameCollisions(SingleRecordRelationshipAuthorizationSqlSpec spec)
+    private static void ValidateParameterNameCollisions(
+        SingleRecordRelationshipAuthorizationSqlSpec spec,
+        IReadOnlyList<RelationshipAuthorizationProposedValueSqlParameter> proposedValueParametersInOrder
+    )
     {
+        foreach (var parameterName in spec.ReservedParameterNames ?? Array.Empty<string>())
+        {
+            PlanSqlWriterExtensions.ValidateBareParameterName(
+                parameterName,
+                nameof(SingleRecordRelationshipAuthorizationSqlSpec.ReservedParameterNames)
+            );
+        }
+
         if (
             spec.ClaimEducationOrganizationIdParameterization.ParameterNamesInOrder.Contains(
                 spec.DocumentIdParameterName,
@@ -654,6 +1029,40 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
                 "DocumentId parameter name must not collide with claim EdOrg authorization parameter names.",
                 nameof(spec)
             );
+        }
+
+        var duplicateProposedParameter = proposedValueParametersInOrder
+            .GroupBy(static parameter => parameter.ParameterName, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(static group => group.Count() > 1);
+
+        if (duplicateProposedParameter is not null)
+        {
+            throw new ArgumentException(
+                $"Proposed relationship authorization parameter name '{duplicateProposedParameter.Key}' is allocated more than once.",
+                nameof(spec)
+            );
+        }
+
+        var reservedParameterNames = BuildReservedParameterNameSet(spec);
+
+        foreach (
+            var proposedParameterName in proposedValueParametersInOrder.Select(static parameter =>
+                parameter.ParameterName
+            )
+        )
+        {
+            PlanSqlWriterExtensions.ValidateBareParameterName(
+                proposedParameterName,
+                nameof(proposedValueParametersInOrder)
+            );
+
+            if (reservedParameterNames.Contains(proposedParameterName))
+            {
+                throw new ArgumentException(
+                    $"Proposed relationship authorization parameter name '{proposedParameterName}' collides with a reserved parameter name.",
+                    nameof(spec)
+                );
+            }
         }
     }
 
