@@ -63,8 +63,11 @@ public class NamedAuthorizationServiceFactoryTests
             handlerProvider = new NamedAuthorizationServiceFactory();
         }
 
-        [Test]
-        public void Should_Return_NoFurtherAuthorizationRequiredValidator()
+        [TestCase(OperationType.Get)]
+        [TestCase(OperationType.Upsert)]
+        [TestCase(OperationType.Update)]
+        [TestCase(OperationType.Delete)]
+        public async Task Should_Return_NoFurtherAuthorizationRequiredValidator(OperationType operationType)
         {
             var handler =
                 handlerProvider!.GetByName<IAuthorizationValidator>(
@@ -72,14 +75,12 @@ public class NamedAuthorizationServiceFactoryTests
                     serviceProvider!
                 ) as NoFurtherAuthorizationRequiredValidator;
             handler.Should().NotBeNull();
-            var authResult = handler!
-                .ValidateAuthorization(
-                    new DocumentSecurityElements([], [], [], [], []),
-                    [],
-                    [],
-                    OperationType.Get
-                )
-                .Result;
+            var authResult = await handler!.ValidateAuthorization(
+                new DocumentSecurityElements([], [], [], [], []),
+                [],
+                [],
+                operationType
+            );
             authResult.Should().NotBeNull();
             authResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
         }
