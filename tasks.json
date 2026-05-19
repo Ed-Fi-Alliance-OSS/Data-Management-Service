@@ -1,0 +1,226 @@
+[
+  {
+    "category": "contract",
+    "description": "Extend the POST/upsert backend-to-handler result contract so Slice 3 authorization outcomes are explicit instead of flowing through string-only not-authorized results, unknown failures, or exceptions.",
+    "acceptance-criteria": [
+      "Upsert results model relationship-not-authorized with the external RelationshipAuthorizationFailure DTO, proposed value-source metadata, and transitional error messages.",
+      "Upsert results model security-configuration failure separately from 403 authorization denial.",
+      "Upsert results model temporary not-implemented/fail-closed staging for known-but-not-enabled strategies, with reason metadata that can distinguish strategy-not-enabled from existing-resource POST-as-update staging.",
+      "The POST handler maps relationship-not-authorized to 403, known-but-not-enabled/existing-resource staging to 501, and security-configuration failure to the canonical authorization configuration 500 response.",
+      "Existing POST success, reference failure, validation failure, identity conflict, ETag mismatch, profile data policy, and unknown-failure mappings remain unchanged.",
+      "The result contract does not expose Backend.Plans types across the Core.External boundary."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpsertResult.cs for explicit Slice 3 result variants.",
+      "Review src/dms/core/EdFi.DataManagementService.Core/Handler/UpsertHandler.cs for one-to-one handler mappings for the new result variants.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter UpsertHandler",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository"
+    ],
+    "completed": false
+  },
+  {
+    "category": "repository-orchestration",
+    "description": "Add POST operation-neutral relationship authorization planning after route/resource/action and token context are known, and before request-dependent validation, reference resolution, or target identity work in the relational document store repository.",
+    "acceptance-criteria": [
+      "Relational POST adapts AuthorizationStrategyEvaluator inputs to configured strategy metadata and calls proposed-value relationship planning once for the route/resource/action and token context.",
+      "NoAuthorizationRequired and NoFurtherAuthorizationRequired continue through the normal write path without relationship checks.",
+      "Security-configuration failures from planning return the new upsert security-configuration result before request-dependent POST validation, reference resolution, descriptor resolution, target lookup, or write executor execution, and win over known-but-not-enabled staging when both are present.",
+      "Any effective NamespaceBased, OwnershipBased, People relationship, or custom view-based known-but-not-enabled strategy returns the temporary not-implemented result before request-dependent POST validation, reference resolution, descriptor resolution, target lookup, or write executor execution, whether it appears alone or mixed with supported EdOrg strategies.",
+      "Empty normalized EdOrg claims for supported EdOrg relationship POST return relationship-not-authorized/403 with no-claims metadata before request-dependent POST validation, reference resolution, descriptor resolution, target lookup, or write executor execution.",
+      "The preflight keeps NoFurtherAuthorizationRequired as a no-op and does not partially authorize when unsupported known strategies are also configured."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs for POST planning order before ExecuteWriteGuardRails invokes request-dependent work.",
+      "Review unit tests proving request-dependent validators, reference resolver, descriptor resolver, target lookup service, and write executor are not called for security-configuration, known-but-not-enabled, and empty-claims short-circuits.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner"
+    ],
+    "completed": false
+  },
+  {
+    "category": "proposed-value-extraction",
+    "description": "Build the runtime extractor that reads proposed EdOrg authorization subjects from the finalized root RowBuffer produced by the write path.",
+    "acceptance-criteria": [
+      "Proposed authorization values are read by RelationshipAuthorizationProposedValueBinding.BindingIndex from the finalized root RootWriteRowBuffer, not from raw JSON.",
+      "Writable profile POST uses the effective ProfileAppliedWriteRequest.WritableRequestBody and any projected ProfileAppliedWriteContext before flattening and extraction.",
+      "Extraction occurs after reference resolution, descriptor resolution, key-unification/precomputed binding population, write-shape filtering, and application-computed defaults that are present in the row buffer.",
+      "Database-generated defaults are not treated as a source for authorization-required proposed subjects.",
+      "Missing, unresolved, or SQL-null proposed EdOrg subject values produce relationship-not-authorized metadata with ProposedValueMissing/element-required semantics and do not compose authorization SQL.",
+      "Multiple subjects within one relationship strategy remain AND semantics and multiple strategies remain OR semantics in the extracted runtime check input.",
+      "Extraction preserves configured strategy indexes, relationship-local order, subject ordinals, readable securable names, JSON paths, root table/column bindings, auth object metadata, and normalized EdOrg claim context for Slice 6."
+    ],
+    "steps-to-verify": [
+      "Review the extractor implementation near the relational write executor or supporting backend helper for row-buffer-based value access.",
+      "Review unit tests where raw request JSON differs from the profile-applied writable body and authorization values come from the finalized row buffer.",
+      "Review unit tests for missing/null proposed values returning relationship element-required metadata before SQL execution.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter Default_Relational_Write_Executor",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sql-generation",
+    "description": "Extend relationship authorization SQL generation so proposed-value EdOrg-only checks can be composed with create persistence for PostgreSQL and SQL Server.",
+    "acceptance-criteria": [
+      "The compiler accepts RelationshipAuthorizationCheckTarget.Proposed and rejects mixed stored/proposed check batches for Slice 3.",
+      "Proposed EdOrg values are bound as SQL parameters allocated without collisions against claim EdOrg parameters, document insert parameters, and root insert parameters.",
+      "Token EdOrg IDs are always parameterized through the existing ClaimEducationOrganizationIds contract and are never inlined into SQL.",
+      "Normal RelationshipsWithEdOrgsOnly uses token claims against SourceEducationOrganizationId and proposed values against TargetEducationOrganizationId.",
+      "RelationshipsWithEdOrgsOnlyInverted swaps SourceEducationOrganizationId and TargetEducationOrganizationId filtering for proposed values.",
+      "Multiple strategies OR together, duplicate configured strategies remain distinct, and multiple proposed subjects within one strategy AND together.",
+      "Failed proposed OR groups throw the shared versioned AUTH1 failure-set payload with emitted check index, strategy ordinal, subject ordinal, and compact failure-kind codes only.",
+      "If any OR strategy succeeds, failures from other strategies are not surfaced.",
+      "PostgreSQL uses the established dms.throw_error AUTH1 mechanism and SQL Server uses the established CAST('AUTH1 - ...' AS INT) abort pattern.",
+      "Generated operation-specific proposed authorization SQL is not cached; only reusable operation-neutral metadata may be cached by the existing effective schema, mapping set, resource, strategy, and securable element boundaries."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs or its replacement for proposed-target SQL generation.",
+      "Review SQL golden/assertion tests for PostgreSQL and SQL Server normal, inverted, OR, AND, duplicate strategy, and parameter collision cases.",
+      "Review AUTH1 payload parser tests for proposed-value failure-kind codes and malformed payload handling.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorization",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter Auth1"
+    ],
+    "completed": false
+  },
+  {
+    "category": "write-executor",
+    "description": "Integrate proposed-value relationship authorization into the POST create-new write executor path after flattening and before create persistence.",
+    "acceptance-criteria": [
+      "POST create-new evaluates proposed-value relationship authorization after reference and descriptor resolution and after the target is resolved as create-new.",
+      "Unauthorized proposed values return the new relationship-not-authorized upsert result before dms.Document insert, root insert, child inserts, referential identity maintenance, update-tracking/journal writes, or committed-response readback.",
+      "Reference-resolution failures remain reference-resolution results and are not converted into authorization denials unless the earlier empty-claims short-circuit already stopped the request.",
+      "Security-configuration and known-but-not-enabled planning failures remain operation-neutral preflight outcomes and do not run executor authorization.",
+      "The create-new authorization check and dms.Document insert execute in the same provider command/batch inside the request-scoped write transaction, with AUTH1 before the document insert.",
+      "Authorization failure rolls back the write session and returns the mapped relationship failure DTO without running a post-failure database lookup.",
+      "Authorized create-new continues through existing merge, root/child persistence, committed-response readback, and InsertSuccess behavior.",
+      "Descriptor writes remain outside the resource relationship authorization path for this slice."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs for authorization placement after create-new target resolution and before persistence.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs or the chosen persister boundary for same-batch AUTH1-before-dms.Document insertion.",
+      "Review tests proving the persister command composes AUTH1 before dms.Document insertion, aborts without committed create-side artifacts when proposed authorization fails, and does not run committed-response readback after the failure.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter Default_Relational_Write_Executor",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalWriteNoProfilePersister"
+    ],
+    "completed": false
+  },
+  {
+    "category": "post-precedence",
+    "description": "Implement Slice 3 POST precedence for create-new If-Match and existing-resource POST-as-update staging.",
+    "acceptance-criteria": [
+      "POST create-new with If-Match and unauthorized proposed values returns relationship-not-authorized/403 before exposing the create-new 412 response.",
+      "POST create-new with If-Match and authorized proposed values returns the existing upsert ETag mismatch/412 result and inserts no rows.",
+      "POST requests that resolve to an existing document run proposed-value relationship authorization before exposing the temporary POST-as-update not-implemented/fail-closed result.",
+      "Existing-resource POST with failed proposed authorization returns relationship-not-authorized/403, so unauthorized callers cannot distinguish existing-resource POST from create-new POST by status code.",
+      "Existing-resource POST with successful proposed authorization returns the explicit temporary not-implemented result and does not execute stored-value authorization, update authorization, no-op logic, or mutation behavior.",
+      "Earlier operation-neutral security-configuration and known-but-not-enabled planning failures retain precedence over request-dependent target work."
+    ],
+    "steps-to-verify": [
+      "Review DefaultRelationalWriteExecutor ordering for POST If-Match so create-new 412 is evaluated after proposed authorization when required.",
+      "Review repository/executor tests for create-new unauthorized+If-Match, create-new authorized+If-Match, existing-resource unauthorized, and existing-resource authorized staging.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter IfMatch",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter Post"
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add focused unit coverage for POST proposed-value relationship authorization planning, extraction, orchestration, SQL placement, result mapping, and failure precedence.",
+    "acceptance-criteria": [
+      "Planner tests cover proposed-value normal and inverted EdOrg-only strategies, duplicate strategies, OR ordering, AND subjects, NoFurtherAuthorizationRequired, empty claims, known-but-not-enabled strategies, and security-configuration failures.",
+      "SQL/compiler tests prove proposed authorization SQL appears before dms.Document insertion in the composed create command.",
+      "Extractor/orchestration tests prove missing/null proposed subjects return ProposedValueMissing metadata without composing SQL.",
+      "Repository tests prove preflight security-configuration, known-but-not-enabled, and no-claims outcomes happen before reference resolution or target identity lookup.",
+      "Write executor tests prove reference-resolution failures and authorization failures remain distinct when no empty-claims short-circuit applies.",
+      "Write executor tests prove existing-resource POST-as-update staging is hidden by failed proposed authorization and exposed only after proposed authorization succeeds.",
+      "Write executor tests prove create-new If-Match precedence for unauthorized and authorized proposed values.",
+      "Profile-aware unit coverage proves proposed authorization reads finalized row-buffer values derived from ProfileAppliedWriteRequest.WritableRequestBody."
+    ],
+    "steps-to-verify": [
+      "Review new and updated NUnit tests for Given_ class naming, Setup arrange/act style, It_ test names, FluentAssertions assertions, and FakeItEasy fakes where needed.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter Upsert"
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-integration",
+    "description": "Add PostgreSQL backend integration coverage for EdOrg-only POST create-new proposed-value authorization.",
+    "acceptance-criteria": [
+      "Authorized POST create-new for a resource using RelationshipsWithEdOrgsOnly inserts dms.Document and expected root/resource rows.",
+      "Unauthorized POST create-new returns 403 and inserts no dms.Document row, no resource root row, no child rows, no dms.ReferentialIdentity row for the attempted identity, no dms.DocumentChangeEvent/update-tracking row, and no dms.Document row carrying an ownership stamp for the attempted resource.",
+      "Reference-resolution failure returns the existing reference-resolution response and does not masquerade as authorization denial when no empty-claims short-circuit applies.",
+      "Authorization failure after successful reference resolution still prevents all create-side artifacts.",
+      "RelationshipsWithEdOrgsOnlyInverted proves proposed-value Source/Target hierarchy filtering is swapped.",
+      "Create-new If-Match with failed proposed authorization returns 403 and inserts no rows.",
+      "Create-new If-Match with successful proposed authorization returns 412 and inserts no rows.",
+      "Provider assertions do not require global sequences or identity generators to avoid advancing."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration for focused POST relationship authorization tests and fixture setup.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter RelationalPost",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter Authorization"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-integration",
+    "description": "Add SQL Server backend integration coverage for EdOrg-only POST create-new proposed-value authorization.",
+    "acceptance-criteria": [
+      "Authorized POST create-new for a resource using RelationshipsWithEdOrgsOnly inserts dms.Document and expected root/resource rows.",
+      "Unauthorized POST create-new returns 403 and inserts no dms.Document row, no resource root row, no child rows, no dms.ReferentialIdentity row for the attempted identity, no dms.DocumentChangeEvent/update-tracking row, and no dms.Document row carrying an ownership stamp for the attempted resource.",
+      "Reference-resolution failure returns the existing reference-resolution response and does not masquerade as authorization denial when no empty-claims short-circuit applies.",
+      "Authorization failure after successful reference resolution still prevents all create-side artifacts.",
+      "RelationshipsWithEdOrgsOnlyInverted proves proposed-value Source/Target hierarchy filtering is swapped.",
+      "SQL Server scalar claim-EdOrg binding below 2000 IDs and dms.BigIntTable TVP binding at 2000 or more IDs remain compatible with proposed authorization checks.",
+      "Create-new If-Match with failed proposed authorization returns 403 and inserts no rows.",
+      "Create-new If-Match with successful proposed authorization returns 412 and inserts no rows.",
+      "Provider assertions do not require global sequences or identity generators to avoid advancing."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration for focused POST relationship authorization tests and fixture setup.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter RelationalPost",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter Authorization"
+    ],
+    "completed": false
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Add focused DMS E2E coverage with real claim-set/token wiring for EdOrg-only POST create-new authorization on the relational backend.",
+    "acceptance-criteria": [
+      "A @relational-backend scenario creates a resource through RelationshipsWithEdOrgsOnly when the caller has an authorized EdOrg claim.",
+      "A @relational-backend scenario denies POST create-new with 403 when the caller lacks the required EdOrg relationship.",
+      "The denied scenario uses the transitional Slice 3 relationship authorization response shape and avoids asserting final Slice 6 ProblemDetails wording.",
+      "The E2E data setup creates only relationship and EdOrg hierarchy data required for the focused POST create-new scenarios.",
+      "The E2E suite is placed under src/dms/tests/EdFi.DataManagementService.Tests.E2E and does not use the Instance Management E2E harness.",
+      "The feature tags are compatible with the existing relational backend CI tagging/sharding conventions."
+    ],
+    "steps-to-verify": [
+      "From src/dms/tests/EdFi.DataManagementService.Tests.E2E, run pwsh ./teardown-local-dms.ps1 and then pwsh ./setup-local-dms.ps1 before the local E2E run.",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=relational-backend&FullyQualifiedName~RelationshipsWithEdOrgsOnly\"",
+      "If the E2E run fails before API requests, inspect dms-local docker logs for environment/runtime issues before changing test expectations."
+    ],
+    "completed": false
+  },
+  {
+    "category": "regression-verification",
+    "description": "Run the focused Slice 3 verification set and format changed C# files after implementation.",
+    "acceptance-criteria": [
+      "All changed C# files under src/dms are formatted with csharpier.",
+      "Backend unit, plans unit, PostgreSQL integration, SQL Server integration, and focused E2E tests for Slice 3 pass or have documented environmental blockers.",
+      "Existing Slice 2 GET-by-id and DELETE relationship authorization tests continue to pass.",
+      "Existing write-path smoke tests for descriptors, profile writes, create/update ETag behavior, reference resolution, and guarded no-op continue to pass.",
+      "tasks.json remains valid JSON and completed values are updated only for tasks actually completed by the implementation pass."
+    ],
+    "steps-to-verify": [
+      "Run dotnet csharpier format src/dms",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"Authorization|RelationalWrite\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"Authorization|RelationalWrite\"",
+      "Run the focused @relational-backend E2E scenario added for Slice 3 after rebuilding the dms-local stack."
+    ],
+    "completed": false
+  }
+]
