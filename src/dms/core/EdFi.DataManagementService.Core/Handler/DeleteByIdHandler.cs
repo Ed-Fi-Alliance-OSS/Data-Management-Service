@@ -83,9 +83,33 @@ internal class DeleteByIdHandler(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(
                     traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: notAuthorized.ErrorMessages
+                    errors: notAuthorized.ErrorMessages,
+                    hints: notAuthorized.Hints
                 ),
                 Headers: []
+            ),
+            DeleteFailureRelationshipNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: notAuthorized.ErrorMessages,
+                    hints: notAuthorized.Hints
+                ),
+                Headers: []
+            ),
+            DeleteFailureNotImplemented failure => new FrontendResponse(
+                StatusCode: 501,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            DeleteFailureSecurityConfiguration failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: FailureResponse.ForSecurityConfiguration(
+                    requestInfo.FrontendRequest.TraceId,
+                    failure.Errors
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             DeleteFailureReference failure => new FrontendResponse(
                 StatusCode: 409,

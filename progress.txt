@@ -1,0 +1,5 @@
+Completed backend-contracts for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/02-edorg-only-get-by-id-and-delete.md
+Decisions: added Core.External relationship failure DTO, kept backend plan types out of Core.External, added explicit GET/DELETE relationship-denied variants, GET security-configuration variant, DELETE 501 and security-configuration variants. Handlers map intentional outcomes to 403/501/canonical security 500.
+Files changed: GetResult.cs, DeleteResult.cs, RelationshipAuthorizationFailure.cs, GetByIdHandler.cs, DeleteByIdHandler.cs, GetByIdHandlerTests.cs, DeleteByIdHandlerTests.cs, tasks.json, progress.txt.
+Verify: handler filter passed 21 tests. Requested FailureResponseTests filter had zero matching fixture names; equivalent Given_Failure_Response filter passed 4 tests.
+Next: implement backend-runtime AUTH1 payload/parser and mapping from plan metadata into the external DTO.

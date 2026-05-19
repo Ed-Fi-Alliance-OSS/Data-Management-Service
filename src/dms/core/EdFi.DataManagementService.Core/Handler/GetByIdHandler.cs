@@ -73,6 +73,15 @@ internal class GetByIdHandler(
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
+            GetFailureSecurityConfiguration failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: FailureResponse.ForSecurityConfiguration(
+                    requestInfo.FrontendRequest.TraceId,
+                    failure.Errors
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.
             GetFailureRetryable => new FrontendResponse(
@@ -81,6 +90,15 @@ internal class GetByIdHandler(
                 Headers: []
             ),
             GetFailureNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: notAuthorized.ErrorMessages,
+                    hints: notAuthorized.Hints
+                ),
+                Headers: []
+            ),
+            GetFailureRelationshipNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(
                     traceId: requestInfo.FrontendRequest.TraceId,

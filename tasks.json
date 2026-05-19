@@ -13,7 +13,7 @@
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandlerTests|FullyQualifiedName~DeleteByIdHandlerTests\"",
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~FailureResponseTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "backend-runtime",
