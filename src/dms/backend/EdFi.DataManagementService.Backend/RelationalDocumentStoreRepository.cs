@@ -34,7 +34,7 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
     IRelationalWriteSessionFactory writeSessionFactory,
     RelationalEdOrgAuthorizationSubjectSelector edOrgAuthorizationSubjectSelector,
-    ISingleRecordRelationshipAuthorizationExecutor? singleRecordRelationshipAuthorizationExecutor = null,
+    ISingleRecordRelationshipAuthorizationExecutor singleRecordRelationshipAuthorizationExecutor,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null
@@ -73,8 +73,9 @@ public sealed class RelationalDocumentStoreRepository(
         deleteConstraintResolver ?? throw new ArgumentNullException(nameof(deleteConstraintResolver));
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
-    private readonly ISingleRecordRelationshipAuthorizationExecutor? _singleRecordRelationshipAuthorizationExecutor =
-        singleRecordRelationshipAuthorizationExecutor;
+    private readonly ISingleRecordRelationshipAuthorizationExecutor _singleRecordRelationshipAuthorizationExecutor =
+        singleRecordRelationshipAuthorizationExecutor
+        ?? throw new ArgumentNullException(nameof(singleRecordRelationshipAuthorizationExecutor));
     private readonly IRelationalParameterConfigurator _relationalParameterConfigurator =
         relationalParameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
@@ -734,6 +735,7 @@ public sealed class RelationalDocumentStoreRepository(
         };
     }
 
+    // TODO Slice 6 (DMS-1165): aggregate FailedStrategies/FailedSubjects.Hint into Hints.
     private static DeleteResult.DeleteFailureRelationshipNotAuthorized CreateDeleteRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
     ) => new(BuildRelationshipAuthorizationErrorMessages(relationshipFailure), relationshipFailure);
@@ -1432,17 +1434,6 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        if (_singleRecordRelationshipAuthorizationExecutor is null)
-        {
-            return new GetAuthorizationOutcome(
-                new GetResult.UnknownFailure(
-                    "Relational single-record relationship authorization executor is not configured."
-                ),
-                null,
-                false
-            );
-        }
-
         var authorizationExecutionResult = await _singleRecordRelationshipAuthorizationExecutor
             .ExecuteAsync(
                 new SingleRecordRelationshipAuthorizationExecutionRequest(
@@ -1539,6 +1530,7 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
+    // TODO Slice 6 (DMS-1165): aggregate FailedStrategies/FailedSubjects.Hint into Hints.
     private static GetResult.GetFailureRelationshipNotAuthorized CreateGetRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
     ) => new(BuildRelationshipAuthorizationErrorMessages(relationshipFailure), relationshipFailure);

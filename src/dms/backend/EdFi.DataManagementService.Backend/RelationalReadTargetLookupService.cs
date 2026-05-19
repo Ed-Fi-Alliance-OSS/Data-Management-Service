@@ -22,7 +22,7 @@ public abstract record RelationalReadTargetLookupResult
 {
     private RelationalReadTargetLookupResult() { }
 
-    public sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid, long ContentVersion = 0)
+    public sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid, long ContentVersion)
         : RelationalReadTargetLookupResult;
 
     public sealed record NotFound() : RelationalReadTargetLookupResult;

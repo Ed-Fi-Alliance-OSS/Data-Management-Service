@@ -305,7 +305,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var getRequest = CreateGetRequest(
@@ -528,7 +529,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(346L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(346L, documentUuid, 94L));
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -583,7 +584,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(347L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(347L, documentUuid, 95L));
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -1205,7 +1206,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 93L));
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -1506,7 +1507,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var queryRequest = CreateQueryRequest(
@@ -1580,7 +1582,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var queryRequest = CreateQueryRequest(
@@ -1650,7 +1653,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var queryRequest = CreateQueryRequest(
@@ -3908,7 +3912,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             new NoOpRelationalWriteExceptionClassifier(),
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -3963,7 +3968,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -4001,7 +4007,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             new NoOpRelationalWriteExceptionClassifier(),
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -4056,7 +4063,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -4143,7 +4151,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
@@ -4202,7 +4211,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
 
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
@@ -4274,7 +4284,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExceptionClassifier,
             _deleteConstraintResolver,
             _writeSessionFactory,
-            CreateAuthorizationSubjectSelector()
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor
         );
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteOutcome(deleted: true);

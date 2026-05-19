@@ -339,16 +339,14 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     private static bool IsGetManyRequest(RequestInfo requestInfo) =>
         requestInfo.Method == RequestMethod.GET && !requestInfo.PathComponents.HasDocumentUuidSegment;
 
+    // Broad relational GET/DELETE surface used for missing-strategy classification; GET-many is included.
     private static bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
         requestInfo.MappingSet is not null
         && (requestInfo.Method == RequestMethod.GET || requestInfo.Method == RequestMethod.DELETE);
 
+    // DMS-1056 owns single-record GET-by-id and DELETE; GET-many remains on the GET-many auth path.
     private static bool IsRelationalSingleRecordDms1056Request(RequestInfo requestInfo) =>
-        requestInfo.MappingSet is not null
-        && (
-            (requestInfo.Method == RequestMethod.GET && requestInfo.PathComponents.HasDocumentUuidSegment)
-            || requestInfo.Method == RequestMethod.DELETE
-        );
+        IsRelationalBackendAuthorizationRequest(requestInfo) && !IsGetManyRequest(requestInfo);
 
     private static string GetOperationLabel(RequestInfo requestInfo) =>
         requestInfo.Method == RequestMethod.GET && requestInfo.PathComponents.HasDocumentUuidSegment
