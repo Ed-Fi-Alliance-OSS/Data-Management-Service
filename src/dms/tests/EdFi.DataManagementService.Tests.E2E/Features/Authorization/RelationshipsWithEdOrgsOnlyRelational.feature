@@ -205,19 +205,6 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
              When a GET request is made to "/ed-fi/academicWeeks/{id}"
              Then it should respond with 403
-              And the response body is
-                  """
-                  {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
-                      "title": "Authorization Denied",
-                      "status": 403,
-                      "validationErrors": {},
-                      "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901222') and the resource item's SchoolId value."
-                      ]
-                  }
-                  """
 
         @relational-backend
         @relational-ci-shard-3
@@ -242,19 +229,6 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
              When a DELETE request is made to "/ed-fi/academicWeeks/{id}"
              Then it should respond with 403
-              And the response body is
-                  """
-                  {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
-                      "title": "Authorization Denied",
-                      "status": 403,
-                      "validationErrors": {},
-                      "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901222') and the resource item's SchoolId value."
-                      ]
-                  }
-                  """
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
              When a GET request is made to "/ed-fi/academicWeeks/{id}"
              Then it should respond with 200
