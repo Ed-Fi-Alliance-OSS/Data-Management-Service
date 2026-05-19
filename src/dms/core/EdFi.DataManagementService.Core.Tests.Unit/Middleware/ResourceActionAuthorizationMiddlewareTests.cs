@@ -665,6 +665,68 @@ public class ResourceActionAuthorizationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Relational_Single_Record_With_RelationshipsWithEdOrgsOnlyInverted
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [TestCase("GET", "Read", "ed-fi/schools/11111111-1111-1111-1111-111111111111")]
+        [TestCase("DELETE", "Delete", "ed-fi/schools/11111111-1111-1111-1111-111111111111")]
+        public async Task It_allows_the_request_to_continue(
+            string requestMethodName,
+            string action,
+            string path
+        )
+        {
+            var requestMethod = Enum.Parse<RequestMethod>(requestMethodName);
+            _requestInfo = CreateRequestInfo(requestMethod, path, hasDocumentUuidSegment: true);
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await Middleware(action, AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
+                .Execute(_requestInfo, NullNext);
+
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo
+                .ResourceActionAuthStrategies.Should()
+                .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Out_Of_Scope_Write_With_RelationshipsWithEdOrgsOnlyInverted
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [TestCase("POST", "Create", "ed-fi/schools", false, "POST")]
+        [TestCase("PUT", "Update", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true, "PUT")]
+        public async Task It_still_returns_not_implemented(
+            string requestMethodName,
+            string action,
+            string path,
+            bool hasDocumentUuidSegment,
+            string operationLabel
+        )
+        {
+            var requestMethod = Enum.Parse<RequestMethod>(requestMethodName);
+            _requestInfo = CreateRequestInfo(requestMethod, path, hasDocumentUuidSegment);
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await Middleware(action, AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
+                .Execute(_requestInfo, NullNext);
+
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+            _requestInfo
+                .FrontendResponse.Body?["error"]?.GetValue<string>()
+                .Should()
+                .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
+                .And.Contain(operationLabel);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Relational_Get_Many_With_No_Authorization_Strategies
         : ResourceActionAuthorizationMiddlewareTests
     {
@@ -701,6 +763,42 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .Should()
                 .Be(
                     "No authorization strategies were defined for the requested action 'Read' against resource ['School'] matched by the caller's claim 'SIS-Vendor'."
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Single_Record_With_No_Authorization_Strategies
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [TestCase("GET", "Read", "ed-fi/schools/11111111-1111-1111-1111-111111111111")]
+        [TestCase("DELETE", "Delete", "ed-fi/schools/11111111-1111-1111-1111-111111111111")]
+        public async Task It_returns_security_configuration_problem_details(
+            string requestMethodName,
+            string action,
+            string path
+        )
+        {
+            var requestMethod = Enum.Parse<RequestMethod>(requestMethodName);
+            _requestInfo = CreateRequestInfo(requestMethod, path, hasDocumentUuidSegment: true);
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await NoAuthStrategyMiddleware(action).Execute(_requestInfo, NullNext);
+
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            _requestInfo
+                .FrontendResponse.Body?["type"]?.GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:system:configuration:security");
+            _requestInfo
+                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+                .Should()
+                .Be(
+                    $"No authorization strategies were defined for the requested action '{action}' against resource ['School'] matched by the caller's claim 'SIS-Vendor'."
                 );
         }
     }
