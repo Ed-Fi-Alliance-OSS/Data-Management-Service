@@ -182,6 +182,6 @@
       "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"FullyQualifiedName~RelationshipsWithEdOrgsOnlyRelational\"",
       "cd src/dms/tests/EdFi.DataManagementService.Tests.E2E && pwsh ./teardown-local-dms.ps1"
     ],
-    "completed": false
+    "completed": true
   }
 ]
