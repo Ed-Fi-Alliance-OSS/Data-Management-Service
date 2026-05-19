@@ -274,14 +274,16 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
     }
 
     [Test]
-    public async Task It_defers_known_but_not_enabled_mixed_strategies_to_the_existing_get_path()
+    public async Task It_returns_501_for_known_but_not_enabled_mixed_strategies()
     {
         var result = await GetRootChildAsync(
             _authorizationRootChildSeeds[0],
             _normalPlusKnownUnsupportedStrategy
         );
 
-        AssertSuccess(result, _authorizationRootChildSeeds[0].DocumentUuid);
+        var failure = result.Should().BeOfType<GetResult.GetFailureNotImplemented>().Subject;
+        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+        _context.AssertNoHydration();
     }
 
     [Test]
