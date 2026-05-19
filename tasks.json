@@ -130,5 +130,58 @@
       "cd src/dms/tests/EdFi.DataManagementService.Tests.E2E && pwsh ./teardown-local-dms.ps1"
     ],
     "completed": true
+  },
+  {
+    "category": "pipeline-authorization",
+    "description": "High: Relational single-record GET-by-id and DELETE requests with RelationshipsWithEdOrgsOnlyInverted are still blocked by ResourceActionAuthorizationMiddleware's stale pre-DMS-1056 501 guard, so the implemented Slice 2 backend authorization path is unreachable through HTTP for an in-scope strategy.",
+    "acceptance-criteria": [
+      "When MappingSet is present, GET-by-id and DELETE requests whose effective strategies include RelationshipsWithEdOrgsOnlyInverted continue past ResourceActionAuthorizationMiddleware so the relational backend can execute Slice 2 authorization.",
+      "The staged 501 guard remains only for operations still outside Slice 2 scope, such as POST and PUT, and for any non-relational paths that still lack inverted single-record support.",
+      "Relational GET-by-id and DELETE filter/evaluator setup preserves raw strategy names without invoking legacy relationship filter providers before backend target resolution, so backend result precedence is preserved for missing targets, empty EdOrg claims, known-but-not-enabled strategies, and security-configuration failures.",
+      "Unit or E2E coverage proves an HTTP/pipeline-level relational GET-by-id and DELETE with RelationshipsWithEdOrgsOnlyInverted reaches the backend and does not return the stale 'Support is currently limited to GET-many until DMS-1056' 501 response."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core/Middleware/ResourceActionAuthorizationMiddleware.cs and src/dms/core/EdFi.DataManagementService.Core/Middleware/ProvideAuthorizationFiltersMiddleware.cs to confirm relational GET-by-id and DELETE are routed to the Slice 2 backend planner instead of the legacy staged guard/provider validation.",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests|FullyQualifiedName~ProvideAuthorizationFiltersMiddlewareTests|FullyQualifiedName~GetByIdHandlerTests|FullyQualifiedName~DeleteByIdHandlerTests\"",
+      "cd src/dms/tests/EdFi.DataManagementService.Tests.E2E && pwsh ./setup-local-dms.ps1",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"FullyQualifiedName~RelationshipsWithEdOrgsOnlyRelational\"",
+      "cd src/dms/tests/EdFi.DataManagementService.Tests.E2E && pwsh ./teardown-local-dms.ps1"
+    ],
+    "completed": false
+  },
+  {
+    "category": "get-by-id",
+    "description": "High: GET-by-id can still hydrate table rows from a different committed state than the relationship authorization check because the ContentVersion guard compares only the authorization result with the hydration metadata result set, while HydrationBatchBuilder reads metadata and resource rows in separate statements.",
+    "acceptance-criteria": [
+      "Relational GET-by-id cannot materialize or return a document whose root-table authorization values were committed after the stored-value relationship authorization check observed an older ContentVersion.",
+      "The chosen fix establishes a real same-observed-read boundary for authorization and all hydration result sets, such as a transaction/snapshot boundary, a final post-hydration ContentVersion guard, or equivalent provider-specific command composition.",
+      "When a changed ContentVersion is detected at any point after authorization but before response materialization, GET-by-id retries target resolution and authorization or fails deterministically without materializing the stale-authorized representation.",
+      "The fix applies to both PostgreSQL and SQL Server and preserves the existing behavior for not-found, authorization denial before reconstitution, and StoredDocument internal reads."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs and src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs to confirm the read-boundary proof covers all hydration result sets, not only the document metadata result set.",
+      "Add or update focused tests that simulate a mutation between hydration metadata reading and root/table row hydration and prove GET-by-id does not return rows authorized against the older ContentVersion.",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalGetByIdAuthorization\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalGetByIdAuthorization\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "e2e",
+    "description": "High: The new relational single-record GET-by-id and DELETE E2E scenarios expect the legacy/final relationship authorization ProblemDetails text, but Slice 2 handlers currently return the transitional generic relationship-denied 403 body, so the focused E2E coverage can fail even when backend authorization denies correctly.",
+    "acceptance-criteria": [
+      "The unauthorized relational GET-by-id E2E scenario in RelationshipsWithEdOrgsOnlyRelational.feature no longer pins the Slice 6/final relationship error wording unless that formatter is implemented in this branch.",
+      "The unauthorized relational DELETE E2E scenario in RelationshipsWithEdOrgsOnlyRelational.feature no longer pins the Slice 6/final relationship error wording unless that formatter is implemented in this branch.",
+      "The scenarios still prove the Slice 2 behavior that unauthorized GET-by-id returns 403 and unauthorized DELETE returns 403 while leaving the resource readable by an authorized caller.",
+      "RelationshipsWithEdOrgsOnlyRelational.feature.cs is regenerated or otherwise kept consistent with the feature file so the committed E2E test code executes the corrected expectations."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsOnlyRelational.feature and the generated .feature.cs file to confirm the single-record unauthorized assertions match the current Slice 2 transitional handler surface or the branch has implemented the final formatter.",
+      "cd src/dms/tests/EdFi.DataManagementService.Tests.E2E && pwsh ./setup-local-dms.ps1",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"FullyQualifiedName~RelationshipsWithEdOrgsOnlyRelational\"",
+      "cd src/dms/tests/EdFi.DataManagementService.Tests.E2E && pwsh ./teardown-local-dms.ps1"
+    ],
+    "completed": false
   }
 ]

@@ -1240,6 +1240,19 @@ public sealed class RelationalDocumentStoreRepository(
                 continue;
             }
 
+            var shouldRetryPostHydrationReadBoundary = await ShouldRetryPostHydrationReadBoundaryAsync(
+                    mappingSet,
+                    resource,
+                    existingDocument,
+                    authorizationOutcome.ObservedContentVersion
+                )
+                .ConfigureAwait(false);
+
+            if (shouldRetryPostHydrationReadBoundary)
+            {
+                continue;
+            }
+
             var edfiDoc = _readMaterializer.Materialize(
                 new RelationalReadMaterializationRequest(
                     readPlan,
@@ -1281,6 +1294,38 @@ public sealed class RelationalDocumentStoreRepository(
         return new GetResult.UnknownFailure(
             "Relational GET could not read a stable authorized representation for the requested document."
         );
+    }
+
+    private async Task<bool> ShouldRetryPostHydrationReadBoundaryAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalReadTargetLookupResult.ExistingDocument expectedDocument,
+        long? observedContentVersion
+    )
+    {
+        if (observedContentVersion is null)
+        {
+            return false;
+        }
+
+        var targetLookupResult = await _readTargetLookupService
+            .ResolveForGetByIdAsync(mappingSet, resource, expectedDocument.DocumentUuid)
+            .ConfigureAwait(false);
+
+        if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument currentDocument)
+        {
+            return true;
+        }
+
+        if (
+            currentDocument.DocumentId != expectedDocument.DocumentId
+            || currentDocument.DocumentUuid != expectedDocument.DocumentUuid
+        )
+        {
+            return true;
+        }
+
+        return currentDocument.ContentVersion != observedContentVersion.Value;
     }
 
     private async Task<GetAuthorizationOutcome> AuthorizeGetByIdIfRequiredAsync(

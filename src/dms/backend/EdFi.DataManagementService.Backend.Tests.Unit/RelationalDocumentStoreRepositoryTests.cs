@@ -207,7 +207,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -478,7 +478,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -640,7 +640,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -713,7 +713,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -775,7 +775,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
 
         var result = await _sut.GetDocumentById(getRequest);
 
@@ -836,7 +836,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -905,7 +905,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -928,6 +928,103 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.GetDocumentById(getRequest);
 
         result.Should().BeOfType<GetResult.GetSuccess>();
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_retries_get_hydration_when_the_post_hydration_content_version_guard_observes_a_change()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-2222-3333-4444-fefefefefefe"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+        Queue<RelationalReadTargetLookupResult> targetLookupResults = new([
+            new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L),
+            new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 92L),
+            new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 92L),
+            new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 92L),
+        ]);
+        Queue<SingleRecordRelationshipAuthorizationExecutionResult> authorizationResults = new([
+            new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(91L),
+            new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(92L),
+        ]);
+        Queue<HydratedPage> hydratedPages = new([
+            CreateHydratedPage(
+                readPlan,
+                CreateDocumentMetadataRow(documentUuid, 345L, 91L),
+                (345L, "Rows Read After Concurrent Update")
+            ),
+            CreateHydratedPage(
+                readPlan,
+                CreateDocumentMetadataRow(documentUuid, 345L, 92L),
+                (345L, "Stable Lincoln High")
+            ),
+        ]);
+        RelationalReadMaterializationRequest capturedReadRequest = null!;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() => Task.FromResult(targetLookupResults.Dequeue()));
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() => Task.FromResult(authorizationResults.Dequeue()));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() => hydratedPages.Dequeue());
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Invokes(call => capturedReadRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!)
+            .Returns(JsonNode.Parse("""{"id":"stable"}""")!);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        capturedReadRequest.DocumentMetadata.ContentVersion.Should().Be(92L);
+        capturedReadRequest.TableRowsInDependencyOrder[0].Rows[0][1].Should().Be("Stable Lincoln High");
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
