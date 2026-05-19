@@ -33,3 +33,8 @@ Decisions: added provider-specific synthetic DELETE fixtures mirroring GET cover
 Files changed: PostgresqlRelationalDeleteAuthorizationTests.cs, MssqlRelationalDeleteAuthorizationTests.cs, PostgresqlRelationalQueryAuthorizationTests.cs, MssqlRelationalQueryAuthorizationTests.cs, tasks.json, progress.txt.
 Verify: PgSQL exact DELETE fixture passed 10; MSSQL exact DELETE fixture passed 10; PgSQL task filter Delete|Authorization|IfMatch passed 43; MSSQL task filter Delete|Authorization|IfMatch passed 44.
 Next: add DMS E2E GET-by-id/DELETE coverage with real claim-set/token wiring.
+Completed get-by-id read-boundary fix for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/02-edorg-only-get-by-id-and-delete.md
+Decisions: kept ContentVersion guard/retry approach; read target lookup now exposes ContentVersion and authorized GET-by-id revalidates after hydration before materialization. If post-hydration target/version differs, retry target/auth/hydration; if still unstable, existing deterministic unknown failure path wins. StoredDocument/no-auth reads skip extra guard.
+Files changed: RelationalDocumentStoreRepository.cs, RelationalReadTargetLookupService.cs, RelationalDocumentStoreRepositoryTests.cs, RelationalReadTargetLookupServiceTests.cs, tasks.json, progress.txt.
+Verify: backend unit repository/read-target filter passed 142; PgSQL exact GET fixture passed 10. Task's exact RelationalGetByIdAuthorization integration filter matched zero tests, reran actual fixture filters. MSSQL initial run failed because no SQL Server on localhost:1434; started dms-local-mssql and exact GET fixture passed 10.
+Next: pipeline inverted single-record guard and E2E transitional 403 expectation tasks remain open.

@@ -22,7 +22,7 @@ public abstract record RelationalReadTargetLookupResult
 {
     private RelationalReadTargetLookupResult() { }
 
-    public sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid)
+    public sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid, long ContentVersion = 0)
         : RelationalReadTargetLookupResult;
 
     public sealed record NotFound() : RelationalReadTargetLookupResult;
@@ -59,9 +59,17 @@ internal sealed class RelationalReadTargetLookupService(IRelationalCommandExecut
 
         if (resolvedDocument.ResourceKeyId == expectedResourceKeyId)
         {
+            if (resolvedDocument.ContentVersion is null)
+            {
+                throw new InvalidOperationException(
+                    $"Relational GET target lookup for document uuid '{documentUuid.Value}' returned a row without ContentVersion."
+                );
+            }
+
             return new RelationalReadTargetLookupResult.ExistingDocument(
                 resolvedDocument.DocumentId,
-                resolvedDocument.DocumentUuid
+                resolvedDocument.DocumentUuid,
+                resolvedDocument.ContentVersion.Value
             );
         }
 
