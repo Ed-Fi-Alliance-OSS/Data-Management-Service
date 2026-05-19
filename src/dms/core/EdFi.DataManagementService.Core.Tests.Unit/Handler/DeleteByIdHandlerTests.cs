@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Backend;
@@ -576,6 +577,28 @@ actual: {_requestInfo.FrontendResponse.Body}
             _requestInfo.ResourceInfo = CreateResourceInfo();
             _requestInfo.ResourceSchema = GetResourceSchema();
             _requestInfo.ProfileContext = CreateWriteProfileContext();
+            _requestInfo.AuthorizationStrategyEvaluators =
+            [
+                new("RelationshipsWithEdOrgsOnly", [], FilterOperator.Or),
+            ];
+            _requestInfo.ClientAuthorizations = new ClientAuthorizations(
+                TokenId: "token-id",
+                ClientId: "client-id",
+                ClaimSetName: "claim-set",
+                EducationOrganizationIds:
+                [
+                    new EducationOrganizationId(255902),
+                    new EducationOrganizationId(255901),
+                    new EducationOrganizationId(255902),
+                ],
+                NamespacePrefixes:
+                [
+                    new NamespacePrefix("uri://sample-b.org"),
+                    new NamespacePrefix("uri://sample-a.org"),
+                    new NamespacePrefix("uri://sample-b.org"),
+                ],
+                DmsInstanceIds: []
+            );
 
             var (deleteByIdHandler, serviceProvider) = Handler(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
@@ -589,6 +612,25 @@ actual: {_requestInfo.FrontendResponse.Body}
             _repository
                 .CapturedRequest.WritePrecondition.Should()
                 .Be(new WritePrecondition.IfMatch("\"72\""));
+        }
+
+        [Test]
+        public void It_carries_relational_authorization_inputs()
+        {
+            var relationalRequest = _repository
+                .CapturedRequest.Should()
+                .BeAssignableTo<IRelationalDeleteRequest>()
+                .Subject;
+
+            relationalRequest
+                .AuthorizationStrategyEvaluators.Should()
+                .BeSameAs(_requestInfo.AuthorizationStrategyEvaluators);
+            relationalRequest
+                .AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(255901L, 255902L);
+            relationalRequest
+                .AuthorizationContext.NamespacePrefixes.Should()
+                .Equal("uri://sample-a.org", "uri://sample-b.org");
         }
     }
 }

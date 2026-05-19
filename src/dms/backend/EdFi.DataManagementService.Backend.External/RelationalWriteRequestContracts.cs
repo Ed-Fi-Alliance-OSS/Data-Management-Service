@@ -56,6 +56,11 @@ public interface IRelationalUpdateRequest : IUpdateRequest, IRelationalWriteRequ
 public interface IRelationalDeleteRequest : IDeleteRequest, IRelationalRequestWithMappingSet
 {
     /// <summary>
+    /// Typed request-scoped authorization inputs for relational single-record planning/execution.
+    /// </summary>
+    RelationalAuthorizationContext AuthorizationContext { get; }
+
+    /// <summary>
     /// Effective authorization strategy evaluators for the current delete action.
     /// </summary>
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
