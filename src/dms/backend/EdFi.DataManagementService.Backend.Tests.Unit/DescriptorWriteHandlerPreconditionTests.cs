@@ -32,9 +32,8 @@ public class Given_Descriptor_Write_Preconditions
         {
             PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
@@ -47,7 +46,6 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.Session.Executor.Commands.Should().ContainSingle();
         sessionFactory
             .Session.Executor.Commands[0]
@@ -64,7 +62,6 @@ public class Given_Descriptor_Write_Preconditions
         {
             PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         var currentState = CreatePersistedDescriptorBody(description: "Current Charter");
         var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
@@ -73,7 +70,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Current Charter"),
         ]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             documentUuid,
@@ -106,14 +103,13 @@ public class Given_Descriptor_Write_Preconditions
         {
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Current Charter"),
         ]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
@@ -144,7 +140,6 @@ public class Given_Descriptor_Write_Preconditions
         {
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
         var currentState = CreatePersistedDescriptorBody();
@@ -152,7 +147,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         request = request with { WritePrecondition = new WritePrecondition.IfMatch(currentEtag) };
 
         var result = await sut.HandlePostAsync(request);
@@ -178,18 +173,16 @@ public class Given_Descriptor_Write_Preconditions
         {
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
         var currentEtag = RelationalApiMetadataFormatter.FormatEtag(CreatePersistedDescriptorBody());
 
         var result = await sut.HandlePostAsync(request);
 
         result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, currentEtag));
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -208,18 +201,16 @@ public class Given_Descriptor_Write_Preconditions
         {
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
         var currentEtag = RelationalApiMetadataFormatter.FormatEtag(CreatePersistedDescriptorBody());
 
         var result = await sut.HandlePutAsync(request);
 
         result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, currentEtag));
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -238,13 +229,12 @@ public class Given_Descriptor_Write_Preconditions
         {
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(45L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Changed Elsewhere"),
         ]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePostAsync(request);
@@ -252,7 +242,6 @@ public class Given_Descriptor_Write_Preconditions
         result
             .Should()
             .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -269,13 +258,12 @@ public class Given_Descriptor_Write_Preconditions
         {
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(45L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Changed Elsewhere"),
         ]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePutAsync(request);
@@ -283,7 +271,6 @@ public class Given_Descriptor_Write_Preconditions
         result
             .Should()
             .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -300,9 +287,8 @@ public class Given_Descriptor_Write_Preconditions
         {
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             documentUuid,
@@ -312,7 +298,6 @@ public class Given_Descriptor_Write_Preconditions
         var result = await sut.HandlePostAsync(request);
 
         result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -329,9 +314,8 @@ public class Given_Descriptor_Write_Preconditions
         {
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             documentUuid,
@@ -341,7 +325,6 @@ public class Given_Descriptor_Write_Preconditions
         var result = await sut.HandlePutAsync(request);
 
         result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -358,7 +341,6 @@ public class Given_Descriptor_Write_Preconditions
         {
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
@@ -368,7 +350,7 @@ public class Given_Descriptor_Write_Preconditions
             command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
                 ? new StubDbException("descriptor update failed")
                 : null;
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             documentUuid,
@@ -378,7 +360,6 @@ public class Given_Descriptor_Write_Preconditions
         var result = await sut.HandlePutAsync(request);
 
         result.Should().BeOfType<UpdateResult.UnknownFailure>();
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -395,7 +376,6 @@ public class Given_Descriptor_Write_Preconditions
         {
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         var currentState = CreatePersistedDescriptorBody(description: "Current Charter");
         var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
@@ -404,7 +384,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Current Charter"),
         ]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             documentUuid,
@@ -435,14 +415,13 @@ public class Given_Descriptor_Write_Preconditions
         {
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         var currentState = CreatePersistedDescriptorBody();
         var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = new DescriptorWriteRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             _descriptorResource,
@@ -484,12 +463,11 @@ public class Given_Descriptor_Write_Preconditions
     public async Task It_returns_precondition_failed_for_descriptor_delete_when_if_match_mismatches()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), commandExecutor, sessionFactory);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
         var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
@@ -515,7 +493,6 @@ public class Given_Descriptor_Write_Preconditions
     public async Task It_deletes_the_descriptor_when_delete_if_match_exactly_matches_the_current_etag()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         var currentState = CreatePersistedDescriptorBody();
         var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
@@ -525,7 +502,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["DocumentId"] = 345L }),
         ]);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), commandExecutor, sessionFactory);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
         var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
             WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
@@ -548,9 +525,8 @@ public class Given_Descriptor_Write_Preconditions
     public async Task It_returns_not_exists_for_descriptor_delete_when_the_scoped_lookup_misses_under_if_match()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), commandExecutor, sessionFactory);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
         var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
             WritePrecondition = new WritePrecondition.IfMatch("\"current-etag\""),
@@ -583,7 +559,6 @@ public class Given_Descriptor_Write_Preconditions
         A.CallTo(() => resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, constraintName))
             .Returns(referencingResource);
 
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         var currentState = CreatePersistedDescriptorBody();
         var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
@@ -597,7 +572,6 @@ public class Given_Descriptor_Write_Preconditions
 
         var sut = CreateSut(
             new StubRelationalWriteTargetLookupService(),
-            commandExecutor,
             sessionFactory,
             classifier,
             resolver
@@ -669,7 +643,6 @@ public class Given_Descriptor_Write_Preconditions
 
     private static DescriptorWriteHandler CreateSut(
         IRelationalWriteTargetLookupService targetLookupService,
-        IRelationalCommandExecutor commandExecutor,
         RecordingRelationalWriteSessionFactory sessionFactory,
         IRelationalWriteExceptionClassifier? classifier = null,
         IRelationalDeleteConstraintResolver? deleteConstraintResolver = null
@@ -677,7 +650,6 @@ public class Given_Descriptor_Write_Preconditions
     {
         return new DescriptorWriteHandler(
             targetLookupService,
-            commandExecutor,
             classifier ?? new NoOpRelationalWriteExceptionClassifier(),
             deleteConstraintResolver ?? A.Fake<IRelationalDeleteConstraintResolver>(),
             sessionFactory,

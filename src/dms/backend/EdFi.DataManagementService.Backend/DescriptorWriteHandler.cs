@@ -18,7 +18,6 @@ namespace EdFi.DataManagementService.Backend;
 /// </summary>
 internal sealed class DescriptorWriteHandler(
     IRelationalWriteTargetLookupService targetLookupService,
-    IRelationalCommandExecutor commandExecutor,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
     IRelationalWriteSessionFactory writeSessionFactory,
@@ -27,8 +26,6 @@ internal sealed class DescriptorWriteHandler(
 {
     private readonly IRelationalWriteTargetLookupService _targetLookupService =
         targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
         writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
     private readonly IRelationalDeleteConstraintResolver _deleteConstraintResolver =
@@ -440,29 +437,7 @@ internal sealed class DescriptorWriteHandler(
             request.Resource
         );
 
-        if (request.WritePrecondition is not WritePrecondition.IfMatch ifMatch)
-        {
-            var command = BuildDescriptorDeleteCommand(
-                _commandExecutor.Dialect,
-                request.DocumentUuid,
-                resourceKeyId
-            );
-
-            return await RelationalDeleteExecution
-                .TryExecuteAsync(
-                    _commandExecutor,
-                    command,
-                    _writeExceptionClassifier,
-                    _deleteConstraintResolver,
-                    request.MappingSet.Model,
-                    _logger,
-                    request.DocumentUuid,
-                    request.TraceId,
-                    DeleteTargetKind.Descriptor,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
+        var ifMatch = request.WritePrecondition as WritePrecondition.IfMatch;
 
         IRelationalWriteSession writeSession;
 
@@ -502,30 +477,9 @@ internal sealed class DescriptorWriteHandler(
 
             try
             {
-                var preconditionResult = await ResolveLockedDescriptorForIfMatchAsync(
-                        request.MappingSet,
-                        request.Resource,
-                        request.DocumentUuid,
-                        referentialId: null,
-                        DescriptorPreconditionTargetKind.Delete,
-                        ifMatch,
-                        writeSession,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                outcome = preconditionResult switch
+                if (ifMatch is null)
                 {
-                    DescriptorLockedPreconditionResult.NotFound => new DeleteResult.DeleteFailureNotExists(),
-                    DescriptorLockedPreconditionResult.MissingDocument =>
-                        new DeleteResult.DeleteFailureNotExists(),
-                    DescriptorLockedPreconditionResult.MissingDescriptor(var documentId) =>
-                        new DeleteResult.UnknownFailure(
-                            BuildMissingDescriptorMessage(request.Resource, documentId)
-                        ),
-                    DescriptorLockedPreconditionResult.Mismatch =>
-                        new DeleteResult.DeleteFailureETagMisMatch(),
-                    DescriptorLockedPreconditionResult.Loaded => await RelationalDeleteExecution
+                    outcome = await RelationalDeleteExecution
                         .TryExecuteAsync(
                             sessionCommandExecutor,
                             BuildDescriptorDeleteCommand(
@@ -542,11 +496,57 @@ internal sealed class DescriptorWriteHandler(
                             DeleteTargetKind.Descriptor,
                             cancellationToken
                         )
-                        .ConfigureAwait(false),
-                    _ => throw new InvalidOperationException(
-                        $"Unexpected locked descriptor precondition result type '{preconditionResult.GetType().Name}'."
-                    ),
-                };
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    var preconditionResult = await ResolveLockedDescriptorForIfMatchAsync(
+                            request.MappingSet,
+                            request.Resource,
+                            request.DocumentUuid,
+                            referentialId: null,
+                            DescriptorPreconditionTargetKind.Delete,
+                            ifMatch,
+                            writeSession,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    outcome = preconditionResult switch
+                    {
+                        DescriptorLockedPreconditionResult.NotFound =>
+                            new DeleteResult.DeleteFailureNotExists(),
+                        DescriptorLockedPreconditionResult.MissingDocument =>
+                            new DeleteResult.DeleteFailureNotExists(),
+                        DescriptorLockedPreconditionResult.MissingDescriptor(var documentId) =>
+                            new DeleteResult.UnknownFailure(
+                                BuildMissingDescriptorMessage(request.Resource, documentId)
+                            ),
+                        DescriptorLockedPreconditionResult.Mismatch =>
+                            new DeleteResult.DeleteFailureETagMisMatch(),
+                        DescriptorLockedPreconditionResult.Loaded => await RelationalDeleteExecution
+                            .TryExecuteAsync(
+                                sessionCommandExecutor,
+                                BuildDescriptorDeleteCommand(
+                                    sessionCommandExecutor.Dialect,
+                                    request.DocumentUuid,
+                                    resourceKeyId
+                                ),
+                                _writeExceptionClassifier,
+                                _deleteConstraintResolver,
+                                request.MappingSet.Model,
+                                _logger,
+                                request.DocumentUuid,
+                                request.TraceId,
+                                DeleteTargetKind.Descriptor,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false),
+                        _ => throw new InvalidOperationException(
+                            $"Unexpected locked descriptor precondition result type '{preconditionResult.GetType().Name}'."
+                        ),
+                    };
+                }
             }
             catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
             {

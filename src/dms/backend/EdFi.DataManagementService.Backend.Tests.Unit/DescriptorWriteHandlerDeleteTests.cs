@@ -50,6 +50,7 @@ public class Given_Descriptor_Write_Handler_Delete
             .As<DeleteResult.DeleteFailureNotImplemented>()
             .FailureMessage.Should()
             .Contain(authorizationStrategyName);
+        A.CallTo(() => fixture.SessionFactory.CreateAsync(A<CancellationToken>._)).MustNotHaveHappened();
         A.CallTo(() =>
                 fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, A<string>._)
             )
@@ -85,6 +86,7 @@ public class Given_Descriptor_Write_Handler_Delete
         result
             .Should()
             .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
+        fixture.AssertDeleteFailureRolledBack();
         // Match on the exact MappingSet.Model reference — a narrowing of the any-matcher that
         // catches a regression where the handler stops forwarding mappingSet.Model to the
         // resolver (e.g., accidentally wires null or a stale model set from elsewhere). The
@@ -129,6 +131,7 @@ public class Given_Descriptor_Write_Handler_Delete
         );
 
         result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
+        fixture.AssertDeleteFailureRolledBack();
         A.CallTo(() =>
                 fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, A<string>._)
             )
@@ -166,6 +169,7 @@ public class Given_Descriptor_Write_Handler_Delete
         );
 
         result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
+        fixture.AssertDeleteFailureRolledBack();
         A.CallTo(() =>
                 fixture.Resolver.TryResolveReferencingResource(fixture.MappingSet.Model, constraintName)
             )
@@ -185,17 +189,21 @@ public class Given_Descriptor_Write_Handler_Delete
             Resolver = A.Fake<IRelationalDeleteConstraintResolver>();
             Logger = new RecordingLogger<DescriptorWriteHandler>();
             MappingSet = CreateMappingSet(dialect);
-            var commandExecutor = new ThrowingRelationalCommandExecutor(
-                dialect,
-                new StubDbException("FK constraint violation")
-            );
+            var deleteException = new StubDbException("FK constraint violation");
+            var sessionCommandExecutor = new ThrowingRelationalCommandExecutor(dialect, deleteException);
+            Session = A.Fake<IRelationalWriteSession>();
+            A.CallTo(() => Session.CreateCommandExecutor()).Returns(sessionCommandExecutor);
+            A.CallTo(() => Session.CommitAsync(A<CancellationToken>._)).Returns(Task.CompletedTask);
+            A.CallTo(() => Session.RollbackAsync(A<CancellationToken>._)).Returns(Task.CompletedTask);
+            SessionFactory = A.Fake<IRelationalWriteSessionFactory>();
+            A.CallTo(() => SessionFactory.CreateAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(Session));
             var targetLookupService = A.Fake<IRelationalWriteTargetLookupService>();
             Sut = new DescriptorWriteHandler(
                 targetLookupService,
-                commandExecutor,
                 Classifier,
                 Resolver,
-                A.Fake<IRelationalWriteSessionFactory>(),
+                SessionFactory,
                 Logger
             );
         }
@@ -206,9 +214,20 @@ public class Given_Descriptor_Write_Handler_Delete
 
         public RecordingLogger<DescriptorWriteHandler> Logger { get; }
 
+        public IRelationalWriteSessionFactory SessionFactory { get; }
+
+        public IRelationalWriteSession Session { get; }
+
         public MappingSet MappingSet { get; }
 
         public DescriptorWriteHandler Sut { get; }
+
+        public void AssertDeleteFailureRolledBack()
+        {
+            A.CallTo(() => SessionFactory.CreateAsync(A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => Session.CommitAsync(A<CancellationToken>._)).MustNotHaveHappened();
+            A.CallTo(() => Session.RollbackAsync(A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+        }
 
         private static MappingSet CreateMappingSet(SqlDialect dialect)
         {
