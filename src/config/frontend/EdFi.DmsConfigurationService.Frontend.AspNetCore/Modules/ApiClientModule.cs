@@ -162,7 +162,8 @@ public class ApiClientModule : IEndpointModule
                 application.ClaimSetName,
                 string.Join(",", application.EducationOrganizationIds),
                 command.DmsInstanceIds,
-                false
+                false,
+                identitySettings.Value.ClientRole
             );
 
             switch (disableClientResult)
@@ -299,6 +300,7 @@ public class ApiClientModule : IEndpointModule
         IVendorRepository vendorRepository,
         IDmsInstanceRepository dmsInstanceRepository,
         IIdentityProviderRepository identityProviderRepository,
+        IOptions<IdentitySettings> identitySettings,
         ILogger<ApiClientModule> logger
     )
     {
@@ -390,7 +392,8 @@ public class ApiClientModule : IEndpointModule
             application.ClaimSetName,
             string.Join(",", application.EducationOrganizationIds),
             command.DmsInstanceIds,
-            command.IsApproved
+            command.IsApproved,
+            identitySettings.Value.ClientRole
         );
 
         switch (clientUpdateResult)
@@ -416,7 +419,9 @@ public class ApiClientModule : IEndpointModule
                     "ApiClient not found in identity provider",
                     httpContext.TraceIdentifier
                 );
-            case ClientUpdateResult.Success:
+            case ClientUpdateResult.Success updateSuccess:
+                // Persist the new UUID issued by the identity provider after delete-and-recreate
+                command.ClientUuid = updateSuccess.ClientUuid;
                 // Update database SECOND - attempt rollback if this fails
                 var repositoryResult = await apiClientRepository.UpdateApiClient(command);
 
@@ -433,12 +438,13 @@ public class ApiClientModule : IEndpointModule
                                 id
                             );
                             await identityProviderRepository.UpdateClientAsync(
-                                existingApiClient.ClientUuid.ToString(),
+                                (command.ClientUuid ?? existingApiClient.ClientUuid).ToString(),
                                 existingApiClient.Name,
                                 originalApplication.ClaimSetName,
                                 string.Join(",", originalApplication.EducationOrganizationIds),
                                 [.. existingApiClient.DmsInstanceIds],
-                                existingApiClient.IsApproved
+                                existingApiClient.IsApproved,
+                                identitySettings.Value.ClientRole
                             );
                         }
                         throw new ValidationException([
@@ -453,12 +459,13 @@ public class ApiClientModule : IEndpointModule
                                 id
                             );
                             await identityProviderRepository.UpdateClientAsync(
-                                existingApiClient.ClientUuid.ToString(),
+                                (command.ClientUuid ?? existingApiClient.ClientUuid).ToString(),
                                 existingApiClient.Name,
                                 originalApplication.ClaimSetName,
                                 string.Join(",", originalApplication.EducationOrganizationIds),
                                 [.. existingApiClient.DmsInstanceIds],
-                                existingApiClient.IsApproved
+                                existingApiClient.IsApproved,
+                                identitySettings.Value.ClientRole
                             );
                         }
                         throw new ValidationException([
@@ -476,12 +483,13 @@ public class ApiClientModule : IEndpointModule
                                 id
                             );
                             await identityProviderRepository.UpdateClientAsync(
-                                existingApiClient.ClientUuid.ToString(),
+                                (command.ClientUuid ?? existingApiClient.ClientUuid).ToString(),
                                 existingApiClient.Name,
                                 originalApplication.ClaimSetName,
                                 string.Join(",", originalApplication.EducationOrganizationIds),
                                 [.. existingApiClient.DmsInstanceIds],
-                                existingApiClient.IsApproved
+                                existingApiClient.IsApproved,
+                                identitySettings.Value.ClientRole
                             );
                         }
                         throw new ValidationException([
@@ -496,12 +504,13 @@ public class ApiClientModule : IEndpointModule
                                 id
                             );
                             await identityProviderRepository.UpdateClientAsync(
-                                existingApiClient.ClientUuid.ToString(),
+                                (command.ClientUuid ?? existingApiClient.ClientUuid).ToString(),
                                 existingApiClient.Name,
                                 originalApplication.ClaimSetName,
                                 string.Join(",", originalApplication.EducationOrganizationIds),
                                 [.. existingApiClient.DmsInstanceIds],
-                                existingApiClient.IsApproved
+                                existingApiClient.IsApproved,
+                                identitySettings.Value.ClientRole
                             );
                         }
                         logger.LogError(

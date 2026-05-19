@@ -138,7 +138,7 @@ public class KeycloakClientRepository(
             Client newClient = new()
             {
                 ClientId = client.ClientId,
-                Enabled = true,
+                Enabled = client.Enabled,
                 Secret = client.Secret,
                 Name = client.Name,
                 ServiceAccountsEnabled = true,
@@ -296,7 +296,8 @@ public class KeycloakClientRepository(
         string scope,
         string educationOrganizationIds,
         long[]? dmsInstanceIds = null,
-        bool isApproved = true
+        bool isApproved = true,
+        string role = ""
     )
     {
         try
@@ -332,6 +333,36 @@ public class KeycloakClientRepository(
                 );
                 if (!string.IsNullOrEmpty(newClientId))
                 {
+                    if (!string.IsNullOrEmpty(role))
+                    {
+                        // Re-assign the service account role lost during delete-and-recreate
+                        var realmRoles = await keycloakClientFacade.GetRolesAsync(_realm);
+                        Role? clientRole = realmRoles.FirstOrDefault(x =>
+                            x.Name.Equals(role, StringComparison.InvariantCultureIgnoreCase)
+                        );
+
+                        if (clientRole != null)
+                        {
+                            var serviceAccountUser = await keycloakClientFacade.GetUserForServiceAccountAsync(
+                                _realm,
+                                newClientId
+                            );
+                            _ = await keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                                _realm,
+                                serviceAccountUser.Id,
+                                [clientRole]
+                            );
+                        }
+                        else
+                        {
+                            logger.LogWarning(
+                                "Role {Role} not found; service account role mapping skipped for client {ClientId}",
+                                SanitizeForLog(role),
+                                SanitizeForLog(client.ClientId)
+                            );
+                        }
+                    }
+
                     return new ClientUpdateResult.Success(Guid.Parse(newClientId));
                 }
             }

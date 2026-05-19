@@ -28,3 +28,61 @@ Feature: Token validation
                     }
                   """
              Then it should respond with 401
+
+        Scenario: 03 Ensure a disabled API client cannot obtain a token
+            When a POST request is made to "/v2/vendors" with
+                 """
+                   {
+                     "company": "Token Test Vendor {scenarioRunId}",
+                     "contactName": "Test",
+                     "contactEmailAddress": "test@gmail.com",
+                     "namespacePrefixes": "uri://token-test-{scenarioRunId}.org"
+                   }
+                 """
+            Then it should respond with 201
+            When a POST request is made to "/v2/dmsInstances" with
+                 """
+                   {
+                     "instanceType": "Test",
+                     "instanceName": "Token Test Instance {scenarioRunId}",
+                     "connectionString": "Server=test;Database=TestDb;"
+                   }
+                 """
+            Then it should respond with 201
+            When a POST request is made to "/v2/applications" with
+                 """
+                   {
+                     "vendorId": {vendorId},
+                     "applicationName": "Token Test App {scenarioRunId}",
+                     "claimSetName": "ClaimSet03",
+                     "educationOrganizationIds": [],
+                     "dmsInstanceIds": [{dmsInstanceId}]
+                   }
+                 """
+            Then it should respond with 201
+            When a POST request is made to "/v2/apiClients" with
+                 """
+                   {
+                     "applicationId": {applicationId},
+                     "name": "Disabled Client {scenarioRunId}",
+                     "isApproved": false,
+                     "dmsInstanceIds": [{dmsInstanceId}]
+                   }
+                 """
+            Then it should respond with 201
+             And retrieve created key and secret
+            When a token request is attempted with the captured application credentials
+            Then it should respond with 401
+             And the response body is
+                 """
+                   {
+                     "detail": "The request could not be processed. See 'errors' for details.",
+                     "type": "urn:ed-fi:api:security:authentication",
+                     "title": "Authentication Failed",
+                     "status": 401,
+                     "validationErrors": {},
+                     "errors": [
+                       "invalid_client. Invalid client or Invalid client credentials"
+                     ]
+                   }
+                 """

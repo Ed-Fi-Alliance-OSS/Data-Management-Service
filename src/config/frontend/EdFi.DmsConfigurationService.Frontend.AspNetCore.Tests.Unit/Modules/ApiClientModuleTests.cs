@@ -192,7 +192,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<long[]?>.Ignored,
-                        A<bool>.Ignored
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -393,7 +394,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<long[]?>.Ignored,
-                        false
+                        false,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(disabledClientUuid));
@@ -439,7 +441,8 @@ public class ApiClientModuleTests
                         "TestClaimSet",
                         "1,2",
                         A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1),
-                        false
+                        false,
+                        A<string>.Ignored
                     )
                 )
                 .MustHaveHappenedOnceExactly();
@@ -514,7 +517,8 @@ public class ApiClientModuleTests
                         "TestClaimSet",
                         "1,2",
                         A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1),
-                        false
+                        false,
+                        A<string>.Ignored
                     )
                 )
                 .MustHaveHappenedOnceExactly();
@@ -764,7 +768,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<long[]?>.Ignored,
-                        A<bool>.Ignored
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -1199,7 +1204,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<long[]?>.Ignored,
-                        A<bool>.Ignored
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(

@@ -15,6 +15,12 @@ public class ApiClientUpdateCommand
     public required bool IsApproved { get; set; }
     public long[] DmsInstanceIds { get; set; } = [];
 
+    /// <summary>
+    /// Set server-side after the identity provider issues a new UUID on update.
+    /// Not part of the HTTP request body.
+    /// </summary>
+    public Guid? ClientUuid { get; set; }
+
     public class Validator : AbstractValidator<ApiClientUpdateCommand>
     {
         public Validator()

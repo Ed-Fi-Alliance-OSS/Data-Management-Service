@@ -552,7 +552,7 @@ public class ApplicationRepository(
         try
         {
             string sql = """
-                SELECT ClientId, ClientUuid
+                SELECT ClientId, ClientUuid, IsApproved
                 FROM dmscs.ApiClient
                 WHERE ApplicationId = @Id
                 ORDER BY Id

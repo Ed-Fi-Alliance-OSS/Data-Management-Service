@@ -207,6 +207,7 @@ public class ApplicationModule : IEndpointModule
         HttpContext httpContext,
         IApplicationRepository repository,
         IIdentityProviderRepository clientRepository,
+        IOptions<IdentitySettings> identitySettings,
         ILogger<ApplicationModule> logger
     )
     {
@@ -225,7 +226,9 @@ public class ApplicationModule : IEndpointModule
                         command.ApplicationName,
                         command.ClaimSetName,
                         string.Join(",", command.EducationOrganizationIds),
-                        command.DmsInstanceIds
+                        command.DmsInstanceIds,
+                        client.IsApproved,
+                        identitySettings.Value.ClientRole
                     );
                     switch (clientUpdateResult)
                     {

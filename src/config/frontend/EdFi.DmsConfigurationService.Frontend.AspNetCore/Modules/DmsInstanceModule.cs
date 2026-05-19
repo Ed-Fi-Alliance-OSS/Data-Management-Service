@@ -7,6 +7,7 @@ using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
@@ -25,7 +26,9 @@ public class DmsInstanceModule : IEndpointModule
         endpoints.MapLimitedAccess($"/v2/dmsInstances/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v2/dmsInstances/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v2/dmsInstances/{{id}}", Delete);
-        endpoints.MapSecuredGet($"/v2/dmsInstances/{{id}}/applications/", GetApplicationsByDmsInstance);
+        endpoints
+            .MapSecuredGet($"/v2/dmsInstances/{{id}}/applications/", GetApplicationsByDmsInstance)
+            .Produces<List<ApplicationResponse>>(200);
     }
 
     private static async Task<IResult> InsertDmsInstance(

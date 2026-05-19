@@ -6,6 +6,7 @@
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
@@ -24,7 +25,9 @@ public class VendorModule : IEndpointModule
         endpoints.MapSecuredGet($"/v2/vendors/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v2/vendors/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v2/vendors/{{id}}", Delete);
-        endpoints.MapSecuredGet($"/v2/vendors/{{id}}/applications", GetApplicationsByVendorId);
+        endpoints
+            .MapSecuredGet($"/v2/vendors/{{id}}/applications", GetApplicationsByVendorId)
+            .Produces<List<ApplicationResponse>>(200);
     }
 
     private static async Task<IResult> InsertVendor(

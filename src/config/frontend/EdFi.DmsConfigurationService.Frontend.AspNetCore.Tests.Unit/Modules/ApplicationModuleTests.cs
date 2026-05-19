@@ -145,7 +145,7 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationDeleteResult.Success());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
-                .Returns(new ApplicationApiClientsResult.Success([new("1", Guid.NewGuid())]));
+                .Returns(new ApplicationApiClientsResult.Success([new("1", Guid.NewGuid(), true)]));
 
             A.CallTo(() =>
                     _clientRepository.CreateClientAsync(
@@ -170,7 +170,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -776,7 +778,9 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
-                .Returns(new ApplicationApiClientsResult.Success([new ApiClient("111", Guid.NewGuid())]));
+                .Returns(
+                    new ApplicationApiClientsResult.Success([new ApiClient("111", Guid.NewGuid(), true)])
+                );
 
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
@@ -784,7 +788,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -938,7 +944,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(
-                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid())])
+                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
 
             A.CallTo(() =>
@@ -947,7 +953,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -1124,7 +1132,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(
-                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid())])
+                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
 
             A.CallTo(() =>
@@ -1133,7 +1141,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -1288,7 +1298,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(
-                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid())])
+                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
 
             A.CallTo(() =>
@@ -1297,7 +1307,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -1414,7 +1426,7 @@ public class ApplicationModuleTests
         public void SetUp()
         {
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
-                .Returns(new ApplicationApiClientsResult.Success([new ApiClient("1", Guid.NewGuid())]));
+                .Returns(new ApplicationApiClientsResult.Success([new ApiClient("1", Guid.NewGuid(), true)]));
 
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
                 .Returns(new ClientResetResult.Success("NEW_SECRET"));

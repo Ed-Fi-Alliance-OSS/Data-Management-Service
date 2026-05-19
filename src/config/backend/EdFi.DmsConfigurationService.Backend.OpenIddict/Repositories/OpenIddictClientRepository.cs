@@ -251,7 +251,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string scope,
             string educationOrganizationIds,
             long[]? dmsInstanceIds = null,
-            bool isApproved = true
+            bool isApproved = true,
+            string role = ""
         )
         {
             try
