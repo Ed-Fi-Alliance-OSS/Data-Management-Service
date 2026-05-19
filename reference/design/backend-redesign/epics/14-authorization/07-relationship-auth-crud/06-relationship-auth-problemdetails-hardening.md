@@ -1,6 +1,6 @@
 ---
-jira: DMS-1056
-jira_url: https://edfi.atlassian.net/browse/DMS-1056
+jira: DMS-1165
+jira_url: https://edfi.atlassian.net/browse/DMS-1165
 ---
 
 # Slice 6: Relationship Auth ProblemDetails Hardening

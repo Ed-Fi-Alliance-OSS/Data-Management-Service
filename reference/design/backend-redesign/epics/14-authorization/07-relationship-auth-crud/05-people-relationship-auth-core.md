@@ -1,6 +1,6 @@
 ---
-jira: DMS-1056
-jira_url: https://edfi.atlassian.net/browse/DMS-1056
+jira: DMS-1164
+jira_url: https://edfi.atlassian.net/browse/DMS-1164
 ---
 
 # Slice 5: Implement People Relationship Auth Core

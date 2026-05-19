@@ -1,6 +1,6 @@
 ---
-jira: DMS-1056
-jira_url: https://edfi.atlassian.net/browse/DMS-1056
+jira: DMS-1161
+jira_url: https://edfi.atlassian.net/browse/DMS-1161
 ---
 
 # Slice 2: EdOrg-only GET-by-id And DELETE
