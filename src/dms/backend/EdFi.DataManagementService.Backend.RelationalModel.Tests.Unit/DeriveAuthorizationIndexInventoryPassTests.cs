@@ -620,9 +620,10 @@ public class Given_Person_Resource_With_Self_Securable
 }
 
 /// <summary>
-/// Test fixture asserting that when a subject's Student securable resolves to multiple
-/// candidate chains, BFS picks the shortest. A 3-hop short chain and a 4-hop long chain both
-/// reach <c>Ed-Fi.Student</c>; the pass must emit indexes only for the 3-hop chain.
+/// Pins multi-chain emission: when a subject declares two Student securable paths that resolve
+/// to <em>distinct</em> join chains (3-hop short vs. 4-hop long, each via its own intermediate
+/// resources), the pass emits auth indexes for <em>every</em> hop of <em>both</em> chains so
+/// independent person references stay covered.
 /// </summary>
 [TestFixture]
 public class Given_Resource_Chain_Of_Three_Hops
@@ -645,54 +646,49 @@ public class Given_Resource_Chain_Of_Three_Hops
     }
 
     [Test]
-    public void It_should_emit_exactly_three_person_join_auth_indexes()
+    public void It_should_emit_indexes_for_every_hop_of_both_chains()
     {
-        _authIndexes.Should().HaveCount(3);
+        _authIndexes.Should().HaveCount(7);
     }
 
     [Test]
-    public void It_should_emit_the_subject_hop_on_the_short_chain_FK()
-    {
-        var index = _authIndexes.Single(i =>
-            i.Table.Name == "ThreeHopChainSubject" && i.KeyColumns[0].Value == "ShortHop1_DocumentId"
-        );
-        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
-        index.Name.Value.Should().Be("IX_ThreeHopChainSubject_ShortHop1_DocumentId_Auth");
-    }
-
-    [Test]
-    public void It_should_emit_the_first_intermediate_hop_on_the_short_chain()
-    {
-        var index = _authIndexes.Single(i =>
-            i.Table.Name == "ShortHop1" && i.KeyColumns[0].Value == "ShortHop2_DocumentId"
-        );
-        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
-        index.Name.Value.Should().Be("IX_ShortHop1_ShortHop2_DocumentId_Auth");
-    }
-
-    [Test]
-    public void It_should_emit_the_terminal_hop_landing_on_Student()
-    {
-        var index = _authIndexes.Single(i =>
-            i.Table.Name == "ShortHop2" && i.KeyColumns[0].Value == "Student_DocumentId"
-        );
-        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
-        index.Name.Value.Should().Be("IX_ShortHop2_Student_DocumentId_Auth");
-    }
-
-    [Test]
-    public void It_should_not_emit_indexes_for_the_long_chain_hops()
+    public void It_should_emit_the_subject_hops_on_both_chains()
     {
         _authIndexes
             .Should()
-            .NotContain(i =>
-                i.Table.Name == "LongHop1" || i.Table.Name == "LongHop2" || i.Table.Name == "LongHop3"
+            .Contain(i =>
+                i.Table.Name == "ThreeHopChainSubject" && i.KeyColumns[0].Value == "ShortHop1_DocumentId"
             );
         _authIndexes
             .Should()
-            .NotContain(i =>
+            .Contain(i =>
                 i.Table.Name == "ThreeHopChainSubject" && i.KeyColumns[0].Value == "LongHop1_DocumentId"
             );
+    }
+
+    [Test]
+    public void It_should_emit_every_intermediate_hop_on_the_short_chain()
+    {
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "ShortHop1" && i.KeyColumns[0].Value == "ShortHop2_DocumentId");
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "ShortHop2" && i.KeyColumns[0].Value == "Student_DocumentId");
+    }
+
+    [Test]
+    public void It_should_emit_every_intermediate_hop_on_the_long_chain()
+    {
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "LongHop1" && i.KeyColumns[0].Value == "LongHop2_DocumentId");
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "LongHop2" && i.KeyColumns[0].Value == "LongHop3_DocumentId");
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "LongHop3" && i.KeyColumns[0].Value == "Student_DocumentId");
     }
 }
 
@@ -1729,10 +1725,9 @@ public class Given_SecurableElementLocationResolver_with_multi_candidate_path
     [Test]
     public void It_should_emit_the_auth_index_at_the_root_candidate()
     {
-        // End-to-end agreement check: the pass uses ResolveSecurableElementLocation, which now
-        // delegates to SecurableElementLocationResolver. The auth index must be emitted on the
-        // root scalar location, not the child binding location a first-match-wins scan would
-        // have produced.
+        // End-to-end agreement check: the pass delegates to SecurableElementLocationResolver.
+        // The auth index must be emitted on the root scalar location, not the child binding
+        // location a first-match-wins scan would have produced.
         var modelSet = AuthorizationIndexTestRunner.Build(ctx =>
             ctx.ConcreteResourcesInNameOrder.Add(
                 AuthIndexFixtureResources.BuildResourceWithMultiCandidateOnSamePath()
@@ -1749,9 +1744,9 @@ public class Given_SecurableElementLocationResolver_with_multi_candidate_path
 /// <summary>
 /// Pins the tied-length first-wins behavior in
 /// <see cref="PersonJoinPathResolver.ResolveShortestPersonPath"/>: when a subject declares two
-/// distinct 1-hop Student references on different FK columns, only the first iterated path
-/// emits an auth index — the second FK column is silently unindexed. Matches the runtime
-/// resolver, which uses the same strict-less-than tiebreaker.
+/// distinct 1-hop Student references on different FK columns (two structurally different
+/// chains), the pass emits an auth index for <em>each</em> FK column. Independent person
+/// references stay covered.
 /// </summary>
 [TestFixture]
 public class Given_Subject_With_Two_Direct_Person_References_Same_Length_Chains
@@ -1774,73 +1769,71 @@ public class Given_Subject_With_Two_Direct_Person_References_Same_Length_Chains
     }
 
     [Test]
-    public void It_should_emit_exactly_one_auth_index_for_the_first_resolved_path()
+    public void It_should_emit_an_auth_index_for_each_FK_column()
     {
-        // First-wins by strict < tiebreaker: only the path iterated first emits its hop.
-        _authIndexes.Should().ContainSingle(i => i.Table.Name == "TwoDirectStudentRefCarrier");
+        _authIndexes.Where(i => i.Table.Name == "TwoDirectStudentRefCarrier").Should().HaveCount(2);
     }
 
     [Test]
-    public void It_should_emit_the_index_on_the_first_FK_column_only()
+    public void It_should_emit_an_index_keyed_on_StudentA_DocumentId()
     {
-        var index = _authIndexes.Single();
-        index.KeyColumns.Select(c => c.Value).Should().Equal("StudentA_DocumentId");
+        var index = _authIndexes.Single(i => i.KeyColumns[0].Value == "StudentA_DocumentId");
+        index.Table.Name.Should().Be("TwoDirectStudentRefCarrier");
         index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
     }
 
     [Test]
-    public void It_should_not_emit_an_index_for_the_second_FK_column()
+    public void It_should_emit_an_index_keyed_on_StudentB_DocumentId()
     {
-        _authIndexes.Should().NotContain(i => i.KeyColumns[0].Value == "StudentB_DocumentId");
+        var index = _authIndexes.Single(i => i.KeyColumns[0].Value == "StudentB_DocumentId");
+        index.Table.Name.Should().Be("TwoDirectStudentRefCarrier");
+        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
     }
 }
 
 /// <summary>
-/// Pins the silent-skip contract for mixed resolvable + unresolvable root-level person paths:
-/// when at least one Student path resolves to a binding, the pass emits its chain and does NOT
-/// flag any sibling unresolved paths as errors. Matches the runtime resolver
-/// (<see cref="SecurableElementColumnPathResolver.ResolveAll"/>): unresolved person paths are
-/// only thrown when <em>no</em> root-level path resolved.
+/// Pins the surface-unresolved-sibling contract (Fix #7, DMS-1094 Round 6): when a Student
+/// path resolves alongside a sibling path that does not bind to any
+/// <see cref="DocumentReferenceBinding"/>, the pass throws on the unresolved sibling rather
+/// than silently dropping it. Matches the runtime resolver. Previously this fixture pinned
+/// the silent-skip contract — that hid schema drift until every path broke.
 /// </summary>
 [TestFixture]
 public class Given_Subject_With_Mixed_Resolvable_And_Unresolvable_Root_Person_Paths
 {
-    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
     private Exception? _exception;
 
     [SetUp]
     public void Setup()
     {
         _exception = TestExceptions.CaptureException(() =>
-            _authIndexes = AuthorizationIndexTestRunner
-                .Build(ctx =>
-                {
-                    ctx.ConcreteResourcesInNameOrder.Add(
-                        AuthIndexFixtureResources.BuildResourceWithMixedResolvableAndUnresolvableStudentPaths()
-                    );
-                    ctx.ConcreteResourcesInNameOrder.Add(
-                        AuthIndexFixtureResources.BuildPlainResource("Student")
-                    );
-                })
-                .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
-                .ToArray()
+            AuthorizationIndexTestRunner.Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithMixedResolvableAndUnresolvableStudentPaths()
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(AuthIndexFixtureResources.BuildPlainResource("Student"));
+            })
         );
     }
 
     [Test]
-    public void It_should_not_throw()
+    public void It_should_throw_on_the_unresolved_sibling()
     {
-        _exception.Should().BeNull();
+        _exception.Should().BeOfType<InvalidOperationException>();
     }
 
     [Test]
-    public void It_should_emit_exactly_one_auth_index_for_the_resolved_path()
+    public void It_should_name_the_subject_resource_in_the_message()
     {
-        _authIndexes.Should().ContainSingle();
-        var index = _authIndexes.Single();
-        index.Table.Name.Should().Be("MixedResolvableStudentCarrier");
-        index.KeyColumns.Select(c => c.Value).Should().Equal("Student_DocumentId");
-        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
+        _exception!.Message.Should().Contain("MixedResolvableStudentCarrier");
+    }
+
+    [Test]
+    public void It_should_list_only_the_unresolved_path_in_the_message()
+    {
+        _exception!.Message.Should().Contain("$.legacyStudentReference.studentUniqueId");
+        _exception.Message.Should().NotContain("$.studentReference.studentUniqueId");
     }
 }
 

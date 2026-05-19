@@ -18,7 +18,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
     // Frequently-used column names, allocated once to avoid repetitive allocations.
-    private static readonly DbColumnName DocumentIdColumn = new("DocumentId");
+    private static readonly DbColumnName DocumentIdColumn = RelationalNameConventions.DocumentIdColumnName;
     private static readonly DbColumnName ContentVersionColumn = new("ContentVersion");
     private static readonly DbColumnName ContentLastModifiedAtColumn = new("ContentLastModifiedAt");
     private static readonly DbColumnName IdentityVersionColumn = new("IdentityVersion");

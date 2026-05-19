@@ -77,9 +77,7 @@ internal static class SecurableElementColumnPathResolver
         }
 
         unresolvedPaths.AddRange(
-            resolvedEdOrgCandidates
-                .UnresolvedElements.Select(static element => element.JsonPath)
-                .Distinct(StringComparer.Ordinal)
+            resolvedEdOrgCandidates.UnresolvedElements.Select(static element => element.JsonPath)
         );
 
         foreach (string ns in securableElements.Namespace)
@@ -134,7 +132,7 @@ internal static class SecurableElementColumnPathResolver
             throw new InvalidOperationException(
                 $"Failed to resolve securable element column paths for resource "
                     + $"'{resource.ProjectName}.{resource.ResourceName}': "
-                    + $"unresolved paths: {string.Join(", ", unresolvedPaths)}"
+                    + $"unresolved paths: {string.Join(", ", unresolvedPaths.Distinct(StringComparer.Ordinal))}"
             );
         }
 
@@ -145,7 +143,7 @@ internal static class SecurableElementColumnPathResolver
                 $"Failed to resolve securable element column paths for resource "
                     + $"'{resource.ProjectName}.{resource.ResourceName}': "
                     + $"all paths require unsupported child-table traversal (array-nested): "
-                    + $"{string.Join(", ", skippedArrayNestedPaths)}"
+                    + $"{string.Join(", ", skippedArrayNestedPaths.Distinct(StringComparer.Ordinal))}"
             );
         }
 
@@ -202,8 +200,8 @@ internal static class SecurableElementColumnPathResolver
     /// (<see cref="ColumnPathStep.TargetTable"/> and <see cref="ColumnPathStep.TargetColumnName"/>
     /// are <see langword="null"/> — the auth value lives at <c>SourceTable.SourceColumnName</c>).
     /// Delegates to <see cref="SecurableElementLocationResolver"/> so the runtime mapping and the
-    /// DDL index pass (<c>DeriveAuthorizationIndexInventoryPass.ResolveSecurableElementLocation</c>)
-    /// agree on which (table, column) carries the value for both root-level and array-nested paths.
+    /// DDL index pass agree on which (table, column) carries the value for both root-level and
+    /// array-nested paths.
     /// </summary>
     private static ColumnPathStep? ResolveEdOrgOrNamespacePath(
         ConcreteResourceModel resource,
@@ -212,11 +210,11 @@ internal static class SecurableElementColumnPathResolver
 
     /// <summary>
     /// Resolves person (Student/Contact/Staff) securable element paths. Delegates the shortest-
-    /// path resolution to <see cref="PersonJoinPathResolver.ResolveShortestPersonPath"/> and
-    /// folds the result into <paramref name="results"/> /
-    /// <paramref name="unresolvedPaths"/>. The "subject IS the person resource" case is the only
-    /// path where a null shortest-path is not an error — see
-    /// <see cref="PersonJoinPathResolver.IsPersonResource"/>.
+    /// path resolution to <see cref="PersonJoinPathResolver.ResolveDistinctPersonChains"/> —
+    /// one <see cref="ResolvedSecurableElementPath"/> is appended to <paramref name="results"/>
+    /// per distinct chain, supporting independent same-kind person references. The "subject IS
+    /// the person resource" case is the only path where zero resolved chains plus non-empty
+    /// root-level paths is not an error — see <see cref="PersonJoinPathResolver.IsPersonResource"/>.
     /// </summary>
     private static void ResolvePersonPaths(
         ConcreteResourceModel subjectResource,
@@ -234,31 +232,33 @@ internal static class SecurableElementColumnPathResolver
             return;
         }
 
-        var shortestPath = PersonJoinPathResolver.ResolveShortestPersonPath(
+        var chains = PersonJoinPathResolver.ResolveDistinctPersonChains(
             subjectResource,
             personPaths,
             personResourceName,
             resourceLookup,
             skippedArrayNestedPaths,
-            out var rootLevelPaths
+            out _,
+            out var unresolvedRootLevelPaths
         );
 
-        if (shortestPath is not null)
+        foreach (var chain in chains)
         {
-            results.Add(new ResolvedSecurableElementPath(kind, shortestPath));
+            results.Add(new ResolvedSecurableElementPath(kind, chain));
         }
-        else if (
-            rootLevelPaths.Count > 0
+
+        // Surface any root-level path that did not bind (Fix #7) — unless the subject IS the
+        // person resource, in which case unresolved paths are self-references and silently
+        // skipped (e.g. Contact declaring $.contactUniqueId).
+        if (
+            unresolvedRootLevelPaths.Count > 0
             && !PersonJoinPathResolver.IsPersonResource(
                 subjectResource.RelationalModel.Resource,
                 personResourceName
             )
         )
         {
-            // Only flag as unresolved when the subject resource is NOT the person resource
-            // itself. Person resources (e.g., Contact with $.contactUniqueId) don't need
-            // a join chain — their own identity column is the authorization anchor.
-            unresolvedPaths.AddRange(rootLevelPaths);
+            unresolvedPaths.AddRange(unresolvedRootLevelPaths);
         }
     }
 

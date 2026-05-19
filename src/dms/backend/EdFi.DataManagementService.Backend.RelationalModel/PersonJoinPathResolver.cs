@@ -3,10 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.RelationalModel.Naming;
+
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
-/// Resolves the shortest column-path chain from a subject resource to a named person resource
+/// Resolves the column-path chain from a subject resource to a named person resource
 /// (<c>Student</c>, <c>Contact</c>, or <c>Staff</c>) via the subject's Student / Contact /
 /// Staff securable element JSON paths.
 /// </summary>
@@ -35,7 +37,10 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///     <see cref="DocumentReferenceBinding"/> on the subject's root table that owns an
 ///     <see cref="ReferenceIdentityBinding"/> whose <c>ReferenceJsonPath</c> equals the
 ///     securable path exactly. A reference-object prefix match alone is not enough — the
-///     full identity path must be present in the binding's <c>IdentityBindings</c>.</description>
+///     full identity path must be present in the binding's <c>IdentityBindings</c>.
+///     Paths that don't bind are accumulated into <c>unresolvedRootLevelPaths</c>; the caller
+///     decides whether to throw (subject is not the person resource) or skip (subject IS the
+///     person resource, the path is a self-reference).</description>
 ///   </item>
 ///   <item>
 ///     <description>If the binding's target is the person resource, the chain is a single
@@ -43,15 +48,16 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///     until the person resource is reached.</description>
 ///   </item>
 ///   <item>
-///     <description>Return the shortest chain across all candidate paths. Each step's
-///     source column is canonicalized through
-///     <see cref="ColumnStorage.UnifiedAlias.CanonicalColumn"/>.</description>
+///     <description>Dedupe by structural chain equality. Multiple paths resolving to the same
+///     chain (key-unification alternatives) collapse to one. Paths producing different chains
+///     are independent person references and yield one chain each — callers emit auth indexes
+///     and runtime filter steps per chain.</description>
 ///   </item>
 /// </list>
-/// <para>Returns <see langword="null"/> when no non-array-nested path resolves. Callers decide
-/// whether that null combined with "subject is not the person resource itself" means
-/// "unresolved" (throw) or "OK, subject is the person and its own DocumentId is the anchor"
-/// (skip). Use <see cref="IsPersonResource"/> for that check.</para>
+/// <para>Returns an empty list when no non-array-nested path resolves. Callers decide whether
+/// that — combined with "subject is not the person resource itself" — means "unresolved"
+/// (throw) or "OK, subject is the person and its own DocumentId is the anchor" (skip). Use
+/// <see cref="IsPersonResource"/> for that check.</para>
 /// </remarks>
 public static class PersonJoinPathResolver
 {
@@ -62,28 +68,35 @@ public static class PersonJoinPathResolver
     /// </summary>
     public const string EdFiProjectName = "Ed-Fi";
 
-    private static readonly DbColumnName _documentIdColumn = new("DocumentId");
-
     /// <summary>
-    /// Resolves the shortest person-join chain from <paramref name="subjectResource"/> to the
+    /// Resolves every distinct person-join chain from <paramref name="subjectResource"/> to the
     /// named person resource via the supplied securable element JSON paths.
     /// </summary>
+    /// <remarks>
+    /// Multiple JSON paths that fold onto the same <c>(table, FK, target, target-column)</c>
+    /// sequence (key-unification alternatives) collapse into a single chain. Paths producing
+    /// structurally different chains are independent person references and yield one chain
+    /// each — callers emit indexes / runtime auth-filter steps per chain.
+    /// </remarks>
     /// <param name="subjectResource">Subject resource declaring the person securable element(s).</param>
     /// <param name="personPaths">Securable element JSON paths for one person kind (Student / Contact / Staff).</param>
     /// <param name="personResourceName">Person resource name — <c>"Student"</c>, <c>"Contact"</c>, or <c>"Staff"</c>.</param>
     /// <param name="resourceLookup">All concrete resources keyed by qualified resource name.</param>
     /// <param name="skippedArrayNestedPaths">Mutable accumulator: array-nested paths (containing <c>[*]</c>) are appended here.</param>
     /// <param name="rootLevelPaths">Output: the subset of <paramref name="personPaths"/> that are not array-nested, in input order.</param>
+    /// <param name="unresolvedRootLevelPaths">Output: root-level paths that did not bind to a <see cref="DocumentReferenceBinding"/>, in input order.</param>
     /// <returns>
-    /// Shortest column-path chain, or <see langword="null"/> if no non-array-nested path resolved.
+    /// All distinct resolved chains (deduped by structural equality), in first-resolution order.
+    /// Empty when no non-array-nested path resolved.
     /// </returns>
-    public static IReadOnlyList<ColumnPathStep>? ResolveShortestPersonPath(
+    public static IReadOnlyList<IReadOnlyList<ColumnPathStep>> ResolveDistinctPersonChains(
         ConcreteResourceModel subjectResource,
         IReadOnlyList<string> personPaths,
         string personResourceName,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         List<string> skippedArrayNestedPaths,
-        out IReadOnlyList<string> rootLevelPaths
+        out IReadOnlyList<string> rootLevelPaths,
+        out IReadOnlyList<string> unresolvedRootLevelPaths
     )
     {
         ArgumentNullException.ThrowIfNull(subjectResource);
@@ -92,10 +105,12 @@ public static class PersonJoinPathResolver
         ArgumentNullException.ThrowIfNull(resourceLookup);
         ArgumentNullException.ThrowIfNull(skippedArrayNestedPaths);
 
+        rootLevelPaths = [];
+        unresolvedRootLevelPaths = [];
+
         if (personPaths.Count == 0)
         {
-            rootLevelPaths = [];
-            return null;
+            return [];
         }
 
         // Person path traversal currently follows only root-table bindings.
@@ -116,61 +131,103 @@ public static class PersonJoinPathResolver
 
         if (rootLevel.Count == 0)
         {
-            return null;
+            return [];
         }
 
         var model = subjectResource.RelationalModel;
         var rootTable = model.Root;
 
-        IReadOnlyList<ColumnPathStep>? shortestPath = null;
+        var resolvedChains = new List<IReadOnlyList<ColumnPathStep>>();
+        var unresolved = new List<string>();
 
         foreach (var personPath in rootLevel)
         {
-            var binding = FindBindingByPersonPath(model, rootTable.Table, personPath);
-            if (binding is null)
+            var chain = TryResolveOneChain(
+                subjectResource,
+                rootTable,
+                model,
+                personPath,
+                personResourceName,
+                resourceLookup
+            );
+            if (chain is null)
             {
-                continue;
-            }
-
-            if (IsPersonResource(binding.TargetResource, personResourceName))
-            {
-                if (!resourceLookup.TryGetValue(binding.TargetResource, out var directTarget))
-                {
-                    continue;
-                }
-
-                var fkColumn = ResolveToCanonicalColumn(rootTable, binding.FkColumn);
-                var path = new List<ColumnPathStep>
-                {
-                    new(
-                        rootTable.Table,
-                        fkColumn,
-                        directTarget.RelationalModel.Root.Table,
-                        _documentIdColumn
-                    ),
-                };
-                if (shortestPath is null || path.Count < shortestPath.Count)
-                {
-                    shortestPath = path;
-                }
+                unresolved.Add(personPath);
             }
             else
             {
-                var chain = BfsToPersonResource(
-                    subjectResource,
-                    rootTable,
-                    binding,
-                    personResourceName,
-                    resourceLookup
-                );
-                if (chain is not null && (shortestPath is null || chain.Count < shortestPath.Count))
-                {
-                    shortestPath = chain;
-                }
+                resolvedChains.Add(chain);
             }
         }
 
-        return shortestPath;
+        unresolvedRootLevelPaths = unresolved;
+
+        return resolvedChains.Distinct(ChainEqualityComparer.Instance).ToList();
+    }
+
+    private static IReadOnlyList<ColumnPathStep>? TryResolveOneChain(
+        ConcreteResourceModel subjectResource,
+        DbTableModel rootTable,
+        RelationalResourceModel model,
+        string personPath,
+        string personResourceName,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup
+    )
+    {
+        var binding = FindBindingByPersonPath(model, rootTable.Table, personPath);
+        if (binding is null)
+        {
+            return null;
+        }
+
+        if (IsPersonResource(binding.TargetResource, personResourceName))
+        {
+            if (!resourceLookup.TryGetValue(binding.TargetResource, out var directTarget))
+            {
+                return null;
+            }
+
+            var fkColumn = ResolveToCanonicalColumn(rootTable, binding.FkColumn);
+            return
+            [
+                new ColumnPathStep(
+                    rootTable.Table,
+                    fkColumn,
+                    directTarget.RelationalModel.Root.Table,
+                    RelationalNameConventions.DocumentIdColumnName
+                ),
+            ];
+        }
+
+        return BfsToPersonResource(subjectResource, rootTable, binding, personResourceName, resourceLookup);
+    }
+
+    private sealed class ChainEqualityComparer : IEqualityComparer<IReadOnlyList<ColumnPathStep>>
+    {
+        public static readonly ChainEqualityComparer Instance = new();
+
+        public bool Equals(IReadOnlyList<ColumnPathStep>? x, IReadOnlyList<ColumnPathStep>? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+            if (x is null || y is null)
+            {
+                return false;
+            }
+            return x.SequenceEqual(y);
+        }
+
+        public int GetHashCode(IReadOnlyList<ColumnPathStep> obj)
+        {
+            var hc = new HashCode();
+            foreach (var step in obj)
+            {
+                hc.Add(step);
+            }
+            return hc.ToHashCode();
+        }
     }
 
     /// <summary>
@@ -222,7 +279,7 @@ public static class PersonJoinPathResolver
             subjectRootTable.Table,
             firstFkColumn,
             intermediateResource.RelationalModel.Root.Table,
-            _documentIdColumn
+            RelationalNameConventions.DocumentIdColumnName
         );
 
         visited.Add(firstHopBinding.TargetResource);
@@ -262,7 +319,7 @@ public static class PersonJoinPathResolver
                     currentRoot.Table,
                     fkColumn,
                     targetResource.RelationalModel.Root.Table,
-                    _documentIdColumn
+                    RelationalNameConventions.DocumentIdColumnName
                 );
 
                 var newPath = new List<ColumnPathStep>(currentPath) { step };

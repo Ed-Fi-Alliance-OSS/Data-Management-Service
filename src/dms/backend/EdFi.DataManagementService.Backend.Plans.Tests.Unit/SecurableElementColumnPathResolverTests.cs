@@ -539,9 +539,11 @@ public class Given_SecurableElementColumnPathResolver
         }
 
         [Test]
-        public void It_should_pick_shortest_path_when_multiple_paths_exist()
+        public void It_should_emit_one_result_per_distinct_chain()
         {
-            // Resource has two paths to Student: one direct, one through intermediate
+            // Resource has two independent paths to Student: one direct, one through an
+            // intermediate. Both chains are emitted as separate ResolvedSecurableElementPath
+            // entries so the runtime auth filter can join through each independently.
             var rootTable = CreateRootTable(
                 Table("TestResource"),
                 [
@@ -636,7 +638,7 @@ public class Given_SecurableElementColumnPathResolver
             );
             var studentModel = CreateModel("Ed-Fi", "Student", studentRoot);
 
-            // Two paths: direct and indirect
+            // Two paths: direct (1 hop) and indirect (2 hops) — distinct chains
             var securableElements = new ResourceSecurableElements(
                 [],
                 [],
@@ -654,11 +656,22 @@ public class Given_SecurableElementColumnPathResolver
                 [testConcrete, intermediateConcrete, studentConcrete]
             );
 
-            // Should pick the shortest path (direct, 1 hop) over the indirect (2 hops)
-            results.Should().HaveCount(1);
-            results[0].Kind.Should().Be(SecurableElementKind.Student);
-            results[0].Steps.Should().HaveCount(1);
-            results[0].Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            results.Should().HaveCount(2);
+            results.Should().AllSatisfy(p => p.Kind.Should().Be(SecurableElementKind.Student));
+
+            // Direct chain: 1 hop, FK column Student_DocumentId on TestResource.
+            results
+                .Should()
+                .ContainSingle(p =>
+                    p.Steps.Count == 1 && p.Steps[0].SourceColumnName == Col("Student_DocumentId")
+                );
+
+            // Indirect chain: 2 hops via Intermediate.
+            results
+                .Should()
+                .ContainSingle(p =>
+                    p.Steps.Count == 2 && p.Steps[0].SourceColumnName == Col("Intermediate_DocumentId")
+                );
         }
     }
 
