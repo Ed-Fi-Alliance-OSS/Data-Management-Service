@@ -657,6 +657,145 @@ actual: {requestInfo.FrontendResponse.Body}
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Relational_Get_Request_With_Empty_EdOrg_Claims : GetByIdHandlerTests
+    {
+        private static readonly string[] _responseErrors =
+        [
+            "Relationship authorization required caller EducationOrganizationIds.",
+        ];
+        private static readonly string[] _responseHints =
+        [
+            "Verify the caller's education organization claims.",
+        ];
+
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IRelationalGetRequest? CapturedRequest { get; private set; }
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                CapturedRequest = getRequest as IRelationalGetRequest;
+
+                return Task.FromResult<GetResult>(
+                    new GetFailureRelationshipNotAuthorized(
+                        _responseErrors,
+                        CreateEmptyClaimsRelationshipFailure(),
+                        _responseHints
+                    )
+                );
+            }
+
+            private static RelationshipAuthorizationFailure CreateEmptyClaimsRelationshipFailure() =>
+                new(
+                    RelationshipAuthorizationFailureValueSource.Stored,
+                    EmittedAuth1Index: 0,
+                    FailedStrategies:
+                    [
+                        new RelationshipAuthorizationFailedStrategy(
+                            ConfiguredStrategyIndex: 0,
+                            RelationshipLocalOrder: 0,
+                            StrategyName: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                            StrategyKind: "RelationshipsWithEdOrgsOnly",
+                            AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                                Name: "auth.EdOrgIdToEdOrgId",
+                                SubjectValueColumn: "TargetEdOrgId",
+                                ClaimEducationOrganizationIdColumn: "SourceEdOrgId"
+                            ),
+                            FailedSubjects:
+                            [
+                                new RelationshipAuthorizationFailedSubject(
+                                    SubjectIndex: 0,
+                                    FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+                                    RootBinding: new RelationshipAuthorizationRootBinding(
+                                        ResourceName: "SampleExtension.Student",
+                                        TableName: "sample.Student",
+                                        ColumnName: "SchoolId"
+                                    ),
+                                    SecurableElements:
+                                    [
+                                        new RelationshipAuthorizationSecurableElement(
+                                            Kind: "EducationOrganization",
+                                            JsonPath: "$.schoolReference.schoolId",
+                                            ReadableName: "SchoolId"
+                                        ),
+                                    ]
+                                ),
+                            ]
+                        ),
+                    ],
+                    ClaimEducationOrganizationIds: []
+                );
+        }
+
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = No.RequestInfo("empty-claims-get-by-id");
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("SampleExtension"),
+                ResourceName: new ResourceName("Student"),
+                IsDescriptor: false,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                    false,
+                    default,
+                    default
+                ),
+                AuthorizationSecurableInfo: []
+            );
+            _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.AuthorizationStrategyEvaluators =
+            [
+                new(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly, [], FilterOperator.Or),
+            ];
+            _requestInfo.ClientAuthorizations = new ClientAuthorizations(
+                TokenId: "token-id",
+                ClientId: "client-id",
+                ClaimSetName: "claim-set",
+                EducationOrganizationIds: [],
+                NamespacePrefixes: [],
+                DmsInstanceIds: []
+            );
+
+            var (getByIdHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await getByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_passes_empty_edorg_claims_through_the_relational_authorization_context()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository
+                .CapturedRequest!.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public void It_maps_the_empty_claims_relationship_denial_to_http_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(static error => error!.ToString())
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(_responseErrors[0]);
+            _requestInfo.FrontendResponse.Body!["detail"]!.ToString().Should().Contain(_responseHints[0]);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Descriptor_Request_With_Relational_Read_Metadata : GetByIdHandlerTests
     {
         private static ResourceInfo CreateResourceInfo(

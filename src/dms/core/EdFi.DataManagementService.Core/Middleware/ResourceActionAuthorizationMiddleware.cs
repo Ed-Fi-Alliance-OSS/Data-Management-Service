@@ -346,7 +346,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     private static bool IsRelationalSingleRecordDms1056Request(RequestInfo requestInfo) =>
         requestInfo.MappingSet is not null
         && (
-            requestInfo.Method == RequestMethod.GET && requestInfo.PathComponents.HasDocumentUuidSegment
+            (requestInfo.Method == RequestMethod.GET && requestInfo.PathComponents.HasDocumentUuidSegment)
             || requestInfo.Method == RequestMethod.DELETE
         );
 

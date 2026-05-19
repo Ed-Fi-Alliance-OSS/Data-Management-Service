@@ -45,7 +45,8 @@ public interface ISingleRecordRelationshipAuthorizationExecutor
 }
 
 internal sealed class SingleRecordRelationshipAuthorizationExecutor(
-    IRelationalCommandExecutor commandExecutor
+    IRelationalCommandExecutor commandExecutor,
+    IRelationalParameterConfigurator? parameterConfigurator = null
 ) : ISingleRecordRelationshipAuthorizationExecutor
 {
     private const string AuthorizationResultColumn = "AuthorizationResult";
@@ -53,6 +54,8 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
 
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
+    private readonly IRelationalParameterConfigurator _parameterConfigurator =
+        parameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
 
     public async Task<SingleRecordRelationshipAuthorizationExecutionResult> ExecuteAsync(
         SingleRecordRelationshipAuthorizationExecutionRequest request,
@@ -74,7 +77,7 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
         {
             return await _commandExecutor
                 .ExecuteReaderAsync(
-                    BuildCommand(sqlPlan, request),
+                    BuildCommand(sqlPlan, request, _parameterConfigurator),
                     ReadAuthorizedResultAsync,
                     cancellationToken
                 )
@@ -101,7 +104,8 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
 
     private static RelationalCommand BuildCommand(
         SingleRecordRelationshipAuthorizationSqlPlan sqlPlan,
-        SingleRecordRelationshipAuthorizationExecutionRequest request
+        SingleRecordRelationshipAuthorizationExecutionRequest request,
+        IRelationalParameterConfigurator parameterConfigurator
     )
     {
         Dictionary<string, object?> valuesByParameterName = new(StringComparer.Ordinal)
@@ -119,13 +123,21 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
             sqlPlan.AuthorizationSql,
             [
                 .. sqlPlan.ParametersInOrder.Select(parameter =>
-                    BuildParameter(parameter, valuesByParameterName[parameter.ParameterName])
+                    BuildParameter(
+                        parameter,
+                        valuesByParameterName[parameter.ParameterName],
+                        parameterConfigurator
+                    )
                 ),
             ]
         );
     }
 
-    private static RelationalParameter BuildParameter(QuerySqlParameter parameter, object? value) =>
+    private static RelationalParameter BuildParameter(
+        QuerySqlParameter parameter,
+        object? value,
+        IRelationalParameterConfigurator parameterConfigurator
+    ) =>
         parameter.Binding.Kind switch
         {
             QuerySqlParameterBindingKind.Scalar => new RelationalParameter(
@@ -145,7 +157,7 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
                         ),
                     RequireInt64List(value, parameter.ParameterName)
                 ),
-                dbParameter => ConfigureStructuredParameter(dbParameter, parameter)
+                dbParameter => parameterConfigurator.ConfigureParameter(dbParameter, parameter)
             ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(parameter),
@@ -317,31 +329,6 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
         }
 
         return structuredTable;
-    }
-
-    private static void ConfigureStructuredParameter(
-        DbParameter dbParameter,
-        QuerySqlParameter querySqlParameter
-    )
-    {
-        var sqlDbTypeProperty = dbParameter.GetType().GetProperty("SqlDbType");
-        var typeNameProperty = dbParameter.GetType().GetProperty("TypeName");
-
-        if (sqlDbTypeProperty is null || typeNameProperty is null)
-        {
-            throw new InvalidOperationException(
-                "SQL Server structured authorization parameter binding requires a SqlParameter-compatible instance."
-            );
-        }
-
-        sqlDbTypeProperty.SetValue(dbParameter, SqlDbType.Structured);
-        typeNameProperty.SetValue(
-            dbParameter,
-            querySqlParameter.Binding.StructuredTypeName
-                ?? throw new InvalidOperationException(
-                    $"Structured binding for parameter '{querySqlParameter.ParameterName}' is missing a type name."
-                )
-        );
     }
 }
 

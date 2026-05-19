@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Security;
@@ -109,7 +110,10 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
                 ]),
             ]
         );
-        var sut = new SingleRecordRelationshipAuthorizationExecutor(commandExecutor);
+        var sut = new SingleRecordRelationshipAuthorizationExecutor(
+            commandExecutor,
+            new MssqlRelationalParameterConfigurator()
+        );
 
         var result = await sut.ExecuteAsync(
             new SingleRecordRelationshipAuthorizationExecutionRequest(

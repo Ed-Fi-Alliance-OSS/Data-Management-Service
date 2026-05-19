@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
@@ -88,17 +89,10 @@ public static class RelationshipAuthorizationFailureMapper
     private static bool TryMapStrategy(
         RelationshipAuthorizationCheckSpec checkSpec,
         IReadOnlyList<RelationshipAuthorizationAuth1SubjectFailure> subjectFailures,
-        out RelationshipAuthorizationFailedStrategy failedStrategy
+        [MaybeNullWhen(false)] out RelationshipAuthorizationFailedStrategy failedStrategy
     )
     {
-        failedStrategy = new RelationshipAuthorizationFailedStrategy(
-            0,
-            0,
-            string.Empty,
-            string.Empty,
-            null,
-            []
-        );
+        failedStrategy = null!;
 
         List<RelationshipAuthorizationFailedSubject> failedSubjects = [];
 

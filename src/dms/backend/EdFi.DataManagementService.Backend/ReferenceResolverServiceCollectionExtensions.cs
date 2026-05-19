@@ -50,6 +50,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.AddOptions();
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalCommandExecutor, TRelationalCommandExecutor>());
         services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationalParameterConfigurator,
+                DefaultRelationalParameterConfigurator
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteSessionFactory, TRelationalWriteSessionFactory>()
         );
         services.Replace(ServiceDescriptor.Scoped<IDocumentHydrator, TDocumentHydrator>());

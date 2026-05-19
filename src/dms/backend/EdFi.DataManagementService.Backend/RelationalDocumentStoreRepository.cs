@@ -34,7 +34,8 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
     IRelationalWriteSessionFactory writeSessionFactory,
     RelationalEdOrgAuthorizationSubjectSelector edOrgAuthorizationSubjectSelector,
-    ISingleRecordRelationshipAuthorizationExecutor? singleRecordRelationshipAuthorizationExecutor = null
+    ISingleRecordRelationshipAuthorizationExecutor? singleRecordRelationshipAuthorizationExecutor = null,
+    IRelationalParameterConfigurator? relationalParameterConfigurator = null
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
@@ -72,6 +73,8 @@ public sealed class RelationalDocumentStoreRepository(
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
     private readonly ISingleRecordRelationshipAuthorizationExecutor? _singleRecordRelationshipAuthorizationExecutor =
         singleRecordRelationshipAuthorizationExecutor;
+    private readonly IRelationalParameterConfigurator _relationalParameterConfigurator =
+        relationalParameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
     private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
         edOrgAuthorizationSubjectSelector
     );
@@ -679,7 +682,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
     }
 
-    private static async Task<DeleteResult?> ExecuteDeleteRelationshipAuthorizationAsync(
+    private async Task<DeleteResult?> ExecuteDeleteRelationshipAuthorizationAsync(
         MappingSet mappingSet,
         long documentId,
         RelationshipAuthorizationResult.Authorized authorized,
@@ -693,7 +696,10 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        var authorizationExecutor = new SingleRecordRelationshipAuthorizationExecutor(sessionCommandExecutor);
+        var authorizationExecutor = new SingleRecordRelationshipAuthorizationExecutor(
+            sessionCommandExecutor,
+            _relationalParameterConfigurator
+        );
         var authorizationExecutionResult = await authorizationExecutor
             .ExecuteAsync(
                 new SingleRecordRelationshipAuthorizationExecutionRequest(
