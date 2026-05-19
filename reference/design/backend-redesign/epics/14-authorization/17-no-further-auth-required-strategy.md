@@ -20,7 +20,22 @@ Implement the `NoFurtherAuthorizationRequired` authorization strategy per:
 
 ## Composition with relationship strategies
 
-`NoFurtherAuthorizationRequired` GET-many AND-composition is covered at the
-classifier level. CRUD AND-composition is intentionally deferred to DMS-1056,
-where relationship CRUD authorization is implemented and mixed-strategy
-behavior can be tested against the real authorization path.
+`NoFurtherAuthorizationRequired` AND-composition with relationship strategies
+is covered at the contract level, so the no-op semantics hold across both
+read- and write-side planning regardless of how each surface is wired up later:
+
+- GET-many AND-composition is covered through the classifier and query
+  planning path: the classifier routes `NoFurtherAuthorizationRequired` into a
+  separate no-op bucket so it never contributes a relationship subject, check,
+  or error hint to the read-side query plan.
+- CRUD AND-composition is covered at the planner / proposed-value contract
+  level: `RelationshipAuthorizationPlanner.PlanProposedValues(...)` reuses the
+  same classification, so `NoFurtherAuthorizationRequired` emits no proposed
+  check spec, does not shift the configured-index or relationship-local
+  ordering of sibling relationship strategies, and does not contribute
+  security-configuration failures.
+
+Full end-to-end relational CRUD authorization — wiring the proposed-value
+check specs into the write path, enforcing them at execution time, and
+exercising mixed strategies through E2E flows — remains owned by the
+relationship CRUD authorization work tracked outside DMS-1090.

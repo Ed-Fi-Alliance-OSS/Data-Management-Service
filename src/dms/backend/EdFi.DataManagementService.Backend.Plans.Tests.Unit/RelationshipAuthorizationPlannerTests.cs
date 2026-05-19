@@ -208,6 +208,90 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_treat_no_further_authorization_required_as_a_noop_in_proposed_value_planning()
+    {
+        (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
+        var resource = new QualifiedResourceName("Ed-Fi", "CourseOffering");
+        var writePlan = mappingSet.GetWritePlanOrThrow(resource);
+        var rootTablePlan = GetRootTableWritePlan(writePlan);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var authorizedResult = (RelationshipAuthorizationResult.Authorized)result;
+
+        authorizedResult.CheckSpecs.Should().HaveCount(2);
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.ConfiguredStrategy.StrategyName)
+            .Should()
+            .Equal(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+            );
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.ConfiguredStrategy.RawConfiguredIndex)
+            .Should()
+            .Equal(1, 2);
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.Direction)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                RelationshipAuthorizationHierarchyDirection.Inverted
+            );
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.ValueSource)
+            .Should()
+            .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Proposed);
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.CheckTarget)
+            .Should()
+            .AllSatisfy(checkTarget =>
+                checkTarget.Should().BeOfType<RelationshipAuthorizationCheckTarget.Proposed>()
+            );
+
+        foreach (var checkSpec in authorizedResult.CheckSpecs)
+        {
+            var proposedTarget = (RelationshipAuthorizationCheckTarget.Proposed)checkSpec.CheckTarget;
+            var subject = checkSpec.Subjects.Single();
+            var expectedBinding = rootTablePlan
+                .ColumnBindings.Select(static (binding, index) => (binding, index))
+                .Single(entry => entry.binding.Column.ColumnName.Equals(subject.Column));
+
+            proposedTarget.RootTable.Should().Be(rootTablePlan.TableModel.Table);
+            proposedTarget
+                .SubjectBindingsInOrder.Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeEquivalentTo(
+                    new RelationshipAuthorizationProposedValueBinding(
+                        subject.Table,
+                        subject.Column,
+                        expectedBinding.index,
+                        subject.Column.Value,
+                        expectedBinding.binding.ParameterName
+                    )
+                );
+        }
+    }
+
+    [Test]
     public void It_should_report_missing_proposed_root_bindings_as_security_configuration_errors()
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
