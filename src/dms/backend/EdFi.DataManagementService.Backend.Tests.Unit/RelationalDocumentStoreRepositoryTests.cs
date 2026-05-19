@@ -804,6 +804,58 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_not_implemented_when_get_by_id_authorization_includes_known_out_of_scope_strategies()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-2222-3333-4444-cfcfcfcfcfcf"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureNotImplemented>().Subject;
+        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_bypasses_relationship_authorization_for_stored_document_get_requests()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-2222-3333-4444-dddddddddddd"));
@@ -4208,13 +4260,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_defers_delete_namespace_authorization_until_the_strategy_is_implemented()
+    public async Task It_returns_not_implemented_for_delete_namespace_authorization_until_the_strategy_is_implemented()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteOutcome(deleted: true);
+        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute for staged auth."));
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
             documentUuid,
             123L,
@@ -4229,11 +4281,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        result
+            .As<DeleteResult.DeleteFailureNotImplemented>()
+            .FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.NamespaceBased);
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
     [Test]
@@ -4374,12 +4430,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_defers_delete_authorization_when_it_includes_known_out_of_scope_strategies()
+    public async Task It_returns_not_implemented_when_delete_authorization_includes_known_out_of_scope_strategies()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
         ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteOutcome(deleted: true);
+        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute for staged auth."));
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
         A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
@@ -4394,12 +4450,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        result
+            .As<DeleteResult.DeleteFailureNotImplemented>()
+            .FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.NamespaceBased);
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
         A.CallTo(_commandExecutor)
             .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
             .MustNotHaveHappened();
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
     }
 
     [Test]

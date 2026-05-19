@@ -373,7 +373,7 @@ public class Given_A_Postgresql_Relational_Delete_Authorization_With_A_Synthetic
     }
 
     [Test]
-    public async Task It_defers_known_but_not_enabled_mixed_strategies_to_the_existing_delete_path()
+    public async Task It_returns_501_and_security_configuration_failures_before_deleting()
     {
         var knownUnsupportedSeed = _authorizationRootChildSeeds[7];
 
@@ -389,17 +389,29 @@ public class Given_A_Postgresql_Relational_Delete_Authorization_With_A_Synthetic
             RelationshipAuthorizationCrudTestSupport.EdOrgOnlyPlusKnownUnsupportedStrategyNames
         );
 
-        knownUnsupportedResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        securityConfigurationResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        var notImplemented = knownUnsupportedResult
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureNotImplemented>()
+            .Subject;
+        notImplemented
+            .FailureMessage.Should()
+            .Contain(RelationshipAuthorizationCrudTestSupport.NamespaceBased);
+        var securityConfiguration = securityConfigurationResult
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Subject;
+        securityConfiguration
+            .Errors.Should()
+            .Contain(error => error.Contains("$.classPeriods[*].classPeriodReference.schoolId"));
         await AssertRowsAsync(
             RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
             knownUnsupportedSeed.DocumentUuid,
-            0
+            1
         );
         await AssertRowsAsync(
             RelationshipAuthorizationCrudTestSupport.ChildOnlyEdOrgResourceName,
             _authorizationChildOnlySeed.DocumentUuid,
-            0
+            1
         );
     }
 
