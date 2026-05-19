@@ -33,7 +33,28 @@ public abstract record DeleteResult
     /// <summary>
     /// A failure because the client is not authorized to delete the document
     /// </summary>
-    public record DeleteFailureNotAuthorized(string[] ErrorMessages) : DeleteResult();
+    public record DeleteFailureNotAuthorized(string[] ErrorMessages, string[]? Hints = null) : DeleteResult();
+
+    /// <summary>
+    /// A failure because stored relationship authorization denied deletion of the document.
+    /// </summary>
+    public record DeleteFailureRelationshipNotAuthorized(
+        string[] ErrorMessages,
+        RelationshipAuthorizationFailure RelationshipFailure,
+        string[]? Hints = null
+    ) : DeleteResult();
+
+    /// <summary>
+    /// A failure because the requested delete operation is intentionally not implemented.
+    /// </summary>
+    /// <param name="FailureMessage">A message providing failure information</param>
+    public record DeleteFailureNotImplemented(string FailureMessage) : DeleteResult();
+
+    /// <summary>
+    /// A failure because security configuration metadata for the delete operation is invalid.
+    /// </summary>
+    /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
+    public record DeleteFailureSecurityConfiguration(string[] Errors) : DeleteResult();
 
     /// <summary>
     /// A failure of unknown category

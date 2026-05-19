@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
@@ -30,6 +31,47 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class DeleteByIdHandlerTests
 {
+    internal static RelationshipAuthorizationFailure CreateRelationshipFailure() =>
+        new(
+            RelationshipAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 12,
+            FailedStrategies:
+            [
+                new RelationshipAuthorizationFailedStrategy(
+                    ConfiguredStrategyIndex: 0,
+                    RelationshipLocalOrder: 0,
+                    StrategyName: "RelationshipsWithEdOrgsOnly",
+                    StrategyKind: "RelationshipsWithEdOrgsOnly",
+                    AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                        Name: "auth.EdOrgIdToEdOrgId",
+                        SubjectValueColumn: "TargetEdOrgId",
+                        ClaimEducationOrganizationIdColumn: "SourceEdOrgId"
+                    ),
+                    FailedSubjects:
+                    [
+                        new RelationshipAuthorizationFailedSubject(
+                            SubjectIndex: 0,
+                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+                            RootBinding: new RelationshipAuthorizationRootBinding(
+                                ResourceName: "School",
+                                TableName: "edfi.School",
+                                ColumnName: "SchoolId"
+                            ),
+                            SecurableElements:
+                            [
+                                new RelationshipAuthorizationSecurableElement(
+                                    Kind: "EducationOrganization",
+                                    JsonPath: "$.schoolId",
+                                    ReadableName: "SchoolId"
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+            ],
+            ClaimEducationOrganizationIds: [new EducationOrganizationId(255901)]
+        );
+
     internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
         IDocumentStoreRepository documentStoreRepository
     )
@@ -212,6 +254,183 @@ public class DeleteByIdHandlerTests
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Relationship_Not_Authorized : DeleteByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string[] ResponseErrors = ["No relationship exists."];
+            public static readonly string[] ResponseHints =
+            [
+                "Verify the caller's education organization claims.",
+            ];
+
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+            {
+                return Task.FromResult<DeleteResult>(
+                    new DeleteFailureRelationshipNotAuthorized(
+                        ResponseErrors,
+                        CreateRelationshipFailure(),
+                        ResponseHints
+                    )
+                );
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = No.RequestInfo("relationship-delete-403");
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _requestInfo.ResourceSchema = GetResourceSchema();
+
+            var (deleteByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await deleteByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_relationship_failure_to_http_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(static error => error!.ToString())
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(Repository.ResponseErrors[0]);
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .ToString()
+                .Should()
+                .Contain(Repository.ResponseHints[0]);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Not_Implemented : DeleteByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string ResponseBody = "FailureMessage";
+
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+            {
+                return Task.FromResult<DeleteResult>(new DeleteFailureNotImplemented(ResponseBody));
+            }
+        }
+
+        private static readonly string _traceId = "relationship-delete-501";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _requestInfo.ResourceSchema = GetResourceSchema();
+
+            var (deleteByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await deleteByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_staged_failure_to_http_501()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+
+            var expected = Utility.ToJsonError(Repository.ResponseBody, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Security_Configuration_Failure : DeleteByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string[] ResponseErrors =
+            [
+                "Resource 'Ed-Fi.School' has relationship authorization metadata that cannot be resolved.",
+            ];
+
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+            {
+                return Task.FromResult<DeleteResult>(new DeleteFailureSecurityConfiguration(ResponseErrors));
+            }
+        }
+
+        private static readonly string _traceId = "relationship-delete-500";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _requestInfo.ResourceSchema = GetResourceSchema();
+
+            var (deleteByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await deleteByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_security_configuration_failure_to_the_canonical_http_500()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = FailureResponse.ForSecurityConfiguration(
+                new TraceId(_traceId),
+                Repository.ResponseErrors
+            );
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
         }
     }
 

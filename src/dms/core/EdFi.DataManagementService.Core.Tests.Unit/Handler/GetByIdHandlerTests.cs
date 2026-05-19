@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
@@ -30,6 +31,47 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class GetByIdHandlerTests
 {
+    internal static RelationshipAuthorizationFailure CreateRelationshipFailure() =>
+        new(
+            RelationshipAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 12,
+            FailedStrategies:
+            [
+                new RelationshipAuthorizationFailedStrategy(
+                    ConfiguredStrategyIndex: 0,
+                    RelationshipLocalOrder: 0,
+                    StrategyName: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    StrategyKind: "RelationshipsWithEdOrgsOnly",
+                    AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                        Name: "auth.EdOrgIdToEdOrgId",
+                        SubjectValueColumn: "TargetEdOrgId",
+                        ClaimEducationOrganizationIdColumn: "SourceEdOrgId"
+                    ),
+                    FailedSubjects:
+                    [
+                        new RelationshipAuthorizationFailedSubject(
+                            SubjectIndex: 0,
+                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+                            RootBinding: new RelationshipAuthorizationRootBinding(
+                                ResourceName: "School",
+                                TableName: "edfi.School",
+                                ColumnName: "SchoolId"
+                            ),
+                            SecurableElements:
+                            [
+                                new RelationshipAuthorizationSecurableElement(
+                                    Kind: "EducationOrganization",
+                                    JsonPath: "$.schoolId",
+                                    ReadableName: "SchoolId"
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+            ],
+            ClaimEducationOrganizationIds: [new EducationOrganizationId(255901)]
+        );
+
     internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
         IDocumentStoreRepository documentStoreRepository
     )
@@ -157,6 +199,62 @@ public class GetByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Relationship_Not_Authorized : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string[] ResponseErrors = ["No relationship exists."];
+            public static readonly string[] ResponseHints =
+            [
+                "Verify the caller's education organization claims.",
+            ];
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(
+                    new GetFailureRelationshipNotAuthorized(
+                        ResponseErrors,
+                        CreateRelationshipFailure(),
+                        ResponseHints
+                    )
+                );
+            }
+        }
+
+        private static readonly string _traceId = "relationship-get-403";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await getByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_relationship_failure_to_http_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(static error => error!.ToString())
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(Repository.ResponseErrors[0]);
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .ToString()
+                .Should()
+                .Contain(Repository.ResponseHints[0]);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Not_Implemented : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -196,6 +294,60 @@ public class GetByIdHandlerTests
                     expected: {expected}
 
                     actual: {requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Security_Configuration_Failure : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string[] ResponseErrors =
+            [
+                "Resource 'Ed-Fi.School' has relationship authorization metadata that cannot be resolved.",
+            ];
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(new GetFailureSecurityConfiguration(ResponseErrors));
+            }
+        }
+
+        private static readonly string _traceId = "relationship-get-500";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await getByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_security_configuration_failure_to_the_canonical_http_500()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = FailureResponse.ForSecurityConfiguration(
+                new TraceId(_traceId),
+                Repository.ResponseErrors
+            );
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
                     """
                 );
         }
