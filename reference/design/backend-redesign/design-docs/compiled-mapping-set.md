@@ -190,7 +190,16 @@ public sealed record DbIndexInfo(
     DbIndexKind Kind,
     // Optional non-key columns to include in the index leaf pages (SQL `INCLUDE` clause).
     // Null and empty are treated identically by emitters: no `INCLUDE` clause.
-    // Required by the five `PrimaryAssociation` authorization indexes (see `auth.md`); null elsewhere.
+    // Non-null for the five `PrimaryAssociation` authorization indexes (see `auth.md`) AND for
+    // person-join authorization indexes (DMS-1094), which always INCLUDE the source table's
+    // `DocumentId` so the runtime auth-filter join can be served by an index-only scan.
+    // An emitted authorization index's `IncludeColumns` may be *widened* when a later step in
+    // `DeriveAuthorizationIndexInventoryPass` collides on the same `(table, leading key column)` —
+    // e.g. a person-join hop landing on `StudentContactAssociation.Student_DocumentId` (PA-covered,
+    // INCLUDE `[Contact_DocumentId]`) widens that PA index to INCLUDE `[Contact_DocumentId, DocumentId]`.
+    // EdOrg/Namespace auth indexes (originally `IncludeColumns: null`) widen to `[DocumentId]` under
+    // the same collision rule. The merged list is sorted ordinal-ascending by `DbColumnName.Value`
+    // and deduped, so widening is deterministic and independent of pass execution order.
     // Manifest serialization: omitted when null/empty, otherwise emitted as `"include_columns": [...]`.
     IReadOnlyList<DbColumnName>? IncludeColumns = null
 );
@@ -475,7 +484,6 @@ Mapping-set integration points:
   - per-resource `Namespace` indexes (for namespace-based checks),
   - per-resource EdOrg-id indexes (for relationship-based checks), and
   - join-column indexes used to reach person `DocumentId`s (for people-related relationship checks).
-  Note: the Namespace and EdOrg branches are emitted today by `DeriveAuthorizationIndexInventoryPass` (DMS-1054). The person-join branch (Student/Contact/Staff securable elements) is pending DMS-1094 — `DeriveAuthorizationIndexInventoryPass` currently scopes those out, so consumers should not yet rely on person-join entries appearing under `DbIndexKind.Authorization`.
 
 Example (sketch): resolving the `Student` securable element for `CourseTranscript`
 - ApiSchema marks `$.studentAcademicRecordReference.studentUniqueId` as a `Student` securable element.

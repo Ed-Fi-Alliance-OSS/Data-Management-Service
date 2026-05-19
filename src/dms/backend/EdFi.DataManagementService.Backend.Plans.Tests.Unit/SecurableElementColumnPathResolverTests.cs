@@ -512,8 +512,22 @@ public class Given_SecurableElementColumnPathResolver
                 []
             );
 
+            var sarSecurableElements = new ResourceSecurableElements(
+                [],
+                [],
+                ["$.studentReference.studentUniqueId"],
+                [],
+                []
+            );
+
             var ctConcrete = CreateConcrete(1, "Ed-Fi", "CourseTranscript", ctModel, securableElements);
-            var sarConcrete = CreateConcrete(2, "Ed-Fi", "StudentAcademicRecord", sarModel);
+            var sarConcrete = CreateConcrete(
+                2,
+                "Ed-Fi",
+                "StudentAcademicRecord",
+                sarModel,
+                sarSecurableElements
+            );
             var studentConcrete = CreateConcrete(3, "Ed-Fi", "Student", studentModel);
 
             var results = SecurableElementColumnPathResolver.ResolveAll(
@@ -539,9 +553,12 @@ public class Given_SecurableElementColumnPathResolver
         }
 
         [Test]
-        public void It_should_pick_shortest_path_when_multiple_paths_exist()
+        public void It_should_pick_the_shortest_chain_when_alternatives_exist()
         {
-            // Resource has two paths to Student: one direct, one through intermediate
+            // Resource declares two Student securable paths: one direct (1 hop) and one through
+            // an intermediate (2 hops). Per the DMS-1053 design contract (auth.md L879), the
+            // resolver follows each path and returns the shortest — only the direct chain
+            // becomes a ResolvedSecurableElementPath.
             var rootTable = CreateRootTable(
                 Table("TestResource"),
                 [
@@ -636,7 +653,8 @@ public class Given_SecurableElementColumnPathResolver
             );
             var studentModel = CreateModel("Ed-Fi", "Student", studentRoot);
 
-            // Two paths: direct and indirect
+            // Two alternative paths to the same person kind: direct (1 hop) and indirect
+            // (2 hops). Shortest wins.
             var securableElements = new ResourceSecurableElements(
                 [],
                 [],
@@ -645,8 +663,22 @@ public class Given_SecurableElementColumnPathResolver
                 []
             );
 
+            var intermediateSecurableElements = new ResourceSecurableElements(
+                [],
+                [],
+                ["$.studentReference.studentUniqueId"],
+                [],
+                []
+            );
+
             var testConcrete = CreateConcrete(1, "Ed-Fi", "TestResource", testModel, securableElements);
-            var intermediateConcrete = CreateConcrete(2, "Ed-Fi", "Intermediate", intermediateModel);
+            var intermediateConcrete = CreateConcrete(
+                2,
+                "Ed-Fi",
+                "Intermediate",
+                intermediateModel,
+                intermediateSecurableElements
+            );
             var studentConcrete = CreateConcrete(3, "Ed-Fi", "Student", studentModel);
 
             var results = SecurableElementColumnPathResolver.ResolveAll(
@@ -654,11 +686,11 @@ public class Given_SecurableElementColumnPathResolver
                 [testConcrete, intermediateConcrete, studentConcrete]
             );
 
-            // Should pick the shortest path (direct, 1 hop) over the indirect (2 hops)
             results.Should().HaveCount(1);
             results[0].Kind.Should().Be(SecurableElementKind.Student);
             results[0].Steps.Should().HaveCount(1);
             results[0].Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            results[0].Steps[0].TargetTable.Should().Be(Table("Student"));
         }
     }
 
