@@ -72,6 +72,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
+        var singleRecordRelationshipAuthorizationExecutor =
+            scope.ServiceProvider.GetRequiredService<ISingleRecordRelationshipAuthorizationExecutor>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
         var writeFreshnessChecker =
@@ -118,6 +120,9 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         sessionDocumentHydrator.Should().BeOfType<TestSessionDocumentHydrator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
+        singleRecordRelationshipAuthorizationExecutor
+            .Should()
+            .BeOfType<SingleRecordRelationshipAuthorizationExecutor>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();

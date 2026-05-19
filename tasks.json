@@ -48,7 +48,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~RelationalReadTargetLookupServiceTests|FullyQualifiedName~RelationalReadMaterializerTests\"",
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandlerTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "delete",

@@ -60,6 +60,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<IRelationalReadTargetLookupService, RelationalReadTargetLookupService>()
         );
         services.TryAdd(
+            ServiceDescriptor.Scoped<
+                ISingleRecordRelationshipAuthorizationExecutor,
+                SingleRecordRelationshipAuthorizationExecutor
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteCurrentStateLoader, RelationalWriteCurrentStateLoader>()
         );
         services.TryAdd(

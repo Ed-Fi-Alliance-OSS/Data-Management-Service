@@ -166,6 +166,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             DocumentUuid: documentUuid,
             ResourceInfo: PostgresqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
             MappingSet: mappingSet,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             ResourceAuthorizationHandler: new PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),

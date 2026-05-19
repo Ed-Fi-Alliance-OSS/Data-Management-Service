@@ -33,9 +33,18 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
     IRelationalWriteSessionFactory writeSessionFactory,
-    RelationalEdOrgAuthorizationSubjectSelector edOrgAuthorizationSubjectSelector
+    RelationalEdOrgAuthorizationSubjectSelector edOrgAuthorizationSubjectSelector,
+    ISingleRecordRelationshipAuthorizationExecutor? singleRecordRelationshipAuthorizationExecutor = null
 ) : IDocumentStoreRepository, IQueryHandler
 {
+    private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
+    private const int GetByIdReadBoundaryAttemptCount = 2;
+
+    private static readonly string[] _relationshipAuthorizationErrorMessages =
+    [
+        "No relationship exists between the caller's education organization claims and the requested resource.",
+    ];
+
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IRelationalWriteExecutor _writeExecutor =
@@ -65,6 +74,8 @@ public sealed class RelationalDocumentStoreRepository(
         deleteConstraintResolver ?? throw new ArgumentNullException(nameof(deleteConstraintResolver));
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
+    private readonly ISingleRecordRelationshipAuthorizationExecutor? _singleRecordRelationshipAuthorizationExecutor =
+        singleRecordRelationshipAuthorizationExecutor;
     private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
         edOrgAuthorizationSubjectSelector
     );
@@ -920,116 +931,432 @@ public sealed class RelationalDocumentStoreRepository(
         ResourceReadPlan readPlan
     )
     {
-        // Relational authorization is pending a later story. Do not route GET-by-id
-        // through the legacy authorization handler while the relational auth seam lands.
-        var targetLookupResult = await _readTargetLookupService
-            .ResolveForGetByIdAsync(mappingSet, resource, relationalGetRequest.DocumentUuid)
-            .ConfigureAwait(false);
-
-        if (
-            targetLookupResult
-            is RelationalReadTargetLookupResult.NotFound
-                or RelationalReadTargetLookupResult.WrongResource
-        )
+        for (var attemptIndex = 0; attemptIndex < GetByIdReadBoundaryAttemptCount; attemptIndex++)
         {
-            return new GetResult.GetFailureNotExists();
-        }
+            var targetLookupResult = await _readTargetLookupService
+                .ResolveForGetByIdAsync(mappingSet, resource, relationalGetRequest.DocumentUuid)
+                .ConfigureAwait(false);
 
-        if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument existingDocument)
-        {
-            throw new InvalidOperationException(
-                $"Relational repository GET target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
-            );
-        }
-
-        // StoredDocument-mode reads do not emit `link`, so the auxiliary document-reference
-        // lookup is wasted work — opt out via IncludeDocumentReferenceLookup: false. Descriptor
-        // URIs are still needed for both read modes.
-        var hydrationExecutionOptions = new HydrationExecutionOptions(
-            IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
-                == RelationalGetRequestReadMode.ExternalResponse
-        );
-        var hydratedPage = await _documentHydrator
-            .HydrateAsync(
-                readPlan,
-                new PageKeysetSpec.Single(existingDocument.DocumentId),
-                hydrationExecutionOptions,
-                default
-            )
-            .ConfigureAwait(false);
-
-        if (hydratedPage.DocumentMetadata.Count == 0)
-        {
-            return new GetResult.GetFailureNotExists();
-        }
-
-        if (hydratedPage.DocumentMetadata.Count != 1)
-        {
-            throw new InvalidOperationException(
-                $"Relational GET hydration for document id {existingDocument.DocumentId} returned "
-                    + $"{hydratedPage.DocumentMetadata.Count} metadata rows, but exactly 1 was expected."
-            );
-        }
-
-        var documentMetadata = hydratedPage.DocumentMetadata[0];
-
-        if (documentMetadata.DocumentId != existingDocument.DocumentId)
-        {
-            throw new InvalidOperationException(
-                $"Relational GET hydration returned metadata for document id {documentMetadata.DocumentId}, "
-                    + $"but target document id was {existingDocument.DocumentId}."
-            );
-        }
-
-        if (documentMetadata.DocumentUuid != existingDocument.DocumentUuid.Value)
-        {
-            throw new InvalidOperationException(
-                $"Relational GET hydration returned document uuid '{documentMetadata.DocumentUuid}', "
-                    + $"but target document uuid was '{existingDocument.DocumentUuid.Value}'."
-            );
-        }
-
-        var edfiDoc = _readMaterializer.Materialize(
-            new RelationalReadMaterializationRequest(
-                readPlan,
-                documentMetadata,
-                hydratedPage.TableRowsInDependencyOrder,
-                hydratedPage.DescriptorRowsInPlanOrder,
-                relationalGetRequest.ReadMode
+            if (
+                targetLookupResult
+                is RelationalReadTargetLookupResult.NotFound
+                    or RelationalReadTargetLookupResult.WrongResource
             )
             {
-                MappingSet = mappingSet,
-                DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
+                return new GetResult.GetFailureNotExists();
             }
-        );
 
-        if (ShouldApplyReadableProfileProjection(relationalGetRequest))
-        {
-            var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
-            edfiDoc = _readableProfileProjector.Project(
+            if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument existingDocument)
+            {
+                throw new InvalidOperationException(
+                    $"Relational repository GET target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+                );
+            }
+
+            var authorizationOutcome = await AuthorizeGetByIdIfRequiredAsync(
+                    relationalGetRequest,
+                    mappingSet,
+                    resource,
+                    existingDocument.DocumentId
+                )
+                .ConfigureAwait(false);
+
+            if (authorizationOutcome.FailureResult is not null)
+            {
+                return authorizationOutcome.FailureResult;
+            }
+
+            if (authorizationOutcome.RetryTargetResolution)
+            {
+                continue;
+            }
+
+            // StoredDocument-mode reads do not emit `link`, so the auxiliary document-reference
+            // lookup is wasted work — opt out via IncludeDocumentReferenceLookup: false. Descriptor
+            // URIs are still needed for both read modes.
+            var hydrationExecutionOptions = new HydrationExecutionOptions(
+                IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
+                    == RelationalGetRequestReadMode.ExternalResponse
+            );
+            var hydratedPage = await _documentHydrator
+                .HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(existingDocument.DocumentId),
+                    hydrationExecutionOptions,
+                    default
+                )
+                .ConfigureAwait(false);
+
+            if (hydratedPage.DocumentMetadata.Count == 0)
+            {
+                if (authorizationOutcome.ObservedContentVersion is not null)
+                {
+                    continue;
+                }
+
+                return new GetResult.GetFailureNotExists();
+            }
+
+            if (hydratedPage.DocumentMetadata.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Relational GET hydration for document id {existingDocument.DocumentId} returned "
+                        + $"{hydratedPage.DocumentMetadata.Count} metadata rows, but exactly 1 was expected."
+                );
+            }
+
+            var documentMetadata = hydratedPage.DocumentMetadata[0];
+
+            if (documentMetadata.DocumentId != existingDocument.DocumentId)
+            {
+                throw new InvalidOperationException(
+                    $"Relational GET hydration returned metadata for document id {documentMetadata.DocumentId}, "
+                        + $"but target document id was {existingDocument.DocumentId}."
+                );
+            }
+
+            if (documentMetadata.DocumentUuid != existingDocument.DocumentUuid.Value)
+            {
+                throw new InvalidOperationException(
+                    $"Relational GET hydration returned document uuid '{documentMetadata.DocumentUuid}', "
+                        + $"but target document uuid was '{existingDocument.DocumentUuid.Value}'."
+                );
+            }
+
+            if (
+                authorizationOutcome.ObservedContentVersion is { } observedContentVersion
+                && documentMetadata.ContentVersion != observedContentVersion
+            )
+            {
+                continue;
+            }
+
+            var edfiDoc = _readMaterializer.Materialize(
+                new RelationalReadMaterializationRequest(
+                    readPlan,
+                    documentMetadata,
+                    hydratedPage.TableRowsInDependencyOrder,
+                    hydratedPage.DescriptorRowsInPlanOrder,
+                    relationalGetRequest.ReadMode
+                )
+                {
+                    MappingSet = mappingSet,
+                    DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
+                }
+            );
+
+            if (ShouldApplyReadableProfileProjection(relationalGetRequest))
+            {
+                var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
+                edfiDoc = _readableProfileProjector.Project(
+                    edfiDoc,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                );
+            }
+
+            // Final response-shaping pass — strips `link` subtrees when ResourceLinksOptions.Enabled
+            // is false. Runs after readable-profile projection so the flag governs the served body,
+            // not the cached intermediate. No-op when Enabled is true. See
+            // design-docs/link-injection.md §Feature Flag and §Cache and Etag.
+            _readMaterializer.StripReferenceLinks(edfiDoc, readPlan);
+
+            return new GetResult.GetSuccess(
+                new DocumentUuid(documentMetadata.DocumentUuid),
                 edfiDoc,
-                projectionContext.ContentTypeDefinition,
-                projectionContext.IdentityPropertyNames
+                documentMetadata.ContentLastModifiedAt.UtcDateTime,
+                null
             );
         }
 
-        // Final response-shaping pass — strips `link` subtrees when ResourceLinksOptions.Enabled
-        // is false. Runs after readable-profile projection so the flag governs the served body,
-        // not the cached intermediate. No-op when Enabled is true. See
-        // design-docs/link-injection.md §Feature Flag and §Cache and Etag.
-        _readMaterializer.StripReferenceLinks(edfiDoc, readPlan);
-
-        return new GetResult.GetSuccess(
-            new DocumentUuid(documentMetadata.DocumentUuid),
-            edfiDoc,
-            documentMetadata.ContentLastModifiedAt.UtcDateTime,
-            null
+        return new GetResult.UnknownFailure(
+            "Relational GET could not read a stable authorized representation for the requested document."
         );
+    }
+
+    private async Task<GetAuthorizationOutcome> AuthorizeGetByIdIfRequiredAsync(
+        IRelationalGetRequest relationalGetRequest,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        long documentId
+    )
+    {
+        if (ShouldBypassSingleRecordAuthorization(relationalGetRequest))
+        {
+            return GetAuthorizationOutcome.NotRequired;
+        }
+
+        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
+            relationalGetRequest.AuthorizationStrategyEvaluators
+        );
+        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies,
+            relationalGetRequest.AuthorizationContext
+        );
+
+        switch (relationshipAuthorizationResult)
+        {
+            case RelationshipAuthorizationResult.NoAuthorizationRequired:
+            case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
+                return GetAuthorizationOutcome.NotRequired;
+
+            case RelationshipAuthorizationResult.NoClaims noClaims:
+                if (
+                    !TryCreateRelationshipAuthorizationFailure(
+                        noClaims.CheckSpecs,
+                        relationalGetRequest.AuthorizationContext.ClaimEducationOrganizationIds,
+                        GetByIdRelationshipAuthorizationAuth1Index,
+                        out var noClaimsFailure
+                    ) || noClaimsFailure is null
+                )
+                {
+                    return new GetAuthorizationOutcome(
+                        new GetResult.UnknownFailure(
+                            "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
+                        ),
+                        null,
+                        false
+                    );
+                }
+
+                return new GetAuthorizationOutcome(
+                    CreateGetRelationshipNotAuthorized(noClaimsFailure),
+                    null,
+                    false
+                );
+
+            case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
+                return new GetAuthorizationOutcome(
+                    new GetResult.GetFailureNotImplemented(
+                        BuildKnownButNotEnabledGetAuthorizationMessage(resource, knownButNotEnabled.Failures)
+                    ),
+                    null,
+                    false
+                );
+
+            case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
+                return new GetAuthorizationOutcome(
+                    BuildGetAuthorizationSecurityConfigurationFailure(
+                        mappingSet,
+                        resource,
+                        securityConfigurationError.Failures
+                    ),
+                    null,
+                    false
+                );
+
+            case RelationshipAuthorizationResult.Authorized authorized:
+                return await ExecuteGetRelationshipAuthorizationAsync(mappingSet, documentId, authorized)
+                    .ConfigureAwait(false);
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
+                );
+        }
+    }
+
+    private async Task<GetAuthorizationOutcome> ExecuteGetRelationshipAuthorizationAsync(
+        MappingSet mappingSet,
+        long documentId,
+        RelationshipAuthorizationResult.Authorized authorized
+    )
+    {
+        if (authorized.ClaimEducationOrganizationIdParameterization is null)
+        {
+            return new GetAuthorizationOutcome(
+                new GetResult.UnknownFailure(
+                    "Relationship authorization produced executable checks without claim EducationOrganizationId parameterization."
+                ),
+                null,
+                false
+            );
+        }
+
+        if (_singleRecordRelationshipAuthorizationExecutor is null)
+        {
+            return new GetAuthorizationOutcome(
+                new GetResult.UnknownFailure(
+                    "Relational single-record relationship authorization executor is not configured."
+                ),
+                null,
+                false
+            );
+        }
+
+        var authorizationExecutionResult = await _singleRecordRelationshipAuthorizationExecutor
+            .ExecuteAsync(
+                new SingleRecordRelationshipAuthorizationExecutionRequest(
+                    mappingSet,
+                    documentId,
+                    authorized.CheckSpecs,
+                    authorized.ClaimEducationOrganizationIdParameterization,
+                    GetByIdRelationshipAuthorizationAuth1Index
+                )
+            )
+            .ConfigureAwait(false);
+
+        return authorizationExecutionResult switch
+        {
+            SingleRecordRelationshipAuthorizationExecutionResult.Authorized authorizationSuccess =>
+                new GetAuthorizationOutcome(null, authorizationSuccess.ObservedContentVersion, false),
+            SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                new GetAuthorizationOutcome(
+                    CreateGetRelationshipNotAuthorized(notAuthorized.RelationshipFailure),
+                    null,
+                    false
+                ),
+            SingleRecordRelationshipAuthorizationExecutionResult.StaleTarget => new GetAuthorizationOutcome(
+                null,
+                null,
+                true
+            ),
+            SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                new GetAuthorizationOutcome(
+                    new GetResult.UnknownFailure(invalidFailure.FailureMessage),
+                    null,
+                    false
+                ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported single-record authorization execution result '{authorizationExecutionResult.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static bool ShouldBypassSingleRecordAuthorization(IRelationalGetRequest relationalGetRequest) =>
+        relationalGetRequest.ReadMode switch
+        {
+            RelationalGetRequestReadMode.StoredDocument => true,
+            RelationalGetRequestReadMode.ExternalResponse => false,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(relationalGetRequest),
+                relationalGetRequest.ReadMode,
+                "Unsupported relational GET read mode."
+            ),
+        };
+
+    private static bool TryCreateRelationshipAuthorizationFailure(
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        int emittedAuth1Index,
+        out RelationshipAuthorizationFailure? relationshipFailure
+    )
+    {
+        relationshipFailure = null;
+
+        if (checkSpecs.Count == 0)
+        {
+            return false;
+        }
+
+        List<RelationshipAuthorizationAuth1SubjectFailure> subjectFailures = [];
+
+        for (var strategyOrdinal = 0; strategyOrdinal < checkSpecs.Count; strategyOrdinal++)
+        {
+            var checkSpec = checkSpecs[strategyOrdinal];
+
+            for (var subjectOrdinal = 0; subjectOrdinal < checkSpec.Subjects.Count; subjectOrdinal++)
+            {
+                subjectFailures.Add(
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        strategyOrdinal,
+                        subjectOrdinal,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    )
+                );
+            }
+        }
+
+        if (subjectFailures.Count == 0)
+        {
+            return false;
+        }
+
+        return RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(emittedAuth1Index, subjectFailures),
+            checkSpecs,
+            claimEducationOrganizationIds,
+            out relationshipFailure
+        );
+    }
+
+    private static GetResult.GetFailureRelationshipNotAuthorized CreateGetRelationshipNotAuthorized(
+        RelationshipAuthorizationFailure relationshipFailure
+    ) =>
+        new(
+            _relationshipAuthorizationErrorMessages,
+            relationshipFailure,
+            BuildRelationshipAuthorizationHints(relationshipFailure)
+        );
+
+    private static string[] BuildRelationshipAuthorizationHints(
+        RelationshipAuthorizationFailure relationshipFailure
+    ) =>
+        [
+            .. relationshipFailure
+                .FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+                .Select(static subject => subject.Hint)
+                .Where(static hint => hint is not null)
+                .Distinct(StringComparer.Ordinal)
+                .Cast<string>(),
+        ];
+
+    private sealed record GetAuthorizationOutcome(
+        GetResult? FailureResult,
+        long? ObservedContentVersion,
+        bool RetryTargetResolution
+    )
+    {
+        public static GetAuthorizationOutcome NotRequired { get; } = new(null, null, false);
     }
 
     private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>
         relationalGetRequest.ReadMode == RelationalGetRequestReadMode.ExternalResponse
         && relationalGetRequest.ReadableProfileProjectionContext is not null;
+
+    private static string BuildKnownButNotEnabledGetAuthorizationMessage(
+        QualifiedResourceName resource,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures
+    )
+    {
+        var unsupportedStrategyNames = knownButNotEnabledFailures
+            .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Where(static strategyName => strategyName is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
+            .Select(static strategyName => $"'{strategyName}'");
+
+        return $"Relational GET-by-id authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
+            + "when effective GET authorization includes strategies outside the current DMS-1056 EdOrg-only scope. Unsupported strategies: "
+            + $"[{string.Join(", ", unsupportedStrategyNames)}]. Supported DMS-1056 strategies are "
+            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly}', "
+            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted}', and "
+            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op.";
+    }
+
+    private static GetResult.GetFailureSecurityConfiguration BuildGetAuthorizationSecurityConfigurationFailure(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(failures);
+
+        if (HasOnlyEdOrgSubjectSelectionFailures(failures))
+        {
+            return new GetResult.GetFailureSecurityConfiguration([
+                BuildEdOrgSubjectSelectionFailureMessage(mappingSet, resource, failures),
+            ]);
+        }
+
+        return new GetResult.GetFailureSecurityConfiguration([
+            .. failures.Select(failure => BuildSecurityConfigurationFailureMessage(mappingSet, failure)),
+        ]);
+    }
 
     private static string BuildKnownButNotEnabledQueryAuthorizationMessage(
         QualifiedResourceName resource,

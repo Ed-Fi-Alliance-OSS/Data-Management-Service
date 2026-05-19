@@ -1008,6 +1008,7 @@ internal class ProfileWriteValidationMiddleware(
                         requestInfo.ResourceSchema.IsDescriptor
                     ),
                     MappingSet: requestInfo.MappingSet,
+                    AuthorizationContext: new RelationalAuthorizationContext([]),
                     ResourceAuthorizationHandler: bypassAuthHandler,
                     AuthorizationStrategyEvaluators: [],
                     TraceId: requestInfo.FrontendRequest.TraceId,

@@ -154,6 +154,7 @@ file static class MssqlProfileIfMatchEtagTestSupport
             DocumentUuid: documentUuid,
             ResourceInfo: MssqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
             MappingSet: mappingSet,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             ResourceAuthorizationHandler: new MssqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),
