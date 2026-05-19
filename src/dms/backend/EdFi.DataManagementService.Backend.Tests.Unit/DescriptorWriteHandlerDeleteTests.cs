@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,35 @@ public class Given_Descriptor_Write_Handler_Delete
         "Ed-Fi",
         "EducationOrganizationCategoryDescriptor"
     );
+
+    [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
+    [TestCase(AuthorizationStrategyNameConstants.NamespaceBased)]
+    public async Task It_fails_closed_for_descriptor_delete_authorization_without_executing_sql(
+        string authorizationStrategyName
+    )
+    {
+        var fixture = new Fixture(SqlDialect.Pgsql);
+
+        var result = await fixture.Sut.HandleDeleteAsync(
+            new DescriptorDeleteRequest(
+                fixture.MappingSet,
+                _descriptorResource,
+                new DocumentUuid(Guid.NewGuid()),
+                new TraceId("descriptor-delete-auth"),
+                [new AuthorizationStrategyEvaluator(authorizationStrategyName, [], FilterOperator.And)]
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        result
+            .As<DeleteResult.DeleteFailureNotImplemented>()
+            .FailureMessage.Should()
+            .Contain(authorizationStrategyName);
+        A.CallTo(() =>
+                fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, A<string>._)
+            )
+            .MustNotHaveHappened();
+    }
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]

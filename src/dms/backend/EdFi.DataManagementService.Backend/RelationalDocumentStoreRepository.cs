@@ -310,7 +310,8 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     resource,
                     relationalDeleteRequest.DocumentUuid,
-                    relationalDeleteRequest.TraceId
+                    relationalDeleteRequest.TraceId,
+                    relationalDeleteRequest.AuthorizationStrategyEvaluators
                 )
                 {
                     WritePrecondition = writePrecondition,

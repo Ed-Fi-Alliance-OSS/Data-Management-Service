@@ -417,6 +417,22 @@ internal sealed class DescriptorWriteHandler(
             LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
         );
 
+        if (
+            !RelationalReadGuardrails.HasOnlyNoFurtherAuthorizationRequired(
+                request.AuthorizationStrategyEvaluators
+            )
+        )
+        {
+            return new DeleteResult.DeleteFailureNotImplemented(
+                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                    request.Resource,
+                    request.AuthorizationStrategyEvaluators,
+                    "descriptor DELETE",
+                    "DELETE"
+                )
+            );
+        }
+
         // Scope the DELETE by ResourceKeyId so a UUID belonging to a different descriptor
         // (or a non-descriptor document) cannot be deleted through this resource endpoint.
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(

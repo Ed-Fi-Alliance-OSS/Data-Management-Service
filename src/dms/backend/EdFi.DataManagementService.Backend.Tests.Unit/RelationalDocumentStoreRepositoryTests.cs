@@ -4106,12 +4106,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_forwards_resource_document_uuid_and_trace_id_to_the_descriptor_delete_handler()
+    public async Task It_forwards_resource_document_uuid_trace_id_and_authorization_strategies_to_the_descriptor_delete_handler()
     {
         var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
         var expectedDocumentUuid = new DocumentUuid(Guid.NewGuid());
         var expectedTraceId = new TraceId("descriptor-delete-forwarding");
         var expectedMappingSet = CreateDescriptorOnlyMappingSet(_descriptorResourceInfo);
+        AuthorizationStrategyEvaluator[] expectedAuthorizationStrategyEvaluators =
+        [
+            CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+        ];
         var expectedResource = new QualifiedResourceName(
             _descriptorResourceInfo.ProjectName.Value,
             _descriptorResourceInfo.ResourceName.Value
@@ -4148,6 +4152,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => deleteRequest.DocumentUuid).Returns(expectedDocumentUuid);
         A.CallTo(() => deleteRequest.TraceId).Returns(expectedTraceId);
         A.CallTo(() => deleteRequest.WritePrecondition).Returns(new WritePrecondition.None());
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns(expectedAuthorizationStrategyEvaluators);
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
@@ -4156,6 +4162,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedRequest.Resource.Should().Be(expectedResource);
         capturedRequest.DocumentUuid.Should().Be(expectedDocumentUuid);
         capturedRequest.TraceId.Value.Should().Be(expectedTraceId.Value);
+        capturedRequest
+            .AuthorizationStrategyEvaluators.Should()
+            .BeSameAs(expectedAuthorizationStrategyEvaluators);
         capturedRequest.WritePrecondition.Should().BeOfType<WritePrecondition.None>();
         A.CallTo(() =>
                 descriptorHandler.HandleDeleteAsync(A<DescriptorDeleteRequest>._, A<CancellationToken>._)
