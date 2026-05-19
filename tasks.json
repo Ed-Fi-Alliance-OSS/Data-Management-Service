@@ -79,7 +79,7 @@
     "steps-to-verify": [
       "Review the backend integration fixture files and E2E authorization artifacts to confirm stored-null, no-op, inverted, and mixed-strategy scenarios can be selected without per-test metadata mutation."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "backend-integration",
