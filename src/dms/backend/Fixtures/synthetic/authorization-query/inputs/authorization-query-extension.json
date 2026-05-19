@@ -5,6 +5,7 @@
     "caseInsensitiveEndpointNameMapping": {
       "authorizationandresources": "authorizationAndResources",
       "authorizationchildonlyresources": "authorizationChildOnlyResources",
+      "authorizationnullableresources": "authorizationNullableResources",
       "authorizationrootchildresources": "authorizationRootChildResources"
     },
     "compatibleDsRange": "5.2.0",
@@ -19,6 +20,7 @@
     "resourceNameMapping": {
       "AuthorizationAndResource": "authorizationAndResources",
       "AuthorizationChildOnlyResource": "authorizationChildOnlyResources",
+      "AuthorizationNullableResource": "authorizationNullableResources",
       "AuthorizationRootChildResource": "authorizationRootChildResources"
     },
     "resourceSchemas": {
@@ -486,6 +488,108 @@
             {
               "jsonPath": "$.classPeriods[*].classPeriodReference.schoolId",
               "metaEdName": "SchoolId"
+            }
+          ],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
+        }
+      },
+      "authorizationNullableResources": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "commonExtensionOverrides": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {
+          "AuthorizationNullableId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.authorizationNullableId",
+            "type": "number"
+          },
+          "Name": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.name",
+            "type": "string"
+          },
+          "NullableSchoolId": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": false,
+            "path": "$.nullableSchoolId",
+            "type": "number"
+          }
+        },
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": ["$.authorizationNullableId"],
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Synthetic authorization resource with a nullable root EdOrg subject.",
+          "properties": {
+            "authorizationNullableId": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "name": {
+              "maxLength": 75,
+              "type": "string"
+            },
+            "nullableSchoolId": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": ["authorizationNullableId", "name"],
+          "title": "Authz.AuthorizationNullableResource",
+          "type": "object"
+        },
+        "numericJsonPaths": ["$.authorizationNullableId", "$.nullableSchoolId"],
+        "queryFieldMapping": {
+          "authorizationNullableId": [
+            {
+              "path": "$.authorizationNullableId",
+              "type": "number"
+            }
+          ],
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "name": [
+            {
+              "path": "$.name",
+              "type": "string"
+            }
+          ],
+          "nullableSchoolId": [
+            {
+              "path": "$.nullableSchoolId",
+              "type": "number"
+            }
+          ]
+        },
+        "resourceName": "AuthorizationNullableResource",
+        "securableElements": {
+          "Contact": [],
+          "EducationOrganization": [
+            {
+              "jsonPath": "$.nullableSchoolId",
+              "metaEdName": "NullableSchoolId"
             }
           ],
           "Namespace": [],

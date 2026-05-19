@@ -9,4 +9,11 @@ public static class AuthorizationClaimSetNames
 {
     public const string SisVendor = "SISVendor";
     public const string NoFurtherAuthRequired = "E2E-NoFurtherAuthRequiredClaimSet";
+    public const string RelationshipsWithEdOrgsOnly = "E2E-RelationshipsWithEdOrgsOnlyClaimSet";
+    public const string RelationshipsWithEdOrgsOnlyInverted =
+        "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet";
+    public const string RelationshipsWithEdOrgsOnlyOrInverted =
+        "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet";
+    public const string RelationshipsWithEdOrgsOnlyMixedStrategy =
+        "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet";
 }
