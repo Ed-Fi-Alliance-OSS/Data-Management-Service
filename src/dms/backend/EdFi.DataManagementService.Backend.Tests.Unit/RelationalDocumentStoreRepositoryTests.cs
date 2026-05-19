@@ -856,6 +856,45 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public void It_returns_all_discoverable_security_configuration_failures_when_relationship_planning_has_an_invalid_strategy_and_no_root_edorg_subject()
+    {
+        var mappingSet = CreateQuerySupportedMappingSetWithChildOnlyEdOrgSubject(_schoolResourceInfo);
+        var planner = new RelationshipAuthorizationPlanner(CreateAuthorizationSubjectSelector());
+
+        var result = planner.PlanStoredValues(
+            mappingSet,
+            new QualifiedResourceName("Ed-Fi", "School"),
+            [
+                new ConfiguredAuthorizationStrategy(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    0
+                ),
+                new ConfiguredAuthorizationStrategy("CustomAuthorizationStrategy", 1),
+            ],
+            new RelationalAuthorizationContext([255901L])
+        );
+
+        var failure = result
+            .Should()
+            .BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>()
+            .Subject;
+        failure.Failures.Should().HaveCount(2);
+        failure
+            .Failures.Select(static planningFailure => planningFailure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
+                RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy
+            );
+        failure
+            .Failures[0]
+            .ConfiguredStrategy!.StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
+        failure.Failures[0].Location!.JsonPath.Should().Be("$.classPeriods[*].classPeriodReference.schoolId");
+        failure.Failures[1].ConfiguredStrategy!.StrategyName.Should().Be("CustomAuthorizationStrategy");
+    }
+
+    [Test]
     public async Task It_bypasses_relationship_authorization_for_stored_document_get_requests()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-2222-3333-4444-dddddddddddd"));
