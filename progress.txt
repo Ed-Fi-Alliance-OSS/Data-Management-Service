@@ -3,3 +3,8 @@ Decisions: added Core.External relationship failure DTO, kept backend plan types
 Files changed: GetResult.cs, DeleteResult.cs, RelationshipAuthorizationFailure.cs, GetByIdHandler.cs, DeleteByIdHandler.cs, GetByIdHandlerTests.cs, DeleteByIdHandlerTests.cs, tasks.json, progress.txt.
 Verify: handler filter passed 21 tests. Requested FailureResponseTests filter had zero matching fixture names; equivalent Given_Failure_Response filter passed 4 tests.
 Next: implement backend-runtime AUTH1 payload/parser and mapping from plan metadata into the external DTO.
+Completed backend-runtime for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/02-edorg-only-get-by-id-and-delete.md
+Decisions: added versioned AUTH1 payload grammar `1|index|count|strategy:subject:kind`, count guards truncation/partial payloads; provider wrappers normalize PgSQL `AUTH1` sqlstate and SQL Server `AUTH1 - ...` cast text into one parser; mapper fails closed on bad ordinals/source-kind mismatches and orders DTO failures by configured plan order. Added shared single-record stored auth SQL compiler using same ClaimEducationOrganizationIds parameterization: Pg array, MSSQL scalar below 2000, MSSQL TVP at 2000+.
+Files changed: RelationshipAuthorizationAuth1FailurePayload.cs, RelationshipAuthorizationFailureMapper.cs, SingleRecordRelationshipAuthorizationSqlModels.cs, SingleRecordRelationshipAuthorizationSqlCompiler.cs, RelationshipAuthorizationAuth1FailurePayloadTests.cs, tasks.json, progress.txt.
+Verify: backend unit filter passed 130 tests; plans unit AUTH1/Relationship filter passed 42 tests.
+Next: wire GET-by-id external read path through planner/compiler, preserve StoredDocument bypass and same observed read boundary.
