@@ -48,3 +48,9 @@ Implement People-involved relationship-based authorization for GET-by-id, POST, 
 - Works for both PostgreSQL and SQL Server, using the `dms.throw_error` function in PostgreSQL and the `CAST('AUTH1 - ...' AS INT)` pattern in SQL Server for aborting batches.
 - For SQL Server, when the token's EdOrgId list has fewer than 2,000 entries, use a parameterized `IN` clause; otherwise, use a TVP of type `dms.BigIntTable`.
 - This story replaces the temporary not-implemented behavior for People-involved relationship-based GET-by-id, POST, PUT, and DELETE operations.
+- Re-enable `@relational-backend` and the appropriate `@relational-ci-shard-*` tag on the People-involved E2E scenarios temporarily excluded during the DMS-1056 EdOrg-only slice because they require People relational GET-by-id or DELETE authorization. At minimum, restore both tags on:
+  - `Features/Authorization/EducationOrganizationChanges.feature`: scenarios 01, 08, and 09.
+  - `Features/Authorization/RelationshipsWithEdOrgsAndContacts.feature`: scenarios 02, 08, and 16.
+  - `Features/Authorization/RelationshipsWithEdOrgsAndPeople.feature`: scenarios 03, 09, 11, and 18.
+  - `Features/Authorization/RoleNamedSecurity/DisciplineActionAuthorization.feature`: scenarios 02.1 and 04.
+  - `Features/Authorization/RoleNamedSecurity/OrganizationDepartmentAuthorization.feature`: scenarios 02.1 and 04.

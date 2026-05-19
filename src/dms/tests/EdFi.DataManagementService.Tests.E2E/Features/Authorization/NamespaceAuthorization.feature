@@ -261,8 +261,6 @@ Feature: Namespace Authorization
                   }]
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 10 Ensure client can get a resource in the ns2 namespace
              When a GET request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 200
@@ -284,8 +282,6 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 12 Ensure client can delete a resource in the ns2 namespace
              When a DELETE request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 204
