@@ -37,6 +37,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
     private const string StampStyleEtagPattern = "^\"\\d+\"$";
+    private const string RelationshipAuthorizationSchoolIdErrorMessage =
+        "No relationships have been established between the caller's education organization id claims ('255901') and the resource item's SchoolId value.";
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("LocalEducationAgency"),
@@ -730,11 +732,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.GetDocumentById(getRequest);
 
-        result.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>();
-        result
-            .As<GetResult.GetFailureRelationshipNotAuthorized>()
-            .RelationshipFailure.Should()
-            .BeSameAs(relationshipFailure);
+        var failure = result.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>().Subject;
+        failure.ErrorMessages.Should().Equal(RelationshipAuthorizationSchoolIdErrorMessage);
+        failure.Hints.Should().BeNull();
+        failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -4207,13 +4208,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_not_implemented_for_delete_namespace_authorization_until_the_strategy_is_implemented()
+    public async Task It_defers_delete_namespace_authorization_until_the_strategy_is_implemented()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute for staged auth."));
+        ConfigureDeleteOutcome(deleted: true);
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
             documentUuid,
             123L,
@@ -4228,11 +4229,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
 
     [Test]
@@ -4333,11 +4334,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>();
-        result
-            .As<DeleteResult.DeleteFailureRelationshipNotAuthorized>()
-            .RelationshipFailure.Should()
-            .BeSameAs(relationshipFailure);
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
+        failure.ErrorMessages.Should().Equal(RelationshipAuthorizationSchoolIdErrorMessage);
+        failure.Hints.Should().BeNull();
+        failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -4374,12 +4374,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_not_implemented_when_delete_authorization_includes_known_out_of_scope_strategies()
+    public async Task It_defers_delete_authorization_when_it_includes_known_out_of_scope_strategies()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
         ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute for staged auth."));
+        ConfigureDeleteOutcome(deleted: true);
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
         A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
@@ -4394,12 +4394,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
-        result
-            .As<DeleteResult.DeleteFailureNotImplemented>()
-            .FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        A.CallTo(_commandExecutor)
+            .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
+            .MustNotHaveHappened();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
     }
 
     [Test]

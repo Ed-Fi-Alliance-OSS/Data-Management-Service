@@ -29,6 +29,8 @@ Data Management Service E2E tests do not always clean up after themselves. Teard
 
 If local E2E tests fail before issuing API requests, check for environment/runtime issues such as unsupported `NODE_OPTIONS` values or container health checks failing because required shell tools are missing.
 
+E2E tests require the @relational-backend tag to work with the relational backend.
+
 ### Setup Data Management Service E2E test Docker environment
 
 1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`

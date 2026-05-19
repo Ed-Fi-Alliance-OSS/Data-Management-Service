@@ -41,11 +41,6 @@ public sealed class RelationalDocumentStoreRepository(
     private const int DeleteRelationshipAuthorizationAuth1Index = 0;
     private const int GetByIdReadBoundaryAttemptCount = 2;
 
-    private static readonly string[] _relationshipAuthorizationErrorMessages =
-    [
-        "No relationship exists between the caller's education organization claims and the requested resource.",
-    ];
-
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IRelationalWriteExecutor _writeExecutor =
@@ -623,6 +618,15 @@ public sealed class RelationalDocumentStoreRepository(
         IRelationalCommandExecutor sessionCommandExecutor
     )
     {
+        if (
+            HasSingleRecordAuthorizationStrategiesOutsideDms1056Scope(
+                relationalDeleteRequest.AuthorizationStrategyEvaluators
+            )
+        )
+        {
+            return null;
+        }
+
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalDeleteRequest.AuthorizationStrategyEvaluators
         );
@@ -656,10 +660,8 @@ public sealed class RelationalDocumentStoreRepository(
 
                 return CreateDeleteRelationshipNotAuthorized(noClaimsFailure);
 
-            case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
-                return new DeleteResult.DeleteFailureNotImplemented(
-                    BuildKnownButNotEnabledDeleteAuthorizationMessage(resource, knownButNotEnabled.Failures)
-                );
+            case RelationshipAuthorizationResult.KnownButNotEnabled:
+                return null;
 
             case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
                 return BuildDeleteAuthorizationSecurityConfigurationFailure(
@@ -728,12 +730,7 @@ public sealed class RelationalDocumentStoreRepository(
 
     private static DeleteResult.DeleteFailureRelationshipNotAuthorized CreateDeleteRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) =>
-        new(
-            _relationshipAuthorizationErrorMessages,
-            relationshipFailure,
-            BuildRelationshipAuthorizationHints(relationshipFailure)
-        );
+    ) => new(BuildRelationshipAuthorizationErrorMessages(relationshipFailure), relationshipFailure);
 
     private static RelationalCommand BuildDocumentDeleteByDocumentIdCommand(
         SqlDialect dialect,
@@ -1381,14 +1378,8 @@ public sealed class RelationalDocumentStoreRepository(
                     false
                 );
 
-            case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
-                return new GetAuthorizationOutcome(
-                    new GetResult.GetFailureNotImplemented(
-                        BuildKnownButNotEnabledGetAuthorizationMessage(resource, knownButNotEnabled.Failures)
-                    ),
-                    null,
-                    false
-                );
+            case RelationshipAuthorizationResult.KnownButNotEnabled:
+                return GetAuthorizationOutcome.NotRequired;
 
             case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
                 return new GetAuthorizationOutcome(
@@ -1480,7 +1471,10 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private static bool ShouldBypassSingleRecordAuthorization(IRelationalGetRequest relationalGetRequest) =>
-        relationalGetRequest.ReadMode switch
+        HasSingleRecordAuthorizationStrategiesOutsideDms1056Scope(
+            relationalGetRequest.AuthorizationStrategyEvaluators
+        )
+        || relationalGetRequest.ReadMode switch
         {
             RelationalGetRequestReadMode.StoredDocument => true,
             RelationalGetRequestReadMode.ExternalResponse => false,
@@ -1490,6 +1484,19 @@ public sealed class RelationalDocumentStoreRepository(
                 "Unsupported relational GET read mode."
             ),
         };
+
+    private static bool HasSingleRecordAuthorizationStrategiesOutsideDms1056Scope(
+        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    ) =>
+        authorizationStrategyEvaluators.Any(static evaluator =>
+            !IsDms1056SingleRecordAuthorizationStrategy(evaluator.AuthorizationStrategyName)
+        );
+
+    private static bool IsDms1056SingleRecordAuthorizationStrategy(string strategyName) =>
+        strategyName
+            is AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                or AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+                or AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired;
 
     private static bool TryCreateRelationshipAuthorizationFailure(
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
@@ -1538,24 +1545,65 @@ public sealed class RelationalDocumentStoreRepository(
 
     private static GetResult.GetFailureRelationshipNotAuthorized CreateGetRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) =>
-        new(
-            _relationshipAuthorizationErrorMessages,
-            relationshipFailure,
-            BuildRelationshipAuthorizationHints(relationshipFailure)
-        );
+    ) => new(BuildRelationshipAuthorizationErrorMessages(relationshipFailure), relationshipFailure);
 
-    private static string[] BuildRelationshipAuthorizationHints(
+    private static string[] BuildRelationshipAuthorizationErrorMessages(
         RelationshipAuthorizationFailure relationshipFailure
-    ) =>
+    )
+    {
+        string edOrgIdsFromFilters = string.Join(
+            ", ",
+            relationshipFailure.ClaimEducationOrganizationIds.Select(static id => $"'{id.Value}'")
+        );
+        string[] notAuthorizedProperties =
         [
             .. relationshipFailure
                 .FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
-                .Select(static subject => subject.Hint)
-                .Where(static hint => hint is not null)
-                .Distinct(StringComparer.Ordinal)
-                .Cast<string>(),
+                .SelectMany(static subject => GetRelationshipAuthorizationPropertyNames(subject))
+                .Distinct(StringComparer.Ordinal),
         ];
+
+        if (notAuthorizedProperties.Length == 0)
+        {
+            return
+            [
+                "No relationships have been established between the caller's education organization id claims "
+                    + $"({edOrgIdsFromFilters}) and the requested resource.",
+            ];
+        }
+
+        if (notAuthorizedProperties.Length == 1)
+        {
+            return
+            [
+                "No relationships have been established between the caller's education organization id claims "
+                    + $"({edOrgIdsFromFilters}) and the resource item's {notAuthorizedProperties[0]} value.",
+            ];
+        }
+
+        return
+        [
+            "No relationships have been established between the caller's education organization id claims "
+                + $"({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: "
+                + $"{string.Join(", ", notAuthorizedProperties.Select(static property => $"'{property}'"))}.",
+        ];
+    }
+
+    private static IEnumerable<string> GetRelationshipAuthorizationPropertyNames(
+        RelationshipAuthorizationFailedSubject subject
+    )
+    {
+        if (subject.SecurableElements.Length == 0)
+        {
+            yield return subject.RootBinding.ColumnName;
+            yield break;
+        }
+
+        foreach (var securableElement in subject.SecurableElements)
+        {
+            yield return securableElement.ReadableName;
+        }
+    }
 
     private sealed record GetAuthorizationOutcome(
         GetResult? FailureResult,
@@ -1569,48 +1617,6 @@ public sealed class RelationalDocumentStoreRepository(
     private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>
         relationalGetRequest.ReadMode == RelationalGetRequestReadMode.ExternalResponse
         && relationalGetRequest.ReadableProfileProjectionContext is not null;
-
-    private static string BuildKnownButNotEnabledGetAuthorizationMessage(
-        QualifiedResourceName resource,
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures
-    )
-    {
-        var unsupportedStrategyNames = knownButNotEnabledFailures
-            .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
-            .Where(static strategyName => strategyName is not null)
-            .Cast<string>()
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
-            .Select(static strategyName => $"'{strategyName}'");
-
-        return $"Relational GET-by-id authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
-            + "when effective GET authorization includes strategies outside the current DMS-1056 EdOrg-only scope. Unsupported strategies: "
-            + $"[{string.Join(", ", unsupportedStrategyNames)}]. Supported DMS-1056 strategies are "
-            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly}', "
-            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted}', and "
-            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op.";
-    }
-
-    private static string BuildKnownButNotEnabledDeleteAuthorizationMessage(
-        QualifiedResourceName resource,
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures
-    )
-    {
-        var unsupportedStrategyNames = knownButNotEnabledFailures
-            .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
-            .Where(static strategyName => strategyName is not null)
-            .Cast<string>()
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
-            .Select(static strategyName => $"'{strategyName}'");
-
-        return $"Relational DELETE authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
-            + "when effective DELETE authorization includes strategies outside the current DMS-1056 EdOrg-only scope. Unsupported strategies: "
-            + $"[{string.Join(", ", unsupportedStrategyNames)}]. Supported DMS-1056 strategies are "
-            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly}', "
-            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted}', and "
-            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op.";
-    }
 
     private static GetResult.GetFailureSecurityConfiguration BuildGetAuthorizationSecurityConfigurationFailure(
         MappingSet mappingSet,
