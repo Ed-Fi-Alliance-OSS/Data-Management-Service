@@ -15,8 +15,6 @@ Feature: Delete a Descriptor
                   """
 
         @API-022
-        @relational-backend
-        @relational-ci-shard-2
         Scenario: 01 Verify deleting a specific descriptor by ID
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
@@ -89,7 +87,6 @@ Feature: Delete a Descriptor
                     "errors":[]
                   }
                   """
-
 
 
 

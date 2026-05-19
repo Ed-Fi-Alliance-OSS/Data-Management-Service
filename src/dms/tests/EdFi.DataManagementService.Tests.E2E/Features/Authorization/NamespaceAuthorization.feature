@@ -19,8 +19,6 @@ Feature: Namespace Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 01 Ensure client can create a descriptor in the ns2 namespace
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -39,8 +37,6 @@ Feature: Namespace Authorization
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 03 Ensure client can update a descriptor in the ns2 namespace
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -56,8 +52,6 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 04 Ensure client can delete a descriptor in the ns2 namespace
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
