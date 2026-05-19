@@ -93,11 +93,15 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     public MssqlGeneratedDdlTestDatabase Database { get; private set; } = null!;
 
-    public async Task InitializeAsync(string fixtureRelativePath, bool strict)
+    public async Task InitializeAsync(
+        string fixtureRelativePath,
+        bool strict,
+        bool replaceReadTargetLookup = true
+    )
     {
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(fixtureRelativePath, strict);
         Database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = CreateServiceProvider();
+        _serviceProvider = CreateServiceProvider(replaceReadTargetLookup);
         _recorder = _serviceProvider.GetRequiredService<MssqlRelationalQueryExecutionRecorder>();
     }
 
@@ -123,11 +127,36 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         return (PageKeysetSpec.Query)_recorder.HydrationKeysets[0];
     }
 
+    public PageKeysetSpec.Single AssertSingleDocumentHydration()
+    {
+        _recorder.HydrationKeysets.Should().ContainSingle();
+        _recorder.HydrationKeysets[0].Should().BeOfType<PageKeysetSpec.Single>();
+        return (PageKeysetSpec.Single)_recorder.HydrationKeysets[0];
+    }
+
+    public void AssertSingleDocumentMaterialized()
+    {
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(1);
+        _recorder.PageMaterializationCallCount.Should().Be(0);
+    }
+
     public void AssertNoHydration()
     {
         _recorder.HydrationKeysets.Should().BeEmpty();
         _recorder.PageMaterializationCallCount.Should().Be(0);
         _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+    }
+
+    public void AssertHydratedWithoutMaterialization(int expectedHydrationCount)
+    {
+        _recorder.HydrationKeysets.Should().HaveCount(expectedHydrationCount);
+        _recorder.PageMaterializationCallCount.Should().Be(0);
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+    }
+
+    public void BeforeNextHydration(Func<CancellationToken, Task> beforeHydrationAsync)
+    {
+        _recorder.BeforeNextHydrationAsync = beforeHydrationAsync;
     }
 
     public async Task SeedSchoolDescriptorDataAsync()
@@ -207,6 +236,17 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             RelationalQueryAuthorizationRequestBodies.CreateAuthorizationChildOnlyRequestBody(seed),
             seed.DocumentUuid,
             $"seed-auth-child-only-{seed.AuthorizationChildOnlyId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateAuthorizationNullableAsync(AuthorizationNullableSeed seed)
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationNullableResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNullableRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-auth-nullable-{seed.AuthorizationNullableId}"
         );
     }
 
@@ -342,6 +382,45 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             .QueryDocuments(request);
     }
 
+    public async Task<GetResult> GetByIdAsync(
+        string projectEndpointName,
+        string resourceName,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? traceId = null
+    )
+    {
+        ResetRecorder();
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new IntegrationRelationalGetRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: resourceHandle.ResourceInfo,
+            MappingSet: MappingSet,
+            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
+            AuthorizationStrategyEvaluators:
+            [
+                .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+            TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-get-by-id")
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds),
+        };
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .GetDocumentById(request);
+    }
+
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
@@ -372,6 +451,30 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 NameOfInstitution: GetRequiredString(row, "NameOfInstitution")
             )),
         ];
+    }
+
+    public async Task MutateAuthorizationRootChildSchoolAsync(
+        DocumentUuid documentUuid,
+        int newSchoolId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ = cancellationToken;
+        var documentId = await GetDocumentIdByUuidAsync(documentUuid);
+        var schoolDocumentId = await GetSchoolDocumentIdAsync(newSchoolId);
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            UPDATE [authz].[AuthorizationRootChildResource]
+            SET
+                [School_DocumentId] = @schoolDocumentId,
+                [School_SchoolId] = @newSchoolId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@newSchoolId", newSchoolId),
+            new SqlParameter("@documentId", documentId)
+        );
     }
 
     private async Task<UpsertResult> UpsertAsync(
@@ -459,7 +562,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         return resourceHandle;
     }
 
-    private static ServiceProvider CreateServiceProvider()
+    private static ServiceProvider CreateServiceProvider(bool replaceReadTargetLookup)
     {
         ServiceCollection services = [];
 
@@ -474,12 +577,16 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         services.Replace(
             ServiceDescriptor.Scoped<IRelationalReadMaterializer, RecordingRelationalReadMaterializer>()
         );
-        services.Replace(
-            ServiceDescriptor.Scoped<
-                IRelationalReadTargetLookupService,
-                ThrowingRelationalReadTargetLookupService
-            >()
-        );
+
+        if (replaceReadTargetLookup)
+        {
+            services.Replace(
+                ServiceDescriptor.Scoped<
+                    IRelationalReadTargetLookupService,
+                    ThrowingRelationalReadTargetLookupService
+                >()
+            );
+        }
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -540,6 +647,30 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             """,
             new SqlParameter("@projectName", projectName),
             new SqlParameter("@resourceName", resourceName)
+        );
+    }
+
+    private async Task<long> GetDocumentIdByUuidAsync(DocumentUuid documentUuid)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT [DocumentId]
+            FROM [dms].[Document]
+            WHERE [DocumentUuid] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid.Value)
+        );
+    }
+
+    private async Task<long> GetSchoolDocumentIdAsync(int schoolId)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT [DocumentId]
+            FROM [edfi].[School]
+            WHERE [SchoolId] = @schoolId;
+            """,
+            new SqlParameter("@schoolId", schoolId)
         );
     }
 
