@@ -145,6 +145,44 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
+    public async Task It_can_authorize_proposed_relationship_values_without_document_insert()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post);
+        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(
+                ReaderResultSets: [CreateSingleValueResultSet("AuthorizationResult", typeof(int), 1)]
+            ),
+        ]);
+
+        await _sut.AuthorizeProposedRelationshipAsync(request, mergeResult, writeSession);
+
+        writeSession.Commands.Should().ContainSingle();
+        var command = writeSession.Commands[0];
+        command.CommandText.Should().Contain("AUTH1");
+        command.CommandText.Should().NotContain("INSERT INTO dms.\"Document\"");
+        GetParameterValue(command, "@relationshipAuthorization_0_0_SchoolId").Should().Be(255901);
+        GetParameterValue(command, "@ClaimEducationOrganizationIds")
+            .Should()
+            .BeEquivalentTo(new long[] { 1234L });
+        command.Parameters.Select(static parameter => parameter.Name).Should().NotContain("@documentUuid");
+        command.Parameters.Select(static parameter => parameter.Name).Should().NotContain("@resourceKeyId");
+    }
+
+    [Test]
     public async Task It_maps_proposed_relationship_authorization_auth1_failures_before_root_insert()
     {
         var rootPlan = CreateRootPlan();

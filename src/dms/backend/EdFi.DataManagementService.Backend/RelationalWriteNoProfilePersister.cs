@@ -22,6 +22,13 @@ internal interface IRelationalWritePersister
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken = default
     );
+
+    Task AuthorizeProposedRelationshipAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteMergeResult mergeResult,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal sealed class RelationalWriteNoProfilePersister(
@@ -86,6 +93,59 @@ internal sealed class RelationalWriteNoProfilePersister(
             .ConfigureAwait(false);
 
         return new RelationalWritePersistResult(rootDocumentId, GetTargetDocumentUuid(targetContext));
+    }
+
+    public async Task AuthorizeProposedRelationshipAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteMergeResult mergeResult,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(mergeResult);
+        ArgumentNullException.ThrowIfNull(writeSession);
+
+        var relationshipAuthorizationRuntimeCheck =
+            mergeResult.ProposedRelationshipAuthorizationRuntimeCheck
+            ?? throw new InvalidOperationException(
+                "Cannot authorize proposed relationship values without a runtime authorization check."
+            );
+
+        try
+        {
+            await ExecuteProposedRelationshipAuthorizationAsync(
+                    writeSession,
+                    BuildProposedRelationshipAuthorizationCommand(request.MappingSet, mergeResult),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (DbException ex)
+        {
+            if (
+                TryMapRelationshipAuthorizationFailure(
+                    request.MappingSet.Key.Dialect,
+                    relationshipAuthorizationRuntimeCheck,
+                    ex,
+                    out var relationshipFailure
+                )
+            )
+            {
+                throw new RelationalWriteRelationshipAuthorizationNotAuthorizedException(
+                    relationshipFailure!
+                );
+            }
+
+            if (IsRelationshipAuthorizationProviderFailure(request.MappingSet.Key.Dialect, ex))
+            {
+                throw new RelationalWriteInvalidRelationshipAuthorizationFailureException(
+                    "Relationship authorization failed, but the AUTH1 failure metadata could not be mapped."
+                );
+            }
+
+            throw;
+        }
     }
 
     private static DocumentUuid GetTargetDocumentUuid(RelationalWriteTargetContext targetContext) =>
@@ -421,6 +481,61 @@ internal sealed class RelationalWriteNoProfilePersister(
         }
 
         return RequireDocumentId(reader.GetValue(0), resource);
+    }
+
+    private static async Task ExecuteProposedRelationshipAuthorizationAsync(
+        IRelationalWriteSession writeSession,
+        RelationalCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var dbCommand = writeSession.CreateCommand(command);
+        await using var reader = await dbCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "Proposed relationship authorization did not return an authorization result."
+            );
+        }
+
+        var authorizationResult = Convert.ToInt32(
+            reader.GetValue(reader.GetOrdinal(AuthorizationResultColumn)),
+            CultureInfo.InvariantCulture
+        );
+
+        if (authorizationResult != 1)
+        {
+            throw new InvalidOperationException(
+                $"Proposed relationship authorization returned unexpected result '{authorizationResult}'."
+            );
+        }
+    }
+
+    private RelationalCommand BuildProposedRelationshipAuthorizationCommand(
+        MappingSet mappingSet,
+        RelationalWriteMergeResult mergeResult
+    )
+    {
+        var relationshipAuthorizationRuntimeCheck =
+            mergeResult.ProposedRelationshipAuthorizationRuntimeCheck
+            ?? throw new InvalidOperationException(
+                "Cannot build a proposed authorization command without a runtime authorization check."
+            );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(mappingSet.Key.Dialect);
+        var sqlPlan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                relationshipAuthorizationRuntimeCheck.CheckSpecs,
+                relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,
+                relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
+                ReservedParameterNames: GetReservedWriteParameterNames(mergeResult)
+            )
+        );
+
+        return new RelationalCommand(
+            sqlPlan.AuthorizationSql,
+            BuildRelationshipAuthorizationParameters(sqlPlan, relationshipAuthorizationRuntimeCheck)
+        );
     }
 
     private RelationalCommand BuildAuthorizedInsertDocumentCommand(

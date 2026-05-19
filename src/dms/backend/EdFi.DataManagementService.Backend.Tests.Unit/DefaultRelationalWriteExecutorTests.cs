@@ -3691,6 +3691,137 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_relationship_authorization_failure_for_create_new_if_match_before_etag_mismatch()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+        var relationshipFailure = CreateProposedSchoolIdRelationshipFailure(request);
+        _noProfilePersister.ProposedAuthorizationExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.Should()
+            .BeSameAs(relationshipFailure);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_if_match_failure_for_create_new_after_successful_proposed_relationship_authorization()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_relationship_authorization_failure_for_existing_post_before_not_implemented_staging()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        var relationshipFailure = CreateProposedSchoolIdRelationshipFailure(request);
+        _noProfilePersister.ProposedAuthorizationExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.Should()
+            .BeSameAs(relationshipFailure);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_not_implemented_for_existing_post_after_successful_proposed_relationship_authorization()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var notImplemented = upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNotImplemented>()
+            .Subject;
+        notImplemented.Reason.Should().Be(UpsertFailureNotImplementedReason.ExistingResourcePostAsUpdate);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public void It_preserves_strategy_and_subject_order_in_extracted_proposed_runtime_check()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
@@ -4806,6 +4937,8 @@ public class Given_Default_Relational_Write_Executor
     {
         public int TryPersistCallCount { get; private set; }
 
+        public int AuthorizeProposedRelationshipCallCount { get; private set; }
+
         public RelationalWriteExecutorRequest? CapturedRequest { get; private set; }
 
         public RelationalWriteMergeResult? CapturedMergeResult { get; private set; }
@@ -4813,6 +4946,8 @@ public class Given_Default_Relational_Write_Executor
         public IRelationalWriteSession? CapturedWriteSession { get; private set; }
 
         public Exception? ExceptionToThrow { get; set; }
+
+        public Exception? ProposedAuthorizationExceptionToThrow { get; set; }
 
         public RelationalWritePersistResult? ResultToReturn { get; set; }
 
@@ -4835,6 +4970,27 @@ public class Given_Default_Relational_Write_Executor
             }
 
             return Task.FromResult(ResultToReturn ?? CreateDefaultResult(request));
+        }
+
+        public Task AuthorizeProposedRelationshipAsync(
+            RelationalWriteExecutorRequest request,
+            RelationalWriteMergeResult mergeResult,
+            IRelationalWriteSession writeSession,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AuthorizeProposedRelationshipCallCount++;
+            CapturedRequest = request;
+            CapturedMergeResult = mergeResult;
+            CapturedWriteSession = writeSession;
+
+            if (ProposedAuthorizationExceptionToThrow is not null)
+            {
+                throw ProposedAuthorizationExceptionToThrow;
+            }
+
+            return Task.CompletedTask;
         }
 
         private static RelationalWritePersistResult CreateDefaultResult(
