@@ -12,6 +12,7 @@ namespace EdFi.DataManagementService.Backend;
 internal sealed record ProposedRelationshipAuthorizationRuntimeCheck(
     IReadOnlyList<RelationshipAuthorizationCheckSpec> CheckSpecs,
     AuthorizationClaimEducationOrganizationIdParameterization ClaimEducationOrganizationIdParameterization,
+    int EmittedAuth1Index,
     IReadOnlyList<ProposedRelationshipAuthorizationRuntimeStrategy> Strategies
 );
 
@@ -182,6 +183,7 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             new ProposedRelationshipAuthorizationRuntimeCheck(
                 authorized.CheckSpecs,
                 claimParameterization,
+                emittedAuth1Index,
                 runtimeStrategies
             )
         );

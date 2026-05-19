@@ -3664,6 +3664,33 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_relationship_authorization_failure_from_create_persistence_without_committed_readback()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var relationshipFailure = CreateProposedSchoolIdRelationshipFailure(request);
+        _noProfilePersister.ExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.Should()
+            .BeSameAs(relationshipFailure);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public void It_preserves_strategy_and_subject_order_in_extracted_proposed_runtime_check()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
@@ -3807,6 +3834,38 @@ public class Given_Default_Relational_Write_Executor
                 RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
             )
         );
+    }
+
+    private static RelationshipAuthorizationFailure CreateProposedSchoolIdRelationshipFailure(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        var authorized = CreateProposedSchoolIdRelationshipAuthorization(request);
+
+        if (
+            !RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+                new RelationshipAuthorizationAuth1FailurePayload(
+                    0,
+                    [
+                        new RelationshipAuthorizationAuth1SubjectFailure(
+                            0,
+                            0,
+                            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                        ),
+                    ]
+                ),
+                authorized.CheckSpecs,
+                authorized.ClaimEducationOrganizationIdParameterization!.ClaimEducationOrganizationIds,
+                out var relationshipFailure
+            ) || relationshipFailure is null
+        )
+        {
+            throw new InvalidOperationException(
+                "Test setup could not map the proposed relationship authorization failure."
+            );
+        }
+
+        return relationshipFailure;
     }
 
     private static RelationshipAuthorizationResult.Authorized CreateTwoStrategyTwoSubjectRelationshipAuthorization(

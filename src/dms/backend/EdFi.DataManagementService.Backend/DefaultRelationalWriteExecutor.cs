@@ -442,6 +442,19 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return BuildPlannerContractMismatchResult(request.OperationKind, ex);
         }
+        catch (RelationalWriteRelationshipAuthorizationNotAuthorizedException ex)
+        {
+            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return BuildProposedRelationshipAuthorizationFailureResult(
+                request.OperationKind,
+                ex.RelationshipFailure
+            );
+        }
+        catch (RelationalWriteInvalidRelationshipAuthorizationFailureException ex)
+        {
+            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return BuildUnknownFailureResult(request.OperationKind, ex.FailureMessage);
+        }
         catch (DbException ex)
         {
             bool isMappedWriteFailure;
