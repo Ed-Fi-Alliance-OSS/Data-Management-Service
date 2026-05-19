@@ -1,0 +1,758 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using FluentAssertions;
+using Npgsql;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+
+/// <summary>
+/// Verifies that the auth EdOrg hierarchy triggers emitted onto concrete EducationOrganization
+/// tables correctly maintain <c>auth.EducationOrganizationIdToEducationOrganizationId</c> in
+/// response to inserts and updates (and the leaf-delete regression path).
+///
+/// Covers DMS-1096 acceptance criterion: "Test(s) ensure that inserts/updates made to concrete
+/// Education Organizations update the auth.EducationOrganizationIdToEducationOrganizationId
+/// table accordingly."
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_Triggers
+{
+    private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
+
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private short _stateEducationAgencyResourceKeyId;
+    private short _educationServiceCenterResourceKeyId;
+    private short _localEducationAgencyResourceKeyId;
+    private short _schoolResourceKeyId;
+    private short _localEducationAgencyCategoryDescriptorResourceKeyId;
+    private long _localEducationAgencyCategoryDescriptorDocumentId;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        var fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            FixtureRelativePath,
+            strict: true
+        );
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
+
+        _stateEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StateEducationAgency");
+        _educationServiceCenterResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "EducationServiceCenter");
+        _localEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "LocalEducationAgency");
+        _schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        _localEducationAgencyCategoryDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "LocalEducationAgencyCategoryDescriptor"
+        );
+    }
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        await _database.ResetAsync();
+
+        // Every LEA insert requires a LocalEducationAgencyCategoryDescriptor_DescriptorId; seed one
+        // fresh per test so the row is in scope after ResetAsync() truncates user tables.
+        _localEducationAgencyCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+            documentUuid: Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"),
+            resourceKeyId: _localEducationAgencyCategoryDescriptorResourceKeyId,
+            discriminator: "Ed-Fi:LocalEducationAgencyCategoryDescriptor",
+            uri: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
+            @namespace: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
+            codeValue: "Independent",
+            shortDescription: "Independent"
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    // ── Insert scenarios ───────────────────────────────────────────────
+
+    [Test]
+    public async Task It_creates_self_tuple_when_a_leaf_StateEducationAgency_is_inserted()
+    {
+        await InsertStateEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            stateEducationAgencyId: 100,
+            nameOfInstitution: "Test SEA"
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples.Should().BeEquivalentTo(new[] { (Source: 100L, Target: 100L) });
+    }
+
+    [Test]
+    public async Task It_creates_self_and_ancestor_tuples_when_a_hierarchical_LocalEducationAgency_is_inserted()
+    {
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Test LEA",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_creates_full_ancestor_chain_when_a_School_is_inserted_under_an_LEA()
+    {
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        var leaDocumentId = await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Test LEA",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        await InsertSchoolAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000700"),
+            schoolId: 700,
+            nameOfInstitution: "Test School",
+            parentLocalEducationAgencyDocumentId: leaDocumentId,
+            parentLocalEducationAgencyId: 500
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 500L),
+                    (Source: 100L, Target: 700L),
+                    (Source: 500L, Target: 500L),
+                    (Source: 500L, Target: 700L),
+                    (Source: 700L, Target: 700L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_creates_self_tuple_only_when_an_LEA_is_inserted_without_a_parent_FK()
+    {
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Orphan LEA"
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples.Should().BeEquivalentTo(new[] { (Source: 500L, Target: 500L) });
+    }
+
+    [Test]
+    public async Task It_creates_ancestor_tuples_for_each_present_parent_FK_when_an_LEA_has_multiple_parents()
+    {
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        var escDocumentId = await InsertEducationServiceCenterAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000300"),
+            educationServiceCenterId: 300,
+            nameOfInstitution: "Test ESC",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
+            localEducationAgencyId: 400,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Parent LEA",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Child LEA",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100,
+            parentEducationServiceCenterDocumentId: escDocumentId,
+            parentEducationServiceCenterId: 300,
+            parentLocalEducationAgencyDocumentId: parentLeaDocumentId,
+            parentLocalEducationAgencyId: 400
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        // Child LEA inherits ancestry from each of its three populated parent FK pairs (SEA, ESC,
+        // parent-LEA), plus its own self-tuple.
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 300L),
+                    (Source: 100L, Target: 400L),
+                    (Source: 100L, Target: 500L),
+                    (Source: 300L, Target: 300L),
+                    (Source: 300L, Target: 500L),
+                    (Source: 400L, Target: 400L),
+                    (Source: 400L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    // ── Update scenarios ───────────────────────────────────────────────
+
+    [Test]
+    public async Task It_rewrites_ancestor_tuples_when_an_LEA_parent_FK_is_changed_to_another_SEA()
+    {
+        var sea1DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "SEA 1"
+        );
+        var sea2DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000200"),
+            200,
+            "SEA 2"
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Test LEA",
+            parentStateEducationAgencyDocumentId: sea1DocumentId,
+            parentStateEducationAgencyId: 100
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."LocalEducationAgency"
+            SET "StateEducationAgency_DocumentId" = @newSeaDocumentId,
+                "StateEducationAgency_StateEducationAgencyId" = @newSeaId
+            WHERE "LocalEducationAgencyId" = @leaId;
+            """,
+            new NpgsqlParameter("newSeaDocumentId", sea2DocumentId),
+            new NpgsqlParameter("newSeaId", 200L),
+            new NpgsqlParameter("leaId", 500L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 200L, Target: 200L),
+                    (Source: 200L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_rewrites_descendant_tuples_when_an_intermediate_LEA_parent_FK_changes()
+    {
+        var sea1DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "SEA 1"
+        );
+        var sea2DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000200"),
+            200,
+            "SEA 2"
+        );
+        var leaDocumentId = await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Test LEA",
+            parentStateEducationAgencyDocumentId: sea1DocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        await InsertSchoolAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000700"),
+            schoolId: 700,
+            nameOfInstitution: "Test School",
+            parentLocalEducationAgencyDocumentId: leaDocumentId,
+            parentLocalEducationAgencyId: 500
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."LocalEducationAgency"
+            SET "StateEducationAgency_DocumentId" = @newSeaDocumentId,
+                "StateEducationAgency_StateEducationAgencyId" = @newSeaId
+            WHERE "LocalEducationAgencyId" = @leaId;
+            """,
+            new NpgsqlParameter("newSeaDocumentId", sea2DocumentId),
+            new NpgsqlParameter("newSeaId", 200L),
+            new NpgsqlParameter("leaId", 500L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        // SEA1 ancestry to both LEA and School is gone; SEA2 ancestry replaces it.
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 200L, Target: 200L),
+                    (Source: 200L, Target: 500L),
+                    (Source: 200L, Target: 700L),
+                    (Source: 500L, Target: 500L),
+                    (Source: 500L, Target: 700L),
+                    (Source: 700L, Target: 700L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_adds_ancestor_tuples_when_an_LEA_parent_FK_transitions_from_null_to_a_value()
+    {
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Orphan LEA"
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."LocalEducationAgency"
+            SET "StateEducationAgency_DocumentId" = @seaDocumentId,
+                "StateEducationAgency_StateEducationAgencyId" = @seaId
+            WHERE "LocalEducationAgencyId" = @leaId;
+            """,
+            new NpgsqlParameter("seaDocumentId", seaDocumentId),
+            new NpgsqlParameter("seaId", 100L),
+            new NpgsqlParameter("leaId", 500L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_removes_ancestor_tuples_when_an_LEA_parent_FK_transitions_from_a_value_to_null()
+    {
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Test LEA",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."LocalEducationAgency"
+            SET "StateEducationAgency_DocumentId" = NULL,
+                "StateEducationAgency_StateEducationAgencyId" = NULL
+            WHERE "LocalEducationAgencyId" = @leaId;
+            """,
+            new NpgsqlParameter("leaId", 500L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples.Should().BeEquivalentTo(new[] { (Source: 100L, Target: 100L), (Source: 500L, Target: 500L) });
+    }
+
+    // ── Delete scenarios (regression coverage; not part of canonical AC) ──
+
+    [Test]
+    public async Task It_removes_all_tuples_for_a_deleted_leaf_School()
+    {
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        var leaDocumentId = await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Test LEA",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        await InsertSchoolAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000700"),
+            schoolId: 700,
+            nameOfInstitution: "Test School",
+            parentLocalEducationAgencyDocumentId: leaDocumentId,
+            parentLocalEducationAgencyId: 500
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM "edfi"."School" WHERE "SchoolId" = @schoolId;
+            """,
+            new NpgsqlParameter("schoolId", 700L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        // All rows with Target = School (700) removed; SEA and LEA self/ancestor tuples intact.
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    // ── Seed helpers ───────────────────────────────────────────────────
+
+    private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
+    {
+        return await _database.ExecuteScalarAsync<short>(
+            """
+            SELECT "ResourceKeyId"
+            FROM "dms"."ResourceKey"
+            WHERE "ProjectName" = @projectName
+              AND "ResourceName" = @resourceName;
+            """,
+            new NpgsqlParameter("projectName", projectName),
+            new NpgsqlParameter("resourceName", resourceName)
+        );
+    }
+
+    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
+            VALUES (@documentUuid, @resourceKeyId)
+            RETURNING "DocumentId";
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+    }
+
+    private async Task<long> InsertDescriptorAsync(
+        Guid documentUuid,
+        short resourceKeyId,
+        string discriminator,
+        string uri,
+        string @namespace,
+        string codeValue,
+        string shortDescription
+    )
+    {
+        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."Descriptor" (
+                "DocumentId",
+                "Namespace",
+                "CodeValue",
+                "ShortDescription",
+                "Description",
+                "Discriminator",
+                "Uri"
+            )
+            VALUES (
+                @documentId,
+                @namespace,
+                @codeValue,
+                @shortDescription,
+                @description,
+                @discriminator,
+                @uri
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("namespace", @namespace),
+            new NpgsqlParameter("codeValue", codeValue),
+            new NpgsqlParameter("shortDescription", shortDescription),
+            new NpgsqlParameter("description", shortDescription),
+            new NpgsqlParameter("discriminator", discriminator),
+            new NpgsqlParameter("uri", uri)
+        );
+
+        return documentId;
+    }
+
+    /// <summary>
+    /// Inserts a row into <c>dms.Document</c> and <c>edfi.StateEducationAgency</c>. The
+    /// abstract-identity triggers on the concrete table populate
+    /// <c>edfi.EducationOrganizationIdentity</c> automatically; do not pre-seed it.
+    /// </summary>
+    private async Task<long> InsertStateEducationAgencyAsync(
+        Guid documentUuid,
+        long stateEducationAgencyId,
+        string nameOfInstitution
+    )
+    {
+        var documentId = await InsertDocumentAsync(documentUuid, _stateEducationAgencyResourceKeyId);
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."StateEducationAgency" (
+                "DocumentId",
+                "StateEducationAgencyId",
+                "NameOfInstitution"
+            )
+            VALUES (@documentId, @stateEducationAgencyId, @nameOfInstitution);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("stateEducationAgencyId", stateEducationAgencyId),
+            new NpgsqlParameter("nameOfInstitution", nameOfInstitution)
+        );
+
+        return documentId;
+    }
+
+    private async Task<long> InsertEducationServiceCenterAsync(
+        Guid documentUuid,
+        long educationServiceCenterId,
+        string nameOfInstitution,
+        long? parentStateEducationAgencyDocumentId = null,
+        long? parentStateEducationAgencyId = null
+    )
+    {
+        var documentId = await InsertDocumentAsync(documentUuid, _educationServiceCenterResourceKeyId);
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."EducationServiceCenter" (
+                "DocumentId",
+                "EducationServiceCenterId",
+                "NameOfInstitution",
+                "StateEducationAgency_DocumentId",
+                "StateEducationAgency_StateEducationAgencyId"
+            )
+            VALUES (
+                @documentId,
+                @educationServiceCenterId,
+                @nameOfInstitution,
+                @parentSeaDocumentId,
+                @parentSeaId
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("educationServiceCenterId", educationServiceCenterId),
+            new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
+            new NpgsqlParameter(
+                "parentSeaDocumentId",
+                (object?)parentStateEducationAgencyDocumentId ?? DBNull.Value
+            ),
+            new NpgsqlParameter("parentSeaId", (object?)parentStateEducationAgencyId ?? DBNull.Value)
+        );
+
+        return documentId;
+    }
+
+    /// <summary>
+    /// Inserts a row into <c>dms.Document</c> and <c>edfi.LocalEducationAgency</c>. Every parent
+    /// FK is a nullable subtype-specific pair (<c>_DocumentId</c> + scoped natural-key id); a
+    /// CHECK constraint on the table requires both members of each pair to be NULL or both
+    /// NOT NULL. The category descriptor is required.
+    /// </summary>
+    private async Task<long> InsertLocalEducationAgencyAsync(
+        Guid documentUuid,
+        long localEducationAgencyId,
+        long localEducationAgencyCategoryDescriptorDocumentId,
+        string nameOfInstitution,
+        long? parentStateEducationAgencyDocumentId = null,
+        long? parentStateEducationAgencyId = null,
+        long? parentEducationServiceCenterDocumentId = null,
+        long? parentEducationServiceCenterId = null,
+        long? parentLocalEducationAgencyDocumentId = null,
+        long? parentLocalEducationAgencyId = null
+    )
+    {
+        var documentId = await InsertDocumentAsync(documentUuid, _localEducationAgencyResourceKeyId);
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."LocalEducationAgency" (
+                "DocumentId",
+                "LocalEducationAgencyId",
+                "LocalEducationAgencyCategoryDescriptor_DescriptorId",
+                "NameOfInstitution",
+                "StateEducationAgency_DocumentId",
+                "StateEducationAgency_StateEducationAgencyId",
+                "EducationServiceCenter_DocumentId",
+                "EducationServiceCenter_EducationServiceCenterId",
+                "ParentLocalEducationAgency_DocumentId",
+                "ParentLocalEducationAgency_LocalEducationAgencyId"
+            )
+            VALUES (
+                @documentId,
+                @localEducationAgencyId,
+                @categoryDescriptorDocumentId,
+                @nameOfInstitution,
+                @parentSeaDocumentId,
+                @parentSeaId,
+                @parentEscDocumentId,
+                @parentEscId,
+                @parentLeaDocumentId,
+                @parentLeaId
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("localEducationAgencyId", localEducationAgencyId),
+            new NpgsqlParameter(
+                "categoryDescriptorDocumentId",
+                localEducationAgencyCategoryDescriptorDocumentId
+            ),
+            new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
+            new NpgsqlParameter(
+                "parentSeaDocumentId",
+                (object?)parentStateEducationAgencyDocumentId ?? DBNull.Value
+            ),
+            new NpgsqlParameter("parentSeaId", (object?)parentStateEducationAgencyId ?? DBNull.Value),
+            new NpgsqlParameter(
+                "parentEscDocumentId",
+                (object?)parentEducationServiceCenterDocumentId ?? DBNull.Value
+            ),
+            new NpgsqlParameter("parentEscId", (object?)parentEducationServiceCenterId ?? DBNull.Value),
+            new NpgsqlParameter(
+                "parentLeaDocumentId",
+                (object?)parentLocalEducationAgencyDocumentId ?? DBNull.Value
+            ),
+            new NpgsqlParameter("parentLeaId", (object?)parentLocalEducationAgencyId ?? DBNull.Value)
+        );
+
+        return documentId;
+    }
+
+    private async Task<long> InsertSchoolAsync(
+        Guid documentUuid,
+        long schoolId,
+        string nameOfInstitution,
+        long parentLocalEducationAgencyDocumentId,
+        long parentLocalEducationAgencyId
+    )
+    {
+        var documentId = await InsertDocumentAsync(documentUuid, _schoolResourceKeyId);
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."School" (
+                "DocumentId",
+                "SchoolId",
+                "NameOfInstitution",
+                "LocalEducationAgency_DocumentId",
+                "LocalEducationAgency_LocalEducationAgencyId"
+            )
+            VALUES (
+                @documentId,
+                @schoolId,
+                @nameOfInstitution,
+                @parentLeaDocumentId,
+                @parentLeaId
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("schoolId", schoolId),
+            new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
+            new NpgsqlParameter("parentLeaDocumentId", parentLocalEducationAgencyDocumentId),
+            new NpgsqlParameter("parentLeaId", parentLocalEducationAgencyId)
+        );
+
+        return documentId;
+    }
+
+    /// <summary>
+    /// Returns the current contents of <c>auth.EducationOrganizationIdToEducationOrganizationId</c>
+    /// as a sorted list of <c>(SourceEducationOrganizationId, TargetEducationOrganizationId)</c>
+    /// tuples. The auth columns are <c>bigint</c>, so tuple members are <see cref="long"/>.
+    /// Assertions should match by value — never by row index.
+    /// </summary>
+    private async Task<IReadOnlyList<(long Source, long Target)>> GetAuthTuplesAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "SourceEducationOrganizationId", "TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+            ORDER BY 1, 2;
+            """
+        );
+
+        return
+        [
+            .. rows.Select(row =>
+                (
+                    Source: Convert.ToInt64(row["SourceEducationOrganizationId"]),
+                    Target: Convert.ToInt64(row["TargetEducationOrganizationId"])
+                )
+            ),
+        ];
+    }
+}
