@@ -294,8 +294,7 @@ public class Given_RelationshipAuthorizationFailureMapper
                 direction is RelationshipAuthorizationHierarchyDirection.Normal
                     ? AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                     : AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-                configuredStrategyIndex,
-                RelationshipAuthorizationStrategyComposition.Or
+                configuredStrategyIndex
             ),
             relationshipLocalOrder,
             direction,
@@ -467,8 +466,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
                 direction is RelationshipAuthorizationHierarchyDirection.Normal
                     ? AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                     : AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-                configuredStrategyIndex,
-                RelationshipAuthorizationStrategyComposition.Or
+                configuredStrategyIndex
             ),
             relationshipLocalOrder,
             direction,

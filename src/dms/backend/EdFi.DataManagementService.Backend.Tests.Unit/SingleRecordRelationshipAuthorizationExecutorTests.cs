@@ -266,8 +266,7 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
                 direction is RelationshipAuthorizationHierarchyDirection.Normal
                     ? AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                     : AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-                RawConfiguredIndex: 0,
-                RelationshipAuthorizationStrategyComposition.Or
+                RawConfiguredIndex: 0
             ),
             RelationshipLocalOrder: 0,
             direction,
