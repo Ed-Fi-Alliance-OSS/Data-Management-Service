@@ -25,8 +25,8 @@ Feature: NoFurtherAuthorizationRequired strategy is a no-op for relational read 
                   | localEducationAgencyId | nameOfInstitution | stateEducationAgencyReference   | categories                                                                                                               | localEducationAgencyCategoryDescriptor                       |
                   | 201                    | DMS-1090 LEA      | { "stateEducationAgencyId": 2 } | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
               And the system has these "schools"
-                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
-                  | 20101    | DMS-1090 school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | { "localEducationAgencyId": 201} |
+                  | _storeResultingIdInVariable | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
+                  | SchoolId1                   | 20101    | DMS-1090 school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | { "localEducationAgencyId": 201} |
             # Switch to a claim set whose EdOrg id 999 has no overlap with the seeded hierarchy.
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "999"
              When a GET request is made to "/ed-fi/schools"
@@ -50,7 +50,7 @@ Feature: NoFurtherAuthorizationRequired strategy is a no-op for relational read 
                       }
                   ]
                   """
-             When a GET request is made to "/ed-fi/schools/{id}"
+             When a GET request is made to "/ed-fi/schools/{SchoolId1}"
              Then it should respond with 200
 
         @relational-backend
