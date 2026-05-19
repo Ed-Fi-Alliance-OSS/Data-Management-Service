@@ -3,35 +3,72 @@ jira: DMS-1056
 jira_url: https://edfi.atlassian.net/browse/DMS-1056
 ---
 
-# Story: Implement Relationship-based Authorization Strategies for GET-by-id, POST, PUT, and DELETE
+# Story: Split Relationship-based Authorization for GET-by-id, POST, PUT, and DELETE
 
-## Description
+## Planning Split
 
-Implement the relationship-based authorization strategies for the GET-by-id, POST, PUT, and DELETE scenarios per:
+This planning branch recuts `DMS-1056` into six implementation slices so the team can land the relationship CRUD authorization work without combining the operation refactor, EdOrg strategy behavior, People strategy behavior, and final error-response hardening in one acceptance boundary.
 
-- `reference/design/backend-redesign/design-docs/auth.md`
+All slice documents keep the `DMS-1056` ticket number until the Jira split is finalized.
 
-## Acceptance Criteria
+This document becomes the umbrella index for the slice docs under:
 
-- GET-by-id: An authorization check is executed (using EXISTS subqueries) against the stored values before reconstitution. If unauthorized, a 403 Forbidden response is returned with appropriate ProblemDetails; no reconstitution occurs.
-- POST (new resource): An authorization check is executed against the values from the request body before inserting into dms.Document. If unauthorized, the insert does not happen and a 403 Forbidden response is returned.
-- POST (existing resource / upsert as update): Authorization follows the same rules as PUT — check stored values first, then check new values (if the resource allows updates to its identifying values).
-- PUT: Two authorization checks are performed:
-  - First, authorize using the currently stored values (abort if unauthorized).
-  - Second, authorize using the new values from the request body (only if the resource allows updates to its identifying values; abort if unauthorized).
-  Both checks are batched in the same roundtrip as reference resolution and reconstitution.
-- DELETE: An authorization check is executed against the stored values before deletion. If unauthorized, the delete does not happen and a 403 Forbidden response is returned.
-- Each strategy type correctly determines which securable elements participate. For EducationOrganization subjects, use the ODS-parity DMS concrete root-table subject scope established by [DMS-1055](https://edfi.atlassian.net/browse/DMS-1055); child-table EdOrg predicates are not introduced by this story unless explicitly added by a later design change.
-- Inverted strategies correctly swap Source/Target filtering in EXISTS subqueries.
-- This story replaces the temporary DMS-1055 501 Not Implemented behavior for relationship-based GET-by-id, POST, PUT, and DELETE operations, including RelationshipsWithEdOrgsOnlyInverted.
-- When multiple relationship-based strategies are configured for the same resource, they are combined with OR semantics (the EXISTS clauses for each strategy are wrapped in parentheses and combined with OR).
-- When authorization fails, the AUTH1 error code is thrown with the strategy index in the message (e.g., 'Unauthorized, index: 0'), allowing the C# code to map the failure to the specific strategy and generate ProblemDetails.
-- When multiple relationship-based (OR) strategies are configured and authorization fails, all OR strategies are evaluated and their error hints are combined/concatenated in the ProblemDetails response (not just the first failure). See `auth.md` §"Authorization Failure Hints" for the hint table and formatting rules.
-- ProblemDetails follow the structure defined in `auth.md` §"ProblemDetails", including:
-  - The `type`, `title`, `detail`, `errors`, and `correlationId` fields per RFC 9457.
-  - Securable element paths are translated to user-friendly names (e.g. `$.schoolReference.schoolId` → `SchoolId`).
-  - When a single securable element is involved, the error uses the singular form; when multiple, the plural form listing all elements.
-  - EdOrg claims are shown in the error (up to 5, then `...`).
-- Auth checks are batched with other statements in the same DB roundtrip (e.g., reconstitution for GET-by-id, delete for DELETE, insert for POST) to match the roundtrip targets defined in the design doc.
-- Works for both PostgreSQL and SQL Server, using the throw_error function in PostgreSQL and the CAST('AUTH1 - ...' AS INT) pattern in SQL Server for aborting batches.
-- For SQL Server, when the token's EdOrgId list has fewer than 2,000 entries, use a parameterized IN clause; otherwise, use a TVP.
+- `reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/`
+
+## Shared Constraints
+
+All slices inherit these constraints:
+
+- Relationship authorization follows `reference/design/backend-redesign/design-docs/auth.md`.
+- DMS reuses the ODS-parity concrete root-table EducationOrganization subject scope established by `DMS-1055`; child-table EdOrg predicates are not introduced unless a later design change explicitly changes DMS semantics.
+- Relationship strategies compose as OR strategies; multiple securable subjects within one relationship strategy compose with AND semantics.
+- `RelationshipsWithEdOrgsOnlyInverted` and `RelationshipsWithEdOrgsAndPeopleInverted` swap `SourceEducationOrganizationId` and `TargetEducationOrganizationId` filtering for EdOrg hierarchy checks.
+- SQL generation and parameter binding must support PostgreSQL and SQL Server, including the DMS-1055 `ClaimEducationOrganizationIds` parameter contract and SQL Server `dms.BigIntTable` TVP threshold behavior.
+- Generated operation-specific authorization SQL should not be cached. Resolved securable path metadata and operation-neutral authorization specs may be cached by effective schema, mapping set, resource, strategy, and securable element.
+- Authorization failures must preserve strategy identity and configured strategy index ordering so `AUTH1` failures and final ProblemDetails can point back to the correct strategy.
+
+## Slice Order
+
+1. [01-relationship-crud-auth-core.md](07-relationship-auth-crud/01-relationship-crud-auth-core.md)
+   - Goal: generalize DMS-1055 relationship strategy classification, subject resolution, parameterization, and SQL-fragment inputs beyond GET-many.
+   - After merge: operation-neutral EdOrg relationship authorization specs are available for stored-value and proposed-value single-record checks.
+   - Still out of scope: endpoint execution, People-involved subjects, and final ProblemDetails formatting.
+2. [02-edorg-only-get-by-id-and-delete.md](07-relationship-auth-crud/02-edorg-only-get-by-id-and-delete.md)
+   - Goal: prove the core vertically with EdOrg-only stored-value checks for GET-by-id and DELETE.
+   - After merge: unauthorized GET-by-id does not reconstitute, and unauthorized DELETE does not delete.
+   - Still out of scope: POST, PUT, POST-as-update, People subjects, and final ProblemDetails hardening.
+3. [03-edorg-only-post-create.md](07-relationship-auth-crud/03-edorg-only-post-create.md)
+   - Goal: authorize proposed request-body EdOrg values before creating a new document.
+   - After merge: unauthorized POST-create does not insert `dms.Document` or resource rows.
+   - Still out of scope: POST-as-update, PUT, DELETE changes beyond Slice 2, People subjects, and final ProblemDetails hardening.
+4. [04-edorg-only-put-and-post-as-update.md](07-relationship-auth-crud/04-edorg-only-put-and-post-as-update.md)
+   - Goal: authorize EdOrg-only updates by checking stored values first and proposed values second when identifying authorization values can change.
+   - After merge: PUT and POST-as-update close the EdOrg-only CRUD operation surface.
+   - Still out of scope: People CRUD endpoint execution and final ProblemDetails hardening.
+5. [05-people-relationship-auth-core.md](07-relationship-auth-crud/05-people-relationship-auth-core.md)
+   - Goal: implement the shared People-involved relationship authorization core consumed by GET-many and later People CRUD work.
+   - After merge: People strategy classification, person DocumentId path resolution, auth-view selection, inverted EdOrg metadata, and failure-hint metadata are available operation-neutrally.
+   - Still out of scope: GET-many filtering execution, People CRUD endpoint execution, database execution, and endpoint ProblemDetails mapping.
+6. [06-relationship-auth-problemdetails-hardening.md](07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md)
+   - Goal: harden relationship authorization error handling to the exact `auth.md` RFC 9457 ProblemDetails contract.
+   - After merge: relationship CRUD authorization failures format readable securable names, EdOrg claims, singular/plural messages, and OR-strategy hints consistently.
+   - Still out of scope: new authorization strategies or new database objects.
+
+## Operation Ownership Map
+
+- Operation-neutral EdOrg CRUD auth specs, shared strategy metadata, and SQL-fragment inputs — Slice 1
+- `GET /{resource}/{id}` EdOrg-only stored-value checks — Slice 2
+- `DELETE /{resource}/{id}` EdOrg-only stored-value checks — Slice 2
+- `POST /{resource}` create-new EdOrg-only proposed-value checks — Slice 3
+- `POST /{resource}` upsert-as-update EdOrg-only stored/proposed checks — Slice 4
+- `PUT /{resource}/{id}` EdOrg-only stored/proposed checks — Slice 4
+- People-involved strategy core metadata and path resolution — Slice 5
+- Exact relationship authorization ProblemDetails behavior — Slice 6
+
+## Notes For Review
+
+- The first implementation slice is deliberately operation-neutral. It should remove GET-many-specific naming and contracts from reusable relationship auth infrastructure instead of copying `PageDocumentId...` or `RelationalGetMany...` concepts into single-record operations.
+- Slice 2 is the first vertical proof because it needs only stored values and can validate the read/delete batching model before write executor integration.
+- Slice 4 is the highest-risk EdOrg-only operation slice because it touches existing target resolution, `If-Match`, current-state loading, guarded no-op, profile-aware writes, and authorization-before-mutation behavior.
+- Slice 5 is intentionally a core story, not an endpoint story. It gives `DMS-1095` and later People CRUD work the same reusable People subject model.
+- Slice 6 should not introduce new authorization semantics. It closes response-shape and hint aggregation gaps after the operation paths can produce structured relationship authorization failures.

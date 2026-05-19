@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -748,7 +749,10 @@ actual: {requestInfo.FrontendResponse.Body}
                 A.Fake<IReadableProfileProjector>(),
                 new NoOpRelationalWriteExceptionClassifier(),
                 A.Fake<IRelationalDeleteConstraintResolver>(),
-                A.Fake<IRelationalWriteSessionFactory>()
+                A.Fake<IRelationalWriteSessionFactory>(),
+                new RelationalEdOrgAuthorizationSubjectSelector(
+                    new RelationalEdOrgAuthorizationElementResolutionCache()
+                )
             );
 
             return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor);

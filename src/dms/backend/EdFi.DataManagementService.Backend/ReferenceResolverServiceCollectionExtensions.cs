@@ -156,6 +156,7 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteExecutor, DefaultRelationalWriteExecutor>());
+        services.AddRelationalRelationshipAuthorizationServices();
 
         return services.AddReferenceResolver<TReferenceResolverAdapterFactory>();
     }

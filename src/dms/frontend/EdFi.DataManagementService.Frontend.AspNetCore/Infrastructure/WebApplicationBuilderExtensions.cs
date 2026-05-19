@@ -326,6 +326,7 @@ public static class WebApplicationBuilderExtensions
 
     private static void ReplaceWithRelationalDocumentStoreRepository(IServiceCollection services)
     {
+        services.AddRelationalRelationshipAuthorizationServices();
         services.TryAddScoped<RelationalDocumentStoreRepository>();
         services.Replace(
             ServiceDescriptor.Scoped<IDocumentStoreRepository>(serviceProvider =>
@@ -336,6 +337,7 @@ public static class WebApplicationBuilderExtensions
 
     private static void ReplaceWithRelationalQueryHandler(IServiceCollection services)
     {
+        services.AddRelationalRelationshipAuthorizationServices();
         services.TryAddScoped<RelationalDocumentStoreRepository>();
         services.Replace(
             ServiceDescriptor.Scoped<IQueryHandler>(serviceProvider =>

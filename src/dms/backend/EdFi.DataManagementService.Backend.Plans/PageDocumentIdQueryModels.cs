@@ -93,7 +93,9 @@ public sealed record PageDocumentIdAuthorizationSubject(DbTableName Table, DbCol
 /// </param>
 public sealed record PageDocumentIdAuthorizationStrategy(
     PageDocumentIdAuthorizationStrategyKind Kind,
-    IReadOnlyList<PageDocumentIdAuthorizationSubject> Subjects
+    IReadOnlyList<PageDocumentIdAuthorizationSubject> Subjects,
+    int? RawConfiguredIndex = null,
+    int? RelationshipLocalOrder = null
 );
 
 /// <summary>

@@ -7,12 +7,13 @@ using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -68,6 +69,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private RecordingWriteSessionFactory _writeSessionFactory = null!;
     private RelationalWriteExecutorRequest _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorRequest> _capturedExecutorRequests = null!;
+
+    private static RelationalEdOrgAuthorizationSubjectSelector CreateAuthorizationSubjectSelector() =>
+        new(new RelationalEdOrgAuthorizationElementResolutionCache());
 
     [SetUp]
     public void Setup()
@@ -142,7 +146,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
     }
 
@@ -162,7 +167,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
     }
 
@@ -290,7 +296,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var getRequest = CreateGetRequest(
@@ -958,7 +965,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var queryRequest = CreateQueryRequest(
@@ -1031,7 +1039,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var queryRequest = CreateQueryRequest(
@@ -1100,7 +1109,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var queryRequest = CreateQueryRequest(
@@ -1665,7 +1675,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_deduplicates_duplicate_supported_query_authorization_strategies_before_compiling_query_authorization()
+    public async Task It_preserves_duplicate_supported_query_authorization_strategies_as_distinct_or_branches()
     {
         static int CountOrdinalOccurrences(string value, string text) =>
             value.Split(text, StringSplitOptions.None).Length - 1;
@@ -1738,9 +1748,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 "\"auth\".\"EducationOrganizationIdToEducationOrganizationId\""
             )
             .Should()
-            .Be(1);
-        CountOrdinalOccurrences(pageDocumentIdSql, "r.\"LocalEducationAgencyId\" IN (SELECT").Should().Be(1);
-        pageDocumentIdSql.Should().NotContain(" OR ");
+            .Be(2);
+        CountOrdinalOccurrences(pageDocumentIdSql, "r.\"LocalEducationAgencyId\" IN (SELECT").Should().Be(2);
+        pageDocumentIdSql.Should().Contain(" OR ");
     }
 
     [Test]
@@ -2208,7 +2218,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_returns_not_implemented_when_query_authorization_includes_known_out_of_scope_strategies()
     {
         var queryRequest = CreateQueryRequest(
-            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
             [],
             totalCount: false,
             authorizationStrategyEvaluators:
@@ -2231,6 +2241,42 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .As<QueryResult.QueryFailureNotImplemented>()
             .FailureMessage.Should()
             .Contain($"{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_failure_when_query_authorization_includes_invalid_and_known_out_of_scope_strategies()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
+        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().HaveCount(2);
+        result
+            .As<QueryResult.QueryFailureSecurityConfiguration>()
+            .Errors.Should()
+            .Contain(error => error.Contains("CustomAuthorizationStrategy", StringComparison.Ordinal))
+            .And.Contain(error =>
+                error.Contains(AuthorizationStrategyNameConstants.NamespaceBased, StringComparison.Ordinal)
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -3321,7 +3367,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             new NoOpRelationalWriteExceptionClassifier(),
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -3375,7 +3422,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -3412,7 +3460,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             new NoOpRelationalWriteExceptionClassifier(),
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -3466,7 +3515,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -3548,7 +3598,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
@@ -3601,7 +3652,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
 
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
@@ -3672,7 +3724,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readableProfileProjector,
             _writeExceptionClassifier,
             _deleteConstraintResolver,
-            _writeSessionFactory
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector()
         );
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteOutcome(deleted: true);

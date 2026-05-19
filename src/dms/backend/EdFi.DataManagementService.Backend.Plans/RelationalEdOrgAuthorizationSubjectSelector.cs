@@ -7,66 +7,79 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
-internal enum RelationalEdOrgAuthorizationSubjectSelectionOutcome
+public enum RelationalEdOrgAuthorizationSubjectSelectionOutcome
 {
     Success,
     SecurityConfigurationError,
 }
 
-internal sealed record RelationalEdOrgAuthorizationSubject(
-    string JsonPath,
-    string ReadableName,
-    DbTableName Table,
-    DbColumnName Column
-);
-
-internal sealed record RelationalEdOrgAuthorizationSubjectSelection(
+public sealed record RelationalEdOrgAuthorizationSubjectSelection(
     RelationalEdOrgAuthorizationSubjectSelectionOutcome Outcome,
-    IReadOnlyList<RelationalEdOrgAuthorizationSubject> Subjects,
-    string? FailureMessage
+    IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
+    IReadOnlyList<RelationshipAuthorizationFailureMetadata> SecurityConfigurationFailures
 );
 
-internal static class RelationalEdOrgAuthorizationSubjectSelector
+public sealed class RelationalEdOrgAuthorizationSubjectSelector
 {
-    private static readonly RelationalEdOrgAuthorizationElementResolutionCache _elementResolutionCache =
-        new();
+    private readonly RelationalEdOrgAuthorizationElementResolutionCache _elementResolutionCache;
 
-    public static RelationalEdOrgAuthorizationSubjectSelection Select(
+    public RelationalEdOrgAuthorizationSubjectSelector(
+        RelationalEdOrgAuthorizationElementResolutionCache elementResolutionCache
+    )
+    {
+        _elementResolutionCache =
+            elementResolutionCache ?? throw new ArgumentNullException(nameof(elementResolutionCache));
+    }
+
+    internal RelationalEdOrgAuthorizationSubjectSelection Select(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        IReadOnlyList<string> strategyNames
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies
+    ) =>
+        Select(
+            mappingSet,
+            resource,
+            [
+                .. supportedStrategies.Select(
+                    static strategy => new SupportedRelationshipAuthorizationStrategySelection(
+                        strategy.ConfiguredStrategy,
+                        strategy.RelationshipLocalOrder
+                    )
+                ),
+            ]
+        );
+
+    private RelationalEdOrgAuthorizationSubjectSelection Select(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategySelection> supportedStrategies
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(strategyNames);
+        ArgumentNullException.ThrowIfNull(supportedStrategies);
 
         var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
-        var rootTable = concreteResourceModel.RelationalModel.Root.Table;
         var elementResolutions = _elementResolutionCache.GetOrResolveAll(mappingSet, resource);
-        var configuredElements = elementResolutions.Select(static resolution => resolution.Element).ToArray();
-        var resolvedCandidates = elementResolutions
-            .SelectMany(static resolution => resolution.ResolvedCandidates)
-            .ToArray();
+        var tableModelsByName = concreteResourceModel.RelationalModel.TablesInDependencyOrder.ToDictionary(
+            static table => table.Table
+        );
 
-        List<RelationalEdOrgAuthorizationSubject> subjects = [];
-        List<EdOrgSecurableElement> unresolvedWithoutSelectedSubject = [];
+        List<SelectedRootSubjectCandidate> selectedRootSubjectCandidates = [];
+        List<RelationshipAuthorizationFailureMetadata> securityConfigurationFailures = [];
+        List<NonRootResolvedCandidate> nonRootResolvedCandidates = [];
 
-        foreach (var elementResolution in elementResolutions)
+        for (var elementIndex = 0; elementIndex < elementResolutions.Count; elementIndex++)
         {
-            var selectedCandidate = SelectPreferredConcreteRootCandidate(
-                rootTable,
+            var elementResolution = elementResolutions[elementIndex];
+            var rootCandidate = SelectPreferredConcreteRootCandidate(
+                tableModelsByName,
                 elementResolution.ResolvedCandidates
             );
 
-            if (selectedCandidate is not null)
+            if (rootCandidate is not null)
             {
-                subjects.Add(
-                    new RelationalEdOrgAuthorizationSubject(
-                        selectedCandidate.JsonPath,
-                        selectedCandidate.ReadableName,
-                        selectedCandidate.Step.SourceTable,
-                        selectedCandidate.Step.SourceColumnName
-                    )
+                selectedRootSubjectCandidates.Add(
+                    new SelectedRootSubjectCandidate(elementIndex, rootCandidate)
                 );
 
                 continue;
@@ -74,125 +87,193 @@ internal static class RelationalEdOrgAuthorizationSubjectSelector
 
             if (elementResolution.ResolvedCandidates.Count == 0)
             {
-                unresolvedWithoutSelectedSubject.Add(elementResolution.Element);
+                securityConfigurationFailures.AddRange(
+                    CreateUnresolvedFailures(resource, supportedStrategies, elementResolution.Element)
+                );
+
+                continue;
             }
+
+            nonRootResolvedCandidates.AddRange(
+                elementResolution.ResolvedCandidates.Select(candidate => new NonRootResolvedCandidate(
+                    elementIndex,
+                    candidate,
+                    GetCandidateTableKind(tableModelsByName, candidate)
+                ))
+            );
         }
 
-        if (unresolvedWithoutSelectedSubject.Count > 0)
+        if (selectedRootSubjectCandidates.Count == 0)
         {
-            return new RelationalEdOrgAuthorizationSubjectSelection(
-                RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError,
-                [],
-                BuildUnresolvedFailureMessage(
-                    mappingSet,
+            securityConfigurationFailures.AddRange(
+                CreateNoApplicableRootSubjectFailures(
                     resource,
-                    strategyNames,
-                    unresolvedWithoutSelectedSubject
+                    supportedStrategies,
+                    nonRootResolvedCandidates
                 )
             );
         }
 
-        if (subjects.Count > 0)
+        if (securityConfigurationFailures.Count > 0)
         {
             return new RelationalEdOrgAuthorizationSubjectSelection(
-                RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success,
-                subjects,
-                null
+                RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError,
+                [],
+                [.. OrderFailures(securityConfigurationFailures)]
             );
         }
 
         return new RelationalEdOrgAuthorizationSubjectSelection(
-            RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError,
-            [],
-            BuildNoApplicableSubjectsFailureMessage(
-                mappingSet,
-                resource,
-                strategyNames,
-                resolvedCandidates,
-                configuredElements
-            )
+            RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success,
+            [.. GroupRootSubjects(resource, selectedRootSubjectCandidates)],
+            []
         );
     }
 
     private static ResolvedEdOrgSecurableElementCandidate? SelectPreferredConcreteRootCandidate(
-        DbTableName rootTable,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByName,
         IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> candidates
     )
     {
         ArgumentNullException.ThrowIfNull(candidates);
 
         return candidates
-            .Where(candidate => candidate.Step.SourceTable == rootTable)
+            .Where(candidate => GetCandidateTableKind(tableModelsByName, candidate) is DbTableKind.Root)
             .OrderBy(static candidate => candidate.JsonPath.Length)
             .ThenBy(static candidate => candidate.JsonPath, StringComparer.Ordinal)
             .ThenBy(static candidate => candidate.Step.SourceColumnName.Value, StringComparer.Ordinal)
             .FirstOrDefault();
     }
 
-    private static string BuildUnresolvedFailureMessage(
-        MappingSet mappingSet,
+    private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateUnresolvedFailures(
         QualifiedResourceName resource,
-        IReadOnlyList<string> strategyNames,
-        IReadOnlyList<EdOrgSecurableElement> unresolvedElements
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategySelection> supportedStrategies,
+        EdOrgSecurableElement unresolvedElement
     )
     {
-        var unresolvedDetails = unresolvedElements
-            .Select(static element => $"'{element.MetaEdName}' at '{element.JsonPath}'")
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static detail => detail, StringComparer.Ordinal);
-
-        return $"Relational query authorization metadata is invalid for resource '{MappingSetResourceLookupExtensions.FormatResource(resource)}'. "
-            + $"Effective GET-many strategies [{FormatStrategyNames(strategyNames)}] require resolvable EducationOrganization securable elements, "
-            + $"but the following elements could not be resolved to relational columns in mapping set "
-            + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}': "
-            + $"[{string.Join(", ", unresolvedDetails)}].";
+        return supportedStrategies.Select(supportedStrategy => new RelationshipAuthorizationFailureMetadata(
+            RelationshipAuthorizationFailureKind.UnresolvedSecurableElement,
+            resource,
+            supportedStrategy.ConfiguredStrategy,
+            supportedStrategy.RelationshipLocalOrder,
+            Location: new RelationshipAuthorizationFailureLocation(
+                Kind: SecurableElementKind.EducationOrganization,
+                JsonPath: unresolvedElement.JsonPath,
+                ReadableName: unresolvedElement.MetaEdName
+            ),
+            Hint: "EducationOrganization securable element did not resolve to a relational column."
+        ));
     }
 
-    private static string BuildNoApplicableSubjectsFailureMessage(
-        MappingSet mappingSet,
+    private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateNoApplicableRootSubjectFailures(
         QualifiedResourceName resource,
-        IReadOnlyList<string> strategyNames,
-        IReadOnlyList<ResolvedEdOrgSecurableElementCandidate> resolvedCandidates,
-        IReadOnlyList<EdOrgSecurableElement> configuredElements
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategySelection> supportedStrategies,
+        IReadOnlyList<NonRootResolvedCandidate> nonRootResolvedCandidates
     )
     {
-        var resolvedDetails = resolvedCandidates
-            .Select(static candidate =>
-                $"'{candidate.ReadableName}' at '{candidate.JsonPath}' -> '{candidate.Step.SourceTable}.{candidate.Step.SourceColumnName.Value}'"
-            )
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static detail => detail, StringComparer.Ordinal)
-            .ToArray();
+        if (nonRootResolvedCandidates.Count == 0)
+        {
+            return supportedStrategies.Select(
+                supportedStrategy => new RelationshipAuthorizationFailureMetadata(
+                    RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
+                    resource,
+                    supportedStrategy.ConfiguredStrategy,
+                    supportedStrategy.RelationshipLocalOrder,
+                    Location: new RelationshipAuthorizationFailureLocation(
+                        Kind: SecurableElementKind.EducationOrganization
+                    ),
+                    Hint: "No EducationOrganization securable elements are configured for this resource."
+                )
+            );
+        }
 
-        var configuredDetails = configuredElements
-            .Select(static element => $"'{element.MetaEdName}' at '{element.JsonPath}'")
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static detail => detail, StringComparer.Ordinal)
-            .ToArray();
-
-        var resolvedDetailText =
-            resolvedDetails.Length == 0
-                ? "No EducationOrganization securable elements resolved to relational columns."
-                : $"Resolved candidates: [{string.Join(", ", resolvedDetails)}].";
-        var configuredDetailText =
-            configuredDetails.Length == 0
-                ? "No EducationOrganization securable elements are configured for this resource."
-                : $"Configured elements: [{string.Join(", ", configuredDetails)}].";
-
-        return $"Relational query authorization metadata is invalid for resource '{MappingSetResourceLookupExtensions.FormatResource(resource)}'. "
-            + $"Effective GET-many strategies [{FormatStrategyNames(strategyNames)}] require at least one applicable concrete root-table EducationOrganization authorization subject, "
-            + $"but none were found in mapping set '{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'. "
-            + $"{resolvedDetailText} {configuredDetailText}";
-    }
-
-    private static string FormatStrategyNames(IReadOnlyList<string> strategyNames)
-    {
-        return string.Join(
-            ", ",
-            strategyNames
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
-                .Select(static strategyName => $"'{strategyName}'")
+        return supportedStrategies.SelectMany(supportedStrategy =>
+            nonRootResolvedCandidates.Select(nonRootCandidate => new RelationshipAuthorizationFailureMetadata(
+                RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
+                resource,
+                supportedStrategy.ConfiguredStrategy,
+                supportedStrategy.RelationshipLocalOrder,
+                Location: new RelationshipAuthorizationFailureLocation(
+                    Kind: SecurableElementKind.EducationOrganization,
+                    JsonPath: nonRootCandidate.Candidate.JsonPath,
+                    ReadableName: nonRootCandidate.Candidate.ReadableName,
+                    Table: nonRootCandidate.Candidate.Step.SourceTable,
+                    Column: nonRootCandidate.Candidate.Step.SourceColumnName
+                ),
+                Hint: $"Resolved to non-root table kind '{nonRootCandidate.TableKind}' instead of '{DbTableKind.Root}'."
+            ))
         );
     }
+
+    private static IEnumerable<RelationshipAuthorizationSubject> GroupRootSubjects(
+        QualifiedResourceName resource,
+        IReadOnlyList<SelectedRootSubjectCandidate> selectedRootSubjectCandidates
+    )
+    {
+        return selectedRootSubjectCandidates
+            .GroupBy(static candidate =>
+                (candidate.Candidate.Step.SourceTable, candidate.Candidate.Step.SourceColumnName)
+            )
+            .OrderBy(static group => group.Min(candidate => candidate.ConfiguredElementIndex))
+            .ThenBy(static group => group.Key.SourceTable.ToString(), StringComparer.Ordinal)
+            .ThenBy(static group => group.Key.SourceColumnName.Value, StringComparer.Ordinal)
+            .Select(group => new RelationshipAuthorizationSubject(
+                resource,
+                group.Key.SourceTable,
+                group.Key.SourceColumnName,
+                [
+                    .. group
+                        .OrderBy(static candidate => candidate.ConfiguredElementIndex)
+                        .ThenBy(static candidate => candidate.Candidate.JsonPath, StringComparer.Ordinal)
+                        .ThenBy(static candidate => candidate.Candidate.ReadableName, StringComparer.Ordinal)
+                        .Select(static candidate => new RelationshipAuthorizationSubjectContributor(
+                            SecurableElementKind.EducationOrganization,
+                            candidate.Candidate.JsonPath,
+                            candidate.Candidate.ReadableName
+                        )),
+                ]
+            ));
+    }
+
+    private static IEnumerable<RelationshipAuthorizationFailureMetadata> OrderFailures(
+        IEnumerable<RelationshipAuthorizationFailureMetadata> failures
+    ) =>
+        failures
+            .OrderBy(static failure => failure.ConfiguredStrategy?.RawConfiguredIndex ?? int.MaxValue)
+            .ThenBy(static failure => failure.Location?.JsonPath, StringComparer.Ordinal)
+            .ThenBy(static failure => failure.Location?.ReadableName, StringComparer.Ordinal)
+            .ThenBy(static failure => failure.Location?.Table?.ToString(), StringComparer.Ordinal)
+            .ThenBy(static failure => failure.Location?.Column?.Value, StringComparer.Ordinal)
+            .ThenBy(static failure => failure.Hint, StringComparer.Ordinal);
+
+    private static DbTableKind GetCandidateTableKind(
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByName,
+        ResolvedEdOrgSecurableElementCandidate candidate
+    )
+    {
+        if (!tableModelsByName.TryGetValue(candidate.Step.SourceTable, out var tableModel))
+        {
+            throw new InvalidOperationException(
+                $"Resolved EducationOrganization candidate table '{candidate.Step.SourceTable}' was not found in the resource model."
+            );
+        }
+
+        return tableModel.IdentityMetadata.TableKind;
+    }
+
+    private sealed record SelectedRootSubjectCandidate(
+        int ConfiguredElementIndex,
+        ResolvedEdOrgSecurableElementCandidate Candidate
+    );
+
+    private sealed record SupportedRelationshipAuthorizationStrategySelection(
+        ConfiguredAuthorizationStrategy ConfiguredStrategy,
+        int RelationshipLocalOrder
+    );
+
+    private sealed record NonRootResolvedCandidate(
+        int ConfiguredElementIndex,
+        ResolvedEdOrgSecurableElementCandidate Candidate,
+        DbTableKind TableKind
+    );
 }

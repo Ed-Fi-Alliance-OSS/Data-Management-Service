@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 
 namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 
