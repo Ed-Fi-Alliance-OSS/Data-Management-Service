@@ -51,6 +51,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
+        var parameterConfigurator =
+            scope.ServiceProvider.GetRequiredService<IRelationalParameterConfigurator>();
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
@@ -66,6 +68,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalCurrentEtagPreconditionChecker>();
         var deleteEtagPreconditionChecker =
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteEtagPreconditionChecker>();
+        var relationshipAuthorizationProviderFailureExtractor =
+            scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
@@ -81,6 +85,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         factory.Should().BeOfType<MssqlReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<MssqlReferenceResolverAdapter>();
         commandExecutor.Should().BeOfType<MssqlRelationalCommandExecutor>();
+        parameterConfigurator.Should().BeOfType<MssqlRelationalParameterConfigurator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<MssqlRelationalWriteExceptionClassifier>();
@@ -90,6 +95,9 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeSameAs(currentEtagPreconditionChecker);
+        relationshipAuthorizationProviderFailureExtractor
+            .Should()
+            .BeOfType<DefaultRelationshipAuthorizationProviderFailureExtractor>();
     }
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)

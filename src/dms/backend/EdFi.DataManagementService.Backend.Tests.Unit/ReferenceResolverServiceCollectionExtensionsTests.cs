@@ -65,6 +65,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         using var scope = serviceProvider.CreateScope();
 
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
+        var parameterConfigurator =
+            scope.ServiceProvider.GetRequiredService<IRelationalParameterConfigurator>();
         var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
@@ -72,6 +74,10 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
+        var singleRecordRelationshipAuthorizationExecutor =
+            scope.ServiceProvider.GetRequiredService<ISingleRecordRelationshipAuthorizationExecutor>();
+        var relationshipAuthorizationProviderFailureExtractor =
+            scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
         var writeFreshnessChecker =
@@ -112,12 +118,19 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .Subject;
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
+        parameterConfigurator.Should().BeOfType<DefaultRelationalParameterConfigurator>();
         writeSessionFactory.Should().BeOfType<TestRelationalWriteSessionFactory>();
         documentHydrator.Should().BeOfType<TestDocumentHydrator>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         sessionDocumentHydrator.Should().BeOfType<TestSessionDocumentHydrator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
+        singleRecordRelationshipAuthorizationExecutor
+            .Should()
+            .BeOfType<SingleRecordRelationshipAuthorizationExecutor>();
+        relationshipAuthorizationProviderFailureExtractor
+            .Should()
+            .BeOfType<DefaultRelationshipAuthorizationProviderFailureExtractor>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();

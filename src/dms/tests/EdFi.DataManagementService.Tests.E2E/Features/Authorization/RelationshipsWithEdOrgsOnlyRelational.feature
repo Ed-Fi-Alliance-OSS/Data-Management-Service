@@ -1,5 +1,5 @@
 @reset-data-before-scenario
-Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
+Feature: RelationshipsWithEdOrgsOnly relational authorization
 
     Rule: Query scenarios use the relational backend authorization lane
 
@@ -177,5 +177,71 @@ Feature: RelationshipsWithEdOrgsOnly relational GET-many authorization
                   """
                   {
                       "error": "Relational query authorization is not implemented for resource 'Ed-Fi.AcademicWeek' when effective GET-many authorization includes strategies outside the current DMS-1055 EdOrg-only scope. Unsupported strategies: ['NamespaceBased']. Supported DMS-1055 strategies are 'RelationshipsWithEdOrgsOnly', 'RelationshipsWithEdOrgsOnlyInverted', and 'NoFurtherAuthorizationRequired' as a no-op."
+                  }
+                  """
+
+    Rule: Single-record scenarios use stored-value relationship authorization
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: GET by id returns forbidden for an academic week outside the caller education organization claims
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "single record get",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-01",
+                      "endDate": "2023-08-07",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
+             When a GET request is made to "/ed-fi/academicWeeks/{id}"
+             Then it should respond with 403
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: DELETE returns forbidden and leaves an academic week outside the caller education organization claims
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "single record delete",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
+             When a DELETE request is made to "/ed-fi/academicWeeks/{id}"
+             Then it should respond with 403
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+             When a GET request is made to "/ed-fi/academicWeeks/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "single record delete",
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 5,
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
                   }
                   """

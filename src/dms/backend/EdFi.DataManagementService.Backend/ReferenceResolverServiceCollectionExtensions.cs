@@ -50,6 +50,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.AddOptions();
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalCommandExecutor, TRelationalCommandExecutor>());
         services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationalParameterConfigurator,
+                DefaultRelationalParameterConfigurator
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteSessionFactory, TRelationalWriteSessionFactory>()
         );
         services.Replace(ServiceDescriptor.Scoped<IDocumentHydrator, TDocumentHydrator>());
@@ -58,6 +64,18 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalReadMaterializer, RelationalReadMaterializer>());
         services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalReadTargetLookupService, RelationalReadTargetLookupService>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                ISingleRecordRelationshipAuthorizationExecutor,
+                SingleRecordRelationshipAuthorizationExecutor
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationshipAuthorizationProviderFailureExtractor,
+                DefaultRelationshipAuthorizationProviderFailureExtractor
+            >()
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteCurrentStateLoader, RelationalWriteCurrentStateLoader>()

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -26,6 +27,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
@@ -66,6 +68,138 @@ file sealed class MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler : IU
         );
 }
 
+internal sealed record MssqlRelationalQueryAuthorizationRecordedCommand(int SessionId, string CommandText);
+
+internal sealed class MssqlRelationalQueryAuthorizationWriteSessionRecorder
+{
+    private readonly object _sync = new();
+    private readonly List<MssqlRelationalQueryAuthorizationRecordedCommand> _commands = [];
+    private int _nextSessionId;
+
+    public IReadOnlyList<MssqlRelationalQueryAuthorizationRecordedCommand> Commands
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return [.. _commands];
+            }
+        }
+    }
+
+    public int CreateSessionId()
+    {
+        lock (_sync)
+        {
+            _nextSessionId++;
+            return _nextSessionId;
+        }
+    }
+
+    public void Record(int sessionId, RelationalCommand command)
+    {
+        lock (_sync)
+        {
+            _commands.Add(
+                new MssqlRelationalQueryAuthorizationRecordedCommand(sessionId, command.CommandText)
+            );
+        }
+    }
+
+    public void Reset()
+    {
+        lock (_sync)
+        {
+            _commands.Clear();
+            _nextSessionId = 0;
+        }
+    }
+}
+
+internal sealed class MssqlRelationalQueryAuthorizationRecordingWriteSessionFactory(
+    IDmsInstanceSelection dmsInstanceSelection,
+    IOptions<DatabaseOptions> databaseOptions,
+    MssqlRelationalQueryAuthorizationWriteSessionRecorder recorder
+) : IRelationalWriteSessionFactory
+{
+    private readonly IDmsInstanceSelection _dmsInstanceSelection =
+        dmsInstanceSelection ?? throw new ArgumentNullException(nameof(dmsInstanceSelection));
+    private readonly IOptions<DatabaseOptions> _databaseOptions =
+        databaseOptions ?? throw new ArgumentNullException(nameof(databaseOptions));
+    private readonly MssqlRelationalQueryAuthorizationWriteSessionRecorder _recorder =
+        recorder ?? throw new ArgumentNullException(nameof(recorder));
+
+    public async Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
+    {
+        var selectedInstance = _dmsInstanceSelection.GetSelectedDmsInstance();
+        var connectionString = selectedInstance.ConnectionString;
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                $"Selected DMS instance '{selectedInstance.Id}' does not have a valid connection string."
+            );
+        }
+
+        var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        try
+        {
+            var transaction = await connection.BeginTransactionAsync(
+                _databaseOptions.Value.IsolationLevel,
+                cancellationToken
+            );
+            return new MssqlRelationalQueryAuthorizationRecordingWriteSession(
+                connection,
+                transaction,
+                _recorder.CreateSessionId(),
+                _recorder
+            );
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+}
+
+internal sealed class MssqlRelationalQueryAuthorizationRecordingWriteSession(
+    DbConnection connection,
+    DbTransaction transaction,
+    int sessionId,
+    MssqlRelationalQueryAuthorizationWriteSessionRecorder recorder
+) : IRelationalWriteSession
+{
+    public DbConnection Connection { get; } =
+        connection ?? throw new ArgumentNullException(nameof(connection));
+
+    public DbTransaction Transaction { get; } =
+        transaction ?? throw new ArgumentNullException(nameof(transaction));
+
+    private readonly MssqlRelationalQueryAuthorizationWriteSessionRecorder _recorder =
+        recorder ?? throw new ArgumentNullException(nameof(recorder));
+
+    public DbCommand CreateCommand(RelationalCommand command)
+    {
+        _recorder.Record(sessionId, command);
+        return SessionRelationalCommandFactory.CreateCommand(Connection, Transaction, command);
+    }
+
+    public Task CommitAsync(CancellationToken cancellationToken = default) =>
+        Transaction.CommitAsync(cancellationToken);
+
+    public Task RollbackAsync(CancellationToken cancellationToken = default) =>
+        Transaction.RollbackAsync(cancellationToken);
+
+    public async ValueTask DisposeAsync()
+    {
+        await Transaction.DisposeAsync();
+        await Connection.DisposeAsync();
+    }
+}
+
 internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDisposable
 {
     private const int MaximumPageSize = 500;
@@ -88,17 +222,24 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     private MssqlGeneratedDdlFixture _fixture = null!;
     private ServiceProvider _serviceProvider = null!;
     private MssqlRelationalQueryExecutionRecorder _recorder = null!;
+    private MssqlRelationalQueryAuthorizationWriteSessionRecorder _writeSessionRecorder = null!;
 
     public MappingSet MappingSet => _fixture.MappingSet;
 
     public MssqlGeneratedDdlTestDatabase Database { get; private set; } = null!;
 
-    public async Task InitializeAsync(string fixtureRelativePath, bool strict)
+    public async Task InitializeAsync(
+        string fixtureRelativePath,
+        bool strict,
+        bool replaceReadTargetLookup = true
+    )
     {
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(fixtureRelativePath, strict);
         Database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = CreateServiceProvider();
+        _serviceProvider = CreateServiceProvider(replaceReadTargetLookup);
         _recorder = _serviceProvider.GetRequiredService<MssqlRelationalQueryExecutionRecorder>();
+        _writeSessionRecorder =
+            _serviceProvider.GetRequiredService<MssqlRelationalQueryAuthorizationWriteSessionRecorder>();
     }
 
     public async ValueTask DisposeAsync()
@@ -114,7 +255,31 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         }
     }
 
-    public void ResetRecorder() => _recorder.Reset();
+    public void ResetRecorder()
+    {
+        _recorder.Reset();
+        _writeSessionRecorder.Reset();
+    }
+
+    public void AssertDeleteWithIfMatchSharedGuardedSession()
+    {
+        var commands = _writeSessionRecorder.Commands;
+
+        commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
+
+        var firstLockIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentLockCommand);
+        var authorizationIndex = FindRequiredCommandIndex(commands, IsMssqlRelationshipAuthorizationCommand);
+        var secondLockIndex = FindRequiredCommandIndex(
+            commands,
+            IsMssqlDocumentLockCommand,
+            authorizationIndex + 1
+        );
+        var deleteIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentDeleteCommand);
+
+        firstLockIndex.Should().BeLessThan(authorizationIndex);
+        authorizationIndex.Should().BeLessThan(secondLockIndex);
+        secondLockIndex.Should().BeLessThan(deleteIndex);
+    }
 
     public PageKeysetSpec.Query AssertSingleQueryHydration()
     {
@@ -123,11 +288,36 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         return (PageKeysetSpec.Query)_recorder.HydrationKeysets[0];
     }
 
+    public PageKeysetSpec.Single AssertSingleDocumentHydration()
+    {
+        _recorder.HydrationKeysets.Should().ContainSingle();
+        _recorder.HydrationKeysets[0].Should().BeOfType<PageKeysetSpec.Single>();
+        return (PageKeysetSpec.Single)_recorder.HydrationKeysets[0];
+    }
+
+    public void AssertSingleDocumentMaterialized()
+    {
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(1);
+        _recorder.PageMaterializationCallCount.Should().Be(0);
+    }
+
     public void AssertNoHydration()
     {
         _recorder.HydrationKeysets.Should().BeEmpty();
         _recorder.PageMaterializationCallCount.Should().Be(0);
         _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+    }
+
+    public void AssertHydratedWithoutMaterialization(int expectedHydrationCount)
+    {
+        _recorder.HydrationKeysets.Should().HaveCount(expectedHydrationCount);
+        _recorder.PageMaterializationCallCount.Should().Be(0);
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+    }
+
+    public void BeforeNextHydration(Func<CancellationToken, Task> beforeHydrationAsync)
+    {
+        _recorder.BeforeNextHydrationAsync = beforeHydrationAsync;
     }
 
     public async Task SeedSchoolDescriptorDataAsync()
@@ -207,6 +397,17 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             RelationalQueryAuthorizationRequestBodies.CreateAuthorizationChildOnlyRequestBody(seed),
             seed.DocumentUuid,
             $"seed-auth-child-only-{seed.AuthorizationChildOnlyId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateAuthorizationNullableAsync(AuthorizationNullableSeed seed)
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationNullableResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNullableRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-auth-nullable-{seed.AuthorizationNullableId}"
         );
     }
 
@@ -342,6 +543,118 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             .QueryDocuments(request);
     }
 
+    public async Task<GetResult> GetByIdAsync(
+        string projectEndpointName,
+        string resourceName,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? traceId = null
+    )
+    {
+        ResetRecorder();
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new IntegrationRelationalGetRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: resourceHandle.ResourceInfo,
+            MappingSet: MappingSet,
+            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
+            AuthorizationStrategyEvaluators:
+            [
+                .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+            TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-get-by-id")
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds),
+        };
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .GetDocumentById(request);
+    }
+
+    public async Task<DeleteResult> DeleteByIdAsync(
+        string projectEndpointName,
+        string resourceName,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null,
+        string? traceId = null
+    )
+    {
+        ResetRecorder();
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new DeleteRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: resourceHandle.ResourceInfo,
+            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: [],
+            TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-delete-by-id"),
+            DeleteInEdOrgHierarchy: false,
+            Headers: CreateHeaders(ifMatch),
+            MappingSet: MappingSet
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds),
+            AuthorizationStrategyEvaluators =
+            [
+                .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+        };
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .DeleteDocumentById(request);
+    }
+
+    public async Task<long> CountDocumentRowsAsync(DocumentUuid documentUuid)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT_BIG(*)
+            FROM [dms].[Document]
+            WHERE [DocumentUuid] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid.Value)
+        );
+    }
+
+    public async Task<long> CountResourceRootRowsAsync(
+        string physicalSchema,
+        string resourceName,
+        DocumentUuid documentUuid
+    )
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT COUNT_BIG(*)
+            FROM [{physicalSchema}].[{resourceName}] root
+            INNER JOIN [dms].[Document] document
+                ON document.[DocumentId] = root.[DocumentId]
+            WHERE document.[DocumentUuid] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid.Value)
+        );
+    }
+
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
@@ -372,6 +685,30 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 NameOfInstitution: GetRequiredString(row, "NameOfInstitution")
             )),
         ];
+    }
+
+    public async Task MutateAuthorizationRootChildSchoolAsync(
+        DocumentUuid documentUuid,
+        int newSchoolId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ = cancellationToken;
+        var documentId = await GetDocumentIdByUuidAsync(documentUuid);
+        var schoolDocumentId = await GetSchoolDocumentIdAsync(newSchoolId);
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            UPDATE [authz].[AuthorizationRootChildResource]
+            SET
+                [School_DocumentId] = @schoolDocumentId,
+                [School_SchoolId] = @newSchoolId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@newSchoolId", newSchoolId),
+            new SqlParameter("@documentId", documentId)
+        );
     }
 
     private async Task<UpsertResult> UpsertAsync(
@@ -459,7 +796,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         return resourceHandle;
     }
 
-    private static ServiceProvider CreateServiceProvider()
+    private static ServiceProvider CreateServiceProvider(bool replaceReadTargetLookup)
     {
         ServiceCollection services = [];
 
@@ -469,17 +806,28 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddSingleton<MssqlRelationalQueryExecutionRecorder>();
+        services.AddSingleton<MssqlRelationalQueryAuthorizationWriteSessionRecorder>();
         services.AddMssqlReferenceResolver();
+        services.Replace(
+            ServiceDescriptor.Scoped<
+                IRelationalWriteSessionFactory,
+                MssqlRelationalQueryAuthorizationRecordingWriteSessionFactory
+            >()
+        );
         services.Replace(ServiceDescriptor.Scoped<IDocumentHydrator, RecordingMssqlDocumentHydrator>());
         services.Replace(
             ServiceDescriptor.Scoped<IRelationalReadMaterializer, RecordingRelationalReadMaterializer>()
         );
-        services.Replace(
-            ServiceDescriptor.Scoped<
-                IRelationalReadTargetLookupService,
-                ThrowingRelationalReadTargetLookupService
-            >()
-        );
+
+        if (replaceReadTargetLookup)
+        {
+            services.Replace(
+                ServiceDescriptor.Scoped<
+                    IRelationalReadTargetLookupService,
+                    ThrowingRelationalReadTargetLookupService
+                >()
+            );
+        }
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -540,6 +888,30 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             """,
             new SqlParameter("@projectName", projectName),
             new SqlParameter("@resourceName", resourceName)
+        );
+    }
+
+    private async Task<long> GetDocumentIdByUuidAsync(DocumentUuid documentUuid)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT [DocumentId]
+            FROM [dms].[Document]
+            WHERE [DocumentUuid] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid.Value)
+        );
+    }
+
+    private async Task<long> GetSchoolDocumentIdAsync(int schoolId)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT [DocumentId]
+            FROM [edfi].[School]
+            WHERE [SchoolId] = @schoolId;
+            """,
+            new SqlParameter("@schoolId", schoolId)
         );
     }
 
@@ -725,6 +1097,37 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
         return value;
     }
+
+    private static Dictionary<string, string> CreateHeaders(string? ifMatch) =>
+        ifMatch is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatch };
+
+    private static int FindRequiredCommandIndex(
+        IReadOnlyList<MssqlRelationalQueryAuthorizationRecordedCommand> commands,
+        Func<string, bool> predicate,
+        int startIndex = 0
+    )
+    {
+        for (var commandIndex = startIndex; commandIndex < commands.Count; commandIndex++)
+        {
+            if (predicate(commands[commandIndex].CommandText))
+            {
+                return commandIndex;
+            }
+        }
+
+        throw new InvalidOperationException("Expected relational write command was not recorded.");
+    }
+
+    private static bool IsMssqlDocumentLockCommand(string commandText) =>
+        commandText.Contains("UPDLOCK", StringComparison.Ordinal)
+        && commandText.Contains("[dms].[Document]", StringComparison.Ordinal);
+
+    private static bool IsMssqlRelationshipAuthorizationCommand(string commandText) =>
+        commandText.Contains("[AuthorizationResult]", StringComparison.Ordinal)
+        && commandText.Contains("AUTH1", StringComparison.Ordinal);
+
+    private static bool IsMssqlDocumentDeleteCommand(string commandText) =>
+        commandText.Contains("DELETE FROM [dms].[Document]", StringComparison.Ordinal);
 }
 
 [TestFixture]

@@ -83,13 +83,15 @@ public sealed record DescriptorDeleteRequest
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
-        TraceId traceId
+        TraceId traceId,
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
         Resource = resource;
         DocumentUuid = documentUuid;
         TraceId = traceId;
+        AuthorizationStrategyEvaluators = authorizationStrategyEvaluators ?? [];
     }
 
     /// <summary>
@@ -111,6 +113,11 @@ public sealed record DescriptorDeleteRequest
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// The effective DELETE authorization strategies already resolved by Core.
+    /// </summary>
+    public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; }
 
     /// <summary>
     /// Typed write precondition forwarded from Core for descriptor delete flows.

@@ -83,7 +83,8 @@ public class Given_No_Profile_Relational_Post
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
             A.Fake<IRelationalWriteSessionFactory>(),
-            AuthorizationSubjectSelectorTestSupport.Create()
+            AuthorizationSubjectSelectorTestSupport.Create(),
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -197,7 +198,8 @@ public class Given_No_Profile_Relational_Put
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
             A.Fake<IRelationalWriteSessionFactory>(),
-            AuthorizationSubjectSelectorTestSupport.Create()
+            AuthorizationSubjectSelectorTestSupport.Create(),
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -311,7 +313,8 @@ public class Given_A_Profiled_Relational_Post
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
             A.Fake<IRelationalWriteSessionFactory>(),
-            AuthorizationSubjectSelectorTestSupport.Create()
+            AuthorizationSubjectSelectorTestSupport.Create(),
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -424,7 +427,8 @@ public class Given_A_Profiled_Relational_Put
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
             A.Fake<IRelationalWriteSessionFactory>(),
-            AuthorizationSubjectSelectorTestSupport.Create()
+            AuthorizationSubjectSelectorTestSupport.Create(),
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();

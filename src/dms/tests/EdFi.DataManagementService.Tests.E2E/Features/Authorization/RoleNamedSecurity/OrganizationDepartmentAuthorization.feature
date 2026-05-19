@@ -30,8 +30,6 @@ Feature: OrganizationDepartment Authorization
                   """
              Then it should respond with 201
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 02.1 Ensure authorized client can get a OrganizationDepartment by id
              When a GET request is made to "/ed-fi/organizationDepartments/{orgDepId}"
              Then it should respond with 200
@@ -94,8 +92,6 @@ Feature: OrganizationDepartment Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 04 Ensure authorized client can delete a OrganizationDepartment
              When a DELETE request is made to "/ed-fi/organizationDepartments/{orgDepId}"
              Then it should respond with 204

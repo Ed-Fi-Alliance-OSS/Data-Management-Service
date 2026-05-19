@@ -26,6 +26,8 @@ public sealed record IntegrationRelationalGetRequest(
 ) : IRelationalGetRequest
 {
     public ResourceName ResourceName => ResourceInfo.ResourceName;
+
+    public RelationalAuthorizationContext AuthorizationContext { get; init; } = new([]);
 }
 
 public static class RelationalGetIntegrationTestHelper

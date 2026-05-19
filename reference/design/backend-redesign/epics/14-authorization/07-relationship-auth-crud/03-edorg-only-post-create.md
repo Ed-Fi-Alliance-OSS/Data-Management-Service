@@ -1,6 +1,6 @@
 ---
-jira: DMS-1056
-jira_url: https://edfi.atlassian.net/browse/DMS-1056
+jira: DMS-1162
+jira_url: https://edfi.atlassian.net/browse/DMS-1162
 ---
 
 # Slice 3: EdOrg-only POST-create

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
@@ -26,10 +27,135 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+
+internal sealed record PostgresqlRelationalQueryAuthorizationRecordedCommand(
+    int SessionId,
+    string CommandText
+);
+
+internal sealed class PostgresqlRelationalQueryAuthorizationWriteSessionRecorder
+{
+    private readonly object _sync = new();
+    private readonly List<PostgresqlRelationalQueryAuthorizationRecordedCommand> _commands = [];
+    private int _nextSessionId;
+
+    public IReadOnlyList<PostgresqlRelationalQueryAuthorizationRecordedCommand> Commands
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return [.. _commands];
+            }
+        }
+    }
+
+    public int CreateSessionId()
+    {
+        lock (_sync)
+        {
+            _nextSessionId++;
+            return _nextSessionId;
+        }
+    }
+
+    public void Record(int sessionId, RelationalCommand command)
+    {
+        lock (_sync)
+        {
+            _commands.Add(
+                new PostgresqlRelationalQueryAuthorizationRecordedCommand(sessionId, command.CommandText)
+            );
+        }
+    }
+
+    public void Reset()
+    {
+        lock (_sync)
+        {
+            _commands.Clear();
+            _nextSessionId = 0;
+        }
+    }
+}
+
+internal sealed class PostgresqlRelationalQueryAuthorizationRecordingWriteSessionFactory(
+    NpgsqlDataSourceProvider dataSourceProvider,
+    IOptions<DatabaseOptions> databaseOptions,
+    PostgresqlRelationalQueryAuthorizationWriteSessionRecorder recorder
+) : IRelationalWriteSessionFactory
+{
+    private readonly NpgsqlDataSourceProvider _dataSourceProvider =
+        dataSourceProvider ?? throw new ArgumentNullException(nameof(dataSourceProvider));
+    private readonly IOptions<DatabaseOptions> _databaseOptions =
+        databaseOptions ?? throw new ArgumentNullException(nameof(databaseOptions));
+    private readonly PostgresqlRelationalQueryAuthorizationWriteSessionRecorder _recorder =
+        recorder ?? throw new ArgumentNullException(nameof(recorder));
+
+    public async Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
+    {
+        var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync(cancellationToken);
+
+        try
+        {
+            var transaction = await connection.BeginTransactionAsync(
+                _databaseOptions.Value.IsolationLevel,
+                cancellationToken
+            );
+            return new PostgresqlRelationalQueryAuthorizationRecordingWriteSession(
+                connection,
+                transaction,
+                _recorder.CreateSessionId(),
+                _recorder
+            );
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+}
+
+internal sealed class PostgresqlRelationalQueryAuthorizationRecordingWriteSession(
+    DbConnection connection,
+    DbTransaction transaction,
+    int sessionId,
+    PostgresqlRelationalQueryAuthorizationWriteSessionRecorder recorder
+) : IRelationalWriteSession
+{
+    public DbConnection Connection { get; } =
+        connection ?? throw new ArgumentNullException(nameof(connection));
+
+    public DbTransaction Transaction { get; } =
+        transaction ?? throw new ArgumentNullException(nameof(transaction));
+
+    private readonly PostgresqlRelationalQueryAuthorizationWriteSessionRecorder _recorder =
+        recorder ?? throw new ArgumentNullException(nameof(recorder));
+
+    public DbCommand CreateCommand(RelationalCommand command)
+    {
+        _recorder.Record(sessionId, command);
+        return SessionRelationalCommandFactory.CreateCommand(Connection, Transaction, command);
+    }
+
+    public Task CommitAsync(CancellationToken cancellationToken = default) =>
+        Transaction.CommitAsync(cancellationToken);
+
+    public Task RollbackAsync(CancellationToken cancellationToken = default) =>
+        Transaction.RollbackAsync(cancellationToken);
+
+    public async ValueTask DisposeAsync()
+    {
+        await Transaction.DisposeAsync();
+        await Connection.DisposeAsync();
+    }
+}
 
 internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsyncDisposable
 {
@@ -42,20 +168,27 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private ServiceProvider _serviceProvider = null!;
     private PostgresqlRelationalQueryExecutionRecorder _recorder = null!;
+    private PostgresqlRelationalQueryAuthorizationWriteSessionRecorder _writeSessionRecorder = null!;
 
     public MappingSet MappingSet => _fixture.MappingSet;
 
     public PostgresqlGeneratedDdlTestDatabase Database { get; private set; } = null!;
 
-    public async Task InitializeAsync(string fixtureRelativePath, bool strict)
+    public async Task InitializeAsync(
+        string fixtureRelativePath,
+        bool strict,
+        bool replaceReadTargetLookup = true
+    )
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             fixtureRelativePath,
             strict
         );
         Database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = CreateServiceProvider();
+        _serviceProvider = CreateServiceProvider(replaceReadTargetLookup);
         _recorder = _serviceProvider.GetRequiredService<PostgresqlRelationalQueryExecutionRecorder>();
+        _writeSessionRecorder =
+            _serviceProvider.GetRequiredService<PostgresqlRelationalQueryAuthorizationWriteSessionRecorder>();
     }
 
     public async ValueTask DisposeAsync()
@@ -71,7 +204,34 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         }
     }
 
-    public void ResetRecorder() => _recorder.Reset();
+    public void ResetRecorder()
+    {
+        _recorder.Reset();
+        _writeSessionRecorder.Reset();
+    }
+
+    public void AssertDeleteWithIfMatchSharedGuardedSession()
+    {
+        var commands = _writeSessionRecorder.Commands;
+
+        commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
+
+        var firstLockIndex = FindRequiredCommandIndex(commands, IsPostgresqlDocumentLockCommand);
+        var authorizationIndex = FindRequiredCommandIndex(
+            commands,
+            IsPostgresqlRelationshipAuthorizationCommand
+        );
+        var secondLockIndex = FindRequiredCommandIndex(
+            commands,
+            IsPostgresqlDocumentLockCommand,
+            authorizationIndex + 1
+        );
+        var deleteIndex = FindRequiredCommandIndex(commands, IsPostgresqlDocumentDeleteCommand);
+
+        firstLockIndex.Should().BeLessThan(authorizationIndex);
+        authorizationIndex.Should().BeLessThan(secondLockIndex);
+        secondLockIndex.Should().BeLessThan(deleteIndex);
+    }
 
     public PageKeysetSpec.Query AssertSingleQueryHydration()
     {
@@ -80,11 +240,36 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         return (PageKeysetSpec.Query)_recorder.HydrationKeysets[0];
     }
 
+    public PageKeysetSpec.Single AssertSingleDocumentHydration()
+    {
+        _recorder.HydrationKeysets.Should().ContainSingle();
+        _recorder.HydrationKeysets[0].Should().BeOfType<PageKeysetSpec.Single>();
+        return (PageKeysetSpec.Single)_recorder.HydrationKeysets[0];
+    }
+
+    public void AssertSingleDocumentMaterialized()
+    {
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(1);
+        _recorder.PageMaterializationCallCount.Should().Be(0);
+    }
+
     public void AssertNoHydration()
     {
         _recorder.HydrationKeysets.Should().BeEmpty();
         _recorder.PageMaterializationCallCount.Should().Be(0);
         _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+    }
+
+    public void AssertHydratedWithoutMaterialization(int expectedHydrationCount)
+    {
+        _recorder.HydrationKeysets.Should().HaveCount(expectedHydrationCount);
+        _recorder.PageMaterializationCallCount.Should().Be(0);
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+    }
+
+    public void BeforeNextHydration(Func<CancellationToken, Task> beforeHydrationAsync)
+    {
+        _recorder.BeforeNextHydrationAsync = beforeHydrationAsync;
     }
 
     public async Task SeedSchoolDescriptorDataAsync()
@@ -167,6 +352,17 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    public async Task<UpsertResult> CreateAuthorizationNullableAsync(AuthorizationNullableSeed seed)
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationNullableResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNullableRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-auth-nullable-{seed.AuthorizationNullableId}"
+        );
+    }
+
     public async Task InsertAuthEdgeAsync(
         long sourceEducationOrganizationId,
         long targetEducationOrganizationId
@@ -229,6 +425,118 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             .QueryDocuments(request);
     }
 
+    public async Task<GetResult> GetByIdAsync(
+        string projectEndpointName,
+        string resourceName,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? traceId = null
+    )
+    {
+        ResetRecorder();
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new IntegrationRelationalGetRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: resourceHandle.ResourceInfo,
+            MappingSet: MappingSet,
+            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
+            AuthorizationStrategyEvaluators:
+            [
+                .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+            TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-get-by-id")
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds),
+        };
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .GetDocumentById(request);
+    }
+
+    public async Task<DeleteResult> DeleteByIdAsync(
+        string projectEndpointName,
+        string resourceName,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null,
+        string? traceId = null
+    )
+    {
+        ResetRecorder();
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new DeleteRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: resourceHandle.ResourceInfo,
+            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: [],
+            TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-delete-by-id"),
+            DeleteInEdOrgHierarchy: false,
+            Headers: CreateHeaders(ifMatch),
+            MappingSet: MappingSet
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds),
+            AuthorizationStrategyEvaluators =
+            [
+                .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+        };
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .DeleteDocumentById(request);
+    }
+
+    public async Task<long> CountDocumentRowsAsync(DocumentUuid documentUuid)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT(*)::bigint
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid.Value)
+        );
+    }
+
+    public async Task<long> CountResourceRootRowsAsync(
+        string physicalSchema,
+        string resourceName,
+        DocumentUuid documentUuid
+    )
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT COUNT(*)::bigint
+            FROM "{physicalSchema}"."{resourceName}" root
+            INNER JOIN "dms"."Document" document
+                ON document."DocumentId" = root."DocumentId"
+            WHERE document."DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid.Value)
+        );
+    }
+
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
@@ -259,6 +567,30 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 NameOfInstitution: GetRequiredString(row, "NameOfInstitution")
             )),
         ];
+    }
+
+    public async Task MutateAuthorizationRootChildSchoolAsync(
+        DocumentUuid documentUuid,
+        int newSchoolId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ = cancellationToken;
+        var documentId = await GetDocumentIdByUuidAsync(documentUuid);
+        var schoolDocumentId = await GetSchoolDocumentIdAsync(newSchoolId);
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            UPDATE "authz"."AuthorizationRootChildResource"
+            SET
+                "School_DocumentId" = @schoolDocumentId,
+                "School_SchoolId" = @newSchoolId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
+            new NpgsqlParameter("newSchoolId", newSchoolId),
+            new NpgsqlParameter("documentId", documentId)
+        );
     }
 
     private async Task<UpsertResult> UpsertAsync(
@@ -346,7 +678,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         return resourceHandle;
     }
 
-    private static ServiceProvider CreateServiceProvider()
+    private static ServiceProvider CreateServiceProvider(bool replaceReadTargetLookup)
     {
         ServiceCollection services = [];
 
@@ -359,17 +691,28 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddSingleton<PostgresqlRelationalQueryExecutionRecorder>();
+        services.AddSingleton<PostgresqlRelationalQueryAuthorizationWriteSessionRecorder>();
         services.AddPostgresqlReferenceResolver();
+        services.Replace(
+            ServiceDescriptor.Scoped<
+                IRelationalWriteSessionFactory,
+                PostgresqlRelationalQueryAuthorizationRecordingWriteSessionFactory
+            >()
+        );
         services.Replace(ServiceDescriptor.Scoped<IDocumentHydrator, RecordingPostgresqlDocumentHydrator>());
         services.Replace(
             ServiceDescriptor.Scoped<IRelationalReadMaterializer, RecordingRelationalReadMaterializer>()
         );
-        services.Replace(
-            ServiceDescriptor.Scoped<
-                IRelationalReadTargetLookupService,
-                ThrowingRelationalReadTargetLookupService
-            >()
-        );
+
+        if (replaceReadTargetLookup)
+        {
+            services.Replace(
+                ServiceDescriptor.Scoped<
+                    IRelationalReadTargetLookupService,
+                    ThrowingRelationalReadTargetLookupService
+                >()
+            );
+        }
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -430,6 +773,30 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """,
             new NpgsqlParameter("projectName", projectName),
             new NpgsqlParameter("resourceName", resourceName)
+        );
+    }
+
+    private async Task<long> GetDocumentIdByUuidAsync(DocumentUuid documentUuid)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT "DocumentId"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid.Value)
+        );
+    }
+
+    private async Task<long> GetSchoolDocumentIdAsync(int schoolId)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT "DocumentId"
+            FROM "edfi"."School"
+            WHERE "SchoolId" = @schoolId;
+            """,
+            new NpgsqlParameter("schoolId", schoolId)
         );
     }
 
@@ -562,6 +929,37 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
         return value;
     }
+
+    private static Dictionary<string, string> CreateHeaders(string? ifMatch) =>
+        ifMatch is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatch };
+
+    private static int FindRequiredCommandIndex(
+        IReadOnlyList<PostgresqlRelationalQueryAuthorizationRecordedCommand> commands,
+        Func<string, bool> predicate,
+        int startIndex = 0
+    )
+    {
+        for (var commandIndex = startIndex; commandIndex < commands.Count; commandIndex++)
+        {
+            if (predicate(commands[commandIndex].CommandText))
+            {
+                return commandIndex;
+            }
+        }
+
+        throw new InvalidOperationException("Expected relational write command was not recorded.");
+    }
+
+    private static bool IsPostgresqlDocumentLockCommand(string commandText) =>
+        commandText.Contains("FOR UPDATE", StringComparison.Ordinal)
+        && commandText.Contains("dms.\"Document\"", StringComparison.Ordinal);
+
+    private static bool IsPostgresqlRelationshipAuthorizationCommand(string commandText) =>
+        commandText.Contains("\"AuthorizationResult\"", StringComparison.Ordinal)
+        && commandText.Contains("AUTH1", StringComparison.Ordinal);
+
+    private static bool IsPostgresqlDocumentDeleteCommand(string commandText) =>
+        commandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal);
 }
 
 [TestFixture]

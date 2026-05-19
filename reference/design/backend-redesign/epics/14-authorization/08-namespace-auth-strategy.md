@@ -29,6 +29,12 @@ Implement the namespace-based authorization strategy for all CRUD operations per
   - SQL Server: When the client has fewer than 2,000 namespace prefixes, use parameterized OR chains of LIKE clauses. When >= 2,000, throw an error (no TVP is used for namespace prefixes).
 - Namespace-based is combined with AND when other strategy types are also configured for the resource. It executes before relationship-based (OR) strategies.
 - This story replaces the temporary DMS-1055 GET-many 501 Not Implemented behavior for NamespaceBased in mixed strategy configurations. NamespaceBased is applied as an AND filter with the relationship strategy OR group instead of causing the unsupported mixed-strategy failure.
+- This story replaces the temporary DMS-1056 GET-by-id and DELETE 501 Not Implemented behavior for `NamespaceBased` in single-record relational authorization.
+- Re-enable `@relational-backend` and the appropriate `@relational-ci-shard-*` tag on the NamespaceBased E2E scenarios temporarily excluded during the DMS-1056 EdOrg-only slice because they require NamespaceBased relational CRUD authorization. Restore both tags on:
+  - `Features/Descriptors/DescriptorCaseInsensitiveValidation.feature`: scenario 1.
+  - `Features/Descriptors/DeleteDescriptorsValidation.feature`: scenario 01.
+  - `Features/Authorization/NamespaceAuthorization.feature`: scenarios 01, 03, 04, 10, and 12.
+  - `Features/Extensions/TpdmExtension.feature`: scenario 04.
 - ProblemDetails follow `auth.md` §"ProblemDetails", specifically:
   - §2.9 — No namespace prefixes configured on the API client.
   - §2.10 — Namespace value uninitialized (existing data).

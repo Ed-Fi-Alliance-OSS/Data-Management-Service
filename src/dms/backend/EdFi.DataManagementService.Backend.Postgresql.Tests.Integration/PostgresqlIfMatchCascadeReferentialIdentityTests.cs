@@ -410,6 +410,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
                 DocumentUuid: documentUuid,
                 ResourceInfo: resourceInfo,
                 MappingSet: _mappingSet,
+                AuthorizationContext: new RelationalAuthorizationContext([]),
                 ResourceAuthorizationHandler: new PostgresqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 AuthorizationStrategyEvaluators: [],
                 TraceId: new TraceId(traceId)

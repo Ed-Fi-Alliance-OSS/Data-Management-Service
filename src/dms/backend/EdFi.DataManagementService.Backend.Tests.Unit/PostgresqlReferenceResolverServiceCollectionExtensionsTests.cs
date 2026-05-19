@@ -5,6 +5,7 @@
 
 using System.Data;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Profile;
@@ -14,6 +15,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -73,6 +75,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalCurrentEtagPreconditionChecker>();
         var deleteEtagPreconditionChecker =
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteEtagPreconditionChecker>();
+        var relationshipAuthorizationProviderFailureExtractor =
+            scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
@@ -97,6 +101,28 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeSameAs(currentEtagPreconditionChecker);
+        relationshipAuthorizationProviderFailureExtractor
+            .Should()
+            .BeOfType<PostgresqlRelationshipAuthorizationProviderFailureExtractor>();
+    }
+
+    [Test]
+    public void It_extracts_postgresql_provider_failure_metadata_from_postgres_exception()
+    {
+        var extractor = new PostgresqlRelationshipAuthorizationProviderFailureExtractor();
+        var exception = new PostgresException(
+            "1|7|1|0:0:n",
+            "ERROR",
+            "ERROR",
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode
+        );
+
+        var providerFailure = extractor.Extract(exception);
+
+        providerFailure
+            .ErrorCode.Should()
+            .Be(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode);
+        providerFailure.Message.Should().Be("1|7|1|0:0:n");
     }
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)

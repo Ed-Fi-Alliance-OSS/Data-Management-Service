@@ -27,6 +27,9 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
                 MssqlRelationalWriteExceptionClassifier
             >()
         );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IRelationalParameterConfigurator, MssqlRelationalParameterConfigurator>()
+        );
 
         return services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,

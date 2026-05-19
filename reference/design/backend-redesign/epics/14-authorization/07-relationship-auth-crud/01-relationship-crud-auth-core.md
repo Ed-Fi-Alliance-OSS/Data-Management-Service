@@ -1,6 +1,6 @@
 ---
-jira: DMS-1056
-jira_url: https://edfi.atlassian.net/browse/DMS-1056
+jira: DMS-1160
+jira_url: https://edfi.atlassian.net/browse/DMS-1160
 ---
 
 # Slice 1: Relationship CRUD Auth Core

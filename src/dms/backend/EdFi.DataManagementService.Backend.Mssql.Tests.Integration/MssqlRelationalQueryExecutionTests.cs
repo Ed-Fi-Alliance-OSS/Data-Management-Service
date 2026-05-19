@@ -33,6 +33,7 @@ internal sealed class MssqlRelationalQueryExecutionRecorder
 {
     public List<PageKeysetSpec> HydrationKeysets { get; } = [];
     public List<long> PageMaterializedDocumentIds { get; } = [];
+    public Func<CancellationToken, Task>? BeforeNextHydrationAsync { get; set; }
     public int SingleDocumentMaterializationCallCount { get; private set; }
     public int PageMaterializationCallCount { get; private set; }
 
@@ -56,6 +57,19 @@ internal sealed class MssqlRelationalQueryExecutionRecorder
             materializedDocuments.Select(static document => document.DocumentMetadata.DocumentId)
         );
     }
+
+    public async Task InvokeBeforeHydrationAsync(CancellationToken cancellationToken)
+    {
+        var beforeHydrationAsync = BeforeNextHydrationAsync;
+
+        if (beforeHydrationAsync is null)
+        {
+            return;
+        }
+
+        BeforeNextHydrationAsync = null;
+        await beforeHydrationAsync(cancellationToken);
+    }
 }
 
 internal sealed class RecordingMssqlDocumentHydrator(
@@ -75,6 +89,7 @@ internal sealed class RecordingMssqlDocumentHydrator(
         CancellationToken ct
     )
     {
+        await _recorder.InvokeBeforeHydrationAsync(ct);
         _recorder.HydrationKeysets.Add(keyset);
 
         var selectedInstance = _dmsInstanceSelection.GetSelectedDmsInstance();

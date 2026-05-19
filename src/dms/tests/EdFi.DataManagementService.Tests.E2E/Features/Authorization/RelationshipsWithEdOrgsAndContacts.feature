@@ -53,8 +53,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
              Then it should respond with 201
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 02 Ensure client can retrieve a StudentContactAssociation
             Given a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -248,8 +246,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 08 Ensure client can delete a StudentContactAssociation
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -491,8 +487,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 16 Ensure client can retrieve a contact with student contact association
              When a POST request is made to "/ed-fi/contacts" with
                   """

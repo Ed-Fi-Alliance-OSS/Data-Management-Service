@@ -39,10 +39,25 @@ public record GetResult
     public record GetFailureNotAuthorized(string[] ErrorMessages, string[]? Hints = null) : GetResult();
 
     /// <summary>
+    /// A failure because stored relationship authorization denied access to the document.
+    /// </summary>
+    public record GetFailureRelationshipNotAuthorized(
+        string[] ErrorMessages,
+        RelationshipAuthorizationFailure RelationshipFailure,
+        string[]? Hints = null
+    ) : GetResult();
+
+    /// <summary>
     /// A failure because the requested read operation is intentionally not implemented.
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>
     public record GetFailureNotImplemented(string FailureMessage) : GetResult();
+
+    /// <summary>
+    /// A failure because security configuration metadata for the read operation is invalid.
+    /// </summary>
+    /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
+    public record GetFailureSecurityConfiguration(string[] Errors) : GetResult();
 
     /// <summary>
     /// A transient failure due to a retryable condition, for example a serialization issue

@@ -1,6 +1,6 @@
 ---
-jira: DMS-1056
-jira_url: https://edfi.atlassian.net/browse/DMS-1056
+jira: DMS-1163
+jira_url: https://edfi.atlassian.net/browse/DMS-1163
 ---
 
 # Slice 4: EdOrg-only PUT And POST-as-update

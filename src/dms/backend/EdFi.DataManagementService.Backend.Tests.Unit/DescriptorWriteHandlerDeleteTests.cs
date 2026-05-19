@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,36 @@ public class Given_Descriptor_Write_Handler_Delete
         "Ed-Fi",
         "EducationOrganizationCategoryDescriptor"
     );
+
+    [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
+    [TestCase(AuthorizationStrategyNameConstants.NamespaceBased)]
+    public async Task It_fails_closed_for_descriptor_delete_authorization_without_executing_sql(
+        string authorizationStrategyName
+    )
+    {
+        var fixture = new Fixture(SqlDialect.Pgsql);
+
+        var result = await fixture.Sut.HandleDeleteAsync(
+            new DescriptorDeleteRequest(
+                fixture.MappingSet,
+                _descriptorResource,
+                new DocumentUuid(Guid.NewGuid()),
+                new TraceId("descriptor-delete-auth"),
+                [new AuthorizationStrategyEvaluator(authorizationStrategyName, [], FilterOperator.And)]
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        result
+            .As<DeleteResult.DeleteFailureNotImplemented>()
+            .FailureMessage.Should()
+            .Contain(authorizationStrategyName);
+        A.CallTo(() => fixture.SessionFactory.CreateAsync(A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() =>
+                fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, A<string>._)
+            )
+            .MustNotHaveHappened();
+    }
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
@@ -55,6 +86,7 @@ public class Given_Descriptor_Write_Handler_Delete
         result
             .Should()
             .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
+        fixture.AssertDeleteFailureRolledBack();
         // Match on the exact MappingSet.Model reference — a narrowing of the any-matcher that
         // catches a regression where the handler stops forwarding mappingSet.Model to the
         // resolver (e.g., accidentally wires null or a stale model set from elsewhere). The
@@ -99,6 +131,7 @@ public class Given_Descriptor_Write_Handler_Delete
         );
 
         result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
+        fixture.AssertDeleteFailureRolledBack();
         A.CallTo(() =>
                 fixture.Resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, A<string>._)
             )
@@ -136,6 +169,7 @@ public class Given_Descriptor_Write_Handler_Delete
         );
 
         result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference([]));
+        fixture.AssertDeleteFailureRolledBack();
         A.CallTo(() =>
                 fixture.Resolver.TryResolveReferencingResource(fixture.MappingSet.Model, constraintName)
             )
@@ -155,17 +189,21 @@ public class Given_Descriptor_Write_Handler_Delete
             Resolver = A.Fake<IRelationalDeleteConstraintResolver>();
             Logger = new RecordingLogger<DescriptorWriteHandler>();
             MappingSet = CreateMappingSet(dialect);
-            var commandExecutor = new ThrowingRelationalCommandExecutor(
-                dialect,
-                new StubDbException("FK constraint violation")
-            );
+            var deleteException = new StubDbException("FK constraint violation");
+            var sessionCommandExecutor = new ThrowingRelationalCommandExecutor(dialect, deleteException);
+            Session = A.Fake<IRelationalWriteSession>();
+            A.CallTo(() => Session.CreateCommandExecutor()).Returns(sessionCommandExecutor);
+            A.CallTo(() => Session.CommitAsync(A<CancellationToken>._)).Returns(Task.CompletedTask);
+            A.CallTo(() => Session.RollbackAsync(A<CancellationToken>._)).Returns(Task.CompletedTask);
+            SessionFactory = A.Fake<IRelationalWriteSessionFactory>();
+            A.CallTo(() => SessionFactory.CreateAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(Session));
             var targetLookupService = A.Fake<IRelationalWriteTargetLookupService>();
             Sut = new DescriptorWriteHandler(
                 targetLookupService,
-                commandExecutor,
                 Classifier,
                 Resolver,
-                A.Fake<IRelationalWriteSessionFactory>(),
+                SessionFactory,
                 Logger
             );
         }
@@ -176,9 +214,20 @@ public class Given_Descriptor_Write_Handler_Delete
 
         public RecordingLogger<DescriptorWriteHandler> Logger { get; }
 
+        public IRelationalWriteSessionFactory SessionFactory { get; }
+
+        public IRelationalWriteSession Session { get; }
+
         public MappingSet MappingSet { get; }
 
         public DescriptorWriteHandler Sut { get; }
+
+        public void AssertDeleteFailureRolledBack()
+        {
+            A.CallTo(() => SessionFactory.CreateAsync(A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => Session.CommitAsync(A<CancellationToken>._)).MustNotHaveHappened();
+            A.CallTo(() => Session.RollbackAsync(A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+        }
 
         private static MappingSet CreateMappingSet(SqlDialect dialect)
         {
