@@ -76,6 +76,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var singleRecordRelationshipAuthorizationExecutor =
             scope.ServiceProvider.GetRequiredService<ISingleRecordRelationshipAuthorizationExecutor>();
+        var relationshipAuthorizationProviderFailureExtractor =
+            scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
         var writeFreshnessChecker =
@@ -126,6 +128,9 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         singleRecordRelationshipAuthorizationExecutor
             .Should()
             .BeOfType<SingleRecordRelationshipAuthorizationExecutor>();
+        relationshipAuthorizationProviderFailureExtractor
+            .Should()
+            .BeOfType<DefaultRelationshipAuthorizationProviderFailureExtractor>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();

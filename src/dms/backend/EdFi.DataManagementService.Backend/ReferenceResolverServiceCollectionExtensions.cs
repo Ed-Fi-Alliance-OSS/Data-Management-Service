@@ -72,6 +72,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationshipAuthorizationProviderFailureExtractor,
+                DefaultRelationshipAuthorizationProviderFailureExtractor
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteCurrentStateLoader, RelationalWriteCurrentStateLoader>()
         );
         services.TryAdd(

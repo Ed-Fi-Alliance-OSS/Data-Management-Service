@@ -46,7 +46,8 @@ public interface ISingleRecordRelationshipAuthorizationExecutor
 
 internal sealed class SingleRecordRelationshipAuthorizationExecutor(
     IRelationalCommandExecutor commandExecutor,
-    IRelationalParameterConfigurator? parameterConfigurator = null
+    IRelationalParameterConfigurator? parameterConfigurator = null,
+    IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
 ) : ISingleRecordRelationshipAuthorizationExecutor
 {
     private const string AuthorizationResultColumn = "AuthorizationResult";
@@ -56,6 +57,8 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IRelationalParameterConfigurator _parameterConfigurator =
         parameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
+    private readonly IRelationshipAuthorizationProviderFailureExtractor _providerFailureExtractor =
+        providerFailureExtractor ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
 
     public async Task<SingleRecordRelationshipAuthorizationExecutionResult> ExecuteAsync(
         SingleRecordRelationshipAuthorizationExecutionRequest request,
@@ -226,7 +229,7 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
         );
     }
 
-    private static bool TryMapRelationshipAuthorizationFailure(
+    private bool TryMapRelationshipAuthorizationFailure(
         SingleRecordRelationshipAuthorizationExecutionRequest request,
         DbException exception,
         out SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized? notAuthorized
@@ -268,39 +271,33 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
         return true;
     }
 
-    private static bool TryParseRelationshipAuthorizationFailure(
+    private bool TryParseRelationshipAuthorizationFailure(
         SqlDialect dialect,
         DbException exception,
         out RelationshipAuthorizationAuth1FailurePayload? payload
-    ) =>
-        RelationshipAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
+    )
+    {
+        var providerFailure = _providerFailureExtractor.Extract(exception);
+
+        return RelationshipAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
             dialect,
-            GetProviderErrorCode(dialect, exception),
-            GetProviderMessage(dialect, exception),
+            providerFailure.ErrorCode,
+            providerFailure.Message,
             out payload
         );
+    }
 
-    private static bool IsRelationshipAuthorizationProviderFailure(
-        SqlDialect dialect,
-        DbException exception
-    ) =>
-        RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+    private bool IsRelationshipAuthorizationProviderFailure(SqlDialect dialect, DbException exception)
+    {
+        var providerFailure = _providerFailureExtractor.Extract(exception);
+
+        return RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
             dialect,
-            GetProviderErrorCode(dialect, exception),
-            GetProviderMessage(dialect, exception),
+            providerFailure.ErrorCode,
+            providerFailure.Message,
             out _
         );
-
-    private static string? GetProviderErrorCode(SqlDialect dialect, DbException exception) =>
-        dialect is SqlDialect.Pgsql ? GetStringProperty(exception, "SqlState") : null;
-
-    private static string GetProviderMessage(SqlDialect dialect, DbException exception) =>
-        dialect is SqlDialect.Pgsql
-            ? GetStringProperty(exception, "MessageText") ?? exception.Message
-            : exception.Message;
-
-    private static string? GetStringProperty(DbException exception, string propertyName) =>
-        exception.GetType().GetProperty(propertyName)?.GetValue(exception) as string;
+    }
 
     private static IReadOnlyList<long> RequireInt64List(object? value, string parameterName)
     {

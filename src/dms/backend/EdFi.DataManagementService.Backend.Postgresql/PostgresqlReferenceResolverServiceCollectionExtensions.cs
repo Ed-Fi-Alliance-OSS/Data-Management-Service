@@ -26,6 +26,12 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 PostgresqlRelationalWriteExceptionClassifier
             >()
         );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationshipAuthorizationProviderFailureExtractor,
+                PostgresqlRelationshipAuthorizationProviderFailureExtractor
+            >()
+        );
 
         return services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,

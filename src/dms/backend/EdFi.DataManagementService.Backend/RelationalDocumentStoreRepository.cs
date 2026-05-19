@@ -35,7 +35,9 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalWriteSessionFactory writeSessionFactory,
     RelationalEdOrgAuthorizationSubjectSelector edOrgAuthorizationSubjectSelector,
     ISingleRecordRelationshipAuthorizationExecutor? singleRecordRelationshipAuthorizationExecutor = null,
-    IRelationalParameterConfigurator? relationalParameterConfigurator = null
+    IRelationalParameterConfigurator? relationalParameterConfigurator = null,
+    IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
+        null
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
@@ -75,6 +77,9 @@ public sealed class RelationalDocumentStoreRepository(
         singleRecordRelationshipAuthorizationExecutor;
     private readonly IRelationalParameterConfigurator _relationalParameterConfigurator =
         relationalParameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
+    private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
+        relationshipAuthorizationProviderFailureExtractor
+        ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
     private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
         edOrgAuthorizationSubjectSelector
     );
@@ -698,7 +703,8 @@ public sealed class RelationalDocumentStoreRepository(
 
         var authorizationExecutor = new SingleRecordRelationshipAuthorizationExecutor(
             sessionCommandExecutor,
-            _relationalParameterConfigurator
+            _relationalParameterConfigurator,
+            _relationshipAuthorizationProviderFailureExtractor
         );
         var authorizationExecutionResult = await authorizationExecutor
             .ExecuteAsync(

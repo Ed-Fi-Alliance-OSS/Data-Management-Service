@@ -169,12 +169,15 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
         );
         var commandExecutor = new RecordingRelationalCommandExecutor(
             SqlDialect.Pgsql,
-            exceptionToThrow: new StubPostgresqlDbException(
+            exceptionToThrow: new StubDbException("PostgreSQL provider exception")
+        );
+        var sut = new SingleRecordRelationshipAuthorizationExecutor(
+            commandExecutor,
+            providerFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
                 RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
                 payloadText
             )
         );
-        var sut = new SingleRecordRelationshipAuthorizationExecutor(commandExecutor);
 
         var result = await sut.ExecuteAsync(
             new SingleRecordRelationshipAuthorizationExecutionRequest(
@@ -343,11 +346,16 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
 
     private sealed class StubDbException(string message) : DbException(message);
 
-    private sealed class StubPostgresqlDbException(string sqlState, string messageText)
-        : DbException(messageText)
+    private sealed class StubRelationshipAuthorizationProviderFailureExtractor(
+        string? providerErrorCode,
+        string providerMessage
+    ) : IRelationshipAuthorizationProviderFailureExtractor
     {
-        public override string? SqlState { get; } = sqlState;
+        public RelationshipAuthorizationProviderFailure Extract(DbException exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
 
-        public string MessageText { get; } = messageText;
+            return new RelationshipAuthorizationProviderFailure(providerErrorCode, providerMessage);
+        }
     }
 }
