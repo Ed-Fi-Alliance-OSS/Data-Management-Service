@@ -113,7 +113,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Delete|FullyQualifiedName~Authorization|FullyQualifiedName~IfMatch\"",
       "Review the delete integration tests to confirm they assert unchanged rows on authorization failure instead of only checking HTTP or result status."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "e2e",
