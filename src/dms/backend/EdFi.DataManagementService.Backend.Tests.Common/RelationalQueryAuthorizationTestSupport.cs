@@ -35,7 +35,24 @@ internal sealed record AuthorizationChildOnlySeed(
     IReadOnlyList<ClassPeriodReferenceSeed> ClassPeriods
 );
 
+internal sealed record AuthorizationNullableSeed(
+    DocumentUuid DocumentUuid,
+    int AuthorizationNullableId,
+    string Name,
+    int? NullableSchoolId = null
+);
+
 internal sealed record ClassPeriodReferenceSeed(string ClassPeriodName, int SchoolId);
+
+internal sealed class RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler
+    : IResourceAuthorizationHandler
+{
+    public Task<ResourceAuthorizationResult> Authorize(
+        DocumentSecurityElements documentSecurityElements,
+        OperationType operationType,
+        TraceId traceId
+    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
+}
 
 internal static class RelationalQueryAuthorizationRequestBodies
 {
@@ -132,6 +149,22 @@ internal static class RelationalQueryAuthorizationRequestBodies
             ["name"] = seed.Name,
             ["classPeriods"] = classPeriods,
         };
+    }
+
+    public static JsonNode CreateAuthorizationNullableRequestBody(AuthorizationNullableSeed seed)
+    {
+        JsonObject requestBody = new()
+        {
+            ["authorizationNullableId"] = seed.AuthorizationNullableId,
+            ["name"] = seed.Name,
+        };
+
+        if (seed.NullableSchoolId is not null)
+        {
+            requestBody["nullableSchoolId"] = (long)seed.NullableSchoolId.Value;
+        }
+
+        return requestBody;
     }
 }
 

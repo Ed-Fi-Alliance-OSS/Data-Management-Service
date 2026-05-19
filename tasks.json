@@ -96,7 +96,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Get|FullyQualifiedName~Authorization\"",
       "Review the PostgreSQL and SQL Server GET-by-id integration tests to confirm they assert skipped reconstitution or equivalent proof, not only HTTP or result status."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "backend-integration",
