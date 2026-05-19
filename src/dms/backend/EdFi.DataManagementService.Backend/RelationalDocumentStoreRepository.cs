@@ -42,6 +42,7 @@ public sealed class RelationalDocumentStoreRepository(
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
     private const int DeleteRelationshipAuthorizationAuth1Index = 0;
+    private const int PostRelationshipAuthorizationAuth1Index = 0;
     private const int GetByIdReadBoundaryAttemptCount = 2;
 
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -154,7 +155,14 @@ public sealed class RelationalDocumentStoreRepository(
                             $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a POST request."
                         ),
                     },
-                profileWriteContext
+                profileWriteContext,
+                writePlan =>
+                    AuthorizePostRelationshipIfRequired(
+                        relationalUpsertRequest,
+                        mappingSet,
+                        resource,
+                        writePlan
+                    )
             )
             .ConfigureAwait(false);
 
@@ -958,6 +966,101 @@ public sealed class RelationalDocumentStoreRepository(
         return BuildQuerySuccess(relationalQueryRequest, resource, readPlan, hydratedPage);
     }
 
+    private WriteGuardRailPreflightResult<UpsertResult> AuthorizePostRelationshipIfRequired(
+        IRelationalUpsertRequest relationalUpsertRequest,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceWritePlan writePlan
+    )
+    {
+        var authorizationStrategyEvaluators = relationalUpsertRequest.AuthorizationStrategyEvaluators;
+
+        if (authorizationStrategyEvaluators is null)
+        {
+            authorizationStrategyEvaluators = [];
+        }
+
+        var authorizationContext = relationalUpsertRequest.AuthorizationContext;
+
+        if (authorizationContext is null)
+        {
+            authorizationContext = new RelationalAuthorizationContext([]);
+        }
+
+        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
+            authorizationStrategyEvaluators
+        );
+        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanProposedValues(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies,
+            authorizationContext,
+            writePlan
+        );
+
+        return relationshipAuthorizationResult switch
+        {
+            RelationshipAuthorizationResult.NoAuthorizationRequired
+            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(null),
+
+            RelationshipAuthorizationResult.Authorized authorized =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(authorized),
+
+            RelationshipAuthorizationResult.NoClaims noClaims =>
+                BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext),
+
+            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                    new UpsertResult.UpsertFailureNotImplemented(
+                        BuildKnownButNotEnabledPostAuthorizationMessage(
+                            resource,
+                            knownButNotEnabled.Failures
+                        ),
+                        UpsertFailureNotImplementedReason.StrategyNotEnabled
+                    )
+                ),
+
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                    BuildPostAuthorizationSecurityConfigurationFailure(
+                        mappingSet,
+                        securityConfigurationError.Failures
+                    )
+                ),
+
+            _ => throw new InvalidOperationException(
+                $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static WriteGuardRailPreflightResult<UpsertResult> BuildNoClaimsPostRelationshipAuthorizationFailure(
+        RelationshipAuthorizationResult.NoClaims noClaims,
+        RelationalAuthorizationContext authorizationContext
+    )
+    {
+        if (
+            !TryCreateRelationshipAuthorizationFailure(
+                noClaims.CheckSpecs,
+                authorizationContext.ClaimEducationOrganizationIds,
+                PostRelationshipAuthorizationAuth1Index,
+                out var noClaimsFailure
+            ) || noClaimsFailure is null
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                new UpsertResult.UnknownFailure(
+                    "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
+                )
+            );
+        }
+
+        return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+            CreateUpsertRelationshipNotAuthorized(noClaimsFailure)
+        );
+    }
+
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
         System.Text.Json.Nodes.JsonNode requestBody,
         WritePrecondition writePrecondition,
@@ -970,7 +1073,8 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
         Func<RelationalWriteExecutorResult, TResult> executorResultProjector,
-        BackendProfileWriteContext? profileWriteContext = null
+        BackendProfileWriteContext? profileWriteContext = null,
+        Func<ResourceWritePlan, WriteGuardRailPreflightResult<TResult>>? preflight = null
     )
     {
         ArgumentNullException.ThrowIfNull(requestBody);
@@ -995,6 +1099,28 @@ public sealed class RelationalDocumentStoreRepository(
         catch (MissingWritePlanLookupGuardRailException ex)
         {
             return failureFactory(ex.Message);
+        }
+
+        RelationshipAuthorizationResult.Authorized? proposedRelationshipAuthorization = null;
+
+        if (preflight is not null)
+        {
+            var preflightResult = preflight(writePlan);
+
+            switch (preflightResult)
+            {
+                case WriteGuardRailPreflightResult<TResult>.Continue continueResult:
+                    proposedRelationshipAuthorization = continueResult.ProposedRelationshipAuthorization;
+                    break;
+
+                case WriteGuardRailPreflightResult<TResult>.Stop stopResult:
+                    return stopResult.Result;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported relational write preflight result '{preflightResult.GetType().Name}'."
+                    );
+            }
         }
 
         var readPlanPreparation = PrepareExistingDocumentReadPlan(mappingSet, resource);
@@ -1041,7 +1167,8 @@ public sealed class RelationalDocumentStoreRepository(
                         ),
                         targetContext: targetResolution.TargetContext!,
                         profileWriteContext: profileWriteContext,
-                        writePrecondition: writePrecondition
+                        writePrecondition: writePrecondition,
+                        proposedRelationshipAuthorization: proposedRelationshipAuthorization
                     )
                 )
                 .ConfigureAwait(false);
@@ -1137,6 +1264,17 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteTargetContext? TargetContext,
         RelationalWriteExecutorResult? ImmediateResult
     );
+
+    private abstract record WriteGuardRailPreflightResult<TResult>
+    {
+        private WriteGuardRailPreflightResult() { }
+
+        public sealed record Continue(
+            RelationshipAuthorizationResult.Authorized? ProposedRelationshipAuthorization
+        ) : WriteGuardRailPreflightResult<TResult>;
+
+        public sealed record Stop(TResult Result) : WriteGuardRailPreflightResult<TResult>;
+    }
 
     private async Task<GetResult> GetDocumentByIdAsync(
         IRelationalGetRequest relationalGetRequest,
@@ -1535,6 +1673,10 @@ public sealed class RelationalDocumentStoreRepository(
         RelationshipAuthorizationFailure relationshipFailure
     ) => new(BuildRelationshipAuthorizationErrorMessages(relationshipFailure), relationshipFailure);
 
+    private static UpsertResult.UpsertFailureRelationshipNotAuthorized CreateUpsertRelationshipNotAuthorized(
+        RelationshipAuthorizationFailure relationshipFailure
+    ) => new(BuildRelationshipAuthorizationErrorMessages(relationshipFailure), relationshipFailure);
+
     private static string[] BuildRelationshipAuthorizationErrorMessages(
         RelationshipAuthorizationFailure relationshipFailure
     )
@@ -1648,6 +1790,27 @@ public sealed class RelationalDocumentStoreRepository(
             + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op.";
     }
 
+    private static string BuildKnownButNotEnabledPostAuthorizationMessage(
+        QualifiedResourceName resource,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures
+    )
+    {
+        var unsupportedStrategyNames = knownButNotEnabledFailures
+            .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Where(static strategyName => strategyName is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
+            .Select(static strategyName => $"'{strategyName}'");
+
+        return $"Relational POST authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
+            + "when effective POST authorization includes strategies outside the current DMS-1162 EdOrg-only scope. Unsupported strategies: "
+            + $"[{string.Join(", ", unsupportedStrategyNames)}]. Supported DMS-1162 strategies are "
+            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly}', "
+            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted}', and "
+            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op.";
+    }
+
     private static GetResult.GetFailureSecurityConfiguration BuildGetAuthorizationSecurityConfigurationFailure(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -1687,6 +1850,19 @@ public sealed class RelationalDocumentStoreRepository(
 
         return new DeleteResult.DeleteFailureSecurityConfiguration([
             .. failures.Select(failure => BuildSecurityConfigurationFailureMessage(mappingSet, failure)),
+        ]);
+    }
+
+    private static UpsertResult.UpsertFailureSecurityConfiguration BuildPostAuthorizationSecurityConfigurationFailure(
+        MappingSet mappingSet,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(failures);
+
+        return new UpsertResult.UpsertFailureSecurityConfiguration([
+            .. failures.Select(failure => BuildPostSecurityConfigurationFailureMessage(mappingSet, failure)),
         ]);
     }
 
@@ -1842,6 +2018,50 @@ public sealed class RelationalDocumentStoreRepository(
                 is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
                     or RelationshipAuthorizationFailureKind.NoApplicableRootSubject
         );
+
+    private static string BuildPostSecurityConfigurationFailureMessage(
+        MappingSet mappingSet,
+        RelationshipAuthorizationFailureMetadata failure
+    ) =>
+        failure.FailureKind switch
+        {
+            RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy =>
+                $"Relational POST authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Effective POST authorization also includes known-but-not-enabled strategy '{failure.ConfiguredStrategy?.StrategyName}', "
+                    + "which is outside the current DMS-1162 EdOrg-only scope.",
+            RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource =>
+                $"Relational POST authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' matches the {{BasisResource}}With... custom-view convention, "
+                    + $"but basis resource '{failure.Location?.AuthorizationObjectName}' was not found in mapping set "
+                    + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'.",
+            RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy =>
+                $"Relational POST authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' is not a recognized built-in strategy and does not match the "
+                    + "{BasisResource}With... custom-view convention.",
+            RelationshipAuthorizationFailureKind.UnresolvedSecurableElement =>
+                $"Relational POST authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires resolvable EducationOrganization securable elements, "
+                    + $"but element {FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath)} could not be resolved to a relational column.",
+            RelationshipAuthorizationFailureKind.NoApplicableRootSubject =>
+                $"Relational POST authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires a concrete root-table EducationOrganization authorization subject, "
+                    + $"but {FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "no configured EducationOrganization securable element"} "
+                    + (
+                        failure.Location?.Table is not null && failure.Location?.Column is not null
+                            ? $"resolved to '{failure.Location.Table}.{failure.Location.Column.Value}' instead of a '{DbTableKind.Root}' table."
+                            : failure.Hint ?? "did not produce a concrete root-table binding."
+                    ),
+            RelationshipAuthorizationFailureKind.MissingProposedRootBinding =>
+                $"Relational POST authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires proposed-value EducationOrganization subject "
+                    + $"{FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "from relationship authorization metadata"}, "
+                    + $"but root column '{failure.Location?.Table}.{failure.Location?.Column?.Value}' does not have a matching root write binding.",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(failure),
+                failure.FailureKind,
+                "Unsupported POST-authorization security-configuration failure kind."
+            ),
+        };
 
     private static string BuildSecurityConfigurationFailureMessage(
         MappingSet mappingSet,

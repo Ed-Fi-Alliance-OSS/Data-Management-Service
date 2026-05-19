@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -76,6 +77,9 @@ internal class UpsertHandler(
                     )
                     {
                         AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
+                        AuthorizationContext = RelationalAuthorizationContext.Create(
+                            requestInfo.ClientAuthorizations
+                        ),
                     }
                 );
             },
