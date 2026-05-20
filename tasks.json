@@ -221,6 +221,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"Authorization|RelationalWrite\"",
       "Run the focused @relational-backend E2E scenario added for Slice 3 after rebuilding the dms-local stack."
     ],
-    "completed": false
+    "completed": true
   }
 ]
