@@ -460,13 +460,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 );
             }
 
-            // Skip trigger creation when no referrers need propagation updates.
-            // This can happen when all referrer bindings resolve to non-root tables.
-            if (referrerUpdates.Count == 0)
-            {
-                continue;
-            }
-
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName(BuildTriggerName(triggerTable, PropagationFallbackPrefix)),
