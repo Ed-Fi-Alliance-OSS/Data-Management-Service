@@ -148,7 +148,8 @@ state. DMS compose services do not consume claimset fragment files, so `local-dm
 | **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; configure DMS instances; create smoke-test or seed-loading CMS application credentials; load seed data; accept schema or claims parameters |
 
 **Boundary note:** `-InfraOnly` and `-DmsBaseUrl` are Docker-layer controls - they decide whether a DMS
-container starts or an already-provisioned IDE-hosted DMS endpoint is health-checked. Story 00 keeps staged
+container starts or an already-provisioned IDE-hosted DMS endpoint is health-checked. Story 00 makes staged
+schema/security the prepared bootstrap contract, not the Docker runtime source of truth. It keeps staged
 schema and staged claims startup inactive as a pair, because activating only CMS claims while DMS remains
 DLL-backed can produce mismatched authorization metadata. Story 04 owns the claims-ready gate for staged
 bootstrap startup, including any CMS load/composition result or authorization metadata verification. `-DmsBaseUrl`

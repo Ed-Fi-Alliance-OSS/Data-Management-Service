@@ -336,7 +336,9 @@ are not themselves the hashed artifact. Package-backed selection is a later inpu
 must converge on the same filesystem workspace. Direct `-ApiSchemaPath` loading remains a supported
 bootstrap path after asset-only packages replace DLL-backed package distribution.
 
-The staged ApiSchema workspace is the runtime schema/content contract for the run. DMS runtime reads
+The staged ApiSchema workspace is the end-state runtime schema/content contract for the run after Story 04
+activates file-based runtime loading. Story 00 prepares and validates this workspace but does not make it the
+Docker runtime source of truth. In the Story 04 path, DMS runtime reads
 `eng/docker-compose/.bootstrap/ApiSchema/` and applies the same normalization rules to that staged file set:
 
 - exactly one normalized schema file must have `projectSchema.isExtensionProject=false`; that file is the core

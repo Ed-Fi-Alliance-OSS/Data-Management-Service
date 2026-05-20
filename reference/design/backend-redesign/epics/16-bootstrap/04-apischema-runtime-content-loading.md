@@ -20,10 +20,12 @@ metadata/specification and XSD endpoints read manifest-relative files from that 
 generate DLLs from loose files and does not extract content from assembly resources for the DMS-916 bootstrap
 path.
 
-This story depends on the normalized filesystem workspace and ApiSchema asset manifest contract, not on
-asset-only package publication. It can be implemented in parallel with the MetaEd package switch-over because
-package-backed inputs in Story 06 and direct `-ApiSchemaPath` inputs from Story 00 both
-materialize to the same workspace before runtime starts.
+This story depends on the normalized filesystem workspace, staged claims workspace, and root bootstrap
+manifest contract produced by Story 00, not on asset-only package publication. Story 00 deliberately leaves
+those prepared inputs inactive at Docker runtime; this story is where `.bootstrap/ApiSchema` and
+`.bootstrap/claims` become runtime-authoritative together. It can be implemented in parallel with the MetaEd
+package switch-over because package-backed inputs in Story 06 and direct `-ApiSchemaPath` inputs from Story 00
+both materialize to the same workspace before runtime starts.
 
 ## Acceptance Criteria
 
@@ -43,6 +45,9 @@ materialize to the same workspace before runtime starts.
   - Docker: `AppSettings:UseApiSchemaPath=true`, `AppSettings:ApiSchemaPath=/app/ApiSchema`,
   - IDE: `AppSettings:UseApiSchemaPath=true`,
     `AppSettings:ApiSchemaPath=<repo-root>/eng/docker-compose/.bootstrap/ApiSchema`.
+- Docker bootstrap startup activates staged DMS schema and staged CMS claims as one boundary:
+  `.bootstrap/ApiSchema` is mounted/read by DMS, and `.bootstrap/claims` is mounted/read by Config Service for
+  the same root bootstrap manifest.
 - Existing non-bootstrap behavior may keep a compatibility path for assembly-bundled content when
   `UseApiSchemaPath=false`, but that path is not the DMS-916 bootstrap contract.
 - Unit or integration coverage proves that metadata/specification JSON and XSD endpoints work from a

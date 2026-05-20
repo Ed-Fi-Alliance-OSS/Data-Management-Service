@@ -431,7 +431,7 @@ try {
     foreach ($copyOperation in $copyOperations) {
         $targetPath = Join-Path $temporaryRoot $copyOperation.RelativeTargetPath
         New-Item -ItemType Directory -Path (Split-Path -Parent $targetPath) -Force | Out-Null
-        Copy-Item -LiteralPath $copyOperation.SourcePath -Destination $targetPath
+        Copy-Item -LiteralPath $copyOperation.SourcePath -Destination $targetPath -ErrorAction Stop
     }
 
     $apiSchemaManifest = [ordered]@{
@@ -494,7 +494,7 @@ try {
         }
 
         New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
-        Move-Item -LiteralPath $temporaryRoot -Destination $finalWorkspace
+        Move-Item -LiteralPath $temporaryRoot -Destination $finalWorkspace -ErrorAction Stop
         $temporaryMoved = $true
     }
 

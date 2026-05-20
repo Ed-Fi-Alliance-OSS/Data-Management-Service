@@ -52,9 +52,11 @@ packaging, and package-backed standard schema selection.
 - Story 03 reuses the parameter surfaces and mechanisms delivered by the other slices where applicable, but
   it is not a blanket prerequisite chain for every Story 03 task. Treat the main design and each companion
   story as the authority for the specific dependency of a given implementation task.
-- Story 04 depends on Story 00's normalized ApiSchema workspace and ApiSchema asset manifest contract. It removes the DMS
-  runtime bootstrap-path dependency on `*.ApiSchema.dll` assemblies for metadata/specification JSON and XSD
-  content. It does not depend on published asset-only packages.
+- Story 04 depends on Story 00's normalized ApiSchema workspace, staged claims workspace, ApiSchema asset
+  manifest, and root bootstrap manifest contracts. Story 00 prepares and validates those inputs; Story 04 makes
+  them runtime-authoritative together by removing the DMS runtime bootstrap-path dependency on
+  `*.ApiSchema.dll` assemblies and activating the matching staged Config Service claims path. It does not
+  depend on published asset-only packages.
 - Story 05 is a cross-repo MetaEd package-production switch-over. It enables Story 06 package-backed
   standard mode against published packages, but it is not a prerequisite for direct filesystem
   ApiSchema loading. Story 00, Story 04, and Story 05 can proceed in parallel because all three meet at the

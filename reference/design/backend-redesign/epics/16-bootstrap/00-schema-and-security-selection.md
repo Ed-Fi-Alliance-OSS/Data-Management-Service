@@ -57,12 +57,12 @@ packaging to publish asset-only ApiSchema NuGet packages is Story 05; that packa
 Story 06 package-backed standard-mode slice but does not replace or deprecate direct filesystem loading.
 
 **Mode-to-security summary (normative for Story 00):** The effective staged schema set from `-ApiSchemaPath`
-is the single source of truth for the staged ApiSchema files and for the matching base staged claimset
-fragments available for the run through the Story 00 v1 mapped-extension lookup. If `-ApiSchemaPath` stages
-unmapped non-core schemas that need additional security metadata, `-ClaimsDirectoryPath` is required for
-caller-supplied fragments. No later phase re-derives or replaces that security selection. Story 06
-package-backed `-Extensions` mode must feed the same root bootstrap manifest schema contract and
-claims-staging contract rather than introducing a second path.
+is the single source of truth inside the prepared workspace for the staged ApiSchema files and for the
+matching base staged claimset fragments available for the run through the Story 00 v1 mapped-extension lookup.
+If `-ApiSchemaPath` stages unmapped non-core schemas that need additional security metadata,
+`-ClaimsDirectoryPath` is required for caller-supplied fragments. No later phase re-derives or replaces that
+security selection. Story 06 package-backed `-Extensions` mode must feed the same root bootstrap manifest
+schema contract and claims-staging contract rather than introducing a second path.
 
 ## Acceptance Criteria
 
@@ -75,6 +75,10 @@ claims-staging contract rather than introducing a second path.
 - The staged ApiSchema workspace contains `bootstrap-api-schema-manifest.json` with deterministic
   manifest-relative paths for each selected project's normalized schema file and optional static content. This
   ApiSchema manifest is a runtime asset index only.
+- Story 00 makes staged schema/security the prepared bootstrap contract, not the Docker runtime source of
+  truth. Startup may validate the root bootstrap manifest, but DMS continues using DLL-backed schema
+  assemblies and CMS continues using the non-staged claims path until Story 04 switches both runtime inputs
+  together.
 - `prepare-dms-schema.ps1` writes the schema section of
   `eng/docker-compose/.bootstrap/bootstrap-manifest.json` with schema selection mode (`ApiSchemaPath`),
   selected extension names, expected `EffectiveSchemaHash`, an ApiSchema workspace fingerprint, and the
@@ -226,7 +230,9 @@ claims-staging contract rather than introducing a second path.
    `-AddExtensionSecurityMetadata` compatibility path, but clears `DMS_CONFIG_CLAIMS_MOUNT_SOURCE` so CMS
    cannot mount staged `.bootstrap/claims` for a different staged schema set. Story 04 owns flipping DMS and
    CMS over to the staged workspaces together (re-introducing `bootstrap-dms.yml` and the corresponding
-   env-var wiring in `Set-BootstrapStartupEnvironment`).
+   env-var wiring in `Set-BootstrapStartupEnvironment`). Activating `.bootstrap/claims` without also
+   activating `.bootstrap/ApiSchema` is explicitly prohibited in Story 00 because it can create a
+   schema/security metadata mismatch.
 5. Implement additive security-fragment staging in `prepare-dms-claims.ps1`: stage fragments into one
    bootstrap workspace, with duplicate-filename detection, malformed-JSON validation, unknown effective
    claim-set-reference validation, and updates to the root bootstrap manifest claims section that record the
@@ -282,6 +288,8 @@ claims-staging contract rather than introducing a second path.
 - Flipping Config Service startup to read the staged `.bootstrap/claims` workspace for bootstrap mode; that
   must happen with the Story 04 DMS staged-schema runtime switch so schema and authorization metadata remain
   aligned.
+- Treating the prepared Story 00 schema/security workspace as the Docker runtime source of truth. Story 00
+  records and validates the prepared contract; Story 04 makes that contract runtime-authoritative.
 
 ## Design References
 
@@ -319,3 +327,15 @@ Single high-severity finding; accepted with the "clear `.bootstrap/` before star
 - **FB8 (High, VALID):** `start-local-dms.ps1` checks the bootstrap manifest first and only applies `-AddExtensionSecurityMetadata` in the `elseif`. A stale `.bootstrap/` workspace (core-only, partial, or with a different extension selection) overrides the DLL-backed E2E/build path: CMS reads `.bootstrap/claims` while runtime loads DLL schemas, producing mismatched authorization or a fail-fast on a missing claims/seed section. `build-dms.ps1`'s teardown doesn't pass `-RemoveBootstrap`, and the E2E setup wrappers assume the caller ran teardown first. Fix: add `-RemoveBootstrap` to `build-dms.ps1`'s teardown calls, and add a defensive `.bootstrap/` removal step at the top of both E2E setup wrappers. Add Pester coverage that asserts the cleanup contracts.
 
 No round-3 findings dismissed.
+
+### 2026-05-20 — External PR review round 4 (DMS-1150 / branch)
+
+Five findings; one high accepted as a Story 04 boundary, four mediums accepted:
+
+- **FB9 (High, ACCEPTED AS STORY 04 BOUNDARY):** Reviewer flagged `Set-BootstrapStartupEnvironment` blanking `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` (bootstrap-manifest.psm1:447) and `DMS_CONFIG_CLAIMS_MOUNT_SOURCE` (:510) as leaving startup on DLL-backed schemas and non-staged claims after both prepare scripts run. That observation is correct for Story 00: staged schema/security is the prepared bootstrap contract, not the Docker runtime source of truth. Runtime activation is deferred because `ContentProvider` still loads `*.ApiSchema.dll`, and activating staged CMS claims without staged DMS schema can create mismatched authorization metadata. Story 04 owns flipping DMS and CMS over to the staged workspaces together. The blanking remains as the defensive guard against `.env`-leaked Story-04 values.
+- **FB10 (Medium, VALID):** `prepare-dms-claims.ps1` recreated `.bootstrap/claims` when the workspace was missing without checking for stale manifest `claims`/`seed` sections, then overwrote those sections, bypassing the teardown-guidance fail-fast required by Task #9. Mirror the schema-phase guard (FB3) so partial prior state fails fast with the workspace-mismatch message.
+- **FB11 (Medium, VALID):** Claimset discovery in `prepare-dms-claims.ps1:Get-UserFragmentFile` read only the top level of `-ClaimsDirectoryPath`. CMS `ClaimsFragmentComposer.DiscoverFragmentFiles` uses `SearchOption.AllDirectories`, so nested valid fragments were silently dropped and nested filename collisions were missed. Add `-Recurse` so bootstrap input discovery matches CMS runtime discovery; the existing filename-collision guard then catches nested duplicates after flattening.
+- **FB12 (Medium, VALID):** `Test-TruthyJsonValue` coerced non-bool `isParent` via `[System.Convert]::ToBoolean`, and `resourceClaims`/`claimSets`/`actions` accepted singleton non-arrays through `@(...)` coercion. CMS deserializes `IsParent` as a strict `bool` and the three array fields as `List<T>` with no lenient `JsonSerializerOptions`, so malformed fragments passed bootstrap and failed later at CMS startup. Tighten each to strict shape. Extend the same strict-array guard to `authorizationStrategyOverridesForCRUD` for consistency. (Fixing the IList check also required `Get-ValueOrNull` to wrap returns with the unary comma so PowerShell's function-output unwrapping does not flatten single-element arrays to scalars.)
+- **FB13 (Medium, VALID):** `Copy-Item`/`Move-Item` at `prepare-dms-schema.ps1:431,:497` and `prepare-dms-claims.ps1:452,:502` are non-terminating cmdlets, and neither script sets `$ErrorActionPreference = 'Stop'`. A failed staging copy/move could still allow the manifest write that follows, producing a manifest pointing at an incomplete workspace. Add `-ErrorAction Stop` to the four staging calls.
+
+No round-4 findings dismissed. FB9 is accepted as an intentional Story 04 runtime-activation boundary.

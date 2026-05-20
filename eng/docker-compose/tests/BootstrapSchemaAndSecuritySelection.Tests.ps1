@@ -628,6 +628,140 @@ exit $ExitCode
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*missing 'name'*"
         }
+
+        It "discovers caller fragments recursively to match CMS ClaimsFragmentComposer" {
+            # CMS scans -ClaimsDirectoryPath with SearchOption.AllDirectories. Bootstrap input
+            # discovery must match so nested fragments are staged (and nested duplicates rejected).
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "nested-claims"
+            $nestedDir = Join-Path $claimsDir "subdir"
+            New-ExplicitClaimsetFragment -Path (Join-Path $nestedDir "010-tpdm-claimset.json")
+
+            Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
+
+            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims/010-tpdm-claimset.json") |
+                Should -BeTrue
+        }
+
+        It "detects nested filename collisions across subdirectories" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "nested-collision"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "a/010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "b/010-tpdm-claimset.json")
+
+            { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
+                Should -Throw -ExpectedMessage "*filename collision*"
+        }
+
+        It "rejects a non-boolean isParent value because CMS deserializes IsParent as a strict bool" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "string-isparent"
+            $fragment = [ordered]@{
+                name = "EdFiSandbox"
+                resourceClaims = @(
+                    [ordered]@{
+                        isParent = "true"
+                        name = "http://example.org/identity/claims/widget"
+                    }
+                )
+            }
+            New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
+            $fragment | ConvertTo-Json -Depth 20 |
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-string-isparent-claimset.json") -Encoding utf8
+
+            { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
+                Should -Throw -ExpectedMessage "*malformed boolean for 'isParent'*"
+        }
+
+        It "rejects a resourceClaims value that is a single object instead of an array" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "scalar-resourceclaims"
+            $fragment = [ordered]@{
+                name = "EdFiSandbox"
+                resourceClaims = [ordered]@{
+                    isParent = $false
+                    name = "http://example.org/identity/claims/widget"
+                }
+            }
+            New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
+            $fragment | ConvertTo-Json -Depth 20 |
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-resourceclaims-claimset.json") -Encoding utf8
+
+            { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
+                Should -Throw -ExpectedMessage "*resourceClaims value that is not a JSON array*"
+        }
+
+        It "rejects a claimSets value that is a single object instead of an array" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "scalar-claimsets"
+            $fragment = [ordered]@{
+                resourceClaims = @(
+                    [ordered]@{
+                        isParent = $true
+                        name = "http://example.org/identity/claims/domains/explicitParent"
+                        claimSets = [ordered]@{
+                            name = "EdFiSandbox"
+                            actions = @(
+                                [ordered]@{
+                                    name = "Read"
+                                }
+                            )
+                        }
+                    }
+                )
+            }
+            New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
+            $fragment | ConvertTo-Json -Depth 20 |
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-claimsets-claimset.json") -Encoding utf8
+
+            { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
+                Should -Throw -ExpectedMessage "*claimSets value that is not a JSON array*"
+        }
+
+        It "rejects an actions value that is a single object instead of an array" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "scalar-actions"
+            $fragment = [ordered]@{
+                resourceClaims = @(
+                    [ordered]@{
+                        isParent = $true
+                        name = "http://example.org/identity/claims/domains/explicitParent"
+                        claimSets = @(
+                            [ordered]@{
+                                name = "EdFiSandbox"
+                                actions = [ordered]@{
+                                    name = "Read"
+                                }
+                            }
+                        )
+                    }
+                )
+            }
+            New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
+            $fragment | ConvertTo-Json -Depth 20 |
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-actions-claimset.json") -Encoding utf8
+
+            { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
+                Should -Throw -ExpectedMessage "*claimSets actions value that is not a JSON array*"
+        }
+
+        It "fails fast when manifest has stale claims/seed sections but claims workspace is missing" {
+            # Symmetric to the prepare-dms-schema.ps1 guard: a partial prior state (manifest
+            # records claims/seed but .bootstrap/claims was removed) must not silently rewrite
+            # the manifest sections; teardown is the required remediation.
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "stale-claims-input"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+            Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
+
+            $stagedClaims = Join-Path $script:repo.BootstrapRoot "claims"
+            Remove-Item -LiteralPath $stagedClaims -Recurse -Force
+
+            { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
+                Should -Throw -ExpectedMessage "*stale claims/seed sections*"
+
+            Test-Path -LiteralPath $stagedClaims | Should -BeFalse
+        }
     }
 
     Context "startup handoff" {

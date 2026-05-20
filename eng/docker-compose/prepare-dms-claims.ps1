@@ -60,7 +60,9 @@ function Get-ValueOrNull {
     )
 
     if ($Hashtable -is [System.Collections.IDictionary] -and $Hashtable.Contains($Key)) {
-        return $Hashtable[$Key]
+        # Wrap with the unary comma so PowerShell does not flatten single-element arrays into
+        # scalars on function return — callers rely on the original shape for IList checks.
+        return ,$Hashtable[$Key]
     }
 
     return $null
@@ -96,11 +98,7 @@ function Test-TruthyJsonValue {
         return $Value
     }
 
-    try {
-        return [System.Convert]::ToBoolean($Value)
-    } catch {
-        throw "Claimset fragment '$(Format-LogSafeText $Path)' has malformed boolean for 'isParent'."
-    }
+    throw "Claimset fragment '$(Format-LogSafeText $Path)' has malformed boolean for 'isParent'."
 }
 
 function Get-EffectiveClaimSetName {
@@ -171,7 +169,7 @@ function Get-UserFragmentFile {
     $directory = Get-Item -LiteralPath $fullPath
 
     $claimsetFiles = @(
-        Get-ChildItem -LiteralPath $directory.FullName -File -Filter "*-claimset.json" |
+        Get-ChildItem -LiteralPath $directory.FullName -File -Filter "*-claimset.json" -Recurse |
             Sort-Object -Property FullName
     )
 
@@ -245,7 +243,13 @@ function Assert-FragmentValidAndExtractCheck {
     $fragmentName = Get-ValueOrNull -Hashtable $fragment -Key "name"
 
     $resourceClaims = Get-ValueOrNull -Hashtable $fragment -Key "resourceClaims"
-    if ($null -eq $resourceClaims -or @($resourceClaims).Count -eq 0) {
+    if ($null -eq $resourceClaims) {
+        throw "Claimset fragment '$(Format-LogSafeText $Path)' does not contain resourceClaims."
+    }
+    if ($resourceClaims -isnot [System.Collections.IList]) {
+        throw "Claimset fragment '$(Format-LogSafeText $Path)' has a resourceClaims value that is not a JSON array."
+    }
+    if (@($resourceClaims).Count -eq 0) {
         throw "Claimset fragment '$(Format-LogSafeText $Path)' does not contain resourceClaims."
     }
 
@@ -266,6 +270,9 @@ function Assert-FragmentValidAndExtractCheck {
             -Path $Path
 
         $claimSets = Get-ValueOrNull -Hashtable $resourceClaim -Key "claimSets"
+        if ($null -ne $claimSets -and $claimSets -isnot [System.Collections.IList]) {
+            throw "Claimset fragment '$(Format-LogSafeText $Path)' has a claimSets value that is not a JSON array."
+        }
         $claimSetsCount = if ($null -eq $claimSets) { 0 } else { @($claimSets).Count }
         if (-not $isParent -and $claimSetsCount -gt 0) {
             throw "Claimset fragment '$(Format-LogSafeText $Path)' has a non-parent resourceClaims entry with claimSets. CMS composes non-parent claims from the fragment top-level name and authorizationStrategyOverridesForCRUD; move the actions there or make the resource claim a parent."
@@ -290,7 +297,11 @@ function Assert-FragmentValidAndExtractCheck {
                 throw "Claimset fragment '$(Format-LogSafeText $Path)' references unknown effective claim set '$(Format-LogSafeText $claimSetName)'."
             }
 
-            foreach ($action in @((Get-ValueOrNull -Hashtable $claimSet -Key "actions"))) {
+            $actions = Get-ValueOrNull -Hashtable $claimSet -Key "actions"
+            if ($null -ne $actions -and $actions -isnot [System.Collections.IList]) {
+                throw "Claimset fragment '$(Format-LogSafeText $Path)' has a claimSets actions value that is not a JSON array."
+            }
+            foreach ($action in @($actions)) {
                 if ($null -eq $action) {
                     continue
                 }
@@ -310,7 +321,11 @@ function Assert-FragmentValidAndExtractCheck {
         }
 
         if ($usesImplicitClaimSetName) {
-            foreach ($action in @((Get-ValueOrNull -Hashtable $resourceClaim -Key "authorizationStrategyOverridesForCRUD"))) {
+            $overrideActions = Get-ValueOrNull -Hashtable $resourceClaim -Key "authorizationStrategyOverridesForCRUD"
+            if ($null -ne $overrideActions -and $overrideActions -isnot [System.Collections.IList]) {
+                throw "Claimset fragment '$(Format-LogSafeText $Path)' has an authorizationStrategyOverridesForCRUD value that is not a JSON array."
+            }
+            foreach ($action in @($overrideActions)) {
                 $actionName = Get-ValueOrNull -Hashtable $action -Key "actionName"
                 if ([string]::IsNullOrWhiteSpace($actionName)) {
                     throw "Claimset fragment '$(Format-LogSafeText $Path)' has an authorizationStrategyOverridesForCRUD entry missing 'actionName'."
@@ -450,7 +465,7 @@ try {
     New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 
     foreach ($fragment in $fragments) {
-        Copy-Item -LiteralPath $fragment.SourcePath -Destination (Join-Path $temporaryRoot $fragment.FileName)
+        Copy-Item -LiteralPath $fragment.SourcePath -Destination (Join-Path $temporaryRoot $fragment.FileName) -ErrorAction Stop
     }
 
     $fingerprint = Get-BootstrapWorkspaceFingerprint -Path $temporaryRoot
@@ -498,8 +513,12 @@ try {
             throw (Get-BootstrapWorkspaceMismatchMessage -Reason "seed extensionNamespacePrefixes mismatch")
         }
     } else {
+        if ($rootManifest.ContainsKey("claims") -or $rootManifest.ContainsKey("seed")) {
+            throw (Get-BootstrapWorkspaceMismatchMessage -Reason "manifest has stale claims/seed sections but claims workspace is missing")
+        }
+
         New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
-        Move-Item -LiteralPath $temporaryRoot -Destination $finalWorkspace
+        Move-Item -LiteralPath $temporaryRoot -Destination $finalWorkspace -ErrorAction Stop
         $temporaryMoved = $true
     }
 
