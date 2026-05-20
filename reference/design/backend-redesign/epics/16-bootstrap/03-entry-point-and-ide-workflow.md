@@ -62,7 +62,7 @@ across separate invocations.
     selection and schema provisioning. Any later DMS-dependent step is owned by wrapper orchestration or by
     the next explicit phase command. If seed loading is requested, `load-dms-seed-data.ps1` is the next
     phase to invoke; the wrapper forwards the same `-DmsBaseUrl` value to that phase as the BulkLoadClient
-    base URL and forwards the selected `-IdentityProvider` so the seed phase resolves the matching token
+    base URL and forwards the selected `-IdentityProvider` so the seed phase resolves the matching OAuth
     endpoint, along with `-AdditionalNamespacePrefix` when provided and the instance set already selected by
     `configure-local-dms-instance.ps1`. This keeps
     `start-local-dms.ps1` limited to infrastructure lifecycle and health waiting while preserving a

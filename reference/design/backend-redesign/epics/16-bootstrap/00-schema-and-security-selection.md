@@ -248,8 +248,8 @@ schema contract and claims-staging contract rather than introducing a second pat
    `DMS_CONFIG_CLAIMS_MOUNT_SOURCE`, but do not set that variable from the bootstrap manifest in Story 00;
    staged claims startup must move with the Story 04 DMS staged-schema runtime switch. DMS reads claimsets
    from CMS authorization metadata, not from fragment files mounted into the DMS container.
-7. Ensure operator-facing validation messages report missing schema, security, or seed artifacts as artifact
-   resolution/configuration failures.
+7. Ensure operator-facing validation messages report missing schema or security artifacts as artifact
+   resolution/configuration failures. Seed artifact resolution messages belong to Story 02.
 8. Remove bootstrap-surface dependence on `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` and
    remove standalone `-AddExtensionSecurityMetadata` from the DMS-916 normative contract. The staged claims
    workspace is the only security-selection path in this story; bootstrap manages core and selected extension
