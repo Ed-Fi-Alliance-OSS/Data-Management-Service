@@ -1069,6 +1069,104 @@ file sealed class InvalidUnifiedAliasPresenceGateFixturePass : IRelationalModelS
 }
 
 /// <summary>
+/// Test fixture for IdentityPropagationFallback on MSSQL with a child-collection
+/// reference binding (in addition to the existing root-table binding). Verifies
+/// that child collection referrers must appear as PropagationReferrerTarget
+/// entries on the referenced resource's propagation trigger.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_On_Mssql_With_Child_Collection_Referrer
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildChildReferenceProjectSchemaForTriggerDerivation();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should emit one propagation trigger on School.
+    /// </summary>
+    [Test]
+    public void It_should_emit_one_propagation_trigger_on_School()
+    {
+        var schoolPropagations = _triggers
+            .Where(t =>
+                t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+                && t.Name.Value == "TR_School_PropagateIdentity"
+            )
+            .ToArray();
+
+        schoolPropagations.Should().ContainSingle();
+        schoolPropagations[0].Table.Name.Should().Be("School");
+    }
+
+    /// <summary>
+    /// It should include child table referrer alongside root referrer.
+    /// </summary>
+    [Test]
+    public void It_should_include_child_table_referrer_alongside_root_referrer()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            && t.Name.Value == "TR_School_PropagateIdentity"
+        );
+        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+            schoolPropagation.Parameters;
+
+        // Existing root-table referrer (Enrollment) must still be present.
+        propagationParams.ReferrerUpdates.Should().Contain(r => r.ReferrerTable.Name == "Enrollment");
+
+        // New: child-collection referrer (BusRouteAddress) must be present.
+        propagationParams
+            .ReferrerUpdates.Should()
+            .Contain(
+                r => r.ReferrerTable.Name == "BusRouteAddress",
+                "child collection bindings must be included in IdentityPropagationFallback"
+            );
+    }
+
+    /// <summary>
+    /// It should resolve child referrer target columns against the child table model.
+    /// </summary>
+    [Test]
+    public void It_should_resolve_child_referrer_target_columns_against_the_child_table_model()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            && t.Name.Value == "TR_School_PropagateIdentity"
+        );
+        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+            schoolPropagation.Parameters;
+
+        var childReferrer = propagationParams.ReferrerUpdates.Single(r =>
+            r.ReferrerTable.Name == "BusRouteAddress"
+        );
+
+        childReferrer.ReferrerFkColumn.Value.Should().Be("School_DocumentId");
+
+        var targetColumns = childReferrer.ColumnMappings.Select(m => m.TargetColumn.Value).ToArray();
+        targetColumns.Should().Contain("School_EducationOrganizationId").And.Contain("School_SchoolId");
+    }
+}
+
+/// <summary>
 /// Test schema builder for trigger inventory pass tests.
 /// </summary>
 internal static class TriggerInventoryTestSchemaBuilder
