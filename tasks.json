@@ -225,7 +225,7 @@
   },
   {
     "category": "core-middleware",
-    "description": "High: Relational POST create requests still use legacy Core authorization middleware instead of the backend-planned relationship authorization lane, so inverted EdOrg-only POST create can be blocked by the old staged 501 and empty-claim or known-but-not-enabled POST precedence can be shaped before the repository preflight owns it.",
+    "description": "Move relational POST create authorization through the backend-planned authorization lane so repository preflight owns inverted EdOrg-only, empty-claim, and known-but-not-enabled POST precedence.",
     "acceptance-criteria": [
       "ResourceActionAuthorizationMiddleware treats relational POST create requests as backend-planned authorization requests for Slice 3, so RelationshipsWithEdOrgsOnlyInverted is not rejected by the legacy DMS-1056 staged 501 path before reaching the repository.",
       "ProvideAuthorizationFiltersMiddleware preserves raw authorization strategy names with empty filters for relational POST requests, matching the relational GET/DELETE behavior, and does not resolve legacy filter providers or throw the legacy no-EducationOrganization-claims authorization exception.",
@@ -244,7 +244,7 @@
   },
   {
     "category": "proposed-value-extraction",
-    "description": "High: Proposed-value extraction treats any missing/null subject in any OR strategy as an immediate relationship denial, so POST create can reject a request even when another configured EdOrg-only relationship strategy has all required proposed values and would authorize.",
+    "description": "Make proposed-value relationship authorization extraction OR-aware so incomplete strategies do not deny POST create when another complete EdOrg-only strategy can authorize.",
     "acceptance-criteria": [
       "A missing/null proposed subject in one relationship strategy does not short-circuit evaluation of other OR strategies that have all required proposed values.",
       "POST create succeeds and persists normally when at least one complete proposed EdOrg-only strategy authorizes, even if another configured strategy has proposed element-required metadata.",
@@ -260,6 +260,152 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalWriteNoProfilePersister",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter RelationalPost",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter RelationalPost"
+    ],
+    "completed": false
+  },
+  {
+    "category": "relationship-authorization-plan",
+    "description": "Add explicit direct EdOrg claim-match metadata to relationship authorization plans for EdOrg-to-EdOrg hierarchy checks.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationAuthObject or RelationshipAuthorizationCheckSpec carries an explicit direct-claim-match flag for auth.EducationOrganizationIdToEducationOrganizationId checks.",
+      "RelationshipAuthorizationPlanner sets the direct-claim-match flag for both stored-value and proposed-value EdOrg hierarchy checks.",
+      "Normal and inverted RelationshipsWithEdOrgsOnly checks keep their existing SubjectValueColumn and ClaimEducationOrganizationIdColumn direction while also allowing direct match.",
+      "The flag is not set for any non-EdOrg relationship, Namespace, Ownership, custom-view, or people authorization check.",
+      "PageDocumentIdQueryModels exposes direct-match capability for page authorization subjects or strategies, and PageDocumentIdAuthorizationSpecAdapter preserves it when adapting stored relationship authorization for GET-many page SQL.",
+      "Existing RelationshipAuthorizationFailureMapper output and Core.External RelationshipAuthorizationFailure DTOs remain unchanged."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationContracts.cs for the direct-claim-match plan metadata.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs for stored and proposed EdOrg hierarchy check construction.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs and src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdAuthorizationSpecAdapter.cs for propagation into page authorization models.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs and src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdAuthorizationSpecAdapterTests.cs for assertions that the flag is set only for EdOrg hierarchy checks and is preserved for GET-many page specs.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationPlannerTests|PageDocumentIdAuthorizationSpecAdapterTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "single-record-sql-generation",
+    "description": "Emit direct EdOrg claim match in single-record relationship authorization SQL for stored and proposed EdOrg hierarchy subjects.",
+    "acceptance-criteria": [
+      "SingleRecordRelationshipAuthorizationSqlCompiler emits direct claim match OR hierarchy EXISTS for EdOrg hierarchy checks whose plan metadata allows direct match.",
+      "Stored-value authorization for GET-by-id and DELETE authorizes when the stored subject EdOrgId is directly present in the caller's EdOrg claims without requiring an auth hierarchy row.",
+      "Proposed-value authorization for POST create authorizes when the proposed subject EdOrgId is directly present in the caller's EdOrg claims without requiring an auth hierarchy row.",
+      "Null stored values still fail with StoredValueNull and null or missing proposed values still fail with ProposedValueMissing before any direct-match success is possible.",
+      "Normal hierarchy checks still compare token claims to SourceEducationOrganizationId and subject values to TargetEducationOrganizationId when direct match fails.",
+      "Inverted hierarchy checks still compare token claims to TargetEducationOrganizationId and subject values to SourceEducationOrganizationId when direct match fails.",
+      "Direct-match SQL is emitted only for checks whose plan metadata allows direct claim match; hierarchy-only checks keep their existing EXISTS behavior.",
+      "PostgreSQL array, SQL Server scalar, and SQL Server structured TVP claim parameterization all work for the direct-match predicate without duplicating token claim parameters.",
+      "Empty EdOrg claims still use the existing NoClaims planning path and do not reach generated single-record SQL.",
+      "Multiple subjects remain AND semantics, multiple strategies remain OR semantics, and duplicate strategies remain distinct failure branches."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs for direct-match SQL in stored and proposed subject failure predicates.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs or adjacent SingleRecordRelationshipAuthorizationSqlCompiler tests for PostgreSQL and SQL Server direct-match assertions.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationSqlCompiler",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationAuth1FailurePayload"
+    ],
+    "completed": false
+  },
+  {
+    "category": "page-query-sql-generation",
+    "description": "Emit direct EdOrg claim match in GET-many page authorization SQL for stored EdOrg hierarchy subjects.",
+    "acceptance-criteria": [
+      "PageDocumentIdSqlCompiler emits a page predicate equivalent to root EdOrg column direct claim match OR auth hierarchy lookup for RelationshipsWithEdOrgsOnly.",
+      "PageDocumentIdSqlCompiler emits the same direct claim match for RelationshipsWithEdOrgsOnlyInverted while preserving the inverted hierarchy-table direction for the fallback lookup.",
+      "The direct-match predicate is included in both page DocumentId SQL and TotalCount SQL.",
+      "PostgreSQL array, SQL Server scalar, and SQL Server structured TVP claim parameterization all work for GET-many direct match.",
+      "Multiple EdOrg subjects within one strategy remain AND semantics and multiple relationship strategies remain OR semantics.",
+      "Duplicate supported relationship strategies remain distinct OR branches.",
+      "Empty EdOrg claims still use the existing NoClaims planning path and do not reach generated page-query SQL.",
+      "Direct-match page SQL is emitted only for authorization subjects or strategies whose page authorization model allows direct claim match.",
+      "No page-query direct match is emitted when authorization is absent or when no relationship authorization strategies are present."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs for direct-match authorization model fields.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs for direct-match SQL in AppendAuthorizationSubjectSql.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs for normal, inverted, duplicate, total-count, PostgreSQL, SQL Server scalar, and SQL Server TVP assertions.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs for GET-many captured SQL assertions that include direct match.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PageDocumentIdSqlCompilerTests",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepositoryTests"
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-integration",
+    "description": "Add PostgreSQL integration coverage proving direct EdOrg claim match authorizes relationship checks without a pre-existing auth hierarchy row.",
+    "acceptance-criteria": [
+      "POST create with a proposed EdOrg subject equal to the caller's EdOrg claim succeeds when auth.EducationOrganizationIdToEducationOrganizationId has no matching row for that value.",
+      "POST create with a proposed EdOrg subject different from the caller's EdOrg claim still returns relationship-not-authorized/403 and creates no document, root, child, referential identity, or document-change rows.",
+      "GET-by-id and DELETE of existing rows with a stored EdOrg subject equal to the caller's EdOrg claim succeed when the auth hierarchy row is absent.",
+      "GET-many returns an existing row with a root EdOrg subject equal to the caller's EdOrg claim when the auth hierarchy row is absent.",
+      "The generated PostgreSQL authorization command text contains the direct claim-match predicate and still places AUTH1 authorization before dms.Document insertion on POST create."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalPostAuthorizationTests.cs for direct-match POST create coverage.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalGetByIdAuthorizationTests.cs and src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalDeleteAuthorizationTests.cs for stored single-record direct-match coverage.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalQueryAuthorizationTests.cs for GET-many direct-match coverage.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"RelationalPost|Authorization\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-integration",
+    "description": "Add SQL Server integration coverage proving direct EdOrg claim match authorizes relationship checks without a pre-existing auth hierarchy row.",
+    "acceptance-criteria": [
+      "POST create with a proposed EdOrg subject equal to the caller's EdOrg claim succeeds when auth.EducationOrganizationIdToEducationOrganizationId has no matching row for that value.",
+      "POST create with a proposed EdOrg subject different from the caller's EdOrg claim still returns relationship-not-authorized/403 and creates no document, root, child, referential identity, or document-change rows.",
+      "GET-by-id and DELETE of existing rows with a stored EdOrg subject equal to the caller's EdOrg claim succeed when the auth hierarchy row is absent.",
+      "GET-many returns an existing row with a root EdOrg subject equal to the caller's EdOrg claim when the auth hierarchy row is absent.",
+      "SQL Server scalar claim parameters below the TVP threshold and dms.BigIntTable TVP parameters at or above the threshold both work for direct-match authorization.",
+      "The generated SQL Server authorization command text contains the direct claim-match predicate and still places AUTH1 authorization before dms.Document insertion on POST create."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalPostAuthorizationTests.cs for direct-match POST create coverage.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalGetByIdAuthorizationTests.cs and src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalDeleteAuthorizationTests.cs for stored single-record direct-match coverage.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalQueryAuthorizationTests.cs for GET-many direct-match coverage.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"RelationalPost|Authorization\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Add focused relational E2E coverage for LocalEducationAgency create authorization by direct EdOrg claim match.",
+    "acceptance-criteria": [
+      "A @relational-backend scenario with EdOrg claim 255901 POSTs LocalEducationAgency 255901 and receives 201 without pre-seeding an auth hierarchy self tuple for 255901.",
+      "A @relational-backend scenario with EdOrg claim 999999 POSTs LocalEducationAgency 255901 and receives 403.",
+      "A @relational-backend scenario with empty EdOrg claims POSTs LocalEducationAgency 255901 and receives the existing no-claims authorization failure shape for the current slice.",
+      "The authorized scenario does not create LocalEducationAgency 255901 or an auth.EducationOrganizationIdToEducationOrganizationId self tuple for 255901 during setup.",
+      "The focused scenarios use normal RelationshipsWithEdOrgsOnly claim-set wiring and do not switch setup writes to NoFurtherAuthorizationRequired to bypass relationship authorization.",
+      "Existing legacy RelationshipsWithEdOrgsOnly E2E scenarios remain semantically unchanged except for relational backend and shard tags.",
+      "Successful LocalEducationAgency create is followed by a read path assertion proving the created item is accessible through relational authorization."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsOnly.feature and any focused relational companion feature for direct-match LEA scenarios.",
+      "From src/dms/tests/EdFi.DataManagementService.Tests.E2E, run pwsh ./teardown-local-dms.ps1 and then pwsh ./setup-local-dms.ps1 before the local E2E run.",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=relational-backend&FullyQualifiedName~RelationshipsWithEdOrgsOnly\"",
+      "If the E2E run fails before API requests, inspect dms-local docker logs for environment/runtime issues before changing test expectations."
+    ],
+    "completed": false
+  },
+  {
+    "category": "regression-verification",
+    "description": "Run focused verification for the direct EdOrg claim-match implementation and keep repository artifacts valid.",
+    "acceptance-criteria": [
+      "All changed C# files under src/dms are formatted with csharpier.",
+      "tasks.json remains valid JSON with the new direct-match tasks left as completed false until their implementation is actually finished.",
+      "Plans unit tests covering RelationshipAuthorizationPlanner, SingleRecordRelationshipAuthorizationSqlCompiler, PageDocumentIdSqlCompiler, and PageDocumentIdAuthorizationSpecAdapter pass.",
+      "Backend unit tests covering relational GET-many, GET-by-id, DELETE, and POST authorization orchestration pass.",
+      "PostgreSQL and SQL Server relational authorization integration tests pass or have documented environmental blockers.",
+      "Focused relational-backend E2E coverage for RelationshipsWithEdOrgsOnly LocalEducationAgency create passes or has documented environmental blockers."
+    ],
+    "steps-to-verify": [
+      "Run dotnet csharpier format src/dms",
+      "Run jq empty tasks.json",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationPlannerTests|SingleRecordRelationshipAuthorizationSqlCompiler|PageDocumentIdSqlCompilerTests|PageDocumentIdAuthorizationSpecAdapterTests\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDocumentStoreRepositoryTests|Default_Relational_Write_Executor\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"RelationalPost|Authorization\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"RelationalPost|Authorization\"",
+      "From src/dms/tests/EdFi.DataManagementService.Tests.E2E, run pwsh ./teardown-local-dms.ps1, pwsh ./setup-local-dms.ps1, and then dotnet test EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=relational-backend&FullyQualifiedName~RelationshipsWithEdOrgsOnly\""
     ],
     "completed": false
   }

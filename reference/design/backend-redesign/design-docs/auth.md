@@ -62,7 +62,7 @@ The strategy logic iterates through the participating authorization subjects and
 - auth.EducationOrganizationIdToEducationOrganizationId
 - auth.EducationOrganizationIdToStudentUSI
 
-For single-record authorization, ODS executes the following query using the above auth views/tables:
+For single-record authorization, the database relationship lookup has the following shape using the above auth views/tables. The direct EdOrg claim match described below is an additional authorization path for EdOrg-to-EdOrg subjects.
 
 ```sql
 SELECT 
@@ -118,6 +118,27 @@ ORDER BY
 ```
 
 This ODS GET-many shape authorizes aggregate root rows. In DMS page SQL, the query starts from the concrete aggregate root table alias `r`, and relationship auth joins are applied back to that root alias only. DMS does not generate a separate base alias `b` for derived/subclass resources in this path. ODS does not authorize every child collection row, does not require at least one child row, and does not exclude a root document because a child collection is empty.
+
+#### Direct EdOrg claim match
+
+For an EducationOrganization relationship subject, a caller is authorized when the subject EdOrgId appears directly in the caller's EdOrg claims, even if the `auth.EducationOrganizationIdToEducationOrganizationId` table does not yet contain a matching row. This is required ODS/DMS behavior, not only a performance optimization.
+
+This matters when creating an EducationOrganization such as a LocalEducationAgency. A token with EdOrg claim `255901` must be able to create LocalEducationAgency `255901` before the LEA row exists. The insert trigger that maintains `auth.EducationOrganizationIdToEducationOrganizationId` can only add the self relationship tuple after the LEA is inserted, so a pre-insert authorization check that depends only on the auth hierarchy table creates a circular dependency and incorrectly denies the request.
+
+For each EdOrg-to-EdOrg relationship subject, DMS must authorize with direct claim match plus the existing hierarchy lookup:
+
+```sql
+@EducationOrganizationId = ANY(@TokenEducationOrganizationIds)
+OR @EducationOrganizationId IN (
+  SELECT TargetEducationOrganizationId
+  FROM auth.EducationOrganizationIdToEducationOrganizationId
+  WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds)
+)
+```
+
+The same direct-match predicate applies to inverted relationship strategies. Direct match is directionless because the subject EdOrgId and the claimed EdOrgId are the same value; if direct match does not succeed, normal and inverted strategies still use their existing hierarchy-table direction.
+
+This rule applies only to relationship authorization subjects whose securable element is an EducationOrganization id. It does not apply to Student, Staff, Contact, Namespace, Ownership, or custom-view checks. It also does not make missing or null proposed EdOrg values authorized; those must still fail as missing/uninitialized securable elements. Empty EdOrg claims still follow the existing no-claims authorization failure path.
 
 When multiple authorization strategies are configured for a given resource, relationship-based strategies are combined with OR, while the remaining strategies are combined with AND. For example: (`RelationshipsWithEdOrgsAndPeopleInverted` OR `RelationshipsWithEdOrgsAndPeople`) AND `NamespaceBased`.
 
@@ -321,6 +342,33 @@ In DMS, we aim to apply joins using the DocumentId surrogate key instead of natu
 
 In the example above, the `auth.StudentWithCTECourseEnrollments` view will return the Student's DocumentId instead of the StudentUSI. See the `Resolving the DB columns used for authorization` section below for more information.
 
+### Relationship-based direct EdOrg claim match
+
+The relationship authorization plan must explicitly identify EdOrg-to-EdOrg subjects that allow direct claim match. A planner/check-spec flag such as `AllowDirectClaimMatch` should be set only when the subject is an EducationOrganization id relationship check that uses `auth.EducationOrganizationIdToEducationOrganizationId`.
+
+The SQL compiler must then emit direct claim match as part of the same predicate as the hierarchy lookup. The generated predicate should be equivalent to:
+
+```sql
+subjectEducationOrganizationId = ANY(@TokenEducationOrganizationIds)
+OR EXISTS (
+    SELECT 1
+    FROM auth.EducationOrganizationIdToEducationOrganizationId AS authvw
+    WHERE authvw.TargetEducationOrganizationId = subjectEducationOrganizationId
+      AND authvw.SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds)
+)
+```
+
+For SQL Server, use the token EdOrg id table-valued parameter or generated token-claim parameter table instead of PostgreSQL `ANY`. For inverted relationship checks, keep the direct-match predicate unchanged and reverse only the hierarchy-table comparison.
+
+This must be available for both stored-value and proposed-value relationship authorization. It is especially required for POST-create of an EducationOrganization, where the direct claim match authorizes the create before the auth hierarchy self tuple exists. After the create succeeds, the EducationOrganization hierarchy trigger inserts the self tuple used by later stored-value checks.
+
+Acceptance coverage should include these cases:
+
+- Claim `255901`, POST LocalEducationAgency `255901`, with no existing LEA/auth self tuple: authorized and returns created.
+- Claim `999999`, POST LocalEducationAgency `255901`: denied by relationship authorization.
+- Empty EdOrg claims, POST LocalEducationAgency `255901`: denied by the existing no-claims path.
+- After creating LocalEducationAgency `255901`, stored-value operations such as GET, PUT, and DELETE remain authorized through the persisted auth hierarchy.
+
 ### Performance improvements over ODS
 
 ODS executes an additional DB roundtrip for single-record authorizations, presumably because NHibernate limitations make batching difficult. In DMS, we have fine-grained control over the SQL queries we execute. Below are the expected DB roundtrips per operation.
@@ -446,7 +494,8 @@ async Task GetManyCourses()
         WHERE
           dms.Document.CreatedByOwnershipTokenId = ANY(@OwnershipTokens)
           AND (
-         EducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+         EducationOrganizationId = ANY(@TokenEducationOrganizationIds)
+         OR EducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
          OR EducationOrganizationId IN (SELECT SourceEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE TargetEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
           )
           AND CourseCode = @CourseCode";
@@ -542,7 +591,7 @@ async Task PostCourseTranscript()
         }
     }
 
-    if (documentId == null)
+    if (documentId is null)
     {
         // POST results in create
 
@@ -566,7 +615,10 @@ async Task PostCourseTranscript()
                 WHEN EXISTS (
                     SELECT 1
                     WHERE
-                        @EducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                        (
+                            @EducationOrganizationId = ANY(@TokenEducationOrganizationIds)
+                            OR @EducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                        )
                         AND (SELECT Student_DocumentId FROM StudentAcademicRecord WHERE DocumentId = @StudentAcademicRecord_DocumentId)
                             IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
                 )
@@ -633,7 +685,10 @@ async Task PostCourseTranscript()
                     JOIN edfi.StudentAcademicRecord ON StudentAcademicRecord.DocumentId = CourseTranscript.StudentAcademicRecord_DocumentId
                     WHERE
                         edfi.CourseTranscript.DocumentId = @DocumentId
-                        AND StudentAcademicRecord_EducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                        AND (
+                            StudentAcademicRecord_EducationOrganizationId = ANY(@TokenEducationOrganizationIds)
+                            OR StudentAcademicRecord_EducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                        )
                         AND StudentAcademicRecord.Student_DocumentId IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
                 )
                 THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 2')
@@ -659,7 +714,11 @@ async Task PostCourseTranscript()
             SELECT CASE
                 WHEN EXISTS (
                     SELECT 1
-                        @NewEducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                    WHERE
+                        (
+                            @NewEducationOrganizationId = ANY(@TokenEducationOrganizationIds)
+                            OR @NewEducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                        )
                         AND (SELECT Student_DocumentId FROM StudentAcademicRecord WHERE DocumentId = @NewStudentAcademicRecord_DocumentId)
                             IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
                 )
@@ -732,7 +791,7 @@ async Task GetGradeBookEntryById()
         }
     }
 
-    if (documentId == null)
+    if (documentId is null)
     {
         throw new InvalidOperationException(message: "Not found");
     }
@@ -1071,7 +1130,7 @@ There are performance optimizations that we could implement for specific scenari
 
 - Don't execute the `Authorize request body values` step if the identifying values didn't change (on POST/PUT)
 - Some Namespace and Ownership checks can be done in C#, and if unauthorized, reject the request before hitting the DB
-- If the resource's EducationOrganizationId appears directly in the client's token, we can grant access without generating the SQL check
+- When direct EdOrg claim match can be proven in C# for an EdOrg-to-EdOrg relationship subject, skip only that subject's hierarchy-table SQL predicate
 - Update the bulk reference resolution logic to also resolve people's DocumentIds that are referenced either directly or transitively. This would avoid the joins on the POST/PUT `Authorize request body values` step.
 - Convert the authorization views from *normal* views to Indexed Views (only applicable for SQL Server)
 
