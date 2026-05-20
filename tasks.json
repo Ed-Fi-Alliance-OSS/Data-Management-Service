@@ -201,7 +201,7 @@
       "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=relational-backend&FullyQualifiedName~RelationshipsWithEdOrgsOnly\"",
       "If the E2E run fails before API requests, inspect dms-local docker logs for environment/runtime issues before changing test expectations."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "regression-verification",
