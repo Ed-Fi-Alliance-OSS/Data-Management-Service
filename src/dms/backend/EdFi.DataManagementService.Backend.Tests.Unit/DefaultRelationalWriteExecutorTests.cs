@@ -3909,6 +3909,75 @@ public class Given_Default_Relational_Write_Executor
             });
     }
 
+    [Test]
+    public void It_keeps_incomplete_or_strategies_in_the_runtime_check_when_another_strategy_can_authorize()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var rootRow = new RootWriteRowBuffer(
+            rootPlan,
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ]
+        );
+
+        var result = RelationshipAuthorizationProposedValueExtractor.Extract(
+            CreateTwoSingleSubjectStrategyRelationshipAuthorization(request),
+            rootRow,
+            emittedAuth1Index: 0
+        );
+
+        var ready = result
+            .Should()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
+            .Subject;
+        ready.RuntimeCheck.Strategies.Should().HaveCount(2);
+        ready.RuntimeCheck.Strategies[0].Subjects.Should().ContainSingle();
+        ready.RuntimeCheck.Strategies[0].Subjects[0].Value.Should().BeNull();
+        ready.RuntimeCheck.Strategies[1].Subjects.Should().ContainSingle();
+        ready.RuntimeCheck.Strategies[1].Subjects[0].Value.Should().Be("Lincoln High");
+    }
+
+    [Test]
+    public void It_returns_relationship_authorization_failure_when_every_or_strategy_is_incomplete()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var rootRow = new RootWriteRowBuffer(
+            rootPlan,
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(null),
+            ]
+        );
+
+        var result = RelationshipAuthorizationProposedValueExtractor.Extract(
+            CreateTwoSingleSubjectStrategyRelationshipAuthorization(request),
+            rootRow,
+            emittedAuth1Index: 0
+        );
+
+        var notAuthorized = result
+            .Should()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.NotAuthorized>()
+            .Subject;
+        notAuthorized
+            .RelationshipFailure.FailedStrategies.Select(static strategy => strategy.ConfiguredStrategyIndex)
+            .Should()
+            .Equal(0, 1);
+        notAuthorized
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Should()
+            .AllSatisfy(subject =>
+                subject
+                    .FailureKind.Should()
+                    .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing)
+            );
+    }
+
     [TestCaseSource(nameof(MissingProposedValueCases))]
     public void It_treats_unbound_proposed_runtime_values_as_proposed_missing(
         FlattenedWriteValue missingValue
@@ -4069,6 +4138,47 @@ public class Given_Default_Relational_Write_Executor
                     rootPlan,
                     subjects,
                     bindings,
+                    relationshipLocalOrder: 1,
+                    rawConfiguredIndex: 1,
+                    direction: RelationshipAuthorizationHierarchyDirection.Inverted
+                ),
+            ],
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                request.MappingSet.Key.Dialect,
+                [1234L],
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            )
+        );
+    }
+
+    private static RelationshipAuthorizationResult.Authorized CreateTwoSingleSubjectStrategyRelationshipAuthorization(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var schoolIdSubject = CreateRelationshipAuthorizationSubject(
+            request,
+            rootPlan,
+            "SchoolId",
+            "$.schoolId",
+            "SchoolId"
+        );
+        var nameSubject = CreateRelationshipAuthorizationSubject(request, rootPlan, "Name", "$.name", "Name");
+
+        return new RelationshipAuthorizationResult.Authorized(
+            [
+                CreateProposedCheckSpec(
+                    rootPlan,
+                    [schoolIdSubject],
+                    [CreateProposedValueBinding(rootPlan, schoolIdSubject.Column.Value)],
+                    relationshipLocalOrder: 0,
+                    rawConfiguredIndex: 0,
+                    direction: RelationshipAuthorizationHierarchyDirection.Normal
+                ),
+                CreateProposedCheckSpec(
+                    rootPlan,
+                    [nameSubject],
+                    [CreateProposedValueBinding(rootPlan, nameSubject.Column.Value)],
                     relationshipLocalOrder: 1,
                     rawConfiguredIndex: 1,
                     direction: RelationshipAuthorizationHierarchyDirection.Inverted

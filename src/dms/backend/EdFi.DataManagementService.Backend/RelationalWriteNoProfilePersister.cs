@@ -603,10 +603,10 @@ internal sealed class RelationalWriteNoProfilePersister(
         ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck
     )
     {
-        Dictionary<(int StrategyOrdinal, int SubjectOrdinal), object> valuesByOrdinal =
+        Dictionary<(int StrategyOrdinal, int SubjectOrdinal), object?> valuesByOrdinal =
             relationshipAuthorizationRuntimeCheck
                 .Strategies.SelectMany(strategy =>
-                    strategy.Subjects.Select(subject => new KeyValuePair<(int, int), object>(
+                    strategy.Subjects.Select(subject => new KeyValuePair<(int, int), object?>(
                         (strategy.StrategyOrdinal, subject.SubjectOrdinal),
                         subject.Value
                     ))

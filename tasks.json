@@ -261,7 +261,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter RelationalPost",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter RelationalPost"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "relationship-authorization-plan",

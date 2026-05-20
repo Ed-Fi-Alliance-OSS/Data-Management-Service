@@ -26,7 +26,7 @@ internal sealed record ProposedRelationshipAuthorizationRuntimeSubject(
     int SubjectOrdinal,
     RelationshipAuthorizationSubject Subject,
     RelationshipAuthorizationProposedValueBinding Binding,
-    object Value
+    object? Value
 );
 
 internal abstract record ProposedRelationshipAuthorizationExtractionResult
@@ -142,7 +142,6 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                             RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
                         )
                     );
-                    continue;
                 }
 
                 runtimeSubjects.Add(
@@ -164,7 +163,12 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             );
         }
 
-        if (missingSubjectFailures.Count > 0)
+        if (
+            missingSubjectFailures.Count > 0
+            && runtimeStrategies.TrueForAll(static strategy =>
+                strategy.Subjects.Any(static subject => subject.Value is null or DBNull)
+            )
+        )
         {
             return TryMapMissingValueFailures(
                 authorized.CheckSpecs,
