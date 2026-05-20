@@ -171,5 +171,9 @@ public record ApiClient(
     /// The behind the scenes globally unique identifier for the client.
     /// This must be used for deleting the resource and resetting credentials.
     /// </summary>
-    Guid ClientUuid
+    Guid ClientUuid,
+    /// <summary>
+    /// Whether the api client is approved to authenticate.
+    /// </summary>
+    bool IsApproved
 );

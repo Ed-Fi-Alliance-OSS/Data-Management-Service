@@ -295,6 +295,7 @@ public class ApiClientRepository(
             string updateSql = """
                 UPDATE dmscs.ApiClient
                 SET ApplicationId = @ApplicationId, Name = @Name, IsApproved = @IsApproved,
+                    ClientUuid = COALESCE(@ClientUuid, ClientUuid),
                     LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
                 WHERE Id = @Id;
                 """;
@@ -307,6 +308,7 @@ public class ApiClientRepository(
                     command.ApplicationId,
                     command.Name,
                     command.IsApproved,
+                    ClientUuid = command.ClientUuid,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                 },

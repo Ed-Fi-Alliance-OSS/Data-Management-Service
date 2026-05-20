@@ -515,6 +515,29 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _applicationSecret = responseJson["secret"]!.GetValue<string>();
     }
 
+    [When("a token request is attempted with the captured application credentials")]
+    public async Task WhenATokenRequestIsAttemptedWithTheCapturedApplicationCredentials()
+    {
+        await GetClientAccessToken(_applicationKey, _applicationSecret, "edfi_admin_api/full_access");
+    }
+
+    [Then("the response body contains an object matching")]
+    public async Task ThenTheResponseBodyContainsAnObjectMatching(string expectedPartial)
+    {
+        string content = await _apiResponse.TextAsync();
+        expectedPartial = await ReplaceIdsAsync(expectedPartial);
+        var jsonArray = JsonNode.Parse(content)?.AsArray();
+        jsonArray.Should().NotBeNull("response body should be a JSON array");
+        var expectedObj = JsonNode.Parse(expectedPartial)!.AsObject();
+        bool found = jsonArray!.Any(item =>
+            item is JsonObject obj
+            && expectedObj.All(kvp =>
+                obj.ContainsKey(kvp.Key) && obj[kvp.Key]?.ToJsonString() == kvp.Value?.ToJsonString()
+            )
+        );
+        found.Should().BeTrue($"No object in the array matched: {expectedPartial}");
+    }
+
     [Then("the token should have {string} scope and {string} namespacePrefix")]
     public async Task ThenValidateTheScope(string claimset, string namespacePrefix)
     {

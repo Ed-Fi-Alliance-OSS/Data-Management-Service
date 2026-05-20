@@ -283,6 +283,46 @@ public class MetadataModuleTests
         resetCredProperties.Should().ContainKeys("applicationId", "name", "key", "secret");
     }
 
+    [Test]
+    public async Task OpenApi_ApplicationResponse_Schema_Has_Enabled_Boolean_Property()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/openapi/v1.json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = System.Text.Json.JsonDocument.Parse(json);
+
+        // Navigate: components -> schemas -> ApplicationResponse -> properties -> enabled
+        doc.RootElement.TryGetProperty("components", out var components)
+            .Should()
+            .BeTrue("OpenAPI doc must have components");
+        components.TryGetProperty("schemas", out var schemas).Should().BeTrue("components must have schemas");
+        schemas
+            .TryGetProperty("ApplicationResponse", out var appSchema)
+            .Should()
+            .BeTrue("schemas must include ApplicationResponse");
+        appSchema
+            .TryGetProperty("properties", out var properties)
+            .Should()
+            .BeTrue("ApplicationResponse must have properties");
+        properties
+            .TryGetProperty("enabled", out var enabledProp)
+            .Should()
+            .BeTrue("ApplicationResponse must have 'enabled' property");
+        enabledProp.TryGetProperty("type", out var enabledType).Should().BeTrue("'enabled' must have a type");
+        TypeIncludes(enabledType, "boolean")
+            .Should()
+            .BeTrue("ApplicationResponse.enabled should be of type boolean in OpenAPI schema");
+    }
+
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)
     {
         return type.ValueKind switch

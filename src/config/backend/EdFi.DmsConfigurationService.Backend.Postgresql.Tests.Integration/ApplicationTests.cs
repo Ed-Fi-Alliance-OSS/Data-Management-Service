@@ -3,11 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
+using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -83,6 +86,7 @@ public class ApplicationTests : DatabaseTest
             application.ClaimSetName.Should().Be("Test Claim set");
             application.VendorId.Should().Be(_vendorId);
             application.EducationOrganizationIds.Count.Should().Be(3);
+            application.Enabled.Should().BeTrue();
         }
 
         [Test]
@@ -96,6 +100,7 @@ public class ApplicationTests : DatabaseTest
             application.ClaimSetName.Should().Be("Test Claim set");
             application.VendorId.Should().Be(_vendorId);
             application.EducationOrganizationIds.Count.Should().Be(3);
+            application.Enabled.Should().BeTrue();
         }
 
         [Test]
@@ -675,6 +680,487 @@ public class ApplicationTests : DatabaseTest
                 .ToList();
             names.Should().HaveCount(3);
             names.Should().ContainInOrder("Alice-App", "Bob-App", "Charlie-App");
+        }
+    }
+
+    [TestFixture]
+    public class Given_ApplicationWithDisabledApiClient : ApplicationTests
+    {
+        private long _id;
+        private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<ApiClientRepository>.Instance,
+            new TestAuditContext()
+        );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "Disabled Test Company",
+                    ContactEmailAddress = "disabled@test.com",
+                    ContactName = "Disabled Name",
+                    NamespacePrefixes = "DisabledPrefix",
+                }
+            );
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+            var appResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Disabled Api Client App",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            appResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            _id = (appResult as ApplicationInsertResult.Success)!.Id;
+
+            var clientResult = await _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = _id,
+                    Name = "Unapproved Client",
+                    IsApproved = false,
+                    DmsInstanceIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            clientResult.Should().BeOfType<ApiClientInsertResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_return_enabled_false_from_query()
+        {
+            var result = await _applicationRepository.QueryApplication(
+                new ApplicationQuery { Limit = 25, Offset = 0 }
+            );
+            result.Should().BeOfType<ApplicationQueryResult.Success>();
+            var application = ((ApplicationQueryResult.Success)result).ApplicationResponses.Single(a =>
+                a.Id == _id
+            );
+            application.Enabled.Should().BeFalse();
+        }
+
+        [Test]
+        public async Task It_should_return_enabled_false_from_get_by_id()
+        {
+            var result = await _applicationRepository.GetApplication(_id);
+            result.Should().BeOfType<ApplicationGetResult.Success>();
+            var application = ((ApplicationGetResult.Success)result).ApplicationResponse;
+            application.Enabled.Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_DmsInstanceApplicationWithDisabledApiClient : ApplicationTests
+    {
+        private long _applicationId;
+        private long _dmsInstanceId;
+
+        private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<ApiClientRepository>.Instance,
+            new TestAuditContext()
+        );
+
+        private readonly IDmsInstanceRepository _dmsInstanceRepository;
+
+        public Given_DmsInstanceApplicationWithDisabledApiClient()
+        {
+            var routeContextRepository = new DmsInstanceRouteContextRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceRouteContextRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var derivativeRepository = new DmsInstanceDerivativeRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TestAuditContext()
+            );
+            _dmsInstanceRepository = new DmsInstanceRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                routeContextRepository,
+                derivativeRepository,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "DmsInstance Disabled Test Company",
+                    ContactEmailAddress = "dmsinstance@test.com",
+                    ContactName = "DmsInstance Test",
+                    NamespacePrefixes = "DmsInstancePrefix",
+                }
+            );
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+            var dmsResult = await _dmsInstanceRepository.InsertDmsInstance(
+                new DmsInstanceInsertCommand
+                {
+                    InstanceType = "Test",
+                    InstanceName = "Disabled Client Test Instance",
+                    ConnectionString = "Server=test;Database=TestDb;",
+                }
+            );
+            dmsResult.Should().BeOfType<DmsInstanceInsertResult.Success>();
+            _dmsInstanceId = (dmsResult as DmsInstanceInsertResult.Success)!.Id;
+
+            var appResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "DmsInstance Disabled App",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim Set",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            appResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            _applicationId = (appResult as ApplicationInsertResult.Success)!.Id;
+
+            // InsertApplication auto-creates an ApiClient with IsApproved = true.
+            // Adding a second client with IsApproved = false makes BOOL_AND return false.
+            var clientResult = await _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = _applicationId,
+                    Name = "Disabled DmsInstance Client",
+                    IsApproved = false,
+                    DmsInstanceIds = [_dmsInstanceId],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            clientResult.Should().BeOfType<ApiClientInsertResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_return_enabled_false_from_QueryApplicationByDmsInstance()
+        {
+            var result = await _dmsInstanceRepository.QueryApplicationByDmsInstance(
+                _dmsInstanceId,
+                new PagingQuery { Limit = 25, Offset = 0 }
+            );
+            result.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
+            var app = ((ApplicationByDmsInstanceQueryResult.Success)result).ApplicationResponse.Single(a =>
+                a.Id == _applicationId
+            );
+            app.Enabled.Should().BeFalse();
+        }
+
+        [Test]
+        public async Task It_should_return_enabled_true_when_all_api_clients_are_approved()
+        {
+            // Create a separate application with only approved clients
+            var appResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "DmsInstance All Approved App",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim Set Approved",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            appResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            var approvedAppId = (appResult as ApplicationInsertResult.Success)!.Id;
+
+            // Add an approved ApiClient linked to the DMS instance
+            await _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = approvedAppId,
+                    Name = "Approved DmsInstance Client",
+                    IsApproved = true,
+                    DmsInstanceIds = [_dmsInstanceId],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+
+            var result = await _dmsInstanceRepository.QueryApplicationByDmsInstance(
+                _dmsInstanceId,
+                new PagingQuery { Limit = 25, Offset = 0 }
+            );
+            result.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
+            var app = ((ApplicationByDmsInstanceQueryResult.Success)result).ApplicationResponse.Single(a =>
+                a.Id == approvedAppId
+            );
+            app.Enabled.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_DmsInstanceApplicationEnabled_CrossInstanceIsolation : ApplicationTests
+    {
+        private long _applicationId;
+        private long _dmsInstance1Id;
+        private long _dmsInstance2Id;
+
+        private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<ApiClientRepository>.Instance,
+            new TestAuditContext()
+        );
+
+        private readonly IDmsInstanceRepository _dmsInstanceRepository;
+
+        public Given_DmsInstanceApplicationEnabled_CrossInstanceIsolation()
+        {
+            var routeContextRepository = new DmsInstanceRouteContextRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceRouteContextRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var derivativeRepository = new DmsInstanceDerivativeRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TestAuditContext()
+            );
+            _dmsInstanceRepository = new DmsInstanceRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                routeContextRepository,
+                derivativeRepository,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "CrossInstance Test Company",
+                    ContactEmailAddress = "crossinstance@test.com",
+                    ContactName = "CrossInstance Test",
+                    NamespacePrefixes = "CrossInstancePrefix",
+                }
+            );
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+            var dms1Result = await _dmsInstanceRepository.InsertDmsInstance(
+                new DmsInstanceInsertCommand
+                {
+                    InstanceType = "Test",
+                    InstanceName = "CrossInstance Instance 1",
+                    ConnectionString = "Server=test1;Database=TestDb1;",
+                }
+            );
+            dms1Result.Should().BeOfType<DmsInstanceInsertResult.Success>();
+            _dmsInstance1Id = (dms1Result as DmsInstanceInsertResult.Success)!.Id;
+
+            var dms2Result = await _dmsInstanceRepository.InsertDmsInstance(
+                new DmsInstanceInsertCommand
+                {
+                    InstanceType = "Test",
+                    InstanceName = "CrossInstance Instance 2",
+                    ConnectionString = "Server=test2;Database=TestDb2;",
+                }
+            );
+            dms2Result.Should().BeOfType<DmsInstanceInsertResult.Success>();
+            _dmsInstance2Id = (dms2Result as DmsInstanceInsertResult.Success)!.Id;
+
+            var appResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "CrossInstance App",
+                    VendorId = _vendorId,
+                    ClaimSetName = "CrossInstance Claim Set",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            appResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            _applicationId = (appResult as ApplicationInsertResult.Success)!.Id;
+
+            // Client 1: approved, linked to DmsInstance 1 only
+            var client1Result = await _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = _applicationId,
+                    Name = "Approved Client Instance1",
+                    IsApproved = true,
+                    DmsInstanceIds = [_dmsInstance1Id],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            client1Result.Should().BeOfType<ApiClientInsertResult.Success>();
+
+            // Client 2: disabled, linked to DmsInstance 2 only
+            var client2Result = await _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = _applicationId,
+                    Name = "Disabled Client Instance2",
+                    IsApproved = false,
+                    DmsInstanceIds = [_dmsInstance2Id],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            client2Result.Should().BeOfType<ApiClientInsertResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_return_enabled_true_for_instance_with_only_approved_clients()
+        {
+            var result = await _dmsInstanceRepository.QueryApplicationByDmsInstance(
+                _dmsInstance1Id,
+                new PagingQuery { Limit = 25, Offset = 0 }
+            );
+            result.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
+            var app = ((ApplicationByDmsInstanceQueryResult.Success)result).ApplicationResponse.Single(a =>
+                a.Id == _applicationId
+            );
+            app.Enabled.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_should_return_enabled_false_for_instance_with_disabled_client_without_bleeding_across_instances()
+        {
+            var result = await _dmsInstanceRepository.QueryApplicationByDmsInstance(
+                _dmsInstance2Id,
+                new PagingQuery { Limit = 25, Offset = 0 }
+            );
+            result.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
+            var app = ((ApplicationByDmsInstanceQueryResult.Success)result).ApplicationResponse.Single(a =>
+                a.Id == _applicationId
+            );
+            app.Enabled.Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_GetApplicationByClientId_WithDisabledApiClient : ApplicationTests
+    {
+        private string _clientId = string.Empty;
+
+        private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<ApiClientRepository>.Instance,
+            new TestAuditContext()
+        );
+
+        private readonly OpenIddictDataRepository _openIddictDataRepository = new(
+            Configuration.DatabaseOptions
+        );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "OpenIddict Disabled Test Company",
+                    ContactEmailAddress = "openiddict@test.com",
+                    ContactName = "OpenIddict Test",
+                    NamespacePrefixes = "OpenIddictPrefix",
+                }
+            );
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+            _clientId = Guid.NewGuid().ToString();
+
+            var appResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "OpenIddict Disabled App",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim Set",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+            );
+            appResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            var applicationId = (appResult as ApplicationInsertResult.Success)!.Id;
+
+            // Create OpenIddictApplication record to make the application visible to OpenIddict queries
+            await _openIddictDataRepository.ExecuteInTransactionAsync(
+                async (connection, transaction) =>
+                {
+                    await _openIddictDataRepository.InsertApplicationAsync(
+                        Guid.NewGuid(),
+                        _clientId,
+                        "secret",
+                        "OpenIddict Disabled App",
+                        [],
+                        [],
+                        "confidential",
+                        "{}",
+                        connection,
+                        transaction
+                    );
+                }
+            );
+
+            // InsertApplication auto-creates an ApiClient with IsApproved = true using _clientId.
+            // Adding a second client with IsApproved = false AND THE SAME ClientId makes BOOL_AND return false.
+            var clientResult = await _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = applicationId,
+                    Name = "Unapproved OpenIddict Client",
+                    IsApproved = false,
+                    DmsInstanceIds = [],
+                },
+                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+            );
+            clientResult.Should().BeOfType<ApiClientInsertResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_return_IsApproved_false_from_GetApplicationByClientIdAsync()
+        {
+            var result = await _openIddictDataRepository.GetApplicationByClientIdAsync(_clientId);
+            result.Should().NotBeNull();
+            result!.IsApproved.Should().BeFalse();
         }
     }
 }

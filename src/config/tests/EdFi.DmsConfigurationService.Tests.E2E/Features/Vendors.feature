@@ -347,7 +347,8 @@ Feature: Vendors endpoints
                                 3
                             ],
                             "dmsInstanceIds": [{dmsInstanceId}],
-                            "profileIds": []
+                            "profileIds": [],
+                            "enabled": true
                         }
                     ]
                   """

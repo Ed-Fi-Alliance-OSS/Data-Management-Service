@@ -23,8 +23,8 @@ public class ApplicationModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v2/applications/", InsertApplication);
-        endpoints.MapSecuredGet("/v2/applications/", GetAll);
-        endpoints.MapSecuredGet($"/v2/applications/{{id}}", GetById);
+        endpoints.MapSecuredGet("/v2/applications/", GetAll).Produces<List<ApplicationResponse>>(200);
+        endpoints.MapSecuredGet($"/v2/applications/{{id}}", GetById).Produces<ApplicationResponse>(200);
         endpoints.MapSecuredPut($"/v2/applications/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v2/applications/{{id}}", Delete);
 
@@ -207,6 +207,7 @@ public class ApplicationModule : IEndpointModule
         HttpContext httpContext,
         IApplicationRepository repository,
         IIdentityProviderRepository clientRepository,
+        IOptions<IdentitySettings> identitySettings,
         ILogger<ApplicationModule> logger
     )
     {
@@ -225,7 +226,9 @@ public class ApplicationModule : IEndpointModule
                         command.ApplicationName,
                         command.ClaimSetName,
                         string.Join(",", command.EducationOrganizationIds),
-                        command.DmsInstanceIds
+                        command.DmsInstanceIds,
+                        client.IsApproved,
+                        identitySettings.Value.ClientRole
                     );
                     switch (clientUpdateResult)
                     {

@@ -280,7 +280,8 @@ UPDATE dmscs.OpenIddictApplication
                 @"SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
                          a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers::jsonb::text as ProtocolMappers,
                          COALESCE(array_agg(DISTINCT s.Name) FILTER (WHERE s.Name IS NOT NULL), ARRAY[]::text[]) as Scopes,
-                         COALESCE(array_agg(DISTINCT acd.DmsInstanceId) FILTER (WHERE acd.DmsInstanceId IS NOT NULL), ARRAY[]::bigint[]) as DmsInstanceIds
+                         COALESCE(array_agg(DISTINCT acd.DmsInstanceId) FILTER (WHERE acd.DmsInstanceId IS NOT NULL), ARRAY[]::bigint[]) as DmsInstanceIds,
+                         COALESCE(BOOL_AND(ac.IsApproved), true) AS IsApproved
                   FROM dmscs.OpenIddictApplication a
                   LEFT JOIN dmscs.OpenIddictApplicationScope aps ON a.Id = aps.ApplicationId
                   LEFT JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
@@ -306,7 +307,8 @@ UPDATE dmscs.OpenIddictApplication
                 @"SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
                          a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers::jsonb::text as ProtocolMappers,
                          COALESCE(array_agg(DISTINCT s.Name) FILTER (WHERE s.Name IS NOT NULL), ARRAY[]::text[]) as Scopes,
-                         COALESCE(array_agg(DISTINCT acd.DmsInstanceId) FILTER (WHERE acd.DmsInstanceId IS NOT NULL), ARRAY[]::bigint[]) as DmsInstanceIds
+                         COALESCE(array_agg(DISTINCT acd.DmsInstanceId) FILTER (WHERE acd.DmsInstanceId IS NOT NULL), ARRAY[]::bigint[]) as DmsInstanceIds,
+                         COALESCE(BOOL_AND(ac.IsApproved), true) AS IsApproved
                   FROM dmscs.OpenIddictApplication a
                   LEFT JOIN dmscs.OpenIddictApplicationScope aps ON a.Id = aps.ApplicationId
                   LEFT JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
