@@ -33,7 +33,8 @@ public class KeycloakClientRepository(
         string scope,
         string namespacePrefixes,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null
+        long[]? dmsInstanceIds = null,
+        bool isApproved = true
     )
     {
         try
@@ -52,7 +53,7 @@ public class KeycloakClientRepository(
             Client client = new()
             {
                 ClientId = clientId,
-                Enabled = true,
+                Enabled = isApproved,
                 Secret = clientSecret,
                 Name = displayName,
                 ServiceAccountsEnabled = true,

@@ -15,7 +15,8 @@ public interface IIdentityProviderRepository
         string scope,
         string namespacePrefixes,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null
+        long[]? dmsInstanceIds = null,
+        bool isApproved = true
     );
 
     Task<ClientUpdateResult> UpdateClientAsync(

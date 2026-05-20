@@ -124,7 +124,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -280,7 +281,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Invokes(call =>
@@ -372,7 +374,6 @@ public class ApiClientModuleTests
         {
             // Arrange
             var createdClientUuid = Guid.NewGuid();
-            var disabledClientUuid = Guid.NewGuid();
 
             A.CallTo(() =>
                     _identityProviderRepository.CreateClientAsync(
@@ -383,22 +384,11 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(createdClientUuid));
-            A.CallTo(() =>
-                    _identityProviderRepository.UpdateClientAsync(
-                        createdClientUuid.ToString(),
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<long[]?>.Ignored,
-                        false,
-                        A<string>.Ignored
-                    )
-                )
-                .Returns(new ClientUpdateResult.Success(disabledClientUuid));
 
             using var client = SetUpClient();
 
@@ -430,19 +420,8 @@ public class ApiClientModuleTests
                         "TestClaimSet",
                         "uri://test.org",
                         "1,2",
-                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1)
-                    )
-                )
-                .MustHaveHappenedOnceExactly();
-            A.CallTo(() =>
-                    _identityProviderRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        "Test Application",
-                        "TestClaimSet",
-                        "1,2",
                         A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1),
-                        false,
-                        A<string>.Ignored
+                        false
                     )
                 )
                 .MustHaveHappenedOnceExactly();
@@ -450,7 +429,7 @@ public class ApiClientModuleTests
                     _apiClientRepository.InsertApiClient(
                         A<ApiClientInsertCommand>.Ignored,
                         A<ApiClientCommand>.That.Matches(command =>
-                            command.ClientUuid == disabledClientUuid
+                            command.ClientUuid == createdClientUuid
                             && command.DmsInstanceIds.Length == 1
                             && command.DmsInstanceIds[0] == 1
                         )
@@ -726,7 +705,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -1172,7 +1152,8 @@ public class ApiClientModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(

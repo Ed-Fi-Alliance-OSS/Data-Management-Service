@@ -156,7 +156,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -248,7 +249,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Invokes(call =>
@@ -535,7 +537,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -756,7 +759,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -908,7 +912,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -1074,7 +1079,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -1096,7 +1102,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -1262,7 +1269,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));

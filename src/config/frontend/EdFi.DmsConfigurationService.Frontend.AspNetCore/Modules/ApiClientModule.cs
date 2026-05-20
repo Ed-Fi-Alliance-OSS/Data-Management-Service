@@ -119,8 +119,8 @@ public class ApiClientModule : IEndpointModule
         );
 
         Guid clientUuid;
-        // Create the client in the identity provider first. Some providers recreate the
-        // client during approval updates, so persist the final UUID.
+        // Create the client in the identity provider first, with the correct enabled state
+        // so a separate update-to-disable step is not needed (which would risk orphaning a client).
         var clientCreateResult = await clientRepository.CreateClientAsync(
             clientId,
             clientSecret,
@@ -129,7 +129,8 @@ public class ApiClientModule : IEndpointModule
             application.ClaimSetName,
             namespacePrefixes,
             string.Join(",", application.EducationOrganizationIds),
-            command.DmsInstanceIds
+            command.DmsInstanceIds,
+            command.IsApproved
         );
 
         switch (clientCreateResult)
@@ -152,50 +153,6 @@ public class ApiClientModule : IEndpointModule
             default:
                 logger.LogError("Failure creating client");
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
-        }
-
-        if (!command.IsApproved)
-        {
-            var disableClientResult = await clientRepository.UpdateClientAsync(
-                clientUuid.ToString(),
-                application.ApplicationName,
-                application.ClaimSetName,
-                string.Join(",", application.EducationOrganizationIds),
-                command.DmsInstanceIds,
-                false,
-                identitySettings.Value.ClientRole
-            );
-
-            switch (disableClientResult)
-            {
-                case ClientUpdateResult.Success disableSuccess:
-                    clientUuid = disableSuccess.ClientUuid;
-                    break;
-                case ClientUpdateResult.FailureUnknown failure:
-                    logger.LogError("Failure disabling client {Failure}", failure);
-                    await clientRepository.DeleteClientAsync(clientUuid.ToString());
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
-                case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
-                    logger.LogError(
-                        "Failure disabling client: {FailureMessage}",
-                        SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
-                    );
-                    await clientRepository.DeleteClientAsync(clientUuid.ToString());
-                    return FailureResults.BadGateway(
-                        "Identity provider error during client update",
-                        httpContext.TraceIdentifier
-                    );
-                case ClientUpdateResult.FailureNotFound failureNotFound:
-                    logger.LogError(
-                        "Client not found while disabling client: {Failure}",
-                        SanitizeForLog(failureNotFound.FailureMessage)
-                    );
-                    await clientRepository.DeleteClientAsync(clientUuid.ToString());
-                    return FailureResults.NotFound(
-                        "ApiClient not found in identity provider",
-                        httpContext.TraceIdentifier
-                    );
-            }
         }
 
         var repositoryResult = await apiClientRepository.InsertApiClient(
