@@ -82,7 +82,7 @@ Feature: Token validation
                       "status": 401,
                       "validationErrors": {},
                       "errors": [
-                        "invalid_client. Invalid client or invalid client credentials"
+                        "invalid_client. Invalid client or Invalid client credentials"
                       ]
                     }
                   """
