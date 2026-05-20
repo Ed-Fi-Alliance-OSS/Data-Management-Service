@@ -538,6 +538,53 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
     }
 
     [Test]
+    public async Task It_does_not_mutate_auth_tuples_when_an_LEA_parent_FK_is_updated_to_the_same_value()
+    {
+        // Pins the trigger's per-branch `(OLD.X IS NULL AND NEW.X IS NOT NULL) OR OLD.X <> NEW.X`
+        // predicate: a no-op UPDATE (OLD = NEW, both non-null) must leave
+        // auth.EducationOrganizationIdToEducationOrganizationId untouched. A predicate inversion
+        // (`<>` → `=`) would mutate auth on every no-op write and skip every real re-parent.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Test LEA",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[LocalEducationAgency]
+            SET [StateEducationAgency_DocumentId] = @seaDocumentId,
+                [StateEducationAgency_StateEducationAgencyId] = @seaId
+            WHERE [LocalEducationAgencyId] = @leaId;
+            """,
+            new SqlParameter("@seaDocumentId", seaDocumentId),
+            new SqlParameter("@seaId", 100L),
+            new SqlParameter("@leaId", 500L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    [Test]
     public async Task It_adds_ancestor_tuples_when_an_LEA_parent_LEA_FK_transitions_from_null_to_a_value()
     {
         // Mirrors the SEA-branch NULL→value transition on the ParentLocalEducationAgency_* FK pair.
