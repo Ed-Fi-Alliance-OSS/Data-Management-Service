@@ -860,6 +860,84 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
             );
     }
 
+    [Test]
+    public async Task It_adds_ancestor_tuples_when_an_OrganizationDepartment_parent_FK_transitions_from_null_to_a_value()
+    {
+        // Pins the null→value transition on OrganizationDepartment's abstract-parent column
+        // (`ParentEducationOrganization_EducationOrganizationId`). The LEA tests structurally cover
+        // the predicate template against subtype-scoped columns; this test exercises it against the
+        // unique abstract-column resolution.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        await InsertOrganizationDepartmentAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000800"),
+            organizationDepartmentId: 800,
+            nameOfInstitution: "Orphan OrgDept"
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."OrganizationDepartment"
+            SET "ParentEducationOrganization_DocumentId" = @parentDocumentId,
+                "ParentEducationOrganization_EducationOrganizationId" = @parentId
+            WHERE "OrganizationDepartmentId" = @organizationDepartmentId;
+            """,
+            new NpgsqlParameter("parentDocumentId", seaDocumentId),
+            new NpgsqlParameter("parentId", 100L),
+            new NpgsqlParameter("organizationDepartmentId", 800L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 800L),
+                    (Source: 800L, Target: 800L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_removes_ancestor_tuples_when_an_OrganizationDepartment_parent_FK_transitions_from_a_value_to_null()
+    {
+        // Pins the value→null transition on OrganizationDepartment's abstract-parent column to
+        // exercise the DELETE-half predicate `(NEW.X IS NULL OR OLD.X <> NEW.X)` against the
+        // abstract-column resolution.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        await InsertOrganizationDepartmentAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000800"),
+            organizationDepartmentId: 800,
+            nameOfInstitution: "Test OrgDept",
+            parentEducationOrganizationDocumentId: seaDocumentId,
+            parentEducationOrganizationEducationOrganizationId: 100
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."OrganizationDepartment"
+            SET "ParentEducationOrganization_DocumentId" = NULL,
+                "ParentEducationOrganization_EducationOrganizationId" = NULL
+            WHERE "OrganizationDepartmentId" = @organizationDepartmentId;
+            """,
+            new NpgsqlParameter("organizationDepartmentId", 800L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples.Should().BeEquivalentTo(new[] { (Source: 100L, Target: 100L), (Source: 800L, Target: 800L) });
+    }
+
     // ── Delete scenarios (regression coverage; not part of canonical AC) ──
 
     [Test]

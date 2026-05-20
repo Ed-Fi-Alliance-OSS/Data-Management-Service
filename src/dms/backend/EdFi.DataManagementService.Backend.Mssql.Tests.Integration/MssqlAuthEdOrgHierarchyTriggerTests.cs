@@ -869,6 +869,84 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             );
     }
 
+    [Test]
+    public async Task It_adds_ancestor_tuples_when_an_OrganizationDepartment_parent_FK_transitions_from_null_to_a_value()
+    {
+        // Pins the null→value transition on OrganizationDepartment's abstract-parent column
+        // (`ParentEducationOrganization_EducationOrganizationId`). The LEA tests structurally cover
+        // the predicate template against subtype-scoped columns; this test exercises it against the
+        // unique abstract-column resolution in the MERGE half.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        await InsertOrganizationDepartmentAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000800"),
+            organizationDepartmentId: 800,
+            nameOfInstitution: "Orphan OrgDept"
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[OrganizationDepartment]
+            SET [ParentEducationOrganization_DocumentId] = @parentDocumentId,
+                [ParentEducationOrganization_EducationOrganizationId] = @parentId
+            WHERE [OrganizationDepartmentId] = @organizationDepartmentId;
+            """,
+            new SqlParameter("@parentDocumentId", seaDocumentId),
+            new SqlParameter("@parentId", 100L),
+            new SqlParameter("@organizationDepartmentId", 800L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 800L),
+                    (Source: 800L, Target: 800L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_removes_ancestor_tuples_when_an_OrganizationDepartment_parent_FK_transitions_from_a_value_to_null()
+    {
+        // Pins the value→null transition on OrganizationDepartment's abstract-parent column to
+        // exercise the DELETE-half predicate `(new.X IS NULL OR old.X <> new.X)` against the
+        // abstract-column resolution.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        await InsertOrganizationDepartmentAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000800"),
+            organizationDepartmentId: 800,
+            nameOfInstitution: "Test OrgDept",
+            parentEducationOrganizationDocumentId: seaDocumentId,
+            parentEducationOrganizationEducationOrganizationId: 100
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[OrganizationDepartment]
+            SET [ParentEducationOrganization_DocumentId] = NULL,
+                [ParentEducationOrganization_EducationOrganizationId] = NULL
+            WHERE [OrganizationDepartmentId] = @organizationDepartmentId;
+            """,
+            new SqlParameter("@organizationDepartmentId", 800L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples.Should().BeEquivalentTo(new[] { (Source: 100L, Target: 100L), (Source: 800L, Target: 800L) });
+    }
+
     // ── Delete scenarios (regression coverage; not part of canonical AC) ──
 
     [Test]
@@ -1065,6 +1143,140 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
                     (Source: 200L, Target: 500L),
                     (Source: 300L, Target: 300L),
                     (Source: 300L, Target: 600L),
+                    (Source: 500L, Target: 500L),
+                    (Source: 600L, Target: 600L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_creates_per_row_ancestor_tuples_for_multi_row_insert_with_mixed_parent_presence()
+    {
+        // Pins the statement-level trigger's handling of NULL-parent rows interleaved with
+        // parent-bearing rows. The source subqueries inner-join `inserted` to `auth.*` on the
+        // parent FK column, so NULL parents are silently filtered by the join predicate. A
+        // regression that flipped the INNER JOIN to a LEFT JOIN (or otherwise emitted NULL-target
+        // tuples) would produce a spurious cross-pair on the orphan row and slip past the existing
+        // all-parented bulk test.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        var lea1DocumentId = await InsertDocumentAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            _localEducationAgencyResourceKeyId
+        );
+        var lea2DocumentId = await InsertDocumentAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000600"),
+            _localEducationAgencyResourceKeyId
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[LocalEducationAgency] (
+                [DocumentId],
+                [LocalEducationAgencyId],
+                [LocalEducationAgencyCategoryDescriptor_DescriptorId],
+                [NameOfInstitution],
+                [StateEducationAgency_DocumentId],
+                [StateEducationAgency_StateEducationAgencyId]
+            )
+            VALUES
+                (@lea1DocumentId, 500, @categoryDocumentId, 'Parented LEA', @seaDocumentId, 100),
+                (@lea2DocumentId, 600, @categoryDocumentId, 'Orphan LEA', NULL, NULL);
+            """,
+            new SqlParameter("@lea1DocumentId", lea1DocumentId),
+            new SqlParameter("@lea2DocumentId", lea2DocumentId),
+            new SqlParameter("@seaDocumentId", seaDocumentId),
+            new SqlParameter("@categoryDocumentId", _localEducationAgencyCategoryDescriptorDocumentId)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        // LEA 500 inherits ancestry from SEA 100; LEA 600 has only its self-tuple. The absence of
+        // (100, 600) is the negative-path check for the trigger's join on the NULL parent column.
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                    (Source: 600L, Target: 600L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_rewrites_ancestor_tuples_for_multi_row_update_with_mixed_null_and_value_transitions()
+    {
+        // Pins the DELETE-half row correlation when `new.X` is NULL on one row of a multi-row
+        // UPDATE. The trigger's DELETE predicate `WHERE old.[X] IS NOT NULL AND (new.[X] IS NULL OR
+        // old.[X] <> new.[X])` is exercised in single-row form by the value→null transition test,
+        // and the multi-row correlation is exercised by the value→value bulk test; this test pins
+        // the intersection (multi-row × value→null on some rows).
+        var sea1DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "SEA 1"
+        );
+        var sea2DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000200"),
+            200,
+            "SEA 2"
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "LEA 1",
+            parentStateEducationAgencyDocumentId: sea1DocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000600"),
+            localEducationAgencyId: 600,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "LEA 2",
+            parentStateEducationAgencyDocumentId: sea1DocumentId,
+            parentStateEducationAgencyId: 100
+        );
+
+        // Single multi-row UPDATE: LEA 500 → SEA 2, LEA 600 → NULL. The VALUES-derived join feeds
+        // a NULL pair to LEA 600 via CAST(NULL AS bigint) so the column types are unambiguous.
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE lea
+            SET [StateEducationAgency_DocumentId] = s.NewSeaDocumentId,
+                [StateEducationAgency_StateEducationAgencyId] = s.NewSeaId
+            FROM [edfi].[LocalEducationAgency] AS lea
+            INNER JOIN (
+                VALUES
+                    (@lea1Id, @sea2DocumentId, CAST(200 AS bigint)),
+                    (@lea2Id, CAST(NULL AS bigint), CAST(NULL AS bigint))
+            ) AS s(LeaId, NewSeaDocumentId, NewSeaId)
+                ON lea.[LocalEducationAgencyId] = s.LeaId;
+            """,
+            new SqlParameter("@lea1Id", 500L),
+            new SqlParameter("@lea2Id", 600L),
+            new SqlParameter("@sea2DocumentId", sea2DocumentId)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        // LEA 500 inherits ancestry from SEA 2 only; LEA 600 is orphaned. The old SEA 1 ancestry of
+        // both LEAs is gone, and the absence of (200, 600) is the negative-path check for the
+        // trigger's join on the NULL new parent column in the MERGE half.
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 200L, Target: 200L),
+                    (Source: 200L, Target: 500L),
                     (Source: 500L, Target: 500L),
                     (Source: 600L, Target: 600L),
                 }
