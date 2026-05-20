@@ -578,7 +578,8 @@ public class ApiClientModule : IEndpointModule
                             application.ClaimSetName,
                             namespacePrefixes,
                             string.Join(",", application.EducationOrganizationIds),
-                            [.. apiClient.DmsInstanceIds]
+                            [.. apiClient.DmsInstanceIds],
+                            apiClient.IsApproved
                         );
                         logger.LogWarning(
                             "Successfully recreated client {ClientId} in identity provider after database delete failure. CLIENT SECRET HAS BEEN CHANGED - manual intervention required.",

@@ -376,8 +376,11 @@ public class DmsInstanceRepository(
                 SELECT application.*, aeo.EducationOrganizationId, acdi.DmsInstanceId
                 FROM (
                     SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId,
-                        -- Enabled: application is enabled only if ALL its ApiClients are approved (application-wide, not per-DmsInstance)
-                        (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true) FROM dmscs.ApiClient ac2 WHERE ac2.ApplicationId = a.Id) AS Enabled
+                        -- Enabled: application is enabled only if ALL its ApiClients linked to this DMS instance are approved
+                        (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true)
+                         FROM dmscs.ApiClient ac2
+                         JOIN dmscs.ApiClientDmsInstance acdi2 ON acdi2.ApiClientId = ac2.Id
+                         WHERE ac2.ApplicationId = a.Id AND acdi2.DmsInstanceId = @DmsInstanceId) AS Enabled
                     FROM dmscs.ApiClientDmsInstance acdi
                     JOIN dmscs.ApiClient ac ON ac.Id = acdi.ApiClientId
                     JOIN dmscs.Application a ON a.Id = ac.ApplicationId
