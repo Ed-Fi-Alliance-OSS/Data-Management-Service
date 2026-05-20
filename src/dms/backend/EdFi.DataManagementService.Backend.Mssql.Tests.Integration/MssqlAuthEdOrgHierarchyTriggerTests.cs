@@ -500,6 +500,125 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         tuples.Should().BeEquivalentTo(new[] { (Source: 100L, Target: 100L), (Source: 500L, Target: 500L) });
     }
 
+    [Test]
+    public async Task It_rewrites_ancestor_tuples_when_an_ESC_parent_FK_is_changed_to_another_SEA()
+    {
+        // Pins that the EducationServiceCenter AuthHierarchy_Update trigger fires and correlates
+        // its UNION-of-parents (SEA branch) on update. The LEA update scenarios don't cover this
+        // codepath — ESC has its own emitted statement-level trigger with a SEA-specific source
+        // predicate and its own `inserted`/`deleted` correlation.
+        var sea1DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "SEA 1"
+        );
+        var sea2DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000200"),
+            200,
+            "SEA 2"
+        );
+        await InsertEducationServiceCenterAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000300"),
+            educationServiceCenterId: 300,
+            nameOfInstitution: "Test ESC",
+            parentStateEducationAgencyDocumentId: sea1DocumentId,
+            parentStateEducationAgencyId: 100
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[EducationServiceCenter]
+            SET [StateEducationAgency_DocumentId] = @newSeaDocumentId,
+                [StateEducationAgency_StateEducationAgencyId] = @newSeaId
+            WHERE [EducationServiceCenterId] = @escId;
+            """,
+            new SqlParameter("@newSeaDocumentId", sea2DocumentId),
+            new SqlParameter("@newSeaId", 200L),
+            new SqlParameter("@escId", 300L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 200L, Target: 200L),
+                    (Source: 200L, Target: 300L),
+                    (Source: 300L, Target: 300L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_rewrites_ancestor_tuples_when_a_School_parent_FK_is_changed_to_another_LEA()
+    {
+        // Pins that the School AuthHierarchy_Update trigger fires on update. School has only one
+        // parent FK (parent LEA) so this is the single branch of its UNION-of-parents.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        var lea1DocumentId = await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
+            localEducationAgencyId: 400,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "LEA 1",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        var lea2DocumentId = await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "LEA 2",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        await InsertSchoolAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000700"),
+            schoolId: 700,
+            nameOfInstitution: "Test School",
+            parentLocalEducationAgencyDocumentId: lea1DocumentId,
+            parentLocalEducationAgencyId: 400
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[School]
+            SET [LocalEducationAgency_DocumentId] = @newLeaDocumentId,
+                [LocalEducationAgency_LocalEducationAgencyId] = @newLeaId
+            WHERE [SchoolId] = @schoolId;
+            """,
+            new SqlParameter("@newLeaDocumentId", lea2DocumentId),
+            new SqlParameter("@newLeaId", 500L),
+            new SqlParameter("@schoolId", 700L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        // The shared SEA ancestor (100) remains the school's ancestor through the new LEA path,
+        // so (100, 700) stays. LEA1's ancestry of the school is removed; LEA2's is added.
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 400L),
+                    (Source: 100L, Target: 500L),
+                    (Source: 100L, Target: 700L),
+                    (Source: 400L, Target: 400L),
+                    (Source: 500L, Target: 500L),
+                    (Source: 500L, Target: 700L),
+                    (Source: 700L, Target: 700L),
+                }
+            );
+    }
+
     // ── Delete scenarios (regression coverage; not part of canonical AC) ──
 
     [Test]
@@ -623,6 +742,11 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
     [Test]
     public async Task It_rewrites_ancestor_tuples_for_multi_row_update_in_one_statement()
     {
+        // Heterogeneous new parents per row are required to pin the trigger's row-correlation
+        // predicate (`WHERE d1.[LocalEducationAgencyId] = d2.[LocalEducationAgencyId]`). With
+        // identical new parents, a regression that cross-joined the `inserted`/`deleted` derived
+        // sets would still produce the expected tuples; assigning a different new SEA per LEA in a
+        // single statement forces each LEA to inherit only its own new ancestor.
         var sea1DocumentId = await InsertStateEducationAgencyAsync(
             Guid.Parse("c0000000-0000-0000-0000-000000000100"),
             100,
@@ -632,6 +756,11 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             Guid.Parse("c0000000-0000-0000-0000-000000000200"),
             200,
             "SEA 2"
+        );
+        var sea3DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000300"),
+            300,
+            "SEA 3"
         );
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
@@ -650,23 +779,32 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             parentStateEducationAgencyId: 100
         );
 
+        // Single multi-row UPDATE assigns LEA 500 → SEA2 and LEA 600 → SEA3 via a VALUES-derived
+        // join so per-row new parents differ.
         await _database.ExecuteNonQueryAsync(
             """
-            UPDATE [edfi].[LocalEducationAgency]
-            SET [StateEducationAgency_DocumentId] = @newSeaDocumentId,
-                [StateEducationAgency_StateEducationAgencyId] = @newSeaId
-            WHERE [LocalEducationAgencyId] IN (@lea1Id, @lea2Id);
+            UPDATE lea
+            SET [StateEducationAgency_DocumentId] = s.NewSeaDocumentId,
+                [StateEducationAgency_StateEducationAgencyId] = s.NewSeaId
+            FROM [edfi].[LocalEducationAgency] AS lea
+            INNER JOIN (
+                VALUES
+                    (@lea1Id, @sea2DocumentId, CAST(200 AS bigint)),
+                    (@lea2Id, @sea3DocumentId, CAST(300 AS bigint))
+            ) AS s(LeaId, NewSeaDocumentId, NewSeaId)
+                ON lea.[LocalEducationAgencyId] = s.LeaId;
             """,
-            new SqlParameter("@newSeaDocumentId", sea2DocumentId),
-            new SqlParameter("@newSeaId", 200L),
             new SqlParameter("@lea1Id", 500L),
-            new SqlParameter("@lea2Id", 600L)
+            new SqlParameter("@lea2Id", 600L),
+            new SqlParameter("@sea2DocumentId", sea2DocumentId),
+            new SqlParameter("@sea3DocumentId", sea3DocumentId)
         );
 
         var tuples = await GetAuthTuplesAsync();
 
-        // Both LEAs' SEA1 ancestry must be removed and SEA2 ancestry added — verifying the
-        // trigger's combined `inserted`/`deleted` set-based join over a multi-row statement.
+        // LEA1 (500) inherits ancestry from SEA2 only; LEA2 (600) from SEA3 only. The absence of
+        // the cross-pairs (200, 600) and (300, 500) is the negative-path check for the trigger's
+        // row-correlation predicate over the multi-row `inserted`/`deleted` pseudo-tables.
         tuples
             .Should()
             .BeEquivalentTo(
@@ -675,7 +813,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
                     (Source: 100L, Target: 100L),
                     (Source: 200L, Target: 200L),
                     (Source: 200L, Target: 500L),
-                    (Source: 200L, Target: 600L),
+                    (Source: 300L, Target: 300L),
+                    (Source: 300L, Target: 600L),
                     (Source: 500L, Target: 500L),
                     (Source: 600L, Target: 600L),
                 }
