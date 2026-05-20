@@ -493,6 +493,119 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
     }
 
     [Test]
+    public async Task It_adds_ancestor_tuples_when_an_LEA_parent_LEA_FK_transitions_from_null_to_a_value()
+    {
+        // Mirrors the SEA-branch NULL→value transition on the ParentLocalEducationAgency_* FK pair.
+        // The trigger emits one structurally parallel `((OLD.X IS NULL AND NEW.X IS NOT NULL) OR
+        // OLD.X <> NEW.X)` predicate per parent FK; SEA-only coverage leaves a defect in the
+        // parent-LEA branch's predicate undetected.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
+            localEducationAgencyId: 400,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Parent LEA",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Orphan Child LEA"
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."LocalEducationAgency"
+            SET "ParentLocalEducationAgency_DocumentId" = @parentLeaDocumentId,
+                "ParentLocalEducationAgency_LocalEducationAgencyId" = @parentLeaId
+            WHERE "LocalEducationAgencyId" = @leaId;
+            """,
+            new NpgsqlParameter("parentLeaDocumentId", parentLeaDocumentId),
+            new NpgsqlParameter("parentLeaId", 400L),
+            new NpgsqlParameter("leaId", 500L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        // Both the direct parent-LEA ancestry (400 → 500) and the transitive SEA ancestry through
+        // the parent LEA (100 → 500) are added.
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 400L),
+                    (Source: 100L, Target: 500L),
+                    (Source: 400L, Target: 400L),
+                    (Source: 400L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_removes_ancestor_tuples_when_an_LEA_parent_LEA_FK_transitions_from_a_value_to_null()
+    {
+        // Mirrors the SEA-branch value→NULL transition on the ParentLocalEducationAgency_* FK pair
+        // to pin the per-branch `(NEW.X IS NULL OR OLD.X <> NEW.X)` predicate in the DELETE half
+        // of the trigger.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
+            localEducationAgencyId: 400,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Parent LEA",
+            parentStateEducationAgencyDocumentId: seaDocumentId,
+            parentStateEducationAgencyId: 100
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Child LEA",
+            parentLocalEducationAgencyDocumentId: parentLeaDocumentId,
+            parentLocalEducationAgencyId: 400
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."LocalEducationAgency"
+            SET "ParentLocalEducationAgency_DocumentId" = NULL,
+                "ParentLocalEducationAgency_LocalEducationAgencyId" = NULL
+            WHERE "LocalEducationAgencyId" = @leaId;
+            """,
+            new NpgsqlParameter("leaId", 500L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        // Both the direct parent-LEA → child (400, 500) and the transitive SEA → child (100, 500)
+        // are removed; SEA/parent-LEA self/ancestor tuples and child LEA self-tuple remain.
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 400L),
+                    (Source: 400L, Target: 400L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    [Test]
     public async Task It_rewrites_ancestor_tuples_when_an_ESC_parent_FK_is_changed_to_another_SEA()
     {
         // Pins that the EducationServiceCenter AuthHierarchy_Update trigger fires and correlates
