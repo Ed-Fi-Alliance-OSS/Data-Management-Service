@@ -222,5 +222,45 @@
       "Run the focused @relational-backend E2E scenario added for Slice 3 after rebuilding the dms-local stack."
     ],
     "completed": true
+  },
+  {
+    "category": "core-middleware",
+    "description": "High: Relational POST create requests still use legacy Core authorization middleware instead of the backend-planned relationship authorization lane, so inverted EdOrg-only POST create can be blocked by the old staged 501 and empty-claim or known-but-not-enabled POST precedence can be shaped before the repository preflight owns it.",
+    "acceptance-criteria": [
+      "ResourceActionAuthorizationMiddleware treats relational POST create requests as backend-planned authorization requests for Slice 3, so RelationshipsWithEdOrgsOnlyInverted is not rejected by the legacy DMS-1056 staged 501 path before reaching the repository.",
+      "ProvideAuthorizationFiltersMiddleware preserves raw authorization strategy names with empty filters for relational POST requests, matching the relational GET/DELETE behavior, and does not resolve legacy filter providers or throw the legacy no-EducationOrganization-claims authorization exception.",
+      "UpsertHandler continues to pass RelationalAuthorizationContext from ClientAuthorizations and raw AuthorizationStrategyEvaluators to the repository, so repository POST preflight remains the owner of security-configuration, known-but-not-enabled, no-claims, and supported EdOrg-only planning outcomes before reference resolution or target lookup.",
+      "Core unit tests cover relational POST with RelationshipsWithEdOrgsOnlyInverted, relational POST with empty EducationOrganization claims, and relational POST with supported EdOrg plus a known-but-not-enabled strategy reaching the backend-planned lane without middleware-shaped 501 or legacy 403 responses.",
+      "Existing non-relational authorization middleware behavior and relational GET/DELETE backend-planned behavior remain unchanged.",
+      "A focused relational-backend E2E scenario proves POST create-new succeeds through RelationshipsWithEdOrgsOnlyInverted, or through an OR set where inverted is the authorizing strategy."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core/Middleware/ResourceActionAuthorizationMiddleware.cs and src/dms/core/EdFi.DataManagementService.Core/Middleware/ProvideAuthorizationFiltersMiddleware.cs for relational POST inclusion in the backend-planned authorization lane.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"ResourceActionAuthorizationMiddlewareTests|ProvideAuthorizationFiltersMiddlewareTests|UpsertHandlerTests\"",
+      "From src/dms/tests/EdFi.DataManagementService.Tests.E2E, run pwsh ./teardown-local-dms.ps1 and then pwsh ./setup-local-dms.ps1 before the local E2E run.",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=relational-backend&FullyQualifiedName~RelationshipsWithEdOrgsOnly\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "proposed-value-extraction",
+    "description": "High: Proposed-value extraction treats any missing/null subject in any OR strategy as an immediate relationship denial, so POST create can reject a request even when another configured EdOrg-only relationship strategy has all required proposed values and would authorize.",
+    "acceptance-criteria": [
+      "A missing/null proposed subject in one relationship strategy does not short-circuit evaluation of other OR strategies that have all required proposed values.",
+      "POST create succeeds and persists normally when at least one complete proposed EdOrg-only strategy authorizes, even if another configured strategy has proposed element-required metadata.",
+      "When no OR strategy authorizes, the relationship failure preserves proposed element-required metadata for incomplete strategies and no-relationship metadata for complete-but-unauthorized strategies in configured-strategy order.",
+      "When every configured strategy is incomplete because required proposed values are missing/null, the operation still returns relationship-not-authorized/403 before persistence and does not execute create-side inserts.",
+      "The fix preserves multiple subjects within one strategy as AND semantics and multiple strategies as OR semantics for both normal and inverted EdOrg-only strategies.",
+      "No proposed authorization SQL parameter is left without a deterministic runtime value or explicit SQL null binding, and token EdOrg IDs remain parameterized."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs for OR-aware handling of incomplete strategies instead of whole-plan short-circuiting on the first missing proposed value.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs and proposed authorization SQL tests for null/missing proposed parameter handling that preserves OR semantics.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter Default_Relational_Write_Executor",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalWriteNoProfilePersister",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter RelationalPost",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter RelationalPost"
+    ],
+    "completed": false
   }
 ]
