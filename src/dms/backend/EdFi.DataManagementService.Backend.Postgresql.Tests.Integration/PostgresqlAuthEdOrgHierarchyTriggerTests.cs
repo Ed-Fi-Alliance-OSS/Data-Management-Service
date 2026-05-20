@@ -184,6 +184,73 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
     }
 
     [Test]
+    public async Task It_creates_ancestor_tuples_when_an_LEA_is_inserted_under_only_an_ESC()
+    {
+        // Exercises the ESC branch of the trigger's UNION-of-parents in isolation. Scenarios 2 and
+        // 5 pin the SEA branch and the all-three case; a defect that only broke the ESC branch
+        // would slip past both.
+        var escDocumentId = await InsertEducationServiceCenterAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000300"),
+            educationServiceCenterId: 300,
+            nameOfInstitution: "Standalone ESC"
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "ESC-only LEA",
+            parentEducationServiceCenterDocumentId: escDocumentId,
+            parentEducationServiceCenterId: 300
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 300L, Target: 300L),
+                    (Source: 300L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_creates_ancestor_tuples_when_an_LEA_is_inserted_under_only_a_parent_LEA()
+    {
+        // Exercises the parent-LEA branch of the trigger's UNION-of-parents in isolation.
+        var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
+            localEducationAgencyId: 400,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Parent LEA"
+        );
+        await InsertLocalEducationAgencyAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
+            localEducationAgencyId: 500,
+            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            nameOfInstitution: "Parent-LEA-only Child LEA",
+            parentLocalEducationAgencyDocumentId: parentLeaDocumentId,
+            parentLocalEducationAgencyId: 400
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 400L, Target: 400L),
+                    (Source: 400L, Target: 500L),
+                    (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    [Test]
     public async Task It_creates_ancestor_tuples_for_each_present_parent_FK_when_an_LEA_has_multiple_parents()
     {
         var seaDocumentId = await InsertStateEducationAgencyAsync(
