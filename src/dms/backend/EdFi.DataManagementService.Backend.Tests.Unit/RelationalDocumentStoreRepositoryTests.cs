@@ -2123,12 +2123,22 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 "limit"
             );
         capturedKeyset.Plan.PageDocumentIdSql.Should().Contain("LocalEducationAgencyId");
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain(
+                "r.\"LocalEducationAgencyId\" = ANY(@ClaimEducationOrganizationIds) OR r.\"LocalEducationAgencyId\" IN (SELECT"
+            );
         capturedKeyset.Plan.PageDocumentIdSql.Should().Contain("TargetEducationOrganizationId");
         capturedKeyset
             .Plan.PageDocumentIdSql.Should()
             .Contain("SourceEducationOrganizationId")
             .And.Contain("@ClaimEducationOrganizationIds");
         capturedKeyset.Plan.TotalCountSql.Should().NotBeNull();
+        capturedKeyset
+            .Plan.TotalCountSql.Should()
+            .Contain(
+                "r.\"LocalEducationAgencyId\" = ANY(@ClaimEducationOrganizationIds) OR r.\"LocalEducationAgencyId\" IN (SELECT"
+            );
         capturedKeyset.Plan.TotalCountSql.Should().Contain("@ClaimEducationOrganizationIds");
         A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .MustHaveHappenedOnceExactly();
@@ -2210,6 +2220,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 "limit"
             );
         capturedKeyset.Plan.PageDocumentIdSql.Should().Contain("LocalEducationAgencyId");
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain(
+                "r.\"LocalEducationAgencyId\" = ANY(@ClaimEducationOrganizationIds) OR r.\"LocalEducationAgencyId\" IN (SELECT"
+            );
         capturedKeyset.Plan.PageDocumentIdSql.Should().Contain("SourceEducationOrganizationId");
         capturedKeyset
             .Plan.PageDocumentIdSql.Should()
@@ -2294,6 +2309,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .Be(2);
         CountOrdinalOccurrences(pageDocumentIdSql, "r.\"LocalEducationAgencyId\" IN (SELECT").Should().Be(2);
+        CountOrdinalOccurrences(
+                pageDocumentIdSql,
+                "r.\"LocalEducationAgencyId\" = ANY(@ClaimEducationOrganizationIds)"
+            )
+            .Should()
+            .Be(2);
         pageDocumentIdSql.Should().Contain(" OR ");
     }
 
@@ -2372,6 +2393,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .Be(1);
         CountOrdinalOccurrences(pageDocumentIdSql, "r.\"SchoolId\" IN (SELECT").Should().Be(1);
+        CountOrdinalOccurrences(pageDocumentIdSql, "r.\"SchoolId\" = ANY(@ClaimEducationOrganizationIds)")
+            .Should()
+            .Be(1);
         pageDocumentIdSql
             .Should()
             .Contain("WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
@@ -2454,13 +2478,17 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedKeyset.Plan.PageDocumentIdSql.Should().Contain(" AND ");
         capturedKeyset
             .Plan.PageDocumentIdSql.Should()
-            .Contain(
+            .Contain("r.\"CourseOffering_SchoolReferenceSchoolId\" = ANY(@ClaimEducationOrganizationIds) OR ")
+            .And.Contain(
                 $"r.\"CourseOffering_SchoolReferenceSchoolId\" IN (SELECT t0.\"{expectedSubjectFragment}\""
             )
             .And.Contain($"WHERE t0.\"{expectedClaimFilterFragment}\" = ANY(@ClaimEducationOrganizationIds)");
         capturedKeyset
             .Plan.PageDocumentIdSql.Should()
             .Contain(
+                "r.\"CourseOffering_SessionReferenceSchoolId\" = ANY(@ClaimEducationOrganizationIds) OR "
+            )
+            .And.Contain(
                 $"r.\"CourseOffering_SessionReferenceSchoolId\" IN (SELECT t1.\"{expectedSubjectFragment}\""
             )
             .And.Contain($"WHERE t1.\"{expectedClaimFilterFragment}\" = ANY(@ClaimEducationOrganizationIds)");

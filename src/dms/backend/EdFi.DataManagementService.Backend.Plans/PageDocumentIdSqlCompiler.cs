@@ -798,6 +798,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 rootTable,
                 strategy.Kind,
                 strategy.Subjects[subjectIndex],
+                strategy.AllowsDirectClaimMatch,
                 authorizationClaimParameterization,
                 aliasAllocator.AllocateNext()
             );
@@ -809,6 +810,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         DbTableName rootTable,
         PageDocumentIdAuthorizationStrategyKind strategyKind,
         PageDocumentIdAuthorizationSubject subject,
+        bool allowsDirectClaimMatch,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
@@ -838,6 +840,53 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             ),
         };
 
+        if (allowsDirectClaimMatch)
+        {
+            writer.Append("(");
+            AppendRootSubjectDirectClaimMatchSql(writer, subject, authorizationClaimParameterization);
+            writer.Append(" OR ");
+            AppendRootSubjectHierarchyMatchSql(
+                writer,
+                subject,
+                resourceEdOrgColumn,
+                claimFilterColumn,
+                authorizationClaimParameterization,
+                authAlias
+            );
+            writer.Append(")");
+            return;
+        }
+
+        AppendRootSubjectHierarchyMatchSql(
+            writer,
+            subject,
+            resourceEdOrgColumn,
+            claimFilterColumn,
+            authorizationClaimParameterization,
+            authAlias
+        );
+    }
+
+    private static void AppendRootSubjectDirectClaimMatchSql(
+        SqlWriter writer,
+        PageDocumentIdAuthorizationSubject subject,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        writer.Append($"{_rootAlias}.");
+        writer.AppendQuoted(subject.Column.Value);
+        AppendClaimFilterSql(writer, authorizationClaimParameterization);
+    }
+
+    private static void AppendRootSubjectHierarchyMatchSql(
+        SqlWriter writer,
+        PageDocumentIdAuthorizationSubject subject,
+        DbColumnName resourceEdOrgColumn,
+        DbColumnName claimFilterColumn,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        string authAlias
+    )
+    {
         writer.Append($"{_rootAlias}.");
         writer.AppendQuoted(subject.Column.Value);
         writer.Append(" IN (SELECT ");
