@@ -816,6 +816,67 @@ public class ApiClientModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         }
+
+        [Test]
+        public async Task It_syncs_rollback_client_uuid_when_database_update_fails()
+        {
+            // Arrange
+            var updatedClientUuid = Guid.NewGuid();
+            var rollbackClientUuid = Guid.NewGuid();
+            List<ApiClientUpdateCommand> updateCommands = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(updatedClientUuid),
+                    new ClientUpdateResult.Success(rollbackClientUuid)
+                );
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Invokes(call =>
+                {
+                    updateCommands.Add(call.GetArgument<ApiClientUpdateCommand>(0)!);
+                })
+                .ReturnsNextFromSequence(
+                    new ApiClientUpdateResult.FailureUnknown("Database error"),
+                    new ApiClientUpdateResult.Success()
+                );
+
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v2/apiClients/1",
+                new StringContent(
+                    """
+                    {
+                      "id": 1,
+                      "applicationId": 1,
+                      "name": "Updated",
+                      "isApproved": true,
+                      "dmsInstanceIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            updateCommands.Should().HaveCount(2);
+            updateCommands[0].ClientUuid.Should().Be(updatedClientUuid);
+            updateCommands[1].ClientUuid.Should().Be(rollbackClientUuid);
+        }
     }
 
     [TestFixture]
