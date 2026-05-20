@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using NUnit.Framework;
@@ -162,5 +163,130 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
                     + "PG `CREATE OR REPLACE VIEW` and MSSQL `CREATE OR ALTER VIEW` silently overwrite duplicates, "
                     + "so a re-emission from an extension would not error and would only surface here."
             );
+    }
+
+    [Test]
+    public void It_should_serialize_auth_table_definition_in_relational_model_manifest_for_pgsql()
+    {
+        AssertManifestSerializesAuthTable("relational-model.pgsql.manifest.json");
+    }
+
+    [Test]
+    public void It_should_serialize_auth_table_definition_in_relational_model_manifest_for_mssql()
+    {
+        AssertManifestSerializesAuthTable("relational-model.mssql.manifest.json");
+    }
+
+    [Test]
+    public void It_should_serialize_each_auth_view_definition_in_relational_model_manifest_for_pgsql()
+    {
+        AssertManifestSerializesPeopleAuthViews("relational-model.pgsql.manifest.json");
+    }
+
+    [Test]
+    public void It_should_serialize_each_auth_view_definition_in_relational_model_manifest_for_mssql()
+    {
+        AssertManifestSerializesPeopleAuthViews("relational-model.mssql.manifest.json");
+    }
+
+    private void AssertManifestSerializesAuthTable(string manifestFileName)
+    {
+        var authObjects = ReadAuthObjects(manifestFileName);
+
+        // Pins that the manifest snapshots the auth EdOrg-to-EdOrg table's columns and PK so a
+        // future change to either is detected by this snapshot (not only by the SQL goldens).
+        // Per DMS-1096 AC `19-auth-verification-harness.md`, both snapshots must cover auth.
+        authObjects.TryGetProperty("table", out var authTable).Should().BeTrue();
+        authTable.GetProperty("table").GetProperty("schema").GetString().Should().Be("auth");
+        authTable
+            .GetProperty("table")
+            .GetProperty("name")
+            .GetString()
+            .Should()
+            .Be("EducationOrganizationIdToEducationOrganizationId");
+
+        var columns = authTable.GetProperty("columns");
+        columns
+            .GetArrayLength()
+            .Should()
+            .Be(2, "auth.EducationOrganizationIdToEducationOrganizationId has exactly two columns");
+        columns[0].GetProperty("name").GetString().Should().Be("SourceEducationOrganizationId");
+        columns[0].GetProperty("type").GetString().Should().Be("bigint");
+        columns[0].GetProperty("is_nullable").GetBoolean().Should().BeFalse();
+        columns[1].GetProperty("name").GetString().Should().Be("TargetEducationOrganizationId");
+        columns[1].GetProperty("type").GetString().Should().Be("bigint");
+        columns[1].GetProperty("is_nullable").GetBoolean().Should().BeFalse();
+
+        var primaryKey = authTable.GetProperty("primary_key");
+        primaryKey
+            .GetProperty("name")
+            .GetString()
+            .Should()
+            .Be("PK_EducationOrganizationIdToEducationOrganizationId");
+        primaryKey
+            .GetProperty("columns")
+            .EnumerateArray()
+            .Select(c => c.GetString())
+            .Should()
+            .Equal("SourceEducationOrganizationId", "TargetEducationOrganizationId");
+    }
+
+    private void AssertManifestSerializesPeopleAuthViews(string manifestFileName)
+    {
+        var authObjects = ReadAuthObjects(manifestFileName);
+
+        // Pins that the manifest snapshots each of the four hand-emitted people auth views, so a
+        // structural change (joins, output columns, source table, DISTINCT flag) flips the manifest
+        // golden — not only the SQL goldens. Drift between this section and
+        // `RelationalModelDdlEmitter.EmitPeopleAuthViews` is intentional schema review surface.
+        authObjects.TryGetProperty("views", out var views).Should().BeTrue();
+        var viewNames = views
+            .EnumerateArray()
+            .Select(v => v.GetProperty("view").GetProperty("name").GetString())
+            .ToArray();
+        viewNames
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    "EducationOrganizationIdToContactDocumentId",
+                    "EducationOrganizationIdToStaffDocumentId",
+                    "EducationOrganizationIdToStudentDocumentId",
+                    "EducationOrganizationIdToStudentDocumentIdThroughResponsibility",
+                },
+                "the four people auth views must each appear exactly once in alphabetical order"
+            );
+
+        // Staff has a UNION of two arms (assignment + employment); all others have one.
+        foreach (var view in views.EnumerateArray())
+        {
+            var name = view.GetProperty("view").GetProperty("name").GetString();
+            var armCount = view.GetProperty("arms").GetArrayLength();
+            if (name == "EducationOrganizationIdToStaffDocumentId")
+            {
+                armCount
+                    .Should()
+                    .Be(2, "Staff view unions over the assignment and employment association tables");
+            }
+            else
+            {
+                armCount.Should().Be(1, $"view '{name}' is single-arm");
+            }
+        }
+    }
+
+    private JsonElement ReadAuthObjects(string manifestFileName)
+    {
+        var manifestJson = ReadActual(manifestFileName);
+        using var document = JsonDocument.Parse(manifestJson);
+        document
+            .RootElement.TryGetProperty("auth_objects", out var authObjects)
+            .Should()
+            .BeTrue(
+                $"the relational-model manifest must include an `auth_objects` section when the auth EdOrg hierarchy is present ({manifestFileName})"
+            );
+        // JsonElement is a value type referencing the parent document; clone so it stays valid
+        // after the using block disposes the JsonDocument.
+        return authObjects.Clone();
     }
 }

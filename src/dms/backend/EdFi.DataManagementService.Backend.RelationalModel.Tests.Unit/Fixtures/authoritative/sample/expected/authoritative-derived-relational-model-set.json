@@ -51424,6 +51424,267 @@
       "identity_projection_columns": []
     }
   ],
+  "auth_objects": {
+    "table": {
+      "table": {
+        "schema": "auth",
+        "name": "EducationOrganizationIdToEducationOrganizationId"
+      },
+      "columns": [
+        {
+          "name": "SourceEducationOrganizationId",
+          "type": "bigint",
+          "is_nullable": false
+        },
+        {
+          "name": "TargetEducationOrganizationId",
+          "type": "bigint",
+          "is_nullable": false
+        }
+      ],
+      "primary_key": {
+        "name": "PK_EducationOrganizationIdToEducationOrganizationId",
+        "columns": [
+          "SourceEducationOrganizationId",
+          "TargetEducationOrganizationId"
+        ]
+      }
+    },
+    "views": [
+      {
+        "view": {
+          "schema": "auth",
+          "name": "EducationOrganizationIdToContactDocumentId"
+        },
+        "arms": [
+          {
+            "select_distinct": true,
+            "source": {
+              "alias": "edOrg",
+              "table": {
+                "schema": "auth",
+                "name": "EducationOrganizationIdToEducationOrganizationId"
+              }
+            },
+            "output_columns": [
+              {
+                "alias": "edOrg",
+                "column": "SourceEducationOrganizationId"
+              },
+              {
+                "alias": "sca",
+                "column": "Contact_DocumentId"
+              }
+            ],
+            "joins": [
+              {
+                "alias": "ssa",
+                "table": {
+                  "schema": "edfi",
+                  "name": "StudentSchoolAssociation"
+                },
+                "on": [
+                  {
+                    "left_alias": "edOrg",
+                    "left_column": "TargetEducationOrganizationId",
+                    "right_alias": "ssa",
+                    "right_column": "SchoolId_Unified"
+                  }
+                ]
+              },
+              {
+                "alias": "sca",
+                "table": {
+                  "schema": "edfi",
+                  "name": "StudentContactAssociation"
+                },
+                "on": [
+                  {
+                    "left_alias": "ssa",
+                    "left_column": "Student_DocumentId",
+                    "right_alias": "sca",
+                    "right_column": "Student_DocumentId"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "view": {
+          "schema": "auth",
+          "name": "EducationOrganizationIdToStaffDocumentId"
+        },
+        "arms": [
+          {
+            "select_distinct": false,
+            "source": {
+              "alias": "edOrg",
+              "table": {
+                "schema": "auth",
+                "name": "EducationOrganizationIdToEducationOrganizationId"
+              }
+            },
+            "output_columns": [
+              {
+                "alias": "edOrg",
+                "column": "SourceEducationOrganizationId"
+              },
+              {
+                "alias": "seoaa",
+                "column": "Staff_DocumentId"
+              }
+            ],
+            "joins": [
+              {
+                "alias": "seoaa",
+                "table": {
+                  "schema": "edfi",
+                  "name": "StaffEducationOrganizationAssignmentAssociation"
+                },
+                "on": [
+                  {
+                    "left_alias": "edOrg",
+                    "left_column": "TargetEducationOrganizationId",
+                    "right_alias": "seoaa",
+                    "right_column": "EducationOrganization_EducationOrganizationId"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "select_distinct": false,
+            "source": {
+              "alias": "edOrg",
+              "table": {
+                "schema": "auth",
+                "name": "EducationOrganizationIdToEducationOrganizationId"
+              }
+            },
+            "output_columns": [
+              {
+                "alias": "edOrg",
+                "column": "SourceEducationOrganizationId"
+              },
+              {
+                "alias": "seoea",
+                "column": "Staff_DocumentId"
+              }
+            ],
+            "joins": [
+              {
+                "alias": "seoea",
+                "table": {
+                  "schema": "edfi",
+                  "name": "StaffEducationOrganizationEmploymentAssociation"
+                },
+                "on": [
+                  {
+                    "left_alias": "edOrg",
+                    "left_column": "TargetEducationOrganizationId",
+                    "right_alias": "seoea",
+                    "right_column": "EducationOrganization_EducationOrganizationId"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "view": {
+          "schema": "auth",
+          "name": "EducationOrganizationIdToStudentDocumentId"
+        },
+        "arms": [
+          {
+            "select_distinct": true,
+            "source": {
+              "alias": "edOrg",
+              "table": {
+                "schema": "auth",
+                "name": "EducationOrganizationIdToEducationOrganizationId"
+              }
+            },
+            "output_columns": [
+              {
+                "alias": "edOrg",
+                "column": "SourceEducationOrganizationId"
+              },
+              {
+                "alias": "ssa",
+                "column": "Student_DocumentId"
+              }
+            ],
+            "joins": [
+              {
+                "alias": "ssa",
+                "table": {
+                  "schema": "edfi",
+                  "name": "StudentSchoolAssociation"
+                },
+                "on": [
+                  {
+                    "left_alias": "edOrg",
+                    "left_column": "TargetEducationOrganizationId",
+                    "right_alias": "ssa",
+                    "right_column": "SchoolId_Unified"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "view": {
+          "schema": "auth",
+          "name": "EducationOrganizationIdToStudentDocumentIdThroughResponsibility"
+        },
+        "arms": [
+          {
+            "select_distinct": true,
+            "source": {
+              "alias": "edOrg",
+              "table": {
+                "schema": "auth",
+                "name": "EducationOrganizationIdToEducationOrganizationId"
+              }
+            },
+            "output_columns": [
+              {
+                "alias": "edOrg",
+                "column": "SourceEducationOrganizationId"
+              },
+              {
+                "alias": "seora",
+                "column": "Student_DocumentId"
+              }
+            ],
+            "joins": [
+              {
+                "alias": "seora",
+                "table": {
+                  "schema": "edfi",
+                  "name": "StudentEducationOrganizationResponsibilityAssociation"
+                },
+                "on": [
+                  {
+                    "left_alias": "edOrg",
+                    "left_column": "TargetEducationOrganizationId",
+                    "right_alias": "seora",
+                    "right_column": "EducationOrganization_EducationOrganizationId"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
   "resource_details": [
     {
       "resource": {
