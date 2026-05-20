@@ -13,9 +13,14 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
 /// Runtime proof that the MSSQL identity-propagation trigger emitted for an upstream
-/// resource (<c>ClassPeriod</c>) reaches a stored child-collection binding
-/// (<c>BellScheduleClassPeriod</c>) and that the child stamp trigger then bumps the
-/// owning root document's (<c>BellSchedule</c>) <c>ContentVersion</c>.
+/// resource (<c>ClassPeriod</c>) reaches stored child-collection bindings and that the
+/// child stamp triggers then bump the owning root document's <c>ContentVersion</c>.
+/// Exercises two different child-collection referrers of the same
+/// <c>TR_ClassPeriod_PropagateIdentity</c> trigger
+/// (<c>BellScheduleClassPeriod</c> with owning root <c>BellSchedule</c>, and
+/// <c>SectionClassPeriod</c> with owning root <c>Section</c>) to demonstrate that the
+/// propagation fan-out is general across multiple child-collection referrers of the
+/// same target, not hardcoded to a single binding.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -92,7 +97,7 @@ public class MssqlChildBindingIdentityPropagationTests
             classPeriodSchoolId: SchoolId
         );
 
-        var initialContentVersion = await QueryBellScheduleContentVersionAsync(bellScheduleDocumentId);
+        var initialContentVersion = await QueryDocumentContentVersionAsync(bellScheduleDocumentId);
         var childRowsBefore = await QueryBellScheduleClassPeriodRowCountAsync(bellScheduleDocumentId);
         var childAnchorBefore = await QueryBellScheduleClassPeriodAnchorAsync(bellScheduleDocumentId);
         childRowsBefore.Should().Be(1);
@@ -140,7 +145,96 @@ public class MssqlChildBindingIdentityPropagationTests
 
         // The child stamp trigger (TR_BellScheduleClassPeriod_Stamp) must fire from the
         // propagation UPDATE and bump the owning BellSchedule root's ContentVersion.
-        var finalContentVersion = await QueryBellScheduleContentVersionAsync(bellScheduleDocumentId);
+        var finalContentVersion = await QueryDocumentContentVersionAsync(bellScheduleDocumentId);
+        finalContentVersion
+            .Should()
+            .BeGreaterThan(
+                initialContentVersion,
+                "child stamp trigger must fire from the propagation UPDATE and bump the owning root ContentVersion"
+            );
+    }
+
+    [Test]
+    public async Task Updating_ClassPeriod_identity_propagates_to_SectionClassPeriod_and_bumps_Section_ContentVersion()
+    {
+        // Arrange — seed a School document, a ClassPeriod referencing that School, a
+        // synthetic Section root, and a SectionClassPeriod child binding referencing both
+        // Section and ClassPeriod. The Section row is seeded with FK_Section_CourseOffering
+        // temporarily disabled and Section's own triggers disabled, which bypasses the deep
+        // upstream chain rooted at CourseOffering. None of that chain is needed to exercise
+        // the ClassPeriod identity-propagation fan-out into SectionClassPeriod, which is the
+        // behaviour under test. This exercises a different child-collection referrer of
+        // TR_ClassPeriod_PropagateIdentity than the BellScheduleClassPeriod case — proving
+        // the propagation fan-out works for any child binding to ClassPeriod.
+        const int SchoolId = 100;
+        const string OldClassPeriodName = "Period 1";
+        const string NewClassPeriodName = "Period 1A";
+
+        var schoolDocumentId = await InsertSchoolDocumentAsync(SchoolId);
+        var classPeriodDocumentId = await InsertClassPeriodAsync(
+            schoolDocumentId,
+            SchoolId,
+            OldClassPeriodName
+        );
+        var sectionDocumentId = await InsertSectionAsync(SchoolId);
+        await InsertSectionClassPeriodAsync(
+            sectionDocumentId,
+            ordinal: 1,
+            classPeriodDocumentId: classPeriodDocumentId,
+            classPeriodName: OldClassPeriodName,
+            classPeriodSchoolId: SchoolId
+        );
+
+        var initialContentVersion = await QueryDocumentContentVersionAsync(sectionDocumentId);
+        var childRowsBefore = await QuerySectionClassPeriodRowCountAsync(sectionDocumentId);
+        var childAnchorBefore = await QuerySectionClassPeriodAnchorAsync(sectionDocumentId);
+        childRowsBefore.Should().Be(1);
+
+        // Small delay so any stamp comparison that checks ContentLastModifiedAt
+        // would see a distinct timestamp too.
+        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
+
+        // Act — update the upstream ClassPeriod identity column.
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[ClassPeriod]
+            SET [ClassPeriodName] = @newName
+            WHERE [DocumentId] = @classPeriodDocumentId;
+            """,
+            new SqlParameter("@newName", NewClassPeriodName),
+            new SqlParameter("@classPeriodDocumentId", classPeriodDocumentId)
+        );
+
+        // Assert — propagation updated the projected identity column on the child row
+        var childRow = await QuerySingleSectionClassPeriodAsync(sectionDocumentId);
+        Convert
+            .ToString(childRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(NewClassPeriodName);
+
+        // Row count must be unchanged — propagation is an UPDATE, not an INSERT/DELETE.
+        var childRowsAfter = await QuerySectionClassPeriodRowCountAsync(sectionDocumentId);
+        childRowsAfter
+            .Should()
+            .Be(
+                childRowsBefore,
+                "propagation must update projected identity columns, not insert/delete rows"
+            );
+
+        // FK anchor (ClassPeriod_DocumentId) must NOT change — propagation should only
+        // touch the projected non-key identity columns, never the reference link itself.
+        var childAnchorAfter = await QuerySectionClassPeriodAnchorAsync(sectionDocumentId);
+        childAnchorAfter
+            .Should()
+            .Be(
+                childAnchorBefore,
+                "ClassPeriod_DocumentId is the reference anchor and must not change during identity propagation"
+            );
+
+        // The child stamp trigger (TR_SectionClassPeriod_Stamp) must fire from the
+        // propagation UPDATE and bump the owning Section root's ContentVersion via
+        // the Section_DocumentId locator.
+        var finalContentVersion = await QueryDocumentContentVersionAsync(sectionDocumentId);
         finalContentVersion
             .Should()
             .BeGreaterThan(
@@ -288,7 +382,7 @@ public class MssqlChildBindingIdentityPropagationTests
         );
     }
 
-    private async Task<long> QueryBellScheduleContentVersionAsync(long bellScheduleDocumentId)
+    private async Task<long> QueryDocumentContentVersionAsync(long documentId)
     {
         return await _database.ExecuteScalarAsync<long>(
             """
@@ -296,7 +390,7 @@ public class MssqlChildBindingIdentityPropagationTests
             FROM [dms].[Document]
             WHERE [DocumentId] = @documentId;
             """,
-            new SqlParameter("@documentId", bellScheduleDocumentId)
+            new SqlParameter("@documentId", documentId)
         );
     }
 
@@ -341,6 +435,150 @@ public class MssqlChildBindingIdentityPropagationTests
             WHERE [BellSchedule_DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", bellScheduleDocumentId)
+        );
+
+        return rows.Single();
+    }
+
+    private async Task<long> InsertSectionAsync(int schoolId)
+    {
+        var sectionResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Section");
+        var sectionDocumentId = await InsertDocumentAsync(
+            Guid.Parse("44444444-4444-4444-4444-444444444444"),
+            sectionResourceKeyId
+        );
+
+        // Section requires a non-null CourseOffering FK and a non-null SchoolId_Unified
+        // plus the all-or-none CourseOffering CHECK columns. Seeding the full upstream
+        // CourseOffering → Course + Session + School(again) chain just to exercise the
+        // ClassPeriod → SectionClassPeriod propagation is out of scope for this smoke,
+        // so we temporarily disable FK_Section_CourseOffering and Section's own triggers
+        // to insert a synthetic Section. The propagation behaviour under test fires from
+        // ClassPeriod's trigger and stamps Section via SectionClassPeriod — none of that
+        // depends on real CourseOffering rows being present.
+        await _database.ExecuteNonQueryAsync(
+            "ALTER TABLE [edfi].[Section] NOCHECK CONSTRAINT [FK_Section_CourseOffering];"
+        );
+        await _database.ExecuteNonQueryAsync("DISABLE TRIGGER ALL ON [edfi].[Section];");
+
+        try
+        {
+            await _database.ExecuteNonQueryAsync(
+                """
+                INSERT INTO [edfi].[Section] (
+                    [DocumentId],
+                    [SchoolId_Unified],
+                    [CourseOffering_DocumentId],
+                    [CourseOffering_LocalCourseCode],
+                    [CourseOffering_SchoolYear],
+                    [CourseOffering_SessionName],
+                    [SectionIdentifier]
+                )
+                VALUES (
+                    @documentId,
+                    @schoolId,
+                    @courseOfferingDocumentId,
+                    @localCourseCode,
+                    @schoolYear,
+                    @sessionName,
+                    @sectionIdentifier
+                );
+                """,
+                new SqlParameter("@documentId", sectionDocumentId),
+                new SqlParameter("@schoolId", (long)schoolId),
+                // Synthetic CourseOffering anchor — FK check is disabled for this insert.
+                new SqlParameter("@courseOfferingDocumentId", -1L),
+                new SqlParameter("@localCourseCode", "CRS-1"),
+                new SqlParameter("@schoolYear", 2025),
+                new SqlParameter("@sessionName", "Fall"),
+                new SqlParameter("@sectionIdentifier", "Section-1")
+            );
+        }
+        finally
+        {
+            await _database.ExecuteNonQueryAsync("ENABLE TRIGGER ALL ON [edfi].[Section];");
+            await _database.ExecuteNonQueryAsync(
+                "ALTER TABLE [edfi].[Section] CHECK CONSTRAINT [FK_Section_CourseOffering];"
+            );
+        }
+
+        return sectionDocumentId;
+    }
+
+    private async Task InsertSectionClassPeriodAsync(
+        long sectionDocumentId,
+        int ordinal,
+        long classPeriodDocumentId,
+        string classPeriodName,
+        int classPeriodSchoolId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[SectionClassPeriod] (
+                [Section_DocumentId],
+                [Ordinal],
+                [ClassPeriod_DocumentId],
+                [ClassPeriod_ClassPeriodName],
+                [ClassPeriod_SchoolId]
+            )
+            VALUES (
+                @sectionDocumentId,
+                @ordinal,
+                @classPeriodDocumentId,
+                @classPeriodName,
+                @classPeriodSchoolId
+            );
+            """,
+            new SqlParameter("@sectionDocumentId", sectionDocumentId),
+            new SqlParameter("@ordinal", ordinal),
+            new SqlParameter("@classPeriodDocumentId", classPeriodDocumentId),
+            new SqlParameter("@classPeriodName", classPeriodName),
+            new SqlParameter("@classPeriodSchoolId", classPeriodSchoolId)
+        );
+    }
+
+    private async Task<int> QuerySectionClassPeriodRowCountAsync(long sectionDocumentId)
+    {
+        return await _database.ExecuteScalarAsync<int>(
+            """
+            SELECT COUNT(*)
+            FROM [edfi].[SectionClassPeriod]
+            WHERE [Section_DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", sectionDocumentId)
+        );
+    }
+
+    private async Task<long> QuerySectionClassPeriodAnchorAsync(long sectionDocumentId)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT [ClassPeriod_DocumentId]
+            FROM [edfi].[SectionClassPeriod]
+            WHERE [Section_DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", sectionDocumentId)
+        );
+    }
+
+    private async Task<IReadOnlyDictionary<string, object?>> QuerySingleSectionClassPeriodAsync(
+        long sectionDocumentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                [CollectionItemId],
+                [Section_DocumentId],
+                [Ordinal],
+                [ClassPeriod_DocumentId],
+                [ClassPeriod_ClassPeriodName],
+                [ClassPeriod_SchoolId]
+            FROM [edfi].[SectionClassPeriod]
+            WHERE [Section_DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", sectionDocumentId)
         );
 
         return rows.Single();
