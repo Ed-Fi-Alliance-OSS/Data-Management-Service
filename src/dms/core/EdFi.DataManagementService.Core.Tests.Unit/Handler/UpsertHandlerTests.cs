@@ -236,6 +236,84 @@ public class UpsertHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Relational_Authorized_Request : UpsertHandlerTests
+    {
+        internal sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IRelationalUpsertRequest CapturedRequest { get; private set; } = null!;
+
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                CapturedRequest =
+                    upsertRequest as IRelationalUpsertRequest
+                    ?? throw new AssertionException($"Expected {nameof(IRelationalUpsertRequest)} request.");
+
+                return Task.FromResult<UpsertResult>(new InsertSuccess(CapturedRequest.DocumentUuid));
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly Repository _repository = new();
+        private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
+        [
+            new(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                [],
+                FilterOperator.Or
+            ),
+            new(AuthorizationStrategyNameConstants.NamespaceBased, [], FilterOperator.Or),
+        ];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
+            _requestInfo.ClientAuthorizations = new ClientAuthorizations(
+                TokenId: "token",
+                ClientId: "client",
+                ClaimSetName: "claim-set",
+                EducationOrganizationIds:
+                [
+                    new EducationOrganizationId(202),
+                    new EducationOrganizationId(101),
+                    new EducationOrganizationId(202),
+                ],
+                NamespacePrefixes:
+                [
+                    new NamespacePrefix("uri://sample.org"),
+                    new NamespacePrefix("uri://ed-fi.org"),
+                ],
+                DmsInstanceIds: []
+            );
+
+            var (upsertHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await upsertHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_passes_raw_strategy_evaluators_to_the_repository()
+        {
+            _repository
+                .CapturedRequest.AuthorizationStrategyEvaluators.Should()
+                .BeSameAs(_authorizationStrategyEvaluators);
+        }
+
+        [Test]
+        public void It_passes_normalized_authorization_context_to_the_repository()
+        {
+            _repository
+                .CapturedRequest.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(101, 202);
+            _repository
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal("uri://ed-fi.org", "uri://sample.org");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Profiled_Request : UpsertHandlerTests
     {
         internal sealed class Repository : NotImplementedDocumentStoreRepository

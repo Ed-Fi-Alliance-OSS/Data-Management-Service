@@ -240,7 +240,7 @@
       "From src/dms/tests/EdFi.DataManagementService.Tests.E2E, run pwsh ./teardown-local-dms.ps1 and then pwsh ./setup-local-dms.ps1 before the local E2E run.",
       "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=relational-backend&FullyQualifiedName~RelationshipsWithEdOrgsOnly\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "proposed-value-extraction",

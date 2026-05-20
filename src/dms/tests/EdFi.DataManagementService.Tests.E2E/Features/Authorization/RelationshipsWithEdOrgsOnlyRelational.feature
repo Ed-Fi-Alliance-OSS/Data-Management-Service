@@ -218,6 +218,41 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
 
         @relational-backend
         @relational-ci-shard-3
+        Scenario: POST create-new succeeds through the inverted strategy lane
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet" is authorized with educationOrganizationIds "255901001"
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "post create inverted",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-15",
+                      "endDate": "2023-08-21",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "post create inverted",
+                      "beginDate": "2023-08-15",
+                      "endDate": "2023-08-21",
+                      "totalInstructionalDays": 5,
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: POST create-new returns forbidden when the caller lacks a relationship to the proposed school
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001, 255901222"
               And the system has these "schools"
