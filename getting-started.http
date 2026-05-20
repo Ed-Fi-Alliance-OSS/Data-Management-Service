@@ -30,9 +30,10 @@ client_id={{sysAdminId}}
 ### Read the token from the response body
 @configToken={{configTokenRequest.response.body.access_token}}
 
-# Behind the scenes, the Configuration Service is forwarding this token request
-# out to the real OAuth provider, Keycloak. To prove this, try the following
-# command using the default Keycloak configuration:
+# If configured to use Keycloak as the Identity Provider, the Configuration
+# Service is forwarding this token request to Keycloak behind the scenes. To
+# verify this, try the following command using the default Keycloak
+# configuration:
 
 ###
 POST http://localhost:8045/realms/edfi/protocol/openid-connect/token
