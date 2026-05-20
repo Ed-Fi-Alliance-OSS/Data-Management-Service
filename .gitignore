@@ -61,6 +61,7 @@ BenchmarkDotNet.Artifacts/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+eng/docker-compose/.bootstrap/
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt

@@ -10,8 +10,14 @@
     This script starts the Docker stack and creates the 3 test databases.
     Tenant, instance, and Kafka infrastructure creation is handled by the tests themselves.
 
+    Extension schema packages (Sample, Homograph) are loaded via DLL-backed SCHEMA_PACKAGES.
+    The -AddExtensionSecurityMetadata switch activates Hybrid claims mode so extension
+    claimset fragments are loaded from the AdditionalClaimsets directory mounted at
+    /app/additional-claims. This is the non-bootstrap transitional path until Story 04
+    moves E2E runtime loading onto the staged bootstrap workspace.
+
     The script runs:
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained -NoDmsInstance
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
 #>
 
 [CmdletBinding()]
@@ -56,25 +62,38 @@ $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 try {
     Set-Location $dockerComposeDir
 
+    $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
+    if (Test-Path -LiteralPath $bootstrapDir) {
+        Write-Output "Removing stale .bootstrap workspace before DLL-backed E2E startup..."
+        # Fail fast on cleanup errors: a stale manifest left here would trigger bootstrap mode
+        # on the next start-local-dms.ps1 invocation and silently divert the E2E run.
+        Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction Stop
+        if (Test-Path -LiteralPath $bootstrapDir) {
+            throw "Failed to remove stale .bootstrap workspace at '$bootstrapDir'. Resolve any file locks or permissions before re-running setup."
+        }
+    }
+
     Write-Host "Starting DMS environment with Instance Management E2E configuration..." -ForegroundColor Green
     Write-Host "Configuration:" -ForegroundColor Yellow
     Write-Host "  - Kafka UI: Enabled" -ForegroundColor Gray
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
     Write-Host "  - Environment File: ./.env.routeContext.e2e" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: $(if ($SkipDockerBuild) { "No" } else { "Yes" })" -ForegroundColor Gray
-    Write-Host "  - Extension Security Metadata: Yes" -ForegroundColor Gray
     Write-Host "  - Route Qualifiers: districtId, schoolYear" -ForegroundColor Cyan
     Write-Host "  - Identity Provider: self-contained" -ForegroundColor Gray
+    Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
     Write-Host "NOTE: Tenant, instance, and Kafka infrastructure will be created by tests" -ForegroundColor Yellow
     Write-Host ""
 
+    Write-Output "Using DLL-backed schema packages for E2E. Bootstrap loose-file runtime loading is Story 04."
+
     # Run the start script - NO instance creation
     if ($SkipDockerBuild) {
-        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -AddExtensionSecurityMetadata -IdentityProvider self-contained -NoDmsInstance
+        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
     }
     else {
-        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained -NoDmsInstance
+        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
     }
 
     if ($LASTEXITCODE -ne 0) {

@@ -65,8 +65,8 @@ also append `-v`. Examples:
 # Start everything
 ./start-local-dms.ps1
 
-# Start everything for E2E testing
-./start-local-dms.ps1 -EnvironmentFile ./.env.e2e
+# Start everything for E2E testing (DLL-backed schema packages)
+../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1
 
 # Stop the services, keeping volumes
 ./start-local-dms.ps1 -d
@@ -82,10 +82,12 @@ provisioned and DMS must observe the provisioned `dms.EffectiveSchema` before
 it can serve requests. Because `provision-relational-e2e-database.ps1`
 provisions inside the running `dms-postgresql` container, the sequence is:
 
-1. Start the Docker environment so PostgreSQL is up:
+1. Start the Docker environment so PostgreSQL is up. The E2E setup wrapper uses
+   the DLL-backed `SCHEMA_PACKAGES` schema path until Story 04 adds runtime
+   loose-file content loading:
 
    ```pwsh
-   ./start-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational
+   ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational
    ```
 
 2. Run the provisioning script:
@@ -114,8 +116,8 @@ If you want to use Keycloak as the identity provider, pass the `-IdentityProvide
 # Start everything (Self-Contained/OpenIddict mode)
 ./start-local-dms.ps1 -IdentityProvider self-contained
 
-# Start everything for E2E testing (Self-Contained/OpenIddict mode)
-./start-local-dms.ps1 -IdentityProvider self-contained -EnvironmentFile ./.env.e2e
+# Start everything for E2E testing (Self-Contained/OpenIddict mode, DLL-backed schema by default)
+../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1
 
 # Stop the services, keeping volumes (Self-Contained/OpenIddict mode)
 ./start-local-dms.ps1 -d
@@ -179,21 +181,60 @@ USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
 ]'
 ```
 
-You can also automatically include extension-specific metadata in the
-authorization hierarchy to enable authorization for your extension resources. To
-do this:
+For bootstrap-managed schema and extension security metadata, stage the inputs
+before starting Docker:
 
-1. Author your security claims hierarchy JSON file. See `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`
-for examples. Files must follow the pattern: `{number}-{description}-claimset.json` and will be processed in order.
-
-2. Place it in a directory mounted as a Docker volume named `app/additional-claims` for CMS to see at runtime. The default behavior of the docker compose
-scripts is to mount `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`.
-
-3. Use the `-AddExtensionSecurityMetadata` parameter to configure CMS to read claimsets from `app/additional-claims`:
+> **Requirement — `dms-schema` tool:** `prepare-dms-schema.ps1` needs the
+> in-repo `dms-schema` CLI published as a native executable. Build it once
+> before running the prepare command (the publish step is safe to re-run after
+> branch switches).
 
 ```pwsh
-./start-local-dms.ps1 -AddExtensionSecurityMetadata
+# 1. Publish the dms-schema tool (required on a clean checkout)
+$schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
+$schemaToolOutput  = ".bootstrap/tools/dms-schema"
+dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
+
+# 2. Point to the platform-appropriate executable
+$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/dms-schema.exe" } else { "$schemaToolOutput/dms-schema" }
+
+# 3. Stage schema and claims, then start DMS
+./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+./prepare-dms-claims.ps1 -ClaimsDirectoryPath <directory-with-tpdm-claimset-fragment>
+./start-local-dms.ps1
 ```
+
+`prepare-dms-claims.ps1` stages `*-claimset.json` fragments into
+`.bootstrap/claims`. Story 00 validates the prepared manifest but does
+not point the Config Service at `.bootstrap/claims` during startup because
+DMS Docker startup still uses the non-staged schema path. When a bootstrap
+manifest is present, startup disables `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH`
+so the container falls back to its built-in DLL-backed schema assemblies.
+Runtime reads of `.bootstrap/ApiSchema` and matching staged claims activation
+land together in Story 04.
+
+The full in-repo `EdFi.DataStandard52.ApiSchema` directory includes TPDM. Story
+00 automatically maps only Sample and Homograph extension claim fragments, so
+the full in-repo schema requires `-ClaimsDirectoryPath` with a TPDM
+`*-claimset.json` fragment. For a schema set containing only core, Sample, and
+Homograph, the claims command can be run without `-ClaimsDirectoryPath`.
+
+The DMS E2E setup wrappers stay on the prior DLL-backed `SCHEMA_PACKAGES` flow
+because the DMS runtime ContentProvider does not yet load loose JSON content
+(Story 04). The wrappers should move to the staged `.bootstrap/ApiSchema` and
+`.bootstrap/claims` workspaces when Story 04 lands.
+
+If `prepare-dms-schema.ps1` or `prepare-dms-claims.ps1` fail with a
+fingerprint-mismatch teardown-guidance error after a branch switch or input
+change, recover by running `./start-local-dms.ps1 -d -v -RemoveBootstrap`
+(which removes the local `.bootstrap/` workspace) or the matching E2E
+`teardown-local-dms.ps1` script, then rerun the prepare commands.
+
+> **Note on `-RemoveBootstrap`:** By default, `./start-local-dms.ps1 -d -v`
+> and `./start-published-dms.ps1 -d -v` do **not** delete the `.bootstrap/`
+> workspace on teardown. Pass `-RemoveBootstrap` explicitly when you want the
+> workspace wiped (e.g. after a branch switch). The E2E teardown wrappers
+> always remove it unconditionally.
 
 ## Default URLs
 
