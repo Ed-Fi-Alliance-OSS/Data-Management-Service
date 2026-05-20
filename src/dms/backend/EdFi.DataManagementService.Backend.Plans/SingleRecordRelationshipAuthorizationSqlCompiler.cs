@@ -594,15 +594,15 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.AppendLine();
             writer.Append("CASE WHEN ");
             AppendTargetColumn(writer, subject.Column);
-            writer.Append(" IS NULL OR NOT EXISTS (");
-            AppendAuthorizationExistsSql(
+            writer.Append(" IS NULL OR NOT ");
+            AppendAuthorizationSuccessSql(
                 writer,
                 checkSpec,
                 subjectValueWriter => AppendTargetColumn(subjectValueWriter, subject.Column),
                 authorizationClaimParameterization,
                 authAlias
             );
-            writer.AppendLine(") THEN 1 ELSE 0 END");
+            writer.AppendLine(" THEN 1 ELSE 0 END");
         }
 
         writer.AppendLine();
@@ -684,21 +684,57 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.AppendLine();
             writer.Append("CASE WHEN ");
             writer.AppendParameter(proposedValueParameterName);
-            writer.Append(" IS NULL OR NOT EXISTS (");
-            AppendAuthorizationExistsSql(
+            writer.Append(" IS NULL OR NOT ");
+            AppendAuthorizationSuccessSql(
                 writer,
                 checkSpec,
                 subjectValueWriter => subjectValueWriter.AppendParameter(proposedValueParameterName),
                 authorizationClaimParameterization,
                 authAlias
             );
-            writer.AppendLine(") THEN 1 ELSE 0 END");
+            writer.AppendLine(" THEN 1 ELSE 0 END");
         }
 
         writer.AppendLine();
     }
 
-    private static void AppendAuthorizationExistsSql(
+    private static void AppendAuthorizationSuccessSql(
+        SqlWriter writer,
+        RelationshipAuthorizationCheckSpec checkSpec,
+        Action<SqlWriter> appendSubjectValue,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        string authAlias
+    )
+    {
+        if (checkSpec.AuthObject.AllowsDirectClaimMatch)
+        {
+            writer.Append("(");
+            appendSubjectValue(writer);
+            AppendClaimFilterSql(writer, authorizationClaimParameterization);
+            writer.Append(" OR EXISTS (");
+            AppendAuthorizationExistsSelectSql(
+                writer,
+                checkSpec,
+                appendSubjectValue,
+                authorizationClaimParameterization,
+                authAlias
+            );
+            writer.Append("))");
+            return;
+        }
+
+        writer.Append("EXISTS (");
+        AppendAuthorizationExistsSelectSql(
+            writer,
+            checkSpec,
+            appendSubjectValue,
+            authorizationClaimParameterization,
+            authAlias
+        );
+        writer.Append(")");
+    }
+
+    private static void AppendAuthorizationExistsSelectSql(
         SqlWriter writer,
         RelationshipAuthorizationCheckSpec checkSpec,
         Action<SqlWriter> appendSubjectValue,

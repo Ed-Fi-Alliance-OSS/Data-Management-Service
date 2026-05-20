@@ -304,7 +304,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationSqlCompiler",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationAuth1FailurePayload"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "page-query-sql-generation",

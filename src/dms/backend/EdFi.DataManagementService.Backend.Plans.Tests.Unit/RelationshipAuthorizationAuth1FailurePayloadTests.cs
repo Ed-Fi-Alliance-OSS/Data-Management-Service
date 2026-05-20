@@ -363,6 +363,10 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should().Contain("CONCAT('1|', '5|', COUNT(1)::text, '|'");
         plan.AuthorizationSql.Should().Contain("STRING_AGG");
         plan.AuthorizationSql.Should().Contain("= ANY(@ClaimEducationOrganizationIds)");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "CASE WHEN target.\"SchoolId\" IS NULL OR NOT (target.\"SchoolId\" = ANY(@ClaimEducationOrganizationIds) OR EXISTS (SELECT 1 FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" a0_0 WHERE a0_0.\"TargetEducationOrganizationId\" = target.\"SchoolId\" AND a0_0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))) THEN 1 ELSE 0 END"
+            );
         plan.AuthorizationSql.Should().Contain("CASE WHEN target.\"SchoolId\" IS NULL THEN 's' ELSE 'n' END");
         plan.AuthorizationSql.Should()
             .Contain("NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 0)");
@@ -405,6 +409,10 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should().Contain("STRING_AGG");
         plan.AuthorizationSql.Should()
             .Contain("IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1)");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "CASE WHEN target.[SchoolId] IS NULL OR NOT (target.[SchoolId] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1) OR EXISTS (SELECT 1 FROM [auth].[EducationOrganizationIdToEducationOrganizationId] a0_0 WHERE a0_0.[SourceEducationOrganizationId] = target.[SchoolId] AND a0_0.[TargetEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1))) THEN 1 ELSE 0 END"
+            );
         plan.AuthorizationSql.Should().Contain("[SourceEducationOrganizationId] = target.[SchoolId]");
         plan.AuthorizationSql.Should().Contain("[TargetEducationOrganizationId] IN");
     }
@@ -441,6 +449,8 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Binding.Should()
             .BeEquivalentTo(QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id"));
         plan.AuthorizationSql.Should().Contain("IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)");
+        plan.AuthorizationSql.Should()
+            .Contain("target.[SchoolId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds) OR EXISTS");
     }
 
     [Test]
@@ -530,6 +540,10 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should()
             .Contain("CASE WHEN @relationshipAuthorization_0_0_schoolId IS NULL THEN 'p' ELSE 'n' END");
         plan.AuthorizationSql.Should()
+            .Contain(
+                "CASE WHEN @relationshipAuthorization_0_0_schoolId IS NULL OR NOT (@relationshipAuthorization_0_0_schoolId = ANY(@ClaimEducationOrganizationIds) OR EXISTS (SELECT 1 FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" a0_0 WHERE a0_0.\"TargetEducationOrganizationId\" = @relationshipAuthorization_0_0_schoolId AND a0_0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))) THEN 1 ELSE 0 END"
+            );
+        plan.AuthorizationSql.Should()
             .Contain("\"TargetEducationOrganizationId\" = @relationshipAuthorization_0_0_schoolId");
         plan.AuthorizationSql.Should()
             .Contain("\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
@@ -592,10 +606,47 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should()
             .Contain("CASE WHEN @relationshipAuthorization_0_0_schoolId_2 IS NULL THEN 'p' ELSE 'n' END");
         plan.AuthorizationSql.Should()
+            .Contain(
+                "CASE WHEN @relationshipAuthorization_0_0_schoolId_2 IS NULL OR NOT (@relationshipAuthorization_0_0_schoolId_2 IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1) OR EXISTS (SELECT 1 FROM [auth].[EducationOrganizationIdToEducationOrganizationId] a0_0 WHERE a0_0.[TargetEducationOrganizationId] = @relationshipAuthorization_0_0_schoolId_2 AND a0_0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1))) THEN 1 ELSE 0 END"
+            );
+        plan.AuthorizationSql.Should()
             .Contain("[TargetEducationOrganizationId] = @relationshipAuthorization_0_0_schoolId_2");
         plan.AuthorizationSql.Should()
             .Contain("IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1)");
         plan.AuthorizationSql.Should().NotContain("@DocumentId");
+    }
+
+    [Test]
+    public void It_should_not_emit_direct_claim_match_when_the_auth_object_disallows_it()
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateStoredHierarchyOnlyCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                    ),
+                ],
+                parameterization,
+                11
+            )
+        );
+
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "CASE WHEN target.\"SchoolId\" IS NULL OR NOT EXISTS (SELECT 1 FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" a0_0 WHERE a0_0.\"TargetEducationOrganizationId\" = target.\"SchoolId\" AND a0_0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)) THEN 1 ELSE 0 END"
+            );
+        plan.AuthorizationSql.Should()
+            .NotContain("target.\"SchoolId\" = ANY(@ClaimEducationOrganizationIds)");
     }
 
     [Test]
@@ -671,6 +722,39 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
                 new DbColumnName("DocumentId")
             )
         );
+
+    private static RelationshipAuthorizationCheckSpec CreateStoredHierarchyOnlyCheckSpec(
+        RelationshipAuthorizationHierarchyDirection direction,
+        int configuredStrategyIndex,
+        int relationshipLocalOrder,
+        params RelationshipAuthorizationSubject[] subjects
+    ) =>
+        CreateStoredCheckSpec(direction, configuredStrategyIndex, relationshipLocalOrder, subjects) with
+        {
+            AuthObject = CreateHierarchyOnlyAuthObject(direction),
+        };
+
+    private static RelationshipAuthorizationAuthObject CreateHierarchyOnlyAuthObject(
+        RelationshipAuthorizationHierarchyDirection direction
+    ) =>
+        direction switch
+        {
+            RelationshipAuthorizationHierarchyDirection.Normal => new RelationshipAuthorizationAuthObject(
+                AuthNames.EdOrgIdToEdOrgId,
+                AuthNames.TargetEdOrgId,
+                AuthNames.SourceEdOrgId
+            ),
+            RelationshipAuthorizationHierarchyDirection.Inverted => new RelationshipAuthorizationAuthObject(
+                AuthNames.EdOrgIdToEdOrgId,
+                AuthNames.SourceEdOrgId,
+                AuthNames.TargetEdOrgId
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(direction),
+                direction,
+                "Unsupported relationship authorization hierarchy direction."
+            ),
+        };
 
     private static RelationshipAuthorizationCheckSpec CreateProposedCheckSpec(
         RelationshipAuthorizationHierarchyDirection direction,
