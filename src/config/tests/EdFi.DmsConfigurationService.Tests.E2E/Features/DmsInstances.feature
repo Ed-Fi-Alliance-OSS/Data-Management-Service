@@ -470,3 +470,53 @@ Feature: DmsInstances endpoints
         Scenario: 20 Verify error handling when getting applications using invalid dmsInstance id
              When a GET request is made to "/v2/dmsInstances/invalid/applications/?offset=0&limit=25"
              Then it should respond with 400
+
+        Scenario: 21 Ensure application with a disabled API client returns enabled false via dmsInstance sub-resource
+            Given a POST request is made to "/v2/vendors" with
+                  """
+                    {
+                        "company": "Test Vendor 21",
+                        "contactName": "Test Contact",
+                        "contactEmailAddress": "test21@test.com",
+                        "namespacePrefixes": "uri://test21.org"
+                    }
+                  """
+              And a POST request is made to "/v2/dmsInstances" with
+                  """
+                    {
+                        "instanceType": "Production",
+                        "instanceName": "Test Instance 21",
+                        "connectionString": "Server=test21;Database=TestDb21;"
+                    }
+                  """
+              And a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Disabled Client App 21",
+                   "claimSetName": "Claim21Inst",
+                   "educationOrganizationIds": [],
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+             When a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Disabled Client 21",
+                   "isApproved": false,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             Then it should respond with 201
+             When a GET request is made to "/v2/dmsInstances/{dmsInstanceId}/applications/?offset=0&limit=25"
+             Then it should respond with 200
+              And the response body contains an object matching
+                  """
+                  {
+                   "id": {applicationId},
+                   "enabled": false
+                  }
+                  """

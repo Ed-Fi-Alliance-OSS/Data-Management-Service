@@ -220,7 +220,7 @@ Feature: Connect endpoints
                     "status":401,
                     "validationErrors":{},
                      "errors": [
-                        "unauthorized_client. Invalid client or Invalid client credentials"
+                        "unauthorized_client. Invalid client or invalid client credentials"
                         ]
                   }
                   """
@@ -255,7 +255,7 @@ Feature: Connect endpoints
                     "status":401,
                     "validationErrors":{},
                      "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
+                        "invalid_client. Invalid client or invalid client credentials"
                         ]
                   }
                   """

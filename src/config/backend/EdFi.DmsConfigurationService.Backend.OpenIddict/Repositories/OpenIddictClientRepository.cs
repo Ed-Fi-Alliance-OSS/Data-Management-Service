@@ -138,6 +138,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string namespacePrefixes,
             string educationOrganizationIds,
             long[]? dmsInstanceIds = null,
+            // isApproved is intentionally unused here: for the OpenIddict backend the approval gate is
+            // enforced in OpenIddictTokenManager which reads BOOL_AND(ApiClient.IsApproved) from the
+            // database; this repository only manages the OpenIddictApplication record. For the Keycloak
+            // backend counterpart (KeycloakClientRepository) this value IS used to set Client.Enabled
+            // directly in Keycloak.
             bool isApproved = true
         )
         {
@@ -252,6 +257,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string scope,
             string educationOrganizationIds,
             long[]? dmsInstanceIds = null,
+            // isApproved is intentionally unused here: for the OpenIddict backend the approval gate is
+            // enforced in OpenIddictTokenManager which reads BOOL_AND(ApiClient.IsApproved) from the
+            // database; this repository only manages the OpenIddictApplication record. For the Keycloak
+            // backend counterpart (KeycloakClientRepository) this value IS used to set Client.Enabled
+            // directly in Keycloak.
             bool isApproved = true,
             string role = ""
         )

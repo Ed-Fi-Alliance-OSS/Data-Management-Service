@@ -376,8 +376,8 @@ public class DmsInstanceRepository(
                 SELECT application.*, aeo.EducationOrganizationId, acdi.DmsInstanceId
                 FROM (
                     SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId,
-                        -- IsApproved: application is enabled only if ALL its ApiClients are approved (application-wide, not per-DmsInstance)
-                        (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true) FROM dmscs.ApiClient ac2 WHERE ac2.ApplicationId = a.Id) AS IsApproved
+                        -- Enabled: application is enabled only if ALL its ApiClients are approved (application-wide, not per-DmsInstance)
+                        (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true) FROM dmscs.ApiClient ac2 WHERE ac2.ApplicationId = a.Id) AS Enabled
                     FROM dmscs.ApiClientDmsInstance acdi
                     JOIN dmscs.ApiClient ac ON ac.Id = acdi.ApiClientId
                     JOIN dmscs.Application a ON a.Id = ac.ApplicationId
@@ -407,7 +407,7 @@ public class DmsInstanceRepository(
                 string ApplicationName,
                 string ClaimSetName,
                 long VendorId,
-                bool IsApproved,
+                bool Enabled,
                 long? EducationOrganizationId,
                 long DmsInstanceId
             )>(sql, parameters);
@@ -422,7 +422,7 @@ public class DmsInstanceRepository(
                         ApplicationName = application.ApplicationName,
                         ClaimSetName = application.ClaimSetName,
                         VendorId = application.VendorId,
-                        Enabled = application.IsApproved,
+                        Enabled = application.Enabled,
 
                         EducationOrganizationIds = group
                             .Where(row => row.EducationOrganizationId != null)

@@ -356,10 +356,13 @@ public class KeycloakClientRepository(
                         }
                         else
                         {
-                            logger.LogWarning(
-                                "Role {Role} not found; service account role mapping skipped for client {ClientId}",
+                            logger.LogError(
+                                "Role {Role} not found in Keycloak realm; service account role mapping could not be restored for client {ClientId}",
                                 SanitizeForLog(role),
                                 SanitizeForLog(client.ClientId)
+                            );
+                            return new ClientUpdateResult.FailureUnknown(
+                                $"Role '{role}' not found in Keycloak realm; service account role mapping could not be restored"
                             );
                         }
                     }
