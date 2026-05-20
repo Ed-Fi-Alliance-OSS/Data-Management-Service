@@ -212,7 +212,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 {
                     return new TokenResult.FailureIdentityProvider(
                         new IdentityProviderError.InvalidClient(
-                            "Invalid client or invalid client credentials"
+                            "Invalid client or Invalid client credentials"
                         )
                     );
                 }
@@ -224,7 +224,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 if (!isValidSecret)
                 {
                     return new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unauthorized("Invalid client or invalid client credentials")
+                        new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials")
                     );
                 }
 
@@ -232,7 +232,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 {
                     return new TokenResult.FailureIdentityProvider(
                         new IdentityProviderError.InvalidClient(
-                            "Invalid client or invalid client credentials"
+                            "Invalid client or Invalid client credentials"
                         )
                     );
                 }
