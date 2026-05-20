@@ -33,6 +33,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
     private short _educationServiceCenterResourceKeyId;
     private short _localEducationAgencyResourceKeyId;
     private short _schoolResourceKeyId;
+    private short _organizationDepartmentResourceKeyId;
     private short _localEducationAgencyCategoryDescriptorResourceKeyId;
     private long _localEducationAgencyCategoryDescriptorDocumentId;
 
@@ -56,6 +57,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         _educationServiceCenterResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "EducationServiceCenter");
         _localEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "LocalEducationAgency");
         _schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        _organizationDepartmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "OrganizationDepartment");
         _localEducationAgencyCategoryDescriptorResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "LocalEducationAgencyCategoryDescriptor"
@@ -313,6 +315,41 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
                     (Source: 400L, Target: 400L),
                     (Source: 400L, Target: 500L),
                     (Source: 500L, Target: 500L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_creates_ancestor_tuples_when_an_OrganizationDepartment_is_inserted_under_an_SEA()
+    {
+        // OrganizationDepartment is the only concrete EdOrg in DS 5.2 whose parent FK uses the
+        // abstract `ParentEducationOrganization_EducationOrganizationId` column shape. SEA/ESC/
+        // LEA/School all use subtype-scoped parent FKs (`<Subtype>_<Subtype>Id`); the trigger
+        // generator selects between the two shapes based on entity metadata, so this is the only
+        // test that exercises the abstract-parent path on insert.
+        var seaDocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "Test SEA"
+        );
+        await InsertOrganizationDepartmentAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000800"),
+            organizationDepartmentId: 800,
+            nameOfInstitution: "Test OrgDept",
+            parentEducationOrganizationDocumentId: seaDocumentId,
+            parentEducationOrganizationEducationOrganizationId: 100
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 100L, Target: 800L),
+                    (Source: 800L, Target: 800L),
                 }
             );
     }
@@ -728,6 +765,59 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
                     (Source: 500L, Target: 500L),
                     (Source: 500L, Target: 700L),
                     (Source: 700L, Target: 700L),
+                }
+            );
+    }
+
+    [Test]
+    public async Task It_rewrites_ancestor_tuples_when_an_OrganizationDepartment_parent_FK_is_changed_to_another_SEA()
+    {
+        // Pins the OrganizationDepartment AuthHierarchy_Update trigger and — uniquely among the
+        // covered EdOrgs — the abstract-parent FK update path
+        // (`ParentEducationOrganization_EducationOrganizationId`). A defect in the generator's
+        // abstract-parent column resolution for `_Update` triggers would slip past every other
+        // scenario.
+        var sea1DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000100"),
+            100,
+            "SEA 1"
+        );
+        var sea2DocumentId = await InsertStateEducationAgencyAsync(
+            Guid.Parse("c0000000-0000-0000-0000-000000000200"),
+            200,
+            "SEA 2"
+        );
+        await InsertOrganizationDepartmentAsync(
+            documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000800"),
+            organizationDepartmentId: 800,
+            nameOfInstitution: "Test OrgDept",
+            parentEducationOrganizationDocumentId: sea1DocumentId,
+            parentEducationOrganizationEducationOrganizationId: 100
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[OrganizationDepartment]
+            SET [ParentEducationOrganization_DocumentId] = @newParentDocumentId,
+                [ParentEducationOrganization_EducationOrganizationId] = @newParentId
+            WHERE [OrganizationDepartmentId] = @organizationDepartmentId;
+            """,
+            new SqlParameter("@newParentDocumentId", sea2DocumentId),
+            new SqlParameter("@newParentId", 200L),
+            new SqlParameter("@organizationDepartmentId", 800L)
+        );
+
+        var tuples = await GetAuthTuplesAsync();
+
+        tuples
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (Source: 100L, Target: 100L),
+                    (Source: 200L, Target: 200L),
+                    (Source: 200L, Target: 800L),
+                    (Source: 800L, Target: 800L),
                 }
             );
     }
@@ -1187,6 +1277,57 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter("@parentLeaDocumentId", parentLocalEducationAgencyDocumentId),
             new SqlParameter("@parentLeaId", parentLocalEducationAgencyId)
+        );
+
+        return documentId;
+    }
+
+    /// <summary>
+    /// Inserts a row into <c>dms.Document</c> and <c>edfi.OrganizationDepartment</c>. Unlike the
+    /// other concrete EdOrgs, OrganizationDepartment's parent FK references the abstract
+    /// <c>edfi.EducationOrganizationIdentity</c> via the generic
+    /// <c>ParentEducationOrganization_EducationOrganizationId</c> column rather than a
+    /// subtype-scoped pair. A CHECK constraint on the table requires both members of the parent
+    /// FK pair to be NULL or both NOT NULL.
+    /// </summary>
+    private async Task<long> InsertOrganizationDepartmentAsync(
+        Guid documentUuid,
+        long organizationDepartmentId,
+        string nameOfInstitution,
+        long? parentEducationOrganizationDocumentId = null,
+        long? parentEducationOrganizationEducationOrganizationId = null
+    )
+    {
+        var documentId = await InsertDocumentAsync(documentUuid, _organizationDepartmentResourceKeyId);
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[OrganizationDepartment] (
+                [DocumentId],
+                [OrganizationDepartmentId],
+                [NameOfInstitution],
+                [ParentEducationOrganization_DocumentId],
+                [ParentEducationOrganization_EducationOrganizationId]
+            )
+            VALUES (
+                @documentId,
+                @organizationDepartmentId,
+                @nameOfInstitution,
+                @parentEdOrgDocumentId,
+                @parentEdOrgId
+            );
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@organizationDepartmentId", organizationDepartmentId),
+            new SqlParameter("@nameOfInstitution", nameOfInstitution),
+            new SqlParameter(
+                "@parentEdOrgDocumentId",
+                (object?)parentEducationOrganizationDocumentId ?? DBNull.Value
+            ),
+            new SqlParameter(
+                "@parentEdOrgId",
+                (object?)parentEducationOrganizationEducationOrganizationId ?? DBNull.Value
+            )
         );
 
         return documentId;
