@@ -31,6 +31,11 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
         new(new DocumentUuid(Guid.Parse("dddddddd-0000-0000-0000-000000000001")), 100, "North School"),
         new(new DocumentUuid(Guid.Parse("dddddddd-0000-0000-0000-000000000002")), 200, "South School"),
         new(new DocumentUuid(Guid.Parse("dddddddd-0000-0000-0000-000000000003")), 300, "West School"),
+        new(
+            new DocumentUuid(Guid.Parse("dddddddd-0000-0000-0000-000000000004")),
+            (int)ClaimEducationOrganizationId,
+            "Claim School"
+        ),
     ];
 
     private static readonly ClassPeriodSeed[] _classPeriodSeeds =
@@ -83,6 +88,7 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
         await _context.InsertAuthEdgeAsync(300, ClaimEducationOrganizationId);
+        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
         _context.ResetRecorder();
     }
 
@@ -112,6 +118,29 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
         success.NewDocumentUuid.Should().Be(seed.DocumentUuid);
         await AssertPersistedRowsAsync(seed);
         _context.AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert();
+    }
+
+    [Test]
+    public async Task It_authorizes_post_create_by_direct_claim_match_without_a_hierarchy_edge()
+    {
+        var seed = CreateRootChildSeed(
+            "ffffffff-0000-0000-0000-000000000009",
+            109,
+            "direct-claim-create",
+            (int)ClaimEducationOrganizationId,
+            []
+        );
+
+        (await _context.CountAuthEdgesAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId))
+            .Should()
+            .Be(0);
+
+        var result = await PostRootChildAsync(seed);
+
+        var success = result.Should().BeOfType<UpsertResult.InsertSuccess>().Subject;
+        success.NewDocumentUuid.Should().Be(seed.DocumentUuid);
+        await AssertPersistedRowsAsync(seed);
+        _context.AssertPostCreateDirectClaimMatchAuthorizationBeforeDocumentInsert();
     }
 
     [Test]
@@ -212,7 +241,7 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
             "ffffffff-0000-0000-0000-000000000007",
             107,
             "authorized-scalar-claims",
-            100,
+            (int)ClaimEducationOrganizationId,
             []
         );
 
@@ -230,7 +259,7 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
             "ffffffff-0000-0000-0000-000000000008",
             108,
             "authorized-structured-claims",
-            100,
+            (int)ClaimEducationOrganizationId,
             []
         );
 

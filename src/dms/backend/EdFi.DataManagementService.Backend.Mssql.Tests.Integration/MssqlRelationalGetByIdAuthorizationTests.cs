@@ -54,6 +54,11 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
         new(new DocumentUuid(Guid.Parse("22222222-0000-0000-0000-000000000001")), 100, "North School"),
         new(new DocumentUuid(Guid.Parse("22222222-0000-0000-0000-000000000002")), 200, "South School"),
         new(new DocumentUuid(Guid.Parse("22222222-0000-0000-0000-000000000003")), 300, "West School"),
+        new(
+            new DocumentUuid(Guid.Parse("22222222-0000-0000-0000-000000000004")),
+            (int)ClaimEducationOrganizationId,
+            "Claim School"
+        ),
     ];
     private static readonly ClassPeriodSeed[] _classPeriodSeeds =
     [
@@ -120,6 +125,13 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
         1,
         "stored-null"
     );
+    private static readonly AuthorizationRootChildSeed _directClaimRootChildSeed = new(
+        new DocumentUuid(Guid.Parse("55555555-0000-0000-0000-000000000005")),
+        5,
+        "get-direct-claim",
+        (int)ClaimEducationOrganizationId,
+        []
+    );
 
     private MssqlRelationalQueryAuthorizationTestContext _context = null!;
 
@@ -170,6 +182,10 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
         }
 
         RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationRootChildAsync(_directClaimRootChildSeed)
+        );
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
             await _context.CreateAuthorizationChildOnlyAsync(_authorizationChildOnlySeed)
         );
         RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
@@ -179,6 +195,7 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
         await _context.InsertAuthEdgeAsync(300, ClaimEducationOrganizationId);
+        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
     }
 
     [OneTimeTearDown]
@@ -225,6 +242,19 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
 
         var orResult = await GetRootChildAsync(_authorizationRootChildSeeds[1], _normalAndInvertedStrategies);
         AssertSuccess(orResult, _authorizationRootChildSeeds[1].DocumentUuid);
+        _context.AssertSingleDocumentHydration();
+    }
+
+    [Test]
+    public async Task It_authorizes_get_by_id_by_direct_claim_match_without_a_hierarchy_edge()
+    {
+        (await _context.CountAuthEdgesAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId))
+            .Should()
+            .Be(0);
+
+        var result = await GetRootChildAsync(_directClaimRootChildSeed, _normalStrategy);
+
+        AssertSuccess(result, _directClaimRootChildSeed.DocumentUuid);
         _context.AssertSingleDocumentHydration();
     }
 

@@ -365,7 +365,7 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalQueryAuthorizationTests.cs for GET-many direct-match coverage.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"RelationalPost|Authorization\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "e2e-tests",
