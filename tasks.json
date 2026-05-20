@@ -346,7 +346,7 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalQueryAuthorizationTests.cs for GET-many direct-match coverage.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"RelationalPost|Authorization\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-integration",

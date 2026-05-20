@@ -400,6 +400,39 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    public async Task DeleteAuthEdgeAsync(
+        long sourceEducationOrganizationId,
+        long targetEducationOrganizationId
+    )
+    {
+        await Database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+            WHERE "SourceEducationOrganizationId" = @sourceEducationOrganizationId
+              AND "TargetEducationOrganizationId" = @targetEducationOrganizationId;
+            """,
+            new NpgsqlParameter("sourceEducationOrganizationId", sourceEducationOrganizationId),
+            new NpgsqlParameter("targetEducationOrganizationId", targetEducationOrganizationId)
+        );
+    }
+
+    public async Task<long> CountAuthEdgesAsync(
+        long sourceEducationOrganizationId,
+        long targetEducationOrganizationId
+    )
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT(*)::bigint
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+            WHERE "SourceEducationOrganizationId" = @sourceEducationOrganizationId
+              AND "TargetEducationOrganizationId" = @targetEducationOrganizationId;
+            """,
+            new NpgsqlParameter("sourceEducationOrganizationId", sourceEducationOrganizationId),
+            new NpgsqlParameter("targetEducationOrganizationId", targetEducationOrganizationId)
+        );
+    }
+
     public async Task<QueryResult> QueryAsync(
         string projectEndpointName,
         string resourceName,
@@ -616,16 +649,21 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     public void AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert()
     {
-        var commands = _writeSessionRecorder.Commands;
-        var command = commands
-            .Select(static recorded => recorded.CommandText)
-            .FirstOrDefault(commandText =>
-                commandText.Contains("AUTH1", StringComparison.Ordinal)
-                && commandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
-            );
+        var command = GetPostCreateRelationshipAuthorizationCommand();
 
-        command.Should().NotBeNull("POST create should compose authorization and dms.Document insert");
         command!
+            .IndexOf("AUTH1", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
+    }
+
+    public void AssertPostCreateDirectClaimMatchAuthorizationBeforeDocumentInsert()
+    {
+        var command = GetPostCreateRelationshipAuthorizationCommand();
+
+        command.Should().Contain("= ANY(@ClaimEducationOrganizationIds) OR EXISTS");
+        command.Should().Contain("\"auth\".\"EducationOrganizationIdToEducationOrganizationId\"");
+        command
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
             .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
@@ -780,6 +818,20 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             FROM "{table.Schema.Value}"."{table.Name}";
             """
         );
+    }
+
+    private string GetPostCreateRelationshipAuthorizationCommand()
+    {
+        var commands = _writeSessionRecorder.Commands;
+        var command = commands
+            .Select(static recorded => recorded.CommandText)
+            .FirstOrDefault(commandText =>
+                commandText.Contains("AUTH1", StringComparison.Ordinal)
+                && commandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+            );
+
+        command.Should().NotBeNull("POST create should compose authorization and dms.Document insert");
+        return command!;
     }
 
     private ResourceHandle GetResourceHandle(string projectEndpointName, string resourceName)
@@ -1112,6 +1164,98 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     private static bool IsPostgresqlDocumentDeleteCommand(string commandText) =>
         commandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal);
+}
+
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Relational_Query_Authorization_With_Direct_EdOrg_Claim_Match
+{
+    private const long ClaimEducationOrganizationId =
+        RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
+    private static readonly IReadOnlyList<string> _normalStrategy =
+    [
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+    ];
+    private static readonly QuerySchoolSeed _directClaimSchoolSeed = new(
+        new DocumentUuid(Guid.Parse("99999999-1000-0000-0000-000000000001")),
+        (int)ClaimEducationOrganizationId,
+        "Claim School"
+    );
+    private static readonly AuthorizationRootChildSeed _directClaimRootChildSeed = new(
+        new DocumentUuid(Guid.Parse("99999999-2000-0000-0000-000000000001")),
+        901,
+        "query-direct-claim",
+        (int)ClaimEducationOrganizationId,
+        []
+    );
+
+    private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _context = new PostgresqlRelationalQueryAuthorizationTestContext();
+        await _context.InitializeAsync(
+            RelationshipAuthorizationCrudTestSupport.FixtureRelativePath,
+            strict: false
+        );
+        await _context.SeedSchoolDescriptorDataAsync();
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateSchoolAsync(_directClaimSchoolSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationRootChildAsync(_directClaimRootChildSeed)
+        );
+        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
+    }
+
+    [SetUp]
+    public void SetUp()
+    {
+        _context.ResetRecorder();
+    }
+
+    [Test]
+    public async Task It_returns_get_many_results_by_direct_claim_match_without_a_hierarchy_edge()
+    {
+        (await _context.CountAuthEdgesAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId))
+            .Should()
+            .Be(0);
+
+        var result = await _context.QueryAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
+            [ClaimEducationOrganizationId],
+            _normalStrategy
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_directClaimRootChildSeed.DocumentUuid.Value.ToString());
+
+        var keyset = _context.AssertSingleQueryHydration();
+        const string DirectClaimMatchSql =
+            "r.\"School_SchoolId\" = ANY(@ClaimEducationOrganizationIds) OR r.\"School_SchoolId\" IN (SELECT";
+        keyset.Plan.PageDocumentIdSql.Should().Contain(DirectClaimMatchSql);
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.TotalCountSql!.Should().Contain(DirectClaimMatchSql);
+    }
 }
 
 [TestFixture]

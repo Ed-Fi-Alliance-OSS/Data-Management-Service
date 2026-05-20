@@ -30,6 +30,11 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
         new(new DocumentUuid(Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001")), 100, "North School"),
         new(new DocumentUuid(Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002")), 200, "South School"),
         new(new DocumentUuid(Guid.Parse("aaaaaaaa-0000-0000-0000-000000000003")), 300, "West School"),
+        new(
+            new DocumentUuid(Guid.Parse("aaaaaaaa-0000-0000-0000-000000000004")),
+            (int)ClaimEducationOrganizationId,
+            "Claim School"
+        ),
     ];
 
     private static readonly ClassPeriodSeed[] _classPeriodSeeds =
@@ -75,6 +80,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
         await _context.InsertAuthEdgeAsync(300, ClaimEducationOrganizationId);
+        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
         _context.ResetRecorder();
     }
 
@@ -104,6 +110,29 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
         success.NewDocumentUuid.Should().Be(seed.DocumentUuid);
         await AssertPersistedRowsAsync(seed);
         _context.AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert();
+    }
+
+    [Test]
+    public async Task It_authorizes_post_create_by_direct_claim_match_without_a_hierarchy_edge()
+    {
+        var seed = CreateRootChildSeed(
+            "cccccccc-0000-0000-0000-000000000007",
+            107,
+            "direct-claim-create",
+            (int)ClaimEducationOrganizationId,
+            []
+        );
+
+        (await _context.CountAuthEdgesAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId))
+            .Should()
+            .Be(0);
+
+        var result = await PostRootChildAsync(seed);
+
+        var success = result.Should().BeOfType<UpsertResult.InsertSuccess>().Subject;
+        success.NewDocumentUuid.Should().Be(seed.DocumentUuid);
+        await AssertPersistedRowsAsync(seed);
+        _context.AssertPostCreateDirectClaimMatchAuthorizationBeforeDocumentInsert();
     }
 
     [Test]
