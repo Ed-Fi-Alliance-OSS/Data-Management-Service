@@ -281,7 +281,7 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs and src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdAuthorizationSpecAdapterTests.cs for assertions that the flag is set only for EdOrg hierarchy checks and is preserved for GET-many page specs.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationPlannerTests|PageDocumentIdAuthorizationSpecAdapterTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "single-record-sql-generation",

@@ -69,7 +69,8 @@ public enum RelationshipAuthorizationValueSource
 public sealed record RelationshipAuthorizationAuthObject(
     DbTableName Name,
     DbColumnName SubjectValueColumn,
-    DbColumnName ClaimEducationOrganizationIdColumn
+    DbColumnName ClaimEducationOrganizationIdColumn,
+    bool AllowsDirectClaimMatch = false
 )
 {
     public static RelationshipAuthorizationAuthObject CreateEdOrgHierarchy(
@@ -80,12 +81,14 @@ public sealed record RelationshipAuthorizationAuthObject(
             RelationshipAuthorizationHierarchyDirection.Normal => new RelationshipAuthorizationAuthObject(
                 AuthNames.EdOrgIdToEdOrgId,
                 AuthNames.TargetEdOrgId,
-                AuthNames.SourceEdOrgId
+                AuthNames.SourceEdOrgId,
+                AllowsDirectClaimMatch: true
             ),
             RelationshipAuthorizationHierarchyDirection.Inverted => new RelationshipAuthorizationAuthObject(
                 AuthNames.EdOrgIdToEdOrgId,
                 AuthNames.SourceEdOrgId,
-                AuthNames.TargetEdOrgId
+                AuthNames.TargetEdOrgId,
+                AllowsDirectClaimMatch: true
             ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(direction),
