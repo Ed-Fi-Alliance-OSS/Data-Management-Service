@@ -531,8 +531,9 @@ prepare-dms-schema.ps1
 > content fetch failures. Story 00 stages the workspace and validates the manifest; Story 04 owns the
 > `ContentProvider` update that makes the staged JSON workspace the authoritative runtime source,
 > re-introduces `bootstrap-dms.yml`, and wires `Set-BootstrapStartupEnvironment` to emit the
-> `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` env vars. Until Story 04 lands, Docker-hosted DMS continues to
-> use DLL-backed schema loading (`SCHEMA_PACKAGES` or embedded assembly fallback).
+> `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` env vars. Until Story 04 lands, bootstrap-present Docker startup
+> blanks those env vars and falls back to the built-in DLL-backed schema assemblies. Non-bootstrap local
+> startup can still use the existing `SCHEMA_PACKAGES` downloader path.
 
 This reuses the existing host-side pattern already present in `eng/preflight-dms-schema-compile.ps1`: the
 host materializes concrete schema files first, then downstream steps operate on those staged files rather
@@ -777,11 +778,13 @@ The authoritative phase order and ownership rules live only in
 [`command-boundaries.md`](command-boundaries.md), especially Sections 3.2, 3.3, and 4. This section records
 the security-specific acceptance context:
 
-- `prepare-dms-claims.ps1` derives and stages the claims inputs before the Config Service starts.
-- `start-local-dms.ps1` consumes the bootstrap manifest claims section and treats Config Service readiness
-  as both service health and claims-ready verification for the staged inputs.
-- A missing claimset for an extension resource causes authorization failures during API-based seed loading,
-  so seed delivery never proceeds until the claims-ready gate has passed.
+- `prepare-dms-claims.ps1` derives and stages the claims inputs before staged runtime startup.
+- Story 00 `start-local-dms.ps1` validates the bootstrap manifest when present but does not consume the
+  staged claims section at startup until Story 04 can also point DMS at the matching staged ApiSchema
+  workspace.
+- After staged runtime startup is enabled, a missing claimset for an extension resource causes authorization
+  failures during API-based seed loading, so seed delivery never proceeds until the claims-ready gate has
+  passed.
 - Because the current CMS startup path only initial-loads claims into empty tables, changing the selected
   security inputs against a populated `edfi_config` database is outside the supported rerun surface for
   DMS-916. Bootstrap requires teardown rather than trying to replace claims in place.
@@ -790,19 +793,22 @@ For expert-mode bootstraps, `prepare-dms-claims.ps1` still derives the base clai
 schema and available claims inputs. If the staged schema selection requires additional non-core security
 metadata, `-ClaimsDirectoryPath` is required. Bootstrap stages the combined validated set into one workspace
 directory and records the
-effective CMS startup inputs in the root bootstrap manifest under `.bootstrap`. Those
+prepared CMS startup inputs in the root bootstrap manifest under `.bootstrap`. Those
 fragments may extend resource-claim nodes, but they may only attach actions to effective claim set
 references that already exist in embedded `Claims.json`. Bootstrap validates the same effective reference
-set defined in `command-boundaries.md`: explicit `resourceClaims[].claimSets[].name` values, plus the
-top-level fragment `name` only when CMS composition uses it as an implicit claim set name for a non-parent
-resource claim.
+set defined in `command-boundaries.md`: parent `resourceClaims[].claimSets[].name` values, plus the
+top-level fragment `name` when CMS composition uses it as an implicit claim set name for a non-parent
+resource claim. Non-parent explicit `claimSets` are rejected because CMS composes non-parent grants from
+the top-level fragment name and `authorizationStrategyOverridesForCRUD`.
 
 ### 4.5 Claims-Loading Approach: Safe Path vs. Legacy Flag
 
 The bootstrap design uses the claims section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json` to
 carry the effective Config Service claims inputs for the run, including the equivalent of Hybrid vs Embedded
-startup mode and the relative staged claims workspace when Hybrid mode is active. This is the intended path for
-every schema-selection flow, with `-ClaimsDirectoryPath` acting only as an additive input.
+startup mode and the relative staged claims workspace when Hybrid mode is active. Story 00 records and
+validates those inputs; Story 04 activates them at startup when DMS also reads the matching staged schema
+workspace. This is the intended path for every schema-selection flow, with `-ClaimsDirectoryPath` acting only
+as an additive input.
 For expert `-ApiSchemaPath` flows that need additional non-core security metadata, that additive input is
 required because bootstrap does not infer security fragments for arbitrary resources.
 
@@ -811,11 +817,13 @@ required because bootstrap does not infer security fragments for arbitrary resou
 All three schema-selection modes are explicitly designed to operate without this flag:
 
 - **Mode 1 (core only)**: the bootstrap manifest claims section resolves to Embedded mode - no extra flag needed.
-- **Mode 2 (named extensions)**: the bootstrap manifest claims section resolves to Hybrid mode and points at
-  the staged claims workspace containing only the selected claimset files - no extra flag needed.
-- **Mode 3 (expert `-ApiSchemaPath`)**: claims loading is automatic from the staged schema and available
+- **Mode 2 (named extensions)**: the bootstrap manifest claims section resolves to Hybrid mode and, after
+  Story 04 activates staged runtime startup, points at the staged claims workspace containing only the
+  selected claimset files - no extra flag needed.
+- **Mode 3 (expert `-ApiSchemaPath`)**: claims staging is automatic from the staged schema and available
   claims inputs. When the staged schema set contains extension resources with matching fragments, the same
-  bootstrap manifest mechanism stages the matching base fragments and selects Hybrid mode automatically.
+  bootstrap manifest mechanism stages the matching base fragments and selects Hybrid mode automatically for
+  the future staged runtime startup path.
   Additional non-core claim fragments use `-ClaimsDirectoryPath` and that same mechanism. The
   dangerously-enable flag is **not** required in expert mode either.
 - `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` is **not set** in any of the three modes above.
@@ -1533,10 +1541,11 @@ start.
 6. If any specified extension artifact cannot be resolved, the owning phase exits with a clear error before
    starting any containers.
 
-The staged claims directory must remain in place while Docker containers are running because it is
-bind-mounted into the container at `/app/additional-claims`. For v1, bootstrap uses a stable repo-local
-workspace under `eng/docker-compose/.bootstrap/claims` rather than per-run temp directories plus a state
-file. On same-checkout reruns, bootstrap compares the intended claims set to the existing workspace.
+Once Story 04 activates staged claims startup, the staged claims directory must remain in place while Docker
+containers are running because it is bind-mounted into the container at `/app/additional-claims`. For v1,
+bootstrap uses a stable repo-local workspace under `eng/docker-compose/.bootstrap/claims` rather than per-run
+temp directories plus a state file. On same-checkout reruns, bootstrap compares the intended claims set to
+the existing workspace.
 Identical contents are reused as-is; a different intended set requires teardown because the current CMS
 startup path only initial-loads claims into empty tables and does not replace a populated claims document in
 place. Teardown removes the entire `eng/docker-compose/.bootstrap/` workspace.
@@ -1847,7 +1856,7 @@ Bootstrap-DMS: Starting...
 [prepare-dms-claims]                                       (0.2s)
   Hybrid mode: 1 security fragment(s) staged
 [start-local-dms -InfraOnly]                              (13.7s)
-  Infrastructure and Config Service are claims-ready
+  Infrastructure and Config Service are health-ready
 [configure-local-dms-instance]                             (1.4s)
 [smoke-test credentials]                                   (0.7s)
   Smoke credentials created for selected target instance(s)
@@ -2531,8 +2540,8 @@ the same provider explicitly, for example
 When `-InfraOnly` is used **without** `-DmsBaseUrl`, `start-local-dms.ps1` itself performs only:
 
 1. Docker infrastructure startup without the DMS container.
-2. Config Service readiness checks. In DMS-916 this means `/health` is green and bootstrap has verified
-   that CMS applied the staged claims content as defined in `command-boundaries.md`.
+2. Config Service readiness checks. Story 00 requires `/health` to be green; staged claims readiness moves
+   with the Story 04 staged-schema runtime activation defined in `command-boundaries.md`.
 3. Exit after the infrastructure phase is ready.
 
 The broader IDE preparation flow then continues through separate phase commands or the thin wrapper:
@@ -2551,8 +2560,8 @@ from the earlier stopped invocation.
 When `-DmsBaseUrl` is provided alongside wrapper `-InfraOnly`, the same pre-DMS phases still complete first:
 
 1. Start Docker infrastructure (PostgreSQL, Kafka, Config Service) but not the DMS container.
-2. Wait for Config Service readiness. In DMS-916 this means `/health` is green and bootstrap has verified
-   that CMS applied the staged claims content as defined in `command-boundaries.md`.
+2. Wait for Config Service readiness. Story 00 requires `/health` to be green; staged claims readiness moves
+   with the Story 04 staged-schema runtime activation defined in `command-boundaries.md`.
 3. Run `configure-local-dms-instance.ps1` to create or confirm the target DMS instances, validate or report
    the fixed dev-only `CMSReadOnlyAccess` client created by local identity setup, and optionally create
    smoke-test credentials.

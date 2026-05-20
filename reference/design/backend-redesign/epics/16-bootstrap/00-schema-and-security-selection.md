@@ -114,14 +114,16 @@ claims-staging contract rather than introducing a second path.
   rewriting a directory that may still be bind-mounted into CMS or attempting in-place replacement of
   populated CMS claims data.
 - Claim-fragment validation in bootstrap is structural only: staged fragments must be
-  parseable, must target effective claim set references that already exist in embedded `Claims.json`, and
-  must not collide by filename in the staged workspace. The precise reference rule matches
-  `command-boundaries.md`: every explicit `resourceClaims[].claimSets[].name` is validated, and the
-  fragment top-level `name` is validated only when CMS composition uses it as the implicit claim set name
-  for a non-parent resource claim. A top-level fragment/group label for explicit parent-claim attachments is
-  not itself rejected merely because it is absent from embedded `Claims.json`. Bootstrap does not check
-  attachment overlap or perform semantic composition reasoning; CMS startup is the authoritative composition
-  gate for those outcomes.
+  parseable, must target effective claim set references that already exist in embedded `Claims.json`, must
+  not use explicit `resourceClaims[].claimSets[]` on non-parent claims because CMS composes those through the
+  fragment top-level `name` plus `authorizationStrategyOverridesForCRUD`, and must not collide by filename
+  in the staged workspace. The precise reference rule matches `command-boundaries.md`: explicit
+  `resourceClaims[].claimSets[].name` entries are valid only for parent resource claims, and the fragment
+  top-level `name` is validated when CMS composition uses it as the implicit claim set name for a non-parent
+  resource claim. A top-level fragment/group label for explicit parent-claim attachments is not itself
+  rejected merely because it is absent from embedded `Claims.json`. Bootstrap does not check attachment
+  overlap or perform semantic composition reasoning; CMS startup is the authoritative composition gate for
+  those outcomes.
 - Extension-derived and developer-supplied claimset fragments are staged into one workspace directory with
   fail-fast validation for:
   - missing directory,
@@ -136,14 +138,12 @@ claims-staging contract rather than introducing a second path.
   seed support and does not author or require `SeedLoader` attachments on fragments that lack them — Story
   02 owns built-in seed-package advertisement and the `SeedLoader` coverage requirement enforced at seed
   delivery.
-- CMS consumes the staged claims workspace through the Config Service `/app/additional-claims` mount target.
-  In bootstrap mode, the host source for that mount is the manifest-selected
-  `eng/docker-compose/.bootstrap/claims/` workspace, not the repo
-  `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/` directory. The claims
-  section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json` is the source of truth for the CMS claims
-  mode, relative claims directory, claims fingerprint, and expected claims-verification checks.
-  `start-local-dms.ps1` translates that manifest section into the `local-config.yml` environment and
-  bind-mount inputs used for the run.
+- CMS will consume the staged claims workspace through the Config Service `/app/additional-claims` mount target
+  when Story 04 enables staged runtime startup. Story 00 records the manifest-selected
+  `eng/docker-compose/.bootstrap/claims/` workspace, claims mode, claims fingerprint, and expected
+  claims-verification checks, but `start-local-dms.ps1` does not translate that manifest section into
+  `local-config.yml` environment and bind-mount inputs until DMS also reads the matching staged ApiSchema
+  workspace.
 - `prepare-dms-claims.ps1` updates `eng/docker-compose/.bootstrap/bootstrap-manifest.json` after claims
   staging succeeds. The claims section records only the effective claims startup inputs and fingerprints; the
   seed section records only extension namespace prefixes. The root manifest must not contain built-in
@@ -211,25 +211,37 @@ claims-staging contract rather than introducing a second path.
    stage/validate claim fragments in this phase.
 4. Define the bootstrap-dms compose surface and runtime env wiring (mount `.bootstrap/ApiSchema` →
    `/app/ApiSchema`, set `USE_API_SCHEMA_PATH=true`, set `API_SCHEMA_PATH=/app/ApiSchema`, clear
-   `SCHEMA_PACKAGES`) **in design only**. Story 00 does not enable the runtime DMS bootstrap startup path
-   because `ContentProvider` still expects `*.ApiSchema.dll` assemblies; enabling it now would cause
-   discovery/XSD content fetches to fail in bootstrap mode. Story 04 owns flipping DMS over to the
-   staged workspace at runtime (re-introducing `bootstrap-dms.yml` and the corresponding env-var wiring
-   in `Set-BootstrapStartupEnvironment`).
+   `SCHEMA_PACKAGES`) **in design only** — see the Mode 3 flow in
+   [`bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md) for the end-state diagram
+   Story 04 implements. Story 00 does not enable that runtime DMS bootstrap startup path because
+   `ContentProvider` still expects `*.ApiSchema.dll` assemblies; enabling it now would cause
+   discovery/XSD content fetches to fail in bootstrap mode. To keep the deferral robust against
+   `.env`-leaked values (the repo `.env` / `.env.example` / `.env.e2e` currently set
+   `USE_API_SCHEMA_PATH=true` / `API_SCHEMA_PATH=/app/ApiSchema` for the eventual Story 04 end state),
+   `Set-BootstrapStartupEnvironment` explicitly blanks `USE_API_SCHEMA_PATH` and `API_SCHEMA_PATH` in
+   the process environment when a bootstrap manifest is present. Compose then falls back to
+   `${VAR:-false}` / empty path, so the DMS container does not execute the `SCHEMA_PACKAGES` downloader and
+   uses its built-in DLL-backed schema assemblies. Because DMS is still on that non-staged path here, Story
+   00 leaves `DMS_CONFIG_CLAIMS_SOURCE` and `DMS_CONFIG_CLAIMS_DIRECTORY` to the env file or
+   `-AddExtensionSecurityMetadata` compatibility path, but clears `DMS_CONFIG_CLAIMS_MOUNT_SOURCE` so CMS
+   cannot mount staged `.bootstrap/claims` for a different staged schema set. Story 04 owns flipping DMS and
+   CMS over to the staged workspaces together (re-introducing `bootstrap-dms.yml` and the corresponding
+   env-var wiring in `Set-BootstrapStartupEnvironment`).
 5. Implement additive security-fragment staging in `prepare-dms-claims.ps1`: stage fragments into one
    bootstrap workspace, with duplicate-filename detection, malformed-JSON validation, unknown effective
    claim-set-reference validation, and updates to the root bootstrap manifest claims section that record the
-   Embedded versus Hybrid mode, the relative staged claims workspace CMS must read through the Config Service
-   `/app/additional-claims` mount, the claims fingerprint, and expected verification checks.
-   `start-local-dms.ps1` consumes that manifest section and applies it through `local-config.yml` startup
-   inputs. Also write the root bootstrap manifest seed section from extension namespace-prefix metadata so
-   seed delivery can consume prepared schema/security context without accepting schema or claims parameters.
+   Embedded versus Hybrid mode, the relative staged claims workspace CMS will read through the Config Service
+   `/app/additional-claims` mount once Story 04 enables staged runtime startup, the claims fingerprint, and
+   expected verification checks. `start-local-dms.ps1` validates that manifest section in Story 00 but does
+   not apply it to Config Service startup until DMS also reads the matching staged ApiSchema workspace.
+   Also write the root bootstrap manifest seed section from extension namespace-prefix metadata so seed
+   delivery can consume prepared schema/security context without accepting schema or claims parameters.
    Bootstrap validation stays structural; CMS remains the authority for final composition outcomes.
 6. Remove the redundant DMS-service `/app/additional-claims` bind mounts from `local-dms.yml` and
-   `published-dms.yml`. Update the Config Service `/app/additional-claims` mounts in `local-config.yml` and
-   `published-config.yml` so bootstrap mode sources the manifest-selected `.bootstrap/claims` workspace rather
-   than the repo `AdditionalClaimsets/` directory; DMS reads claimsets from CMS authorization metadata, not
-   from fragment files mounted into the DMS container.
+   `published-dms.yml`. Keep the Config Service `/app/additional-claims` mount source configurable through
+   `DMS_CONFIG_CLAIMS_MOUNT_SOURCE`, but do not set that variable from the bootstrap manifest in Story 00;
+   staged claims startup must move with the Story 04 DMS staged-schema runtime switch. DMS reads claimsets
+   from CMS authorization metadata, not from fragment files mounted into the DMS container.
 7. Ensure operator-facing validation messages report missing schema, security, or seed artifacts as artifact
    resolution/configuration failures.
 8. Remove bootstrap-surface dependence on `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` and
@@ -249,8 +261,8 @@ claims-staging contract rather than introducing a second path.
    resources ahead of runtime.
 12. Add focused tests for the Story 00 staging contracts: schema workspace normalization and collision
     detection, schema and claims rerun fingerprint mismatch handling, selected-extension manifest identity,
-    automatic extension-fragment filtering, known namespace-prefix handoff, Config Service mount source
-    selection for `.bootstrap/claims`, and structural claim-fragment validation failures.
+    automatic extension-fragment filtering, known namespace-prefix handoff, Story 00 deferral of the staged
+    Config Service claims mount source to Story 04, and structural claim-fragment validation failures.
 
 ## Out of Scope
 
@@ -267,6 +279,9 @@ claims-staging contract rather than introducing a second path.
   Story 00 stages the workspace and validates the manifest, but `bootstrap-dms.yml` and the
   `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` env-var wiring in `Set-BootstrapStartupEnvironment` are not
   activated until Story 04 updates `ContentProvider` to read staged JSON instead of `*.ApiSchema.dll`.
+- Flipping Config Service startup to read the staged `.bootstrap/claims` workspace for bootstrap mode; that
+  must happen with the Story 04 DMS staged-schema runtime switch so schema and authorization metadata remain
+  aligned.
 
 ## Design References
 
@@ -278,7 +293,7 @@ claims-staging contract rather than introducing a second path.
 
 ### 2026-05-15 — External PR review (DMS-1150 / branch)
 
-Reviewer reported four findings; all four resolved as actionable. Fix tasks recorded in `docs/tasks.md`:
+Reviewer reported four findings; all four resolved as actionable:
 
 - **FB1 (High, VALID):** Removing `-AddExtensionSecurityMetadata` from E2E wrappers (`tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1`, `tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1`) and `build-dms.ps1` regresses extension claims loading for any startup that does not first run the bootstrap commands. `.env.e2e` still loads Sample/Homograph schema packages, but `DMS_CONFIG_CLAIMS_SOURCE` falls back to `Embedded`. Restore the non-bootstrap hybrid claims path until E2E moves onto the staged bootstrap path in Story 04.
 - **FB2 (Medium, VALID — escalated from PARTIAL):** `Set-BootstrapStartupEnvironment` (`bootstrap-manifest.psm1`) flips DMS into `USE_API_SCHEMA_PATH=true` and `bootstrap-dms.yml` mounts `.bootstrap/ApiSchema`, but the existing `ContentProvider` only loads `*.ApiSchema.dll`. Story 00 should stop short of changing runtime DMS loading; remove or gate the bootstrap-mode startup wiring and re-enable it in Story 04 when ContentProvider reads the staged workspace. Update Task #4 wording to match.
@@ -289,7 +304,7 @@ No findings dismissed.
 
 ### 2026-05-15 — External PR review round 2 (DMS-1150 / branch)
 
-Three follow-up findings; all three accepted. Fix tasks recorded in `docs/tasks.md` (FB5-FB7):
+Three follow-up findings; all three accepted:
 
 - **FB5 (Medium, VALID):** `Assert-FragmentValidAndExtractChecks` only requires `resourceClaims[].name` inside the explicit `claimSets` loop. Parent claims and implicit non-parent claims bypass the check, so a fragment can stage with a nameless entry and later cause CMS to deref `resourceClaim.Name!`. Hoist the check to the top of the loop and add Pester cases.
 - **FB6 (Low/Medium, VALID):** The non-bootstrap `-AddExtensionSecurityMetadata` Hybrid branch sets `DMS_CONFIG_CLAIMS_SOURCE`/`DMS_CONFIG_CLAIMS_DIRECTORY` but leaves `DMS_CONFIG_CLAIMS_MOUNT_SOURCE` untouched. `local-config.yml` honors that env var, so a stale ambient value mounts the wrong directory. Clear it to empty in both `start-local-dms.ps1` and `start-published-dms.ps1`, with a Pester guard.
@@ -299,7 +314,7 @@ No round-2 findings dismissed.
 
 ### 2026-05-15 — External PR review round 3 (DMS-1150 / branch)
 
-Single high-severity finding; accepted with the "clear `.bootstrap/` before start" remediation (not the alternative `-NoBootstrap` opt-out switch). Fix task recorded in `docs/tasks.md` as **FB8**:
+Single high-severity finding; accepted with the "clear `.bootstrap/` before start" remediation (not the alternative `-NoBootstrap` opt-out switch):
 
 - **FB8 (High, VALID):** `start-local-dms.ps1` checks the bootstrap manifest first and only applies `-AddExtensionSecurityMetadata` in the `elseif`. A stale `.bootstrap/` workspace (core-only, partial, or with a different extension selection) overrides the DLL-backed E2E/build path: CMS reads `.bootstrap/claims` while runtime loads DLL schemas, producing mismatched authorization or a fail-fast on a missing claims/seed section. `build-dms.ps1`'s teardown doesn't pass `-RemoveBootstrap`, and the E2E setup wrappers assume the caller ran teardown first. Fix: add `-RemoveBootstrap` to `build-dms.ps1`'s teardown calls, and add a defensive `.bootstrap/` removal step at the top of both E2E setup wrappers. Add Pester coverage that asserts the cleanup contracts.
 

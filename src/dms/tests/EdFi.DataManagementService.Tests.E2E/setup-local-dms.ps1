@@ -64,8 +64,13 @@ try {
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
-        Write-Host "Removing stale .bootstrap workspace before DLL-backed E2E startup..." -ForegroundColor Yellow
-        Remove-Item -LiteralPath $bootstrapDir -Recurse -Force
+        Write-Output "Removing stale .bootstrap workspace before DLL-backed E2E startup..."
+        # Fail fast on cleanup errors: a stale manifest left here would trigger bootstrap mode
+        # on the next start-local-dms.ps1 invocation and silently divert the E2E run.
+        Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction Stop
+        if (Test-Path -LiteralPath $bootstrapDir) {
+            throw "Failed to remove stale .bootstrap workspace at '$bootstrapDir'. Resolve any file locks or permissions before re-running setup."
+        }
     }
 
     Write-Host "Starting DMS environment with E2E configuration..." -ForegroundColor Green
@@ -74,10 +79,10 @@ try {
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
     Write-Host "  - Environment File: $EnvironmentFile" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: Yes" -ForegroundColor Gray
-    Write-Host "  - Extension Security Metadata: Yes" -ForegroundColor Gray
+    Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
 
-    Write-Host "Using DLL-backed schema packages for E2E. Bootstrap loose-file runtime loading is Story 04." -ForegroundColor Yellow
+    Write-Output "Using DLL-backed schema packages for E2E. Bootstrap loose-file runtime loading is Story 04."
 
     # Run the start script with E2E configuration
     ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata

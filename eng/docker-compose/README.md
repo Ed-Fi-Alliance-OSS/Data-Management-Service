@@ -205,12 +205,13 @@ $schemaToolExe = if ($IsWindows) { "$schemaToolOutput/dms-schema.exe" } else { "
 ```
 
 `prepare-dms-claims.ps1` stages `*-claimset.json` fragments into
-`.bootstrap/claims`, and the Config Service reads that workspace at
-`/app/additional-claims` when a bootstrap manifest is present. The staged
-`.bootstrap/ApiSchema` workspace is also produced for `dms-schema hash`
-and downstream consumption, but DMS Docker startup still loads schemas
-from the DLL-backed `SCHEMA_PACKAGES` packages — runtime reads of the
-staged ApiSchema workspace land in Story 04.
+`.bootstrap/claims`. Story 00 validates the prepared manifest but does
+not point the Config Service at `.bootstrap/claims` during startup because
+DMS Docker startup still uses the non-staged schema path. When a bootstrap
+manifest is present, startup disables `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH`
+so the container falls back to its built-in DLL-backed schema assemblies.
+Runtime reads of `.bootstrap/ApiSchema` and matching staged claims activation
+land together in Story 04.
 
 The full in-repo `EdFi.DataStandard52.ApiSchema` directory includes TPDM. Story
 00 automatically maps only Sample and Homograph extension claim fragments, so

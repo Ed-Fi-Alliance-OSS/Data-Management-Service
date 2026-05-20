@@ -398,9 +398,9 @@ try {
     # Remove bootstrap workspace so subsequent setup runs do not trip fingerprint-mismatch fail-fast.
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
-        Write-Host "`nRemoving bootstrap workspace at $bootstrapDir..." -ForegroundColor Yellow
-        Remove-Item -LiteralPath $bootstrapDir -Recurse -Force
-        Write-Host "✓ Bootstrap workspace removed" -ForegroundColor Green
+        Write-Output "`nRemoving bootstrap workspace at $bootstrapDir..."
+        Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction Stop
+        Write-Output "✓ Bootstrap workspace removed"
     }
 
     if ($verificationFailed) {

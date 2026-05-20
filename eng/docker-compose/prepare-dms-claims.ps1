@@ -103,7 +103,7 @@ function Test-TruthyJsonValue {
     }
 }
 
-function Get-EffectiveClaimSetNames {
+function Get-EffectiveClaimSetName {
     $repoRoot = Get-BootstrapRepoRoot
     $claimsPath = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json"
     $claims = Read-JsonHashtable -Path $claimsPath -ArtifactName "Embedded claims"
@@ -149,7 +149,7 @@ function Add-FragmentInput {
     )
 }
 
-function Get-UserFragmentFiles {
+function Get-UserFragmentFile {
     param(
         [string]
         $Path
@@ -225,7 +225,7 @@ function Add-ExpectedVerificationCheck {
     }
 }
 
-function Assert-FragmentValidAndExtractChecks {
+function Assert-FragmentValidAndExtractCheck {
     param(
         [Parameter(Mandatory)]
         [string]
@@ -264,9 +264,14 @@ function Assert-FragmentValidAndExtractChecks {
         $isParent = Test-TruthyJsonValue `
             -Value (Get-ValueOrNull -Hashtable $resourceClaim -Key "isParent") `
             -Path $Path
-        $claimSets = Get-ValueOrNull -Hashtable $resourceClaim -Key "claimSets"
-        $usesImplicitClaimSetName = -not $isParent -and ($null -eq $claimSets -or @($claimSets).Count -eq 0)
 
+        $claimSets = Get-ValueOrNull -Hashtable $resourceClaim -Key "claimSets"
+        $claimSetsCount = if ($null -eq $claimSets) { 0 } else { @($claimSets).Count }
+        if (-not $isParent -and $claimSetsCount -gt 0) {
+            throw "Claimset fragment '$(Format-LogSafeText $Path)' has a non-parent resourceClaims entry with claimSets. CMS composes non-parent claims from the fragment top-level name and authorizationStrategyOverridesForCRUD; move the actions there or make the resource claim a parent."
+        }
+
+        $usesImplicitClaimSetName = -not $isParent -and $claimSetsCount -eq 0
         if ($usesImplicitClaimSetName) {
             $usesTopLevelNameAsClaimSet = $true
         }
@@ -408,7 +413,7 @@ foreach ($extensionProject in $extensionProjects) {
     }
 }
 
-$userFragmentFiles = @(Get-UserFragmentFiles -Path $ClaimsDirectoryPath)
+$userFragmentFiles = @(Get-UserFragmentFile -Path $ClaimsDirectoryPath)
 if ($unmappedExtensionNames.Count -gt 0 -and $userFragmentFiles.Count -eq 0) {
     throw "ClaimsDirectoryPath is required for unmapped extension project(s): $(Format-LogSafeText ($unmappedExtensionNames -join ', '))."
 }
@@ -417,7 +422,7 @@ foreach ($userFragmentFile in $userFragmentFiles) {
     Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $userFragmentFile
 }
 
-$effectiveClaimSetNames = Get-EffectiveClaimSetNames
+$effectiveClaimSetNames = Get-EffectiveClaimSetName
 $expectedVerificationChecks = [System.Collections.ArrayList]::new()
 $seenChecks = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 # Keep the core baseline probe even in Embedded mode; startup readiness owns verifying
@@ -430,7 +435,7 @@ Add-ExpectedVerificationCheck `
     -Action "Read"
 
 foreach ($fragment in $fragments) {
-    Assert-FragmentValidAndExtractChecks `
+    Assert-FragmentValidAndExtractCheck `
         -Path $fragment.SourcePath `
         -EffectiveClaimSetNames $effectiveClaimSetNames `
         -SeenChecks $seenChecks `

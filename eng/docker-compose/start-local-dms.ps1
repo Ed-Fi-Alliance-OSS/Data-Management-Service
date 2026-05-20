@@ -68,7 +68,6 @@ param (
 )
 
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
-$bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
 $originalLocation = Get-Location
 if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
     if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
@@ -81,31 +80,10 @@ if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $EnvironmentFile))
     }
 }
-try {
+$bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
 Push-Location $PSScriptRoot
 try {
-    $bootstrapMode = Set-BootstrapStartupEnvironment -SkipArtifactValidation:$d
-}
-catch {
-    if ($d) {
-        Write-Warning "Bootstrap manifest could not be loaded during teardown; continuing anyway. $(Format-LogSafeText ($_.Exception.Message))"
-        $bootstrapMode = $false
-    }
-    else {
-        throw
-    }
-}
-if ($bootstrapMode) {
-    Write-Output "Bootstrap manifest detected. Configured staged claims startup inputs. Schema runtime loading still uses DLL-backed schema packages (Story 04 enables runtime reads of the staged workspace)."
-}
-elseif ($AddExtensionSecurityMetadata) {
-    # Non-bootstrap (DLL-backed) mode: activate Hybrid claims so extension claimset fragments
-    # are loaded from /app/additional-claims (already mounted by local-config.yml).
-    $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
-    $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
-    $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
-    Write-Output "Extension Security Metadata: Hybrid claims mode enabled (non-bootstrap DLL-backed startup)."
-}
+Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
 
 # Identity provider configuration
 Import-Module ./env-utility.psm1 -Force
@@ -167,13 +145,7 @@ if ($d) {
         Write-Output "Shutting down with volume delete"
         docker compose $files --env-file $EnvironmentFile -p dms-local down -v
 
-        if ($RemoveBootstrap) {
-            $bootstrapDir = Get-BootstrapRoot
-            if (Test-Path -LiteralPath $bootstrapDir) {
-                Write-Output "Removing bootstrap workspace at $(Format-LogSafeText $bootstrapDir)"
-                Remove-Item -LiteralPath $bootstrapDir -Recurse -Force
-            }
-        }
+        Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
     }
     else {
         Write-Output "Shutting down"
@@ -341,5 +313,5 @@ else {
 }
 } finally {
     Restore-BootstrapEnvSnapshot -Snapshot $bootstrapEnvSnapshot
-    Set-Location $originalLocation
+    Pop-Location
 }

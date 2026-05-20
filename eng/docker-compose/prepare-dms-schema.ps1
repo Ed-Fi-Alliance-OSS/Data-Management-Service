@@ -44,7 +44,7 @@ function Get-DotNetFrameworkVersion {
     return [version]::new(0, 0)
 }
 
-function Get-DmsSchemaToolCandidateDirectories {
+function Get-DmsSchemaToolCandidateDirectory {
     $repoRoot = Get-BootstrapRepoRoot
     $toolBinRoot = Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin"
     $frameworkDirectories = [System.Collections.ArrayList]::new()
@@ -100,7 +100,7 @@ function Resolve-DmsSchemaTool {
         @("dms-schema")
     }
 
-    foreach ($candidateDirectory in Get-DmsSchemaToolCandidateDirectories) {
+    foreach ($candidateDirectory in Get-DmsSchemaToolCandidateDirectory) {
         foreach ($candidateName in $candidateNames) {
             $candidate = Join-Path $candidateDirectory $candidateName
             if (Test-Path -LiteralPath $candidate -PathType Leaf) {
@@ -232,22 +232,12 @@ function Read-ApiSchemaIdentity {
     }
 }
 
-function Find-ApiSchemaFiles {
+function Find-ApiSchemaFile {
     param(
         [Parameter(Mandatory)]
         [string]
         $Path
     )
-
-    function Test-CanonicalApiSchemaFileName {
-        param(
-            [Parameter(Mandatory)]
-            [string]
-            $Name
-        )
-
-        return $Name -ieq "ApiSchema.json" -or $Name -imatch "^ApiSchema(?:-[A-Za-z0-9][A-Za-z0-9._-]*-EXTENSION|-EXTENSION)\.json$"
-    }
 
     try {
         $resolvedPath = Resolve-Path -LiteralPath $Path -ErrorAction Stop
@@ -261,19 +251,14 @@ function Find-ApiSchemaFiles {
         throw "ApiSchemaPath must be a directory: $(Format-LogSafeText ($item.FullName))"
     }
 
-    $apiSchemaLikeFiles = @(
-        Get-ChildItem -LiteralPath $item.FullName -File -Filter "ApiSchema*.json" |
-            Sort-Object -Property FullName
+    $schemaFiles = @(
+        Get-ChildItem -LiteralPath $item.FullName -File -Filter "ApiSchema*.json" -Recurse |
+            Sort-Object -Property FullName |
+            ForEach-Object { $_.FullName }
     )
 
-    $rejectedFiles = @($apiSchemaLikeFiles | Where-Object { -not (Test-CanonicalApiSchemaFileName -Name $_.Name) })
-    if ($rejectedFiles.Count -gt 0) {
-        throw "ApiSchemaPath contains unsupported ApiSchema-like file name: $(Format-LogSafeText ($rejectedFiles[0].FullName)). Files must be named ApiSchema.json, ApiSchema-EXTENSION.json, or ApiSchema-<Name>-EXTENSION.json."
-    }
-
-    $schemaFiles = @($apiSchemaLikeFiles | ForEach-Object { $_.FullName })
     if ($schemaFiles.Count -eq 0) {
-        throw "No canonical ApiSchema JSON files were found under '$(Format-LogSafeText ($item.FullName))'."
+        throw "No ApiSchema*.json files were found under '$(Format-LogSafeText ($item.FullName))'."
     }
 
     return $schemaFiles
@@ -310,7 +295,7 @@ function Add-CopyOperation {
     )
 }
 
-function Add-ProjectContentOperations {
+function Add-ProjectContentOperation {
     param(
         [Parameter(Mandatory)]
         $Project,
@@ -358,7 +343,7 @@ function Add-ProjectContentOperations {
     }
 }
 
-$schemaSourceFiles = Find-ApiSchemaFiles -Path $ApiSchemaPath
+$schemaSourceFiles = Find-ApiSchemaFile -Path $ApiSchemaPath
 $schemaProjects = @($schemaSourceFiles | ForEach-Object { Read-ApiSchemaIdentity -Path $_ })
 
 $coreProjects = @($schemaProjects | Where-Object { -not $_.IsExtensionProject })
@@ -380,6 +365,7 @@ $targetSources = [System.Collections.Generic.Dictionary[string, string]]::new(
 )
 $copyOperations = [System.Collections.ArrayList]::new()
 $manifestProjects = [System.Collections.ArrayList]::new()
+$contentBySourceDirectory = @{}
 
 foreach ($project in $orderedProjects) {
     $schemaRelativePath = "schemas/$($project.ProjectDirectoryName)/ApiSchema.json"
@@ -389,22 +375,32 @@ foreach ($project in $orderedProjects) {
         -SourcePath $project.SourcePath `
         -RelativeTargetPath $schemaRelativePath
 
-    $contentPaths = [pscustomobject]@{
-        DiscoverySpecPath = $null
-        XsdDirectory = $null
-    }
+    if (-not $contentBySourceDirectory.ContainsKey($project.SourceDirectory)) {
+        # When two or more projects share a source directory AND that directory carries
+        # schema-adjacent content (discovery-spec.json or xsd/), the core schema owns the staged
+        # content path that every project in the group references. Extension-only groups have no
+        # unambiguous owner in that case — fail fast and tell the caller to put each extension in
+        # its own directory (or add a sibling core schema). When no schema-adjacent content exists
+        # in the directory, there is nothing to disambiguate, so multiple extensions in the same
+        # directory are accepted (typical of recursive ApiSchema*.json discovery layouts).
+        $sourceDirectoryGroup = @($sourceDirectoryGroups[$project.SourceDirectory])
+        $coreInGroup = @($sourceDirectoryGroup | Where-Object { -not $_.IsExtensionProject })
+        if ($sourceDirectoryGroup.Count -gt 1 -and $coreInGroup.Count -eq 0) {
+            $hasSchemaAdjacentContent =
+                (Test-Path -LiteralPath (Join-Path $project.SourceDirectory "discovery-spec.json") -PathType Leaf) -or
+                (Test-Path -LiteralPath (Join-Path $project.SourceDirectory "xsd") -PathType Container) -or
+                (Test-Path -LiteralPath (Join-Path $project.SourceDirectory "XSD") -PathType Container)
+            if ($hasSchemaAdjacentContent) {
+                throw "Ambiguous schema-adjacent content ownership: source directory '$(Format-LogSafeText $project.SourceDirectory)' contains multiple extension schemas and no core schema. Move each extension into its own directory."
+            }
+        }
 
-    $sourceDirectoryGroup = @($sourceDirectoryGroups[$project.SourceDirectory])
-    if ($sourceDirectoryGroup.Count -gt 1 -and ($sourceDirectoryGroup | Where-Object { -not $_.IsExtensionProject }).Count -eq 0) {
-        throw "Ambiguous schema-adjacent content ownership: source directory '$(Format-LogSafeText $project.SourceDirectory)' contains multiple extension schemas and no core schema. Move each extension into its own directory."
-    }
-    $projectOwnsSharedContent = $sourceDirectoryGroup.Count -eq 1 -or -not $project.IsExtensionProject
-    if ($projectOwnsSharedContent) {
-        $contentPaths = Add-ProjectContentOperations `
+        $contentBySourceDirectory[$project.SourceDirectory] = Add-ProjectContentOperation `
             -Project $project `
             -TargetSources $targetSources `
             -CopyOperations $copyOperations
     }
+    $contentPaths = $contentBySourceDirectory[$project.SourceDirectory]
 
     $manifestProject = [ordered]@{
         projectName = $project.ProjectName
@@ -460,7 +456,7 @@ try {
 
     $workspaceFingerprint = Get-BootstrapWorkspaceFingerprint -Path $temporaryRoot
     $schemaSection = [ordered]@{
-        mode = "ApiSchemaPath"
+        selectionMode = "ApiSchemaPath"
         selectedExtensions = @($extensionProjects | ForEach-Object { $_.ProjectEndpointName.ToLowerInvariant() })
         effectiveSchemaHash = $effectiveSchemaHash
         workspaceFingerprint = $workspaceFingerprint
