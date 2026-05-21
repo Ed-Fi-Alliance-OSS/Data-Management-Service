@@ -474,6 +474,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
     /// <summary>
     /// Builds a reverse reference index mapping target resources to their referrer entries.
+    /// Resource extension contexts contribute their <c>_ext</c>-scoped reference mappings against
+    /// the base resource's merged binding set, so extension tables appear as referrers on the
+    /// referenced resource's propagation trigger.
     /// </summary>
     private static Dictionary<QualifiedResourceName, List<ReverseReferenceEntry>> BuildReverseReferenceIndex(
         RelationalModelSetBuilderContext context,
@@ -481,30 +484,55 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     )
     {
         var reverseIndex = new Dictionary<QualifiedResourceName, List<ReverseReferenceEntry>>();
+        var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
+            context,
+            static (_, model) => model
+        );
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
-            if (IsResourceExtension(resourceContext))
-            {
-                continue;
-            }
-
-            var referrerResource = new QualifiedResourceName(
+            var contextResource = new QualifiedResourceName(
                 resourceContext.Project.ProjectSchema.ProjectName,
                 resourceContext.ResourceName
             );
 
-            // Continue intentionally filters abstract and unmodeled resources — they have
-            // schema entries but no concrete resource model (e.g., abstract base resources
-            // or resources that do not produce relational tables).
-            if (!concreteResourcesByName.TryGetValue(referrerResource, out var referrerModel))
-            {
-                continue;
-            }
+            ConcreteResourceModel referrerModel;
+            QualifiedResourceName referrerResource;
 
-            if (referrerModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+            if (IsResourceExtension(resourceContext))
             {
-                continue;
+                // ReferenceBindingPass merges extension reference bindings into the base
+                // resource's RelationalModel.DocumentReferenceBindings (the binding's Table
+                // points at the _ext table). Skipping the extension context here would drop
+                // those _ext-bound referrers from the propagation reverse index, leaving the
+                // extension table's projected identity columns stale on cross-resource
+                // identity updates and preventing its stamp trigger from firing.
+                referrerModel = ResolveBaseResourceForExtension(
+                    resourceContext.ResourceName,
+                    contextResource,
+                    baseResourcesByName,
+                    static model => model.ResourceKey.Resource
+                );
+                referrerResource = referrerModel.ResourceKey.Resource;
+            }
+            else
+            {
+                referrerResource = contextResource;
+
+                // Continue intentionally filters abstract and unmodeled resources — they have
+                // schema entries but no concrete resource model (e.g., abstract base resources
+                // or resources that do not produce relational tables).
+                if (!concreteResourcesByName.TryGetValue(referrerResource, out var resolved))
+                {
+                    continue;
+                }
+
+                if (resolved.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+                {
+                    continue;
+                }
+
+                referrerModel = resolved;
             }
 
             var referrerBuilderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
