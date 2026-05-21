@@ -177,9 +177,30 @@ internal class UpdateByIdHandler(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(
                     traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: failure.ErrorMessages
+                    errors: failure.ErrorMessages,
+                    hints: failure.Hints
                 ),
                 Headers: []
+            ),
+            UpdateFailureRelationshipNotAuthorized failure => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: failure.ErrorMessages,
+                    hints: failure.Hints
+                ),
+                Headers: []
+            ),
+            UpdateFailureNotImplemented failure => new FrontendResponse(
+                StatusCode: 501,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            UpdateFailureSecurityConfiguration failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, failure.Errors),
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             UpdateFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
                 ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),

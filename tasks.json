@@ -14,7 +14,7 @@
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~UpdateByIdHandlerTests|FullyQualifiedName~UpsertHandlerTests\".",
       "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteSmokeTests\"."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "planning",

@@ -772,9 +772,11 @@ internal sealed class DefaultRelationalWriteExecutor(
                     relationshipFailure
                 )
             ),
-            RelationalWriteOperationKind.Put => BuildUnknownFailureResult(
-                operationKind,
-                "Proposed relationship authorization is only supported for POST writes."
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureRelationshipNotAuthorized(
+                    RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure),
+                    relationshipFailure
+                )
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
