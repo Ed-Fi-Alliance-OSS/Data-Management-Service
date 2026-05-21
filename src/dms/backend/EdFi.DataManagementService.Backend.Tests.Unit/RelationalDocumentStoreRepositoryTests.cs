@@ -3445,7 +3445,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
         _capturedExecutorRequests.Should().ContainSingle();
-        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().BeNull();
+        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().NotBeNull();
+        _capturedExecutorRequest
+            .StoredRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.Authorized>()
+            .Which.CheckSpecs.Should()
+            .ContainSingle()
+            .Which.ValueSource.Should()
+            .Be(RelationshipAuthorizationValueSource.Stored);
         _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().NotBeNull();
         _capturedExecutorRequest
             .ProposedRelationshipAuthorization!.CheckSpecs.Should()
@@ -3501,7 +3508,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequests.Should().ContainSingle();
         _capturedExecutorRequest.StoredRelationshipAuthorization.Should().NotBeNull();
         _capturedExecutorRequest
-            .StoredRelationshipAuthorization!.CheckSpecs.Should()
+            .StoredRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.Authorized>()
+            .Which.CheckSpecs.Should()
             .ContainSingle()
             .Which.ValueSource.Should()
             .Be(RelationshipAuthorizationValueSource.Stored);
@@ -3632,9 +3641,27 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_put_relationship_not_authorized_for_empty_edorg_claims_after_existing_target_lookup()
+    public async Task It_forwards_put_empty_edorg_claims_to_the_write_executor_after_existing_target_lookup()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateFailureRelationshipNotAuthorized(
+                            ["stored relationship denied"],
+                            CreateNoClaimsStoredRelationshipFailure()
+                        )
+                    )
+                )
+            );
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
@@ -3664,12 +3691,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .ContainSingle()
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
-        _capturedExecutorRequests.Should().BeEmpty();
+        _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequest
+            .StoredRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.NoClaims>();
         _targetLookupService.ResolveForPutCallCount.Should().Be(1);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .MustNotHaveHappened();
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]
@@ -3745,7 +3775,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequests.Should().ContainSingle();
         _capturedExecutorRequest.StoredRelationshipAuthorization.Should().NotBeNull();
         _capturedExecutorRequest
-            .StoredRelationshipAuthorization!.CheckSpecs.Should()
+            .StoredRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.Authorized>()
+            .Which.CheckSpecs.Should()
             .ContainSingle()
             .Which.ValueSource.Should()
             .Be(RelationshipAuthorizationValueSource.Stored);
@@ -6108,6 +6140,49 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 ),
             ],
             ClaimEducationOrganizationIds: [new EducationOrganizationId(255901)]
+        );
+
+    private static RelationshipAuthorizationFailure CreateNoClaimsStoredRelationshipFailure() =>
+        new(
+            RelationshipAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 0,
+            FailedStrategies:
+            [
+                new RelationshipAuthorizationFailedStrategy(
+                    ConfiguredStrategyIndex: 0,
+                    RelationshipLocalOrder: 0,
+                    StrategyName: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    StrategyKind: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                        "auth.EducationOrganizationIdToEducationOrganizationId",
+                        "TargetEducationOrganizationId",
+                        "SourceEducationOrganizationId"
+                    ),
+                    FailedSubjects:
+                    [
+                        new RelationshipAuthorizationFailedSubject(
+                            SubjectIndex: 0,
+                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
+                            RootBinding: new RelationshipAuthorizationRootBinding(
+                                "Ed-Fi.School",
+                                "edfi.School",
+                                "SchoolId"
+                            ),
+                            SecurableElements:
+                            [
+                                new RelationshipAuthorizationSecurableElement(
+                                    "EducationOrganization",
+                                    "$.schoolId",
+                                    "SchoolId"
+                                ),
+                            ],
+                            Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
+                        ),
+                    ],
+                    Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
+                ),
+            ],
+            ClaimEducationOrganizationIds: []
         );
 
     private static DocumentMetadataRow CreateDocumentMetadataRow(

@@ -7,6 +7,7 @@ using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -102,6 +103,21 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         try
         {
+            var storedAuthorizationBoundary = await ResolveStoredRelationshipAuthorizationBoundaryAsync(
+                    executionRequest,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (storedAuthorizationBoundary.ImmediateResult is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return storedAuthorizationBoundary.ImmediateResult;
+            }
+
+            executionRequest = storedAuthorizationBoundary.ExecutionRequest;
+
             if (
                 request.WritePrecondition is WritePrecondition.IfMatch
                 && !deferPostPreconditionUntilAfterProposedAuthorization
@@ -463,10 +479,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         catch (RelationalWriteRelationshipAuthorizationNotAuthorizedException ex)
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return BuildProposedRelationshipAuthorizationFailureResult(
-                request.OperationKind,
-                ex.RelationshipFailure
-            );
+            return BuildRelationshipAuthorizationFailureResult(request.OperationKind, ex.RelationshipFailure);
         }
         catch (RelationalWriteInvalidRelationshipAuthorizationFailureException ex)
         {
@@ -506,6 +519,388 @@ internal sealed class DefaultRelationalWriteExecutor(
             throw;
         }
     }
+
+    private async Task<StoredRelationshipAuthorizationBoundary> ResolveStoredRelationshipAuthorizationBoundaryAsync(
+        RelationalWriteExecutorRequest request,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            request.StoredRelationshipAuthorization
+            is null
+                or RelationshipAuthorizationResult.NoAuthorizationRequired
+                or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired
+        )
+        {
+            return new StoredRelationshipAuthorizationBoundary(request, null);
+        }
+
+        var targetResolution = await ResolveStoredRelationshipAuthorizationTargetAsync(
+                request,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (targetResolution.ImmediateResult is not null)
+        {
+            return new StoredRelationshipAuthorizationBoundary(request, targetResolution.ImmediateResult);
+        }
+
+        var executionRequest = targetResolution.ExecutionRequest;
+
+        if (
+            executionRequest.TargetContext is not RelationalWriteTargetContext.ExistingDocument existingTarget
+        )
+        {
+            return new StoredRelationshipAuthorizationBoundary(executionRequest, null);
+        }
+
+        var authorizationResult = await AuthorizeStoredRelationshipAsync(
+                executionRequest,
+                existingTarget,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return authorizationResult is null
+            ? new StoredRelationshipAuthorizationBoundary(executionRequest, null)
+            : new StoredRelationshipAuthorizationBoundary(executionRequest, authorizationResult);
+    }
+
+    private async Task<StoredRelationshipAuthorizationTargetResolution> ResolveStoredRelationshipAuthorizationTargetAsync(
+        RelationalWriteExecutorRequest request,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (request.TargetRequest is RelationalWriteTargetRequest.Post postTargetRequest)
+        {
+            return await ResolvePostStoredRelationshipAuthorizationTargetAsync(
+                    request,
+                    postTargetRequest,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument existingTarget)
+        {
+            return new StoredRelationshipAuthorizationTargetResolution(request, null);
+        }
+
+        var lockedContentVersion = await TryLockExistingTargetAsync(
+                request.MappingSet.Key.Dialect,
+                existingTarget.DocumentId,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return lockedContentVersion is null
+            ? new StoredRelationshipAuthorizationTargetResolution(
+                request,
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+            )
+            : new StoredRelationshipAuthorizationTargetResolution(
+                request with
+                {
+                    TargetContext = existingTarget with
+                    {
+                        ObservedContentVersion = lockedContentVersion.Value,
+                    },
+                },
+                null
+            );
+    }
+
+    private async Task<StoredRelationshipAuthorizationTargetResolution> ResolvePostStoredRelationshipAuthorizationTargetAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetRequest.Post postTargetRequest,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
+        {
+            var targetLookupResult = await _targetLookupResolver
+                .ResolveForPostAsync(
+                    request.MappingSet,
+                    request.WritePlan.Model.Resource,
+                    postTargetRequest.ReferentialId,
+                    postTargetRequest.CandidateDocumentUuid,
+                    writeSession.Connection,
+                    writeSession.Transaction,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            var targetContext = RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult);
+
+            switch (targetContext)
+            {
+                case RelationalWriteTargetContext.CreateNew createNew:
+                    return new StoredRelationshipAuthorizationTargetResolution(
+                        request with
+                        {
+                            TargetContext = createNew,
+                        },
+                        null
+                    );
+
+                case RelationalWriteTargetContext.ExistingDocument existingTarget:
+                    var lockedContentVersion = await TryLockExistingTargetAsync(
+                            request.MappingSet.Key.Dialect,
+                            existingTarget.DocumentId,
+                            writeSession,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (lockedContentVersion is not null)
+                    {
+                        return new StoredRelationshipAuthorizationTargetResolution(
+                            request with
+                            {
+                                TargetContext = existingTarget with
+                                {
+                                    ObservedContentVersion = lockedContentVersion.Value,
+                                },
+                            },
+                            null
+                        );
+                    }
+
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Relational POST stored relationship authorization target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+                    );
+            }
+        }
+
+        return new StoredRelationshipAuthorizationTargetResolution(
+            request,
+            new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
+        );
+    }
+
+    private static async Task<RelationalWriteExecutorResult?> AuthorizeStoredRelationshipAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetContext.ExistingDocument existingTarget,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        return request.StoredRelationshipAuthorization switch
+        {
+            null
+            or RelationshipAuthorizationResult.NoAuthorizationRequired
+            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired => null,
+
+            RelationshipAuthorizationResult.NoClaims noClaims =>
+                BuildNoClaimsStoredRelationshipAuthorizationResult(request.OperationKind, noClaims),
+
+            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
+                BuildKnownButNotEnabledStoredRelationshipAuthorizationResult(request, knownButNotEnabled),
+
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+                BuildStoredRelationshipAuthorizationSecurityConfigurationResult(
+                    request,
+                    securityConfigurationError
+                ),
+
+            RelationshipAuthorizationResult.Authorized authorized =>
+                await ExecuteStoredRelationshipAuthorizationAsync(
+                        request,
+                        existingTarget,
+                        authorized,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
+
+            _ => throw new InvalidOperationException(
+                $"Unsupported stored relationship authorization result '{request.StoredRelationshipAuthorization.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static async Task<RelationalWriteExecutorResult?> ExecuteStoredRelationshipAuthorizationAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetContext.ExistingDocument existingTarget,
+        RelationshipAuthorizationResult.Authorized authorized,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (authorized.ClaimEducationOrganizationIdParameterization is null)
+        {
+            return BuildUnknownFailureResult(
+                request.OperationKind,
+                "Relationship authorization produced executable checks without claim EducationOrganizationId parameterization."
+            );
+        }
+
+        var authorizationExecutor = new SingleRecordRelationshipAuthorizationExecutor(
+            writeSession.CreateCommandExecutor()
+        );
+        var authorizationExecutionResult = await authorizationExecutor
+            .ExecuteAsync(
+                new SingleRecordRelationshipAuthorizationExecutionRequest(
+                    request.MappingSet,
+                    existingTarget.DocumentId,
+                    authorized.CheckSpecs,
+                    authorized.ClaimEducationOrganizationIdParameterization,
+                    GetStoredRelationshipAuthorizationAuth1Index(request.OperationKind)
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return authorizationExecutionResult switch
+        {
+            SingleRecordRelationshipAuthorizationExecutionResult.Authorized => null,
+            SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                BuildRelationshipAuthorizationFailureResult(
+                    request.OperationKind,
+                    notAuthorized.RelationshipFailure
+                ),
+            SingleRecordRelationshipAuthorizationExecutionResult.StaleTarget => request.OperationKind switch
+            {
+                RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureWriteConflict()
+                ),
+                RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureNotExists()
+                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
+            },
+            SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                BuildUnknownFailureResult(request.OperationKind, invalidFailure.FailureMessage),
+            _ => throw new InvalidOperationException(
+                $"Unsupported single-record authorization execution result '{authorizationExecutionResult.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static async Task<long?> TryLockExistingTargetAsync(
+        SqlDialect dialect,
+        long documentId,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = writeSession.CreateCommand(
+            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, documentId)
+        );
+
+        var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return scalarResult is null or DBNull ? null : Convert.ToInt64(scalarResult);
+    }
+
+    private static RelationalWriteExecutorResult BuildNoClaimsStoredRelationshipAuthorizationResult(
+        RelationalWriteOperationKind operationKind,
+        RelationshipAuthorizationResult.NoClaims noClaims
+    )
+    {
+        if (
+            !RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+                noClaims.CheckSpecs,
+                noClaims.Failures,
+                [],
+                GetStoredRelationshipAuthorizationAuth1Index(operationKind),
+                out var noClaimsFailure
+            ) || noClaimsFailure is null
+        )
+        {
+            return BuildUnknownFailureResult(
+                operationKind,
+                "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
+            );
+        }
+
+        return BuildRelationshipAuthorizationFailureResult(operationKind, noClaimsFailure);
+    }
+
+    private static RelationalWriteExecutorResult BuildKnownButNotEnabledStoredRelationshipAuthorizationResult(
+        RelationalWriteExecutorRequest request,
+        RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled
+    )
+    {
+        var resource = request.WritePlan.Model.Resource;
+        var unsupportedStrategyNames = knownButNotEnabled
+            .Failures.Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Where(static strategyName => strategyName is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
+            .Select(static strategyName => $"'{strategyName}'");
+        var operationLabel = request.OperationKind is RelationalWriteOperationKind.Post ? "POST" : "PUT";
+        var scopeTag = request.OperationKind is RelationalWriteOperationKind.Post ? "DMS-1162" : "DMS-1163";
+        var message =
+            $"Relational {operationLabel} authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
+            + $"when effective {operationLabel} authorization includes strategies outside the current {scopeTag} EdOrg-only scope. Unsupported strategies: "
+            + $"[{string.Join(", ", unsupportedStrategyNames)}].";
+
+        return request.OperationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureNotImplemented(
+                    message,
+                    UpsertFailureNotImplementedReason.StrategyNotEnabled
+                )
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureNotImplemented(
+                    message,
+                    UpdateFailureNotImplementedReason.StrategyNotEnabled
+                )
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
+        };
+    }
+
+    private static RelationalWriteExecutorResult BuildStoredRelationshipAuthorizationSecurityConfigurationResult(
+        RelationalWriteExecutorRequest request,
+        RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError
+    )
+    {
+        var operationLabel = request.OperationKind is RelationalWriteOperationKind.Post ? "POST" : "PUT";
+        var errors = securityConfigurationError
+            .Failures.Select(failure =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                + (failure.Hint ?? $"Failure kind: {failure.FailureKind}.")
+            )
+            .ToArray();
+
+        return request.OperationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureSecurityConfiguration(errors)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureSecurityConfiguration(errors)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
+        };
+    }
+
+    private static int GetStoredRelationshipAuthorizationAuth1Index(
+        RelationalWriteOperationKind operationKind
+    ) =>
+        operationKind switch
+        {
+            RelationalWriteOperationKind.Post =>
+                RelationalDocumentStoreRepository.PostRelationshipAuthorizationAuth1Index,
+            RelationalWriteOperationKind.Put =>
+                RelationalDocumentStoreRepository.PutRelationshipAuthorizationAuth1Index,
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
 
     private static RootWriteRowBuffer BuildFinalizedRootRowBuffer(
         RelationalWriteExecutorRequest request,
@@ -764,7 +1159,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         };
     }
 
-    private static RelationalWriteExecutorResult BuildProposedRelationshipAuthorizationFailureResult(
+    private static RelationalWriteExecutorResult BuildRelationshipAuthorizationFailureResult(
         RelationalWriteOperationKind operationKind,
         RelationshipAuthorizationFailure relationshipFailure
     )
@@ -1460,6 +1855,16 @@ internal sealed class DefaultRelationalWriteExecutor(
     private sealed record ResolvedExecutionState(
         RelationalWriteExecutorRequest ExecutionRequest,
         RelationalWriteCurrentState? CurrentState,
+        RelationalWriteExecutorResult? ImmediateResult
+    );
+
+    private sealed record StoredRelationshipAuthorizationBoundary(
+        RelationalWriteExecutorRequest ExecutionRequest,
+        RelationalWriteExecutorResult? ImmediateResult
+    );
+
+    private sealed record StoredRelationshipAuthorizationTargetResolution(
+        RelationalWriteExecutorRequest ExecutionRequest,
         RelationalWriteExecutorResult? ImmediateResult
     );
 }

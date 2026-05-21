@@ -52,7 +52,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutorTests\".",
       "Inspect unit tests proving reference and profile failures are not surfaced when stored authorization fails."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "authorization",

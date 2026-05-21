@@ -554,7 +554,7 @@ public sealed record RelationalWriteExecutorRequest
         RelationalWriteTargetContext targetContext,
         BackendProfileWriteContext? profileWriteContext = null,
         WritePrecondition? writePrecondition = null,
-        RelationshipAuthorizationResult.Authorized? storedRelationshipAuthorization = null,
+        RelationshipAuthorizationResult? storedRelationshipAuthorization = null,
         RelationshipAuthorizationResult.Authorized? proposedRelationshipAuthorization = null
     )
     {
@@ -691,10 +691,10 @@ public sealed record RelationalWriteExecutorRequest
     public WritePrecondition WritePrecondition { get; init; }
 
     /// <summary>
-    /// Operation-neutral stored-value relationship authorization plan for existing-target updates, when required.
-    /// Null when no stored relationship authorization applies or when the request targets create-new POST.
+    /// Operation-neutral stored-value relationship authorization result for existing-target updates, when required.
+    /// Null when no stored relationship authorization applies.
     /// </summary>
-    public RelationshipAuthorizationResult.Authorized? StoredRelationshipAuthorization { get; init; }
+    public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; init; }
 
     /// <summary>
     /// Operation-neutral proposed-value relationship authorization plan, when required.

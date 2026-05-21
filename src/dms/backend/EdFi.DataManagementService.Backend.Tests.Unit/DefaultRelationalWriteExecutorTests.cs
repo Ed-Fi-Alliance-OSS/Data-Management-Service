@@ -267,6 +267,181 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_authorizes_stored_relationship_values_for_existing_put_before_reference_resolution()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            documentReferences: [documentReference]
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureReference(
+                        [
+                            DocumentReferenceFailure.From(
+                                documentReference,
+                                DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        []
+                    )
+                )
+            );
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
+        _writeSessionFactory
+            .Session.RelationshipAuthorizationCommandExecutor.Commands.Should()
+            .ContainSingle();
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_stored_relationship_no_claims_before_put_reference_resolution()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            documentReferences: [documentReference]
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdNoClaimsAuthorization(request),
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        var notAuthorized = updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .RelationshipFailure.ValueSource.Should()
+            .Be(RelationshipAuthorizationFailureValueSource.Stored);
+        notAuthorized.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
+        notAuthorized
+            .RelationshipFailure.FailedStrategies.Should()
+            .ContainSingle()
+            .Which.FailedSubjects.Should()
+            .ContainSingle()
+            .Which.FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_stored_relationship_no_claims_before_put_profile_failures()
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var request = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody);
+        _profileMergeSynthesizer.ExceptionToThrow = new ProfilePlannerContractMismatchException(
+            jsonScope: "$.addresses[*]",
+            invariantName: "reverse stored coverage",
+            message: "profile merge should not run before stored authorization"
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                StoredRelationshipAuthorization = CreateStoredSchoolIdNoClaimsAuthorization(request),
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.ValueSource.Should()
+            .Be(RelationshipAuthorizationFailureValueSource.Stored);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _readMaterializer.MaterializeCallCount.Should().Be(0);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_authorizes_stored_relationship_values_for_existing_post_before_reference_resolution()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference],
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureReference(
+                        [
+                            DocumentReferenceFailure.From(
+                                documentReference,
+                                DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        []
+                    )
+                )
+            );
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
+        _writeSessionFactory
+            .Session.RelationshipAuthorizationCommandExecutor.Commands.Should()
+            .ContainSingle();
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_loads_current_state_once_for_existing_document_requests()
     {
         var request = CreateRequest(
@@ -4273,6 +4448,76 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
+    private static RelationshipAuthorizationResult.Authorized CreateStoredSchoolIdRelationshipAuthorization(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var subject = CreateRelationshipAuthorizationSubject(
+            request,
+            rootPlan,
+            "SchoolId",
+            "$.schoolId",
+            "SchoolId"
+        );
+        var checkSpec = new RelationshipAuthorizationCheckSpec(
+            new ConfiguredAuthorizationStrategy(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                0
+            ),
+            0,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            RelationshipAuthorizationValueSource.Stored,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
+            [subject],
+            new RelationshipAuthorizationCheckTarget.Stored(
+                rootPlan.TableModel.Table,
+                new DbColumnName("DocumentId")
+            )
+        );
+
+        return new RelationshipAuthorizationResult.Authorized(
+            [checkSpec],
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                request.MappingSet.Key.Dialect,
+                [1234L],
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            )
+        );
+    }
+
+    private static RelationshipAuthorizationResult.NoClaims CreateStoredSchoolIdNoClaimsAuthorization(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        var authorized = CreateStoredSchoolIdRelationshipAuthorization(request);
+        var checkSpec = authorized.CheckSpecs.Single();
+
+        return new RelationshipAuthorizationResult.NoClaims(
+            authorized.CheckSpecs,
+            [
+                new RelationshipAuthorizationFailureMetadata(
+                    RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
+                    request.WritePlan.Model.Resource,
+                    checkSpec.ConfiguredStrategy,
+                    checkSpec.RelationshipLocalOrder,
+                    checkSpec.ValueSource,
+                    checkSpec.AuthObject,
+                    new RelationshipAuthorizationFailureLocation(
+                        Kind: SecurableElementKind.EducationOrganization,
+                        JsonPath: "$.schoolId",
+                        ReadableName: "SchoolId",
+                        Table: request.WritePlan.Model.Root.Table,
+                        Column: new DbColumnName("SchoolId")
+                    ),
+                    Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
+                ),
+            ]
+        );
+    }
+
     private static RelationshipAuthorizationFailure CreateProposedSchoolIdRelationshipFailure(
         RelationalWriteExecutorRequest request
     ) =>
@@ -5508,6 +5753,11 @@ public class Given_Default_Relational_Write_Executor
 
         public List<RelationalCommand> Commands { get; } = [];
 
+        public InMemoryRelationalCommandExecutor RelationshipAuthorizationCommandExecutor { get; set; } =
+            CreateAuthorizedRelationshipAuthorizationCommandExecutor();
+
+        public int CreateCommandExecutorCallCount { get; private set; }
+
         public int CommitCallCount { get; private set; }
 
         public int RollbackCallCount { get; private set; }
@@ -5523,6 +5773,26 @@ public class Given_Default_Relational_Write_Executor
             Commands.Add(command);
             return new RecordingDbCommand(ScalarResultToReturn);
         }
+
+        public IRelationalCommandExecutor CreateCommandExecutor()
+        {
+            CreateCommandExecutorCallCount++;
+            return RelationshipAuthorizationCommandExecutor;
+        }
+
+        private static InMemoryRelationalCommandExecutor CreateAuthorizedRelationshipAuthorizationCommandExecutor(
+            long contentVersion = 45L
+        ) =>
+            new([
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        RelationalAccessTestData.CreateRow(
+                            ("AuthorizationResult", 1),
+                            ("ContentVersion", contentVersion)
+                        )
+                    ),
+                ]),
+            ]);
 
         public Task CommitAsync(CancellationToken cancellationToken = default)
         {
