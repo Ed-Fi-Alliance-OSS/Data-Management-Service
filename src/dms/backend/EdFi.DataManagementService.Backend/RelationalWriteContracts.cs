@@ -662,7 +662,7 @@ public sealed record RelationalWriteExecutorRequest
     public JsonNode SelectedBody { get; init; }
 
     /// <summary>
-    /// Whether identity-changing writes are allowed for this resource once the executor supports them.
+    /// Whether identity-changing writes are allowed for this resource.
     /// </summary>
     public bool AllowIdentityUpdates { get; init; }
 
