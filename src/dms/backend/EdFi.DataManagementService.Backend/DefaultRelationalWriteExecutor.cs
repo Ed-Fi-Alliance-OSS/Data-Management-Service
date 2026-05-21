@@ -33,8 +33,6 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalReadMaterializer readMaterializer
 ) : IRelationalWriteExecutor
 {
-    private const int PostRelationshipAuthorizationAuth1Index = 0;
-
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
 
@@ -336,7 +334,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
                     executionRequest.ProposedRelationshipAuthorization,
                     finalizedRootRow,
-                    PostRelationshipAuthorizationAuth1Index
+                    RelationalDocumentStoreRepository.PostRelationshipAuthorizationAuth1Index
                 );
 
                 switch (extractionResult)

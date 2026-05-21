@@ -42,7 +42,7 @@ public sealed class RelationalDocumentStoreRepository(
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
     private const int DeleteRelationshipAuthorizationAuth1Index = 0;
-    private const int PostRelationshipAuthorizationAuth1Index = 0;
+    internal const int PostRelationshipAuthorizationAuth1Index = 0;
     private const int GetByIdReadBoundaryAttemptCount = 2;
 
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -974,18 +974,7 @@ public sealed class RelationalDocumentStoreRepository(
     )
     {
         var authorizationStrategyEvaluators = relationalUpsertRequest.AuthorizationStrategyEvaluators;
-
-        if (authorizationStrategyEvaluators is null)
-        {
-            authorizationStrategyEvaluators = [];
-        }
-
         var authorizationContext = relationalUpsertRequest.AuthorizationContext;
-
-        if (authorizationContext is null)
-        {
-            authorizationContext = new RelationalAuthorizationContext([]);
-        }
 
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             authorizationStrategyEvaluators
