@@ -7,7 +7,6 @@ using System.Buffers;
 using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.External.Model;
 using static EdFi.DataManagementService.Backend.RelationalModel.Manifest.ManifestWriterHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Manifest;
@@ -455,18 +454,10 @@ public static class DerivedModelSetManifestEmitter
 
     /// <summary>
     /// Writes the <c>auth_objects</c> section: the auth EdOrg-to-EdOrg table and the four people
-    /// auth view definitions. Emitted only when the auth EdOrg hierarchy is present, mirroring the
-    /// gating in <c>RelationalModelDdlEmitter.EmitAuthTable</c> / <c>EmitPeopleAuthViews</c>.
+    /// auth view definitions, both read from <see cref="AuthObjectDefinitions"/> — the same source
+    /// the SQL emitter renders from — so a single edit to the auth object structure moves both this
+    /// snapshot and the pgsql.sql / mssql.sql goldens together (DMS-1096 AC).
     /// </summary>
-    /// <remarks>
-    /// The auth table shape (columns, types, PK) and the four people auth views are hand-emitted
-    /// hardcoded objects in the DDL emitter, not derived from the relational model. They must
-    /// therefore be hardcoded here too. Any change to the auth table columns/PK or to a view's
-    /// joins/output columns in <see cref="EdFi.DataManagementService.Backend.External.AuthNames"/>
-    /// or in the DDL emitter MUST be mirrored here so this snapshot and the SQL goldens move
-    /// together — per the DMS-1096 acceptance criterion requiring both snapshots to detect auth
-    /// object definition changes.
-    /// </remarks>
     private static void WriteAuthObjects(
         Utf8JsonWriter writer,
         AuthEdOrgHierarchy? authHierarchy,
@@ -481,42 +472,49 @@ public static class DerivedModelSetManifestEmitter
         writer.WritePropertyName("auth_objects");
         writer.WriteStartObject();
 
-        WriteAuthTable(writer);
+        WriteAuthTable(writer, AuthObjectDefinitions.AuthEdOrgTable);
 
-        if (HasAllPeopleAuthViewAssociations(concreteResources))
+        if (AuthObjectDefinitions.HasAllPeopleAuthViewAssociations(concreteResources))
         {
-            WritePeopleAuthViews(writer);
+            WritePeopleAuthViews(writer, AuthObjectDefinitions.PeopleAuthViews);
         }
 
         writer.WriteEndObject();
     }
 
     /// <summary>
-    /// Writes the <c>auth_objects.table</c> entry for
-    /// <c>auth.EducationOrganizationIdToEducationOrganizationId</c>. Mirrors the columns/PK
-    /// emitted by <c>RelationalModelDdlEmitter.EmitAuthTable</c>.
+    /// Writes the <c>auth_objects.table</c> entry from the shared
+    /// <see cref="AuthEdOrgTableDefinition"/>.
     /// </summary>
-    private static void WriteAuthTable(Utf8JsonWriter writer)
+    private static void WriteAuthTable(Utf8JsonWriter writer, AuthEdOrgTableDefinition def)
     {
         writer.WritePropertyName("table");
         writer.WriteStartObject();
 
         writer.WritePropertyName("table");
-        WriteTableReference(writer, AuthNames.EdOrgIdToEdOrgId);
+        WriteTableReference(writer, def.Table);
 
         writer.WritePropertyName("columns");
         writer.WriteStartArray();
-        WriteAuthColumn(writer, AuthNames.SourceEdOrgId.Value);
-        WriteAuthColumn(writer, AuthNames.TargetEdOrgId.Value);
+        foreach (var column in def.Columns)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", column.Name.Value);
+            writer.WriteString("type", column.SqlType);
+            writer.WriteBoolean("is_nullable", column.IsNullable);
+            writer.WriteEndObject();
+        }
         writer.WriteEndArray();
 
         writer.WritePropertyName("primary_key");
         writer.WriteStartObject();
-        writer.WriteString("name", "PK_EducationOrganizationIdToEducationOrganizationId");
+        writer.WriteString("name", def.PrimaryKeyName);
         writer.WritePropertyName("columns");
         writer.WriteStartArray();
-        writer.WriteStringValue(AuthNames.SourceEdOrgId.Value);
-        writer.WriteStringValue(AuthNames.TargetEdOrgId.Value);
+        foreach (var column in def.PrimaryKeyColumns)
+        {
+            writer.WriteStringValue(column.Value);
+        }
         writer.WriteEndArray();
         writer.WriteEndObject();
 
@@ -524,203 +522,17 @@ public static class DerivedModelSetManifestEmitter
     }
 
     /// <summary>
-    /// Writes one auth-table column entry. Auth table columns are uniformly <c>bigint NOT NULL</c>
-    /// per the DDL emitter; if that ever changes here, the SQL goldens must move too.
+    /// Writes the <c>auth_objects.views</c> array from the shared
+    /// <see cref="AuthObjectDefinitions.PeopleAuthViews"/> sequence.
     /// </summary>
-    private static void WriteAuthColumn(Utf8JsonWriter writer, string columnName)
+    private static void WritePeopleAuthViews(Utf8JsonWriter writer, IReadOnlyList<AuthViewDefinition> views)
     {
-        writer.WriteStartObject();
-        writer.WriteString("name", columnName);
-        writer.WriteString("type", "bigint");
-        writer.WriteBoolean("is_nullable", false);
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Returns whether the model contains all five association resources joined by the people auth
-    /// views. Matches the guard in <c>RelationalModelDdlEmitter.EmitPeopleAuthViews</c>; when any
-    /// is missing, the DDL emitter skips view emission and so does this manifest section.
-    /// </summary>
-    private static bool HasAllPeopleAuthViewAssociations(
-        IReadOnlyList<ConcreteResourceModel> concreteResources
-    )
-    {
-        string[] requiredResourceNames =
-        [
-            "StudentSchoolAssociation",
-            "StudentContactAssociation",
-            "StaffEducationOrganizationAssignmentAssociation",
-            "StaffEducationOrganizationEmploymentAssociation",
-            "StudentEducationOrganizationResponsibilityAssociation",
-        ];
-
-        return Array.TrueForAll(
-            requiredResourceNames,
-            requiredResourceName =>
-                concreteResources.Any(r =>
-                    DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
-                    && r.ResourceKey.Resource.ResourceName == requiredResourceName
-                )
-        );
-    }
-
-    /// <summary>
-    /// Writes the <c>auth_objects.views</c> array describing the four people auth views in the
-    /// same alphabetical order they are emitted by the DDL emitter.
-    /// </summary>
-    private static void WritePeopleAuthViews(Utf8JsonWriter writer)
-    {
-        var edfi = new DbSchemaName("edfi");
-        var authEdOrgTable = AuthNames.EdOrgIdToEdOrgId;
-        var sourceCol = AuthNames.SourceEdOrgId.Value;
-        var targetCol = AuthNames.TargetEdOrgId.Value;
-        var schoolIdUnified = AuthNames.SchoolIdUnified.Value;
-        var studentDocId = AuthNames.StudentDocumentId.Value;
-        var contactDocId = AuthNames.ContactDocumentId.Value;
-        var staffDocId = AuthNames.StaffDocumentId.Value;
-        var edOrgEdOrgId = AuthNames.EdOrgEdOrgId.Value;
-        var edOrgAlias = "edOrg";
-
         writer.WritePropertyName("views");
         writer.WriteStartArray();
-
-        // 1. EducationOrganizationIdToContactDocumentId — DISTINCT, single arm
-        WriteAuthView(
-            writer,
-            viewName: "EducationOrganizationIdToContactDocumentId",
-            armsSetOperator: "NONE",
-            arms:
-            [
-                new AuthViewArm(
-                    SelectDistinct: true,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("sca", contactDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "ssa",
-                            new DbTableName(edfi, "StudentSchoolAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "ssa", schoolIdUnified)]
-                        ),
-                        new AuthViewJoin(
-                            "sca",
-                            new DbTableName(edfi, "StudentContactAssociation"),
-                            [new AuthViewJoinPredicate("ssa", studentDocId, "sca", studentDocId)]
-                        ),
-                    ]
-                ),
-            ]
-        );
-
-        // 2. EducationOrganizationIdToStaffDocumentId — UNION of two arms (assignment + employment).
-        // UNION (not UNION ALL) is deliberate: the deduplicating set-operator is what makes per-arm
-        // DISTINCT unnecessary. Pinning `UNION` here flips the manifest if a future change swaps it.
-        WriteAuthView(
-            writer,
-            viewName: "EducationOrganizationIdToStaffDocumentId",
-            armsSetOperator: "UNION",
-            arms:
-            [
-                new AuthViewArm(
-                    SelectDistinct: false,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("seoaa", staffDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "seoaa",
-                            new DbTableName(edfi, "StaffEducationOrganizationAssignmentAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "seoaa", edOrgEdOrgId)]
-                        ),
-                    ]
-                ),
-                new AuthViewArm(
-                    SelectDistinct: false,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("seoea", staffDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "seoea",
-                            new DbTableName(edfi, "StaffEducationOrganizationEmploymentAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "seoea", edOrgEdOrgId)]
-                        ),
-                    ]
-                ),
-            ]
-        );
-
-        // 3. EducationOrganizationIdToStudentDocumentId — DISTINCT, single arm
-        WriteAuthView(
-            writer,
-            viewName: "EducationOrganizationIdToStudentDocumentId",
-            armsSetOperator: "NONE",
-            arms:
-            [
-                new AuthViewArm(
-                    SelectDistinct: true,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("ssa", studentDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "ssa",
-                            new DbTableName(edfi, "StudentSchoolAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "ssa", schoolIdUnified)]
-                        ),
-                    ]
-                ),
-            ]
-        );
-
-        // 4. EducationOrganizationIdToStudentDocumentIdThroughResponsibility — DISTINCT, single arm
-        WriteAuthView(
-            writer,
-            viewName: "EducationOrganizationIdToStudentDocumentIdThroughResponsibility",
-            armsSetOperator: "NONE",
-            arms:
-            [
-                new AuthViewArm(
-                    SelectDistinct: true,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("seora", studentDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "seora",
-                            new DbTableName(edfi, "StudentEducationOrganizationResponsibilityAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "seora", edOrgEdOrgId)]
-                        ),
-                    ]
-                ),
-            ]
-        );
-
+        foreach (var view in views)
+        {
+            WriteAuthView(writer, view);
+        }
         writer.WriteEndArray();
     }
 
@@ -728,26 +540,21 @@ public static class DerivedModelSetManifestEmitter
     /// Writes a single <c>auth_objects.views[]</c> entry: the view's qualified name, the set-operator
     /// joining its arms, and the ordered list of arms.
     /// </summary>
-    private static void WriteAuthView(
-        Utf8JsonWriter writer,
-        string viewName,
-        string armsSetOperator,
-        IReadOnlyList<AuthViewArm> arms
-    )
+    private static void WriteAuthView(Utf8JsonWriter writer, AuthViewDefinition view)
     {
         writer.WriteStartObject();
 
         writer.WritePropertyName("view");
-        WriteTableReference(writer, new DbTableName(AuthNames.AuthSchema, viewName));
+        WriteTableReference(writer, view.View);
 
         // `arms_set_operator` captures the deduplication semantic between arms ("UNION", "UNION_ALL",
         // or "NONE" for single-arm views). Without it, swapping `UNION` for `UNION ALL` in the DDL
         // emitter would be invisible to the manifest goldens.
-        writer.WriteString("arms_set_operator", armsSetOperator);
+        writer.WriteString("arms_set_operator", ArmsSetOperatorString(view.ArmsSetOperator));
 
         writer.WritePropertyName("arms");
         writer.WriteStartArray();
-        foreach (var arm in arms)
+        foreach (var arm in view.Arms)
         {
             WriteAuthViewArm(writer, arm);
         }
@@ -778,7 +585,7 @@ public static class DerivedModelSetManifestEmitter
         {
             writer.WriteStartObject();
             writer.WriteString("alias", column.Alias);
-            writer.WriteString("column", column.ColumnName);
+            writer.WriteString("column", column.Column.Value);
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
@@ -797,9 +604,9 @@ public static class DerivedModelSetManifestEmitter
             {
                 writer.WriteStartObject();
                 writer.WriteString("left_alias", predicate.LeftAlias);
-                writer.WriteString("left_column", predicate.LeftColumn);
+                writer.WriteString("left_column", predicate.LeftColumn.Value);
                 writer.WriteString("right_alias", predicate.RightAlias);
-                writer.WriteString("right_column", predicate.RightColumn);
+                writer.WriteString("right_column", predicate.RightColumn.Value);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -810,28 +617,14 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
-    private sealed record AuthViewArm(
-        bool SelectDistinct,
-        string SourceAlias,
-        DbTableName SourceTable,
-        IReadOnlyList<AuthViewOutputColumn> OutputColumns,
-        IReadOnlyList<AuthViewJoin> Joins
-    );
-
-    private sealed record AuthViewOutputColumn(string Alias, string ColumnName);
-
-    private sealed record AuthViewJoin(
-        string Alias,
-        DbTableName Table,
-        IReadOnlyList<AuthViewJoinPredicate> On
-    );
-
-    private sealed record AuthViewJoinPredicate(
-        string LeftAlias,
-        string LeftColumn,
-        string RightAlias,
-        string RightColumn
-    );
+    private static string ArmsSetOperatorString(AuthViewSetOperator op) =>
+        op switch
+        {
+            AuthViewSetOperator.None => "NONE",
+            AuthViewSetOperator.Union => "UNION",
+            AuthViewSetOperator.UnionAll => "UNION_ALL",
+            _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Unsupported AuthViewSetOperator."),
+        };
 
     /// <summary>
     /// Writes the optional <c>resource_details</c> array for the requested resources.
