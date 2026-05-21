@@ -517,6 +517,39 @@ internal sealed class RelationalWriteNoProfilePersister(
         RelationalWriteMergeResult mergeResult
     )
     {
+        var proposedAuthorizationCommand = BuildProposedRelationshipAuthorizationCommandParts(
+            mappingSet,
+            mergeResult
+        );
+
+        return new RelationalCommand(
+            proposedAuthorizationCommand.AuthorizationSql,
+            proposedAuthorizationCommand.Parameters
+        );
+    }
+
+    private RelationalCommand BuildAuthorizedInsertDocumentCommand(
+        MappingSet mappingSet,
+        RelationalWriteMergeResult mergeResult,
+        RelationalCommand insertDocumentCommand
+    )
+    {
+        var proposedAuthorizationCommand = BuildProposedRelationshipAuthorizationCommandParts(
+            mappingSet,
+            mergeResult
+        );
+
+        return new RelationalCommand(
+            $"{proposedAuthorizationCommand.AuthorizationSql}{Environment.NewLine}{insertDocumentCommand.CommandText}",
+            [.. proposedAuthorizationCommand.Parameters, .. insertDocumentCommand.Parameters]
+        );
+    }
+
+    private ProposedRelationshipAuthorizationCommandParts BuildProposedRelationshipAuthorizationCommandParts(
+        MappingSet mappingSet,
+        RelationalWriteMergeResult mergeResult
+    )
+    {
         var relationshipAuthorizationRuntimeCheck =
             mergeResult.ProposedRelationshipAuthorizationRuntimeCheck
             ?? throw new InvalidOperationException(
@@ -532,41 +565,16 @@ internal sealed class RelationalWriteNoProfilePersister(
             )
         );
 
-        return new RelationalCommand(
+        return new ProposedRelationshipAuthorizationCommandParts(
             sqlPlan.AuthorizationSql,
             BuildRelationshipAuthorizationParameters(sqlPlan, relationshipAuthorizationRuntimeCheck)
         );
     }
 
-    private RelationalCommand BuildAuthorizedInsertDocumentCommand(
-        MappingSet mappingSet,
-        RelationalWriteMergeResult mergeResult,
-        RelationalCommand insertDocumentCommand
-    )
-    {
-        var relationshipAuthorizationRuntimeCheck =
-            mergeResult.ProposedRelationshipAuthorizationRuntimeCheck
-            ?? throw new InvalidOperationException(
-                "Cannot build a proposed authorization document insert without a runtime authorization check."
-            );
-        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(mappingSet.Key.Dialect);
-        var sqlPlan = compiler.Compile(
-            new SingleRecordRelationshipAuthorizationSqlSpec(
-                relationshipAuthorizationRuntimeCheck.CheckSpecs,
-                relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,
-                relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
-                ReservedParameterNames: GetReservedWriteParameterNames(mergeResult)
-            )
-        );
-
-        return new RelationalCommand(
-            $"{sqlPlan.AuthorizationSql}{Environment.NewLine}{insertDocumentCommand.CommandText}",
-            [
-                .. BuildRelationshipAuthorizationParameters(sqlPlan, relationshipAuthorizationRuntimeCheck),
-                .. insertDocumentCommand.Parameters,
-            ]
-        );
-    }
+    private sealed record ProposedRelationshipAuthorizationCommandParts(
+        string AuthorizationSql,
+        IReadOnlyList<RelationalParameter> Parameters
+    );
 
     private IReadOnlyList<RelationalParameter> BuildRelationshipAuthorizationParameters(
         SingleRecordRelationshipAuthorizationSqlPlan sqlPlan,
