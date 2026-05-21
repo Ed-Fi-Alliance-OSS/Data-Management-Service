@@ -473,7 +473,7 @@ public class Given_A_Postgresql_Relational_Delete_Authorization_With_A_Synthetic
 
         var failure = AssertRelationshipDenied(
             result,
-            RelationshipAuthorizationSubjectFailureKind.NoRelationship
+            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds
         );
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
         await AssertRowsAsync(

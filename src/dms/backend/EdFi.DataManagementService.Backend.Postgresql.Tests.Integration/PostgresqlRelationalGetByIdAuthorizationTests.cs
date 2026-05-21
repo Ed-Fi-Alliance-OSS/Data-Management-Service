@@ -341,7 +341,7 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
 
         var failure = AssertRelationshipDenied(
             result,
-            RelationshipAuthorizationSubjectFailureKind.NoRelationship
+            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds
         );
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
         _context.AssertNoHydration();
