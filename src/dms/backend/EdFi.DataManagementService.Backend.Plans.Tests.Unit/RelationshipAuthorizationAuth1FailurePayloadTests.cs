@@ -385,7 +385,8 @@ public class Given_RelationshipAuthorizationFailureMapper
 
         mapped.Should().BeTrue();
         relationshipFailure.Should().NotBeNull();
-        relationshipFailure!.FailedStrategies.Should().HaveCount(2);
+        relationshipFailure!.ValueSource.Should().Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        relationshipFailure.FailedStrategies.Should().HaveCount(2);
         relationshipFailure
             .FailedStrategies.Select(static strategy => strategy.ConfiguredStrategyIndex)
             .Should()
@@ -407,6 +408,24 @@ public class Given_RelationshipAuthorizationFailureMapper
             .Select(static subject => subject.RootBinding.ColumnName)
             .Should()
             .Equal("SchoolId", "LocalEducationAgencyId");
+        relationshipFailure.FailedStrategies[0].AuthObject.Should().NotBeNull();
+        relationshipFailure
+            .FailedStrategies[0]
+            .AuthObject!.SubjectValueColumn.Should()
+            .Be("TargetEducationOrganizationId");
+        relationshipFailure
+            .FailedStrategies[0]
+            .AuthObject!.ClaimEducationOrganizationIdColumn.Should()
+            .Be("SourceEducationOrganizationId");
+        relationshipFailure.FailedStrategies[1].AuthObject.Should().NotBeNull();
+        relationshipFailure
+            .FailedStrategies[1]
+            .AuthObject!.SubjectValueColumn.Should()
+            .Be("SourceEducationOrganizationId");
+        relationshipFailure
+            .FailedStrategies[1]
+            .AuthObject!.ClaimEducationOrganizationIdColumn.Should()
+            .Be("TargetEducationOrganizationId");
     }
 
     private static RelationshipAuthorizationCheckSpec CreateStoredCheckSpec(
@@ -718,6 +737,10 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             );
         plan.AuthorizationSql.Should()
             .Contain("\"TargetEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "@relationshipAuthorization_2_0_educationServiceCenterId = ANY(@ClaimEducationOrganizationIds)"
+            );
         plan.AuthorizationSql.Should()
             .Contain(
                 "NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 0) OR NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 1) OR NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 2)"

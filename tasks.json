@@ -148,7 +148,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationPlannerTests|FullyQualifiedName~RelationshipAuthorizationAuth1FailurePayloadTests\".",
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~UpdateByIdHandlerTests|FullyQualifiedName~UpsertHandlerTests\"."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "postgresql-integration-tests",
