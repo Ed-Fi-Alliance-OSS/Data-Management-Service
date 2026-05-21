@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -123,27 +125,11 @@ internal sealed class RelationalWriteNoProfilePersister(
         }
         catch (DbException ex)
         {
-            if (
-                TryMapRelationshipAuthorizationFailure(
-                    request.MappingSet.Key.Dialect,
-                    relationshipAuthorizationRuntimeCheck,
-                    ex,
-                    out var relationshipFailure
-                )
-            )
-            {
-                throw new RelationalWriteRelationshipAuthorizationNotAuthorizedException(
-                    relationshipFailure!
-                );
-            }
-
-            if (IsRelationshipAuthorizationProviderFailure(request.MappingSet.Key.Dialect, ex))
-            {
-                throw new RelationalWriteInvalidRelationshipAuthorizationFailureException(
-                    "Relationship authorization failed, but the AUTH1 failure metadata could not be mapped."
-                );
-            }
-
+            ThrowMappedRelationshipAuthorizationFailure(
+                request.MappingSet.Key.Dialect,
+                relationshipAuthorizationRuntimeCheck,
+                ex
+            );
             throw;
         }
     }
@@ -404,27 +390,11 @@ internal sealed class RelationalWriteNoProfilePersister(
         }
         catch (DbException ex) when (relationshipAuthorizationRuntimeCheck is not null)
         {
-            if (
-                TryMapRelationshipAuthorizationFailure(
-                    mappingSet.Key.Dialect,
-                    relationshipAuthorizationRuntimeCheck,
-                    ex,
-                    out var relationshipFailure
-                )
-            )
-            {
-                throw new RelationalWriteRelationshipAuthorizationNotAuthorizedException(
-                    relationshipFailure!
-                );
-            }
-
-            if (IsRelationshipAuthorizationProviderFailure(mappingSet.Key.Dialect, ex))
-            {
-                throw new RelationalWriteInvalidRelationshipAuthorizationFailureException(
-                    "Relationship authorization failed, but the AUTH1 failure metadata could not be mapped."
-                );
-            }
-
+            ThrowMappedRelationshipAuthorizationFailure(
+                mappingSet.Key.Dialect,
+                relationshipAuthorizationRuntimeCheck,
+                ex
+            );
             throw;
         }
     }
@@ -677,6 +647,36 @@ internal sealed class RelationalWriteNoProfilePersister(
             exception,
             _relationshipAuthorizationProviderFailureExtractor
         );
+
+    [DoesNotReturn]
+    private void ThrowMappedRelationshipAuthorizationFailure(
+        SqlDialect dialect,
+        ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck,
+        DbException exception
+    )
+    {
+        if (
+            TryMapRelationshipAuthorizationFailure(
+                dialect,
+                relationshipAuthorizationRuntimeCheck,
+                exception,
+                out var relationshipFailure
+            )
+        )
+        {
+            throw new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure!);
+        }
+
+        if (IsRelationshipAuthorizationProviderFailure(dialect, exception))
+        {
+            throw new RelationalWriteInvalidRelationshipAuthorizationFailureException(
+                "Relationship authorization failed, but the AUTH1 failure metadata could not be mapped."
+            );
+        }
+
+        ExceptionDispatchInfo.Capture(exception).Throw();
+        throw new InvalidOperationException("Unreachable relationship authorization failure mapping state.");
+    }
 
     private static RelationalCommand BuildInsertDocumentCommand(
         SqlDialect dialect,
