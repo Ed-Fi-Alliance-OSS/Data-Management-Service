@@ -3886,6 +3886,106 @@ public class Given_Default_Relational_Write_Executor
         runtimeCheck!.Strategies[0].Subjects[0].Value.Should().Be(444444);
     }
 
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_reads_proposed_relationship_authorization_values_from_profile_merged_existing_update_root_row(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var rawBody = JsonNode.Parse("""{"schoolId":111111,"name":"Raw"}""")!;
+        var writableBody = JsonNode.Parse("""{"schoolId":333333,"name":"Writable"}""")!;
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var baseRequest = CreateRequest(
+            operationKind,
+            selectedBody: rawBody,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
+        var rootPlan = baseRequest.WritePlan.TablePlansInDependencyOrder[0];
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    operationKind == RelationalWriteOperationKind.Put
+                        ? new FlattenedWriteValue.Literal(345L)
+                        : FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(333333),
+                    new FlattenedWriteValue.Literal("Writable"),
+                ]
+            )
+        );
+        var mergedRootRow = new RelationalWriteMergedTableRow(
+            values:
+            [
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(444444),
+                new FlattenedWriteValue.Literal("Merged"),
+            ],
+            comparableValues:
+            [
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(444444),
+                new FlattenedWriteValue.Literal("Merged"),
+            ]
+        );
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRootTableRow(345L, 444444, "Stored Hidden")],
+                    [mergedRootRow]
+                ),
+            ],
+            supportsGuardedNoOp: false
+        );
+
+        var result = await _sut.ExecuteAsync(
+            baseRequest with
+            {
+                ProfileWriteContext = profileContext,
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(
+                    baseRequest
+                ),
+            }
+        );
+
+        switch (operationKind)
+        {
+            case RelationalWriteOperationKind.Put:
+                result
+                    .Should()
+                    .BeOfType<RelationalWriteExecutorResult.Update>()
+                    .Which.Result.Should()
+                    .BeOfType<UpdateResult.UpdateSuccess>();
+                break;
+
+            case RelationalWriteOperationKind.Post:
+                result
+                    .Should()
+                    .BeOfType<RelationalWriteExecutorResult.Upsert>()
+                    .Which.Result.Should()
+                    .BeOfType<UpsertResult.UpdateSuccess>();
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
+        }
+
+        _writeFlattener.CapturedInput.Should().NotBeNull();
+        _writeFlattener.CapturedInput!.SelectedBody.Should().BeSameAs(writableBody);
+        _profileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _profileMergeSynthesizer
+            .CapturedRequest!.ProfileRequest.WritableRequestBody.Should()
+            .BeSameAs(writableBody);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+
+        var runtimeCheck = _noProfilePersister
+            .CapturedMergeResult!
+            .ProposedRelationshipAuthorizationRuntimeCheck;
+        runtimeCheck.Should().NotBeNull();
+        runtimeCheck!.Strategies[0].Subjects[0].Value.Should().Be(444444);
+    }
+
     [Test]
     public async Task It_returns_relationship_authorization_failure_for_missing_proposed_root_values_from_authorization_sql()
     {
@@ -4175,12 +4275,20 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_returns_not_implemented_for_existing_post_after_successful_proposed_relationship_authorization()
+    public async Task It_applies_existing_post_after_successful_proposed_relationship_authorization()
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!,
             targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
         );
 
         var result = await _sut.ExecuteAsync(
@@ -4191,12 +4299,127 @@ public class Given_Default_Relational_Write_Executor
         );
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
-        var notImplemented = upsertResult
-            .Result.Should()
-            .BeOfType<UpsertResult.UpsertFailureNotImplemented>()
-            .Subject;
-        notImplemented.Reason.Should().Be(UpsertFailureNotImplementedReason.ExistingResourcePostAsUpdate);
+        var updateSuccess = upsertResult.Result.Should().BeOfType<UpsertResult.UpdateSuccess>().Subject;
+        updateSuccess.ExistingDocumentUuid.Should().Be(existingDocumentUuid);
+        updateSuccess.ETag.Should().Be(ExpectedEtag(request));
         _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister
+            .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies[0]
+            .Subjects[0]
+            .Value.Should()
+            .Be(255901);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _committedRepresentationReader.ReadCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_authorizes_proposed_relationship_values_for_existing_put_before_persist()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        var updateSuccess = updateResult.Result.Should().BeOfType<UpdateResult.UpdateSuccess>().Subject;
+        updateSuccess
+            .ExistingDocumentUuid.Should()
+            .Be(new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")));
+        updateSuccess.ETag.Should().Be(ExpectedEtag(request));
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister
+            .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies[0]
+            .Subjects[0]
+            .Value.Should()
+            .Be(255901);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_relationship_authorization_failure_for_existing_put_proposed_authorization()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"schoolId":333333,"name":"Lincoln High Updated"}""")!
+        );
+        var relationshipFailure = CreateProposedSchoolIdRelationshipFailure(request);
+        _noProfilePersister.ProposedAuthorizationExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 333333,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.Should()
+            .BeSameAs(relationshipFailure);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_proposed_relationship_authorization_failure_for_put_before_guarded_no_op_success()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        var relationshipFailure = CreateProposedSchoolIdRelationshipFailure(request);
+        _noProfilePersister.ProposedAuthorizationExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.Should()
+            .BeSameAs(relationshipFailure);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);

@@ -344,18 +344,13 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            // PUT carries a proposed plan before stored-value orchestration is wired. Keep execution on
-            // the existing POST path so PUT does not authorize proposed values without the stored gate.
-            if (
-                executionRequest.OperationKind is RelationalWriteOperationKind.Post
-                && executionRequest.ProposedRelationshipAuthorization is not null
-            )
+            if (executionRequest.ProposedRelationshipAuthorization is not null)
             {
                 var finalizedRootRow = BuildFinalizedRootRowBuffer(executionRequest, mergeResult);
                 var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
                     executionRequest.ProposedRelationshipAuthorization,
                     finalizedRootRow,
-                    RelationalDocumentStoreRepository.PostRelationshipAuthorizationAuth1Index
+                    GetProposedRelationshipAuthorizationAuth1Index(executionRequest.OperationKind)
                 );
 
                 switch (extractionResult)
@@ -381,8 +376,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 }
             }
 
-            var postProposedAuthorizationPrecedenceResult =
-                await TryBuildPostProposedRelationshipAuthorizationPrecedenceResultAsync(
+            var proposedAuthorizationPrecedenceResult =
+                await TryBuildProposedRelationshipAuthorizationPrecedenceResultAsync(
                         executionRequest,
                         mergeResult,
                         writeSession,
@@ -390,10 +385,10 @@ internal sealed class DefaultRelationalWriteExecutor(
                     )
                     .ConfigureAwait(false);
 
-            if (postProposedAuthorizationPrecedenceResult is not null)
+            if (proposedAuthorizationPrecedenceResult is not null)
             {
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return postProposedAuthorizationPrecedenceResult;
+                return proposedAuthorizationPrecedenceResult;
             }
 
             var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
@@ -902,6 +897,18 @@ internal sealed class DefaultRelationalWriteExecutor(
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
 
+    private static int GetProposedRelationshipAuthorizationAuth1Index(
+        RelationalWriteOperationKind operationKind
+    ) =>
+        operationKind switch
+        {
+            RelationalWriteOperationKind.Post =>
+                RelationalDocumentStoreRepository.PostRelationshipAuthorizationAuth1Index,
+            RelationalWriteOperationKind.Put =>
+                RelationalDocumentStoreRepository.PutRelationshipAuthorizationAuth1Index,
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+
     private static RootWriteRowBuffer BuildFinalizedRootRowBuffer(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult
@@ -951,27 +958,22 @@ internal sealed class DefaultRelationalWriteExecutor(
         };
     }
 
-    private async Task<RelationalWriteExecutorResult?> TryBuildPostProposedRelationshipAuthorizationPrecedenceResultAsync(
+    private async Task<RelationalWriteExecutorResult?> TryBuildProposedRelationshipAuthorizationPrecedenceResultAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
-        if (
-            request.OperationKind is not RelationalWriteOperationKind.Post
-            || mergeResult.ProposedRelationshipAuthorizationRuntimeCheck is null
-        )
+        if (mergeResult.ProposedRelationshipAuthorizationRuntimeCheck is null)
         {
             return null;
         }
 
         if (
-            request.TargetContext is not RelationalWriteTargetContext.ExistingDocument
-            && (
-                request.TargetContext is not RelationalWriteTargetContext.CreateNew
-                || request.WritePrecondition is not WritePrecondition.IfMatch
-            )
+            request.OperationKind is RelationalWriteOperationKind.Post
+            && request.TargetContext is RelationalWriteTargetContext.CreateNew
+            && request.WritePrecondition is not WritePrecondition.IfMatch
         )
         {
             return null;
@@ -987,7 +989,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                 when request.WritePrecondition is WritePrecondition.IfMatch => BuildPreconditionFailureResult(
                 request.OperationKind
             ),
-            RelationalWriteTargetContext.ExistingDocument => BuildExistingResourcePostAsUpdateFailureResult(),
             _ => null,
         };
     }
@@ -1272,14 +1273,6 @@ internal sealed class DefaultRelationalWriteExecutor(
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
     }
-
-    private static RelationalWriteExecutorResult BuildExistingResourcePostAsUpdateFailureResult() =>
-        new RelationalWriteExecutorResult.Upsert(
-            new UpsertResult.UpsertFailureNotImplemented(
-                "POST-as-update for an existing resource is not implemented for relationship-authorized relational POST requests.",
-                UpsertFailureNotImplementedReason.ExistingResourcePostAsUpdate
-            )
-        );
 
     private async Task<ResolvedExecutionState> ResolveExecutionStateAsync(
         RelationalWriteExecutorRequest request,
