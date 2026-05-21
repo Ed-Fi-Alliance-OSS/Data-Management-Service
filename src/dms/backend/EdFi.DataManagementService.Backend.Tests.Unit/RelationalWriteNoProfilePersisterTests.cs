@@ -10,7 +10,10 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -81,6 +84,156 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands[2].CommandText.Should().Be(rootExtensionPlan.InsertSql);
         GetParameterValue(writeSession.Commands[2], "@DocumentId").Should().Be(910L);
         GetParameterValue(writeSession.Commands[2], "@ExtensionCode").Should().Be("BLUE");
+    }
+
+    [Test]
+    public async Task It_runs_proposed_relationship_authorization_before_document_insert_for_create_requests()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post);
+        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(
+                ReaderResultSets:
+                [
+                    CreateSingleValueResultSet("AuthorizationResult", typeof(int), 1),
+                    CreateSingleValueResultSet("DocumentId", typeof(long), 910L),
+                ]
+            ),
+            new CommandResponse(),
+        ]);
+
+        var result = await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        result.DocumentId.Should().Be(910L);
+        writeSession.Commands.Should().HaveCount(2);
+        var authorizationAndDocumentInsertCommand = writeSession.Commands[0];
+        authorizationAndDocumentInsertCommand
+            .CommandText.IndexOf("AUTH1", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(
+                authorizationAndDocumentInsertCommand.CommandText.IndexOf(
+                    "INSERT INTO dms.\"Document\"",
+                    StringComparison.Ordinal
+                )
+            );
+        GetParameterValue(authorizationAndDocumentInsertCommand, "@relationshipAuthorization_0_0_SchoolId")
+            .Should()
+            .Be(255901);
+        GetParameterValue(authorizationAndDocumentInsertCommand, "@ClaimEducationOrganizationIds")
+            .Should()
+            .BeEquivalentTo(new long[] { 1234L });
+        GetParameterValue(authorizationAndDocumentInsertCommand, "@documentUuid")
+            .Should()
+            .Be(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+        GetParameterValue(authorizationAndDocumentInsertCommand, "@resourceKeyId").Should().Be((short)1);
+
+        writeSession.Commands[1].CommandText.Should().Be(rootPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[1], "@DocumentId").Should().Be(910L);
+    }
+
+    [Test]
+    public async Task It_can_authorize_proposed_relationship_values_without_document_insert()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post);
+        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(
+                ReaderResultSets: [CreateSingleValueResultSet("AuthorizationResult", typeof(int), 1)]
+            ),
+        ]);
+
+        await _sut.AuthorizeProposedRelationshipAsync(request, mergeResult, writeSession);
+
+        writeSession.Commands.Should().ContainSingle();
+        var command = writeSession.Commands[0];
+        command.CommandText.Should().Contain("AUTH1");
+        command.CommandText.Should().NotContain("INSERT INTO dms.\"Document\"");
+        GetParameterValue(command, "@relationshipAuthorization_0_0_SchoolId").Should().Be(255901);
+        GetParameterValue(command, "@ClaimEducationOrganizationIds")
+            .Should()
+            .BeEquivalentTo(new long[] { 1234L });
+        command.Parameters.Select(static parameter => parameter.Name).Should().NotContain("@documentUuid");
+        command.Parameters.Select(static parameter => parameter.Name).Should().NotContain("@resourceKeyId");
+    }
+
+    [Test]
+    public async Task It_maps_proposed_relationship_authorization_auth1_failures_before_root_insert()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post, SqlDialect.Mssql);
+        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var auth1Payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                0,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            )
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(ExceptionToThrow: new StubDbException($"AUTH1 - {auth1Payload}")),
+        ]);
+
+        var action = async () => await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        var exception = await action
+            .Should()
+            .ThrowAsync<RelationalWriteRelationshipAuthorizationNotAuthorizedException>();
+        exception
+            .Which.RelationshipFailure.ValueSource.Should()
+            .Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        exception
+            .Which.RelationshipFailure.FailedStrategies.Should()
+            .ContainSingle()
+            .Which.FailedSubjects.Should()
+            .ContainSingle()
+            .Which.FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
+        writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
     }
 
     [Test]
@@ -1346,6 +1499,84 @@ public class Given_Relational_Write_No_Profile_Persister
         command.Parameters.Select(static parameter => parameter.Name).Should().OnlyHaveUniqueItems();
     }
 
+    private static DataTable CreateSingleValueResultSet(string columnName, Type columnType, object value)
+    {
+        DataTable table = new();
+        table.Columns.Add(columnName, columnType);
+        table.Rows.Add(value);
+        return table;
+    }
+
+    private static ProposedRelationshipAuthorizationRuntimeCheck CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(
+        RelationalWriteExecutorRequest request,
+        TableWritePlan rootPlan
+    )
+    {
+        var binding = rootPlan
+            .ColumnBindings.Select(static (binding, index) => (binding, index))
+            .Single(static entry => entry.binding.Column.ColumnName.Value == "SchoolId");
+        var subject = new RelationshipAuthorizationSubject(
+            request.WritePlan.Model.Resource,
+            rootPlan.TableModel.Table,
+            binding.binding.Column.ColumnName,
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    SecurableElementKind.EducationOrganization,
+                    "$.schoolId",
+                    "SchoolId"
+                ),
+            ]
+        );
+        var proposedValueBinding = new RelationshipAuthorizationProposedValueBinding(
+            rootPlan.TableModel.Table,
+            binding.binding.Column.ColumnName,
+            binding.index,
+            binding.binding.Column.ColumnName.Value,
+            binding.binding.ParameterName
+        );
+        var checkSpec = new RelationshipAuthorizationCheckSpec(
+            new ConfiguredAuthorizationStrategy(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                0
+            ),
+            0,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            RelationshipAuthorizationValueSource.Proposed,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
+            [subject],
+            new RelationshipAuthorizationCheckTarget.Proposed(
+                rootPlan.TableModel.Table,
+                [proposedValueBinding]
+            )
+        );
+
+        return new ProposedRelationshipAuthorizationRuntimeCheck(
+            [checkSpec],
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                request.MappingSet.Key.Dialect,
+                [1234L],
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            ),
+            0,
+            [
+                new ProposedRelationshipAuthorizationRuntimeStrategy(
+                    0,
+                    checkSpec,
+                    [
+                        new ProposedRelationshipAuthorizationRuntimeSubject(
+                            0,
+                            subject,
+                            proposedValueBinding,
+                            255901
+                        ),
+                    ]
+                ),
+            ]
+        );
+    }
+
     private static RelationalWriteExecutorRequest CreateRequest(
         ResourceWritePlan writePlan,
         RelationalWriteOperationKind operationKind,
@@ -2108,7 +2339,9 @@ public class Given_Relational_Write_No_Profile_Persister
     private sealed record CommandResponse(
         object? ScalarResult = null,
         int NonQueryResult = 1,
-        IReadOnlyList<ReservedCollectionItemIdRow>? ReservationRows = null
+        IReadOnlyList<ReservedCollectionItemIdRow>? ReservationRows = null,
+        IReadOnlyList<DataTable>? ReaderResultSets = null,
+        DbException? ExceptionToThrow = null
     );
 
     private sealed class RecordingRelationalWriteSession : IRelationalWriteSession
@@ -2182,6 +2415,11 @@ public class Given_Relational_Write_No_Profile_Persister
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (response.ExceptionToThrow is not null)
+            {
+                throw response.ExceptionToThrow;
+            }
+
             return Task.FromResult<DbDataReader>(CreateReservationReader(response));
         }
 
@@ -2199,6 +2437,18 @@ public class Given_Relational_Write_No_Profile_Persister
 
         private static DbDataReader CreateReservationReader(CommandResponse response)
         {
+            if (response.ReaderResultSets is not null)
+            {
+                DataSet dataSet = new();
+
+                foreach (var resultSet in response.ReaderResultSets)
+                {
+                    dataSet.Tables.Add(resultSet);
+                }
+
+                return dataSet.CreateDataReader();
+            }
+
             var table = new DataTable();
             table.Columns.Add("Ordinal", typeof(int));
             table.Columns.Add("CollectionItemId", typeof(long));
@@ -2253,6 +2503,8 @@ public class Given_Relational_Write_No_Profile_Persister
 
         protected override void SetParameter(string parameterName, DbParameter value) { }
     }
+
+    private sealed class StubDbException(string message) : DbException(message);
 
     private sealed class StubDbParameter : DbParameter
     {

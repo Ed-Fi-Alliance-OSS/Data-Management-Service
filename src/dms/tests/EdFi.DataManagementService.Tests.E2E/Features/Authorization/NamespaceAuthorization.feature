@@ -193,8 +193,6 @@ Feature: Namespace Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 09 Ensure client can create a resource in the ns2 namespace
              When a POST request is made to "/ed-fi/surveys" with
                   """
@@ -259,8 +257,6 @@ Feature: Namespace Authorization
              When a GET request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 200
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 11 Ensure client can update a resource in the ns2 namespace
              When a PUT request is made to "/ed-fi/surveys/{id}" with
                   """

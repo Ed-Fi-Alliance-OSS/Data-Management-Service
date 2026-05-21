@@ -51,7 +51,8 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
             MapKind(checkSpec.Direction),
             [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],
             checkSpec.ConfiguredStrategy.RawConfiguredIndex,
-            checkSpec.RelationshipLocalOrder
+            checkSpec.RelationshipLocalOrder,
+            checkSpec.AuthObject.AllowsDirectClaimMatch
         );
     }
 

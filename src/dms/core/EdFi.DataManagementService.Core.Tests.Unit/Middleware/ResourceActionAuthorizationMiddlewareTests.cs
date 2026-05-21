@@ -694,34 +694,95 @@ public class ResourceActionAuthorizationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Relational_Out_Of_Scope_Write_With_RelationshipsWithEdOrgsOnlyInverted
+    public class Given_Relational_Post_With_RelationshipsWithEdOrgsOnlyInverted
         : ResourceActionAuthorizationMiddlewareTests
     {
-        [TestCase("POST", "Create", "ed-fi/schools", false, "POST")]
-        [TestCase("PUT", "Update", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true, "PUT")]
-        public async Task It_still_returns_not_implemented(
-            string requestMethodName,
-            string action,
-            string path,
-            bool hasDocumentUuidSegment,
-            string operationLabel
-        )
+        [SetUp]
+        public async Task Setup()
         {
-            var requestMethod = Enum.Parse<RequestMethod>(requestMethodName);
-            _requestInfo = CreateRequestInfo(requestMethod, path, hasDocumentUuidSegment);
+            _requestInfo = CreateRequestInfo(RequestMethod.POST, "ed-fi/schools");
             _requestInfo.MappingSet = RelationalWriteSeamFixture
                 .Create()
                 .CreateSupportedMappingSet(SqlDialect.Pgsql);
 
-            await Middleware(action, AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
+            await Middleware("Create", AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
                 .Execute(_requestInfo, NullNext);
+        }
 
+        [Test]
+        public void It_allows_the_request_to_continue()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo
+                .ResourceActionAuthStrategies.Should()
+                .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Post_With_EdOrg_And_Known_Not_Enabled_Strategies
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.POST, "ed-fi/schools");
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await Middleware(
+                    "Create",
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthorizationStrategyNameConstants.NamespaceBased
+                )
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_preserves_the_strategy_set_for_repository_planning()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo
+                .ResourceActionAuthStrategies.Should()
+                .Equal(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthorizationStrategyNameConstants.NamespaceBased
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Put_With_RelationshipsWithEdOrgsOnlyInverted
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(
+                RequestMethod.PUT,
+                "ed-fi/schools/11111111-1111-1111-1111-111111111111",
+                hasDocumentUuidSegment: true
+            );
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await Middleware("Update", AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_still_returns_not_implemented()
+        {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
             _requestInfo
                 .FrontendResponse.Body?["error"]?.GetValue<string>()
                 .Should()
                 .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
-                .And.Contain(operationLabel);
+                .And.Contain("PUT");
         }
     }
 

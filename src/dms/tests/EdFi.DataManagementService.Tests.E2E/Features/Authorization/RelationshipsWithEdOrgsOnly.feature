@@ -1,3 +1,4 @@
+@reset-data-before-scenario
 Feature: RelationshipsWithEdOrgsOnly Authorization
 
     Rule: Resource respect RelationshipsWithEdOrgsOnly authorization
@@ -171,7 +172,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "The API client has been given permissions on a resource that uses the 'RelationshipsWithEdOrgsOnly' authorization strategy but the client doesn't have any education organizations assigned."
+                        "No relationships have been established between the caller's education organization id claims () and the resource item's SchoolId value."
                       ]
                   }
                   """

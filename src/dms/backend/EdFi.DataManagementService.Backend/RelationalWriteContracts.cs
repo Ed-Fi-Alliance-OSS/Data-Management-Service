@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -552,7 +553,8 @@ public sealed record RelationalWriteExecutorRequest
         ReferenceResolverRequest referenceResolutionRequest,
         RelationalWriteTargetContext targetContext,
         BackendProfileWriteContext? profileWriteContext = null,
-        WritePrecondition? writePrecondition = null
+        WritePrecondition? writePrecondition = null,
+        RelationshipAuthorizationResult.Authorized? proposedRelationshipAuthorization = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -621,6 +623,7 @@ public sealed record RelationalWriteExecutorRequest
 
         ProfileWriteContext = profileWriteContext;
         WritePrecondition = writePrecondition ?? new WritePrecondition.None();
+        ProposedRelationshipAuthorization = proposedRelationshipAuthorization;
     }
 
     /// <summary>
@@ -684,6 +687,12 @@ public sealed record RelationalWriteExecutorRequest
     /// Typed HTTP write precondition, if any.
     /// </summary>
     public WritePrecondition WritePrecondition { get; init; }
+
+    /// <summary>
+    /// Operation-neutral proposed-value relationship authorization plan for POST, when required.
+    /// Null when no relationship authorization applies.
+    /// </summary>
+    public RelationshipAuthorizationResult.Authorized? ProposedRelationshipAuthorization { get; init; }
 }
 
 /// <summary>

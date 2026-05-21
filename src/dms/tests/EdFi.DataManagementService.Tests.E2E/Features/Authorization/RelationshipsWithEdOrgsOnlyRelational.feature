@@ -180,6 +180,257 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
                   }
                   """
 
+    Rule: POST create-new scenarios use proposed-value relationship authorization
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: POST create-new succeeds when the caller has a relationship to the proposed school
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "post create authorized",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-01",
+                      "endDate": "2023-08-07",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "post create authorized",
+                      "beginDate": "2023-08-01",
+                      "endDate": "2023-08-07",
+                      "totalInstructionalDays": 5,
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: POST create-new succeeds through the inverted strategy lane
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet" is authorized with educationOrganizationIds "255901001"
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "post create inverted",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-15",
+                      "endDate": "2023-08-21",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "post create inverted",
+                      "beginDate": "2023-08-15",
+                      "endDate": "2023-08-21",
+                      "totalInstructionalDays": 5,
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: POST create-new returns forbidden when the caller lacks a relationship to the proposed school
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001, 255901222"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution      | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Authorized school      | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901222 | Caller unrelated school | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "post create forbidden",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the resource could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization:",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "validationErrors": {},
+                      "errors": [
+                          "No relationships have been established between the caller's education organization id claims ('255901222') and the resource item's SchoolId value."
+                      ]
+                  }
+                  """
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+             When a GET request is made to "/ed-fi/academicWeeks?totalCount=true"
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "Total-Count": "0"
+                  }
+                  """
+              And the response body is
+                  """
+                  []
+                  """
+
+    Rule: LocalEducationAgency create uses direct EdOrg claim match
+
+        Background:
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901"
+              And the system has these descriptors
+                  | descriptorValue                                                                       |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency        |
+                  | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district |
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: POST LocalEducationAgency succeeds when the proposed LEA id is directly claimed
+             When a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Direct Match LEA",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Direct Match LEA",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: POST LocalEducationAgency returns forbidden when the proposed LEA id is not claimed
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "999999"
+             When a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Forbidden Direct Match LEA",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the resource could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization:",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "validationErrors": {},
+                      "errors": [
+                          "No relationships have been established between the caller's education organization id claims ('999999') and the resource item's LocalEducationAgencyId value."
+                      ]
+                  }
+                  """
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901"
+             When a GET request is made to "/ed-fi/localEducationAgencies?totalCount=true"
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "Total-Count": "0"
+                  }
+                  """
+              And the response body is
+                  """
+                  []
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: POST LocalEducationAgency returns forbidden when the caller has no EdOrg claims
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds ""
+             When a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "No Claims Direct Match LEA",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the resource could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization:",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "validationErrors": {},
+                      "errors": [
+                          "No relationships have been established between the caller's education organization id claims () and the resource item's LocalEducationAgencyId value."
+                      ]
+                  }
+                  """
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901"
+             When a GET request is made to "/ed-fi/localEducationAgencies?totalCount=true"
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "Total-Count": "0"
+                  }
+                  """
+              And the response body is
+                  """
+                  []
+                  """
+
     Rule: Single-record scenarios use stored-value relationship authorization
 
         @relational-backend

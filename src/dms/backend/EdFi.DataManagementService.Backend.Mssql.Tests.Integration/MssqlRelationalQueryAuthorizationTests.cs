@@ -389,6 +389,25 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    public async Task<UpsertResult> UpsertAuthorizationRootChildAsync(
+        AuthorizationRootChildSeed seed,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationRootChildResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
+            seed.DocumentUuid,
+            $"post-auth-root-child-{seed.AuthorizationRootChildId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
+        );
+    }
+
     public async Task<UpsertResult> CreateAuthorizationChildOnlyAsync(AuthorizationChildOnlySeed seed)
     {
         return await UpsertAsync(
@@ -493,6 +512,39 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 [TargetEducationOrganizationId]
             )
             VALUES (@sourceEducationOrganizationId, @targetEducationOrganizationId);
+            """,
+            new SqlParameter("@sourceEducationOrganizationId", sourceEducationOrganizationId),
+            new SqlParameter("@targetEducationOrganizationId", targetEducationOrganizationId)
+        );
+    }
+
+    public async Task DeleteAuthEdgeAsync(
+        long sourceEducationOrganizationId,
+        long targetEducationOrganizationId
+    )
+    {
+        await Database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM [auth].[EducationOrganizationIdToEducationOrganizationId]
+            WHERE [SourceEducationOrganizationId] = @sourceEducationOrganizationId
+              AND [TargetEducationOrganizationId] = @targetEducationOrganizationId;
+            """,
+            new SqlParameter("@sourceEducationOrganizationId", sourceEducationOrganizationId),
+            new SqlParameter("@targetEducationOrganizationId", targetEducationOrganizationId)
+        );
+    }
+
+    public async Task<long> CountAuthEdgesAsync(
+        long sourceEducationOrganizationId,
+        long targetEducationOrganizationId
+    )
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT_BIG(*)
+            FROM [auth].[EducationOrganizationIdToEducationOrganizationId]
+            WHERE [SourceEducationOrganizationId] = @sourceEducationOrganizationId
+              AND [TargetEducationOrganizationId] = @targetEducationOrganizationId;
             """,
             new SqlParameter("@sourceEducationOrganizationId", sourceEducationOrganizationId),
             new SqlParameter("@targetEducationOrganizationId", targetEducationOrganizationId)
@@ -655,6 +707,103 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    public async Task<long> CountResourceRootRowsAsync(string projectEndpointName, string resourceName)
+    {
+        var writePlan = GetWritePlan(projectEndpointName, resourceName);
+        return await CountRowsInTableAsync(writePlan.Model.Root.Table);
+    }
+
+    public async Task<long> CountResourceCollectionRowsAsync(string projectEndpointName, string resourceName)
+    {
+        var writePlan = GetWritePlan(projectEndpointName, resourceName);
+        long rowCount = 0;
+
+        foreach (
+            var tablePlan in writePlan.TablePlansInDependencyOrder.Where(static tablePlan =>
+                tablePlan.TableModel.IdentityMetadata.TableKind
+                    is DbTableKind.Collection
+                        or DbTableKind.ExtensionCollection
+            )
+        )
+        {
+            rowCount += await CountRowsInTableAsync(tablePlan.TableModel.Table);
+        }
+
+        return rowCount;
+    }
+
+    public async Task<long> CountReferentialIdentityRowsForAuthorizationRootChildAsync(
+        AuthorizationRootChildSeed seed
+    )
+    {
+        var referentialId = CreateAuthorizationRootChildDocumentInfo(seed).ReferentialId;
+
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT_BIG(*)
+            FROM [dms].[ReferentialIdentity]
+            WHERE [ReferentialId] = @referentialId;
+            """,
+            new SqlParameter("@referentialId", referentialId.Value)
+        );
+    }
+
+    public async Task<long> CountDocumentChangeEventRowsForResourceAsync(
+        string projectEndpointName,
+        string resourceName
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId(projectEndpointName, resourceName);
+
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT_BIG(*)
+            FROM [dms].[DocumentChangeEvent]
+            WHERE [ResourceKeyId] = @resourceKeyId;
+            """,
+            new SqlParameter("@resourceKeyId", resourceKeyId)
+        );
+    }
+
+    public void AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert()
+    {
+        var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
+
+        command
+            .IndexOf("AUTH1", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(command.IndexOf("INSERT INTO [dms].[Document]", StringComparison.Ordinal));
+    }
+
+    public void AssertPostCreateDirectClaimMatchAuthorizationBeforeDocumentInsert()
+    {
+        var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
+
+        command.Should().Contain("IN (@ClaimEducationOrganizationIds_0) OR EXISTS");
+        command.Should().Contain("[auth].[EducationOrganizationIdToEducationOrganizationId]");
+        command
+            .IndexOf("AUTH1", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(command.IndexOf("INSERT INTO [dms].[Document]", StringComparison.Ordinal));
+    }
+
+    public void AssertPostCreateRelationshipAuthorizationUsesScalarClaimParameters(int expectedCount)
+    {
+        var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
+
+        command.Should().Contain("@ClaimEducationOrganizationIds_0");
+        command.Should().Contain($"@ClaimEducationOrganizationIds_{expectedCount - 1}");
+        command.Should().NotContain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
+    }
+
+    public void AssertPostCreateRelationshipAuthorizationUsesStructuredClaimParameter()
+    {
+        var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
+
+        command.Should().Contain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
+        command.Should().NotContain("@ClaimEducationOrganizationIds_0");
+    }
+
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
@@ -716,7 +865,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         string resourceName,
         JsonNode requestBody,
         DocumentUuid documentUuid,
-        string traceId
+        string traceId,
+        IReadOnlyList<long>? claimEducationOrganizationIds = null,
+        IReadOnlyList<string>? strategyNames = null,
+        string? ifMatch = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -734,18 +886,73 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             ),
             MappingSet: MappingSet,
             EdfiDoc: requestBody,
-            Headers: [],
+            Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler(),
             ResourceAuthorizationHandler: new MssqlRelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
-        );
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
+            AuthorizationStrategyEvaluators =
+            [
+                .. (strategyNames ?? []).Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .UpsertDocument(request);
+    }
+
+    private DocumentInfo CreateAuthorizationRootChildDocumentInfo(AuthorizationRootChildSeed seed)
+    {
+        var resourceHandle = GetResourceHandle("authz", "AuthorizationRootChildResource");
+
+        return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
+            resourceHandle.ResourceInfo,
+            resourceHandle.ResourceSchema,
+            MappingSet
+        );
+    }
+
+    private ResourceWritePlan GetWritePlan(string projectEndpointName, string resourceName)
+    {
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+        var resource = new QualifiedResourceName(
+            resourceHandle.ResourceInfo.ProjectName.Value,
+            resourceHandle.ResourceInfo.ResourceName.Value
+        );
+
+        return MappingSet.WritePlansByResource[resource];
+    }
+
+    private short GetCompiledResourceKeyId(string projectEndpointName, string resourceName)
+    {
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+        var resource = new QualifiedResourceName(
+            resourceHandle.ResourceInfo.ProjectName.Value,
+            resourceHandle.ResourceInfo.ResourceName.Value
+        );
+
+        return MappingSet.ResourceKeyIdByResource[resource];
+    }
+
+    private async Task<long> CountRowsInTableAsync(DbTableName table)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT COUNT_BIG(*)
+            FROM [{table.Schema.Value}].[{table.Name}];
+            """
+        );
     }
 
     private ResourceHandle GetResourceHandle(string projectEndpointName, string resourceName)
@@ -1128,6 +1335,118 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
     private static bool IsMssqlDocumentDeleteCommand(string commandText) =>
         commandText.Contains("DELETE FROM [dms].[Document]", StringComparison.Ordinal);
+
+    private string GetRequiredPostCreateRelationshipAuthorizationCommand()
+    {
+        var command = _writeSessionRecorder
+            .Commands.Select(static recorded => recorded.CommandText)
+            .FirstOrDefault(commandText =>
+                commandText.Contains("AUTH1", StringComparison.Ordinal)
+                && commandText.Contains("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+            );
+
+        command.Should().NotBeNull("POST create should compose authorization and dms.Document insert");
+        return command!;
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_A_Mssql_Relational_Query_Authorization_With_Direct_EdOrg_Claim_Match
+{
+    private const long ClaimEducationOrganizationId =
+        RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
+    private static readonly IReadOnlyList<string> _normalStrategy =
+    [
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+    ];
+    private static readonly QuerySchoolSeed _directClaimSchoolSeed = new(
+        new DocumentUuid(Guid.Parse("99999999-1000-0000-0000-000000000001")),
+        (int)ClaimEducationOrganizationId,
+        "Claim School"
+    );
+    private static readonly AuthorizationRootChildSeed _directClaimRootChildSeed = new(
+        new DocumentUuid(Guid.Parse("99999999-2000-0000-0000-000000000001")),
+        901,
+        "query-direct-claim",
+        (int)ClaimEducationOrganizationId,
+        []
+    );
+
+    private MssqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _context = new MssqlRelationalQueryAuthorizationTestContext();
+        await _context.InitializeAsync(
+            RelationshipAuthorizationCrudTestSupport.FixtureRelativePath,
+            strict: false
+        );
+        await _context.SeedSchoolDescriptorDataAsync();
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateSchoolAsync(_directClaimSchoolSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationRootChildAsync(_directClaimRootChildSeed)
+        );
+        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
+    }
+
+    [SetUp]
+    public void SetUp()
+    {
+        _context.ResetRecorder();
+    }
+
+    [Test]
+    public async Task It_returns_get_many_results_by_direct_claim_match_without_a_hierarchy_edge()
+    {
+        (await _context.CountAuthEdgesAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId))
+            .Should()
+            .Be(0);
+
+        var result = await _context.QueryAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
+            [ClaimEducationOrganizationId],
+            _normalStrategy
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_directClaimRootChildSeed.DocumentUuid.Value.ToString());
+
+        var keyset = _context.AssertSingleQueryHydration();
+        const string DirectClaimMatchSql =
+            "r.[School_SchoolId] IN (@ClaimEducationOrganizationIds_0) OR r.[School_SchoolId] IN (SELECT";
+        keyset.Plan.PageDocumentIdSql.Should().Contain(DirectClaimMatchSql);
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.TotalCountSql!.Should().Contain(DirectClaimMatchSql);
+    }
 }
 
 [TestFixture]

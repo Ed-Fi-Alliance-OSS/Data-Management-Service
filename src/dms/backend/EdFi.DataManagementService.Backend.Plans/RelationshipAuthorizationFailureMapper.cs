@@ -15,6 +15,113 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public static class RelationshipAuthorizationFailureMapper
 {
+    public static bool TryMapNoClaimsFailure(
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> noClaimsFailures,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        int emittedAuth1Index,
+        out RelationshipAuthorizationFailure? relationshipFailure
+    )
+    {
+        ArgumentNullException.ThrowIfNull(checkSpecs);
+        ArgumentNullException.ThrowIfNull(noClaimsFailures);
+        ArgumentNullException.ThrowIfNull(claimEducationOrganizationIds);
+
+        relationshipFailure = null;
+
+        if (
+            checkSpecs.Count == 0
+            || noClaimsFailures.Count == 0
+            || noClaimsFailures.Any(static failure =>
+                failure.FailureKind != RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds
+                || failure.ConfiguredStrategy is null
+                || failure.RelationshipLocalOrder is null
+                || failure.ValueSource is null
+            )
+        )
+        {
+            return false;
+        }
+
+        var valueSource = checkSpecs[0].ValueSource;
+
+        if (
+            checkSpecs.Any(checkSpec => checkSpec.ValueSource != valueSource)
+            || noClaimsFailures.Any(failure => failure.ValueSource != valueSource)
+        )
+        {
+            return false;
+        }
+
+        var checkSpecsByStrategyIdentity = checkSpecs.ToDictionary(static checkSpec =>
+            (checkSpec.ConfiguredStrategy.RawConfiguredIndex, checkSpec.RelationshipLocalOrder)
+        );
+        List<RelationshipAuthorizationFailedStrategy> failedStrategies = [];
+        HashSet<(int ConfiguredStrategyIndex, int RelationshipLocalOrder)> seenStrategyIdentities = [];
+
+        foreach (
+            var noClaimsFailure in noClaimsFailures
+                .OrderBy(static failure => failure.ConfiguredStrategy!.RawConfiguredIndex)
+                .ThenBy(static failure => failure.RelationshipLocalOrder!.Value)
+        )
+        {
+            var strategyIdentity = (
+                noClaimsFailure.ConfiguredStrategy!.RawConfiguredIndex,
+                noClaimsFailure.RelationshipLocalOrder!.Value
+            );
+
+            if (
+                !seenStrategyIdentities.Add(strategyIdentity)
+                || !checkSpecsByStrategyIdentity.TryGetValue(strategyIdentity, out var checkSpec)
+                || checkSpec.Subjects.Count == 0
+            )
+            {
+                return false;
+            }
+
+            failedStrategies.Add(
+                new RelationshipAuthorizationFailedStrategy(
+                    checkSpec.ConfiguredStrategy.RawConfiguredIndex,
+                    checkSpec.RelationshipLocalOrder,
+                    checkSpec.ConfiguredStrategy.StrategyName,
+                    MapStrategyKind(checkSpec.Direction),
+                    MapAuthObject(noClaimsFailure.AuthObject ?? checkSpec.AuthObject),
+                    [
+                        .. checkSpec.Subjects.Select(
+                            (subject, subjectIndex) =>
+                                MapSubject(
+                                    subjectIndex,
+                                    RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
+                                    subject,
+                                    noClaimsFailure.Hint
+                                        ?? "Relationship authorization requires at least one claim EducationOrganizationId."
+                                )
+                        ),
+                    ],
+                    noClaimsFailure.Hint
+                )
+            );
+        }
+
+        if (failedStrategies.Count == 0)
+        {
+            return false;
+        }
+
+        relationshipFailure = new RelationshipAuthorizationFailure(
+            MapValueSource(valueSource),
+            emittedAuth1Index,
+            [.. failedStrategies],
+            [
+                .. claimEducationOrganizationIds
+                    .Distinct()
+                    .Order()
+                    .Select(static id => new EducationOrganizationId(id)),
+            ]
+        );
+        return true;
+    }
+
     public static bool TryMapAuth1Failure(
         RelationshipAuthorizationAuth1FailurePayload payload,
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
@@ -109,8 +216,9 @@ public static class RelationshipAuthorizationFailureMapper
             failedSubjects.Add(
                 MapSubject(
                     subjectFailure.SubjectOrdinal,
-                    subjectFailure.FailureKind,
-                    checkSpec.Subjects[subjectFailure.SubjectOrdinal]
+                    MapSubjectFailureKind(subjectFailure.FailureKind),
+                    checkSpec.Subjects[subjectFailure.SubjectOrdinal],
+                    BuildSubjectHint(subjectFailure.FailureKind)
                 )
             );
         }
@@ -128,12 +236,13 @@ public static class RelationshipAuthorizationFailureMapper
 
     private static RelationshipAuthorizationFailedSubject MapSubject(
         int subjectIndex,
-        RelationshipAuthorizationAuth1SubjectFailureKind failureKind,
-        RelationshipAuthorizationSubject subject
+        RelationshipAuthorizationSubjectFailureKind failureKind,
+        RelationshipAuthorizationSubject subject,
+        string hint
     ) =>
         new(
             subjectIndex,
-            MapSubjectFailureKind(failureKind),
+            failureKind,
             new RelationshipAuthorizationRootBinding(
                 $"{subject.Resource.ProjectName}.{subject.Resource.ResourceName}",
                 subject.Table.ToString(),
@@ -148,7 +257,7 @@ public static class RelationshipAuthorizationFailureMapper
                     )
                 ),
             ],
-            BuildSubjectHint(failureKind)
+            hint
         );
 
     private static bool HasDuplicateSubjectFailureOrdinals(
