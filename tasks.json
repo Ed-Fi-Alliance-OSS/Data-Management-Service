@@ -209,6 +209,6 @@
       "Verify the DMS container uses the relational backend with docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore|QueryHandler'.",
       "From src/dms/tests/EdFi.DataManagementService.Tests.E2E, run env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\"."
     ],
-    "completed": false
+    "completed": true
   }
 ]

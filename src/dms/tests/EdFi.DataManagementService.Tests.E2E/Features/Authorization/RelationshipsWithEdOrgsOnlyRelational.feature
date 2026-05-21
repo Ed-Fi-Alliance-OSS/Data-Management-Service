@@ -431,6 +431,213 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
                   []
                   """
 
+    Rule: Existing-target updates use stored and proposed relationship authorization
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: PUT succeeds when the caller is authorized for the existing academic week school
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "put authorized",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-01",
+                      "endDate": "2023-08-07",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+             When a PUT request is made to "/ed-fi/academicWeeks/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "put authorized",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-01",
+                      "endDate": "2023-08-07",
+                      "totalInstructionalDays": 6
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/ed-fi/academicWeeks/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "put authorized",
+                      "beginDate": "2023-08-01",
+                      "endDate": "2023-08-07",
+                      "totalInstructionalDays": 6,
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: PUT returns forbidden and leaves the academic week unchanged when stored authorization fails
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "put forbidden",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+             When the resulting id is stored in the "putAcademicWeekId" variable
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
+             When a PUT request is made to "/ed-fi/academicWeeks/{putAcademicWeekId}" with
+                  """
+                  {
+                      "id": "{putAcademicWeekId}",
+                      "weekIdentifier": "put forbidden",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 6
+                  }
+                  """
+             Then it should respond with 403
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+             When a GET request is made to "/ed-fi/academicWeeks/{putAcademicWeekId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "put forbidden",
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 5,
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: POST-as-update succeeds when the caller is authorized for the existing academic week school
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "post update authorized",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-15",
+                      "endDate": "2023-08-21",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+             When the resulting id is stored in the "postUpdateAcademicWeekId" variable
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "post update authorized",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-15",
+                      "endDate": "2023-08-21",
+                      "totalInstructionalDays": 6
+                  }
+                  """
+             Then it should respond with 200
+             When a GET request is made to "/ed-fi/academicWeeks/{postUpdateAcademicWeekId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "post update authorized",
+                      "beginDate": "2023-08-15",
+                      "endDate": "2023-08-21",
+                      "totalInstructionalDays": 6,
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: POST-as-update returns forbidden and leaves the academic week unchanged when stored authorization fails
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "post update forbidden",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-22",
+                      "endDate": "2023-08-28",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+             When the resulting id is stored in the "forbiddenPostUpdateAcademicWeekId" variable
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "post update forbidden",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-22",
+                      "endDate": "2023-08-28",
+                      "totalInstructionalDays": 6
+                  }
+                  """
+             Then it should respond with 403
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+             When a GET request is made to "/ed-fi/academicWeeks/{forbiddenPostUpdateAcademicWeekId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "post update forbidden",
+                      "beginDate": "2023-08-22",
+                      "endDate": "2023-08-28",
+                      "totalInstructionalDays": 5,
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+
     Rule: Single-record scenarios use stored-value relationship authorization
 
         @relational-backend
