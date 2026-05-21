@@ -421,24 +421,8 @@ internal sealed class RelationalWriteNoProfilePersister(
         await using var dbCommand = writeSession.CreateCommand(command);
         await using var reader = await dbCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException(
-                "Proposed relationship authorization did not return an authorization result."
-            );
-        }
-
-        var authorizationResult = Convert.ToInt32(
-            reader.GetValue(reader.GetOrdinal(AuthorizationResultColumn)),
-            CultureInfo.InvariantCulture
-        );
-
-        if (authorizationResult != 1)
-        {
-            throw new InvalidOperationException(
-                $"Proposed relationship authorization returned unexpected result '{authorizationResult}'."
-            );
-        }
+        await ReadAndValidateProposedRelationshipAuthorizationResultAsync(reader, cancellationToken)
+            .ConfigureAwait(false);
 
         if (
             !await reader.NextResultAsync(cancellationToken).ConfigureAwait(false)
@@ -462,6 +446,15 @@ internal sealed class RelationalWriteNoProfilePersister(
         await using var dbCommand = writeSession.CreateCommand(command);
         await using var reader = await dbCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
+        await ReadAndValidateProposedRelationshipAuthorizationResultAsync(reader, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task ReadAndValidateProposedRelationshipAuthorizationResultAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             throw new InvalidOperationException(

@@ -514,7 +514,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteMergeResult mergeResult
     )
     {
-        var rootTable = request.WritePlan.TablePlansInDependencyOrder[0];
+        var rootTable = GetRootTableWritePlan(request.WritePlan);
         var rootTableState = mergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
             tableState.TableWritePlan.TableModel.Table.Equals(rootTable.TableModel.Table)
         );
@@ -535,6 +535,27 @@ internal sealed class DefaultRelationalWriteExecutor(
         }
 
         return new RootWriteRowBuffer(rootTableState.TableWritePlan, rootTableState.MergedRows[0].Values);
+    }
+
+    private static TableWritePlan GetRootTableWritePlan(ResourceWritePlan writePlan)
+    {
+        var rootPlans = writePlan
+            .TablePlansInDependencyOrder.Where(static plan =>
+                plan.TableModel.IdentityMetadata.TableKind is DbTableKind.Root
+            )
+            .Take(2)
+            .ToArray();
+
+        return rootPlans.Length switch
+        {
+            1 => rootPlans[0],
+            0 => throw new InvalidOperationException(
+                $"Write plan for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}' does not contain a root table plan."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Write plan for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}' contains multiple root table plans."
+            ),
+        };
     }
 
     private async Task<RelationalWriteExecutorResult?> TryBuildPostProposedRelationshipAuthorizationPrecedenceResultAsync(
