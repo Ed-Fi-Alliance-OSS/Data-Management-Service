@@ -393,18 +393,22 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         AuthorizationRootChildSeed seed,
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
-        string? ifMatch = null
+        string? ifMatch = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null,
+        JsonNode? requestBody = null
     )
     {
         return await UpsertAsync(
             "authz",
             "AuthorizationRootChildResource",
-            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
+            requestBody
+                ?? RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
             seed.DocumentUuid,
             $"post-auth-root-child-{seed.AuthorizationRootChildId}",
             claimEducationOrganizationIds,
             strategyNames,
-            ifMatch
+            ifMatch,
+            backendProfileWriteContext
         );
     }
 
@@ -413,18 +417,22 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         DocumentUuid documentUuid,
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
-        string? ifMatch = null
+        string? ifMatch = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null,
+        JsonNode? requestBody = null
     )
     {
         return await UpdateAsync(
             "authz",
             "AuthorizationRootChildResource",
-            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
+            requestBody
+                ?? RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
             documentUuid,
             $"put-auth-root-child-{seed.AuthorizationRootChildId}",
             claimEducationOrganizationIds,
             strategyNames,
-            ifMatch
+            ifMatch,
+            backendProfileWriteContext
         );
     }
 
@@ -447,6 +455,26 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNullableRequestBody(seed),
             seed.DocumentUuid,
             $"seed-auth-nullable-{seed.AuthorizationNullableId}"
+        );
+    }
+
+    public async Task<UpdateResult> UpdateAuthorizationNullableByIdAsync(
+        AuthorizationNullableSeed seed,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpdateAsync(
+            "authz",
+            "AuthorizationNullableResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNullableRequestBody(seed),
+            documentUuid,
+            $"put-auth-nullable-{seed.AuthorizationNullableId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
         );
     }
 
@@ -849,6 +877,37 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         command.Should().NotContain("@ClaimEducationOrganizationIds_0");
     }
 
+    public void AssertUpdateRelationshipAuthorizationUsesScalarClaimParameters(int expectedCount)
+    {
+        var commands = GetRequiredUpdateRelationshipAuthorizationCommands();
+
+        commands
+            .Should()
+            .OnlyContain(command =>
+                command.Contains("@ClaimEducationOrganizationIds_0", StringComparison.Ordinal)
+                && command.Contains(
+                    $"@ClaimEducationOrganizationIds_{expectedCount - 1}",
+                    StringComparison.Ordinal
+                )
+                && !command.Contains(
+                    "SELECT [Id] FROM @ClaimEducationOrganizationIds",
+                    StringComparison.Ordinal
+                )
+            );
+    }
+
+    public void AssertUpdateRelationshipAuthorizationUsesStructuredClaimParameter()
+    {
+        var commands = GetRequiredUpdateRelationshipAuthorizationCommands();
+
+        commands
+            .Should()
+            .OnlyContain(command =>
+                command.Contains("SELECT [Id] FROM @ClaimEducationOrganizationIds", StringComparison.Ordinal)
+                && !command.Contains("@ClaimEducationOrganizationIds_0", StringComparison.Ordinal)
+            );
+    }
+
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
@@ -913,7 +972,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         string traceId,
         IReadOnlyList<long>? claimEducationOrganizationIds = null,
         IReadOnlyList<string>? strategyNames = null,
-        string? ifMatch = null
+        string? ifMatch = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -937,7 +997,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler(),
             ResourceAuthorizationHandler: new MssqlRelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: backendProfileWriteContext
         )
         {
             AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
@@ -964,7 +1025,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         string traceId,
         IReadOnlyList<long>? claimEducationOrganizationIds = null,
         IReadOnlyList<string>? strategyNames = null,
-        string? ifMatch = null
+        string? ifMatch = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -988,7 +1050,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler(),
             ResourceAuthorizationHandler: new MssqlRelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: backendProfileWriteContext
         )
         {
             AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
@@ -1186,6 +1249,20 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             FROM [{table.Schema.Value}].[{table.Name}];
             """
         );
+    }
+
+    private IReadOnlyList<string> GetRequiredUpdateRelationshipAuthorizationCommands()
+    {
+        var commands = _writeSessionRecorder
+            .Commands.Select(static recorded => recorded.CommandText)
+            .Where(static commandText =>
+                commandText.Contains("AUTH1", StringComparison.Ordinal)
+                && !commandText.Contains("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+            )
+            .ToArray();
+
+        commands.Should().NotBeEmpty("update authorization should emit AUTH1 command text");
+        return commands;
     }
 
     private ResourceHandle GetResourceHandle(string projectEndpointName, string resourceName)
