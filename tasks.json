@@ -414,10 +414,11 @@
     "description": "High: Relational descriptor POST can bypass authorization because middleware now routes relational POST through backend-planned authorization, but descriptor writes exit before POST relationship preflight and do not receive authorization strategies; narrow backend-planned POST to non-descriptor resources or pass strategies into descriptor POST and fail closed there.",
     "acceptance-criteria": [
       "Descriptor POST requests with any effective authorization strategy other than no strategies or NoFurtherAuthorizationRequired do not create or update descriptors without an explicit supported authorization path.",
-      "The simplest fix either excludes descriptor POST from the backend-planned relational POST lane so existing provider guardrails apply, or forwards AuthorizationStrategyEvaluators and RelationalAuthorizationContext into descriptor POST and returns an explicit not-implemented/fail-closed result for unsupported descriptor write authorization.",
+      "The fix either excludes descriptor POST from the backend-planned relational POST lane through a descriptor-aware middleware predicate so existing provider guardrails apply, or forwards AuthorizationStrategyEvaluators and RelationalAuthorizationContext into descriptor POST and returns an explicit not-implemented/fail-closed result for unsupported descriptor write authorization.",
+      "Descriptor POST fail-closed behavior occurs before descriptor target lookup, write-session creation, insert/update command execution, or persistence side effects when authorization is unsupported.",
       "Descriptor POST with NoFurtherAuthorizationRequired or no effective authorization strategies preserves existing descriptor write behavior.",
-      "Descriptor GET, GET-many, DELETE, and non-descriptor POST authorization behavior remain unchanged.",
-      "Unit coverage proves descriptor POST with RelationshipsWithEdOrgsOnly, NamespaceBased, and a mixed strategy set cannot bypass authorization and invoke descriptor persistence as if authorization were not required."
+      "Descriptor GET, GET-many, DELETE, and non-descriptor POST authorization behavior remain unchanged; descriptor PUT is either left intentionally unchanged or explicitly fail-closed if shared descriptor write contracts are modified.",
+      "Unit coverage proves descriptor POST with RelationshipsWithEdOrgsOnly, NamespaceBased, and a mixed strategy set cannot bypass authorization, cannot probe descriptor target existence, and cannot invoke descriptor persistence as if authorization were not required."
     ],
     "steps-to-verify": [
       "Review src/dms/core/EdFi.DataManagementService.Core/Middleware/ProvideAuthorizationFiltersMiddleware.cs for the relational POST backend-planned boundary.",
@@ -433,8 +434,10 @@
     "description": "Medium: Empty-EdOrg-claim POST denials lose explicit no-claims metadata because the planner emits NoClaimEducationOrganizationIds but POST maps the denial through synthetic NoRelationship subject failures; carry no-claims metadata through the external relationship failure DTO so Slice 6 does not infer it from an empty claim list.",
     "acceptance-criteria": [
       "POST no-claims relationship authorization failures preserve an explicit no-claims failure kind or equivalent external DTO metadata distinct from ordinary NoRelationship failures.",
+      "Slice 6 consumers do not have to infer the no-claims case solely from an empty ClaimEducationOrganizationIds collection.",
       "No-claims POST still short-circuits before reference resolution, descriptor resolution, target identity lookup, authorization SQL composition, and persistence.",
-      "No-claims failures carry configured strategy index, relationship-local order, strategy name/kind, value source, auth object metadata, and normalized empty EdOrg claim context needed by Slice 6.",
+      "No-claims failures carry configured strategy index, relationship-local order, strategy name/kind, value source, auth object metadata, failure hint, and normalized empty EdOrg claim context needed by Slice 6.",
+      "The NoClaims result path maps planner NoClaimEducationOrganizationIds metadata across the backend-to-handler boundary without synthesizing only NoRelationship subject failures.",
       "Ordinary non-empty-claims relationship denials continue to emit NoRelationship subject failures with the existing AUTH1 mapping.",
       "GET-by-id and DELETE no-claims behavior is either updated consistently or verified not to regress if the DTO change is POST-scoped."
     ],
@@ -452,10 +455,12 @@
     "description": "Medium: The proposed-value extractor drops mixed failure metadata for incomplete OR strategies because it short-circuits when every strategy has any missing subject; only short-circuit when every subject in every strategy is missing, and otherwise preserve SQL evaluation so present-but-unauthorized subjects can produce NoRelationship metadata.",
     "acceptance-criteria": [
       "A multi-subject strategy with one missing proposed value and one present proposed value does not return only ProposedValueMissing metadata before SQL when the present subject must be evaluated for NoRelationship metadata.",
-      "The extractor returns an immediate ProposedValueMissing denial only when every subject in every configured OR strategy is missing or unbound.",
+      "The extractor returns an immediate ProposedValueMissing denial only when every subject in every configured OR strategy is missing or unbound, not merely when each strategy has at least one missing subject.",
       "When a failed OR group contains both missing proposed subjects and complete-but-unauthorized subjects, the final relationship failure includes ProposedValueMissing and NoRelationship subject metadata in configured strategy and subject order.",
+      "When a single multi-subject strategy fails with both a missing proposed subject and a present-but-unauthorized subject, the final relationship failure includes both subject failure kinds for that strategy.",
       "If any OR strategy authorizes, the create remains authorized and failures from other strategies are not surfaced.",
-      "Null or missing proposed values remain bound or represented safely so SQL evaluation preserves OR semantics without inserting rows on authorization failure."
+      "Null or missing proposed values remain bound or represented safely so SQL evaluation preserves OR semantics without inserting rows on authorization failure.",
+      "The AUTH1 payload and failure mapper preserve ProposedValueMissing for null-bound proposed subjects and NoRelationship for present unauthorized subjects without a post-failure database lookup."
     ],
     "steps-to-verify": [
       "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs for the short-circuit condition and runtime subject handling.",
