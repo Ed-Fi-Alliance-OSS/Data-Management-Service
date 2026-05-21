@@ -654,8 +654,8 @@ public sealed class RelationalDocumentStoreRepository(
 
             case RelationshipAuthorizationResult.NoClaims noClaims:
                 if (
-                    !TryCreateRelationshipAuthorizationFailure(
-                        noClaims.CheckSpecs,
+                    !TryCreateNoClaimsRelationshipAuthorizationFailure(
+                        noClaims,
                         relationalDeleteRequest.AuthorizationContext.ClaimEducationOrganizationIds,
                         DeleteRelationshipAuthorizationAuth1Index,
                         out var noClaimsFailure
@@ -1041,8 +1041,8 @@ public sealed class RelationalDocumentStoreRepository(
     )
     {
         if (
-            !TryCreateRelationshipAuthorizationFailure(
-                noClaims.CheckSpecs,
+            !TryCreateNoClaimsRelationshipAuthorizationFailure(
+                noClaims,
                 authorizationContext.ClaimEducationOrganizationIds,
                 PostRelationshipAuthorizationAuth1Index,
                 out var noClaimsFailure
@@ -1501,8 +1501,8 @@ public sealed class RelationalDocumentStoreRepository(
 
             case RelationshipAuthorizationResult.NoClaims noClaims:
                 if (
-                    !TryCreateRelationshipAuthorizationFailure(
-                        noClaims.CheckSpecs,
+                    !TryCreateNoClaimsRelationshipAuthorizationFailure(
+                        noClaims,
                         relationalGetRequest.AuthorizationContext.ClaimEducationOrganizationIds,
                         GetByIdRelationshipAuthorizationAuth1Index,
                         out var noClaimsFailure
@@ -1623,50 +1623,19 @@ public sealed class RelationalDocumentStoreRepository(
             ),
         };
 
-    private static bool TryCreateRelationshipAuthorizationFailure(
-        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
+    private static bool TryCreateNoClaimsRelationshipAuthorizationFailure(
+        RelationshipAuthorizationResult.NoClaims noClaims,
         IReadOnlyList<long> claimEducationOrganizationIds,
         int emittedAuth1Index,
         out RelationshipAuthorizationFailure? relationshipFailure
-    )
-    {
-        relationshipFailure = null;
-
-        if (checkSpecs.Count == 0)
-        {
-            return false;
-        }
-
-        List<RelationshipAuthorizationAuth1SubjectFailure> subjectFailures = [];
-
-        for (var strategyOrdinal = 0; strategyOrdinal < checkSpecs.Count; strategyOrdinal++)
-        {
-            var checkSpec = checkSpecs[strategyOrdinal];
-
-            for (var subjectOrdinal = 0; subjectOrdinal < checkSpec.Subjects.Count; subjectOrdinal++)
-            {
-                subjectFailures.Add(
-                    new RelationshipAuthorizationAuth1SubjectFailure(
-                        strategyOrdinal,
-                        subjectOrdinal,
-                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
-                    )
-                );
-            }
-        }
-
-        if (subjectFailures.Count == 0)
-        {
-            return false;
-        }
-
-        return RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
-            new RelationshipAuthorizationAuth1FailurePayload(emittedAuth1Index, subjectFailures),
-            checkSpecs,
+    ) =>
+        RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            noClaims.CheckSpecs,
+            noClaims.Failures,
             claimEducationOrganizationIds,
+            emittedAuth1Index,
             out relationshipFailure
         );
-    }
 
     // TODO Slice 6 (DMS-1165): aggregate FailedStrategies/FailedSubjects.Hint into Hints.
     private static GetResult.GetFailureRelationshipNotAuthorized CreateGetRelationshipNotAuthorized(

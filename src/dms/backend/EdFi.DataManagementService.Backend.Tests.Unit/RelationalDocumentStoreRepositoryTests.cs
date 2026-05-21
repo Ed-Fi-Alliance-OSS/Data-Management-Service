@@ -781,11 +781,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.GetDocumentById(getRequest);
 
-        result.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>();
-        result
-            .As<GetResult.GetFailureRelationshipNotAuthorized>()
-            .RelationshipFailure.ClaimEducationOrganizationIds.Should()
-            .BeEmpty();
+        var failure = result.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>().Subject;
+        failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
+        failure
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Should()
+            .AllSatisfy(subject =>
+                subject
+                    .FailureKind.Should()
+                    .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds)
+            );
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -3361,13 +3366,28 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .RelationshipFailure.ValueSource.Should()
             .Be(RelationshipAuthorizationFailureValueSource.Proposed);
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
-        failure
-            .RelationshipFailure.FailedStrategies.Should()
-            .ContainSingle()
-            .Which.FailedSubjects.Should()
-            .ContainSingle()
-            .Which.RootBinding.ColumnName.Should()
-            .Be("SchoolId");
+        var failedStrategy = failure.RelationshipFailure.FailedStrategies.Should().ContainSingle().Which;
+        failedStrategy.ConfiguredStrategyIndex.Should().Be(0);
+        failedStrategy.RelationshipLocalOrder.Should().Be(0);
+        failedStrategy
+            .StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
+        failedStrategy
+            .StrategyKind.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
+        failedStrategy.AuthObject.Should().NotBeNull();
+        failedStrategy.AuthObject!.Name.Should().Be("auth.EducationOrganizationIdToEducationOrganizationId");
+        failedStrategy
+            .Hint.Should()
+            .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
+        var failedSubject = failedStrategy.FailedSubjects.Should().ContainSingle().Which;
+        failedSubject
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+        failedSubject.RootBinding.ColumnName.Should().Be("SchoolId");
+        failedSubject
+            .Hint.Should()
+            .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
         _capturedExecutorRequests.Should().BeEmpty();
         _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
@@ -4671,11 +4691,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>();
-        result
-            .As<DeleteResult.DeleteFailureRelationshipNotAuthorized>()
-            .RelationshipFailure.ClaimEducationOrganizationIds.Should()
-            .BeEmpty();
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
+        failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
+        failure
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Should()
+            .AllSatisfy(subject =>
+                subject
+                    .FailureKind.Should()
+                    .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds)
+            );
         A.CallTo(_commandExecutor)
             .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
             .MustNotHaveHappened();
