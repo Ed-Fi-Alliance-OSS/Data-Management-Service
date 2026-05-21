@@ -30,7 +30,7 @@ Implement the namespace-based authorization strategy for all CRUD operations per
 - Namespace-based is combined with AND when other strategy types are also configured for the resource. It executes before relationship-based (OR) strategies.
 - This story replaces the temporary DMS-1055 GET-many 501 Not Implemented behavior for NamespaceBased in mixed strategy configurations. NamespaceBased is applied as an AND filter with the relationship strategy OR group instead of causing the unsupported mixed-strategy failure.
 - This story replaces the temporary DMS-1056 GET-by-id and DELETE 501 Not Implemented behavior for `NamespaceBased` in single-record relational authorization.
-- This story closes the DMS-1162 descriptor POST authorization gap introduced while routing relational POST authorization to backend-planned relationship authorization. Descriptor POST must no longer be able to bypass `NamespaceBased` because the generic POST relationship preflight does not run for descriptors.
+- This story owns changing the DMS-1162 descriptor POST behavior to true NamespaceBased authorization. DMS-1162 intentionally accepted the current relational descriptor POST behavior while implementing EdOrg-only relationship POST-create authorization; descriptor POST must no longer be able to bypass `NamespaceBased` once this story is complete.
 - Re-enable `@relational-backend` and the appropriate `@relational-ci-shard-*` tag on the NamespaceBased E2E scenarios temporarily excluded during the DMS-1056 EdOrg-only slice because they require NamespaceBased relational CRUD authorization. Restore both tags on:
   - `Features/Descriptors/DescriptorCaseInsensitiveValidation.feature`: scenario 1.
   - `Features/Descriptors/DeleteDescriptorsValidation.feature`: scenario 01.
@@ -63,10 +63,11 @@ DMS-1162 expanded relational backend-planned authorization to POST so relationsh
 could classify raw strategy names in the backend. Descriptor POST still exits from
 `RelationalDocumentStoreRepository.UpsertDocument` into `DescriptorWriteHandler` before generic
 resource relationship preflight, and `DescriptorWriteRequest` does not currently carry the raw
-authorization strategies. Until this story implements real descriptor namespace authorization,
-the current branch should keep descriptor POST out of any backend-planned POST path that would
-drop the legacy namespace guard. Do not replace that temporary behavior with a descriptor POST
-fail-closed result; descriptor seed writes with matching namespace prefixes must continue to work.
+authorization strategies. DMS-1162 accepts that current descriptor POST configuration so the
+EdOrg-only relationship slice can remain scoped to non-descriptor resources. Do not replace the
+current behavior with a descriptor POST fail-closed result; descriptor seed writes with matching
+namespace prefixes must continue to work until this story implements true descriptor namespace
+authorization.
 
 Until this story restores real relational write authorization, `If-Match` handling from DMS-1005 can still return
 `412` before a final `403` decision for existing targets; restoring the authorization-before-precondition ordering is
