@@ -91,7 +91,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalWriteGuardedNoOpTests\".",
       "Run provider integration tests that cover stored-fail plus stale If-Match, proposed-fail plus stale If-Match, and authorized stale If-Match outcomes."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "provider",
