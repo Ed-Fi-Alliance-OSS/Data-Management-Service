@@ -43,6 +43,7 @@ public sealed class RelationalDocumentStoreRepository(
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
     private const int DeleteRelationshipAuthorizationAuth1Index = 0;
     internal const int PostRelationshipAuthorizationAuth1Index = 0;
+    internal const int PutRelationshipAuthorizationAuth1Index = 0;
     private const int GetByIdReadBoundaryAttemptCount = 2;
 
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -283,7 +284,14 @@ public sealed class RelationalDocumentStoreRepository(
                             $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a PUT request."
                         ),
                     },
-                profileWriteContext
+                profileWriteContext,
+                writePlan =>
+                    AuthorizePutRelationshipIfRequired(
+                        relationalUpdateRequest,
+                        mappingSet,
+                        resource,
+                        writePlan
+                    )
             )
             .ConfigureAwait(false);
 
@@ -979,7 +987,7 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             authorizationStrategyEvaluators
         );
-        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanProposedValues(
+        var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
             resource,
             configuredAuthorizationStrategies,
@@ -987,14 +995,17 @@ public sealed class RelationalDocumentStoreRepository(
             writePlan
         );
 
-        return relationshipAuthorizationResult switch
+        return relationshipAuthorizationPlan.ProposedValues switch
         {
             RelationshipAuthorizationResult.NoAuthorizationRequired
             or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(null),
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(null, null),
 
             RelationshipAuthorizationResult.Authorized authorized =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(authorized),
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    relationshipAuthorizationPlan.StoredValues,
+                    authorized
+                ),
 
             RelationshipAuthorizationResult.NoClaims noClaims =>
                 BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext),
@@ -1019,7 +1030,72 @@ public sealed class RelationalDocumentStoreRepository(
                 ),
 
             _ => throw new InvalidOperationException(
-                $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
+                $"Unsupported relationship authorization result '{relationshipAuthorizationPlan.ProposedValues.GetType().Name}'."
+            ),
+        };
+    }
+
+    private WriteGuardRailPreflightResult<UpdateResult> AuthorizePutRelationshipIfRequired(
+        IRelationalUpdateRequest relationalUpdateRequest,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceWritePlan writePlan
+    )
+    {
+        var authorizationStrategyEvaluators = relationalUpdateRequest.AuthorizationStrategyEvaluators;
+        var authorizationContext = relationalUpdateRequest.AuthorizationContext;
+
+        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
+            authorizationStrategyEvaluators
+        );
+        var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies,
+            authorizationContext,
+            writePlan
+        );
+
+        var securityConfigurationFailures = CollectSecurityConfigurationFailures(
+            relationshipAuthorizationPlan
+        );
+
+        if (securityConfigurationFailures.Count > 0)
+        {
+            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
+            );
+        }
+
+        var knownButNotEnabledFailures = CollectKnownButNotEnabledFailures(relationshipAuthorizationPlan);
+
+        if (knownButNotEnabledFailures.Count > 0)
+        {
+            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                new UpdateResult.UpdateFailureNotImplemented(
+                    BuildKnownButNotEnabledPutAuthorizationMessage(resource, knownButNotEnabledFailures),
+                    UpdateFailureNotImplementedReason.StrategyNotEnabled
+                )
+            );
+        }
+
+        return relationshipAuthorizationPlan.StoredValues switch
+        {
+            RelationshipAuthorizationResult.NoAuthorizationRequired
+            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
+                new WriteGuardRailPreflightResult<UpdateResult>.Continue(null, null),
+
+            RelationshipAuthorizationResult.NoClaims noClaims =>
+                new WriteGuardRailPreflightResult<UpdateResult>.Continue(noClaims, null),
+
+            RelationshipAuthorizationResult.Authorized authorized =>
+                new WriteGuardRailPreflightResult<UpdateResult>.Continue(
+                    authorized,
+                    relationshipAuthorizationPlan.ProposedValues as RelationshipAuthorizationResult.Authorized
+                ),
+
+            _ => throw new InvalidOperationException(
+                $"Unsupported stored relationship authorization result '{relationshipAuthorizationPlan.StoredValues.GetType().Name}' for PUT preflight."
             ),
         };
     }
@@ -1029,25 +1105,201 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext
     )
     {
+        return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+            BuildNoClaimsPostRelationshipAuthorizationResult(
+                noClaims,
+                authorizationContext.ClaimEducationOrganizationIds
+            )
+        );
+    }
+
+    private static UpsertResult BuildNoClaimsPostRelationshipAuthorizationResult(
+        RelationshipAuthorizationResult.NoClaims noClaims,
+        IReadOnlyList<long> claimEducationOrganizationIds
+    )
+    {
         if (
             !TryCreateNoClaimsRelationshipAuthorizationFailure(
                 noClaims,
-                authorizationContext.ClaimEducationOrganizationIds,
+                claimEducationOrganizationIds,
                 PostRelationshipAuthorizationAuth1Index,
                 out var noClaimsFailure
             ) || noClaimsFailure is null
         )
         {
-            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-                new UpsertResult.UnknownFailure(
-                    "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
-                )
+            return new UpsertResult.UnknownFailure(
+                "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
             );
         }
 
-        return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-            CreateUpsertRelationshipNotAuthorized(noClaimsFailure)
+        return CreateUpsertRelationshipNotAuthorized(noClaimsFailure);
+    }
+
+    private static UpdateResult BuildNoClaimsPutRelationshipAuthorizationResult(
+        RelationshipAuthorizationResult.NoClaims noClaims
+    )
+    {
+        if (
+            !TryCreateNoClaimsRelationshipAuthorizationFailure(
+                noClaims,
+                [],
+                PutRelationshipAuthorizationAuth1Index,
+                out var noClaimsFailure
+            ) || noClaimsFailure is null
+        )
+        {
+            return new UpdateResult.UnknownFailure(
+                "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
+            );
+        }
+
+        return new UpdateResult.UpdateFailureRelationshipNotAuthorized(
+            RelationshipAuthorizationErrorMessageFormatter.Format(noClaimsFailure),
+            noClaimsFailure
         );
+    }
+
+    private static TResult BuildNoClaimsStoredRelationshipAuthorizationResult<TResult>(
+        RelationalWriteOperationKind operationKind,
+        RelationshipAuthorizationResult.NoClaims noClaims
+    )
+    {
+        object result = operationKind switch
+        {
+            RelationalWriteOperationKind.Post => BuildNoClaimsPostRelationshipAuthorizationResult(
+                noClaims,
+                []
+            ),
+            RelationalWriteOperationKind.Put => BuildNoClaimsPutRelationshipAuthorizationResult(noClaims),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+
+        return (TResult)result;
+    }
+
+    private static TResult BuildKnownButNotEnabledStoredRelationshipAuthorizationResult<TResult>(
+        QualifiedResourceName resource,
+        RelationalWriteOperationKind operationKind,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        object result = operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new UpsertResult.UpsertFailureNotImplemented(
+                BuildKnownButNotEnabledPostAuthorizationMessage(resource, failures),
+                UpsertFailureNotImplementedReason.StrategyNotEnabled
+            ),
+            RelationalWriteOperationKind.Put => new UpdateResult.UpdateFailureNotImplemented(
+                BuildKnownButNotEnabledPutAuthorizationMessage(resource, failures),
+                UpdateFailureNotImplementedReason.StrategyNotEnabled
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+
+        return (TResult)result;
+    }
+
+    private static TResult BuildStoredRelationshipAuthorizationSecurityConfigurationResult<TResult>(
+        MappingSet mappingSet,
+        RelationalWriteOperationKind operationKind,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        object result = operationKind switch
+        {
+            RelationalWriteOperationKind.Post => BuildPostAuthorizationSecurityConfigurationFailure(
+                mappingSet,
+                failures
+            ),
+            RelationalWriteOperationKind.Put => BuildPutAuthorizationSecurityConfigurationFailure(
+                mappingSet,
+                failures
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+
+        return (TResult)result;
+    }
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CollectSecurityConfigurationFailures(
+        RelationshipAuthorizationUpdatePlan relationshipAuthorizationPlan
+    ) =>
+        [
+            .. new[]
+            {
+                relationshipAuthorizationPlan.StoredValues,
+                relationshipAuthorizationPlan.ProposedValues,
+            }
+                .OfType<RelationshipAuthorizationResult.SecurityConfigurationError>()
+                .SelectMany(static result => result.Failures)
+                .Distinct(),
+        ];
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CollectKnownButNotEnabledFailures(
+        RelationshipAuthorizationUpdatePlan relationshipAuthorizationPlan
+    ) =>
+        [
+            .. new[]
+            {
+                relationshipAuthorizationPlan.StoredValues,
+                relationshipAuthorizationPlan.ProposedValues,
+            }
+                .OfType<RelationshipAuthorizationResult.KnownButNotEnabled>()
+                .SelectMany(static result => result.Failures)
+                .Distinct(),
+        ];
+
+    private static bool TryBuildExistingTargetStoredRelationshipAuthorizationFailure<TResult>(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalWriteOperationKind operationKind,
+        RelationshipAuthorizationResult? storedRelationshipAuthorization,
+        out TResult? failureResult,
+        out RelationshipAuthorizationResult.Authorized? authorizedStoredRelationshipAuthorization
+    )
+    {
+        failureResult = default;
+        authorizedStoredRelationshipAuthorization = null;
+
+        switch (storedRelationshipAuthorization)
+        {
+            case null:
+            case RelationshipAuthorizationResult.NoAuthorizationRequired:
+            case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
+                return false;
+
+            case RelationshipAuthorizationResult.Authorized authorized:
+                authorizedStoredRelationshipAuthorization = authorized;
+                return false;
+
+            case RelationshipAuthorizationResult.NoClaims noClaims:
+                failureResult = BuildNoClaimsStoredRelationshipAuthorizationResult<TResult>(
+                    operationKind,
+                    noClaims
+                );
+                return true;
+
+            case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
+                failureResult = BuildKnownButNotEnabledStoredRelationshipAuthorizationResult<TResult>(
+                    resource,
+                    operationKind,
+                    knownButNotEnabled.Failures
+                );
+                return true;
+
+            case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
+                failureResult = BuildStoredRelationshipAuthorizationSecurityConfigurationResult<TResult>(
+                    mappingSet,
+                    operationKind,
+                    securityConfigurationError.Failures
+                );
+                return true;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported stored relationship authorization result '{storedRelationshipAuthorization.GetType().Name}'."
+                );
+        }
     }
 
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
@@ -1090,6 +1342,7 @@ public sealed class RelationalDocumentStoreRepository(
             return failureFactory(ex.Message);
         }
 
+        RelationshipAuthorizationResult? storedRelationshipAuthorization = null;
         RelationshipAuthorizationResult.Authorized? proposedRelationshipAuthorization = null;
 
         if (preflight is not null)
@@ -1099,6 +1352,7 @@ public sealed class RelationalDocumentStoreRepository(
             switch (preflightResult)
             {
                 case WriteGuardRailPreflightResult<TResult>.Continue continueResult:
+                    storedRelationshipAuthorization = continueResult.StoredRelationshipAuthorization;
                     proposedRelationshipAuthorization = continueResult.ProposedRelationshipAuthorization;
                     break;
 
@@ -1129,6 +1383,26 @@ public sealed class RelationalDocumentStoreRepository(
                 return executorResultProjector(targetResolution.ImmediateResult);
             }
 
+            var targetContext = targetResolution.TargetContext!;
+            var existingTargetStoredRelationshipAuthorization =
+                targetContext is RelationalWriteTargetContext.ExistingDocument
+                    ? storedRelationshipAuthorization
+                    : null;
+
+            if (
+                TryBuildExistingTargetStoredRelationshipAuthorizationFailure(
+                    mappingSet,
+                    resource,
+                    operationKind,
+                    existingTargetStoredRelationshipAuthorization,
+                    out TResult? storedAuthorizationFailure,
+                    out var authorizedStoredRelationshipAuthorization
+                )
+            )
+            {
+                return storedAuthorizationFailure!;
+            }
+
             if (readPlanPreparation.ReadPlan is null)
             {
                 return failureFactory(
@@ -1154,9 +1428,10 @@ public sealed class RelationalDocumentStoreRepository(
                             DocumentReferences: documentReferences,
                             DescriptorReferences: descriptorReferences
                         ),
-                        targetContext: targetResolution.TargetContext!,
+                        targetContext: targetContext,
                         profileWriteContext: profileWriteContext,
                         writePrecondition: writePrecondition,
+                        storedRelationshipAuthorization: authorizedStoredRelationshipAuthorization,
                         proposedRelationshipAuthorization: proposedRelationshipAuthorization
                     )
                 )
@@ -1259,6 +1534,7 @@ public sealed class RelationalDocumentStoreRepository(
         private WriteGuardRailPreflightResult() { }
 
         public sealed record Continue(
+            RelationshipAuthorizationResult? StoredRelationshipAuthorization,
             RelationshipAuthorizationResult.Authorized? ProposedRelationshipAuthorization
         ) : WriteGuardRailPreflightResult<TResult>;
 
@@ -1684,6 +1960,18 @@ public sealed class RelationalDocumentStoreRepository(
             scopeTag: "DMS-1162"
         );
 
+    private static string BuildKnownButNotEnabledPutAuthorizationMessage(
+        QualifiedResourceName resource,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures
+    ) =>
+        BuildKnownButNotEnabledAuthorizationMessage(
+            resource,
+            knownButNotEnabledFailures,
+            operationLabel: "PUT",
+            effectiveAuthorizationLabel: "PUT",
+            scopeTag: "DMS-1163"
+        );
+
     private static GetResult.GetFailureSecurityConfiguration BuildGetAuthorizationSecurityConfigurationFailure(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -1770,6 +2058,27 @@ public sealed class RelationalDocumentStoreRepository(
                     operationLabel: "POST",
                     effectiveAuthorizationLabel: "POST",
                     scopeTag: "DMS-1162"
+                )
+            ),
+        ]);
+    }
+
+    private static UpdateResult.UpdateFailureSecurityConfiguration BuildPutAuthorizationSecurityConfigurationFailure(
+        MappingSet mappingSet,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(failures);
+
+        return new UpdateResult.UpdateFailureSecurityConfiguration([
+            .. failures.Select(failure =>
+                BuildSecurityConfigurationFailureMessage(
+                    mappingSet,
+                    failure,
+                    operationLabel: "PUT",
+                    effectiveAuthorizationLabel: "PUT",
+                    scopeTag: "DMS-1163"
                 )
             ),
         ]);

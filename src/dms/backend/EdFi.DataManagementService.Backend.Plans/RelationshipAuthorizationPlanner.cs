@@ -56,6 +56,47 @@ public sealed class RelationshipAuthorizationPlanner
         );
     }
 
+    public RelationshipAuthorizationUpdatePlan PlanUpdateValues(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        ResourceWritePlan writePlan
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
+        ArgumentNullException.ThrowIfNull(authorizationContext);
+        ArgumentNullException.ThrowIfNull(writePlan);
+
+        var classification = RelationshipAuthorizationStrategyClassifier.Classify(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies
+        );
+
+        return new RelationshipAuthorizationUpdatePlan(
+            PlanValues(
+                mappingSet,
+                resource,
+                configuredAuthorizationStrategies,
+                authorizationContext,
+                RelationshipAuthorizationValueSource.Stored,
+                CreateStoredCheckSpec,
+                classification
+            ),
+            PlanValues(
+                mappingSet,
+                resource,
+                configuredAuthorizationStrategies,
+                authorizationContext,
+                RelationshipAuthorizationValueSource.Proposed,
+                CreateProposedCheckSpecFactory(resource, writePlan),
+                classification
+            )
+        );
+    }
+
     private RelationshipAuthorizationResult PlanValues(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -75,6 +116,29 @@ public sealed class RelationshipAuthorizationPlanner
             resource,
             configuredAuthorizationStrategies
         );
+
+        return PlanValues(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies,
+            authorizationContext,
+            valueSource,
+            createCheckSpec,
+            classification
+        );
+    }
+
+    private RelationshipAuthorizationResult PlanValues(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        RelationshipAuthorizationValueSource valueSource,
+        CreateCheckSpec createCheckSpec,
+        RelationshipAuthorizationClassification classification
+    )
+    {
+        ArgumentNullException.ThrowIfNull(classification);
 
         return classification.Outcome switch
         {

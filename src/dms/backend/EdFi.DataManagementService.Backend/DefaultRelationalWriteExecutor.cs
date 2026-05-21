@@ -328,7 +328,12 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            if (executionRequest.ProposedRelationshipAuthorization is not null)
+            // PUT carries a proposed plan before stored-value orchestration is wired. Keep execution on
+            // the existing POST path so PUT does not authorize proposed values without the stored gate.
+            if (
+                executionRequest.OperationKind is RelationalWriteOperationKind.Post
+                && executionRequest.ProposedRelationshipAuthorization is not null
+            )
             {
                 var finalizedRootRow = BuildFinalizedRootRowBuffer(executionRequest, mergeResult);
                 var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
