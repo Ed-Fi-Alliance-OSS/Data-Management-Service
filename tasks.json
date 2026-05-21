@@ -408,5 +408,116 @@
       "From src/dms/tests/EdFi.DataManagementService.Tests.E2E, run pwsh ./teardown-local-dms.ps1, pwsh ./setup-local-dms.ps1, and then dotnet test EdFi.DataManagementService.Tests.E2E.csproj --filter \"Category=relational-backend&FullyQualifiedName~RelationshipsWithEdOrgsOnly\""
     ],
     "completed": true
+  },
+  {
+    "category": "descriptor-write-authorization",
+    "description": "High: Relational descriptor POST can bypass authorization because middleware now routes relational POST through backend-planned authorization, but descriptor writes exit before POST relationship preflight and do not receive authorization strategies; narrow backend-planned POST to non-descriptor resources or pass strategies into descriptor POST and fail closed there.",
+    "acceptance-criteria": [
+      "Descriptor POST requests with any effective authorization strategy other than no strategies or NoFurtherAuthorizationRequired do not create or update descriptors without an explicit supported authorization path.",
+      "The simplest fix either excludes descriptor POST from the backend-planned relational POST lane so existing provider guardrails apply, or forwards AuthorizationStrategyEvaluators and RelationalAuthorizationContext into descriptor POST and returns an explicit not-implemented/fail-closed result for unsupported descriptor write authorization.",
+      "Descriptor POST with NoFurtherAuthorizationRequired or no effective authorization strategies preserves existing descriptor write behavior.",
+      "Descriptor GET, GET-many, DELETE, and non-descriptor POST authorization behavior remain unchanged.",
+      "Unit coverage proves descriptor POST with RelationshipsWithEdOrgsOnly, NamespaceBased, and a mixed strategy set cannot bypass authorization and invoke descriptor persistence as if authorization were not required."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core/Middleware/ProvideAuthorizationFiltersMiddleware.cs for the relational POST backend-planned boundary.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs and src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteContracts.cs for descriptor POST authorization inputs and fail-closed handling.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs or descriptor write handler tests for descriptor POST authorization guard coverage.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter ProvideAuthorizationFiltersMiddlewareTests",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDocumentStoreRepositoryTests|DescriptorWrite\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "relationship-authorization-metadata",
+    "description": "Medium: Empty-EdOrg-claim POST denials lose explicit no-claims metadata because the planner emits NoClaimEducationOrganizationIds but POST maps the denial through synthetic NoRelationship subject failures; carry no-claims metadata through the external relationship failure DTO so Slice 6 does not infer it from an empty claim list.",
+    "acceptance-criteria": [
+      "POST no-claims relationship authorization failures preserve an explicit no-claims failure kind or equivalent external DTO metadata distinct from ordinary NoRelationship failures.",
+      "No-claims POST still short-circuits before reference resolution, descriptor resolution, target identity lookup, authorization SQL composition, and persistence.",
+      "No-claims failures carry configured strategy index, relationship-local order, strategy name/kind, value source, auth object metadata, and normalized empty EdOrg claim context needed by Slice 6.",
+      "Ordinary non-empty-claims relationship denials continue to emit NoRelationship subject failures with the existing AUTH1 mapping.",
+      "GET-by-id and DELETE no-claims behavior is either updated consistently or verified not to regress if the DTO change is POST-scoped."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs for NoClaimEducationOrganizationIds metadata creation.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs and src/dms/core/EdFi.DataManagementService.Core.External/Backend/RelationshipAuthorizationFailure.cs for no-claims mapping across the backend-to-handler boundary.",
+      "Review unit tests proving POST no-claims failures do not map to only RelationshipAuthorizationSubjectFailureKind.NoRelationship.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository"
+    ],
+    "completed": false
+  },
+  {
+    "category": "proposed-value-extraction",
+    "description": "Medium: The proposed-value extractor drops mixed failure metadata for incomplete OR strategies because it short-circuits when every strategy has any missing subject; only short-circuit when every subject in every strategy is missing, and otherwise preserve SQL evaluation so present-but-unauthorized subjects can produce NoRelationship metadata.",
+    "acceptance-criteria": [
+      "A multi-subject strategy with one missing proposed value and one present proposed value does not return only ProposedValueMissing metadata before SQL when the present subject must be evaluated for NoRelationship metadata.",
+      "The extractor returns an immediate ProposedValueMissing denial only when every subject in every configured OR strategy is missing or unbound.",
+      "When a failed OR group contains both missing proposed subjects and complete-but-unauthorized subjects, the final relationship failure includes ProposedValueMissing and NoRelationship subject metadata in configured strategy and subject order.",
+      "If any OR strategy authorizes, the create remains authorized and failures from other strategies are not surfaced.",
+      "Null or missing proposed values remain bound or represented safely so SQL evaluation preserves OR semantics without inserting rows on authorization failure."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs for the short-circuit condition and runtime subject handling.",
+      "Review SingleRecordRelationshipAuthorizationSqlCompiler and RelationalWriteNoProfilePersister tests for mixed ProposedValueMissing and NoRelationship failure-set preservation.",
+      "Add or review a unit test with one OR strategy containing a missing subject and a present unauthorized subject, asserting both failure kinds are preserved when authorization fails.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter Default_Relational_Write_Executor",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorization"
+    ],
+    "completed": false
+  },
+  {
+    "category": "relationship-authorization-formatting",
+    "description": "Low: Transitional relationship error-message construction is duplicated in the default write executor and repository; extract a shared formatter for the current transitional messages so the two call sites cannot drift before Slice 6 replaces final response shaping.",
+    "acceptance-criteria": [
+      "DefaultRelationalWriteExecutor and RelationalDocumentStoreRepository call one shared helper to build transitional relationship authorization error messages.",
+      "The shared helper preserves the existing transitional message text and property-name ordering unless tests already require a narrower deterministic order.",
+      "No final Slice 6 ProblemDetails wording or response-shaping behavior is introduced as part of this task.",
+      "Existing relationship-not-authorized result DTO payloads are unchanged.",
+      "Focused unit coverage proves repository and write executor relationship failures use the same formatter output."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs and src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs to confirm duplicate BuildRelationshipAuthorizationErrorMessages logic is removed.",
+      "Review the new shared formatter location under src/dms/backend/EdFi.DataManagementService.Backend for a narrowly scoped helper.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"Default_Relational_Write_Executor|RelationalDocumentStoreRepository\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend"
+    ],
+    "completed": false
+  },
+  {
+    "category": "write-persistence",
+    "description": "Low: Proposed authorization command construction is duplicated between standalone authorization and auth-plus-document-insert paths; extract the shared compile-and-parameter step so the POST create boundary remains easy to audit.",
+    "acceptance-criteria": [
+      "RelationalWriteNoProfilePersister compiles proposed relationship authorization SQL and builds its parameters through one shared private helper or narrowly scoped collaborator.",
+      "The standalone proposed authorization command and the auth-plus-dms.Document insert command use identical SQL plan compilation inputs, reserved parameter names, emitted AUTH1 index, and parameter binding order.",
+      "The auth-plus-document-insert path still places AUTH1 authorization SQL before the dms.Document insert command in the same provider command.",
+      "No transaction, retry, merge, insert, or response-readback behavior changes outside the duplicate command construction.",
+      "Unit tests continue to prove authorization SQL precedes document insertion and parameters are bound correctly."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs for a single shared proposed-authorization compile/parameter helper.",
+      "Review unit tests asserting standalone authorization and authorized insert command construction use the expected SQL and parameter order.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalWriteNoProfilePersister",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend"
+    ],
+    "completed": false
+  },
+  {
+    "category": "single-record-sql-generation",
+    "description": "Low: SingleRecordRelationshipAuthorizationSqlCompiler validates dialect compatibility but not authorization claim parameterization shape; share or mirror the page compiler validation so array/TVP parameterizations require exactly the base parameter and SQL Server scalar parameterization has one parameter per claim.",
+    "acceptance-criteria": [
+      "SingleRecordRelationshipAuthorizationSqlCompiler rejects PgsqlArray and MssqlStructured claim parameterizations unless ParameterNamesInOrder contains exactly the BaseParameterName.",
+      "SingleRecordRelationshipAuthorizationSqlCompiler rejects MssqlScalar claim parameterizations unless ParameterNamesInOrder has exactly one parameter per normalized claim EdOrg id.",
+      "The validation is shared with PageDocumentIdSqlCompiler or implemented through an equivalent narrowly scoped helper to avoid future drift.",
+      "Existing valid PostgreSQL array, SQL Server scalar, and SQL Server structured parameterizations still compile successfully.",
+      "Invalid parameterization shape failures occur during compilation with clear ArgumentException messages rather than later binding failures."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs and src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs for shared or equivalent shape validation.",
+      "Review plans unit tests for invalid PgsqlArray, invalid MssqlStructured, invalid MssqlScalar, and valid parameterization cases in the single-record compiler.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationSqlCompiler",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans"
+    ],
+    "completed": false
   }
 ]
