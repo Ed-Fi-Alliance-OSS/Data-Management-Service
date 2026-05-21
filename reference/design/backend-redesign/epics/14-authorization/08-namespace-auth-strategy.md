@@ -35,6 +35,13 @@ Implement the namespace-based authorization strategy for all CRUD operations per
   - `Features/Descriptors/DeleteDescriptorsValidation.feature`: scenario 01.
   - `Features/Authorization/NamespaceAuthorization.feature`: scenarios 01, 03, 04, 10, and 12.
   - `Features/Extensions/TpdmExtension.feature`: scenario 04.
+- Re-enable `@relational-backend` and the appropriate `@relational-ci-shard-*` tag on the NamespaceBased E2E scenarios temporarily excluded during DMS-1162 because they require NamespaceBased relational POST/PUT authorization. Restore both tags on:
+  - `Features/Profiles/ProfileCollectionFiltering.feature`: scenario 08, "IncludeOnly nested filter profile is currently unsupported on read".
+  - `Features/Profiles/ProfileCollectionFiltering.feature`: scenario 09, "ExcludeOnly nested filter profile is currently unsupported on read".
+  - `Features/Profiles/ProfileCollectionFiltering.feature`: scenario 10, "IncludeOnly nested filter profile is currently unsupported on write".
+  - `Features/Profiles/ProfileCollectionFiltering.feature`: scenario 11, "ExcludeOnly nested filter profile is currently unsupported on write".
+  - `Features/Authorization/NamespaceAuthorization.feature`: scenario 09, "Ensure client can create a resource in the ns2 namespace".
+  - `Features/Authorization/NamespaceAuthorization.feature`: scenario 11, "Ensure client can update a resource in the ns2 namespace".
 - ProblemDetails follow `auth.md` §"ProblemDetails", specifically:
   - §2.9 — No namespace prefixes configured on the API client.
   - §2.10 — Namespace value uninitialized (existing data).
