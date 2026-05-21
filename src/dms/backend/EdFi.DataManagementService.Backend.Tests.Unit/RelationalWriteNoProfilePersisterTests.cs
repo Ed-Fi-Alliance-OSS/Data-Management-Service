@@ -183,48 +183,6 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
-    public async Task It_binds_null_proposed_relationship_values_for_incomplete_or_strategies()
-    {
-        var rootPlan = CreateRootPlan();
-        var writePlan = CreateWritePlan([rootPlan]);
-        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post);
-        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan);
-        var nullRuntimeCheck = runtimeCheck with
-        {
-            Strategies =
-            [
-                runtimeCheck.Strategies[0] with
-                {
-                    Subjects = [runtimeCheck.Strategies[0].Subjects[0] with { Value = null }],
-                },
-            ],
-        };
-        var mergeResult = new RelationalWriteMergeResult(
-            [
-                new RelationalWriteMergedTableState(
-                    rootPlan,
-                    [],
-                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, null, "Lincoln High")]
-                ),
-            ],
-            supportsGuardedNoOp: true,
-            nullRuntimeCheck
-        );
-        var writeSession = new RecordingRelationalWriteSession([
-            new CommandResponse(
-                ReaderResultSets: [CreateSingleValueResultSet("AuthorizationResult", typeof(int), 1)]
-            ),
-        ]);
-
-        await _sut.AuthorizeProposedRelationshipAsync(request, mergeResult, writeSession);
-
-        writeSession.Commands.Should().ContainSingle();
-        GetParameterValue(writeSession.Commands[0], "@relationshipAuthorization_0_0_SchoolId")
-            .Should()
-            .BeNull();
-    }
-
-    [Test]
     public async Task It_maps_proposed_relationship_authorization_auth1_failures_before_root_insert()
     {
         var rootPlan = CreateRootPlan();

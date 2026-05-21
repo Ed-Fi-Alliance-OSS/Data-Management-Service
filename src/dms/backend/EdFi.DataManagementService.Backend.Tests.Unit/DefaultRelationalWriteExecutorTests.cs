@@ -3721,6 +3721,56 @@ public class Given_Default_Relational_Write_Executor
             .Which.ReadableName.Should()
             .Be("SchoolId");
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_relationship_authorization_failure_for_mixed_missing_and_present_proposed_values_before_authorization_sql()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(null),
+                    new FlattenedWriteValue.Literal("Lincoln High"),
+                ]
+            )
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateTwoSingleSubjectStrategyRelationshipAuthorization(
+                    request
+                ),
+            }
+        );
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var notAuthorized = upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
+            .Subject;
+
+        notAuthorized
+            .RelationshipFailure.FailedStrategies.Should()
+            .ContainSingle()
+            .Which.ConfiguredStrategyIndex.Should()
+            .Be(0);
+        notAuthorized
+            .RelationshipFailure.FailedStrategies[0]
+            .FailedSubjects.Should()
+            .ContainSingle()
+            .Which.FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -3935,7 +3985,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public void It_keeps_incomplete_or_strategies_in_the_runtime_check_when_another_strategy_can_authorize()
+    public void It_returns_relationship_authorization_failure_when_any_or_strategy_has_a_missing_proposed_value()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -3954,19 +4004,25 @@ public class Given_Default_Relational_Write_Executor
             emittedAuth1Index: 0
         );
 
-        var ready = result
+        var notAuthorized = result
             .Should()
-            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.NotAuthorized>()
             .Subject;
-        ready.RuntimeCheck.Strategies.Should().HaveCount(2);
-        ready.RuntimeCheck.Strategies[0].Subjects.Should().ContainSingle();
-        ready.RuntimeCheck.Strategies[0].Subjects[0].Value.Should().BeNull();
-        ready.RuntimeCheck.Strategies[1].Subjects.Should().ContainSingle();
-        ready.RuntimeCheck.Strategies[1].Subjects[0].Value.Should().Be("Lincoln High");
+        notAuthorized
+            .RelationshipFailure.FailedStrategies.Should()
+            .ContainSingle()
+            .Which.ConfiguredStrategyIndex.Should()
+            .Be(0);
+        notAuthorized
+            .RelationshipFailure.FailedStrategies[0]
+            .FailedSubjects.Should()
+            .ContainSingle()
+            .Which.FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
     }
 
     [Test]
-    public void It_keeps_multi_subject_strategies_with_mixed_missing_and_present_values_in_the_runtime_check()
+    public void It_returns_relationship_authorization_failure_when_a_multi_subject_strategy_has_a_missing_proposed_value()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -3985,16 +4041,22 @@ public class Given_Default_Relational_Write_Executor
             emittedAuth1Index: 0
         );
 
-        var ready = result
+        var notAuthorized = result
             .Should()
-            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.NotAuthorized>()
             .Subject;
-        ready.RuntimeCheck.Strategies.Should().ContainSingle();
-        ready
-            .RuntimeCheck.Strategies[0]
-            .Subjects.Select(static subject => subject.Value)
-            .Should()
-            .Equal([null, "Lincoln High"]);
+        notAuthorized.RelationshipFailure.FailedStrategies.Should().ContainSingle();
+        notAuthorized
+            .RelationshipFailure.FailedStrategies[0]
+            .FailedSubjects.Should()
+            .ContainSingle()
+            .Which.FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
+        notAuthorized
+            .RelationshipFailure.FailedStrategies[0]
+            .FailedSubjects[0]
+            .RootBinding.ColumnName.Should()
+            .Be("SchoolId");
     }
 
     [Test]
