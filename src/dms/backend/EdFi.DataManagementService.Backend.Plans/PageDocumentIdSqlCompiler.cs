@@ -340,50 +340,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         if (authorizationClaimParameterization is not null)
         {
             filterParametersInOrder.AddRange(
-                BuildAuthorizationFilterParametersInOrder(authorizationClaimParameterization)
+                AuthorizationClaimEducationOrganizationIdSqlHelper.BuildFilterParametersInOrder(
+                    authorizationClaimParameterization
+                )
             );
         }
 
         return filterParametersInOrder;
-    }
-
-    private static IReadOnlyList<QuerySqlParameter> BuildAuthorizationFilterParametersInOrder(
-        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
-    )
-    {
-        return authorizationClaimParameterization.Kind switch
-        {
-            AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray =>
-            [
-                new QuerySqlParameter(
-                    QuerySqlParameterRole.Filter,
-                    authorizationClaimParameterization.BaseParameterName,
-                    QuerySqlParameterBinding.PgsqlArray
-                ),
-            ],
-            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar =>
-            [
-                .. authorizationClaimParameterization.ParameterNamesInOrder.Select(
-                    static parameterName => new QuerySqlParameter(QuerySqlParameterRole.Filter, parameterName)
-                ),
-            ],
-            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured =>
-            [
-                new QuerySqlParameter(
-                    QuerySqlParameterRole.Filter,
-                    authorizationClaimParameterization.BaseParameterName,
-                    QuerySqlParameterBinding.CreateMssqlStructured(
-                        AuthorizationClaimEducationOrganizationIdParameterizationFactory.MssqlStructuredParameterTypeName,
-                        AuthorizationClaimEducationOrganizationIdParameterizationFactory.MssqlStructuredParameterColumnName
-                    )
-                ),
-            ],
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(authorizationClaimParameterization),
-                authorizationClaimParameterization.Kind,
-                "Unsupported authorization claim EdOrg parameterization kind."
-            ),
-        };
     }
 
     /// <summary>
@@ -752,7 +715,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         writer.Append($"{_rootAlias}.");
         writer.AppendQuoted(subject.Column.Value);
-        AppendClaimFilterSql(writer, authorizationClaimParameterization);
+        AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
+            writer,
+            authorizationClaimParameterization
+        );
     }
 
     private static void AppendRootSubjectHierarchyMatchSql(
@@ -773,60 +739,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         writer.AppendRelation(new SqlRelationRef.PhysicalTable(AuthNames.EdOrgIdToEdOrgId));
         writer.Append($" {authAlias} WHERE {authAlias}.");
         writer.AppendQuoted(claimFilterColumn.Value);
-        AppendClaimFilterSql(writer, authorizationClaimParameterization);
+        AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
+            writer,
+            authorizationClaimParameterization
+        );
         writer.Append(")");
-    }
-
-    private static void AppendClaimFilterSql(
-        SqlWriter writer,
-        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
-    )
-    {
-        switch (authorizationClaimParameterization.Kind)
-        {
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray:
-                writer.Append(" = ANY(");
-                writer.AppendParameter(authorizationClaimParameterization.BaseParameterName);
-                writer.Append(")");
-                return;
-
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar:
-                writer.Append(" IN (");
-
-                for (
-                    var parameterIndex = 0;
-                    parameterIndex < authorizationClaimParameterization.ParameterNamesInOrder.Count;
-                    parameterIndex++
-                )
-                {
-                    if (parameterIndex > 0)
-                    {
-                        writer.Append(", ");
-                    }
-
-                    writer.AppendParameter(
-                        authorizationClaimParameterization.ParameterNamesInOrder[parameterIndex]
-                    );
-                }
-
-                writer.Append(")");
-                return;
-
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured:
-                writer.Append(" IN (SELECT ");
-                writer.AppendQuoted("Id");
-                writer.Append(" FROM ");
-                writer.AppendParameter(authorizationClaimParameterization.BaseParameterName);
-                writer.Append(")");
-                return;
-
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(authorizationClaimParameterization),
-                    authorizationClaimParameterization.Kind,
-                    "Unsupported authorization claim EdOrg parameterization kind."
-                );
-        }
     }
 
     /// <summary>

@@ -264,50 +264,13 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         );
 
         parameters.AddRange(
-            BuildAuthorizationParametersInOrder(
+            AuthorizationClaimEducationOrganizationIdSqlHelper.BuildFilterParametersInOrder(
                 normalizedSpec.Spec.ClaimEducationOrganizationIdParameterization
             )
         );
 
         return parameters;
     }
-
-    private static IReadOnlyList<QuerySqlParameter> BuildAuthorizationParametersInOrder(
-        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
-    ) =>
-        authorizationClaimParameterization.Kind switch
-        {
-            AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray =>
-            [
-                new QuerySqlParameter(
-                    QuerySqlParameterRole.Filter,
-                    authorizationClaimParameterization.BaseParameterName,
-                    QuerySqlParameterBinding.PgsqlArray
-                ),
-            ],
-            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar =>
-            [
-                .. authorizationClaimParameterization.ParameterNamesInOrder.Select(
-                    static parameterName => new QuerySqlParameter(QuerySqlParameterRole.Filter, parameterName)
-                ),
-            ],
-            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured =>
-            [
-                new QuerySqlParameter(
-                    QuerySqlParameterRole.Filter,
-                    authorizationClaimParameterization.BaseParameterName,
-                    QuerySqlParameterBinding.CreateMssqlStructured(
-                        AuthorizationClaimEducationOrganizationIdParameterizationFactory.MssqlStructuredParameterTypeName,
-                        AuthorizationClaimEducationOrganizationIdParameterizationFactory.MssqlStructuredParameterColumnName
-                    )
-                ),
-            ],
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(authorizationClaimParameterization),
-                authorizationClaimParameterization.Kind,
-                "Unsupported authorization claim EdOrg parameterization kind."
-            ),
-        };
 
     private static IReadOnlyList<RelationshipAuthorizationProposedValueSqlParameter> BuildProposedValueParametersInOrder(
         SingleRecordRelationshipAuthorizationSqlSpec spec
@@ -710,7 +673,10 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         {
             writer.Append("(");
             appendSubjectValue(writer);
-            AppendClaimFilterSql(writer, authorizationClaimParameterization);
+            AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
+                writer,
+                authorizationClaimParameterization
+            );
             writer.Append(" OR EXISTS (");
             AppendAuthorizationExistsSelectSql(
                 writer,
@@ -750,7 +716,10 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         appendSubjectValue(writer);
         writer.Append($" AND {authAlias}.");
         writer.AppendQuoted(checkSpec.AuthObject.ClaimEducationOrganizationIdColumn.Value);
-        AppendClaimFilterSql(writer, authorizationClaimParameterization);
+        AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
+            writer,
+            authorizationClaimParameterization
+        );
     }
 
     private static void AppendFailedSubjectsCte(SqlWriter writer)
@@ -935,60 +904,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     {
         writer.Append($"{TargetCte}.");
         writer.AppendQuoted(column.Value);
-    }
-
-    private static void AppendClaimFilterSql(
-        SqlWriter writer,
-        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
-    )
-    {
-        switch (authorizationClaimParameterization.Kind)
-        {
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray:
-                writer.Append(" = ANY(");
-                writer.AppendParameter(authorizationClaimParameterization.BaseParameterName);
-                writer.Append(")");
-                return;
-
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar:
-                writer.Append(" IN (");
-
-                for (
-                    var parameterIndex = 0;
-                    parameterIndex < authorizationClaimParameterization.ParameterNamesInOrder.Count;
-                    parameterIndex++
-                )
-                {
-                    if (parameterIndex > 0)
-                    {
-                        writer.Append(", ");
-                    }
-
-                    writer.AppendParameter(
-                        authorizationClaimParameterization.ParameterNamesInOrder[parameterIndex]
-                    );
-                }
-
-                writer.Append(")");
-                return;
-
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured:
-                writer.Append(" IN (SELECT ");
-                writer.AppendQuoted(
-                    AuthorizationClaimEducationOrganizationIdParameterizationFactory.MssqlStructuredParameterColumnName
-                );
-                writer.Append(" FROM ");
-                writer.AppendParameter(authorizationClaimParameterization.BaseParameterName);
-                writer.Append(")");
-                return;
-
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(authorizationClaimParameterization),
-                    authorizationClaimParameterization.Kind,
-                    "Unsupported authorization claim EdOrg parameterization kind."
-                );
-        }
     }
 
     private void ValidateAuthorizationClaimParameterization(
