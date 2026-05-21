@@ -128,7 +128,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalPutAuthorizationTests|FullyQualifiedName~PostgresqlRelationalPostAsUpdateAuthorizationTests\".",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~MssqlRelationalPutAuthorizationTests|FullyQualifiedName~MssqlRelationalPostAsUpdateAuthorizationTests\"."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "unit-tests",
