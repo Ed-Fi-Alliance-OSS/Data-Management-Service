@@ -746,6 +746,54 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     }
 
     [Test]
+    public void It_should_reject_postgresql_array_claim_parameterization_without_exactly_the_base_parameter()
+    {
+        var parameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray,
+            "ClaimEducationOrganizationIds",
+            [100L],
+            ["ClaimEducationOrganizationIds", "ClaimEducationOrganizationIds_1"]
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () => compiler.Compile(CreateSingleSubjectStoredSqlSpec(parameterization));
+
+        compile.Should().Throw<ArgumentException>().WithMessage("*exactly the base parameter name*");
+    }
+
+    [Test]
+    public void It_should_reject_sql_server_structured_claim_parameterization_without_exactly_the_base_parameter()
+    {
+        var parameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured,
+            "ClaimEducationOrganizationIds",
+            [100L],
+            ["ClaimEducationOrganizationIds_0"]
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Mssql);
+
+        var compile = () => compiler.Compile(CreateSingleSubjectStoredSqlSpec(parameterization));
+
+        compile.Should().Throw<ArgumentException>().WithMessage("*exactly the base parameter name*");
+    }
+
+    [Test]
+    public void It_should_reject_sql_server_scalar_claim_parameterization_without_one_parameter_per_claim()
+    {
+        var parameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar,
+            "ClaimEducationOrganizationIds",
+            [100L, 200L],
+            ["ClaimEducationOrganizationIds_0"]
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Mssql);
+
+        var compile = () => compiler.Compile(CreateSingleSubjectStoredSqlSpec(parameterization));
+
+        compile.Should().Throw<ArgumentException>().WithMessage("*one parameter name per claim EdOrg id*");
+    }
+
+    [Test]
     public void It_should_reject_mixed_stored_and_proposed_check_batches()
     {
         var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
@@ -782,6 +830,22 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
 
         compile.Should().Throw<ArgumentException>().WithMessage("*all stored-value or all proposed-value*");
     }
+
+    private static SingleRecordRelationshipAuthorizationSqlSpec CreateSingleSubjectStoredSqlSpec(
+        AuthorizationClaimEducationOrganizationIdParameterization parameterization
+    ) =>
+        new(
+            [
+                CreateStoredCheckSpec(
+                    RelationshipAuthorizationHierarchyDirection.Normal,
+                    0,
+                    0,
+                    CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                ),
+            ],
+            parameterization,
+            10
+        );
 
     private static IReadOnlyList<long> CreateClaimEducationOrganizationIds(int count)
     {

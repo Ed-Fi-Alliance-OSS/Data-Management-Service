@@ -995,50 +995,12 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
     )
     {
-        PlanSqlWriterExtensions.ValidateBareParameterName(
-            authorizationClaimParameterization.BaseParameterName,
-            $"{nameof(SingleRecordRelationshipAuthorizationSqlSpec.ClaimEducationOrganizationIdParameterization)}.{nameof(AuthorizationClaimEducationOrganizationIdParameterization.BaseParameterName)}"
+        AuthorizationClaimEducationOrganizationIdParameterizationValidator.ValidateOrThrow(
+            authorizationClaimParameterization,
+            _dialect,
+            nameof(SingleRecordRelationshipAuthorizationSqlSpec.ClaimEducationOrganizationIdParameterization),
+            "Single-record relationship authorization SQL"
         );
-
-        if (authorizationClaimParameterization.ClaimEducationOrganizationIds.Count == 0)
-        {
-            throw new ArgumentException(
-                "Authorization claim EdOrg parameterization requires at least one claim EdOrg id.",
-                nameof(authorizationClaimParameterization)
-            );
-        }
-
-        foreach (var parameterName in authorizationClaimParameterization.ParameterNamesInOrder)
-        {
-            PlanSqlWriterExtensions.ValidateBareParameterName(
-                parameterName,
-                $"{nameof(SingleRecordRelationshipAuthorizationSqlSpec.ClaimEducationOrganizationIdParameterization)}.{nameof(AuthorizationClaimEducationOrganizationIdParameterization.ParameterNamesInOrder)}"
-            );
-        }
-
-        switch (_dialect)
-        {
-            case SqlDialect.Pgsql
-                when authorizationClaimParameterization.Kind
-                    is not AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray:
-                throw CreateAuthorizationClaimParameterizationDialectMismatchException(
-                    authorizationClaimParameterization.Kind
-                );
-            case SqlDialect.Mssql
-                when authorizationClaimParameterization.Kind
-                    is not AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar
-                        and not AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured:
-                throw CreateAuthorizationClaimParameterizationDialectMismatchException(
-                    authorizationClaimParameterization.Kind
-                );
-            case SqlDialect.Pgsql:
-            case SqlDialect.Mssql:
-                return;
-            default:
-                throw new NotSupportedException(
-                    $"Single-record relationship authorization SQL does not support SQL dialect '{_dialect}'."
-                );
-        }
     }
 
     private static void ValidateParameterNameCollisions(
@@ -1101,12 +1063,4 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             }
         }
     }
-
-    private ArgumentException CreateAuthorizationClaimParameterizationDialectMismatchException(
-        AuthorizationClaimEducationOrganizationIdParameterizationKind kind
-    ) =>
-        new(
-            $"Authorization claim EdOrg parameterization kind '{kind}' is not supported by SQL dialect '{_dialect}'.",
-            nameof(kind)
-        );
 }
