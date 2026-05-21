@@ -1,5 +1,10 @@
 # Client credential expiration and rotation
 
+> [!IMPORTANT]
+> This document captures spike/investigation findings only. The secret
+> expiration and rotation features described here were researched but not
+> implemented.
+
 Keycloak does not support client secret rotation as a default feature. However,
 secret rotation is available as a preview feature, but it is disabled by
 default. To enable secret rotation, administrators need to manually configure

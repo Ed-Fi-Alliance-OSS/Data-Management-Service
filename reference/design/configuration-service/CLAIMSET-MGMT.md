@@ -87,7 +87,7 @@ Thus, DMS will use a hybrid model that retains those entity tables exactly as th
 
 * The self-recursive `ParentResourceClaimId` column of the `ResourceClaims` table will be removed in favor of managing the hierarchy in JSON.
 
-* The `ActionUri` in the `Actions` table has not shown to provide any particular value above the more succinct `ActionName` and will be dropped from the model.
+* Actions are hardcoded in the application rather than stored in a database table. The `GET /actions` endpoint returns a fixed list from code, not from a database query.
 
 The security metadata stored in the join tables of the EdFi_Security database will be managed using JSON in a new table named "ClaimsHierarchy".
 
@@ -96,30 +96,23 @@ The DMS Configuration Service data model for managing security metadata will be 
 ```mermaid
 erDiagram
   ResourceClaim {
-    ResourceClaimId int
-    ResourceName varchar(255)
-    ClaimName varchar(850)
-  }
-  Action {
-    ActionId int
-    ActionName varchar(255)
+    bigint Id PK
+    varchar ResourceName
+    varchar ClaimName
   }
   AuthorizationStrategy {
-    AuthorizationStrategyId int
-    AuthorizationStrategyName varchar(255)
-    DisplayName varchar(255)
+    bigint Id PK
+    varchar AuthorizationStrategyName
+    varchar DisplayName
   }
   ClaimSet {
-    ClaimSetId int
-    ClaimSetName varchar(255)
-    IsEdFiPreset bit
-    ForApplicationUseOnly bit
+    bigint Id PK
+    varchar ClaimSetName
+    boolean IsSystemReserved
   }
   ClaimsHierarchy {
-    ClaimsHierarchyId int
-    ProjectName varchar(20)
-    Version varchar(10)
-    Hierarchy jsonb
+    bigint Id PK
+    jsonb Hierarchy
   }
 ```
 
@@ -134,65 +127,55 @@ endpoints. Further discussion with the affected community members is needed to
 determine if this is a viable long-term direction.
 
 Initially, the key goal is to enable the DMS to retrieve claim set information
-from the Configuration Service. However, the DMS represents a
-different type of consumer -- one that is consuming the security metadata for the
-purpose of making authorization decisions. The Admin API has been designed for
-consumers performing security metadata management. For this reason, the DMS Configuration Service will implement a new endpoint that supports this use case:
+from the Configuration Service. However, the DMS represents a different type of
+consumer -- one that is consuming the security metadata for the purpose of
+making authorization decisions. The Admin API has been designed for consumers
+performing security metadata management. For this reason, the DMS Configuration
+Service will implement a new endpoint that supports this use case:
 
-* `GET /v2/authorizations?claimSetName=SIS%20Vendor`
-  * Returns a JSON response containing all the resources accessible to API clients assigned to the specified claim set, along with the authorization metadata for making authorization decisions and applying necessary authorization-based data filtering.
+* `GET /v2/authorizationMetadata?claimSetName=SIS%20Vendor`
+  * Returns authorization metadata for the specified claim set, containing the
+    resources accessible to API clients and the authorization strategies needed
+    to make authorization decisions.
 
-  The structure of the response body will be as follows:
-
-  ```json
-  {
-    "resources": [ ],
-    "authorizations": [ ]
-  }
-  ```
-
-  The objects in the `resources` array will be structured as follows:
+  The actual response is an array of claim set metadata objects:
 
   ```json
-  {
-    "name": "http://ed-fi.org/ods/identity/claims/ed-fi/academicSubjectDescriptor",
-    "authorization": 1
-  }
-  ```
-
-  The objects in `authorizations` array will be structured as follows:
-
-  ```json
-  {
-    "id": 1,
-    "actions": [
-      "name": "Create",
-      "authorizationStrategies": [
+  [
+    {
+      "claimSetName": "SIS Vendor",
+      "claims": [
         {
-          "name": "NamespaceBased"
+          "name": "http://ed-fi.org/ods/identity/claims/ed-fi/academicSubjectDescriptor",
+          "authorizationId": 1
         }
       ],
-      "name": "Read",
-      "authorizationStrategies": [
+      "authorizations": [
         {
-          "name": "NoFurtherAuthorizationRequired"
+          "id": 1,
+          "actions": [
+            {
+              "name": "Create",
+              "authorizationStrategies": [{ "name": "NamespaceBased" }]
+            },
+            {
+              "name": "Read",
+              "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+            }
+          ]
         }
-      ],
-      ...
-    ]
-  }
+      ]
+    }
+  ]
   ```
 
-  An observant reader will notice that this response does not include a
-  hierarchy. The resource claim hierarchy, along with defaults and overrides at
-  different levels, pertains to security metadata management but is not required
-  for authorization _decisions_. While the API response accounts for these
-  concepts, consumers will only receive the information necessary for making
-  authorization decisions.
+  The response does not include the resource claim hierarchy — that pertains to
+  security metadata management and is not required for authorization decisions.
+  Consumers receive only the information necessary to make authorization decisions.
 
 > [!TIP]
-> [admin-api-2.2.0.yaml](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-API-Standards/blob/main/api-specifications/admin-api/admin-api-2.2.0.yaml)
-> is Admin API's specification in OpenAPI format. Use this definition to
+> [management-api-2.3.0.yaml](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-API-Specifications/blob/main/api-specifications/management/management-api-2.3.0.yaml)
+> is the Management API specification in OpenAPI format. Use this definition to
 > determine the request and response payloads.
 
 ### Supported Endpoints
@@ -242,8 +225,7 @@ needs an index on `ClaimSetName`.
 
 #### AuthorizationStrategies
 
-Support full CRUD operations on `/v2/authorizationStrategies`, even though the Admin API
-specification only includes the read operations.
+Continue supporting the read-only list for `/v2/authorizationStrategies`.
 
 #### Actions
 
@@ -275,4 +257,3 @@ subject to change based on community feedback.
   value `true`.
 
 Thus, we have begun defining elements of an Admin API **3.0** specification.
-

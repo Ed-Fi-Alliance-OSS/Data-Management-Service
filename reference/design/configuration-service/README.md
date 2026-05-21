@@ -3,7 +3,7 @@
 > [!NOTE]
 > Rough notes:
 >
-> * Supports Admin API specification (version 2.2) (MOSTLY)
+> * Supports Admin API specification (version 3)
 > * Consider expansion to handle tenant registration and/or creation (replace
 >   Sandbox Admin?). New API specification.
 > * Consider cache management. Should an API go here or in the Data Management
