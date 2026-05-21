@@ -730,7 +730,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
                 new UpsertResult.UpsertFailureRelationshipNotAuthorized(
-                    BuildRelationshipAuthorizationErrorMessages(relationshipFailure),
+                    RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure),
                     relationshipFailure
                 )
             ),
@@ -757,64 +757,6 @@ internal sealed class DefaultRelationalWriteExecutor(
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
-    }
-
-    private static string[] BuildRelationshipAuthorizationErrorMessages(
-        RelationshipAuthorizationFailure relationshipFailure
-    )
-    {
-        string edOrgIdsFromFilters = string.Join(
-            ", ",
-            relationshipFailure.ClaimEducationOrganizationIds.Select(static id => $"'{id.Value}'")
-        );
-        string[] notAuthorizedProperties =
-        [
-            .. relationshipFailure
-                .FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
-                .SelectMany(static subject => GetRelationshipAuthorizationPropertyNames(subject))
-                .Distinct(StringComparer.Ordinal),
-        ];
-
-        if (notAuthorizedProperties.Length == 0)
-        {
-            return
-            [
-                "No relationships have been established between the caller's education organization id claims "
-                    + $"({edOrgIdsFromFilters}) and the requested resource.",
-            ];
-        }
-
-        if (notAuthorizedProperties.Length == 1)
-        {
-            return
-            [
-                "No relationships have been established between the caller's education organization id claims "
-                    + $"({edOrgIdsFromFilters}) and the resource item's {notAuthorizedProperties[0]} value.",
-            ];
-        }
-
-        return
-        [
-            "No relationships have been established between the caller's education organization id claims "
-                + $"({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: "
-                + $"{string.Join(", ", notAuthorizedProperties.Select(static property => $"'{property}'"))}.",
-        ];
-    }
-
-    private static IEnumerable<string> GetRelationshipAuthorizationPropertyNames(
-        RelationshipAuthorizationFailedSubject subject
-    )
-    {
-        if (subject.SecurableElements.Length == 0)
-        {
-            yield return subject.RootBinding.ColumnName;
-            yield break;
-        }
-
-        foreach (var securableElement in subject.SecurableElements)
-        {
-            yield return securableElement.ReadableName;
-        }
     }
 
     private static RelationalWriteExecutorResult BuildProfileCreatabilityRejectionResult(

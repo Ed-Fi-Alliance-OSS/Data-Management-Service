@@ -746,7 +746,7 @@ public sealed class RelationalDocumentStoreRepository(
     // TODO Slice 6 (DMS-1165): aggregate FailedStrategies/FailedSubjects.Hint into Hints.
     private static DeleteResult.DeleteFailureRelationshipNotAuthorized CreateDeleteRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) => new(BuildRelationshipAuthorizationErrorMessages(relationshipFailure), relationshipFailure);
+    ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
 
     private static RelationalCommand BuildDocumentDeleteByDocumentIdCommand(
         SqlDialect dialect,
@@ -1640,69 +1640,11 @@ public sealed class RelationalDocumentStoreRepository(
     // TODO Slice 6 (DMS-1165): aggregate FailedStrategies/FailedSubjects.Hint into Hints.
     private static GetResult.GetFailureRelationshipNotAuthorized CreateGetRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) => new(BuildRelationshipAuthorizationErrorMessages(relationshipFailure), relationshipFailure);
+    ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
 
     private static UpsertResult.UpsertFailureRelationshipNotAuthorized CreateUpsertRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) => new(BuildRelationshipAuthorizationErrorMessages(relationshipFailure), relationshipFailure);
-
-    private static string[] BuildRelationshipAuthorizationErrorMessages(
-        RelationshipAuthorizationFailure relationshipFailure
-    )
-    {
-        string edOrgIdsFromFilters = string.Join(
-            ", ",
-            relationshipFailure.ClaimEducationOrganizationIds.Select(static id => $"'{id.Value}'")
-        );
-        string[] notAuthorizedProperties =
-        [
-            .. relationshipFailure
-                .FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
-                .SelectMany(static subject => GetRelationshipAuthorizationPropertyNames(subject))
-                .Distinct(StringComparer.Ordinal),
-        ];
-
-        if (notAuthorizedProperties.Length == 0)
-        {
-            return
-            [
-                "No relationships have been established between the caller's education organization id claims "
-                    + $"({edOrgIdsFromFilters}) and the requested resource.",
-            ];
-        }
-
-        if (notAuthorizedProperties.Length == 1)
-        {
-            return
-            [
-                "No relationships have been established between the caller's education organization id claims "
-                    + $"({edOrgIdsFromFilters}) and the resource item's {notAuthorizedProperties[0]} value.",
-            ];
-        }
-
-        return
-        [
-            "No relationships have been established between the caller's education organization id claims "
-                + $"({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: "
-                + $"{string.Join(", ", notAuthorizedProperties.Select(static property => $"'{property}'"))}.",
-        ];
-    }
-
-    private static IEnumerable<string> GetRelationshipAuthorizationPropertyNames(
-        RelationshipAuthorizationFailedSubject subject
-    )
-    {
-        if (subject.SecurableElements.Length == 0)
-        {
-            yield return subject.RootBinding.ColumnName;
-            yield break;
-        }
-
-        foreach (var securableElement in subject.SecurableElements)
-        {
-            yield return securableElement.ReadableName;
-        }
-    }
+    ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
 
     private sealed record GetAuthorizationOutcome(
         GetResult? FailureResult,

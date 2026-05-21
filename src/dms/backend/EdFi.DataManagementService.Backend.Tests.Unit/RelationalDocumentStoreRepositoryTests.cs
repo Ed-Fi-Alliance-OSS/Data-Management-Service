@@ -734,6 +734,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.GetDocumentById(getRequest);
 
         var failure = result.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>().Subject;
+        failure
+            .ErrorMessages.Should()
+            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
         failure.ErrorMessages.Should().Equal(RelationshipAuthorizationSchoolIdErrorMessage);
         failure.Hints.Should().BeNull();
         failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
@@ -3363,6 +3366,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var failure = result.Should().BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>().Subject;
         failure
+            .ErrorMessages.Should()
+            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(failure.RelationshipFailure));
+        failure
             .RelationshipFailure.ValueSource.Should()
             .Be(RelationshipAuthorizationFailureValueSource.Proposed);
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
@@ -4664,6 +4670,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
+        failure
+            .ErrorMessages.Should()
+            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
         failure.ErrorMessages.Should().Equal(RelationshipAuthorizationSchoolIdErrorMessage);
         failure.Hints.Should().BeNull();
         failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
