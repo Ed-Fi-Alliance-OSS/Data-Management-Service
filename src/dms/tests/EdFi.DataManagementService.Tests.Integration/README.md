@@ -49,17 +49,22 @@ $env:ConnectionStrings__DatabaseConnection = "host=localhost;port=5435;username=
 
 ### SQL Server
 
-Start SQL Server in a container:
+Start SQL Server in a container. The example maps SQL Server to host port
+`14333` to avoid collisions with a developer SQL Server on `1433`:
 
 ```powershell
-docker run -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='<password>' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+docker run --name dms-mssql-integration -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2022-latest
 ```
 
 Then set the admin connection string:
 
 ```powershell
-$env:ConnectionStrings__MssqlAdmin = "Server=localhost,1433;User Id=sa;Password=<password>;TrustServerCertificate=true"
+$env:ConnectionStrings__MssqlAdmin = "Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
 ```
+
+If the container already exists, use `docker start dms-mssql-integration`.
+If `14333` is busy, map another host port and use that port in
+`ConnectionStrings__MssqlAdmin`.
 
 ### appsettings.Test.json alternative
 
@@ -189,3 +194,18 @@ read the Serilog rolling file at
 `bin/Debug/net10.0/logs/YYYYMMDD.log`. The DMS host writes full exception
 detail there, including ApiSchema-loading and startup-validation failures
 that the test console may swallow.
+
+For MSSQL setup failures, first distinguish "unconfigured" from "configured
+but unreachable." If `ConnectionStrings__MssqlAdmin` is absent, the MSSQL tests
+skip with `Assert.Ignore`. If it is present but points at a stopped container,
+the fixture fails while creating the leased database, before any API request is
+issued.
+
+Useful checks:
+
+```powershell
+Get-ChildItem Env:ConnectionStrings__MssqlAdmin -ErrorAction SilentlyContinue
+Test-NetConnection -ComputerName localhost -Port 14333
+docker ps --filter name=dms-mssql-integration
+docker logs dms-mssql-integration --tail 80
+```
