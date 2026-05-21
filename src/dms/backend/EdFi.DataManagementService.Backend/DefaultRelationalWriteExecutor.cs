@@ -346,13 +346,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                         };
                         break;
 
-                    case ProposedRelationshipAuthorizationExtractionResult.NotAuthorized notAuthorized:
-                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return BuildProposedRelationshipAuthorizationFailureResult(
-                            executionRequest.OperationKind,
-                            notAuthorized.RelationshipFailure
-                        );
-
                     case ProposedRelationshipAuthorizationExtractionResult.InvalidAuthorizationPlan invalid:
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         return BuildUnknownFailureResult(

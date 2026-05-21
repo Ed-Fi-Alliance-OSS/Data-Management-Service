@@ -3712,9 +3712,20 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_returns_relationship_authorization_failure_for_missing_proposed_root_values_before_persistence()
+    public async Task It_returns_relationship_authorization_failure_for_missing_proposed_root_values_from_authorization_sql()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var authorization = CreateProposedSchoolIdRelationshipAuthorization(request);
+        var relationshipFailure = CreateProposedRelationshipFailure(
+            authorization,
+            new RelationshipAuthorizationAuth1SubjectFailure(
+                0,
+                0,
+                RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+            )
+        );
+        _noProfilePersister.ExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
         _writeFlattener.ResultToReturn = new FlattenedWriteSet(
             new RootWriteRowBuffer(
@@ -3730,7 +3741,7 @@ public class Given_Default_Relational_Write_Executor
         var result = await _sut.ExecuteAsync(
             request with
             {
-                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+                ProposedRelationshipAuthorization = authorization,
             }
         );
 
@@ -3767,16 +3778,38 @@ public class Given_Default_Relational_Write_Executor
             .Which.ReadableName.Should()
             .Be("SchoolId");
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.CapturedMergeResult.Should().NotBeNull();
+        _noProfilePersister
+            .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies[0]
+            .Subjects[0]
+            .Value.Should()
+            .BeNull();
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
     [Test]
-    public async Task It_returns_relationship_authorization_failure_for_mixed_missing_and_present_proposed_values_before_authorization_sql()
+    public async Task It_returns_mixed_missing_and_no_relationship_failure_metadata_from_authorization_sql()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var authorization = CreateTwoSingleSubjectStrategyRelationshipAuthorization(request);
+        var relationshipFailure = CreateProposedRelationshipFailure(
+            authorization,
+            new RelationshipAuthorizationAuth1SubjectFailure(
+                0,
+                0,
+                RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+            ),
+            new RelationshipAuthorizationAuth1SubjectFailure(
+                1,
+                0,
+                RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+            )
+        );
+        _noProfilePersister.ExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
         _writeFlattener.ResultToReturn = new FlattenedWriteSet(
             new RootWriteRowBuffer(
@@ -3792,9 +3825,7 @@ public class Given_Default_Relational_Write_Executor
         var result = await _sut.ExecuteAsync(
             request with
             {
-                ProposedRelationshipAuthorization = CreateTwoSingleSubjectStrategyRelationshipAuthorization(
-                    request
-                ),
+                ProposedRelationshipAuthorization = authorization,
             }
         );
 
@@ -3804,20 +3835,35 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
             .Subject;
 
+        notAuthorized.RelationshipFailure.FailedStrategies.Should().HaveCount(2);
         notAuthorized
-            .RelationshipFailure.FailedStrategies.Should()
-            .ContainSingle()
-            .Which.ConfiguredStrategyIndex.Should()
-            .Be(0);
+            .RelationshipFailure.FailedStrategies.Select(static strategy => strategy.ConfiguredStrategyIndex)
+            .Should()
+            .Equal(0, 1);
         notAuthorized
-            .RelationshipFailure.FailedStrategies[0]
-            .FailedSubjects.Should()
-            .ContainSingle()
-            .Which.FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Select(static subject => subject.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
+                RelationshipAuthorizationSubjectFailureKind.NoRelationship
+            );
+        notAuthorized
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Select(static subject => subject.RootBinding.ColumnName)
+            .Should()
+            .Equal("SchoolId", "Name");
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.CapturedMergeResult.Should().NotBeNull();
+        _noProfilePersister
+            .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies.SelectMany(
+                static strategy => strategy.Subjects
+            )
+            .Select(static subject => subject.Value)
+            .Should()
+            .Equal(new object?[] { null, "Lincoln High" });
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -4031,7 +4077,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public void It_returns_relationship_authorization_failure_when_any_or_strategy_has_a_missing_proposed_value()
+    public void It_preserves_missing_and_present_proposed_values_for_or_strategies()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -4050,25 +4096,24 @@ public class Given_Default_Relational_Write_Executor
             emittedAuth1Index: 0
         );
 
-        var notAuthorized = result
+        var ready = result
             .Should()
-            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.NotAuthorized>()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
             .Subject;
-        notAuthorized
-            .RelationshipFailure.FailedStrategies.Should()
-            .ContainSingle()
-            .Which.ConfiguredStrategyIndex.Should()
-            .Be(0);
-        notAuthorized
-            .RelationshipFailure.FailedStrategies[0]
-            .FailedSubjects.Should()
-            .ContainSingle()
-            .Which.FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
+        ready.RuntimeCheck.Strategies.Should().HaveCount(2);
+        ready
+            .RuntimeCheck.Strategies.Select(static strategy => strategy.StrategyOrdinal)
+            .Should()
+            .Equal(0, 1);
+        ready
+            .RuntimeCheck.Strategies.SelectMany(static strategy => strategy.Subjects)
+            .Select(static subject => subject.Value)
+            .Should()
+            .Equal(new object?[] { null, "Lincoln High" });
     }
 
     [Test]
-    public void It_returns_relationship_authorization_failure_when_a_multi_subject_strategy_has_a_missing_proposed_value()
+    public void It_preserves_missing_values_in_multi_subject_strategy()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -4087,26 +4132,20 @@ public class Given_Default_Relational_Write_Executor
             emittedAuth1Index: 0
         );
 
-        var notAuthorized = result
+        var ready = result
             .Should()
-            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.NotAuthorized>()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
             .Subject;
-        notAuthorized.RelationshipFailure.FailedStrategies.Should().ContainSingle();
-        notAuthorized
-            .RelationshipFailure.FailedStrategies[0]
-            .FailedSubjects.Should()
-            .ContainSingle()
-            .Which.FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
-        notAuthorized
-            .RelationshipFailure.FailedStrategies[0]
-            .FailedSubjects[0]
-            .RootBinding.ColumnName.Should()
-            .Be("SchoolId");
+        ready.RuntimeCheck.Strategies.Should().ContainSingle();
+        ready
+            .RuntimeCheck.Strategies[0]
+            .Subjects.Select(static subject => subject.Value)
+            .Should()
+            .Equal(new object?[] { null, "Lincoln High" });
     }
 
     [Test]
-    public void It_returns_relationship_authorization_failure_when_every_or_strategy_is_incomplete()
+    public void It_preserves_null_runtime_values_when_every_or_strategy_is_incomplete()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -4125,28 +4164,23 @@ public class Given_Default_Relational_Write_Executor
             emittedAuth1Index: 0
         );
 
-        var notAuthorized = result
+        var ready = result
             .Should()
-            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.NotAuthorized>()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
             .Subject;
-        notAuthorized
-            .RelationshipFailure.FailedStrategies.Select(static strategy => strategy.ConfiguredStrategyIndex)
+        ready
+            .RuntimeCheck.Strategies.Select(static strategy => strategy.StrategyOrdinal)
             .Should()
             .Equal(0, 1);
-        notAuthorized
-            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+        ready
+            .RuntimeCheck.Strategies.SelectMany(static strategy => strategy.Subjects)
+            .Select(static subject => subject.Value)
             .Should()
-            .AllSatisfy(subject =>
-                subject
-                    .FailureKind.Should()
-                    .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing)
-            );
+            .Equal(new object?[] { null, null });
     }
 
     [TestCaseSource(nameof(MissingProposedValueCases))]
-    public void It_treats_unbound_proposed_runtime_values_as_proposed_missing(
-        FlattenedWriteValue missingValue
-    )
+    public void It_maps_unbound_proposed_runtime_values_to_null_parameters(FlattenedWriteValue missingValue)
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -4165,15 +4199,11 @@ public class Given_Default_Relational_Write_Executor
             emittedAuth1Index: 0
         );
 
-        var notAuthorized = result
+        var ready = result
             .Should()
-            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.NotAuthorized>()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
             .Subject;
-        notAuthorized
-            .RelationshipFailure.FailedStrategies[0]
-            .FailedSubjects[0]
-            .FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
+        ready.RuntimeCheck.Strategies[0].Subjects[0].Value.Should().BeNull();
     }
 
     private static IEnumerable<TestCaseData> MissingProposedValueCases()
@@ -4245,22 +4275,24 @@ public class Given_Default_Relational_Write_Executor
 
     private static RelationshipAuthorizationFailure CreateProposedSchoolIdRelationshipFailure(
         RelationalWriteExecutorRequest request
+    ) =>
+        CreateProposedRelationshipFailure(
+            CreateProposedSchoolIdRelationshipAuthorization(request),
+            new RelationshipAuthorizationAuth1SubjectFailure(
+                0,
+                0,
+                RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+            )
+        );
+
+    private static RelationshipAuthorizationFailure CreateProposedRelationshipFailure(
+        RelationshipAuthorizationResult.Authorized authorized,
+        params RelationshipAuthorizationAuth1SubjectFailure[] subjectFailures
     )
     {
-        var authorized = CreateProposedSchoolIdRelationshipAuthorization(request);
-
         if (
             !RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
-                new RelationshipAuthorizationAuth1FailurePayload(
-                    0,
-                    [
-                        new RelationshipAuthorizationAuth1SubjectFailure(
-                            0,
-                            0,
-                            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
-                        ),
-                    ]
-                ),
+                new RelationshipAuthorizationAuth1FailurePayload(0, subjectFailures),
                 authorized.CheckSpecs,
                 authorized.ClaimEducationOrganizationIdParameterization!.ClaimEducationOrganizationIds,
                 out var relationshipFailure

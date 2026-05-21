@@ -340,6 +340,75 @@ public class Given_RelationshipAuthorizationFailureMapper
             .Equal("SchoolId", "LocalEducationAgencyId");
     }
 
+    [Test]
+    public void It_should_map_mixed_proposed_missing_and_no_relationship_failures_across_or_strategies()
+    {
+        var checkSpecs = new[]
+        {
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Inverted,
+                11,
+                1,
+                CreateSubject(
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyReference.localEducationAgencyId"
+                )
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        1,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+        relationshipFailure!.FailedStrategies.Should().HaveCount(2);
+        relationshipFailure
+            .FailedStrategies.Select(static strategy => strategy.ConfiguredStrategyIndex)
+            .Should()
+            .Equal(10, 11);
+        relationshipFailure
+            .FailedStrategies.Select(static strategy => strategy.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+        relationshipFailure
+            .FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Select(static subject => subject.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
+                RelationshipAuthorizationSubjectFailureKind.NoRelationship
+            );
+        relationshipFailure
+            .FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Select(static subject => subject.RootBinding.ColumnName)
+            .Should()
+            .Equal("SchoolId", "LocalEducationAgencyId");
+    }
+
     private static RelationshipAuthorizationCheckSpec CreateStoredCheckSpec(
         RelationshipAuthorizationHierarchyDirection direction,
         int configuredStrategyIndex,
