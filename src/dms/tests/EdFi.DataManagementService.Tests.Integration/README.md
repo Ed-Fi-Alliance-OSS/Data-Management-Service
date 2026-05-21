@@ -109,6 +109,7 @@ effective schema.
 | `ProfileNestedAndRootExtensionChildren` | `src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-nested-and-root-extension-children/` | Nested children plus root-level extension children under a profile. |
 | `ProfileCollectionAlignedExtension` | `src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension/` | Extension scope aligned to a profile-visible collection. |
 | `ProfileCollectionAlignedExtensionHiddenDescendant` | `src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension-hidden-descendant/` | Same shape with a hidden descendant; loaded only by scenarios that need it. |
+| `AuthoritativeDs52` | `src/dms/backend/Fixtures/authoritative/ds-5.2/` | Full Ed-Fi Data Standard 5.2 schema. Loaded only by scenarios that need production resource shapes the focused fixtures do not model (e.g. School/ClassPeriod/BellSchedule identity-propagation regressions). Baseline provisioning is heavier than focused fixtures. |
 
 The harness's `FixtureKey` enum lists only fixtures whose effective schema the
 strict production DMS runtime mapping compiler accepts. The backend-only
