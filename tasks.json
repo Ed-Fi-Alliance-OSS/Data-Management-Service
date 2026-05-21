@@ -410,26 +410,6 @@
     "completed": true
   },
   {
-    "category": "descriptor-write-authorization",
-    "description": "High: Relational descriptor POST can bypass authorization because middleware now routes relational POST through backend-planned authorization, but descriptor writes exit before POST relationship preflight and do not receive authorization strategies; narrow backend-planned POST to non-descriptor resources or pass strategies into descriptor POST and fail closed there.",
-    "acceptance-criteria": [
-      "Descriptor POST requests with any effective authorization strategy other than no strategies or NoFurtherAuthorizationRequired do not create or update descriptors without an explicit supported authorization path.",
-      "The fix either excludes descriptor POST from the backend-planned relational POST lane through a descriptor-aware middleware predicate so existing provider guardrails apply, or forwards AuthorizationStrategyEvaluators and RelationalAuthorizationContext into descriptor POST and returns an explicit not-implemented/fail-closed result for unsupported descriptor write authorization.",
-      "Descriptor POST fail-closed behavior occurs before descriptor target lookup, write-session creation, insert/update command execution, or persistence side effects when authorization is unsupported.",
-      "Descriptor POST with NoFurtherAuthorizationRequired or no effective authorization strategies preserves existing descriptor write behavior.",
-      "Descriptor GET, GET-many, DELETE, and non-descriptor POST authorization behavior remain unchanged; descriptor PUT is either left intentionally unchanged or explicitly fail-closed if shared descriptor write contracts are modified.",
-      "Unit coverage proves descriptor POST with RelationshipsWithEdOrgsOnly, NamespaceBased, and a mixed strategy set cannot bypass authorization, cannot probe descriptor target existence, and cannot invoke descriptor persistence as if authorization were not required."
-    ],
-    "steps-to-verify": [
-      "Review src/dms/core/EdFi.DataManagementService.Core/Middleware/ProvideAuthorizationFiltersMiddleware.cs for the relational POST backend-planned boundary.",
-      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs and src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteContracts.cs for descriptor POST authorization inputs and fail-closed handling.",
-      "Review src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs or descriptor write handler tests for descriptor POST authorization guard coverage.",
-      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter ProvideAuthorizationFiltersMiddlewareTests",
-      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDocumentStoreRepositoryTests|DescriptorWrite\""
-    ],
-    "completed": false
-  },
-  {
     "category": "relationship-authorization-metadata",
     "description": "Medium: Empty-EdOrg-claim POST denials lose explicit no-claims metadata because the planner emits NoClaimEducationOrganizationIds but POST maps the denial through synthetic NoRelationship subject failures; carry no-claims metadata through the external relationship failure DTO so Slice 6 does not infer it from an empty claim list.",
     "acceptance-criteria": [
