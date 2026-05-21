@@ -173,7 +173,6 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             var targetContext = executionRequest.TargetContext;
             RelationalWriteMergeResult mergeResult;
-            RootWriteRowBuffer finalizedRootRow;
 
             // Profile decision sequence — runs before flattening for profile-aware dispatch
             if (request.ProfileWriteContext is not null)
@@ -275,7 +274,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                         emitEmptyExtensionBuffers: true
                     )
                 );
-                finalizedRootRow = profileFlattenedWriteSet.RootRow;
 
                 var profileMergeOutcome = _profileMergeSynthesizer.Synthesize(
                     new RelationalWriteProfileMergeRequest(
@@ -322,7 +320,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                         validateStorageCollapsedCollectionIdentityUniqueness: true
                     )
                 );
-                finalizedRootRow = flattenedWriteSet.RootRow;
 
                 mergeResult = _noProfileMergeSynthesizer.Synthesize(
                     new RelationalWriteNoProfileMergeRequest(
@@ -335,6 +332,7 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             if (executionRequest.ProposedRelationshipAuthorization is not null)
             {
+                var finalizedRootRow = BuildFinalizedRootRowBuffer(executionRequest, mergeResult);
                 var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
                     executionRequest.ProposedRelationshipAuthorization,
                     finalizedRootRow,
@@ -511,6 +509,34 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
+    }
+
+    private static RootWriteRowBuffer BuildFinalizedRootRowBuffer(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteMergeResult mergeResult
+    )
+    {
+        var rootTable = request.WritePlan.TablePlansInDependencyOrder[0];
+        var rootTableState = mergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
+            tableState.TableWritePlan.TableModel.Table.Equals(rootTable.TableModel.Table)
+        );
+
+        if (rootTableState is null)
+        {
+            throw new InvalidOperationException(
+                $"Relational write merge result did not include the root table '{rootTable.TableModel.Table}'."
+            );
+        }
+
+        if (rootTableState.MergedRows.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"Relational write merge result for root table '{rootTable.TableModel.Table}' "
+                    + $"included {rootTableState.MergedRows.Length} merged rows; expected exactly one."
+            );
+        }
+
+        return new RootWriteRowBuffer(rootTableState.TableWritePlan, rootTableState.MergedRows[0].Values);
     }
 
     private async Task<RelationalWriteExecutorResult?> TryBuildPostProposedRelationshipAuthorizationPrecedenceResultAsync(

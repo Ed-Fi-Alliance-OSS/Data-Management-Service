@@ -3600,7 +3600,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_reads_proposed_relationship_authorization_values_from_profile_writable_root_row()
+    public async Task It_reads_proposed_relationship_authorization_values_from_profile_merged_root_row()
     {
         var rawBody = JsonNode.Parse("""{"schoolId":111111,"name":"Raw"}""")!;
         var writableBody = JsonNode.Parse("""{"schoolId":333333,"name":"Writable"}""")!;
@@ -3616,6 +3616,24 @@ public class Given_Default_Relational_Write_Executor
                     new FlattenedWriteValue.Literal("Writable"),
                 ]
             )
+        );
+        var mergedRootRow = new RelationalWriteMergedTableRow(
+            values:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(444444),
+                new FlattenedWriteValue.Literal("Merged"),
+            ],
+            comparableValues:
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(444444),
+                new FlattenedWriteValue.Literal("Merged"),
+            ]
+        );
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [new RelationalWriteMergedTableState(rootPlan, [], [mergedRootRow])],
+            supportsGuardedNoOp: false
         );
 
         var result = await _sut.ExecuteAsync(
@@ -3644,7 +3662,7 @@ public class Given_Default_Relational_Write_Executor
             .CapturedMergeResult!
             .ProposedRelationshipAuthorizationRuntimeCheck;
         runtimeCheck.Should().NotBeNull();
-        runtimeCheck!.Strategies[0].Subjects[0].Value.Should().Be(333333);
+        runtimeCheck!.Strategies[0].Subjects[0].Value.Should().Be(444444);
     }
 
     [Test]
