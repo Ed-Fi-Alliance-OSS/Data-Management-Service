@@ -169,7 +169,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalPostAsUpdateAuthorizationTests\".",
       "Inspect failed PostgreSQL test diagnostics for AUTH1 payload mapping and row-diff assertions."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "mssql-integration-tests",

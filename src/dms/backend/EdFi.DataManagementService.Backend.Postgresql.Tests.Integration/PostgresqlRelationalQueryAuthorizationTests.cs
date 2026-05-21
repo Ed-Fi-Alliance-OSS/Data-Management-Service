@@ -345,18 +345,22 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         AuthorizationRootChildSeed seed,
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
-        string? ifMatch = null
+        string? ifMatch = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null,
+        JsonNode? requestBody = null
     )
     {
         return await UpsertAsync(
             "authz",
             "AuthorizationRootChildResource",
-            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
+            requestBody
+                ?? RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
             seed.DocumentUuid,
             $"post-auth-root-child-{seed.AuthorizationRootChildId}",
             claimEducationOrganizationIds,
             strategyNames,
-            ifMatch
+            ifMatch,
+            backendProfileWriteContext
         );
     }
 
@@ -365,18 +369,22 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         DocumentUuid documentUuid,
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
-        string? ifMatch = null
+        string? ifMatch = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null,
+        JsonNode? requestBody = null
     )
     {
         return await UpdateAsync(
             "authz",
             "AuthorizationRootChildResource",
-            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
+            requestBody
+                ?? RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
             documentUuid,
             $"put-auth-root-child-{seed.AuthorizationRootChildId}",
             claimEducationOrganizationIds,
             strategyNames,
-            ifMatch
+            ifMatch,
+            backendProfileWriteContext
         );
     }
 
@@ -778,7 +786,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         string traceId,
         IReadOnlyList<long>? claimEducationOrganizationIds = null,
         IReadOnlyList<string>? strategyNames = null,
-        string? ifMatch = null
+        string? ifMatch = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -802,7 +811,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
             ResourceAuthorizationHandler: new PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: backendProfileWriteContext
         )
         {
             AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
@@ -829,7 +839,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         string traceId,
         IReadOnlyList<long>? claimEducationOrganizationIds = null,
         IReadOnlyList<string>? strategyNames = null,
-        string? ifMatch = null
+        string? ifMatch = null,
+        BackendProfileWriteContext? backendProfileWriteContext = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -853,7 +864,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
             ResourceAuthorizationHandler: new PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: backendProfileWriteContext
         )
         {
             AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
