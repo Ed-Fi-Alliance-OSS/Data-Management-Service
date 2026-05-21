@@ -19,5 +19,4 @@ Detailed design notes:
 
 * [Authorization in the Configuration Service](./CS-AUTH.md)
 * [Claimset Management](./CLAIMSET-MGMT.md)
-* [Identity Providers](./IDENTITY-PROVIDERS.md)
 * [Secret Management](./SECRET-MANAGEMENT.md)
