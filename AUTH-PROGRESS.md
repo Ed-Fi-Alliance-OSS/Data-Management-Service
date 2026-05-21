@@ -2,125 +2,92 @@
 
 Audience: DMS team, technical leads, QA, and product owners  
 Window: April 30-May 21, 2026  
-Scope: Relational primary store authorization work under `reference/design/backend-redesign/epics/14-authorization`
+Scope: Relational primary store authorization under `reference/design/backend-redesign/epics/14-authorization`
 
 ---
 
-## Slide 1: Where We Are
+## Slide 1: From Design To Enforcement
 
-- Authorization moved from design and DDL groundwork into runtime enforcement.
-- The strongest progress is in EdOrg relationship-based authorization.
-- GET-many, GET-by-id, DELETE, and POST-create now have completed EdOrg-only coverage.
-- PUT and POST-as-update are the active implementation front.
+Over the past three weeks, authorization moved from relational design and generated database support into runtime behavior. The clearest delivered path is EdOrg relationship-based authorization across GET-many, GET-by-id, DELETE, and POST-create.
 
 **Speaker notes:**  
-The past three weeks were about turning the relational authorization design into executable behavior. The current shape is a vertical slice through EdOrg relationship authorization, with remaining work focused on update flows, People relationships, namespace authorization, and final error hardening.
+The work is no longer just metadata, schema, or planning. DMS now applies authorization decisions in the relational backend for several real API paths.
 
 ---
 
-## Slide 2: Three-Week Narrative
+## Slide 2: The Work Landed In Layers
 
-- First, the team strengthened the generated database surface: indexes and People join-path support.
-- Then GET-many filtering landed for EdOrg relationship strategies.
-- Next, CRUD authorization was split into focused slices to reduce review and QA risk.
-- The first three CRUD slices are complete.
-- QA now has concrete relational behavior to validate instead of only design contracts.
+The team first strengthened the generated relational surface, then added query filtering, then split single-record CRUD authorization into smaller slices. That sequencing reduced risk because each runtime operation now builds on shared planning, SQL, and failure metadata.
 
 **Speaker notes:**  
-The sequencing matters. Runtime authorization depends on predictable generated schema objects and reusable planning contracts. The team built those foundations first, then applied them to query and single-record write paths.
+The important narrative is dependency order: database objects and indexes first, GET-many filtering next, then reusable CRUD planning and endpoint-specific enforcement.
 
 ---
 
-## Slide 3: Completed Foundation And Query Work
+## Slide 3: Completed Foundation Work
 
-| Status | Ticket | Work |
-| --- | --- | --- |
-| Done | `DMS-1054` | Relationship and Namespace auth indexes emitted into generated DDL. |
-| Done | `DMS-1055` | EdOrg-only relationship authorization for GET-many. |
-| Done | `DMS-1091` | Auth startup moved into `IDmsStartupTask`. |
-| Done | `DMS-1090` | `NoFurtherAuthorizationRequired` verified as a no-op strategy. |
-| Done | `DMS-1094` | People join indexes emitted for Person traversal paths. |
+Completed foundation work made authorization reliable enough to execute:
+
+- `DMS-1054`: emitted relationship and namespace authorization indexes.
+- `DMS-1094`: emitted People join indexes for Person traversal paths.
+- `DMS-1091`: moved auth startup into `IDmsStartupTask`.
+- `DMS-1090`: verified `NoFurtherAuthorizationRequired` as a no-op.
+- `DMS-1096`: added verification harness coverage for emitted auth DB objects.
 
 **Speaker notes:**  
-This work made authorization part of the generated relational model and the DMS startup lifecycle. GET-many now applies EdOrg relationship filters instead of treating the strategy as a future placeholder.
+These are the pieces that make runtime enforcement practical: generated schema support, startup ordering, no-op strategy behavior, and database-object verification.
 
 ---
 
-## Slide 4: Completed CRUD Authorization Slices
+## Slide 4: Completed Runtime Behavior
 
-| Status | Ticket | Work |
-| --- | --- | --- |
-| Done | `DMS-1160` | Slice 1: operation-neutral relationship CRUD auth core. |
-| Done | `DMS-1161` | Slice 2: EdOrg-only GET-by-id and DELETE authorization. |
-| Done | `DMS-1162` | Slice 3: EdOrg-only POST-create authorization. |
+EdOrg relationship authorization is now implemented for key relational API paths:
+
+- `DMS-1055`: GET-many filters unauthorized rows and keeps pagination/count behavior correct.
+- `DMS-1160`: shared operation-neutral CRUD authorization core.
+- `DMS-1161`: GET-by-id and DELETE enforce stored-value authorization.
+- `DMS-1162`: POST-create enforces proposed-value authorization before insert.
 
 **Speaker notes:**  
-The CRUD work was intentionally sliced. Slice 1 created shared planning and classification contracts. Slice 2 applied those contracts to stored single-record checks. Slice 3 added proposed-value checks for create-new POST behavior.
+This is the main delivery signal. EdOrg relationship authorization now protects collection reads, single-record reads, deletes, and creates in the relational backend.
 
 ---
 
 ## Slide 5: In QA And In Progress
 
-| Status | Ticket | Work |
-| --- | --- | --- |
-| In QA | `DMS-1096` | Verification harness for emitted auth database objects. |
-| In Progress | `DMS-1163` | Slice 4: EdOrg-only PUT and POST-as-update. |
-| In Progress | `DMS-1056` | Parent story for relationship CRUD authorization. |
+`DMS-1096` is in the verification/QA lane for emitted auth database objects. `DMS-1163` is in progress for PUT and POST-as-update, and it is the remaining slice needed to close EdOrg-only relationship CRUD coverage.
 
 **Speaker notes:**  
-`DMS-1096` is validating the generated auth database objects, especially trigger behavior across PostgreSQL and SQL Server. `DMS-1163` is the highest-risk active slice because updates must authorize both stored and proposed values before any mutation, no-op success, or stale precondition response escapes.
+Update flows are harder than create or delete because they must authorize both the stored record and the proposed final state before mutation, no-op success, or stale precondition responses can leak.
 
 ---
 
-## Slide 6: Open Non-Stretch Work
+## Slide 6: What Remains
 
-| Status | Ticket | Work |
-| --- | --- | --- |
-| Open | `DMS-1057` | Namespace-based authorization strategy. |
-| Open | `DMS-1095` | People-involved relationship authorization for GET-many. |
-| Open | `DMS-1099` | Security configuration ProblemDetails. |
-| Open | `DMS-1158` | People-involved relationship authorization for CRUD. |
-| Open | `DMS-1164` | People relationship auth core. |
-| Open | `DMS-1165` | Relationship auth ProblemDetails hardening. |
+The remaining non-stretch work broadens authorization beyond the EdOrg-only path:
+
+- `DMS-1057`: Namespace-based authorization.
+- `DMS-1095`: People-involved relationship authorization for GET-many.
+- `DMS-1158` and `DMS-1164`: People-involved relationship authorization for CRUD and its core.
+- `DMS-1099` and `DMS-1165`: final security configuration and relationship auth ProblemDetails hardening.
 
 **Speaker notes:**  
-The remaining non-stretch work expands beyond EdOrg-only behavior. People relationships and namespace authorization are still open, and the final ProblemDetails work will make failure responses consistent and product-ready.
+We should describe current progress as strong but bounded. People, Namespace, and final response-shaping work are still open and should not be represented as complete.
 
 ---
 
-## Slide 7: Why The Work Matters Technically
+## Slide 7: Why This Matters
 
-- Authorization is now planned and executed in the relational backend, not only represented in claims metadata.
-- SQL generation is being tested for both PostgreSQL and SQL Server.
-- GET-many now filters unauthorized rows.
-- GET-by-id, DELETE, and POST-create now deny unauthorized single-record operations.
-- Failure metadata is being preserved so later ProblemDetails hardening has the right inputs.
+The implementation now connects claims metadata, generated schema, query planning, SQL execution, and handler result mapping. Authorization failures carry enough structure for later ProblemDetails hardening, and provider coverage is being built for both PostgreSQL and SQL Server.
 
 **Speaker notes:**  
-This is a shift from structural readiness to enforceable behavior. The same authorization concepts now flow through planning, SQL compilation, parameter binding, execution, and handler result mapping.
+This gives engineering and QA concrete behavior to validate instead of only design intent. It also preserves the diagnostic data product needs for understandable failure responses.
 
 ---
 
-## Slide 8: Product And QA Impact
+## Slide 8: Near-Term Focus
 
-- Product can describe EdOrg relationship authorization as partially implemented, with clear operation boundaries.
-- QA can validate concrete relational behavior for GET-many, GET-by-id, DELETE, and POST-create.
-- Update behavior is not complete until `DMS-1163` lands.
-- People, Namespace, Ownership, and View-based behavior should not be represented as complete.
-- Open stretch-goal items are intentionally out of the current delivery signal.
+The next milestone is finishing `DMS-1163` so EdOrg-only relationship CRUD includes PUT and POST-as-update. After that, the work shifts from completing the EdOrg vertical slice to expanding strategy coverage for People and Namespace authorization, then tightening final error responses.
 
 **Speaker notes:**  
-The key message is progress with boundaries. EdOrg relationship authorization is real for several operations, but the team should avoid implying full authorization parity until the remaining non-stretch stories land and QA completes verification.
-
----
-
-## Slide 9: Next Work To Watch
-
-- Finish `DMS-1163` so EdOrg-only relationship CRUD covers PUT and POST-as-update.
-- Complete QA on `DMS-1096` to lock down emitted auth object verification.
-- Start People relationship core and GET-many work: `DMS-1164` and `DMS-1095`.
-- Start Namespace authorization: `DMS-1057`.
-- Harden final failure response shape: `DMS-1099` and `DMS-1165`.
-
-**Speaker notes:**  
-The next milestone is closing the EdOrg-only CRUD path. After that, the work broadens to People and Namespace strategies and then tightens the user-facing failure contract.
+The practical message for stakeholders is: EdOrg relationship authorization is substantially implemented, update authorization is the active risk area, and the remaining non-stretch work is clearly scoped.
