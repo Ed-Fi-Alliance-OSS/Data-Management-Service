@@ -301,12 +301,145 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
-        _writeSessionFactory
-            .Session.RelationshipAuthorizationCommandExecutor.Commands.Should()
-            .ContainSingle();
+        _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_uses_provider_parameter_configurator_for_stored_relationship_authorization_inside_the_write_session()
+    {
+        var parameterConfigurator = new RecordingRelationalParameterConfigurator();
+        _sut = new DefaultRelationalWriteExecutor(
+            _writeSessionFactory,
+            _referenceResolverAdapterFactory,
+            _writeFlattener,
+            _currentStateLoader,
+            _currentEtagPreconditionChecker,
+            _committedRepresentationReader,
+            _targetLookupResolver,
+            _writeFreshnessChecker,
+            _noProfileMergeSynthesizer,
+            _profileMergeSynthesizer,
+            _noProfilePersister,
+            _writeExceptionClassifier,
+            _writeConstraintResolver,
+            _readMaterializer,
+            parameterConfigurator
+        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            documentReferences: [documentReference],
+            dialect: SqlDialect.Mssql
+        );
+        var storedAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request) with
+        {
+            ClaimEducationOrganizationIdParameterization =
+                AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                    SqlDialect.Mssql,
+                    Enumerable.Range(1, 2000).Select(static id => (long)id).ToArray(),
+                    RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+                ),
+        };
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = storedAuthorization,
+            }
+        );
+
+        result.Should().BeOfType<RelationalWriteExecutorResult.Update>();
+        var command = _writeSessionFactory
+            .Session.RelationshipAuthorizationCommands.Should()
+            .ContainSingle()
+            .Subject;
+        var claimParameter = command
+            .Parameters.Should()
+            .ContainSingle(static parameter => parameter.Name == "@ClaimEducationOrganizationIds")
+            .Subject;
+        claimParameter.Value.Should().BeOfType<DataTable>().Which.Rows.Should().HaveCount(2000);
+        claimParameter.ConfigureParameter.Should().NotBeNull();
+
+        claimParameter.ConfigureParameter!(new StubDbParameter());
+
+        parameterConfigurator.CapturedParameters.Should().ContainSingle();
+        parameterConfigurator
+            .CapturedParameters[0]
+            .Binding.Should()
+            .BeEquivalentTo(QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id"));
+    }
+
+    [Test]
+    public async Task It_uses_provider_failure_extractor_for_stored_relationship_authorization_inside_the_write_session()
+    {
+        var auth1Payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                0,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            )
+        );
+        var providerFailureExtractor = new StubRelationshipAuthorizationProviderFailureExtractor(
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            auth1Payload
+        );
+        _sut = new DefaultRelationalWriteExecutor(
+            _writeSessionFactory,
+            _referenceResolverAdapterFactory,
+            _writeFlattener,
+            _currentStateLoader,
+            _currentEtagPreconditionChecker,
+            _committedRepresentationReader,
+            _targetLookupResolver,
+            _writeFreshnessChecker,
+            _noProfileMergeSynthesizer,
+            _profileMergeSynthesizer,
+            _noProfilePersister,
+            _writeExceptionClassifier,
+            _writeConstraintResolver,
+            _readMaterializer,
+            relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor
+        );
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("AUTH1 failed"));
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        var relationshipFailure = updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure;
+        relationshipFailure.ValueSource.Should().Be(RelationshipAuthorizationFailureValueSource.Stored);
+        relationshipFailure
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Which.FailedSubjects.Should()
+            .ContainSingle()
+            .Which.FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+        providerFailureExtractor.ExtractCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -431,9 +564,7 @@ public class Given_Default_Relational_Write_Executor
             );
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
-        _writeSessionFactory
-            .Session.RelationshipAuthorizationCommandExecutor.Commands.Should()
-            .ContainSingle();
+        _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
@@ -6143,8 +6274,18 @@ public class Given_Default_Relational_Write_Executor
 
         public List<RelationalCommand> Commands { get; } = [];
 
-        public InMemoryRelationalCommandExecutor RelationshipAuthorizationCommandExecutor { get; set; } =
+        public IRelationalCommandExecutor RelationshipAuthorizationCommandExecutor { get; set; } =
             CreateAuthorizedRelationshipAuthorizationCommandExecutor();
+
+        public List<RelationalCommand> RelationshipAuthorizationCommands =>
+            RelationshipAuthorizationCommandExecutor switch
+            {
+                InMemoryRelationalCommandExecutor inMemoryExecutor => inMemoryExecutor.Commands,
+                ThrowingRelationalCommandExecutor throwingExecutor => throwingExecutor.Commands,
+                _ => throw new InvalidOperationException(
+                    "Relationship authorization command executor does not expose recorded commands."
+                ),
+            };
 
         public int CreateCommandExecutorCallCount { get; private set; }
 
@@ -6208,6 +6349,60 @@ public class Given_Default_Relational_Write_Executor
         {
             DisposeCallCount++;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingRelationalParameterConfigurator : IRelationalParameterConfigurator
+    {
+        public List<QuerySqlParameter> CapturedParameters { get; } = [];
+
+        public void ConfigureParameter(DbParameter dbParameter, QuerySqlParameter querySqlParameter)
+        {
+            ArgumentNullException.ThrowIfNull(dbParameter);
+            ArgumentNullException.ThrowIfNull(querySqlParameter);
+
+            CapturedParameters.Add(querySqlParameter);
+        }
+    }
+
+    private sealed class StubRelationshipAuthorizationProviderFailureExtractor(
+        string? providerErrorCode,
+        string providerMessage
+    ) : IRelationshipAuthorizationProviderFailureExtractor
+    {
+        public int ExtractCallCount { get; private set; }
+
+        public RelationshipAuthorizationProviderFailure Extract(DbException exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+
+            ExtractCallCount++;
+            return new RelationshipAuthorizationProviderFailure(providerErrorCode, providerMessage);
+        }
+    }
+
+    private sealed class ThrowingRelationalCommandExecutor(SqlDialect dialect, DbException exceptionToThrow)
+        : IRelationalCommandExecutor
+    {
+        private readonly DbException _exceptionToThrow =
+            exceptionToThrow ?? throw new ArgumentNullException(nameof(exceptionToThrow));
+
+        public SqlDialect Dialect { get; } = dialect;
+
+        public List<RelationalCommand> Commands { get; } = [];
+
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ArgumentNullException.ThrowIfNull(command);
+            ArgumentNullException.ThrowIfNull(readAsync);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Commands.Add(command);
+            throw _exceptionToThrow;
         }
     }
 

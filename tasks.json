@@ -110,7 +110,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutorTests\".",
       "Review generated PostgreSQL and SQL Server SQL in failing tests or snapshots for AUTH1 payload shape and parameter binding."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "side-effects",

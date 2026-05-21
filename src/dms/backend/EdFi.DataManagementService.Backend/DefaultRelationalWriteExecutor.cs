@@ -31,7 +31,10 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWritePersister persister,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
-    IRelationalReadMaterializer readMaterializer
+    IRelationalReadMaterializer readMaterializer,
+    IRelationalParameterConfigurator? relationalParameterConfigurator = null,
+    IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
+        null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -78,6 +81,13 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IRelationalReadMaterializer _readMaterializer =
         readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
+
+    private readonly IRelationalParameterConfigurator _relationalParameterConfigurator =
+        relationalParameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
+
+    private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
+        relationshipAuthorizationProviderFailureExtractor
+        ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
         RelationalWriteExecutorRequest request,
@@ -700,7 +710,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         );
     }
 
-    private static async Task<RelationalWriteExecutorResult?> AuthorizeStoredRelationshipAsync(
+    private async Task<RelationalWriteExecutorResult?> AuthorizeStoredRelationshipAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteTargetContext.ExistingDocument existingTarget,
         IRelationalWriteSession writeSession,
@@ -741,7 +751,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         };
     }
 
-    private static async Task<RelationalWriteExecutorResult?> ExecuteStoredRelationshipAuthorizationAsync(
+    private async Task<RelationalWriteExecutorResult?> ExecuteStoredRelationshipAuthorizationAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteTargetContext.ExistingDocument existingTarget,
         RelationshipAuthorizationResult.Authorized authorized,
@@ -758,7 +768,9 @@ internal sealed class DefaultRelationalWriteExecutor(
         }
 
         var authorizationExecutor = new SingleRecordRelationshipAuthorizationExecutor(
-            writeSession.CreateCommandExecutor()
+            writeSession.CreateCommandExecutor(),
+            _relationalParameterConfigurator,
+            _relationshipAuthorizationProviderFailureExtractor
         );
         var authorizationExecutionResult = await authorizationExecutor
             .ExecuteAsync(
