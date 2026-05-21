@@ -302,6 +302,14 @@ ORDER BY
   r.AggregateId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
+Descriptor resources follow the same NamespaceBased semantics even though they are stored in
+the shared `dms.Descriptor` table instead of a resource-specific root table. For descriptor
+writes and single-record reads/deletes, the namespace value to authorize is `dms.Descriptor.Namespace`.
+Descriptor POST must authorize the proposed namespace before inserting `dms.Document` or
+`dms.Descriptor`; descriptor PUT must authorize the stored namespace before mutation and the
+proposed namespace before changing descriptor data; descriptor DELETE must authorize the stored
+namespace before deletion.
+
 Similar to the Ownership-based strategy, GET-by-ID, Update, Create, and Delete are authorized by retrieving the resource from the DB and materializing it in C#, then checking whether the ApiClient has a namespace prefix that matches the resource's. This consumes resources unnecessarily if the client is not authorized.
 
 ### Execution order

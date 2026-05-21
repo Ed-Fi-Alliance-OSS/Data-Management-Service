@@ -22,6 +22,7 @@ This slice proves proposed-value authorization before `dms.Document` insertion w
 ## Explicitly Out Of Scope
 
 - POST requests that resolve to an existing resource.
+- Descriptor resource POST authorization. Descriptors use `NamespaceBased` authorization and are owned by DMS-1057, not this EdOrg relationship slice.
 - PUT authorization.
 - People-involved relationship authorization.
 - Exact final ProblemDetails wording, hint aggregation, and EdOrg claim formatting hardening.
@@ -55,6 +56,7 @@ This slice proves proposed-value authorization before `dms.Document` insertion w
 - Reference-resolution failure remains a reference-resolution error and is not converted into an authorization denial when the request is not already denied by the empty-claims short-circuit.
 - Authorization failure after successful reference resolution still prevents all inserts.
 - Security-configuration failures from Slice 1 surface as configuration failures, not as 403 authorization denials.
+- Enabling backend-planned authorization for relational POST must not cause descriptor POST to bypass its current `NamespaceBased` authorization path. Until DMS-1057 implements real relational NamespaceBased descriptor writes, descriptor POST should remain outside the relationship POST-create preflight or otherwise preserve equivalent namespace guardrails.
 - PostgreSQL and SQL Server both abort the create batch with the established AUTH1 mechanism.
 - Empty normalized EdOrg claims return relationship-not-authorized/403 before reference/descriptor resolution or target identity detection, so callers with no EdOrg authorization context cannot probe references or natural-key existence.
 - POST requests that resolve to an existing document during Slice 3 return the staged existing-resource POST-as-update result only after proposed-value relationship authorization would have succeeded; failed proposed authorization returns 403 so unauthorized callers cannot distinguish existing-resource POST from create-new POST by status code.
