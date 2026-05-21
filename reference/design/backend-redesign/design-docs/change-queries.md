@@ -6,6 +6,10 @@ The Change Queries feature allows client systems to retrieve data that has chang
 
 Unlike Change Data Capture (CDC), this feature does **not** store the old and new values for every write. Instead, it stores only the current representation and its version number, similar to [SQL Server Change Tracking](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/track-data-changes-sql-server). This means downstream systems need special handling to maintain consistency, as described throughout this document.
 
+Refer to the official documentation in the following links:
+- [Using the Changed Record Queries](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries)
+- [Changed Record Queries](https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries)
+
 ## How Change Queries Currently Work in ODS
 
 The feature introduces a global version counter using a sequence object:
@@ -576,8 +580,9 @@ The generated SQL used to fulfill the request is:
 SELECT changes.GetMaxChangeVersion() as NewestChangeVersion
 ```
 
-The `changes.GetMaxChangeVersion()` custom function definition is:
+The `changes.GetMaxChangeVersion()` custom function definition is below.
 
+[For MSSQL](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/c1c478dcd939f90705fb1b0c16a91dd6e5066565/Application/EdFi.Ods.Standard/Standard/6.1.0/Artifacts/MsSql/Structure/Ods/Changes/1010-CreateGetMaxChangeVersionFunction.sql#L6):
 ```sql
 CREATE OR ALTER FUNCTION [changes].GetMaxChangeVersion()
 RETURNS bigint
@@ -590,6 +595,19 @@ BEGIN
     WHERE seq.name = 'ChangeVersionSequence' AND sch.name = 'changes';
     RETURN @Result;
 END
+```
+
+[For PGSQL](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Application/EdFi.Ods.Standard/Standard/6.1.0/Artifacts/PgSql/Structure/Ods/Changes/1010-CreateGetMaxChangeVersionFunction.sql):
+```sql
+CREATE OR REPLACE FUNCTION changes.GetMaxChangeVersion() RETURNS bigint AS
+$$
+DECLARE
+	result bigint;
+BEGIN
+    SELECT last_value FROM changes.ChangeVersionSequence INTO result;
+    RETURN result;
+END
+$$ language plpgsql;
 ```
 
 Note that the response's `oldestChangeVersion` is hardcoded to `0`.
@@ -994,27 +1012,51 @@ We will use the rewrite to make these improvements over ODS:
 
 ### Database Model
 
+#### Derived tracked-change inventory
+
+Change Query database semantics are compiled into the shared `DerivedRelationalModelSet` defined in [compiled-mapping-set.md](compiled-mapping-set.md), not inferred inside dialect DDL string generation.
+
+The derived model must include SQL-free inventory for:
+
+- `TrackedChangeTableInfo` entries for per-resource tracked-change tables and the shared descriptor tracked-change table, including the standard `Id`, `ChangeVersion`, `CreatedAt`, and descriptor `Discriminator` system columns.
+- `TrackedChangeColumnInfo` entries for each tracked old/new value in `ValueColumnsInTableOrder`, including the source JsonPath, canonical storage column when key unification applies, separate old/new nullability, scalar type, and column role.
+- `TrackedChangeDescriptorJoinInfo` entries for descriptor reference paths that must be materialized as `Namespace` and `CodeValue`.
+- `TrackedChangePersonJoinInfo` entries for Student, Contact, and Staff `SecurableElements` paths that must materialize the person resource `DocumentId`.
+- `TriggerKindParameters.ChangeTracking` on the affected `DbTriggerKind.DocumentStamping` trigger inventory entries.
+- `ReadChangesAuthorizationViewInfo` entries for the `*IncludingDeletes` authorization views used by `ReadChanges`.
+
+The model derivation pass owns the semantic decisions: which resources get tracked-change tables, which columns are included, how duplicate canonical columns are de-duplicated, which descriptor/person joins are needed, and which authorization view arms exist. PostgreSQL and SQL Server emitters render this inventory mechanically into tables, triggers, indexes, views, manifests, and fixture outputs. Runtime Change Query SQL planning must consume the same inventory so endpoint selection, authorization, generated DDL, and manifests cannot drift.
+
 #### `tracked_changes*` tables
 
-Similar to ODS, each resource will get an accompanying `tracked_changes*` table with the `tracked_changes_<ProjectName>.<ResourceName>` naming convention. The usual DMS identifier-shortening logic applies to avoid exceeding the PostgreSQL length limit.
+Similar to ODS, each resource will get an accompanying `TrackedChangeTableInfo` with the `tracked_changes_<ProjectName>.<ResourceName>` naming convention. The usual DMS identifier-shortening logic applies to avoid exceeding the PostgreSQL length limit.
 
 These tables are similar to the corresponding live tables.
 
-These tables should include the corresponding columns that result from combining the `IdentityJsonPaths` and `SecurableElements` paths from the resource's ApiSchema.json. They should be included twice, with the `Old_` and `New_` column name prefixes.
+Tracked-change system columns are fixed by role, not by ApiSchema value metadata:
 
-If a path is a descriptor reference, we will include two columns: the descriptor's `Namespace` and `CodeValue`. These columns will be populated by joining with `dms.Descriptor` in the triggers (see below).
+- `Id` stores `dms.Document.DocumentUuid` as PostgreSQL `uuid` / SQL Server `uniqueidentifier`.
+- `ChangeVersion` stores the bumped `dms.Document.ContentVersion` as `bigint`.
+- `CreatedAt` stores the tracked row insert timestamp as PostgreSQL `timestamp with time zone DEFAULT now()` / SQL Server `datetime2(7) DEFAULT sysutcdatetime()`.
+- `Discriminator` is present only for shared descriptor tracked-change tables and uses PostgreSQL `varchar(128)` / SQL Server `nvarchar(128)`.
+
+The `TrackedChangeColumnInfo` value-column list should include the corresponding columns that result from combining the `IdentityJsonPaths` and `SecurableElements` paths from the resource's ApiSchema.json. They should be included twice, with the `Old_` and `New_` column name prefixes.
+
+Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNullable` separately because tombstones populate only old values. `IsOldColumnNullable` follows the tracked source value's nullability. `IsNewColumnNullable` is normally `true` because delete tombstones leave `New_*` columns null; key-change rows populate the new values when present.
+
+If a path is a descriptor reference, the inventory will include two columns: the descriptor's `Namespace` and `CodeValue`. The corresponding `TrackedChangeDescriptorJoinInfo` describes the join to `dms.Descriptor` that trigger emitters use for old and new row images. The two `TrackedChangeColumnInfo` entries reference that table-level join by `DescriptorJoinName`; they do not duplicate the join definition.
 
 If a path is backed by a column that participates in key unification, include the canonical column instead of the generated column.
 
 If the same canonical column has been included multiple times (because of key unification) only include it once.
 
-For people `SecurableElements` paths, we will also store the Student, Contact, or Staff `DocumentId`, which will be populated by joining with the people resource in the triggers (see below).
+For people `SecurableElements` paths, we will also store the Student, Contact, or Staff `DocumentId`. The corresponding `TrackedChangePersonJoinInfo` describes the resource-table join path needed to reach the person resource for old and new row images. The `TrackedChangeColumnInfo` entry references that table-level join by `PersonJoinName`; it does not duplicate the join definition.
 
-Some `SecurableElements` paths might result in nullable columns because of overrides, such as the `StudentAssessment` override.
+Some `SecurableElements` paths might result in nullable `Old_*` and `New_*` value columns because of overrides, such as the `StudentAssessment` override.
 
 Apart from people `SecurableElements`, we do not need to store surrogate keys, such as DocumentIds or DescriptorIds.
 
-We will also emit a `tracked_changes*` table for each concrete abstract resource to support SecurableElement overrides, such as `OrganizationDepartment`.
+The inventory will also contain a `TrackedChangeTableInfo` for each concrete abstract resource to support SecurableElement overrides, such as `OrganizationDepartment`.
 
 MSSQL table definition example for the Grade resource:
 
@@ -1056,7 +1098,7 @@ CREATE TABLE [tracked_changes_edfi].[Grade]
 );
 ```
 
-All descriptor types will be stored in the same table, `tracked_changes_edfi.Descriptor`, even descriptors that belong to extensions. This follows ODS's convention.
+All descriptor types will be stored in the same `TrackedChangeTableInfo` of kind `SharedDescriptor`, rendered as `tracked_changes_edfi.Descriptor`, even descriptors that belong to extensions. This follows ODS's convention. The shared descriptor tracked-change table covers every `ConcreteResourceModel` whose `StorageKind = SharedDescriptorTable` in the same `DerivedRelationalModelSet`; manifests and runtime query planning derive descriptor coverage from that existing resource inventory rather than duplicating a coverage list on the tracked-change table.
 
 MSSQL table definition example for the shared `tracked_changes_edfi.Descriptor`:
 
@@ -1078,13 +1120,69 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
 )
 ```
 
+#### Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror
+
+Each `ConcreteResourceModel` with `StorageKind = RelationalTables` gets two columns mirrored onto its root table: `ContentVersion` and `ContentLastModifiedAt`. The shared `dms.Descriptor` table gets the same two columns. The columns are kept in lock-step with `dms.Document` by the existing `*_Stamp` triggers (see the next subsection).
+
+This mirror lets SQL-side integrators (and the existing ODS-shaped community tooling, including the API Publisher and dashboard datastores) read change-version and last-modified per row without joining `dms.Document`, and lets resource and descriptor endpoints serve `?minChangeVersion=X&maxChangeVersion=Y` as a single-table range seek.
+
+**Scope** — receive the columns and a supporting index:
+
+- Every `ConcreteResourceModel` whose `StorageKind = RelationalTables`, regardless of project schema. This includes core resource roots (`edfi.Student`, `edfi.School`, …) and extension-project resource roots (`tpdm.Candidate`, …); they are all roots of root resources.
+- The shared descriptor table `dms.Descriptor`.
+
+Do not receive the columns:
+
+- Child / collection tables (`edfi.SchoolAddress`, …). No independent endpoint and no window-filter consumer.
+- `*Extension` resource-extension tables (`tpdm.ContactExtension`, …). Not new resources; the `DocumentId` is shared with the base document, so the mirror on the base root is authoritative.
+- Abstract-resource union views. The columns surface through the underlying concrete root tables.
+
+**Invariants:**
+
+1. `dms.Document` remains the source of truth. The mirror is written only by the `*_Stamp` triggers; the relational write path MUST NOT include `ContentVersion` or `ContentLastModifiedAt` in client-writable column projections.
+2. For every committed transaction, `<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt` for the same `DocumentId`.
+3. A trigger fire allocates exactly one `dms.ChangeVersionSequence` value per affected document and writes it to both `dms.Document` and the mirror, captured via `OUTPUT` (SQL Server) / `RETURNING` (PostgreSQL). `NEXT VALUE FOR` MUST NOT be invoked a second time for the same document in the same fire.
+4. `IdentityVersion` / `IdentityLastModifiedAt` are not mirrored; they remain internal-only on `dms.Document`.
+5. The `affectedDocs` CTE inside each `*_Stamp` trigger MUST exclude rows whose `inserted` / `deleted` images differ **only** in the four stamp columns (`ContentVersion`, `ContentLastModifiedAt`, `IdentityVersion`, `IdentityLastModifiedAt`). This tightens the existing "no-op updates are not representation changes" rule from [update-tracking.md](update-tracking.md) §"Stamping rules" and is the mechanism that keeps nested-trigger fire safe when a child / `_ext` trigger writes to the root mirror.
+
+**MSSQL column additions** — illustrated on `edfi.Student`:
+
+```sql
+ALTER TABLE [edfi].[Student]
+    ADD [ContentVersion] bigint NOT NULL
+        CONSTRAINT DF_Student_ContentVersion DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentLastModifiedAt] datetime2(7) NOT NULL
+        CONSTRAINT DF_Student_ContentLastModifiedAt DEFAULT (sysutcdatetime());
+
+CREATE INDEX [IX_Student_ContentVersion] ON [edfi].[Student] ([ContentVersion]);
+```
+
+PostgreSQL is the same shape with `nextval('dms.ChangeVersionSequence')` and `now()` defaults and a `timestamp with time zone` column type.
+
+The defaults exist so that an INSERT bypassing the trigger leaves a monotonic non-null value; the production write path always goes through the `*_Stamp` trigger, which overwrites the default with the value it allocates against `dms.Document` in the same statement.
+
+**`dms.Descriptor` index is composite.** Because every descriptor query is qualified by `Discriminator`, the descriptor index is `IX_Descriptor_Discriminator_ContentVersion (Discriminator, ContentVersion)` rather than a single-column `IX_Descriptor_ContentVersion`. Resource-root indexes stay single-column because each resource root has its own table and no analogous "type" filter precedes the change-version range.
+
+**Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
+
+- The per-resource derivation pass that builds `ConcreteResourceModel.RelationalModel` adds two synthesized columns to the root `DbTableModel` whenever `StorageKind = RelationalTables`. Their `ColumnKind` is `MirroredContentVersion` and `MirroredContentLastModifiedAt` respectively (defined in [flattening-reconstitution.md](flattening-reconstitution.md)). `SourceJsonPath` and `TargetResource` are null. The write-path `TableWritePlan.ColumnBindings` exclusion rule (also defined in [flattening-reconstitution.md](flattening-reconstitution.md)) keeps them out of client-writable column lists; dialect emitters render the correct DDL defaults for each kind (sequence-next for `MirroredContentVersion`, current-UTC for `MirroredContentLastModifiedAt`).
+- For `StorageKind = SharedDescriptorTable`, the columns are added by the core DDL pass that owns `dms.Descriptor`, not by the per-resource pass, because `dms.Descriptor` is a core table.
+- `DeriveIndexInventoryPass` adds one `IX_<Table>_ContentVersion` per in-scope root table and `IX_Descriptor_Discriminator_ContentVersion` on `dms.Descriptor` into `IndexesInCreateOrder`.
+- `DbTriggerInfo` for entries with `Kind = DocumentStamping` gains a required `MirrorStampTargetTable: DbTableName` field. The derivation pass assigns the target by rule: same table for root-table triggers, resource's root for child / `_ext` triggers, `dms.Descriptor` for the descriptor trigger. Dialect emitters render the mirror UPDATE against `MirrorStampTargetTable` and MUST NOT re-derive the target from the trigger's source table.
+
 #### Triggers that populate the `tracked_changes*` tables
 
-The existing `*_Stamp` triggers will be updated to store tombstones and key changes.
+The existing `*_Stamp` trigger inventory entries will be updated to store tombstones and key changes by attaching `TriggerKindParameters.ChangeTracking` to the affected `DbTriggerKind.DocumentStamping` entries. The parameter points to the `TrackedChangeTableInfo` for the source table.
 
-We have to join with `dms.Descriptor` to store the descriptor's Namespace and CodeValue.
+`TriggerKindParameters.ChangeTracking` extends the existing `DbTriggerKind.DocumentStamping` trigger render path. It does not introduce a second trigger with an independent key-change predicate.
 
-Additionally, for people SecurableElements, we have to join until we reach the people resource to store the DocumentId. Use the `ResolveSecurableElementColumnPath` helper function to get the intermediate tables that need to be joined. See [auth.md](auth.md) for more information.
+The dialect trigger emitters must use the tracked-change inventory directly. They must not re-derive old/new columns, descriptor joins, person joins, or key-change predicates from SQL text or from ad hoc DDL-only metadata.
+
+For updates, the key-change workset is the owning trigger's `IdentityProjectionColumns` null-safe old/new value-diff workset. This is the same workset used to decide which documents receive identity stamp updates. Under key unification, emitters use the presence-gated canonical expressions defined in [key-unification.md](key-unification.md). Emitters must not use SQL Server `UPDATE(column)`, PostgreSQL `UPDATE OF`, or equivalent target-list checks to decide whether a key-change row should be emitted.
+
+Descriptor paths use the table-level `TrackedChangeDescriptorJoinInfo` entries to join with `dms.Descriptor` and store the descriptor's `Namespace` and `CodeValue`. Value columns identify the needed descriptor join by `DescriptorJoinName`.
+
+People `SecurableElements` paths use table-level `TrackedChangePersonJoinInfo` entries to join until they reach the people resource and store the person `DocumentId`. Value columns identify the needed person join by `PersonJoinName`. The derivation pass can use the same resolution rules as `ResolveSecurableElementColumnPath`; see [auth.md](auth.md) for more information.
 
 MSSQL trigger definition example for the Grade resource:
 
@@ -1095,13 +1193,35 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    DECLARE @stamped TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [ContentVersion] bigint NOT NULL,
+        [ContentLastModifiedAt] datetime2(7) NOT NULL
+    );
+
     ;WITH affectedDocs AS (
-      -- CTE definition omitted for brevity as no changes are needed
+      -- CTE definition omitted for brevity. Excludes rows whose inserted/deleted images
+      -- differ only in ContentVersion, ContentLastModifiedAt, IdentityVersion, or
+      -- IdentityLastModifiedAt (extends the existing no-op rule from update-tracking.md
+      -- to cover mirror-stamp self-fires; see "Concrete-resource ContentVersion /
+      -- ContentLastModifiedAt mirror" above).
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+
+    -- Mirror the stamped values onto MirrorStampTargetTable from this trigger's DbTriggerInfo.
+    -- For TR_Grade_Stamp the target is [edfi].[Grade] itself; for child / _ext stamping triggers
+    -- the target is the resource's root table (e.g. TR_SchoolAddress_Stamp targets [edfi].[School]).
+    UPDATE r
+    SET r.[ContentVersion] = s.[ContentVersion],
+        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+    FROM [edfi].[Grade] r
+    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Grade] (
@@ -1170,7 +1290,11 @@ BEGIN
         INNER JOIN [edfi].[StudentSectionAssociation] oldStudentSectionAssociation ON oldStudentSectionAssociation.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
         INNER JOIN [edfi].[Student] oldStudent ON oldStudent.[DocumentId] = oldStudentSectionAssociation.[Student_DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([GradeTypeDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([StudentSectionAssociation_BeginDate]) OR UPDATE([StudentSectionAssociation_LocalCourseCode]) OR UPDATE([StudentSectionAssociation_SectionIdentifier]) OR UPDATE([StudentSectionAssociation_SessionName]) OR UPDATE([StudentSectionAssociation_StudentUniqueId]))
+    -- Key-change rows use the same null-safe old/new value-diff workset as identity stamping.
+    -- Build @identityChangedDocs from inserted/deleted rows whose DbTriggerInfo.IdentityProjectionColumns
+    -- are distinct. Do not use SQL Server UPDATE(column), PostgreSQL UPDATE OF, or equivalent
+    -- target-list gates for this predicate.
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
         DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
@@ -1178,8 +1302,9 @@ BEGIN
         OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs ([DocumentId], [ContentVersion])
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
-        -- WHERE clause omitted for brevity as no changes are needed
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        -- WHERE clause omitted for brevity. It is the null-safe value-diff predicate over IdentityProjectionColumns.
+        ;
 
         INSERT INTO [tracked_changes_edfi].[Grade] (
             [Old_StudentSectionAssociation_BeginDate],
@@ -1267,6 +1392,8 @@ DMS therefore issues two `DELETE` statements per document deletion, in order, wi
 
 The leading trigger `UPDATE` of `dms.Document.ContentVersion` therefore runs against a row that the second statement removes. This is intentional: it gives the tombstone the standard read-after-bump `ChangeVersion`, at the cost of one sequence value and one transient row write per delete.
 
+The mirror UPDATE (the second UPDATE in the trigger body, against `MirrorStampTargetTable`) is naturally a zero-row no-op for deleted documents because the resource row is already gone before the trigger fires. The `dms.Document` UPDATE still bumps `ContentVersion` via the first half of the trigger, which is what the tombstone `INSERT` reads from — so the mirror's absence here does not affect the tracked-change row.
+
 The `ON DELETE CASCADE` FK from the resource row to `dms.Document` (see [data-model.md](data-model.md)) is retained as a referential-integrity safety net. Any direct `DELETE FROM dms.Document` issued outside the DMS write path will succeed without producing a tombstone; this is acceptable because the supported deletion path is exclusively through DMS.
 
 There is no `*_Stamp` trigger in `dms.Descriptor`, so we will create one that follows the existing convention.
@@ -1274,6 +1401,8 @@ There is no `*_Stamp` trigger in `dms.Descriptor`, so we will create one that fo
 #### Authorization views
 
 Following the existing DMS authorization approach, the authorization views should return DocumentIds instead of USIs and be renamed appropriately.
+
+Each `*IncludingDeletes` authorization view must be represented by `ReadChangesAuthorizationViewInfo` in the shared derived model. The inventory records the view name, output columns, and ordered union arms over current tables and tracked-change tables. Dialect emitters render the views from that inventory, and runtime authorization/query planning uses the same view metadata when composing `/deletes` and `/keyChanges` authorization predicates.
 
 For example, the `auth.EducationOrganizationIdToContactDocumentIdIncludingDeletes` view definition should be similar to:
 
@@ -1473,18 +1602,94 @@ ORDER BY
   cw.FinalChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-### Tickets
+### Filtering resources and descriptors by ChangeVersion
 
-- Emit the ChangeVersion sequence and the `changes.GetMaxChangeVersion()` function
-- Emit the auth views
-- Emit the `tracked_changes_<schema>` tables
-- Emit the triggers that populate `tracked_changes_*` tables
-- Emit the indirect triggers (similar to ODS, see above)
-- Move the `DocumentId` column to the last position in `*_RefKey` indexes to improve performance for queries that do not specify the `DocumentId` (also likely needed by downstream SQL applications in the field)
-  - Emit a new index in `dms.Descriptor` for the Discriminator, CodeValue, Namespace columns
-  - Emit a new index in `dms.Document` for the ContentVersion column
+Resource and descriptor GET-many endpoints support `?minChangeVersion=X&maxChangeVersion=Y`. With the mirror on the concrete tables (see "Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror" above), the runtime query planner emits a direct range filter on the concrete table — no join to `dms.Document` is required for the change-version predicate.
+
+The generated SQL used to fulfill a `GET /data/v3/ed-fi/grades?minChangeVersion=123&maxChangeVersion=987` request is:
+
+```sql
+WITH authView7f24a2 AS (
+    SELECT DISTINCT
+      av.TargetEducationOrganizationId
+    FROM
+      auth.EducationOrganizationIdToEducationOrganizationId AS av
+    WHERE
+      av.SourceEducationOrganizationId IN (SELECT Id FROM @ClaimEducationOrganizationIds)
+  ),
+  authViewbde5ba AS (
+    SELECT DISTINCT
+      av.Student_DocumentId
+    FROM
+      auth.EducationOrganizationIdToStudentDocumentId AS av
+    WHERE
+      av.SourceEducationOrganizationId IN (SELECT Id FROM @ClaimEducationOrganizationIds)
+  )
+SELECT <projection columns>
+FROM
+  edfi.Grade AS r
+  INNER JOIN authView7f24a2 ON r.SchoolId_Unified = authView7f24a2.TargetEducationOrganizationId  -- Auth check: Relationship with EdOrg
+  INNER JOIN authViewbde5ba ON r.Student_DocumentId = authViewbde5ba.Student_DocumentId          -- Auth check: Relationship with People
+WHERE
+  r.ContentVersion BETWEEN @MinChangeVersion AND @MaxChangeVersion
+ORDER BY
+  r.DocumentId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+```
+
+Descriptor endpoints filter on the shared `dms.Descriptor` with `Discriminator` and `ContentVersion`, served by `IX_Descriptor_Discriminator_ContentVersion`:
+
+```sql
+SELECT <descriptor projection>
+FROM dms.Descriptor d
+WHERE d.Discriminator = 'edfi.SchoolCategoryDescriptor'
+  AND d.ContentVersion BETWEEN @MinChangeVersion AND @MaxChangeVersion
+  AND <namespace-based auth predicates>
+ORDER BY d.DocumentId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+```
+
+The planner uses this path for every resource with a `MirroredContentVersion` column in its `DbTableModel` — which is every `StorageKind = RelationalTables` resource. There is no fallback path; the mirror is universal for in-scope tables.
+
+`/deletes`, `/keyChanges`, and `/availableChangeVersions` are unchanged. They source from `tracked_changes_*` (which carry their own `ChangeVersion`) or from the sequence directly. The mirror affects only the live-resource read path.
+
+Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies remain sourced from `dms.Document` for now; switching to the concrete-table mirror is an optional future read-path optimization (the values are identical per Invariant #2).
+
+### Model and DDL verification
+
+Tests should assert the shared inventory before asserting rendered SQL. At minimum, fixture coverage should validate:
+
+- `TrackedChangeTableInfo` creation for regular resources, concrete abstract resources, and the shared descriptor table.
+- `TrackedChangeColumnInfo` old/new column pairs and separate old/new nullability for identity paths, securable element paths, canonical key-unification storage columns, descriptor `Namespace`/`CodeValue` projections, and person `DocumentId` projections.
+- `TrackedChangeDescriptorJoinInfo` and `TrackedChangePersonJoinInfo` paths used by trigger emitters, with value columns referencing them by join name rather than duplicating join definitions.
+- `TriggerKindParameters.ChangeTracking` attachment to the correct `DbTriggerKind.DocumentStamping` trigger entries.
+- ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates.
+- `ReadChangesAuthorizationViewInfo` union arms for current/current, current/tracked, tracked/current, and tracked/tracked association combinations.
+- Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.
+- Mirror columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.MirroredContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
+- `IX_<Table>_ContentVersion` per in-scope root in `IndexesInCreateOrder` (single-column), and `IX_Descriptor_Discriminator_ContentVersion` composite index on `dms.Descriptor` with key columns in order `[Discriminator, ContentVersion]`.
+- Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `MirrorStampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
+- DB-behavior: mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt`) after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
+- DB-behavior: stamp-only updates (`UPDATE <root> SET ContentVersion = ContentVersion + 1 …`) do not allocate a new sequence value, do not fire additional mirror UPDATEs, and do not insert `tracked_changes_*` rows; multi-row UPDATEs that stamp N documents allocate N distinct `ContentVersion` values, and each document's mirror equals its `dms.Document` stamp.
+- DB-behavior: `IdentityVersion` and `IdentityLastModifiedAt` columns are absent from every in-scope root table and from `dms.Descriptor`.
+- Emitted-SQL snapshot: `?minChangeVersion=X&maxChangeVersion=Y` produces a single-table range filter on the concrete table for `/ed-fi/students`, on `dms.Descriptor` (with the `Discriminator` predicate) for descriptors, and the same shape for at least one extension-project resource endpoint.
+
+### Tickets
+- [DMS-1168] Emit the `changes.GetMaxChangeVersion()` function
+- [DMS-1169] Remove `dms.DocumentChangeEvent` because the new tables replace it
 - Add the `ReadChanges` action and authorization strategies to CMS's auth metadata
-- Update resource and descriptor endpoints to add the Min/Max ChangeVersion filter
+
+- Derive mirror columns (`ContentVersion`, `ContentLastModifiedAt`) onto every root `DbTableModel` with `StorageKind = RelationalTables`, with `ColumnKind` set to `MirroredContentVersion` and `MirroredContentLastModifiedAt` respectively (new values added to [flattening-reconstitution.md](flattening-reconstitution.md)); the `TableWritePlan.ColumnBindings` exclusion rule already covers these kinds. Add `IX_<Table>_ContentVersion` per in-scope root and `IX_Descriptor_Discriminator_ContentVersion` on `dms.Descriptor` to `IndexesInCreateOrder`; add the `MirrorStampTargetTable` field to `DbTriggerInfo` in [compiled-mapping-set.md](compiled-mapping-set.md) and populate it for every `DocumentStamping` entry; extend the core `dms.Descriptor` DDL pass to add the two columns and the composite index.
+- Extend the rendered body of every `DbTriggerKind.DocumentStamping` trigger (PostgreSQL and SQL Server) to capture the stamped values from the `dms.Document` UPDATE via `OUTPUT` / `RETURNING` and write them to `MirrorStampTargetTable`; tighten the `affectedDocs` CTE contract to exclude rows whose only diff is in the four stamp columns (`ContentVersion`, `ContentLastModifiedAt`, `IdentityVersion`, `IdentityLastModifiedAt`).
+
+- Emit/Move the `DocumentId` column to the last position in `*_RefKey` indexes to improve performance for queries that do not specify the `DocumentId` (also likely needed by downstream SQL applications in the field)
+  - Emit a new index in `dms.Descriptor` for the Discriminator, CodeValue, Namespace columns (this change is already specified above, we might need to remove this)
+  - Emit a new index in `dms.Document` for the ContentVersion column
+
+- Derive `TrackedChangeTableInfo`, `TrackedChangeColumnInfo`, descriptor/person join metadata, and `ReadChangesAuthorizationViewInfo` in the shared `DerivedRelationalModelSet`
+- Emit the ReadChanges authorization views from `ReadChangesAuthorizationViewInfo`
+- Emit the `tracked_changes_<schema>` tables from `TrackedChangeTableInfo`
+- Emit the triggers that populate `tracked_changes_*` tables from `TriggerKindParameters.ChangeTracking`
+
+- Update resource and descriptor endpoints to add the Min/Max ChangeVersion filter, served as a direct range filter on the concrete-table `ContentVersion` (and on `dms.Descriptor.ContentVersion` with the `Discriminator` predicate for descriptors) — no join to `dms.Document` for the change-version predicate.
 - Add the `/deletes` endpoint.
   - Same contract as ODS; there should not be breaking changes.
   - Add cascading deletes tests for abstract resources like StudentProgramAssociations; see ODS-4087.
@@ -1497,15 +1702,17 @@ ORDER BY
   - Same contract as ODS; there should not be breaking changes.
 - MetaEd and DMS: Update the OpenAPI spec to include the `/deletes`, `/keyChanges`, and `/availableChangeVersions` endpoints (exclude SchoolYearTypes). Also update the existing resource and descriptor endpoints to include the Min/Max ChangeVersion filters.
 - Consider whether to add specialized tests in a separate ticket or handle them on each endpoint ticket.
-- Remove `dms.DocumentChangeEvent` because the new tables replace it
 
 #### Stretch-goals
 
 - Snapshot support
 - Allow disabling the feature
 - Spike ticket to add view-based auth
+- Add indexes that improve auth checks on `tracked_changes_*` tables (they are missing in ODS as well)
 
 #### Open questions
 
 - We should introduce the snapshots feature because downstream APIs must implement reverse paging with retry to get equivalent behavior. Should we add it for v1.0 or treat it as a stretch goal? CMS already supports storing derivatives, but DMS has to be updated to use them.
 - Should we allow disabling the feature for v1.0? If so, users would need to tell the DDL emitter whether they want to include the change tracking objects. The API would then check for the existence of the changes schema in the DB on boot and fail fast if the feature is enabled in appsettings.json but the DB objects are missing.
+- Should the mirror `ContentVersion` ever be exposed as a top-level named API field (e.g. `contentVersion`) on resource representations, in addition to being served via `_etag` / `_lastModifiedDate` and the per-item `ChangeVersion` returned by Change Query selection? Integrators that already consume the SQL column have asked. Out of scope for this design (would require Data Standard work), but worth flagging.
+- The "Emit a new index in `dms.Document` for the ContentVersion column" item under the `*_RefKey` index ticket above predates the mirror design. With change-version filtering now served by the per-resource and `dms.Descriptor` mirror indexes, an index on `dms.Document.ContentVersion` is no longer required for that access pattern; we should confirm whether any other consumer still needs it before keeping the sub-ticket.

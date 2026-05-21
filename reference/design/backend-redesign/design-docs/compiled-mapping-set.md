@@ -162,6 +162,119 @@ public abstract record AbstractUnionViewProjectionExpression
     public sealed record StringLiteral(string Value) : AbstractUnionViewProjectionExpression;
 }
 
+public enum TrackedChangeTableKind
+{
+    // Per-resource tracked-change table in `tracked_changes_{ProjectEndpointName}`.
+    Resource,
+
+    // Shared descriptor tracked-change table, conventionally `tracked_changes_edfi.Descriptor`.
+    SharedDescriptor
+}
+
+public enum TrackedChangeColumnRole
+{
+    // Value comes from an identityJsonPaths binding or a securableElements scalar binding.
+    SourceValue,
+
+    // Value is projected from `dms.Descriptor.Namespace` for a descriptor reference binding.
+    DescriptorNamespace,
+
+    // Value is projected from `dms.Descriptor.CodeValue` for a descriptor reference binding.
+    DescriptorCodeValue,
+
+    // Value is projected as a Student/Contact/Staff resource `DocumentId` for ReadChanges authorization.
+    PersonDocumentId
+}
+
+public enum PersonSecurableElementKind
+{
+    Student,
+    Contact,
+    Staff
+}
+
+public sealed record TrackedChangeDescriptorJoinInfo(
+    string JoinName,
+    QualifiedResourceName DescriptorResource,
+    DbColumnName SourceDescriptorIdColumn,
+    DbColumnName NamespaceOutputColumn,
+    DbColumnName CodeValueOutputColumn
+);
+
+public sealed record TrackedChangeJoinStep(
+    DbTableName FromTable,
+    DbColumnName FromDocumentIdColumn,
+    DbTableName ToTable,
+    DbColumnName ToDocumentIdColumn
+);
+
+public sealed record TrackedChangePersonJoinInfo(
+    string JoinName,
+    PersonSecurableElementKind PersonKind,
+    JsonPathExpression SourceJsonPath,
+    IReadOnlyList<TrackedChangeJoinStep> JoinStepsInOrder,
+    DbColumnName PersonDocumentIdOutputColumn
+);
+
+public sealed record TrackedChangeColumnInfo(
+    DbColumnName BaseColumnName,
+    DbColumnName OldColumnName,
+    DbColumnName NewColumnName,
+    RelationalScalarType ScalarType,
+    bool IsOldColumnNullable,
+    bool IsNewColumnNullable,
+    TrackedChangeColumnRole Role,
+    JsonPathExpression? SourceJsonPath,
+    DbColumnName? SourceStorageColumn = null,
+    string? DescriptorJoinName = null,
+    string? PersonJoinName = null
+);
+
+public sealed record TrackedChangeTableInfo(
+    DbTableName TableName,
+    TrackedChangeTableKind Kind,
+    ResourceKeyEntry? ResourceKey,
+    DbTableName SourceTable,
+    // System columns use fixed role-based SQL type mappings documented below; they are not value columns.
+    DbColumnName IdColumn,
+    DbColumnName ChangeVersionColumn,
+    DbColumnName CreatedAtColumn,
+    DbColumnName? DiscriminatorColumn,
+    IReadOnlyList<TrackedChangeColumnInfo> ValueColumnsInTableOrder,
+    IReadOnlyList<TrackedChangeDescriptorJoinInfo> DescriptorJoinsInNameOrder,
+    IReadOnlyList<TrackedChangePersonJoinInfo> PersonJoinsInNameOrder
+);
+
+public enum ReadChangesAuthorizationViewKind
+{
+    EducationOrganizationToStudentDocumentIdIncludingDeletes,
+    EducationOrganizationToContactDocumentIdIncludingDeletes,
+    EducationOrganizationToStaffDocumentIdIncludingDeletes,
+    EducationOrganizationToStudentDocumentIdThroughResponsibilityIncludingDeletes
+}
+
+public sealed record ReadChangesAuthorizationJoin(
+    DbTableName FromTable,
+    DbColumnName FromColumn,
+    DbTableName ToTable,
+    DbColumnName ToColumn,
+    bool UsesTrackedChangeTable
+);
+
+public sealed record ReadChangesAuthorizationViewArm(
+    string ArmName,
+    IReadOnlyList<ReadChangesAuthorizationJoin> JoinsInOrder,
+    DbColumnName OutputPersonDocumentIdColumn
+);
+
+public sealed record ReadChangesAuthorizationViewInfo(
+    ReadChangesAuthorizationViewKind Kind,
+    DbTableName ViewName,
+    DbColumnName SourceEducationOrganizationIdColumn,
+    DbColumnName OutputPersonDocumentIdColumn,
+    IReadOnlyList<ReadChangesAuthorizationViewArm> UnionArmsInOrder
+);
+
 public enum DbIndexKind
 {
     // Index implied by PK (included in manifest/inventory for determinism checks).
@@ -228,6 +341,12 @@ public sealed record DbIdentityPropagationFallbackInfo(
     IReadOnlyList<DbIdentityPropagationReferrerAction> ReferrerActions
 );
 
+public abstract record TriggerKindParameters
+{
+    public sealed record None : TriggerKindParameters;
+    public sealed record ChangeTracking(TrackedChangeTableInfo TrackedChangeTable) : TriggerKindParameters;
+}
+
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
     DbTableName TriggerTable,
@@ -235,7 +354,13 @@ public sealed record DbTriggerInfo(
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
     DbTableName? MaintenanceTargetTable = null,
-    DbIdentityPropagationFallbackInfo? PropagationFallback = null
+    DbIdentityPropagationFallbackInfo? PropagationFallback = null,
+    TriggerKindParameters? Parameters = null,
+    // The concrete root table (or `dms.Descriptor`) whose mirrored `ContentVersion` /
+    // `ContentLastModifiedAt` columns this trigger updates after stamping `dms.Document`.
+    // Required (non-null) for every `Kind = DocumentStamping` entry; null for other kinds.
+    // See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
+    DbTableName? MirrorStampTargetTable = null
 );
 
 public sealed record DerivedRelationalModelSet(
@@ -245,6 +370,8 @@ public sealed record DerivedRelationalModelSet(
     IReadOnlyList<ConcreteResourceModel> ConcreteResourcesInNameOrder,
     IReadOnlyList<AbstractIdentityTableInfo> AbstractIdentityTablesInNameOrder,
     IReadOnlyList<AbstractUnionViewInfo> AbstractUnionViewsInNameOrder,
+    IReadOnlyList<TrackedChangeTableInfo> TrackedChangeTablesInNameOrder,
+    IReadOnlyList<ReadChangesAuthorizationViewInfo> ReadChangesAuthorizationViewsInNameOrder,
     IReadOnlyList<DbIndexInfo> IndexesInCreateOrder,
     IReadOnlyList<DbTriggerInfo> TriggersInCreateOrder
 );
@@ -253,10 +380,33 @@ public sealed record DerivedRelationalModelSet(
 Notes:
 - `RelationalResourceModel` and its nested table/column types are defined in `flattening-reconstitution.md` and reused here.
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
-- Index/trigger inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md`.
- - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
-  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission, with one carve-out: authorization indexes for descriptor `Namespace` securable elements land on `dms.Descriptor` (e.g. `IX_Descriptor_Namespace_Auth`) because all descriptor resources share that base table; these are emitted by `DeriveAuthorizationIndexInventoryPass` alongside resource-table auth indexes rather than by core DDL, since their existence is driven by per-resource `securableElements` metadata.
+- Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.
+  - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
+  - Emitters must not use SQL Server `UPDATE(column)`, PostgreSQL `UPDATE OF`, or equivalent target-list checks to decide whether a Change Queries key-change row should be emitted.
+  - `TriggerKindParameters.ChangeTracking` is valid only on `DbTriggerKind.DocumentStamping` entries and is attached when Change Queries requires that trigger to also write key-change and tombstone rows. The tracked-change table metadata tells emitters where and how to write tracked-change rows; the owning `DbTriggerInfo.IdentityProjectionColumns` remains the single key-change predicate source.
+  - `MirrorStampTargetTable` is required (non-null) for every `DbTriggerKind.DocumentStamping` entry and null for all other trigger kinds. The derivation pass assigns it by rule: the same table as `TriggerTable` for root-table stamping triggers, the resource's root table for child / `_ext` stamping triggers, and `dms.Descriptor` for the descriptor stamping trigger. Dialect emitters render the mirror UPDATE (the second UPDATE in the trigger body, after the `dms.Document` stamp UPDATE) against `MirrorStampTargetTable` and MUST NOT re-derive the target from `TriggerTable`. See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
+  - For key-change rows, dialect emitters use the same null-safe old/new value-diff workset already required for identity stamping. Under key unification, this includes the presence-gated canonical expressions defined in `key-unification.md`.
+  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`) and tracked-change tables/views derived from Change Query metadata (see `change-queries.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission, with two carve-outs:
+    - authorization indexes for descriptor `Namespace` securable elements land on `dms.Descriptor` (e.g. `IX_Descriptor_Namespace_Auth`) because all descriptor resources share that base table; these are emitted by `DeriveAuthorizationIndexInventoryPass` alongside resource-table auth indexes rather than by core DDL, since their existence is driven by per-resource `securableElements` metadata.
+    - the shared descriptor tracked-change table (`tracked_changes_edfi.Descriptor`) and its `DbTriggerKind.DocumentStamping`/`TriggerKindParameters.ChangeTracking` trigger are represented in tracked-change inventory because their columns and discriminator coverage are driven by descriptor resources in the effective schema.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
+- `TrackedChangeTablesInNameOrder` and `ReadChangesAuthorizationViewsInNameOrder` are stored in canonical deterministic order by physical object name. Dialect emitters, runtime Change Query SQL planning, authorization view generation, manifests, and tests must consume these inventories rather than re-deriving table columns, descriptor joins, person joins, or view arms from emitted SQL strings.
+- `TrackedChangeTableInfo` separates system columns from `ValueColumnsInTableOrder`:
+  - When `Kind = Resource`, `ResourceKey` is required and identifies the single resource represented by the tracked-change table.
+  - When `Kind = SharedDescriptor`, `ResourceKey` is `null`; the table covers every `ConcreteResourceModel` whose `StorageKind = SharedDescriptorTable` in the same `DerivedRelationalModelSet`. Consumers must not duplicate descriptor coverage lists inside `TrackedChangeTableInfo`.
+  - `ValueColumnsInTableOrder` entries carry `RelationalScalarType` because they are schema-derived old/new values.
+  - `IsOldColumnNullable` and `IsNewColumnNullable` describe the physical old/new tracked-change columns separately. They are required booleans, never tri-state values.
+  - `IsOldColumnNullable` follows the nullability of the tracked source value. Required identity and required securable-element values are `false`; optional securable-element values, such as override-driven nullable paths, are `true`.
+  - `IsNewColumnNullable` is normally `true` because delete tombstones leave `New_*` values `NULL`. If a future tracked-change table records only key-change rows and never tombstones, it may set `IsNewColumnNullable` from the source value nullability instead.
+  - `DescriptorJoinName` and `PersonJoinName` reference entries in `DescriptorJoinsInNameOrder` and `PersonJoinsInNameOrder`; join definitions are owned once at the table level and are not duplicated per value column.
+  - `TrackedChangeColumnRole.DescriptorNamespace` and `TrackedChangeColumnRole.DescriptorCodeValue` require `DescriptorJoinName` and require `PersonJoinName = null`.
+  - `TrackedChangeColumnRole.PersonDocumentId` requires `PersonJoinName` and requires `DescriptorJoinName = null`.
+  - `TrackedChangeColumnRole.SourceValue` requires both join-name fields to be `null`.
+  - `IdColumn`, `ChangeVersionColumn`, `CreatedAtColumn`, and `DiscriminatorColumn` are fixed tracked-change system columns whose SQL types are inferred from their roles, following the same convention used by non-scalar `DbColumnModel` roles (`DocumentFk`, `CollectionKey`, `Ordinal`, etc.).
+  - `IdColumn`: `NOT NULL`, copied from `dms.Document.DocumentUuid`; PostgreSQL `uuid`, SQL Server `uniqueidentifier`.
+  - `ChangeVersionColumn`: `NOT NULL`, copied from the bumped `dms.Document.ContentVersion`; PostgreSQL/SQL Server `bigint`; primary tracked-change window/sort column.
+  - `CreatedAtColumn`: `NOT NULL`, tracked row insert timestamp; PostgreSQL `timestamp with time zone DEFAULT now()`, SQL Server `datetime2(7) DEFAULT sysutcdatetime()`.
+  - `DiscriminatorColumn`: present only when `Kind = SharedDescriptor`; `NOT NULL`; PostgreSQL `varchar(128)`, SQL Server `nvarchar(128)`; omitted (`null`) for per-resource tracked-change tables.
 
 ### 2.3 Mapping set (dialect-specific)
 
