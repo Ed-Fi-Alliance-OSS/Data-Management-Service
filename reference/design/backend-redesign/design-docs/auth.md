@@ -1473,6 +1473,6 @@ Both SQL Server and PostgreSQL support row-level security; however, the recommen
 
 ### Out of scope
 
-- ChangeQueries and the related `*IncludingDeletes` authorization strategies are out of scope. They will be covered in a future spike.
+- ChangeQueries and the related `*IncludingDeletes` authorization strategies are designed in the `Authorization` section of [change-queries.md](change-queries.md).
 - Automatically discovering new person types in extensions is out of scope, given that it is an unlikely scenario.
 - DS 5.2 switched from `Parent` to `Contact`, meaning that supporting DS 4 and below requires additional logic, which is out of scope.

@@ -88,7 +88,7 @@ For collection-shaped outputs, define one view per collection table:
 ## Incremental ETL and performance notes
 
 The intended incremental pattern is:
-1. Select candidate `DocumentId`s in a `[min,max]` window using journal-driven Change Query candidate selection (`dms.DocumentChangeEvent` + verify against `dms.Document.ContentVersion`; see [update-tracking.md](update-tracking.md)).
+1. Select candidate `DocumentId`s in a `[min,max]` window by range-filtering on the resource root's `ContentVersion` mirror column (defined in [change-queries.md](change-queries.md) §"Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror"). The mirror is already the source the ETL view projects `ChangeVersion` from.
 2. Join those candidate ids to the ETL view(s) to fetch natural-key-shaped rows.
 
 If view performance is insufficient at scale, consider:

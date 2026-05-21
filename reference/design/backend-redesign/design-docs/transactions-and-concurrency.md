@@ -236,7 +236,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      canonical/storage columns (binding aliases recompute).
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
      changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
-   - Generated triggers stamp `dms.Document` representation/identity versions for `_etag/_lastModifiedDate/ChangeVersion` and emit `dms.DocumentChangeEvent` (see [update-tracking.md](update-tracking.md)).
+   - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
 
 ### Authorization (CRUD checks)
 
@@ -292,7 +292,7 @@ whole-document no-op fast path:
   preflight query by default; the optimization is meant to reduce write amplification, not trade one write for an
   extra read roundtrip.
 - If the rowsets are equal, the request succeeds without issuing DML for the resource tables, `dms.Document`, or other
-  derived artifacts. No update-tracking stamps or change-journal rows are produced.
+  derived artifacts. No update-tracking stamps or `tracked_changes_*` rows are produced.
 - If any row differs, execute the normal merge write path unchanged.
 
 This is intentionally distinct from “API-surface partial updates”. The merge executor still implements full-document
@@ -492,14 +492,13 @@ When serving from `dms.DocumentCache`, treat a row as usable only if it is **fre
 
 ### Rebuild/invalidation triggers (eventual consistency)
 
-Because indirect representation changes are materialized as local updates (via cascades), `dms.DocumentChangeEvent` already captures:
-- direct content changes, and
-- indirect reference-identity changes on referrers.
+Because indirect representation changes are materialized as local updates to referrers (via PostgreSQL FK cascades and SQL Server `DbTriggerKind.IdentityPropagationFallback` triggers), referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes. `dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on referrers, without reverse dependency expansion at the projector layer.
 
-So the projector does not require reverse dependency expansion. A minimal approach:
-1. Consume `dms.DocumentChangeEvent` in `ChangeVersion` order.
-2. Rebuild `dms.DocumentCache` for `(DocumentId, ChangeVersion)` rows not yet applied.
-3. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (for example, `ContentVersion` plus the derived materialized `_etag`) to enforce freshness.
+A minimal projector approach:
+
+1. Consume `dms.Document` in `ContentVersion` order.
+2. Rebuild `dms.DocumentCache` for `(DocumentId, ContentVersion)` rows not yet applied.
+3. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (for example, the applied `ContentVersion` plus the derived materialized `_etag`) to enforce the freshness contract above.
 
 ---
 

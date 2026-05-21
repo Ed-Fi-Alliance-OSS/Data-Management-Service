@@ -1120,6 +1120,14 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
 )
 ```
 
+##### Operational considerations: tracked-change table volume
+
+The per-resource `tracked_changes_*` tables and the shared `tracked_changes_edfi.Descriptor` are append-only stores of deletes (tombstones) and key-changes. Over very long-running deployments, or in workloads with a high volume of deletes or identity changes, they can take up a disproportionate share of database storage.
+
+DMS does not automate truncation of these tables in v1. The same operational guidance ODS surfaces applies: implementers can truncate the affected `tracked_changes_*` tables periodically when retention is no longer required. The only consequence is loss of visibility into deletes and key-changes that occurred before the truncation — clients whose last-seen `ChangeVersion` predates the truncation point will not see those events on subsequent `/deletes` and `/keyChanges` reads and must perform a full resync.
+
+Because typical ODS deployments rotate per school year, ODS does not automate this either, and DMS adopts the same default.
+
 #### Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror
 
 Each `ConcreteResourceModel` with `StorageKind = RelationalTables` gets two columns mirrored onto its root table: `ContentVersion` and `ContentLastModifiedAt`. The shared `dms.Descriptor` table gets the same two columns. The columns are kept in lock-step with `dms.Document` by the existing `*_Stamp` triggers (see the next subsection).
@@ -1388,7 +1396,7 @@ Because the `_Stamp` trigger's DELETE branch joins `dms.Document` to read `Docum
 DMS therefore issues two `DELETE` statements per document deletion, in order, within the same transaction:
 
 1. `DELETE FROM "<projectSchema>"."<ResourceTable>" WHERE "DocumentId" = @documentId` (or `DELETE FROM "dms"."Descriptor" WHERE "DocumentId" = @documentId` for descriptor resources). This fires the resource's `_Stamp` trigger while `dms.Document` is still present, so the trigger's `UPDATE` allocates a fresh `ChangeVersion` on the parent and the tombstone `INSERT` reads `DocumentUuid` and the freshly bumped `ContentVersion` via the existing join.
-2. `DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId`. This finalizes the lifecycle and cascades to `dms.DocumentChangeEvent`, `dms.DocumentCache`, and `dms.ReferentialIdentity` as defined in [data-model.md](data-model.md).
+2. `DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId`. This finalizes the lifecycle and cascades to `dms.DocumentCache` and `dms.ReferentialIdentity` as defined in [data-model.md](data-model.md).
 
 The leading trigger `UPDATE` of `dms.Document.ContentVersion` therefore runs against a row that the second statement removes. This is intentional: it gives the tombstone the standard read-after-bump `ChangeVersion`, at the cost of one sequence value and one transient row write per delete.
 
@@ -1675,19 +1683,19 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 ### Tickets
 - [DMS-1168] Emit the `changes.GetMaxChangeVersion()` function
 - [DMS-1169] Remove `dms.DocumentChangeEvent` because the new tables replace it
-- Add the `ReadChanges` action and authorization strategies to CMS's auth metadata
 
 - Derive mirror columns (`ContentVersion`, `ContentLastModifiedAt`) onto every root `DbTableModel` with `StorageKind = RelationalTables`, with `ColumnKind` set to `MirroredContentVersion` and `MirroredContentLastModifiedAt` respectively (new values added to [flattening-reconstitution.md](flattening-reconstitution.md)); the `TableWritePlan.ColumnBindings` exclusion rule already covers these kinds. Add `IX_<Table>_ContentVersion` per in-scope root and `IX_Descriptor_Discriminator_ContentVersion` on `dms.Descriptor` to `IndexesInCreateOrder`; add the `MirrorStampTargetTable` field to `DbTriggerInfo` in [compiled-mapping-set.md](compiled-mapping-set.md) and populate it for every `DocumentStamping` entry; extend the core `dms.Descriptor` DDL pass to add the two columns and the composite index.
 - Extend the rendered body of every `DbTriggerKind.DocumentStamping` trigger (PostgreSQL and SQL Server) to capture the stamped values from the `dms.Document` UPDATE via `OUTPUT` / `RETURNING` and write them to `MirrorStampTargetTable`; tighten the `affectedDocs` CTE contract to exclude rows whose only diff is in the four stamp columns (`ContentVersion`, `ContentLastModifiedAt`, `IdentityVersion`, `IdentityLastModifiedAt`).
 
 - Emit/Move the `DocumentId` column to the last position in `*_RefKey` indexes to improve performance for queries that do not specify the `DocumentId` (also likely needed by downstream SQL applications in the field)
   - Emit a new index in `dms.Descriptor` for the Discriminator, CodeValue, Namespace columns (this change is already specified above, we might need to remove this)
-  - Emit a new index in `dms.Document` for the ContentVersion column
 
 - Derive `TrackedChangeTableInfo`, `TrackedChangeColumnInfo`, descriptor/person join metadata, and `ReadChangesAuthorizationViewInfo` in the shared `DerivedRelationalModelSet`
+  - Inventory must include a `TrackedChangeTableInfo` for each concrete abstract resource (e.g. `OrganizationDepartment`, `School`) to support SecurableElement overrides — DMS improvement over ODS, where concrete abstract resources share their abstract parent's tracked-change table.
 - Emit the ReadChanges authorization views from `ReadChangesAuthorizationViewInfo`
 - Emit the `tracked_changes_<schema>` tables from `TrackedChangeTableInfo`
 - Emit the triggers that populate `tracked_changes_*` tables from `TriggerKindParameters.ChangeTracking`
+- Update the delete-by-id path to issue two `DELETE` statements per document deletion within the same transaction: first the concrete resource row (or `dms.Descriptor` for descriptor resources), then the `dms.Document` row. Required so the `_Stamp` trigger DELETE branch can still read `DocumentUuid` and the bumped `ContentVersion` from `dms.Document`. Amends DMS-1010 (Delete-by-Id).
 
 - Update resource and descriptor endpoints to add the Min/Max ChangeVersion filter, served as a direct range filter on the concrete-table `ContentVersion` (and on `dms.Descriptor.ContentVersion` with the `Discriminator` predicate for descriptors) — no join to `dms.Document` for the change-version predicate.
 - Add the `/deletes` endpoint.
@@ -1698,10 +1706,16 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
   - Should also support descriptors and return empty results; see ODS-5422.
   - Add cascading key changes tests.
   - Add a test for total count; see ODS-5423.
+- Add auth to the `/deletes` endpoint.
+- Add auth to the `/keyChanges` endpoint.
 - Add the `/availableChangeVersions` endpoint.
   - Same contract as ODS; there should not be breaking changes.
-- MetaEd and DMS: Update the OpenAPI spec to include the `/deletes`, `/keyChanges`, and `/availableChangeVersions` endpoints (exclude SchoolYearTypes). Also update the existing resource and descriptor endpoints to include the Min/Max ChangeVersion filters.
-- Consider whether to add specialized tests in a separate ticket or handle them on each endpoint ticket.
+
+- **MetaEd**: Emit OpenAPI definitions for the `/deletes`, `/keyChanges`, and `/availableChangeVersions` endpoints (exclude SchoolYearTypes from `/deletes` and `/keyChanges`), and add the `minChangeVersion`/`maxChangeVersion` parameters to existing resource and descriptor endpoint definitions.
+  - **DMS**: Consume MetaEd's updated OpenAPI so the new endpoints and filters are routed and served. Coverage is included in the per-endpoint tickets above; no separate work item.
+
+- Decide what to do with unsupported strategies for v1.0 (OwnershipBased)
+
 
 #### Stretch-goals
 
@@ -1714,5 +1728,3 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 
 - We should introduce the snapshots feature because downstream APIs must implement reverse paging with retry to get equivalent behavior. Should we add it for v1.0 or treat it as a stretch goal? CMS already supports storing derivatives, but DMS has to be updated to use them.
 - Should we allow disabling the feature for v1.0? If so, users would need to tell the DDL emitter whether they want to include the change tracking objects. The API would then check for the existence of the changes schema in the DB on boot and fail fast if the feature is enabled in appsettings.json but the DB objects are missing.
-- Should the mirror `ContentVersion` ever be exposed as a top-level named API field (e.g. `contentVersion`) on resource representations, in addition to being served via `_etag` / `_lastModifiedDate` and the per-item `ChangeVersion` returned by Change Query selection? Integrators that already consume the SQL column have asked. Out of scope for this design (would require Data Standard work), but worth flagging.
-- The "Emit a new index in `dms.Document` for the ContentVersion column" item under the `*_RefKey` index ticket above predates the mirror design. With change-version filtering now served by the per-resource and `dms.Descriptor` mirror indexes, an index on `dms.Document.ContentVersion` is no longer required for that access pattern; we should confirm whether any other consumer still needs it before keeping the sub-ticket.

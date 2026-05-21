@@ -676,7 +676,7 @@ Comparison rules:
   `..._DescriptorId` values, canonical storage columns under key unification, row presence/absence for 1:1 scopes,
   and collection ordinals after merge.
 - Exclude generated/read-only aliases and derived artifacts (`dms.ReferentialIdentity`, update-tracking stamps,
-  change journals) from the equality comparison. If the stored/writable rows are equal, those derived artifacts must
+  `tracked_changes_*` rows) from the equality comparison. If the stored/writable rows are equal, those derived artifacts must
   remain unchanged as well.
 - If any comparable row differs, fall back to the normal write execution path unchanged: root update/insert plus
   merge semantics for scoped child data.

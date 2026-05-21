@@ -43,10 +43,10 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 - Preserves per-site / per-path binding columns as generated/computed, persisted aliases (presence-gated where needed), keeping query compilation and reconstitution stable.
 - Prevents DB-level drift: only the canonical column is written; aliases deterministically project the canonical value and cannot diverge.
 
-### Stored update tracking (stamps + journal)
+### Stored update tracking (stamps + tracked-change rows)
 
 - Serves `_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps and computes `_etag` from deterministic canonical JSON for the full resource-state document before readable profile projection, excluding response decorations such as `link` (no read-time dependency derivation).
-- Uses a narrow, append-only journal (`dms.DocumentChangeEvent`) for scalable Change Query candidate selection.
+- Uses per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns (single-table range filter for `?minChangeVersion=X&maxChangeVersion=Y` reads) and per-resource `tracked_changes_*` tables (for `/deletes` and `/keyChanges`) for scalable Change Query candidate selection. See [change-queries.md](change-queries.md).
 
 ### Stable collection identities + merge semantics for collections
 
@@ -75,7 +75,7 @@ Failure modes:
 Mitigations / guidance:
 - Keep identity updates operationally rare; consider restricting `AllowIdentityUpdates` and/or running identity updates under controlled operational conditions.
 - Implement deadlock retry for write transactions (see [transactions-and-concurrency.md](transactions-and-concurrency.md)).
-- Add telemetry for cascaded row counts and stamp/journal write rates to detect “hub” fan-in scenarios early.
+- Add telemetry for cascaded row counts and stamp / `tracked_changes_*` write rates to detect “hub” fan-in scenarios early.
 
 ### SQL Server cascade-path restrictions (Feasibility + Complexity Risk)
 
@@ -122,7 +122,7 @@ Correctness depends on generated triggers to:
 Failure mode: missing or incorrect triggers can cause stale `_etag/_lastModifiedDate/ChangeVersion` or incorrect identity resolution.
 
 Mitigations:
-- Make DB-apply smoke tests include journaling and basic stamp behavior (see [ddl-generator-testing.md](ddl-generator-testing.md)).
+- Make DB-apply smoke tests include stamping and `tracked_changes_*` population behavior (see [ddl-generator-testing.md](ddl-generator-testing.md)).
 - Add fixture-based tests covering identity propagation scenarios (identity-component and non-identity references) on both PostgreSQL and SQL Server.
 
 ### ReferentialIdentity incorrect mapping (High Correctness/Security Risk)
@@ -180,11 +180,8 @@ Mitigations:
 - Keep `dms.Document` indexes narrow and purpose-built.
 - Plan for UUID index maintenance (engine-appropriate fillfactor, autovacuum/rebuild cadence).
 
-### `dms.DocumentChangeEvent` (journal growth)
+### `tracked_changes_*` growth and `*_Stamp` write amplification
 
-- Append-only journaling can be large at high write rates.
-- Retention/partitioning policy becomes mandatory once Change Queries are used in production.
-
-Mitigations:
-- Partition/retain by `ChangeVersion` and/or `CreatedAt` as appropriate per engine.
-- Expose and enforce `oldestChangeVersion` (see [update-tracking.md](update-tracking.md)).
+- Per-resource `tracked_changes_*` tables and the shared `tracked_changes_edfi.Descriptor` accumulate deletes (tombstones) and key-changes; high-delete or long-running deployments can grow these tables significantly.
+- DMS does not automate truncation of these tables in v1; see [change-queries.md](change-queries.md) §"Operational considerations: tracked-change table volume" for the manual truncation guidance and the loss-of-visibility trade-off.
+- Each `*_Stamp` trigger does three things per affected document: bump `dms.Document.ContentVersion` / `ContentLastModifiedAt`, mirror those values onto the resource root (or `dms.Descriptor`), and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable. Benchmark the trigger path under representative write load.

@@ -31,7 +31,7 @@ This document is the data-model deep dive for `overview.md`.
 
 Lookup table mapping `(ProjectName, ResourceName)` to a small surrogate id (`ResourceKeyId`) used in high-churn core tables.
 
-This reduces row width and index bloat (especially in `dms.Document`, `dms.ReferentialIdentity`, and change journals) while keeping names available via join when needed for diagnostics.
+This reduces row width and index bloat (especially in `dms.Document` and `dms.ReferentialIdentity`) while keeping names available via join when needed for diagnostics.
 
 Population/seeding:
 
@@ -150,7 +150,7 @@ Notes:
 
 ##### 1a) `dms.ChangeVersionSequence`
 
-Global monotonic `bigint` sequence used to allocate update tracking stamps (for `ContentVersion`, `IdentityVersion`, and journal `ChangeVersion`). See `reference/design/backend-redesign/design-docs/update-tracking.md` for stamping rules.
+Global monotonic `bigint` sequence used to allocate update tracking stamps (for `ContentVersion` and `IdentityVersion`). See `reference/design/backend-redesign/design-docs/update-tracking.md` for stamping rules.
 
 **PostgreSQL**
 
@@ -185,60 +185,6 @@ CREATE SEQUENCE dms.CollectionItemIdSequence
     START WITH 1
     INCREMENT BY 1;
 ```
-
-##### 1c) `dms.DocumentChangeEvent` (append-only journal)
-
-Append-only journal of per-document representation changes (served `_etag/_lastModifiedDate/ChangeVersion` impacts). Used to support future Change Query APIs. See `reference/design/backend-redesign/design-docs/update-tracking.md` for the selection algorithm and retention guidance.
-
-Why this table exists (vs. scanning resource tables / `dms.Document`):
-
-- Change Queries need an efficient way to find “documents of resource R whose representation `ChangeVersion` is in `[min,max]`”. Scanning all documents (or all rows of the resource table) to find those candidates does not scale with total dataset size.
-- The token columns (`ContentVersion`/`IdentityVersion`) live on `dms.Document`, change on most writes, and would require additional hot, frequently-updated indexes (or large scans) to support window queries efficiently across PostgreSQL and SQL Server.
-- `dms.DocumentChangeEvent` is a narrow, append-only structure purpose-built for the common access pattern: `WHERE ResourceKeyId=@R AND ChangeVersion BETWEEN @min AND @max`, supported by `IX (ResourceKeyId, ChangeVersion, DocumentId)`.
-- It stores the served `ChangeVersion` for the document (recommended: `ChangeVersion = ContentVersion`), avoiding cross-engine computed-column/OR-indexing pitfalls and simplifying query plans.
-
-Columns:
-
-- `ChangeVersion`: the document's full resource-state representation change stamp (recommended: `ContentVersion`).
-- `DocumentId`: changed document.
-- `ResourceKeyId`: resource key for filtering change queries.
-- `CreatedAt`: journal insert time (operational/auditing).
-
-**PostgreSQL**
-
-```sql
-CREATE TABLE dms.DocumentChangeEvent (
-    ChangeVersion bigint NOT NULL,
-    DocumentId bigint NOT NULL REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
-    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY (ChangeVersion, DocumentId)
-);
-
-CREATE INDEX IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion
-    ON dms.DocumentChangeEvent (ResourceKeyId, ChangeVersion, DocumentId);
-```
-
-**SQL Server**
-
-```sql
-CREATE TABLE dms.DocumentChangeEvent (
-    ChangeVersion bigint NOT NULL,
-    DocumentId bigint NOT NULL,
-    ResourceKeyId smallint NOT NULL,
-    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentChangeEvent_CreatedAt DEFAULT (sysutcdatetime()),
-    CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY CLUSTERED (ChangeVersion, DocumentId),
-    CONSTRAINT FK_DocumentChangeEvent_Document FOREIGN KEY (DocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT FK_DocumentChangeEvent_ResourceKey FOREIGN KEY (ResourceKeyId)
-        REFERENCES dms.ResourceKey (ResourceKeyId)
-);
-
-CREATE INDEX IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion
-    ON dms.DocumentChangeEvent (ResourceKeyId, ChangeVersion, DocumentId);
-```
-
-Recommended population: enforce journal insertion with database triggers on `dms.Document` when `ContentVersion` changes (to avoid “forgotten journal write” bugs and to naturally cover cascaded updates); see `reference/design/backend-redesign/design-docs/update-tracking.md`.
 
 ##### 2) `dms.ReferentialIdentity`
 

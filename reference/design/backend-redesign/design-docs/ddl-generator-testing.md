@@ -264,16 +264,20 @@ A workflow that:
 1. Starts fresh DBs (pgsql and mssql).
 2. Provisions the database using the generated DDL.
    - Recommended additional check: run the **same** DDL a second time and assert it succeeds and the provisioned schema manifest is unchanged (validates existence-check patterns and insert-if-missing seed semantics).
-3. Runs a minimal journaling smoke check (required because journaling triggers are correctness-critical):
-   - insert one row into `dms.Document` (using a seeded `ResourceKeyId`) and assert:
-     - `dms.DocumentChangeEvent` has one new row for that `DocumentId`
-   - update `ContentVersion` and assert one new `dms.DocumentChangeEvent` row is emitted
+3. Runs a minimal change-tracking smoke check (required because `*_Stamp` triggers are correctness-critical):
+   - insert a resource row through the normal write path (i.e., insert into `dms.Document` and the resource root table within one transaction) and assert:
+     - `dms.Document.ContentVersion` is set,
+     - the resource root's `ContentVersion` mirror equals `dms.Document.ContentVersion`,
+     - no `tracked_changes_*` rows are emitted for the insert (tracked rows are written only for deletes and key-changes).
+   - update a non-identifying column and assert `dms.Document.ContentVersion` and the resource root's mirror are both bumped (mirror equals `dms.Document.ContentVersion`), and no `tracked_changes_*` rows are emitted.
+   - update an identifying column and assert a `tracked_changes_*` row is emitted with `Old_*` and `New_*` values populated.
+   - delete the resource row (the resource root first, then `dms.Document` — the cascade-ordering requirement from `change-queries.md`) and assert a tombstone row exists in `tracked_changes_*` (with `New_*` columns NULL).
 4. Runs engine-specific introspection queries and emit a stable **provisioned schema manifest** artifact:
    - tables, columns, types, nullability,
    - PK/UK/FK constraints,
    - indexes,
    - views,
-   - triggers (required for journaling),
+   - triggers (required for stamping and tracked-change population),
    - sequences 
    - functions
    - SQL Server User-Defined Table Types
