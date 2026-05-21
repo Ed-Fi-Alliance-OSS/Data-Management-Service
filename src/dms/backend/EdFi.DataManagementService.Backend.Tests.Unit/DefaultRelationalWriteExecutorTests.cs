@@ -3941,6 +3941,38 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public void It_keeps_multi_subject_strategies_with_mixed_missing_and_present_values_in_the_runtime_check()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var rootRow = new RootWriteRowBuffer(
+            rootPlan,
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal("Lincoln High"),
+            ]
+        );
+
+        var result = RelationshipAuthorizationProposedValueExtractor.Extract(
+            CreateSingleStrategyTwoSubjectRelationshipAuthorization(request),
+            rootRow,
+            emittedAuth1Index: 0
+        );
+
+        var ready = result
+            .Should()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
+            .Subject;
+        ready.RuntimeCheck.Strategies.Should().ContainSingle();
+        ready
+            .RuntimeCheck.Strategies[0]
+            .Subjects.Select(static subject => subject.Value)
+            .Should()
+            .Equal([null, "Lincoln High"]);
+    }
+
+    [Test]
     public void It_returns_relationship_authorization_failure_when_every_or_strategy_is_incomplete()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
@@ -4108,6 +4140,39 @@ public class Given_Default_Relational_Write_Executor
         }
 
         return relationshipFailure;
+    }
+
+    private static RelationshipAuthorizationResult.Authorized CreateSingleStrategyTwoSubjectRelationshipAuthorization(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var subjects = new[]
+        {
+            CreateRelationshipAuthorizationSubject(request, rootPlan, "SchoolId", "$.schoolId", "SchoolId"),
+            CreateRelationshipAuthorizationSubject(request, rootPlan, "Name", "$.name", "Name"),
+        };
+        var bindings = subjects
+            .Select(subject => CreateProposedValueBinding(rootPlan, subject.Column.Value))
+            .ToArray();
+
+        return new RelationshipAuthorizationResult.Authorized(
+            [
+                CreateProposedCheckSpec(
+                    rootPlan,
+                    subjects,
+                    bindings,
+                    relationshipLocalOrder: 0,
+                    rawConfiguredIndex: 0,
+                    direction: RelationshipAuthorizationHierarchyDirection.Normal
+                ),
+            ],
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                request.MappingSet.Key.Dialect,
+                [1234L],
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            )
+        );
     }
 
     private static RelationshipAuthorizationResult.Authorized CreateTwoStrategyTwoSubjectRelationshipAuthorization(

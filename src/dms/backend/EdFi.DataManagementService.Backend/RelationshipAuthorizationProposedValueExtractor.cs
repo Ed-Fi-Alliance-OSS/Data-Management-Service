@@ -165,9 +165,9 @@ internal static class RelationshipAuthorizationProposedValueExtractor
 
         if (
             missingSubjectFailures.Count > 0
-            && runtimeStrategies.TrueForAll(static strategy =>
-                strategy.Subjects.Any(static subject => subject.Value is null or DBNull)
-            )
+            && runtimeStrategies
+                .SelectMany(static strategy => strategy.Subjects)
+                .All(static subject => subject.Value is null or DBNull)
         )
         {
             return TryMapMissingValueFailures(

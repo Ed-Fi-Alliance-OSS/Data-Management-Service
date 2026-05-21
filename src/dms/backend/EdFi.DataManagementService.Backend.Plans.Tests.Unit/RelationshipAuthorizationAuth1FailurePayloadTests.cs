@@ -283,6 +283,63 @@ public class Given_RelationshipAuthorizationFailureMapper
         relationshipFailure.Should().BeNull();
     }
 
+    [Test]
+    public void It_should_map_mixed_proposed_missing_and_no_relationship_failures_for_one_strategy()
+    {
+        var checkSpecs = new[]
+        {
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId"),
+                CreateSubject(
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyReference.localEducationAgencyId"
+                )
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        1,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+        relationshipFailure!.ValueSource.Should().Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        relationshipFailure.FailedStrategies.Should().ContainSingle();
+        relationshipFailure
+            .FailedStrategies[0]
+            .FailedSubjects.Select(static subject => subject.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
+                RelationshipAuthorizationSubjectFailureKind.NoRelationship
+            );
+        relationshipFailure
+            .FailedStrategies[0]
+            .FailedSubjects.Select(static subject => subject.RootBinding.ColumnName)
+            .Should()
+            .Equal("SchoolId", "LocalEducationAgencyId");
+    }
+
     private static RelationshipAuthorizationCheckSpec CreateStoredCheckSpec(
         RelationshipAuthorizationHierarchyDirection direction,
         int configuredStrategyIndex,
@@ -306,6 +363,45 @@ public class Given_RelationshipAuthorizationFailureMapper
                 new DbColumnName("DocumentId")
             )
         );
+
+    private static RelationshipAuthorizationCheckSpec CreateProposedCheckSpec(
+        RelationshipAuthorizationHierarchyDirection direction,
+        int configuredStrategyIndex,
+        int relationshipLocalOrder,
+        params RelationshipAuthorizationSubject[] subjects
+    )
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+
+        return new RelationshipAuthorizationCheckSpec(
+            new ConfiguredAuthorizationStrategy(
+                direction is RelationshipAuthorizationHierarchyDirection.Normal
+                    ? AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    : AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                configuredStrategyIndex
+            ),
+            relationshipLocalOrder,
+            direction,
+            RelationshipAuthorizationValueSource.Proposed,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
+            subjects,
+            new RelationshipAuthorizationCheckTarget.Proposed(
+                rootTable,
+                [
+                    .. subjects.Select(
+                        static (subject, bindingIndex) =>
+                            new RelationshipAuthorizationProposedValueBinding(
+                                subject.Table,
+                                subject.Column,
+                                bindingIndex,
+                                subject.Column.Value,
+                                PlanNamingConventions.CamelCaseFirstCharacter(subject.Column.Value)
+                            )
+                    ),
+                ]
+            )
+        );
+    }
 
     private static RelationshipAuthorizationSubject CreateSubject(string columnName, string jsonPath) =>
         new(
