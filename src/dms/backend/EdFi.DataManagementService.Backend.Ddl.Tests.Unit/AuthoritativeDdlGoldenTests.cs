@@ -258,19 +258,29 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
             );
 
         // Staff has a UNION of two arms (assignment + employment); all others have one.
+        // The `arms_set_operator` is also asserted so a swap from UNION → UNION ALL (which changes
+        // dedup semantics) flips this manifest snapshot, not only the SQL goldens.
         foreach (var view in views.EnumerateArray())
         {
             var name = view.GetProperty("view").GetProperty("name").GetString();
             var armCount = view.GetProperty("arms").GetArrayLength();
+            var setOperator = view.GetProperty("arms_set_operator").GetString();
             if (name == "EducationOrganizationIdToStaffDocumentId")
             {
                 armCount
                     .Should()
                     .Be(2, "Staff view unions over the assignment and employment association tables");
+                setOperator
+                    .Should()
+                    .Be(
+                        "UNION",
+                        "Staff view arms are joined with deduplicating UNION; swapping to UNION ALL is a semantic regression"
+                    );
             }
             else
             {
                 armCount.Should().Be(1, $"view '{name}' is single-arm");
+                setOperator.Should().Be("NONE", $"single-arm view '{name}' has no set-operator");
             }
         }
     }

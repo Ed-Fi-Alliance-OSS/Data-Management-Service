@@ -51456,6 +51456,7 @@
           "schema": "auth",
           "name": "EducationOrganizationIdToContactDocumentId"
         },
+        "arms_set_operator": "NONE",
         "arms": [
           {
             "select_distinct": true,
@@ -51516,6 +51517,7 @@
           "schema": "auth",
           "name": "EducationOrganizationIdToStaffDocumentId"
         },
+        "arms_set_operator": "UNION",
         "arms": [
           {
             "select_distinct": false,
@@ -51598,6 +51600,7 @@
           "schema": "auth",
           "name": "EducationOrganizationIdToStudentDocumentId"
         },
+        "arms_set_operator": "NONE",
         "arms": [
           {
             "select_distinct": true,
@@ -51643,6 +51646,7 @@
           "schema": "auth",
           "name": "EducationOrganizationIdToStudentDocumentIdThroughResponsibility"
         },
+        "arms_set_operator": "NONE",
         "arms": [
           {
             "select_distinct": true,

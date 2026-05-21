@@ -588,6 +588,7 @@ public static class DerivedModelSetManifestEmitter
         WriteAuthView(
             writer,
             viewName: "EducationOrganizationIdToContactDocumentId",
+            armsSetOperator: "NONE",
             arms:
             [
                 new AuthViewArm(
@@ -616,10 +617,13 @@ public static class DerivedModelSetManifestEmitter
             ]
         );
 
-        // 2. EducationOrganizationIdToStaffDocumentId — UNION of two arms (assignment + employment)
+        // 2. EducationOrganizationIdToStaffDocumentId — UNION of two arms (assignment + employment).
+        // UNION (not UNION ALL) is deliberate: the deduplicating set-operator is what makes per-arm
+        // DISTINCT unnecessary. Pinning `UNION` here flips the manifest if a future change swaps it.
         WriteAuthView(
             writer,
             viewName: "EducationOrganizationIdToStaffDocumentId",
+            armsSetOperator: "UNION",
             arms:
             [
                 new AuthViewArm(
@@ -665,6 +669,7 @@ public static class DerivedModelSetManifestEmitter
         WriteAuthView(
             writer,
             viewName: "EducationOrganizationIdToStudentDocumentId",
+            armsSetOperator: "NONE",
             arms:
             [
                 new AuthViewArm(
@@ -692,6 +697,7 @@ public static class DerivedModelSetManifestEmitter
         WriteAuthView(
             writer,
             viewName: "EducationOrganizationIdToStudentDocumentIdThroughResponsibility",
+            armsSetOperator: "NONE",
             arms:
             [
                 new AuthViewArm(
@@ -719,15 +725,25 @@ public static class DerivedModelSetManifestEmitter
     }
 
     /// <summary>
-    /// Writes a single <c>auth_objects.views[]</c> entry: the view's qualified name and the ordered
-    /// list of <c>UNION ALL</c>-separated arms.
+    /// Writes a single <c>auth_objects.views[]</c> entry: the view's qualified name, the set-operator
+    /// joining its arms, and the ordered list of arms.
     /// </summary>
-    private static void WriteAuthView(Utf8JsonWriter writer, string viewName, IReadOnlyList<AuthViewArm> arms)
+    private static void WriteAuthView(
+        Utf8JsonWriter writer,
+        string viewName,
+        string armsSetOperator,
+        IReadOnlyList<AuthViewArm> arms
+    )
     {
         writer.WriteStartObject();
 
         writer.WritePropertyName("view");
         WriteTableReference(writer, new DbTableName(AuthNames.AuthSchema, viewName));
+
+        // `arms_set_operator` captures the deduplication semantic between arms ("UNION", "UNION_ALL",
+        // or "NONE" for single-arm views). Without it, swapping `UNION` for `UNION ALL` in the DDL
+        // emitter would be invisible to the manifest goldens.
+        writer.WriteString("arms_set_operator", armsSetOperator);
 
         writer.WritePropertyName("arms");
         writer.WriteStartArray();
