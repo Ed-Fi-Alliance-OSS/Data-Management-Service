@@ -1027,11 +1027,12 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits the SQL Server descriptor stamping trigger. Uses an <c>affectedDocs</c>
-    /// CTE that joins <c>inserted</c> to <c>deleted</c> on <c>DocumentId</c> with
-    /// null-safe per-column diff predicates across every stored descriptor column.
-    /// Rows that match on all columns produce no entry in the CTE, so the downstream
-    /// <c>UPDATE dms.Document</c> is skipped for no-op UPDATEs.
+    /// Emits the SQL Server descriptor stamping trigger. The trigger is
+    /// <c>AFTER UPDATE</c>, so every <c>inserted</c> row has a matching <c>deleted</c>
+    /// row — an <c>INNER JOIN</c> is sufficient. The <c>WHERE</c> clause carries the
+    /// null-safe per-column diff predicates across every stored descriptor column, so
+    /// no-op UPDATEs produce no CTE rows and the downstream <c>UPDATE dms.Document</c>
+    /// stamps nothing.
     /// </summary>
     private void EmitMssqlDescriptorStampingTrigger(SqlWriter writer)
     {
@@ -1058,26 +1059,11 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 writer.Append("SELECT i.");
                 writer.AppendLine(quotedKeyColumn);
                 writer.AppendLine("FROM inserted i");
-                writer.Append("LEFT JOIN deleted del ON del.");
+                writer.Append("INNER JOIN deleted del ON del.");
                 writer.Append(quotedKeyColumn);
                 writer.Append(" = i.");
                 writer.AppendLine(quotedKeyColumn);
-                writer.Append("WHERE del.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" IS NULL OR ");
-                EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
-                writer.AppendLine();
-                writer.AppendLine("UNION");
-                writer.Append("SELECT del.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.AppendLine("FROM deleted del");
-                writer.Append("LEFT JOIN inserted i ON i.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" = del.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.Append("WHERE i.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" IS NULL OR ");
+                writer.Append("WHERE ");
                 EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
                 writer.AppendLine();
             }
@@ -1146,7 +1132,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 writer.Append(" OR ");
             }
             var quotedColumn = Quote(_descriptorStoredColumns[i].Column.Value);
-            EmitMssqlNullSafeNotEqual(
+            MssqlTriggerDiffEmitter.EmitNullSafeNotEqual(
                 writer,
                 leftAlias,
                 quotedColumn,
@@ -1155,67 +1141,6 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 _descriptorStoredColumns[i].Kind
             );
         }
-    }
-
-    /// <summary>
-    /// Emits a NULL-safe inequality comparison for MSSQL. For <see cref="ScalarKind.String"/>
-    /// columns the operands are wrapped in <c>CAST(... AS varbinary(max))</c> to force
-    /// byte-level comparison (detects trailing-space-only and case-only changes that the
-    /// default <c>nvarchar</c> CI collation + ANSI padding would otherwise miss). This
-    /// mirrors <c>RelationalModelDdlEmitter.EmitMssqlNullSafeNotEqual</c>.
-    /// </summary>
-    private static void EmitMssqlNullSafeNotEqual(
-        SqlWriter writer,
-        string leftAlias,
-        string quotedColumn,
-        string rightAlias,
-        string rightQuotedColumn,
-        ScalarKind? scalarKind
-    )
-    {
-        bool needsCast = scalarKind == ScalarKind.String;
-
-        writer.Append("(");
-        if (needsCast)
-        {
-            writer.Append("CAST(");
-        }
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        if (needsCast)
-        {
-            writer.Append(" AS varbinary(max))");
-        }
-        writer.Append(" <> ");
-        if (needsCast)
-        {
-            writer.Append("CAST(");
-        }
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        if (needsCast)
-        {
-            writer.Append(" AS varbinary(max))");
-        }
-        writer.Append(" OR (");
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        writer.Append(" IS NULL AND ");
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        writer.Append(" IS NOT NULL) OR (");
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        writer.Append(" IS NOT NULL AND ");
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        writer.Append(" IS NULL))");
     }
 
     private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);

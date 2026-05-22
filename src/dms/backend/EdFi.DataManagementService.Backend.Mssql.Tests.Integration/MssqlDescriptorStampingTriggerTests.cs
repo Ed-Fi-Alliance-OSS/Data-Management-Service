@@ -55,7 +55,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     }
 
     private async Task<(long DocumentId, long ContentVersion, DateTime ContentLastModifiedAt)> SeedAsync(
-        string shortDescription = "Female"
+        string shortDescription = "Female",
+        string codeValue = "Female"
     )
     {
         var resourceKeyId = await _database.ExecuteScalarAsync<short>(
@@ -72,6 +73,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
 
+        var uriOrDiscriminator = $"uri://ed-fi.org/SexDescriptor#{codeValue}";
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [dms].[Descriptor]
@@ -82,11 +84,11 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@namespace", "uri://ed-fi.org/SexDescriptor"),
-            new SqlParameter("@codeValue", "Female"),
+            new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", "Female"),
-            new SqlParameter("@discriminator", "uri://ed-fi.org/SexDescriptor#Female"),
-            new SqlParameter("@uri", "uri://ed-fi.org/SexDescriptor#Female")
+            new SqlParameter("@description", codeValue),
+            new SqlParameter("@discriminator", uriOrDiscriminator),
+            new SqlParameter("@uri", uriOrDiscriminator)
         );
 
         var (cv, ts) = await ReadStampsAsync(documentId);
@@ -233,6 +235,34 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
 
         var journalsAfter = await CountJournalRowsAsync(seed.DocumentId);
         journalsAfter.Should().Be(journalsBefore);
+    }
+
+    [Test]
+    public async Task It_stamps_both_documents_on_multi_row_descriptor_update()
+    {
+        var seedA = await SeedAsync(codeValue: "Female");
+        var seedB = await SeedAsync(codeValue: "Male");
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [dms].[Descriptor]
+            SET [ShortDescription] = 'Changed Short Description'
+            WHERE DocumentId IN (@documentIdA, @documentIdB);
+            """,
+            new SqlParameter("@documentIdA", seedA.DocumentId),
+            new SqlParameter("@documentIdB", seedB.DocumentId)
+        );
+
+        var afterA = await ReadStampsAsync(seedA.DocumentId);
+        var afterB = await ReadStampsAsync(seedB.DocumentId);
+        afterA.ContentVersion.Should().BeGreaterThan(seedA.ContentVersion);
+        afterB.ContentVersion.Should().BeGreaterThan(seedB.ContentVersion);
+        afterA
+            .ContentVersion.Should()
+            .NotBe(
+                afterB.ContentVersion,
+                "the affectedDocs CTE must allocate a distinct NEXT VALUE per joined Document row"
+            );
     }
 
     [Test]

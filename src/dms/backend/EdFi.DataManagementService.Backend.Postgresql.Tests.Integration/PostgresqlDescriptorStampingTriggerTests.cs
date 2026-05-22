@@ -47,7 +47,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         }
     }
 
-    private async Task<(long DocumentId, long ContentVersion, DateTime ContentLastModifiedAt)> SeedAsync()
+    private async Task<(long DocumentId, long ContentVersion, DateTime ContentLastModifiedAt)> SeedAsync(
+        string codeValue = "Female"
+    )
     {
         var resourceKeyId = await _database.ExecuteScalarAsync<short>(
             """SELECT MIN("ResourceKeyId") FROM dms."ResourceKey";"""
@@ -63,6 +65,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
 
+        var uriOrDiscriminator = $"uri://ed-fi.org/SexDescriptor#{codeValue}";
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO dms."Descriptor"
@@ -73,11 +76,11 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/SexDescriptor"),
-            new NpgsqlParameter("codeValue", "Female"),
-            new NpgsqlParameter("shortDescription", "Female"),
-            new NpgsqlParameter("description", "Female"),
-            new NpgsqlParameter("discriminator", "uri://ed-fi.org/SexDescriptor#Female"),
-            new NpgsqlParameter("uri", "uri://ed-fi.org/SexDescriptor#Female")
+            new NpgsqlParameter("codeValue", codeValue),
+            new NpgsqlParameter("shortDescription", codeValue),
+            new NpgsqlParameter("description", codeValue),
+            new NpgsqlParameter("discriminator", uriOrDiscriminator),
+            new NpgsqlParameter("uri", uriOrDiscriminator)
         );
 
         var (cv, ts) = await ReadStampsAsync(documentId);
@@ -201,6 +204,34 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             .Be(
                 1,
                 "Document INSERT defaults produce exactly one stamp; descriptor INSERT must not double-stamp"
+            );
+    }
+
+    [Test]
+    public async Task It_stamps_both_documents_on_multi_row_descriptor_update()
+    {
+        var seedA = await SeedAsync(codeValue: "Female");
+        var seedB = await SeedAsync(codeValue: "Male");
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE dms."Descriptor"
+            SET "ShortDescription" = 'Changed Short Description'
+            WHERE "DocumentId" IN (@documentIdA, @documentIdB);
+            """,
+            new NpgsqlParameter("documentIdA", seedA.DocumentId),
+            new NpgsqlParameter("documentIdB", seedB.DocumentId)
+        );
+
+        var afterA = await ReadStampsAsync(seedA.DocumentId);
+        var afterB = await ReadStampsAsync(seedB.DocumentId);
+        afterA.ContentVersion.Should().BeGreaterThan(seedA.ContentVersion);
+        afterB.ContentVersion.Should().BeGreaterThan(seedB.ContentVersion);
+        afterA
+            .ContentVersion.Should()
+            .NotBe(
+                afterB.ContentVersion,
+                "each row must pull a distinct nextval — a per-statement cache would collide"
             );
     }
 

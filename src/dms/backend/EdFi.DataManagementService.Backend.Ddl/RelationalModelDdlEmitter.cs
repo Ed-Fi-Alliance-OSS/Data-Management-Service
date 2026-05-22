@@ -829,7 +829,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             // PostgreSQL: IS DISTINCT FROM provides null-safe inequality comparison.
             // (NULL IS DISTINCT FROM NULL) → false, (NULL IS DISTINCT FROM value) → true.
-            // Equivalent to MSSQL's EmitMssqlNullSafeNotEqual pattern which expands to:
+            // Equivalent to MssqlTriggerDiffEmitter.EmitNullSafeNotEqual which expands to:
             // (a <> b OR (a IS NULL AND b IS NOT NULL) OR (a IS NOT NULL AND b IS NULL))
             writer.Append("IF TG_OP = 'UPDATE' AND (");
             EmitPgsqlValueDiffDisjunction(writer, trigger.IdentityProjectionColumns);
@@ -1818,82 +1818,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(";");
     }
 
-    /// <summary>
-    /// Emits a NULL-safe inequality comparison for MSSQL.
-    /// For <see cref="ScalarKind.String"/> columns emits
-    /// <c>(CAST(left.col AS varbinary(max)) &lt;&gt; CAST(right.col AS varbinary(max))
-    /// OR (left.col IS NULL AND right.col IS NOT NULL)
-    /// OR (left.col IS NOT NULL AND right.col IS NULL))</c>;
-    /// for all other scalar kinds the <c>CAST</c> wrappers are omitted.
-    /// </summary>
-    /// <remarks>
-    /// The <c>CAST(... AS varbinary(max))</c> wrapper on the <c>&lt;&gt;</c> operands ensures
-    /// byte-level comparison, which detects trailing-space-only and case-only changes that
-    /// the default <c>nvarchar</c> comparison misses (ANSI SQL padding ignores trailing
-    /// spaces; the default CI collation ignores case). This mirrors the approach used by
-    /// <c>[dms].[uuidv5]</c>, which hashes raw bytes — so a change that produces a
-    /// different hash must also be detected as a change here.
-    /// Non-text types (int, bigint, decimal, bit, date, datetime, time) are unaffected by
-    /// collation or ANSI padding, so plain <c>&lt;&gt;</c> suffices for those columns.
-    /// </remarks>
-    private static void EmitMssqlNullSafeNotEqual(
-        SqlWriter writer,
-        string leftAlias,
-        string quotedColumn,
-        string rightAlias,
-        string rightQuotedColumn,
-        ScalarKind? scalarKind
-    )
-    {
-        // Text columns need CAST(... AS varbinary(max)) to detect trailing-space-only
-        // and case-only changes that the default nvarchar CI collation would miss.
-        // Non-text types (int, bigint, decimal, bit, date, datetime, time) are
-        // unaffected by collation or ANSI padding, so plain <> suffices.
-        bool needsCast = scalarKind == ScalarKind.String;
-
-        writer.Append("(");
-        if (needsCast)
-        {
-            writer.Append("CAST(");
-        }
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        if (needsCast)
-        {
-            writer.Append(" AS varbinary(max))");
-        }
-        writer.Append(" <> ");
-        if (needsCast)
-        {
-            writer.Append("CAST(");
-        }
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        if (needsCast)
-        {
-            writer.Append(" AS varbinary(max))");
-        }
-        writer.Append(" OR (");
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        writer.Append(" IS NULL AND ");
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        writer.Append(" IS NOT NULL) OR (");
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        writer.Append(" IS NOT NULL AND ");
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        writer.Append(" IS NULL))");
-    }
-
     private static void EmitMssqlNullSafeEqual(
         SqlWriter writer,
         string leftAlias,
@@ -2439,7 +2363,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     )
     {
         var quotedColumn = Quote(columnName);
-        EmitMssqlNullSafeNotEqual(
+        MssqlTriggerDiffEmitter.EmitNullSafeNotEqual(
             writer,
             leftAlias,
             quotedColumn,

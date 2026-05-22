@@ -642,6 +642,30 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
     }
 
+    [Test]
+    public void It_should_diff_every_non_key_descriptor_column_in_stamping_trigger()
+    {
+        // Drift guard: the trigger's no-op predicate is built from a hand-maintained
+        // column list (_descriptorStoredColumns in CoreDdlEmitter). If a future change
+        // to EmitDescriptorTable adds or renames a column without updating that list,
+        // real value changes to the new column will silently fail to bump stamps.
+        // This test re-derives the column set from the emitted Descriptor table and
+        // asserts each non-PK column appears as an IS DISTINCT FROM predicate.
+        var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl);
+        columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
+        columns.Should().Contain("DocumentId", "sanity check the extractor found PK column");
+
+        foreach (var column in columns.Where(c => c != "DocumentId"))
+        {
+            _ddl.Should()
+                .Contain(
+                    $"OLD.\"{column}\" IS DISTINCT FROM NEW.\"{column}\"",
+                    $"descriptor stamping trigger must compare {column}; "
+                        + "update _descriptorStoredColumns in CoreDdlEmitter when adding columns"
+                );
+        }
+    }
+
     // ── No authorization objects ─────────────────────────────────────
 
     [Test]
@@ -1202,12 +1226,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_emit_affected_docs_cte_in_descriptor_stamping_trigger()
     {
+        // AFTER UPDATE guarantees every inserted row has a matching deleted row,
+        // so a single INNER JOIN is sufficient — no LEFT JOIN+UNION ceremony.
         _ddl.Should().Contain(";WITH affectedDocs AS (");
         _ddl.Should().Contain("FROM inserted i");
-        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
-        _ddl.Should().Contain("FROM deleted del");
-        _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
-        _ddl.Should().Contain("UNION");
+        _ddl.Should().Contain("INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().NotContain("LEFT JOIN deleted");
+        _ddl.Should().NotContain("LEFT JOIN inserted");
     }
 
     [Test]
@@ -1242,6 +1267,35 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("d.[ContentLastModifiedAt] = sysutcdatetime()");
         _ddl.Should().Contain("FROM [dms].[Document] d");
         _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
+    }
+
+    [Test]
+    public void It_should_diff_every_non_key_descriptor_column_in_stamping_trigger()
+    {
+        // Drift guard: same intent as the PG sibling test. Strings must be wrapped in
+        // CAST(... AS varbinary(max)) so case-only / trailing-space-only changes are
+        // detected under default CI collation; non-string columns use plain <>. If a
+        // future column addition forgets to wire the right comparator, this test fails.
+        var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
+        columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
+        columns
+            .Select(c => c.Name)
+            .Should()
+            .Contain("DocumentId", "sanity check the extractor found PK column");
+
+        foreach (var (name, type) in columns.Where(c => c.Name != "DocumentId"))
+        {
+            var isStringType = type.Contains("char", StringComparison.OrdinalIgnoreCase);
+            var expected = isStringType
+                ? $"CAST(i.[{name}] AS varbinary(max)) <> CAST(del.[{name}] AS varbinary(max))"
+                : $"i.[{name}] <> del.[{name}]";
+            _ddl.Should()
+                .Contain(
+                    expected,
+                    $"descriptor stamping trigger must compare {name} ({type}); "
+                        + "update _descriptorStoredColumns in CoreDdlEmitter when adding columns"
+                );
+        }
     }
 
     // ── No authorization objects ─────────────────────────────────────
