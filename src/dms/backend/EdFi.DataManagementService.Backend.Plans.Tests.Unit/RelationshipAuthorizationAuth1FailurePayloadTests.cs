@@ -809,6 +809,46 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     }
 
     [Test]
+    public void It_should_reject_postgresql_proposed_auth1_sql_for_non_edorg_hierarchy_auth_object()
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var customAuthObject = new RelationshipAuthorizationAuthObject(
+            new DbTableName(AuthNames.AuthSchema, "StudentAuthorization"),
+            new DbColumnName("StudentUniqueId"),
+            AuthNames.SourceEdOrgId
+        );
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateProposedCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            0,
+                            0,
+                            CreateSubject("StudentUniqueId", "$.studentReference.studentUniqueId")
+                        ) with
+                        {
+                            AuthObject = customAuthObject,
+                        },
+                    ],
+                    parameterization,
+                    12
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*only supports the EdOrg hierarchy auth object*");
+    }
+
+    [Test]
     public void It_should_not_emit_direct_claim_match_when_the_auth_object_disallows_it()
     {
         var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(

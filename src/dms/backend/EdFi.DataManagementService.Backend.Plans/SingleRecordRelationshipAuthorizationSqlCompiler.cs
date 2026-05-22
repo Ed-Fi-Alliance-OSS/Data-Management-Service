@@ -31,6 +31,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
     private static readonly string[] _defaultReservedParameterNames = ["documentUuid", "resourceKeyId"];
+    private static readonly string _pgsqlEdOrgSubjectValueSqlType = ResolvePgsqlEdOrgSubjectValueSqlType();
 
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
@@ -110,6 +111,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             rootTarget is RelationshipAuthorizationCheckTarget.Proposed
                 ? BuildProposedValueParametersInOrder(spec)
                 : [];
+        ValidatePgsqlProposedSubjectValueCasts(spec, rootTarget);
         ValidateParameterNameCollisions(spec, proposedValueParametersInOrder);
 
         return new NormalizedSqlSpec(spec, rootTarget, proposedValueParametersInOrder);
@@ -231,6 +233,80 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
         return rootTarget;
     }
+
+    private void ValidatePgsqlProposedSubjectValueCasts(
+        SingleRecordRelationshipAuthorizationSqlSpec spec,
+        RelationshipAuthorizationCheckTarget target
+    )
+    {
+        if (_dialect is not SqlDialect.Pgsql || target is not RelationshipAuthorizationCheckTarget.Proposed)
+        {
+            return;
+        }
+
+        var unsupportedAuthObjects = spec
+            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject)
+            .Where(static authObject => !UsesEdOrgHierarchyAuthObject(authObject))
+            .Take(1)
+            .ToArray();
+
+        if (unsupportedAuthObjects.Length == 0)
+        {
+            return;
+        }
+
+        var unsupportedAuthObject = unsupportedAuthObjects[0];
+
+        throw new ArgumentException(
+            $"PostgreSQL proposed relationship authorization currently casts subject values as {_pgsqlEdOrgSubjectValueSqlType} and only supports the EdOrg hierarchy auth object. Auth object '{unsupportedAuthObject.Name}' is not supported for proposed-value checks.",
+            nameof(spec)
+        );
+    }
+
+    private static string ResolvePgsqlEdOrgSubjectValueSqlType()
+    {
+        var sourceColumn = ResolveAuthEdOrgTableColumn(AuthNames.SourceEdOrgId);
+        var targetColumn = ResolveAuthEdOrgTableColumn(AuthNames.TargetEdOrgId);
+
+        if (!StringComparer.OrdinalIgnoreCase.Equals(sourceColumn.SqlType, targetColumn.SqlType))
+        {
+            throw new InvalidOperationException(
+                $"Auth EdOrg hierarchy columns '{sourceColumn.Name.Value}' and '{targetColumn.Name.Value}' must have the same SQL type."
+            );
+        }
+
+        return sourceColumn.SqlType;
+    }
+
+    private static AuthTableColumn ResolveAuthEdOrgTableColumn(DbColumnName columnName)
+    {
+        var columns = AuthObjectDefinitions
+            .AuthEdOrgTable.Columns.Where(column => column.Name.Equals(columnName))
+            .Take(1)
+            .ToArray();
+
+        if (columns.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Auth EdOrg hierarchy table '{AuthObjectDefinitions.AuthEdOrgTable.Table}' does not define column '{columnName.Value}'."
+            );
+        }
+
+        return columns[0];
+    }
+
+    private static bool UsesEdOrgHierarchyAuthObject(RelationshipAuthorizationAuthObject authObject) =>
+        authObject.Name.Equals(AuthNames.EdOrgIdToEdOrgId)
+        && (
+            (
+                authObject.SubjectValueColumn.Equals(AuthNames.TargetEdOrgId)
+                && authObject.ClaimEducationOrganizationIdColumn.Equals(AuthNames.SourceEdOrgId)
+            )
+            || (
+                authObject.SubjectValueColumn.Equals(AuthNames.SourceEdOrgId)
+                && authObject.ClaimEducationOrganizationIdColumn.Equals(AuthNames.TargetEdOrgId)
+            )
+        );
 
     private static DbTableName GetRootTable(RelationshipAuthorizationCheckTarget target) =>
         target switch
@@ -668,7 +744,9 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         {
             writer.Append("CAST(");
             writer.AppendParameter(proposedValueParameterName);
-            writer.Append(" AS bigint)");
+            writer.Append(" AS ");
+            writer.Append(_pgsqlEdOrgSubjectValueSqlType);
+            writer.Append(")");
             return;
         }
 

@@ -966,11 +966,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             return;
         }
 
-        if (
-            request.OperationKind is RelationalWriteOperationKind.Post
-            && request.TargetContext is RelationalWriteTargetContext.CreateNew
-            && request.WritePrecondition is not WritePrecondition.IfMatch
-        )
+        if (IsHandledByPostInlineAuth1(request))
         {
             return;
         }
@@ -979,6 +975,11 @@ internal sealed class DefaultRelationalWriteExecutor(
             .AuthorizeProposedRelationshipAsync(request, mergeResult, writeSession, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    private static bool IsHandledByPostInlineAuth1(RelationalWriteExecutorRequest request) =>
+        request.OperationKind is RelationalWriteOperationKind.Post
+        && request.TargetContext is RelationalWriteTargetContext.CreateNew
+        && request.WritePrecondition is not WritePrecondition.IfMatch;
 
     private static IfMatchPreconditionEvaluation GetIfMatchPreconditionEvaluation(
         RelationalWriteExecutorRequest request
