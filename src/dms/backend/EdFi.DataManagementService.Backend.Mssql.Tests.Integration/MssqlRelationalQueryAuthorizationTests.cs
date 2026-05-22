@@ -458,6 +458,23 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    public async Task<UpsertResult> UpsertAuthorizationNullableAsync(
+        AuthorizationNullableSeed seed,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames
+    )
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationNullableResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNullableRequestBody(seed),
+            seed.DocumentUuid,
+            $"post-auth-nullable-{seed.AuthorizationNullableId}",
+            claimEducationOrganizationIds,
+            strategyNames
+        );
+    }
+
     public async Task<UpdateResult> UpdateAuthorizationNullableByIdAsync(
         AuthorizationNullableSeed seed,
         DocumentUuid documentUuid,
@@ -825,6 +842,31 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             ResourceTables: await ReadResourceTableStatesAsync(
                 "authz",
                 "AuthorizationRootChildResource",
+                document.DocumentId
+            ),
+            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            ),
+            DocumentChangeEventCount: await CountDocumentChangeEventRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            )
+        );
+    }
+
+    public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationNullableSideEffectStateAsync(
+        DocumentUuid documentUuid
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationNullableResource");
+        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+
+        return new AuthorizationWriteSideEffectState(
+            Document: document,
+            ResourceTables: await ReadResourceTableStatesAsync(
+                "authz",
+                "AuthorizationNullableResource",
                 document.DocumentId
             ),
             ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
