@@ -42,3 +42,6 @@ This story ensures update tracking remains correct for descriptor resources with
 a temporary bridge for `If-Match` correctness until this story moves descriptor stamping ownership into
 `dms.Descriptor` triggers.
 
+When this story adds descriptor stamping triggers, remove the manual `dms.Document` stamp updates from
+`DescriptorWriteHandler` in the same change. Leaving both mechanisms active would double-stamp descriptor writes.
+

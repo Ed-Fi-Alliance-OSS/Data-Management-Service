@@ -515,9 +515,9 @@ However, for the sake of simplicity, the generic DeletesController and KeyChange
 
 The `ReadChanges` action is not configured for this resource, so attempts to request its `/deletes` or `/keyChanges` endpoints result in authorization denied.
 
-### Filtering resources by ChangeVersion
+### Filtering live resources by ChangeVersion
 
-Resource and descriptor endpoints allow filtering by `minChangeVersion` and `maxChangeVersion`, which internally filter the resource's `ChangeVersion` column. These endpoints allow users to retrieve the current representation of resources updated within a given change window.
+Live resource endpoints are the ordinary resource and descriptor endpoints that return current resource representations, such as `GET /data/v3/ed-fi/students`. These endpoints allow filtering by `minChangeVersion` and `maxChangeVersion`, which internally filter the resource's `ChangeVersion` column. They allow users to retrieve the current representation of resources updated within a given change window.
 
 ```http
 GET /data/v3/ed-fi/grades?minChangeVersion=123&maxChangeVersion=987
@@ -614,7 +614,7 @@ Note that the response's `oldestChangeVersion` is hardcoded to `0`.
 
 ### Authorization
 
-The `/keyChanges` and `/deletes` endpoints return resource identifying values, which are sensitive data, so these endpoints must apply authorization similar to resource endpoints.
+The `/keyChanges` and `/deletes` endpoints return resource identifying values, which are sensitive data, so these endpoints must apply authorization similar to live resource endpoints.
 
 The feature introduces the `ReadChanges` action that must be granted to the resource's claims to access the `/keyChanges` and `/deletes` endpoints.
 The feature also introduces the authorization strategies below, which are meant to be used with the `ReadChanges` action:
@@ -625,10 +625,106 @@ The feature also introduces the authorization strategies below, which are meant 
 
 These authorization strategies are the same as their non-prefixed equivalents. The only difference is that they use different authorization views behind the scenes by setting a `pathModifier`. The feature introduces these views:
 
-- [EducationOrganizationIdToContactUSIIncludingDeletes](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/e489317ea77f245aff99d57374165c238848f9a0/Application/EdFi.Ods.Standard/Standard/6.1.0/Artifacts/PgSql/Structure/Ods/Changes/1020-AuthViewsIncludingDeletes.sql#L46)
-- [EducationOrganizationIdToStaffUSIIncludingDeletes](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/e489317ea77f245aff99d57374165c238848f9a0/Application/EdFi.Ods.Standard/Standard/6.1.0/Artifacts/PgSql/Structure/Ods/Changes/1020-AuthViewsIncludingDeletes.sql#L22)
-- [EducationOrganizationIdToStudentUSIIncludingDeletes](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/e489317ea77f245aff99d57374165c238848f9a0/Application/EdFi.Ods.Standard/Standard/6.1.0/Artifacts/PgSql/Structure/Ods/Changes/1020-AuthViewsIncludingDeletes.sql#L8)
-- [EducationOrganizationIdToStudentUSIThroughDeletedResponsibility](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/e489317ea77f245aff99d57374165c238848f9a0/Application/EdFi.Ods.Standard/Standard/6.1.0/Artifacts/PgSql/Structure/Ods/Changes/1040-AuthViewStudentResponsibilityIncludingDeletes.sql#L6)
+
+#### EducationOrganizationIdToContactUSIIncludingDeletes
+<details>
+  <summary>Definition</summary>
+
+  ```sql
+  CREATE VIEW auth.EducationOrganizationIdToContactUSIIncludingDeletes(SourceEducationOrganizationId, ContactUSI) AS
+      -- Intact StudentSchoolAssociation and intact StudentContactAssociation
+      SELECT	SourceEducationOrganizationId, ContactUSI
+      FROM	auth.EducationOrganizationIdToContactUSI
+
+      UNION
+
+      -- Intact StudentSchoolAssociation and deleted StudentContactAssociation
+      SELECT edOrgs.SourceEducationOrganizationId, spa_tc.OldContactUSI as ContactUSI
+      FROM    auth.EducationOrganizationIdToEducationOrganizationId edOrgs
+          JOIN edfi.StudentSchoolAssociation ssa ON edOrgs.TargetEducationOrganizationId = ssa.SchoolId
+          JOIN tracked_changes_edfi.StudentContactAssociation spa_tc ON ssa.StudentUSI = spa_tc.OldStudentUSI
+
+      UNION
+
+      -- Deleted StudentSchoolAssociation and intact StudentContactAssociation
+      SELECT	edOrgs.SourceEducationOrganizationId, spa.ContactUSI
+      FROM    auth.EducationOrganizationIdToEducationOrganizationId edOrgs
+          JOIN tracked_changes_edfi.StudentSchoolAssociation ssa_tc ON edOrgs.TargetEducationOrganizationId = ssa_tc.OldSchoolId
+          JOIN edfi.StudentContactAssociation spa ON ssa_tc.OldStudentUSI = spa.StudentUSI
+
+      UNION
+
+      -- Deleted StudentSchoolAssociation and StudentContactAssociation
+      SELECT	edOrgs.SourceEducationOrganizationId, spa_tc.OldContactUSI as ContactUSI
+      FROM    auth.EducationOrganizationIdToEducationOrganizationId edOrgs
+          JOIN tracked_changes_edfi.StudentSchoolAssociation ssa_tc ON edOrgs.TargetEducationOrganizationId = ssa_tc.OldSchoolId
+          JOIN tracked_changes_edfi.StudentContactAssociation spa_tc ON ssa_tc.OldStudentUSI = spa_tc.OldStudentUSI;
+  ```
+</details>
+
+#### EducationOrganizationIdToStaffUSIIncludingDeletes
+<details>
+  <summary>Definition</summary>
+
+  ```sql
+  CREATE VIEW auth.EducationOrganizationIdToStaffUSIIncludingDeletes(SourceEducationOrganizationId, StaffUSI) AS
+      SELECT	SourceEducationOrganizationId, StaffUSI
+      FROM	auth.EducationOrganizationIdToStaffUSI edOrgToStaff
+      
+      UNION
+
+      -- Deleted employment
+      SELECT	edOrgs.SourceEducationOrganizationId, emp_tc.OldStaffUSI as StaffUSI
+      FROM	auth.EducationOrganizationIdToEducationOrganizationId edOrgs
+              JOIN tracked_changes_edfi.StaffEducationOrganizationEmploymentAssociation emp_tc
+                  ON edOrgs.TargetEducationOrganizationId = emp_tc.OldEducationOrganizationId
+
+      UNION
+
+      -- Deleted assignments
+      SELECT	edOrgs.SourceEducationOrganizationId, assgn_tc.OldStaffUSI as StaffUSI
+      FROM	auth.EducationOrganizationIdToEducationOrganizationId edOrgs
+              JOIN tracked_changes_edfi.StaffEducationOrganizationAssignmentAssociation assgn_tc
+                  ON edOrgs.TargetEducationOrganizationId = assgn_tc.OldEducationOrganizationId;
+  ```
+</details>
+
+#### EducationOrganizationIdToStudentUSIIncludingDeletes
+<details>
+  <summary>Definition</summary>
+
+  ```sql
+  CREATE VIEW auth.EducationOrganizationIdToStudentUSIIncludingDeletes(SourceEducationOrganizationId, StudentUSI) AS
+      SELECT SourceEducationOrganizationId, StudentUSI
+      FROM auth.EducationOrganizationIdToStudentUSI
+
+      UNION
+
+      SELECT edOrgs.SourceEducationOrganizationId, ssa_tc.OldStudentUSI as StudentUSI
+      FROM auth.EducationOrganizationIdToEducationOrganizationId edOrgs
+          JOIN tracked_changes_edfi.StudentSchoolAssociation ssa_tc ON edOrgs.TargetEducationOrganizationId = ssa_tc.OldSchoolId;
+  ```
+</details>
+
+#### EducationOrganizationIdToStudentUSIThroughDeletedResponsibility
+<details>
+  <summary>Definition</summary>
+
+  ```sql
+  CREATE OR REPLACE VIEW auth.EducationOrganizationIdToStudentUSIThroughDeletedResponsibility AS
+      SELECT  edOrgs.SourceEducationOrganizationId, seora.StudentUSI
+      FROM    auth.EducationOrganizationIdToEducationOrganizationId edOrgs
+              INNER JOIN edfi.StudentEducationOrganizationResponsibilityAssociation seora
+                  ON edOrgs.TargetEducationOrganizationId = seora.EducationOrganizationId
+
+      UNION
+
+      SELECT	edOrgs.SourceEducationOrganizationId, OldStudentUSI as StudentUSI
+      FROM	auth.EducationOrganizationIdToEducationOrganizationId edOrgs
+              INNER JOIN tracked_changes_edfi.StudentEducationOrganizationResponsibilityAssociation seora_tc
+                  ON edOrgs.TargetEducationOrganizationId = seora_tc.OldEducationOrganizationId;
+  ```
+</details>
 
 These strategies are built on top of the authorization logic described in [auth.md](auth.md), meaning they support the same combination mechanics, although they are not combined with other strategies as of today.
 
@@ -646,6 +742,7 @@ The `ReadChanges` action has to be configured with the equivalent authorization 
 | RelationshipsWithStudentsOnlyThroughResponsibility | RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes   |
 | RelationshipsWithEdOrgsOnlyInverted                | RelationshipsWithEdOrgsOnlyInverted                                  |
 | RelationshipsWithEdOrgsAndPeopleInverted           | Not supported                                                        |
+| Custom view-based strategies                       | Custom view-based strategies (unchanged)                             |
 
 The OwnershipBased strategy is explicitly unsupported as documented in [OwnershipBasedAuthorizationFilterDefinitionsFactory](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/10e54ef6a417b036d27a9d23391500069ba52794/Application/EdFi.Ods.Api/Security/AuthorizationStrategies/OwnershipBased/OwnershipBasedAuthorizationFilterDefinitionsFactory.cs#L76).
 
@@ -713,7 +810,7 @@ Snapshots address the following two issues described in the `Scenarios that coul
 
 #### The `Use-Snapshot` header
 
-The feature introduces a `Use-Snapshot` request header that, when set to `true`, redirects the request to the configured snapshot connection string instead of the primary ODS database. The header is honored by all resource, descriptor, `/deletes`, `/keyChanges`, and `/availableChangeVersions` endpoints.
+The feature introduces a `Use-Snapshot` request header that, when set to `true`, redirects the request to the configured snapshot connection string instead of the primary ODS database. The header is honored by live resource and descriptor endpoints, `/deletes`, `/keyChanges`, and `/availableChangeVersions`.
 
 ```http
 GET /data/v3/ed-fi/grades
@@ -791,7 +888,7 @@ An example response is:
 }
 ```
 
-The response contains ordered groups of resource endpoints that can be loaded at the same time. "Delete" operations are to be performed at the reverse order of Create operations.
+The response contains ordered groups of live resource endpoints that can be loaded at the same time. "Delete" operations are to be performed at the reverse order of Create operations.
 
 This endpoint is already implemented in DMS.
 
@@ -805,7 +902,7 @@ Repeating (on a schedule):
 2. Obtain the source system's newest ChangeVersion using the `/availableChangeVersions` endpoint, this becomes the `MaxChangeVersion`.
 3. Iterate through all resources in dependency order; on each resource:
    1. Execute the `/keyChanges` endpoint, specifying the `MinChangeVersion` and `MaxChangeVersion` on the source API, and PUT the new identifying values to the downstream API.
-   2. Extract the latest representation of the resource items, using the usual GET-many endpoint such as `/students`, specifying the `MinChangeVersion` and `MaxChangeVersion` on the source API, and POST the new representations to the downstream API.
+   2. Extract the latest representation of the resource items, using the live resource GET-many endpoint such as `/students`, specifying the `MinChangeVersion` and `MaxChangeVersion` on the source API, and POST the new representations to the downstream API.
 4. Iterate through all resources in reverse dependency order; on each resource:
    1. Execute the `/deletes` endpoint, specifying the `MinChangeVersion` and `MaxChangeVersion` on the source API, and DELETE the items on the downstream API.
 5. If successful, save the new ChangeVersion value for future change processing.
@@ -1132,7 +1229,7 @@ Because typical ODS deployments rotate per school year, ODS does not automate th
 
 Each `ConcreteResourceModel` with `StorageKind = RelationalTables` gets two columns mirrored onto its root table: `ContentVersion` and `ContentLastModifiedAt`. The shared `dms.Descriptor` table gets the same two columns. The columns are kept in lock-step with `dms.Document` by the existing `*_Stamp` triggers (see the next subsection).
 
-This mirror lets SQL-side integrators (and the existing ODS-shaped community tooling, including the API Publisher and dashboard datastores) read change-version and last-modified per row without joining `dms.Document`, and lets resource and descriptor endpoints serve `?minChangeVersion=X&maxChangeVersion=Y` as a single-table range seek.
+This mirror lets SQL-side integrators (and the existing ODS-shaped community tooling, including the API Publisher and dashboard datastores) read change-version and last-modified per row without joining `dms.Document`, and lets live resource and descriptor endpoints serve `?minChangeVersion=X&maxChangeVersion=Y` as a single-table range seek.
 
 **Scope** — receive the columns and a supporting index:
 
@@ -1192,7 +1289,8 @@ Descriptor paths use the table-level `TrackedChangeDescriptorJoinInfo` entries t
 
 People `SecurableElements` paths use table-level `TrackedChangePersonJoinInfo` entries to join until they reach the people resource and store the person `DocumentId`. Value columns identify the needed person join by `PersonJoinName`. The derivation pass can use the same resolution rules as `ResolveSecurableElementColumnPath`; see [auth.md](auth.md) for more information.
 
-MSSQL trigger definition example for the Grade resource:
+<details>
+  <summary>MSSQL trigger definition example for the Grade resource: (Click to expand)</summary>
 
 ```sql
 CREATE OR ALTER TRIGGER [edfi].[TR_Grade_Stamp]
@@ -1209,11 +1307,16 @@ BEGIN
     );
 
     ;WITH affectedDocs AS (
-      -- CTE definition omitted for brevity. Excludes rows whose inserted/deleted images
-      -- differ only in ContentVersion, ContentLastModifiedAt, IdentityVersion, or
-      -- IdentityLastModifiedAt (extends the existing no-op rule from update-tracking.md
-      -- to cover mirror-stamp self-fires; see "Concrete-resource ContentVersion /
-      -- ContentLastModifiedAt mirror" above).
+        -- Avoids mirror-stamp self-fires; see "Concrete-resource ContentVersion / ContentLastModifiedAt mirror" above).
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[GradingPeriodGradingPeriod_DocumentId] <> del.[GradingPeriodGradingPeriod_DocumentId] OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[StudentSectionAssociation_DocumentId] <> del.[StudentSectionAssociation_DocumentId] OR (i.[StudentSectionAssociation_DocumentId] IS NULL AND del.[StudentSectionAssociation_DocumentId] IS NOT NULL) OR (i.[StudentSectionAssociation_DocumentId] IS NOT NULL AND del.[StudentSectionAssociation_DocumentId] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> del.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND del.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND del.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND del.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND del.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NULL)) OR (i.[GradeTypeDescriptor_DescriptorId] <> del.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] <> del.[PerformanceBaseConversionDescriptor_DescriptorId] OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL AND del.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL AND del.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL)) OR (i.[CurrentGradeAsOfDate] <> del.[CurrentGradeAsOfDate] OR (i.[CurrentGradeAsOfDate] IS NULL AND del.[CurrentGradeAsOfDate] IS NOT NULL) OR (i.[CurrentGradeAsOfDate] IS NOT NULL AND del.[CurrentGradeAsOfDate] IS NULL)) OR (i.[CurrentGradeIndicator] <> del.[CurrentGradeIndicator] OR (i.[CurrentGradeIndicator] IS NULL AND del.[CurrentGradeIndicator] IS NOT NULL) OR (i.[CurrentGradeIndicator] IS NOT NULL AND del.[CurrentGradeIndicator] IS NULL)) OR (CAST(i.[DiagnosticStatement] AS varbinary(max)) <> CAST(del.[DiagnosticStatement] AS varbinary(max)) OR (i.[DiagnosticStatement] IS NULL AND del.[DiagnosticStatement] IS NOT NULL) OR (i.[DiagnosticStatement] IS NOT NULL AND del.[DiagnosticStatement] IS NULL)) OR (CAST(i.[GradeEarnedDescription] AS varbinary(max)) <> CAST(del.[GradeEarnedDescription] AS varbinary(max)) OR (i.[GradeEarnedDescription] IS NULL AND del.[GradeEarnedDescription] IS NOT NULL) OR (i.[GradeEarnedDescription] IS NOT NULL AND del.[GradeEarnedDescription] IS NULL)) OR (CAST(i.[LetterGradeEarned] AS varbinary(max)) <> CAST(del.[LetterGradeEarned] AS varbinary(max)) OR (i.[LetterGradeEarned] IS NULL AND del.[LetterGradeEarned] IS NOT NULL) OR (i.[LetterGradeEarned] IS NOT NULL AND del.[LetterGradeEarned] IS NULL)) OR (i.[NumericGradeEarned] <> del.[NumericGradeEarned] OR (i.[NumericGradeEarned] IS NULL AND del.[NumericGradeEarned] IS NOT NULL) OR (i.[NumericGradeEarned] IS NOT NULL AND del.[NumericGradeEarned] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[GradingPeriodGradingPeriod_DocumentId] <> del.[GradingPeriodGradingPeriod_DocumentId] OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[StudentSectionAssociation_DocumentId] <> del.[StudentSectionAssociation_DocumentId] OR (i.[StudentSectionAssociation_DocumentId] IS NULL AND del.[StudentSectionAssociation_DocumentId] IS NOT NULL) OR (i.[StudentSectionAssociation_DocumentId] IS NOT NULL AND del.[StudentSectionAssociation_DocumentId] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> del.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND del.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND del.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND del.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND del.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NULL)) OR (i.[GradeTypeDescriptor_DescriptorId] <> del.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] <> del.[PerformanceBaseConversionDescriptor_DescriptorId] OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL AND del.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL AND del.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL)) OR (i.[CurrentGradeAsOfDate] <> del.[CurrentGradeAsOfDate] OR (i.[CurrentGradeAsOfDate] IS NULL AND del.[CurrentGradeAsOfDate] IS NOT NULL) OR (i.[CurrentGradeAsOfDate] IS NOT NULL AND del.[CurrentGradeAsOfDate] IS NULL)) OR (i.[CurrentGradeIndicator] <> del.[CurrentGradeIndicator] OR (i.[CurrentGradeIndicator] IS NULL AND del.[CurrentGradeIndicator] IS NOT NULL) OR (i.[CurrentGradeIndicator] IS NOT NULL AND del.[CurrentGradeIndicator] IS NULL)) OR (CAST(i.[DiagnosticStatement] AS varbinary(max)) <> CAST(del.[DiagnosticStatement] AS varbinary(max)) OR (i.[DiagnosticStatement] IS NULL AND del.[DiagnosticStatement] IS NOT NULL) OR (i.[DiagnosticStatement] IS NOT NULL AND del.[DiagnosticStatement] IS NULL)) OR (CAST(i.[GradeEarnedDescription] AS varbinary(max)) <> CAST(del.[GradeEarnedDescription] AS varbinary(max)) OR (i.[GradeEarnedDescription] IS NULL AND del.[GradeEarnedDescription] IS NOT NULL) OR (i.[GradeEarnedDescription] IS NOT NULL AND del.[GradeEarnedDescription] IS NULL)) OR (CAST(i.[LetterGradeEarned] AS varbinary(max)) <> CAST(del.[LetterGradeEarned] AS varbinary(max)) OR (i.[LetterGradeEarned] IS NULL AND del.[LetterGradeEarned] IS NOT NULL) OR (i.[LetterGradeEarned] IS NOT NULL AND del.[LetterGradeEarned] IS NULL)) OR (i.[NumericGradeEarned] <> del.[NumericGradeEarned] OR (i.[NumericGradeEarned] IS NULL AND del.[NumericGradeEarned] IS NOT NULL) OR (i.[NumericGradeEarned] IS NOT NULL AND del.[NumericGradeEarned] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -1232,6 +1335,7 @@ BEGIN
 
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        -- Store tombstone
         INSERT INTO [tracked_changes_edfi].[Grade] (
             [Old_StudentSectionAssociation_BeginDate],
             [Old_GradeTypeDescriptor_Namespace],
@@ -1298,11 +1402,7 @@ BEGIN
         INNER JOIN [edfi].[StudentSectionAssociation] oldStudentSectionAssociation ON oldStudentSectionAssociation.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
         INNER JOIN [edfi].[Student] oldStudent ON oldStudent.[DocumentId] = oldStudentSectionAssociation.[Student_DocumentId];
     END
-    -- Key-change rows use the same null-safe old/new value-diff workset as identity stamping.
-    -- Build @identityChangedDocs from inserted/deleted rows whose DbTriggerInfo.IdentityProjectionColumns
-    -- are distinct. Do not use SQL Server UPDATE(column), PostgreSQL UPDATE OF, or equivalent
-    -- target-list gates for this predicate.
-    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([GradeTypeDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([StudentSectionAssociation_BeginDate]) OR UPDATE([StudentSectionAssociation_LocalCourseCode]) OR UPDATE([StudentSectionAssociation_SectionIdentifier]) OR UPDATE([StudentSectionAssociation_SessionName]) OR UPDATE([StudentSectionAssociation_StudentUniqueId]))
     BEGIN
         DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
@@ -1311,9 +1411,9 @@ BEGIN
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        -- WHERE clause omitted for brevity. It is the null-safe value-diff predicate over IdentityProjectionColumns.
-        ;
+        WHERE (i.[GradeTypeDescriptor_DescriptorId] <> del.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> del.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND del.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND del.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND del.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND del.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NULL));
 
+        -- Store key change
         INSERT INTO [tracked_changes_edfi].[Grade] (
             [Old_StudentSectionAssociation_BeginDate],
             [Old_GradeTypeDescriptor_Namespace],
@@ -1388,6 +1488,7 @@ BEGIN
     END
 END;
 ```
+</details>
 
 ##### Cascade-ordering requirement for deletes
 
@@ -1406,13 +1507,52 @@ The `ON DELETE CASCADE` FK from the resource row to `dms.Document` (see [data-mo
 
 There is no `*_Stamp` trigger in `dms.Descriptor`, so we will create one that follows the existing convention.
 
+### Authorization
+
+This section covers authorization concerns specific to the `/deletes` and `/keyChanges` endpoints. The base authorization design lives in [auth.md](auth.md).
+
+#### The `ReadChanges` action
+
+DMS retains the distinct `ReadChanges` action introduced by ODS. Requests to `/deletes` or `/keyChanges` for a resource whose claim set does not grant `ReadChanges` return `403 Forbidden` with the `urn:ed-fi:api:security:authorization:access-denied:action` ProblemDetails described in [auth.md](auth.md).
+
+#### Strategies
+
+DMS will support the same authorization strategies as ODS, with the exception of custom view-based strategies which will be deferred until DMS v1.1. 
+
+Meaning that the next strategies have to be implemented for the `/deletes` and `/keyChanges` endpoints:
+`NoFurtherAuthorizationRequired`                                      
+`NamespaceBased`                                                      
+`RelationshipsWithEdOrgsOnly`                                         
+`RelationshipsWithEdOrgsOnlyInverted`                            
+`RelationshipsWithEdOrgsAndPeopleIncludingDeletes`               
+`RelationshipsWithStudentsOnlyIncludingDeletes`                       
+`RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes`  
+
+The combinator semantics — AND/OR mixing across strategy categories and execution order — defined in [auth.md](auth.md) apply unchanged for `ReadChanges`.
+
+##### Differences when compared to live resource endpoint auth logic
+
+Strategies that share a name across `Read` and `ReadChanges` (`NoFurtherAuthorizationRequired`, `NamespaceBased`, `RelationshipsWithEdOrgsOnly`, `RelationshipsWithEdOrgsOnlyInverted`) reuse the original authorization views. Strategies whose name carries the `*IncludingDeletes` suffix swap their backing view to the corresponding `*IncludingDeletes` view.
+
+Contrary to the live resources logic which computes the people auth subjects joining intermediate resources (to reach the person's DocumentId), the tracked-change tables denomalize people DocumentIds (initialized in in the `*_Stamp` triggers), meaning no entermediate joins are needed for people auth subjects.
+
+Additionally, the tracked-changes tables column names include the `Old_` and `New_` prefixes.
+
 #### Authorization views
 
-Following the existing DMS authorization approach, the authorization views should return DocumentIds instead of USIs and be renamed appropriately.
+Following the existing DMS authorization approach, the `*IncludingDeletes` authorization views return `DocumentId` columns rather than USIs and are renamed accordingly.
 
-Each `*IncludingDeletes` authorization view must be represented by `ReadChangesAuthorizationViewInfo` in the shared derived model. The inventory records the view name, output columns, and ordered union arms over current tables and tracked-change tables. Dialect emitters render the views from that inventory, and runtime authorization/query planning uses the same view metadata when composing `/deletes` and `/keyChanges` authorization predicates.
+Each `*IncludingDeletes` authorization view is represented by `ReadChangesAuthorizationViewInfo` in the shared derived model. The inventory records the view name, output columns, and ordered union arms over current tables and tracked-change tables. Dialect emitters render the views from that inventory, and runtime authorization/query planning consume the same view metadata when composing `/deletes` and `/keyChanges` authorization predicates.
 
-For example, the `auth.EducationOrganizationIdToContactDocumentIdIncludingDeletes` view definition should be similar to:
+The full inventory of `*IncludingDeletes` views DMS emits:
+- `auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes`              
+- `auth.EducationOrganizationIdToContactDocumentIdIncludingDeletes`              
+- `auth.EducationOrganizationIdToStaffDocumentIdIncludingDeletes`                
+- `auth.EducationOrganizationIdToStudentDocumentIdThroughDeletedResponsibility`  
+
+Each view is materialized as a union over current and tracked-change PrimaryAssociation arms, joined against the **current** `auth.EducationOrganizationIdToEducationOrganizationId` hierarchy (see `Preserved authorization peculiarities` below for why the hierarchy is not joined against historical state).
+
+For example, the `auth.EducationOrganizationIdToContactDocumentIdIncludingDeletes` view definition has four union arms — current/current, current/tracked, tracked/current, and tracked/tracked:
 
 ```sql
 CREATE VIEW [auth].[EducationOrganizationIdToContactDocumentIdIncludingDeletes] AS 
@@ -1450,6 +1590,33 @@ FROM
   JOIN tracked_changes_edfi.StudentSchoolAssociation ssa_tc ON edOrgs.TargetEducationOrganizationId = ssa_tc.Old_SchoolId_Unified 
   JOIN tracked_changes_edfi.StudentContactAssociation sca_tc ON ssa_tc.Old_Student_DocumentId = sca_tc.Old_Student_DocumentId;
 ```
+
+The views are only emitted when all five PrimaryAssociation resources exist in the derived relational model, following the same guard described in [auth.md](auth.md) for the non-`IncludingDeletes` views.
+
+#### Preserved authorization peculiarities
+
+DMS deliberately preserves the two ODS authorization peculiarities described in the ODS section of this document.
+
+#### Descriptor authorization
+
+The default `ReadChanges` authorization strategy for descriptors is `NoFurtherAuthorizationRequired`. The two ODS exceptions are preserved unchanged:
+
+- `CrisisTypeDescriptor` uses `NamespaceBased`
+- `NonMedicalImmunizationExemptionDescriptor` uses `NamespaceBased`
+
+#### SchoolYearType
+
+The `ReadChanges` action is not configured for `SchoolYearType`. MetaEd excludes `SchoolYearType` from the emitted OpenAPI for `/deletes` and `/keyChanges`, so the endpoint does not resolve to a route in normal operation.
+
+A request crafted directly against `/data/v3/ed-fi/schoolYearTypes/deletes` or `/keyChanges` returns `403 Forbidden` with the `Authorization Denied` ProblemDetails described in [auth.md](auth.md) §2, matching ODS behavior. The 403 comes from the missing `ReadChanges` claim, not from the missing route, because the generic controller still resolves to a handler.
+
+#### Concrete abstract resources
+
+Each concrete abstract resource (e.g. `School`, `LocalEducationAgency`, `OrganizationDepartment`) gets its own `TrackedChangeTableInfo` and `tracked_changes_*` table, as described in the `tracked_changes*` tables section above.
+
+This carries a direct authorization payoff: the ODS-era `OrganizationDepartment` limitation no longer applies. In ODS, `OrganizationDepartment.ReadChanges` could not honor its `ParentEducationOrganizationId` securable-element override because tombstones lived in the abstract `tracked_changes_edfi.EducationOrganization` table, which only stored `EducationOrganizationId`. In DMS, `OrganizationDepartment`'s own tracked-change table stores both the abstract identity and any override-specified columns, so any relationship-based `ReadChanges` strategy works without falling back to `NoFurtherAuthorizationRequired`.
+
+Other concrete abstract resources with SecurableElement overrides — including any introduced via extensions — get the same benefit automatically.
 
 ### /deletes endpoints
 
@@ -1610,9 +1777,9 @@ ORDER BY
   cw.FinalChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-### Filtering resources and descriptors by ChangeVersion
+### Filtering live resources and descriptors by ChangeVersion
 
-Resource and descriptor GET-many endpoints support `?minChangeVersion=X&maxChangeVersion=Y`. With the mirror on the concrete tables (see "Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror" above), the runtime query planner emits a direct range filter on the concrete table — no join to `dms.Document` is required for the change-version predicate.
+Live resource and descriptor GET-many endpoints support `?minChangeVersion=X&maxChangeVersion=Y`. With the mirror on the concrete tables (see "Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror" above), the runtime query planner emits a direct range filter on the concrete table — no join to `dms.Document` is required for the change-version predicate.
 
 The generated SQL used to fulfill a `GET /data/v3/ed-fi/grades?minChangeVersion=123&maxChangeVersion=987` request is:
 
@@ -1657,7 +1824,7 @@ ORDER BY d.DocumentId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 
 The planner uses this path for every resource with a `MirroredContentVersion` column in its `DbTableModel` — which is every `StorageKind = RelationalTables` resource. There is no fallback path; the mirror is universal for in-scope tables.
 
-`/deletes`, `/keyChanges`, and `/availableChangeVersions` are unchanged. They source from `tracked_changes_*` (which carry their own `ChangeVersion`) or from the sequence directly. The mirror affects only the live-resource read path.
+`/deletes`, `/keyChanges`, and `/availableChangeVersions` are unchanged. They source from `tracked_changes_*` (which carry their own `ChangeVersion`) or from the sequence directly. The mirror affects only the live resource read path.
 
 Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies remain sourced from `dms.Document` for now; switching to the concrete-table mirror is an optional future read-path optimization (the values are identical per Invariant #2).
 
@@ -1692,12 +1859,12 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 
 - Derive `TrackedChangeTableInfo`, `TrackedChangeColumnInfo`, descriptor/person join metadata, and `ReadChangesAuthorizationViewInfo` in the shared `DerivedRelationalModelSet`
   - Inventory must include a `TrackedChangeTableInfo` for each concrete abstract resource (e.g. `OrganizationDepartment`, `School`) to support SecurableElement overrides — DMS improvement over ODS, where concrete abstract resources share their abstract parent's tracked-change table.
-- Emit the ReadChanges authorization views from `ReadChangesAuthorizationViewInfo`
+- Emit the four `*IncludingDeletes` authorization views from `ReadChangesAuthorizationViewInfo`: `EducationOrganizationIdToStudentDocumentIdIncludingDeletes`, `EducationOrganizationIdToContactDocumentIdIncludingDeletes`, `EducationOrganizationIdToStaffDocumentIdIncludingDeletes`, and `EducationOrganizationIdToStudentDocumentIdThroughDeletedResponsibility`. Emit only when all five PrimaryAssociation resources are present in the derived relational model.
 - Emit the `tracked_changes_<schema>` tables from `TrackedChangeTableInfo`
 - Emit the triggers that populate `tracked_changes_*` tables from `TriggerKindParameters.ChangeTracking`
 - Update the delete-by-id path to issue two `DELETE` statements per document deletion within the same transaction: first the concrete resource row (or `dms.Descriptor` for descriptor resources), then the `dms.Document` row. Required so the `_Stamp` trigger DELETE branch can still read `DocumentUuid` and the bumped `ContentVersion` from `dms.Document`. Amends DMS-1010 (Delete-by-Id).
 
-- Update resource and descriptor endpoints to add the Min/Max ChangeVersion filter, served as a direct range filter on the concrete-table `ContentVersion` (and on `dms.Descriptor.ContentVersion` with the `Discriminator` predicate for descriptors) — no join to `dms.Document` for the change-version predicate.
+- Update live resource and descriptors endpoints to add the Min/Max ChangeVersion filter, served as a direct range filter on the concrete-table `ContentVersion` (and on `dms.Descriptor.ContentVersion` with the `Discriminator` predicate for descriptors) — no join to `dms.Document` for the change-version predicate.
 - Add the `/deletes` endpoint.
   - Same contract as ODS; there should not be breaking changes.
   - Add cascading deletes tests for abstract resources like StudentProgramAssociations; see ODS-4087.
@@ -1708,13 +1875,14 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
   - Add a test for total count; see ODS-5423.
 - Add auth to the `/deletes` endpoint.
 - Add auth to the `/keyChanges` endpoint.
+- Ensure `SchoolYearType` requests against `/deletes` or `/keyChanges` (when crafted directly against the generic controller) return `403 Forbidden` because `ReadChanges` is not configured for the resource.
 - Add the `/availableChangeVersions` endpoint.
   - Same contract as ODS; there should not be breaking changes.
 
-- **MetaEd**: Emit OpenAPI definitions for the `/deletes`, `/keyChanges`, and `/availableChangeVersions` endpoints (exclude SchoolYearTypes from `/deletes` and `/keyChanges`), and add the `minChangeVersion`/`maxChangeVersion` parameters to existing resource and descriptor endpoint definitions.
+- **MetaEd**: Emit OpenAPI definitions for the `/deletes`, `/keyChanges`, and `/availableChangeVersions` endpoints (exclude SchoolYearTypes from `/deletes` and `/keyChanges`), and add the `minChangeVersion`/`maxChangeVersion` parameters to existing live resource and descriptor endpoint definitions.
   - **DMS**: Consume MetaEd's updated OpenAPI so the new endpoints and filters are routed and served. Coverage is included in the per-endpoint tickets above; no separate work item.
 
-- Decide what to do with unsupported strategies for v1.0 (OwnershipBased)
+- Decide what to do with unsupported strategies for v1.0 (OwnershipBased) (also, check that auth strategies and claimsets are exacly the same as ODS)
 
 
 #### Stretch-goals
