@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorizat
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
 using FluentValidation.Results;
+using Microsoft.OpenApi;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -20,7 +21,38 @@ public class VendorModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredPost("/v2/vendors/", InsertVendor);
+        endpoints
+            .MapSecuredPost("/v2/vendors/", InsertVendor)
+            .Produces(201)
+            .Produces(200)
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    if (operation.Responses is null)
+                    {
+                        return Task.CompletedTask;
+                    }
+
+                    foreach (var code in new[] { "201", "200" })
+                    {
+                        if (
+                            operation.Responses.TryGetValue(code, out var iResponse)
+                            && iResponse is OpenApiResponse response
+                        )
+                        {
+                            response.Headers ??= new Dictionary<string, IOpenApiHeader>();
+                            response.Headers["Location"] = new OpenApiHeader
+                            {
+                                Description = "The absolute URL of the vendor resource.",
+                                Required = true,
+                                Schema = new OpenApiSchema { Type = JsonSchemaType.String, Format = "uri" },
+                            };
+                        }
+                    }
+
+                    return Task.CompletedTask;
+                }
+            );
         endpoints.MapSecuredGet("/v2/vendors/", GetAll);
         endpoints.MapSecuredGet($"/v2/vendors/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v2/vendors/{{id}}", Update);
@@ -41,25 +73,23 @@ public class VendorModule : IEndpointModule
         var insertResult = await repository.InsertVendor(entity);
 
         var request = httpContext.Request;
+        var locationUrl =
+            $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/";
+
+        if (insertResult is VendorInsertResult.Success success)
+        {
+            var resourceUrl = $"{locationUrl}{success.Id}";
+            if (success.IsNewVendor)
+            {
+                return Results.Created(resourceUrl, null);
+            }
+
+            httpContext.Response.Headers.Location = resourceUrl;
+            return Results.Ok();
+        }
+
         return insertResult switch
         {
-            VendorInsertResult.Success success when success.IsNewVendor => Results.Created(
-                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                new
-                {
-                    Id = success.Id,
-                    Status = 201,
-                    Title = $"New Vendor {entity.Company} has been created successfully.",
-                }
-            ),
-            VendorInsertResult.Success success when !success.IsNewVendor => Results.Ok(
-                new
-                {
-                    Id = success.Id,
-                    Status = 200,
-                    Title = $"Vendor {entity.Company} has been updated successfully.",
-                }
-            ),
             VendorInsertResult.FailureDuplicateCompanyName => Results.Json(
                 FailureResponse.ForDataValidation(
                     [
