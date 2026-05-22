@@ -1106,6 +1106,11 @@ We will use the rewrite to make these improvements over ODS:
 - Descriptor `/deletes` endpoints will correctly hide recreated descriptors.
 - Resource `/deletes` endpoints will correctly hide recreated resources that reference recreated descriptors.
 - Concrete abstract resources, such as School, will now get their own `tracked_changes*` table to support SecurableElement overrides.
+### Out of scope
+The next features are deferred after DMS v1.0
+- Support for DB snapshots
+- Support for the custom view-based authorization strategy in the tracked-changes endpoints
+- Allow disabling the feature
 
 ### Database Model
 
@@ -1847,7 +1852,10 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - DB-behavior: `IdentityVersion` and `IdentityLastModifiedAt` columns are absent from every in-scope root table and from `dms.Descriptor`.
 - Emitted-SQL snapshot: `?minChangeVersion=X&maxChangeVersion=Y` produces a single-table range filter on the concrete table for `/ed-fi/students`, on `dms.Descriptor` (with the `Discriminator` predicate) for descriptors, and the same shape for at least one extension-project resource endpoint.
 
-### Tickets
+### ProblemDetails
+TODO
+
+### Tickets to create
 - [DMS-1168] Emit the `changes.GetMaxChangeVersion()` function
 - [DMS-1169] Remove `dms.DocumentChangeEvent` because the new tables replace it
 
@@ -1883,16 +1891,11 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
   - **DMS**: Consume MetaEd's updated OpenAPI so the new endpoints and filters are routed and served. Coverage is included in the per-endpoint tickets above; no separate work item.
 
 - Decide what to do with unsupported strategies for v1.0 (OwnershipBased) (also, check that auth strategies and claimsets are exacly the same as ODS)
-
+- Apply delete order (concrete table should be deleted before the general dms.Document)
 
 #### Stretch-goals
-
-- Snapshot support
-- Allow disabling the feature
-- Spike ticket to add view-based auth
 - Add indexes that improve auth checks on `tracked_changes_*` tables (they are missing in ODS as well)
-
-#### Open questions
-
-- We should introduce the snapshots feature because downstream APIs must implement reverse paging with retry to get equivalent behavior. Should we add it for v1.0 or treat it as a stretch goal? CMS already supports storing derivatives, but DMS has to be updated to use them.
-- Should we allow disabling the feature for v1.0? If so, users would need to tell the DDL emitter whether they want to include the change tracking objects. The API would then check for the existence of the changes schema in the DB on boot and fail fast if the feature is enabled in appsettings.json but the DB objects are missing.
+- Spike ticket to create View-based auth
+- Spike ticket to bring snapshot support
+- Spike ticket to allow disabling the feature
+- Spike ticket to add support for custom view-based auth strategies
