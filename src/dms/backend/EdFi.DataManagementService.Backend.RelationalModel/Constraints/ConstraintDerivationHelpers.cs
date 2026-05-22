@@ -173,6 +173,83 @@ internal static class ConstraintDerivationHelpers
     }
 
     /// <summary>
+    /// Resolves the concrete table model for a reference binding, selecting the best matching JSON scope when a
+    /// table name appears in multiple scopes (e.g., extensions). The same <see cref="DbTableName"/> can occur on
+    /// more than one <see cref="DbTableModel"/> within a resource's <see cref="RelationalResourceModel.TablesInDependencyOrder"/>
+    /// (for example, a base scope and an <c>_ext</c> scope), so callers must not key a dictionary on
+    /// <see cref="DbTableModel.Table"/> alone — use this helper instead.
+    /// </summary>
+    internal static DbTableModel ResolveReferenceBindingTable(
+        DocumentReferenceBinding binding,
+        RelationalResourceModel resourceModel,
+        QualifiedResourceName resource
+    )
+    {
+        var candidates = resourceModel
+            .TablesInDependencyOrder.Where(table => table.Table.Equals(binding.Table))
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not map to table '{binding.Table}'."
+            );
+        }
+
+        if (candidates.Length == 1)
+        {
+            return candidates[0];
+        }
+
+        var orderedCandidates = candidates
+            .OrderBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
+            .ToArray();
+        DbTableModel? bestMatch = null;
+
+        foreach (var candidate in orderedCandidates)
+        {
+            if (!IsPrefixOf(candidate.JsonScope.Segments, binding.ReferenceObjectPath.Segments))
+            {
+                continue;
+            }
+
+            if (bestMatch is null || candidate.JsonScope.Segments.Count > bestMatch.JsonScope.Segments.Count)
+            {
+                bestMatch = candidate;
+            }
+        }
+
+        if (bestMatch is null)
+        {
+            var scopeList = string.Join(", ", orderedCandidates.Select(table => table.JsonScope.Canonical));
+
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not match any table scope for '{binding.Table}'. "
+                    + $"Candidates: {scopeList}."
+            );
+        }
+
+        if (
+            binding.ReferenceObjectPath.Segments.Any(segment =>
+                segment is JsonPathSegment.Property { Name: "_ext" }
+            )
+            && !bestMatch.JsonScope.Segments.Any(segment =>
+                segment is JsonPathSegment.Property { Name: "_ext" }
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
+            );
+        }
+
+        return bestMatch;
+    }
+
+    /// <summary>
     /// Adds a column to a constraint column list exactly once, preserving the first-seen order.
     /// </summary>
     internal static void AddUniqueColumn(

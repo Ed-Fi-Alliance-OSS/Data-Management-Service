@@ -1805,9 +1805,13 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_returns_not_yet_supported_failure_when_existing_document_identity_changes_and_updates_are_allowed()
+    public async Task It_proceeds_past_identity_stability_fence_when_existing_document_identity_changes_and_updates_are_allowed()
     {
-        var request = CreateRequest(RelationalWriteOperationKind.Put, allowIdentityUpdates: true);
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            allowIdentityUpdates: true,
+            selectedBody: JsonNode.Parse("""{"name":"Lincoln High","schoolId":255902}""")!
+        );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
             currentSchoolId: 255901,
@@ -1820,14 +1824,56 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UnknownFailure(
-                        "Relational existing-document writes do not yet support identity-changing operations for resource 'Ed-Fi.School' when allowIdentityUpdates=true. "
-                            + "Keep the identity projection stable until the strict identity-maintenance work lands."
-                    )
+                    new UpdateResult.UpdateSuccess(
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        ExpectedEtag(request)
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_maps_unique_violations_for_identity_changing_updates_to_update_identity_conflicts()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            allowIdentityUpdates: true,
+            selectedBody: JsonNode.Parse("""{"name":"Lincoln High","schoolId":255902}""")!
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255902
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("duplicate key");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey");
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RootNaturalKeyUnique("UK_School_NaturalKey");
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureIdentityConflict(
+                        new ResourceName("School"),
+                        [new KeyValuePair<string, string>("schoolId", "255902")]
+                    )
+                )
+            );
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        _writeConstraintResolver.ResolveCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }

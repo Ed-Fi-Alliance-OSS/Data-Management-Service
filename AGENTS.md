@@ -63,6 +63,29 @@ The default `pwsh ./setup-local-dms.ps1` command uses `.env.e2e`, which starts D
 
 Use `src/dms/tests/EdFi.InstanceManagement.Tests.E2E` only for the Instance Management E2E suite; it uses route-context settings and a different instance setup.
 
+## Working with DMS API-Level Integration Tests
+
+The API-level integration tests directory is `src/dms/tests/EdFi.DataManagementService.Tests.Integration/`. These are not Docker-stack E2E tests: they boot the DMS HTTP pipeline in-process and lease real PostgreSQL or SQL Server databases from configured admin connection strings.
+
+For SQL Server/MSSQL tests, `ConnectionStrings__MssqlAdmin` must point to a running SQL Server. If the variable is absent, MSSQL tests skip. If the variable is present but stale, tests fail during fixture database setup with a SQL Server connection error before any API request is issued. Troubleshoot that as environment setup, not as a test result:
+
+```powershell
+Get-ChildItem Env:ConnectionStrings__MssqlAdmin -ErrorAction SilentlyContinue
+Test-NetConnection -ComputerName localhost -Port 14333
+docker ps --filter name=dms-mssql-integration
+docker logs dms-mssql-integration --tail 80
+```
+
+Known-good local MSSQL setup:
+
+```powershell
+docker run --name dms-mssql-integration -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+$env:ConnectionStrings__MssqlAdmin = "Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
+dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter "Category=MssqlIntegration"
+```
+
+If the container already exists, use `docker start dms-mssql-integration`. If port `14333` is busy, map another host port and use the same port in `ConnectionStrings__MssqlAdmin`.
+
 ## Working with DMS Configuration Management Service E2E Tests
 
 The DMS Configuration Management Service E2E tests directory is `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/`.

@@ -2672,6 +2672,34 @@ internal static class ConstraintDerivationTestSchemaBuilder
     }
 
     /// <summary>
+    /// Variant of the child-reference schema augmented with a scalar identity path on BusRoute.
+    /// Required when the schema is consumed by DeriveTriggerInventoryPass, which rejects
+    /// resources with no identityJsonPaths.
+    /// </summary>
+    internal static JsonObject BuildChildReferenceProjectSchemaForTriggerDerivation()
+    {
+        var schema = BuildReferenceConstraintProjectSchemaWithChildReference();
+        var busRoute = (JsonObject)((JsonObject)schema["resourceSchemas"]!)["busRoutes"]!;
+
+        busRoute["identityJsonPaths"] = new JsonArray { "$.busRouteName" };
+        busRoute["allowIdentityUpdates"] = true;
+
+        var documentPathsMapping = (JsonObject)busRoute["documentPathsMapping"]!;
+        documentPathsMapping["BusRouteName"] = new JsonObject
+        {
+            ["isReference"] = false,
+            ["path"] = "$.busRouteName",
+        };
+
+        var jsonSchemaForInsert = (JsonObject)busRoute["jsonSchemaForInsert"]!;
+        var properties = (JsonObject)jsonSchemaForInsert["properties"]!;
+        properties["busRouteName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 };
+        jsonSchemaForInsert["required"] = new JsonArray("busRouteName");
+
+        return schema;
+    }
+
+    /// <summary>
     /// Build reference-backed collection project schema.
     /// </summary>
     internal static JsonObject BuildReferenceBackedCollectionProjectSchema()
