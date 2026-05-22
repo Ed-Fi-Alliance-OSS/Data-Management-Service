@@ -75,7 +75,7 @@ Authorization: bearer {{configToken}}
 ### Read the newly-created Vendor ID from the Location header
 @vendorLocation={{createVendor.response.headers.location}}
 
-### Retrieve the vendor so that we can extract the Id
+### Retrieve the vendor to read the Id (POST returns no body per DMS-1081; id is the last segment of the Location header)
 # @name getVendor
 GET {{vendorLocation}}
 Authorization: bearer {{configToken}}

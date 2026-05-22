@@ -375,6 +375,7 @@ function Add-Vendor {
     $webResponse = Invoke-WebRequest @webRequestParams
     $location = $webResponse.Headers['Location']
     if ($location -is [array]) { $location = $location[0] }
+    if (-not $location) { throw "CMS Add-Vendor response missing Location header" }
     return [long]($location -split '/')[-1]
 }
 

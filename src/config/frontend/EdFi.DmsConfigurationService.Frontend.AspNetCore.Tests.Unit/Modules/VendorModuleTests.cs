@@ -220,7 +220,7 @@ public class VendorModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_with_Company_key()
+        public async Task Should_return_bad_request_with_Name_field_key()
         {
             using var client = SetUpClient();
 

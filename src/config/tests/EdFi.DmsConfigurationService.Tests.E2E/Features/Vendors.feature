@@ -419,3 +419,13 @@ Feature: Vendors endpoints
                    }
                   """
               And the response body is empty
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": {id},
+                      "company": "Upsert Co",
+                      "contactName": "Updated Contact",
+                      "contactEmailAddress": "updated@example.com",
+                      "namespacePrefixes": "Test"
+                  }
+                  """

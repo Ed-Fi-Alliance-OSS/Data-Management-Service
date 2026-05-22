@@ -33,13 +33,6 @@ public class VendorModule : IEndpointModule
                         return Task.CompletedTask;
                     }
 
-                    var locationHeader = new OpenApiHeader
-                    {
-                        Description = "The absolute URL of the vendor resource.",
-                        Required = true,
-                        Schema = new OpenApiSchema { Type = JsonSchemaType.String, Format = "uri" },
-                    };
-
                     foreach (var code in new[] { "201", "200" })
                     {
                         if (
@@ -48,7 +41,12 @@ public class VendorModule : IEndpointModule
                         )
                         {
                             response.Headers ??= new Dictionary<string, IOpenApiHeader>();
-                            response.Headers["Location"] = locationHeader;
+                            response.Headers["Location"] = new OpenApiHeader
+                            {
+                                Description = "The absolute URL of the vendor resource.",
+                                Required = true,
+                                Schema = new OpenApiSchema { Type = JsonSchemaType.String, Format = "uri" },
+                            };
                         }
                     }
 
