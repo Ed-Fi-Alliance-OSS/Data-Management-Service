@@ -172,6 +172,61 @@
     "completed": true
   },
   {
+    "category": "postgresql-integration-tests",
+    "description": "Medium: PostgreSQL Slice 4 update integration tests do not exercise stored-null or proposed-missing EdOrg authorization metadata for existing-target updates. Add narrow nullable EdOrg PUT and POST-as-update coverage so PostgreSQL proves the update AUTH1 path maps stored null values to stored invalid-data metadata and finalized proposed null values to proposed element-required metadata without write side effects.",
+    "acceptance-criteria": [
+      "PostgreSQL PUT coverage seeds an existing nullable-root-EdOrg fixture with a null stored authorization subject and asserts a relationship 403 with stored-value StoredValueNull metadata.",
+      "PostgreSQL PUT coverage sends a finalized proposed nullable EdOrg value of null and asserts a relationship 403 with proposed-value ProposedValueMissing metadata.",
+      "PostgreSQL POST-as-update coverage exercises the same stored-null and proposed-missing metadata paths for an existing target when practical with the synthetic nullable fixture.",
+      "Each unauthorized nullable update assertion proves dms.Document stamps, resource rows, dms.ReferentialIdentity rows, and dms.DocumentChangeEvent counts remain unchanged.",
+      "The PostgreSQL test context exposes only the nullable update/upsert helpers needed for these scenarios and does not broaden the fixture matrix."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalPutAuthorizationTests.cs for stored-null and proposed-missing nullable PUT and POST-as-update assertions.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalPutAuthorizationTests|FullyQualifiedName~PostgresqlRelationalPostAsUpdateAuthorizationTests\".",
+      "Inspect failed PostgreSQL test diagnostics to confirm AUTH1 payload mapping distinguishes StoredValueNull, ProposedValueMissing, and NoRelationship failure kinds."
+    ],
+    "completed": false
+  },
+  {
+    "category": "profile-integration-tests",
+    "description": "Medium: Writable-profile Slice 4 provider integration coverage only proves the authorized hidden-stored EdOrg path. Add narrow PostgreSQL and SQL Server unauthorized profile-aware PUT and POST-as-update coverage so the profile merge/proposed-authorization path is proven to deny unauthorized finalized proposed EdOrg values without write side effects.",
+    "acceptance-criteria": [
+      "PostgreSQL PUT coverage runs with a BackendProfileWriteContext active and returns a relationship 403 when the finalized profile-merged proposed EdOrg value is unauthorized.",
+      "PostgreSQL POST-as-update coverage runs with a BackendProfileWriteContext active and returns a relationship 403 when the finalized profile-merged proposed EdOrg value is unauthorized.",
+      "SQL Server PUT coverage runs with a BackendProfileWriteContext active and returns a relationship 403 when the finalized profile-merged proposed EdOrg value is unauthorized.",
+      "SQL Server POST-as-update coverage runs with a BackendProfileWriteContext active and returns a relationship 403 when the finalized profile-merged proposed EdOrg value is unauthorized.",
+      "Each unauthorized profile-aware update assertion proves dms.Document stamps, resource rows, dms.ReferentialIdentity rows, and dms.DocumentChangeEvent counts remain unchanged; POST-as-update also proves the candidate DocumentUuid was not inserted.",
+      "The tests reuse the existing synthetic profile authorization fixture helpers where practical and do not expand into a broad profile matrix."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalPutAuthorizationTests.cs for unauthorized profile-aware PUT and POST-as-update no-side-effect assertions.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalPutAuthorizationTests.cs for unauthorized profile-aware PUT and POST-as-update no-side-effect assertions.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalPutAuthorizationTests|FullyQualifiedName~PostgresqlRelationalPostAsUpdateAuthorizationTests\".",
+      "Run ConnectionStrings__MssqlAdmin='Server=localhost,1434;User Id=sa;Password=<StrongPassword>;TrustServerCertificate=True;Encrypt=True' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~MssqlRelationalPutAuthorizationTests|FullyQualifiedName~MssqlRelationalPostAsUpdateAuthorizationTests\"."
+    ],
+    "completed": false
+  },
+  {
+    "category": "mssql-integration-tests",
+    "description": "Medium: SQL Server nullable Slice 4 metadata coverage stops at PUT, and the existing nullable PUT cases only assert failure metadata. Add narrow nullable EdOrg POST-as-update coverage and no-side-effect assertions for both nullable PUT and POST-as-update so SQL Server proves stored null and proposed missing AUTH1 denials abort without write artifacts.",
+    "acceptance-criteria": [
+      "Existing SQL Server nullable PUT stored-null and proposed-missing coverage asserts dms.Document stamps, resource rows, dms.ReferentialIdentity rows, and dms.DocumentChangeEvent counts remain unchanged.",
+      "SQL Server POST-as-update coverage seeds an existing nullable-root-EdOrg fixture with a null stored authorization subject and asserts a relationship 403 with stored-value StoredValueNull metadata.",
+      "SQL Server POST-as-update coverage sends a finalized proposed nullable EdOrg value of null and asserts a relationship 403 with proposed-value ProposedValueMissing metadata.",
+      "Each unauthorized nullable POST-as-update assertion proves dms.Document stamps, resource rows, dms.ReferentialIdentity rows, and dms.DocumentChangeEvent counts remain unchanged.",
+      "Each nullable POST-as-update assertion proves the incoming candidate DocumentUuid was not inserted.",
+      "The SQL Server test context reuses the nullable update/upsert helpers needed for these scenarios and does not broaden the fixture matrix."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalPutAuthorizationTests.cs for stored-null and proposed-missing nullable PUT no-side-effect assertions.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalPutAuthorizationTests.cs for stored-null and proposed-missing nullable POST-as-update assertions.",
+      "Run ConnectionStrings__MssqlAdmin='Server=localhost,1434;User Id=sa;Password=<StrongPassword>;TrustServerCertificate=True;Encrypt=True' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~MssqlRelationalPutAuthorizationTests|FullyQualifiedName~MssqlRelationalPostAsUpdateAuthorizationTests\".",
+      "Inspect failed SQL Server test diagnostics to confirm AUTH1 payload mapping distinguishes StoredValueNull, ProposedValueMissing, and NoRelationship failure kinds on the UpdateResult and UpsertResult paths."
+    ],
+    "completed": false
+  },
+  {
     "category": "mssql-integration-tests",
     "description": "Add narrow SQL Server backend integration coverage matching the PostgreSQL Slice 4 authorization scenarios, including provider-specific AUTH1 abort behavior, SQL Server EdOrg claim parameterization, If-Match precedence, inverted strategy behavior, and writable-profile merged-row authorization.",
     "acceptance-criteria": [
@@ -210,5 +265,38 @@
       "From src/dms/tests/EdFi.DataManagementService.Tests.E2E, run env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\"."
     ],
     "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Remove dead and duplicated stored relationship authorization fallback handling from DefaultRelationalWriteExecutor. Repository preflight already stops known-but-not-enabled and security-configuration results before executor entry, so the executor should not carry unreachable duplicate result/message builders for those outcomes.",
+    "acceptance-criteria": [
+      "DefaultRelationalWriteExecutor stored authorization handling only accepts the stored authorization result shapes that can reach executor entry after repository preflight.",
+      "Known-but-not-enabled and security-configuration stored authorization message/result construction has a single owner, or the executor contract explicitly fails fast if those shapes are passed unexpectedly.",
+      "No Slice 4 PUT or POST-as-update response precedence changes are introduced for no-claims, stored denial, proposed denial, missing target, stale If-Match, or security-configuration outcomes.",
+      "Any removed branches have corresponding unit coverage or assertions proving the repository preflight remains the owner for planned strategy and security-configuration failures."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs for removed unreachable KnownButNotEnabled and SecurityConfigurationError stored-auth result builders.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs to confirm PUT and POST preflight still stops known-but-not-enabled and security-configuration authorization plans before executor invocation.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalDocumentStoreRepositoryTests\"."
+    ],
+    "completed": false
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Simplify proposed relationship authorization executor plumbing by removing null-returning precedence-result ceremony and duplicated AUTH1 index helpers. The proposed authorization step should read as a side-effecting authorization gate, and stored/proposed emitted AUTH1 index selection should have one source of truth.",
+    "acceptance-criteria": [
+      "The proposed authorization helper in DefaultRelationalWriteExecutor returns Task or another non-nullable shape that reflects its side-effecting gate behavior instead of always returning null.",
+      "The executor call site no longer checks for an impossible proposed authorization precedence result.",
+      "Stored and proposed relationship authorization emitted AUTH1 index selection is consolidated into one helper or moved into the authorization plan/request data so POST and PUT index values cannot drift accidentally.",
+      "The create-new POST optimization still skips the separate proposed authorization command when there is no If-Match and authorization remains folded into insert.",
+      "Existing tests continue to prove proposed authorization runs before deferred If-Match, guarded no-op, and persistence for PUT and POST-as-update."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs for a non-null-returning proposed authorization gate and a single AUTH1 index selection path.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs and src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs to confirm emitted AUTH1 index behavior is unchanged.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalWriteNoProfilePersisterTests\"."
+    ],
+    "completed": false
   }
 ]
