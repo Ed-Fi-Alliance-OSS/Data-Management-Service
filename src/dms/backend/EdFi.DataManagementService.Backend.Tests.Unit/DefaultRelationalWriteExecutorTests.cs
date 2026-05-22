@@ -445,7 +445,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_returns_stored_relationship_no_claims_before_put_reference_resolution()
+    public async Task It_locks_existing_put_target_before_returning_stored_relationship_no_claims()
     {
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
             new ReferentialId(Guid.NewGuid()),
@@ -480,7 +480,41 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
-        _writeSessionFactory.Session.Commands.Should().BeEmpty();
+        _writeSessionFactory.Session.Commands.Should().ContainSingle();
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_when_put_target_disappears_before_stored_relationship_no_claims()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            documentReferences: [documentReference]
+        );
+        _writeSessionFactory.Session.ScalarResultToReturn = null;
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdNoClaimsAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+            );
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
@@ -517,6 +551,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.RelationshipFailure.ValueSource.Should()
             .Be(RelationshipAuthorizationFailureValueSource.Stored);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _readMaterializer.MaterializeCallCount.Should().Be(0);
         _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -581,6 +616,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
