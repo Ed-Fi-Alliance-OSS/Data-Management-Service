@@ -1202,9 +1202,6 @@ internal sealed class DescriptorWriteHandler(
         );
     }
 
-    // Descriptor writes currently stamp dms.Document manually. If descriptor stamping
-    // moves into dms.Descriptor triggers, remove the dms.Document stamp updates below
-    // in the same change; otherwise descriptor writes can double-stamp and double-journal.
     // Update SQL builders (POST as upsert-as-update)
 
     private static RelationalCommand BuildPostgresqlUpdateCommand(
@@ -1223,11 +1220,6 @@ internal sealed class DescriptorWriteHandler(
                 "Uri" = @uri
             WHERE "DocumentId" = @documentId;
 
-            UPDATE dms."Document"
-            SET "ContentVersion" = nextval('dms."ChangeVersionSequence"'),
-                "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = @documentId;
-
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -1244,11 +1236,6 @@ internal sealed class DescriptorWriteHandler(
                 [EffectiveBeginDate] = @effectiveBeginDate,
                 [EffectiveEndDate] = @effectiveEndDate,
                 [Uri] = @uri
-            WHERE [DocumentId] = @documentId;
-
-            UPDATE [dms].[Document]
-            SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
-                [ContentLastModifiedAt] = GETUTCDATE()
             WHERE [DocumentId] = @documentId;
 
             """;
@@ -1274,11 +1261,6 @@ internal sealed class DescriptorWriteHandler(
                 "EffectiveBeginDate" = @effectiveBeginDate::date,
                 "EffectiveEndDate" = @effectiveEndDate::date,
                 "Uri" = @uri
-            WHERE "DocumentId" = @documentId;
-
-            UPDATE dms."Document"
-            SET "ContentVersion" = nextval('dms."ChangeVersionSequence"'),
-                "ContentLastModifiedAt" = now()
             WHERE "DocumentId" = @documentId;
 
             INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
@@ -1311,11 +1293,6 @@ internal sealed class DescriptorWriteHandler(
                 [EffectiveBeginDate] = @effectiveBeginDate,
                 [EffectiveEndDate] = @effectiveEndDate,
                 [Uri] = @uri
-            WHERE [DocumentId] = @documentId;
-
-            UPDATE [dms].[Document]
-            SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
-                [ContentLastModifiedAt] = GETUTCDATE()
             WHERE [DocumentId] = @documentId;
 
             MERGE [dms].[ReferentialIdentity] AS target

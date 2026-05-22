@@ -596,6 +596,52 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().NotContain("sysutcdatetime()");
     }
 
+    // ── PG descriptor stamping trigger ──────────────────────────────
+
+    [Test]
+    public void It_should_create_descriptor_stamping_function()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()");
+    }
+
+    [Test]
+    public void It_should_drop_existing_descriptor_stamping_trigger_before_creating()
+    {
+        _ddl.Should()
+            .Contain("DROP TRIGGER IF EXISTS \"TR_Descriptor_Stamp_Document\" ON \"dms\".\"Descriptor\"");
+    }
+
+    [Test]
+    public void It_should_create_descriptor_stamping_trigger()
+    {
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"");
+        _ddl.Should().Contain("AFTER UPDATE ON \"dms\".\"Descriptor\"");
+        _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()");
+    }
+
+    [Test]
+    public void It_should_emit_no_op_guard_in_descriptor_stamping_function()
+    {
+        _ddl.Should().Contain("IF TG_OP = 'UPDATE' AND NOT (");
+        _ddl.Should().Contain("OLD.\"Namespace\" IS DISTINCT FROM NEW.\"Namespace\"");
+        _ddl.Should().Contain("OLD.\"CodeValue\" IS DISTINCT FROM NEW.\"CodeValue\"");
+        _ddl.Should().Contain("OLD.\"ShortDescription\" IS DISTINCT FROM NEW.\"ShortDescription\"");
+        _ddl.Should().Contain("OLD.\"Description\" IS DISTINCT FROM NEW.\"Description\"");
+        _ddl.Should().Contain("OLD.\"EffectiveBeginDate\" IS DISTINCT FROM NEW.\"EffectiveBeginDate\"");
+        _ddl.Should().Contain("OLD.\"EffectiveEndDate\" IS DISTINCT FROM NEW.\"EffectiveEndDate\"");
+        _ddl.Should().Contain("OLD.\"Discriminator\" IS DISTINCT FROM NEW.\"Discriminator\"");
+        _ddl.Should().Contain("OLD.\"Uri\" IS DISTINCT FROM NEW.\"Uri\"");
+    }
+
+    [Test]
+    public void It_should_stamp_document_from_descriptor_trigger()
+    {
+        _ddl.Should().Contain("UPDATE \"dms\".\"Document\"");
+        _ddl.Should().Contain("\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
+        _ddl.Should().Contain("\"ContentLastModifiedAt\" = now()");
+        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+    }
+
     // ── No authorization objects ─────────────────────────────────────
 
     [Test]
@@ -1121,6 +1167,81 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().NotContain("LANGUAGE plpgsql");
         _ddl.Should().NotContain("DISTINCT ON");
         _ddl.Should().NotContain("new_table");
+    }
+
+    // ── MSSQL descriptor stamping trigger ───────────────────────────
+
+    [Test]
+    public void It_should_create_or_alter_descriptor_stamping_trigger()
+    {
+        _ddl.Should().Contain("CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]");
+        _ddl.Should().Contain("ON [dms].[Descriptor]");
+        _ddl.Should().Contain("AFTER UPDATE");
+    }
+
+    [Test]
+    public void It_should_emit_go_batch_separator_around_descriptor_stamping_trigger()
+    {
+        var triggerIndex = _ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]",
+            StringComparison.Ordinal
+        );
+        triggerIndex.Should().BeGreaterThan(0);
+
+        var precedingGo = _ddl.LastIndexOf("GO\n", triggerIndex, StringComparison.Ordinal);
+        precedingGo
+            .Should()
+            .BeGreaterOrEqualTo(0, "expected GO batch separator before descriptor stamping trigger");
+
+        var trailingGo = _ddl.IndexOf("GO\n", triggerIndex, StringComparison.Ordinal);
+        trailingGo
+            .Should()
+            .BeGreaterThan(triggerIndex, "expected GO batch separator after descriptor stamping trigger");
+    }
+
+    [Test]
+    public void It_should_emit_affected_docs_cte_in_descriptor_stamping_trigger()
+    {
+        _ddl.Should().Contain(";WITH affectedDocs AS (");
+        _ddl.Should().Contain("FROM inserted i");
+        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("FROM deleted del");
+        _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
+        _ddl.Should().Contain("UNION");
+    }
+
+    [Test]
+    public void It_should_emit_null_safe_per_column_diffs_for_descriptor_stamping_trigger()
+    {
+        // String columns must be wrapped in CAST(... AS varbinary(max)) for byte-level comparison.
+        _ddl.Should()
+            .Contain("(CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max))");
+        _ddl.Should()
+            .Contain("(CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max))");
+        _ddl.Should()
+            .Contain(
+                "(CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max))"
+            );
+        _ddl.Should()
+            .Contain("(CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max))");
+        _ddl.Should()
+            .Contain(
+                "(CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max))"
+            );
+        _ddl.Should().Contain("(CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max))");
+        // Date columns must use plain <> (no CAST).
+        _ddl.Should().Contain("(i.[EffectiveBeginDate] <> del.[EffectiveBeginDate]");
+        _ddl.Should().Contain("(i.[EffectiveEndDate] <> del.[EffectiveEndDate]");
+    }
+
+    [Test]
+    public void It_should_update_document_from_descriptor_stamping_trigger()
+    {
+        _ddl.Should().Contain("UPDATE d");
+        _ddl.Should().Contain("SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
+        _ddl.Should().Contain("d.[ContentLastModifiedAt] = sysutcdatetime()");
+        _ddl.Should().Contain("FROM [dms].[Document] d");
+        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
     }
 
     // ── No authorization objects ─────────────────────────────────────
