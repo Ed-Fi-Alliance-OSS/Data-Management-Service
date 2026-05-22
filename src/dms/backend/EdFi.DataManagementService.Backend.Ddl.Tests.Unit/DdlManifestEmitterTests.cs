@@ -856,3 +856,71 @@ public class Given_DdlManifestEmitter_Emit_Manifest_Schema
             .Be("ef05371c08d966f2229348542ec66ce0eec906e411cdb9b7f4c3cd4c69bd82eb");
     }
 }
+
+[TestFixture]
+public class Given_DdlManifestEmitter_CountStatements_With_GetMaxChangeVersion_Pgsql
+{
+    private int _count;
+
+    [SetUp]
+    public void Setup()
+    {
+        var sql = """
+            CREATE OR REPLACE FUNCTION dms.GetMaxChangeVersion() RETURNS bigint AS
+            $GetMaxChangeVersion$
+            DECLARE
+                result bigint;
+            BEGIN
+                SELECT last_value FROM "dms"."ChangeVersionSequence" INTO result;
+                RETURN result;
+            END
+            $GetMaxChangeVersion$ LANGUAGE plpgsql;
+            """;
+
+        _count = DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql);
+    }
+
+    [Test]
+    public void It_should_count_function_definition_as_one_statement()
+    {
+        _count.Should().Be(1);
+    }
+}
+
+[TestFixture]
+public class Given_DdlManifestEmitter_CountStatements_With_Two_Mssql_Function_Batches
+{
+    private int _count;
+
+    [SetUp]
+    public void Setup()
+    {
+        var sql = """
+            GO
+            CREATE OR ALTER FUNCTION [dms].[GetMaxChangeVersion]()
+            RETURNS bigint
+            AS
+            BEGIN
+                DECLARE @Result bigint;
+                SELECT @Result = 1;
+                RETURN @Result;
+            END;
+            GO
+            CREATE OR ALTER FUNCTION [dms].[uuidv5](@a uniqueidentifier)
+            RETURNS uniqueidentifier
+            AS
+            BEGIN
+                RETURN @a;
+            END;
+            GO
+            """;
+
+        _count = DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql);
+    }
+
+    [Test]
+    public void It_should_count_each_function_batch_as_a_separate_statement()
+    {
+        _count.Should().Be(2);
+    }
+}
