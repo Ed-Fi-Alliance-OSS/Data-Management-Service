@@ -185,6 +185,9 @@ public abstract class SqlDialectBase : ISqlDialect
     public abstract string CreateUuidv5Function(DbSchemaName schema);
 
     /// <inheritdoc />
+    public abstract string CreateGetMaxChangeVersionFunction(DbSchemaName schema);
+
+    /// <inheritdoc />
     public abstract string CreateThrowErrorFunction(DbSchemaName schema);
 
     /// <inheritdoc />

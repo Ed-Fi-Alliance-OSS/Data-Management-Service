@@ -230,6 +230,23 @@ public interface ISqlDialect
     string CreateUuidv5Function(DbSchemaName schema);
 
     /// <summary>
+    /// Returns the DDL statement to create the <c>GetMaxChangeVersion</c> helper function in the
+    /// specified schema. The function returns the current value of
+    /// <c>dms.ChangeVersionSequence</c> as a <c>bigint</c> and is the backing query for the
+    /// <c>/changeQueries/v1/availableChangeVersions</c> endpoint.
+    /// </summary>
+    /// <remarks>
+    /// PostgreSQL emits the function name unquoted (case-folded to <c>getmaxchangeversion</c>)
+    /// so a call <c>SELECT dms.GetMaxChangeVersion()</c> resolves; the body references the
+    /// case-preserved sequence as <c>"dms"."ChangeVersionSequence"</c>. SQL Server emits
+    /// <c>[dms].[GetMaxChangeVersion]</c> with a body that reads <c>sys.sequences.current_value</c>.
+    /// SQL Server callers are responsible for surrounding <c>GO</c> batch separators.
+    /// </remarks>
+    /// <param name="schema">The schema to create the function in (typically "dms").</param>
+    /// <returns>The complete CREATE FUNCTION statement.</returns>
+    string CreateGetMaxChangeVersionFunction(DbSchemaName schema);
+
+    /// <summary>
     /// Returns the DDL statement to create the <c>throw_error</c> helper function used by
     /// batched authorization checks to abort a batch with a custom error code and message.
     /// PostgreSQL emits a <c>CREATE OR REPLACE FUNCTION</c> using <c>RAISE EXCEPTION</c>;

@@ -1135,3 +1135,52 @@ public class Given_PgsqlDialect_Rendering_Numeric_Literals
         _dialect.RenderIntegerLiteral(0).Should().Be("0");
     }
 }
+
+[TestFixture]
+public class Given_PgsqlDialect_Emitting_GetMaxChangeVersion_Function
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _ddl = dialect.CreateGetMaxChangeVersionFunction(new DbSchemaName("dms"));
+    }
+
+    [Test]
+    public void It_should_emit_create_or_replace_function_with_unquoted_name()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION dms.GetMaxChangeVersion()");
+    }
+
+    [Test]
+    public void It_should_return_bigint()
+    {
+        _ddl.Should().Contain("RETURNS bigint");
+    }
+
+    [Test]
+    public void It_should_reference_quoted_change_version_sequence()
+    {
+        _ddl.Should().Contain("\"dms\".\"ChangeVersionSequence\"");
+    }
+
+    [Test]
+    public void It_should_select_last_value_into_result_variable()
+    {
+        _ddl.Should().Contain("SELECT last_value FROM \"dms\".\"ChangeVersionSequence\" INTO result;");
+    }
+
+    [Test]
+    public void It_should_use_named_dollar_quote_tag()
+    {
+        _ddl.Should().Contain("$GetMaxChangeVersion$");
+    }
+
+    [Test]
+    public void It_should_be_plpgsql()
+    {
+        _ddl.Should().Contain("LANGUAGE plpgsql;");
+    }
+}
