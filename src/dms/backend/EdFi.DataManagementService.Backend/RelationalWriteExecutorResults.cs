@@ -74,6 +74,38 @@ internal static class RelationalWriteExecutorResults
         return BuildRelationshipAuthorizationFailureResult(operationKind, noClaimsFailure);
     }
 
+    public static RelationalWriteExecutorResult BuildPreconditionFailureResult(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureETagMisMatch()
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureETagMisMatch()
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    public static RelationalWriteExecutorResult? BuildMissingExistingDocumentReadPlanResult(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        if (request.ExistingDocumentReadPlan is not null)
+        {
+            return null;
+        }
+
+        var failureMessage = RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(
+            request.WritePlan.Model.Resource
+        );
+
+        return BuildUnknownFailureResult(request.OperationKind, failureMessage);
+    }
+
     public static int GetRelationshipAuthorizationAuth1Index(RelationalWriteOperationKind operationKind) =>
         operationKind switch
         {

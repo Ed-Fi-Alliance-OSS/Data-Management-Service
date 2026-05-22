@@ -46,19 +46,9 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalWriteFlattener _writeFlattener =
         writeFlattener ?? throw new ArgumentNullException(nameof(writeFlattener));
 
-    private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
-        currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
-
-    private readonly IRelationalCurrentEtagPreconditionChecker _currentEtagPreconditionChecker =
-        currentEtagPreconditionChecker
-        ?? throw new ArgumentNullException(nameof(currentEtagPreconditionChecker));
-
     private readonly IRelationalCommittedRepresentationReader _committedRepresentationReader =
         committedRepresentationReader
         ?? throw new ArgumentNullException(nameof(committedRepresentationReader));
-
-    private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
-        targetLookupResolver ?? throw new ArgumentNullException(nameof(targetLookupResolver));
 
     private readonly IRelationalWriteFreshnessChecker _writeFreshnessChecker =
         writeFreshnessChecker ?? throw new ArgumentNullException(nameof(writeFreshnessChecker));
@@ -81,6 +71,13 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalReadMaterializer _readMaterializer =
         readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
 
+    private readonly RelationalWriteExecutionStateResolver _executionStateResolver = new(
+        targetLookupResolver,
+        currentStateLoader,
+        currentEtagPreconditionChecker,
+        readMaterializer
+    );
+
     private readonly StoredRelationshipAuthorizationOrchestrator _storedRelationshipAuthorizationOrchestrator =
         new(
             targetLookupResolver,
@@ -88,6 +85,9 @@ internal sealed class DefaultRelationalWriteExecutor(
             relationshipAuthorizationProviderFailureExtractor
                 ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance
         );
+
+    private readonly ProposedRelationshipAuthorizationOrchestrator _proposedRelationshipAuthorizationOrchestrator =
+        new(persister);
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
         RelationalWriteExecutorRequest request,
@@ -104,7 +104,8 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteExecutorResult? writeFailureResult = null;
         var executionRequest = request;
         RelationalWriteCurrentState? currentState = null;
-        var ifMatchPreconditionEvaluation = GetIfMatchPreconditionEvaluation(request);
+        var ifMatchPreconditionEvaluation =
+            RelationalWriteExecutionStateResolver.GetIfMatchPreconditionEvaluation(request);
 
         await using var writeSession = await _writeSessionFactory
             .CreateAsync(cancellationToken)
@@ -133,7 +134,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 && ifMatchPreconditionEvaluation is IfMatchPreconditionEvaluation.BeforeProposedAuthorization
             )
             {
-                var resolvedExecutionState = await ResolveExecutionStateAsync(
+                var resolvedExecutionState = await _executionStateResolver
+                    .ResolveAsync(
                         executionRequest,
                         writeSession,
                         cancellationToken,
@@ -153,7 +155,9 @@ internal sealed class DefaultRelationalWriteExecutor(
                 if (executionRequest.TargetContext is RelationalWriteTargetContext.CreateNew)
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return BuildPreconditionFailureResult(executionRequest.OperationKind);
+                    return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        executionRequest.OperationKind
+                    );
                 }
             }
 
@@ -183,12 +187,13 @@ internal sealed class DefaultRelationalWriteExecutor(
                     ifMatchPreconditionEvaluation
                     is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
                         ? ExecutionStateResolutionOptions.DeferredIfMatch(
-                            GetExistingTargetLockMode(storedAuthorizationBoundary),
+                            storedAuthorizationBoundary,
                             postTargetReevaluation
                         )
                         : ExecutionStateResolutionOptions.Standard(postTargetReevaluation);
 
-                var resolvedExecutionState = await ResolveExecutionStateAsync(
+                var resolvedExecutionState = await _executionStateResolver
+                    .ResolveAsync(
                         executionRequest,
                         writeSession,
                         cancellationToken,
@@ -365,57 +370,28 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            if (executionRequest.ProposedRelationshipAuthorization is not null)
+            var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator
+                .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (proposedAuthorizationBoundary.ImmediateResult is not null)
             {
-                var finalizedRootRow = BuildFinalizedRootRowBuffer(executionRequest, mergeResult);
-                var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
-                    executionRequest.ProposedRelationshipAuthorization,
-                    finalizedRootRow,
-                    RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(
-                        executionRequest.OperationKind
-                    )
-                );
-
-                switch (extractionResult)
-                {
-                    case ProposedRelationshipAuthorizationExtractionResult.Ready ready:
-                        mergeResult = mergeResult with
-                        {
-                            ProposedRelationshipAuthorizationRuntimeCheck = ready.RuntimeCheck,
-                        };
-                        break;
-
-                    case ProposedRelationshipAuthorizationExtractionResult.InvalidAuthorizationPlan invalid:
-                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return BuildUnknownFailureResult(
-                            executionRequest.OperationKind,
-                            invalid.FailureMessage
-                        );
-
-                    default:
-                        throw new InvalidOperationException(
-                            $"Unsupported proposed relationship authorization extraction result '{extractionResult.GetType().Name}'."
-                        );
-                }
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return proposedAuthorizationBoundary.ImmediateResult;
             }
 
-            await AuthorizeProposedRelationshipAsync(
-                    executionRequest,
-                    mergeResult,
-                    writeSession,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            mergeResult = proposedAuthorizationBoundary.MergeResult;
 
             if (
                 ifMatchPreconditionEvaluation
                 is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             )
             {
-                var deferredPreconditionResult = TryBuildDeferredPreconditionFailureResult(
-                    executionRequest,
-                    currentState
-                );
+                var deferredPreconditionResult =
+                    _executionStateResolver.TryBuildDeferredPreconditionFailureResult(
+                        executionRequest,
+                        currentState
+                    );
 
                 if (deferredPreconditionResult is not null)
                 {
@@ -549,155 +525,6 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
-    }
-
-    private static RootWriteRowBuffer BuildFinalizedRootRowBuffer(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteMergeResult mergeResult
-    )
-    {
-        var rootTable = GetRootTableWritePlan(request.WritePlan);
-        var rootTableState = mergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
-            tableState.TableWritePlan.TableModel.Table.Equals(rootTable.TableModel.Table)
-        );
-
-        if (rootTableState is null)
-        {
-            throw new InvalidOperationException(
-                $"Relational write merge result did not include the root table '{rootTable.TableModel.Table}'."
-            );
-        }
-
-        if (rootTableState.MergedRows.Length != 1)
-        {
-            throw new InvalidOperationException(
-                $"Relational write merge result for root table '{rootTable.TableModel.Table}' "
-                    + $"included {rootTableState.MergedRows.Length} merged rows; expected exactly one."
-            );
-        }
-
-        return new RootWriteRowBuffer(rootTableState.TableWritePlan, rootTableState.MergedRows[0].Values);
-    }
-
-    private static TableWritePlan GetRootTableWritePlan(ResourceWritePlan writePlan)
-    {
-        var rootPlans = writePlan
-            .TablePlansInDependencyOrder.Where(static plan =>
-                plan.TableModel.IdentityMetadata.TableKind is DbTableKind.Root
-            )
-            .Take(2)
-            .ToArray();
-
-        return rootPlans.Length switch
-        {
-            1 => rootPlans[0],
-            0 => throw new InvalidOperationException(
-                $"Write plan for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}' does not contain a root table plan."
-            ),
-            _ => throw new InvalidOperationException(
-                $"Write plan for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}' contains multiple root table plans."
-            ),
-        };
-    }
-
-    private async Task AuthorizeProposedRelationshipAsync(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteMergeResult mergeResult,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    )
-    {
-        if (mergeResult.ProposedRelationshipAuthorizationRuntimeCheck is null)
-        {
-            return;
-        }
-
-        if (IsHandledByPostInlineAuth1(request))
-        {
-            return;
-        }
-
-        await _persister
-            .AuthorizeProposedRelationshipAsync(request, mergeResult, writeSession, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static bool IsHandledByPostInlineAuth1(RelationalWriteExecutorRequest request) =>
-        request.OperationKind is RelationalWriteOperationKind.Post
-        && request.TargetContext is RelationalWriteTargetContext.CreateNew
-        && request.WritePrecondition is not WritePrecondition.IfMatch;
-
-    private static IfMatchPreconditionEvaluation GetIfMatchPreconditionEvaluation(
-        RelationalWriteExecutorRequest request
-    ) =>
-        request.WritePrecondition is WritePrecondition.IfMatch
-        && request.ProposedRelationshipAuthorization is not null
-            ? IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
-            : IfMatchPreconditionEvaluation.BeforeProposedAuthorization;
-
-    private static ExistingTargetLockMode GetExistingTargetLockMode(
-        StoredRelationshipAuthorizationBoundary storedAuthorizationBoundary
-    ) =>
-        storedAuthorizationBoundary.ExistingTargetLocked
-            ? ExistingTargetLockMode.AlreadyLocked
-            : ExistingTargetLockMode.LockBeforeCurrentStateLoad;
-
-    private RelationalWriteExecutorResult? TryBuildDeferredPreconditionFailureResult(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteCurrentState? currentState
-    )
-    {
-        if (request.WritePrecondition is not WritePrecondition.IfMatch ifMatch)
-        {
-            return null;
-        }
-
-        if (request.TargetContext is RelationalWriteTargetContext.CreateNew)
-        {
-            return BuildPreconditionFailureResult(request.OperationKind);
-        }
-
-        if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
-        {
-            throw new InvalidOperationException(
-                $"Deferred If-Match precondition does not support target context '{request.TargetContext.GetType().Name}'."
-            );
-        }
-
-        var readPlan = request.ExistingDocumentReadPlan;
-        if (readPlan is null)
-        {
-            return TryBuildMissingExistingDocumentReadPlanResult(request);
-        }
-
-        if (currentState is null)
-        {
-            return request.OperationKind switch
-            {
-                RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpsertFailureWriteConflict()
-                ),
-                RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UpdateFailureNotExists()
-                ),
-                _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
-            };
-        }
-
-        var currentRepresentation = _readMaterializer.Materialize(
-            new RelationalReadMaterializationRequest(
-                readPlan,
-                currentState.DocumentMetadata,
-                currentState.TableRowsInDependencyOrder,
-                currentState.DescriptorRowsInPlanOrder,
-                RelationalGetRequestReadMode.ExternalResponse
-            )
-        );
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentRepresentation);
-
-        return string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal)
-            ? null
-            : BuildPreconditionFailureResult(request.OperationKind);
     }
 
     private static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
@@ -934,299 +761,6 @@ internal sealed class DefaultRelationalWriteExecutor(
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
     }
-
-    private static RelationalWriteExecutorResult BuildPreconditionFailureResult(
-        RelationalWriteOperationKind operationKind
-    )
-    {
-        return operationKind switch
-        {
-            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpsertFailureETagMisMatch()
-            ),
-            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateFailureETagMisMatch()
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
-        };
-    }
-
-    private async Task<ResolvedExecutionState> ResolveExecutionStateAsync(
-        RelationalWriteExecutorRequest request,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken,
-        ExecutionStateResolutionOptions options
-    )
-    {
-        var targetContext = request.TargetContext;
-        RelationalWriteCurrentState? currentState = null;
-        InSessionTargetResolution? inSessionTargetResolution = null;
-
-        if (
-            request.TargetRequest
-                is RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid)
-            && options.AllowPostTargetReevaluation
-            && (
-                targetContext is RelationalWriteTargetContext.CreateNew
-                || request.WritePrecondition is WritePrecondition.IfMatch
-            )
-        )
-        {
-            inSessionTargetResolution = await ResolvePostTargetAsync(
-                    request,
-                    referentialId,
-                    candidateDocumentUuid,
-                    writeSession,
-                    cancellationToken,
-                    options
-                )
-                .ConfigureAwait(false);
-        }
-        else if (targetContext is RelationalWriteTargetContext.ExistingDocument existingDocument)
-        {
-            inSessionTargetResolution = await LoadCurrentStateForExistingTargetAsync(
-                    request,
-                    existingDocument,
-                    writeSession,
-                    cancellationToken,
-                    options
-                )
-                .ConfigureAwait(false);
-        }
-
-        if (inSessionTargetResolution?.ImmediateResult is not null)
-        {
-            return new ResolvedExecutionState(request, null, inSessionTargetResolution.ImmediateResult);
-        }
-
-        if (inSessionTargetResolution?.TargetContext is not null)
-        {
-            targetContext = inSessionTargetResolution.TargetContext;
-            currentState = inSessionTargetResolution.CurrentState;
-        }
-
-        return new ResolvedExecutionState(request with { TargetContext = targetContext }, currentState, null);
-    }
-
-    private async Task<InSessionTargetResolution> ResolvePostTargetAsync(
-        RelationalWriteExecutorRequest request,
-        ReferentialId referentialId,
-        DocumentUuid candidateDocumentUuid,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken,
-        ExecutionStateResolutionOptions options
-    )
-    {
-        var targetLookupResult = await _targetLookupResolver
-            .ResolveForPostAsync(
-                request.MappingSet,
-                request.WritePlan.Model.Resource,
-                referentialId,
-                candidateDocumentUuid,
-                writeSession.Connection,
-                writeSession.Transaction,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        var targetContext = RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult);
-
-        if (targetContext is RelationalWriteTargetContext.CreateNew createdTargetContext)
-        {
-            return new InSessionTargetResolution(createdTargetContext, null, null);
-        }
-
-        if (targetContext is not RelationalWriteTargetContext.ExistingDocument existingTargetContext)
-        {
-            throw new InvalidOperationException(
-                $"Relational POST target re-evaluation returned unsupported result type '{targetLookupResult.GetType().Name}'."
-            );
-        }
-
-        return await LoadCurrentStateForExistingTargetAsync(
-                request with
-                {
-                    TargetContext = existingTargetContext,
-                },
-                existingTargetContext,
-                writeSession,
-                cancellationToken,
-                options.SuppressPostTargetReevaluation()
-            )
-            .ConfigureAwait(false);
-    }
-
-    private async Task<InSessionTargetResolution> LoadCurrentStateForExistingTargetAsync(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken,
-        ExecutionStateResolutionOptions options
-    )
-    {
-        var missingReadPlanResult = TryBuildMissingExistingDocumentReadPlanResult(request);
-
-        if (missingReadPlanResult is not null)
-        {
-            return new InSessionTargetResolution(null, null, missingReadPlanResult);
-        }
-
-        if (
-            options.IfMatchPreconditionEvaluation
-                is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
-            && options.ExistingTargetLock is ExistingTargetLockMode.LockBeforeCurrentStateLoad
-        )
-        {
-            var lockedContentVersion = await RelationalWriteTargetLocking
-                .TryLockExistingTargetAsync(
-                    request.MappingSet.Key.Dialect,
-                    targetContext.DocumentId,
-                    writeSession,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (lockedContentVersion is null)
-            {
-                return await HandleMissingExistingTargetAsync(
-                        request,
-                        writeSession,
-                        cancellationToken,
-                        options
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            targetContext = targetContext with { ObservedContentVersion = lockedContentVersion.Value };
-        }
-
-        if (
-            options.IfMatchPreconditionEvaluation is IfMatchPreconditionEvaluation.BeforeProposedAuthorization
-            && request.WritePrecondition is WritePrecondition.IfMatch ifMatch
-        )
-        {
-            var preconditionCheckResult = await _currentEtagPreconditionChecker
-                .CheckAsync(
-                    new RelationalCurrentEtagPreconditionCheckRequest(
-                        request.MappingSet,
-                        request.ExistingDocumentReadPlan!,
-                        targetContext,
-                        ifMatch
-                    ),
-                    writeSession,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (preconditionCheckResult is not null)
-            {
-                return new InSessionTargetResolution(
-                    preconditionCheckResult.TargetContext,
-                    preconditionCheckResult.CurrentState,
-                    preconditionCheckResult.IsMatch
-                        ? null
-                        : BuildPreconditionFailureResult(request.OperationKind)
-                );
-            }
-
-            return await HandleMissingExistingTargetAsync(request, writeSession, cancellationToken, options)
-                .ConfigureAwait(false);
-        }
-
-        var currentState = await _currentStateLoader
-            .LoadAsync(
-                new RelationalWriteCurrentStateLoadRequest(
-                    request.ExistingDocumentReadPlan!,
-                    targetContext,
-                    includeDescriptorProjection: request.ProfileWriteContext is not null
-                        || options.CurrentStateProjection
-                            is CurrentStateProjectionMode.IncludeDescriptorsForDeferredPrecondition
-                ),
-                writeSession,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (currentState is not null)
-        {
-            return new InSessionTargetResolution(
-                RefreshTargetContextFromCurrentState(targetContext, currentState),
-                currentState,
-                null
-            );
-        }
-
-        return await HandleMissingExistingTargetAsync(request, writeSession, cancellationToken, options)
-            .ConfigureAwait(false);
-    }
-
-    private async Task<InSessionTargetResolution> HandleMissingExistingTargetAsync(
-        RelationalWriteExecutorRequest request,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken,
-        ExecutionStateResolutionOptions options
-    )
-    {
-        return request.TargetRequest switch
-        {
-            RelationalWriteTargetRequest.Put => new InSessionTargetResolution(
-                null,
-                null,
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
-            ),
-            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
-                options.AllowPostTargetReevaluation
-                    ? await ResolvePostTargetAsync(
-                            request,
-                            referentialId,
-                            candidateDocumentUuid,
-                            writeSession,
-                            cancellationToken,
-                            options
-                        )
-                        .ConfigureAwait(false)
-                    : new InSessionTargetResolution(
-                        null,
-                        null,
-                        new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.UpsertFailureWriteConflict()
-                        )
-                    ),
-            _ => throw new InvalidOperationException(
-                $"Relational existing-target recovery does not support target request type '{request.TargetRequest.GetType().Name}'."
-            ),
-        };
-    }
-
-    private static RelationalWriteExecutorResult? TryBuildMissingExistingDocumentReadPlanResult(
-        RelationalWriteExecutorRequest request
-    )
-    {
-        if (request.ExistingDocumentReadPlan is not null)
-        {
-            return null;
-        }
-
-        var failureMessage = RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(
-            request.WritePlan.Model.Resource
-        );
-
-        return request.OperationKind switch
-        {
-            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UnknownFailure(failureMessage)
-            ),
-            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UnknownFailure(failureMessage)
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
-        };
-    }
-
-    private static RelationalWriteTargetContext.ExistingDocument RefreshTargetContextFromCurrentState(
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        RelationalWriteCurrentState currentState
-    ) => targetContext with { ObservedContentVersion = currentState.DocumentMetadata.ContentVersion };
 
     private bool TryBuildWriteFailureResult(
         RelationalWriteExecutorRequest request,
@@ -1535,83 +1069,4 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private static string BuildUnrecognizedDatabaseWriteFailureMessage(QualifiedResourceName resource) =>
         $"Relational write failed for resource '{RelationalWriteSupport.FormatResource(resource)}' because the database reported an unrecognized final write failure.";
-
-    private sealed record InSessionTargetResolution(
-        RelationalWriteTargetContext? TargetContext,
-        RelationalWriteCurrentState? CurrentState,
-        RelationalWriteExecutorResult? ImmediateResult
-    );
-
-    private sealed record ResolvedExecutionState(
-        RelationalWriteExecutorRequest ExecutionRequest,
-        RelationalWriteCurrentState? CurrentState,
-        RelationalWriteExecutorResult? ImmediateResult
-    );
-
-    private enum IfMatchPreconditionEvaluation
-    {
-        BeforeProposedAuthorization,
-        DeferredUntilAfterProposedAuthorization,
-    }
-
-    private enum ExistingTargetLockMode
-    {
-        NotRequired,
-        AlreadyLocked,
-        LockBeforeCurrentStateLoad,
-    }
-
-    private enum CurrentStateProjectionMode
-    {
-        Standard,
-        IncludeDescriptorsForDeferredPrecondition,
-    }
-
-    private sealed record ExecutionStateResolutionOptions(
-        IfMatchPreconditionEvaluation IfMatchPreconditionEvaluation,
-        ExistingTargetLockMode ExistingTargetLock,
-        CurrentStateProjectionMode CurrentStateProjection,
-        PostTargetReevaluationMode PostTargetReevaluation
-    )
-    {
-        public bool AllowPostTargetReevaluation =>
-            PostTargetReevaluation is PostTargetReevaluationMode.Allowed;
-
-        public static ExecutionStateResolutionOptions Standard(
-            PostTargetReevaluationMode postTargetReevaluation
-        ) =>
-            new(
-                IfMatchPreconditionEvaluation.BeforeProposedAuthorization,
-                ExistingTargetLockMode.NotRequired,
-                CurrentStateProjectionMode.Standard,
-                postTargetReevaluation
-            );
-
-        public static ExecutionStateResolutionOptions DeferredIfMatch(
-            ExistingTargetLockMode existingTargetLock,
-            PostTargetReevaluationMode postTargetReevaluation
-        )
-        {
-            if (existingTargetLock is ExistingTargetLockMode.NotRequired)
-            {
-                throw new ArgumentException(
-                    "Deferred If-Match current-state loading must either lock an existing target or use an existing stored-authorization lock.",
-                    nameof(existingTargetLock)
-                );
-            }
-
-            return new ExecutionStateResolutionOptions(
-                IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization,
-                existingTargetLock,
-                CurrentStateProjectionMode.IncludeDescriptorsForDeferredPrecondition,
-                postTargetReevaluation
-            );
-        }
-
-        public ExecutionStateResolutionOptions SuppressPostTargetReevaluation() =>
-            this with
-            {
-                PostTargetReevaluation = PostTargetReevaluationMode.Suppressed,
-            };
-    }
 }
