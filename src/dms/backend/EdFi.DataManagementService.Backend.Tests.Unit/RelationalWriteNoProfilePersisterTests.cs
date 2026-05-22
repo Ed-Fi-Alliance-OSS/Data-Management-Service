@@ -215,7 +215,9 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands.Should().ContainSingle();
         var command = writeSession.Commands[0];
         command.CommandText.Should().Contain("AUTH1");
-        command.CommandText.Should().Contain("@relationshipAuthorization_0_0_SchoolId IS NULL");
+        command
+            .CommandText.Should()
+            .Contain("CAST(@relationshipAuthorization_0_0_SchoolId AS bigint) IS NULL");
         GetParameterValue(command, "@relationshipAuthorization_0_0_SchoolId").Should().BeNull();
     }
 

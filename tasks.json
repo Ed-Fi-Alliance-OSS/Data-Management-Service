@@ -297,6 +297,6 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs and src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs to confirm emitted AUTH1 index behavior is unchanged.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalWriteNoProfilePersisterTests\"."
     ],
-    "completed": false
+    "completed": true
   }
 ]

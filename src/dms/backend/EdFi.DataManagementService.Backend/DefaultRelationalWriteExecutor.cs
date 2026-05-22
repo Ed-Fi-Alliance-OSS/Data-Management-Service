@@ -362,7 +362,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
                     executionRequest.ProposedRelationshipAuthorization,
                     finalizedRootRow,
-                    GetProposedRelationshipAuthorizationAuth1Index(executionRequest.OperationKind)
+                    GetRelationshipAuthorizationAuth1Index(executionRequest.OperationKind)
                 );
 
                 switch (extractionResult)
@@ -388,20 +388,13 @@ internal sealed class DefaultRelationalWriteExecutor(
                 }
             }
 
-            var proposedAuthorizationPrecedenceResult =
-                await TryBuildProposedRelationshipAuthorizationPrecedenceResultAsync(
-                        executionRequest,
-                        mergeResult,
-                        writeSession,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-            if (proposedAuthorizationPrecedenceResult is not null)
-            {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return proposedAuthorizationPrecedenceResult;
-            }
+            await AuthorizeProposedRelationshipAsync(
+                    executionRequest,
+                    mergeResult,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
             if (deferPreconditionUntilAfterProposedAuthorization)
             {
@@ -778,7 +771,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     existingTarget.DocumentId,
                     authorized.CheckSpecs,
                     authorized.ClaimEducationOrganizationIdParameterization,
-                    GetStoredRelationshipAuthorizationAuth1Index(request.OperationKind)
+                    GetRelationshipAuthorizationAuth1Index(request.OperationKind)
                 ),
                 cancellationToken
             )
@@ -835,7 +828,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 noClaims.CheckSpecs,
                 noClaims.Failures,
                 [],
-                GetStoredRelationshipAuthorizationAuth1Index(operationKind),
+                GetRelationshipAuthorizationAuth1Index(operationKind),
                 out var noClaimsFailure
             ) || noClaimsFailure is null
         )
@@ -849,21 +842,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         return BuildRelationshipAuthorizationFailureResult(operationKind, noClaimsFailure);
     }
 
-    private static int GetStoredRelationshipAuthorizationAuth1Index(
-        RelationalWriteOperationKind operationKind
-    ) =>
-        operationKind switch
-        {
-            RelationalWriteOperationKind.Post =>
-                RelationalDocumentStoreRepository.PostRelationshipAuthorizationAuth1Index,
-            RelationalWriteOperationKind.Put =>
-                RelationalDocumentStoreRepository.PutRelationshipAuthorizationAuth1Index,
-            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
-        };
-
-    private static int GetProposedRelationshipAuthorizationAuth1Index(
-        RelationalWriteOperationKind operationKind
-    ) =>
+    private static int GetRelationshipAuthorizationAuth1Index(RelationalWriteOperationKind operationKind) =>
         operationKind switch
         {
             RelationalWriteOperationKind.Post =>
@@ -922,7 +901,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         };
     }
 
-    private async Task<RelationalWriteExecutorResult?> TryBuildProposedRelationshipAuthorizationPrecedenceResultAsync(
+    private async Task AuthorizeProposedRelationshipAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
@@ -931,7 +910,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     {
         if (mergeResult.ProposedRelationshipAuthorizationRuntimeCheck is null)
         {
-            return null;
+            return;
         }
 
         if (
@@ -940,14 +919,12 @@ internal sealed class DefaultRelationalWriteExecutor(
             && request.WritePrecondition is not WritePrecondition.IfMatch
         )
         {
-            return null;
+            return;
         }
 
         await _persister
             .AuthorizeProposedRelationshipAsync(request, mergeResult, writeSession, cancellationToken)
             .ConfigureAwait(false);
-
-        return null;
     }
 
     private static bool ShouldDeferPreconditionUntilAfterProposedAuthorization(
