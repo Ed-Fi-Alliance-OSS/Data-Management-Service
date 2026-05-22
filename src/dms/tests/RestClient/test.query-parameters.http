@@ -60,7 +60,16 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@vendorAlphaId={{createVendorAlpha.response.body.id}}
+@vendorAlphaLocation={{createVendorAlpha.response.headers.location}}
+
+### Retrieve Alpha vendor so that we can extract the Id
+# @name getVendorAlpha
+GET {{vendorAlphaLocation}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+###
+@vendorAlphaId={{getVendorAlpha.response.body.id}}
 
 # @name createVendorMango
 POST http://localhost:{{configPort}}/v2/vendors

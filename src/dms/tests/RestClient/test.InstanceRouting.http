@@ -179,8 +179,17 @@ Content-Type: application/json
 }
 
 ###
+@vendorLocation={{vendor.response.headers.location}}
 
-@vendorId = {{vendor.response.body.id}}
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+###
+
+@vendorId = {{getVendor.response.body.id}}
 
 ###############################################################################
 # STEP 5: Create Application

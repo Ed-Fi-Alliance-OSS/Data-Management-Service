@@ -323,6 +323,61 @@ public class MetadataModuleTests
             .BeTrue("ApplicationResponse.enabled should be of type boolean in OpenAPI schema");
     }
 
+    [Test]
+    public async Task OpenApi_Vendor_Post_Response_Documents_Location_Header()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/openapi/v1.json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = System.Text.Json.JsonDocument.Parse(json);
+        var pathMap = doc
+            .RootElement.GetProperty("paths")
+            .EnumerateObject()
+            .ToDictionary(p => p.Name.TrimEnd('/').ToLowerInvariant(), p => p.Value);
+
+        pathMap.Should().ContainKey("/v2/vendors", "path /v2/vendors should exist in OpenAPI spec");
+        var pathItem = pathMap["/v2/vendors"];
+
+        pathItem.TryGetProperty("post", out var postOp).Should().BeTrue("POST /v2/vendors should exist");
+        var responses = postOp.GetProperty("responses");
+
+        responses
+            .TryGetProperty("201", out _)
+            .Should()
+            .BeTrue("POST /v2/vendors should define a 201 response for new resources");
+
+        responses
+            .TryGetProperty("200", out _)
+            .Should()
+            .BeTrue("POST /v2/vendors should define a 200 response for updated resources");
+
+        foreach (var code in new[] { "201", "200" })
+        {
+            responses.TryGetProperty(code, out var codeResponse).Should().BeTrue();
+            codeResponse
+                .TryGetProperty("headers", out var headers)
+                .Should()
+                .BeTrue($"{code} response should define headers");
+            headers
+                .TryGetProperty("Location", out var locationHeader)
+                .Should()
+                .BeTrue($"{code} response headers should include Location");
+            locationHeader.GetProperty("required").GetBoolean().Should().BeTrue();
+            locationHeader.GetProperty("schema").GetProperty("type").GetString().Should().Be("string");
+            locationHeader.GetProperty("schema").GetProperty("format").GetString().Should().Be("uri");
+            locationHeader.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
+        }
+    }
+
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)
     {
         return type.ValueKind switch

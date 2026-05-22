@@ -72,8 +72,17 @@ Authorization: bearer {{configToken}}
 # these below), and in some cases they restrict which records your client can
 # access ("namespace-based authorization").
 
-### Read the newly-created Vendor ID from the response body
-@vendorId={{createVendor.response.body.id}}
+### Read the newly-created Vendor ID from the Location header
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
 
 ### Create a DMS instance
 # @name createDmsInstance

@@ -362,18 +362,20 @@ function Add-Vendor {
         $headers["Tenant"] = $Tenant
     }
 
-    $invokeParams = @{
-        BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/vendors"
-        Method       = "Post"
-        ContentType  = "application/json"
-        Body         = ConvertTo-Json -InputObject $vendorData -Depth 10
-        Headers      = $headers
+    $fullUri = "$($CmsUrl.TrimEnd('/'))/v2/vendors"
+
+    $webRequestParams = @{
+        Uri         = $fullUri
+        Method      = "Post"
+        ContentType = "application/json"
+        Body        = ConvertTo-Json -InputObject $vendorData -Depth 10
+        Headers     = $headers
     }
 
-    $response = Invoke-Api @invokeParams
-
-    return $response.id
+    $webResponse = Invoke-WebRequest @webRequestParams
+    $location = $webResponse.Headers['Location']
+    if ($location -is [array]) { $location = $location[0] }
+    return [long]($location -split '/')[-1]
 }
 
 <#

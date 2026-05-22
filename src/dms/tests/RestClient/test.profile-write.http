@@ -69,7 +69,16 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@vendorId={{createVendor.response.body.id}}
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
 
 ### Step 5: DMS instance (relational backend)
 # @name createDmsInstance

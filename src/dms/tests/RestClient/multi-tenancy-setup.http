@@ -291,7 +291,16 @@ Tenant: {{tenant1Name}}
 }
 
 ###
-@vendor1Id = {{createVendor1.response.body.id}}
+@vendor1Location={{createVendor1.response.headers.location}}
+
+### Retrieve Vendor for Tenant 1 to extract the Id
+# @name getVendor1
+GET {{vendor1Location}}
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+###
+@vendor1Id={{getVendor1.response.body.id}}
 
 ### Create Application for Tenant 1 (with access to both school year instances)
 # @name createApp1
@@ -332,7 +341,16 @@ Tenant: {{tenant2Name}}
 }
 
 ###
-@vendor2Id = {{createVendor2.response.body.id}}
+@vendor2Location={{createVendor2.response.headers.location}}
+
+### Retrieve Vendor for Tenant 2 to extract the Id
+# @name getVendor2
+GET {{vendor2Location}}
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+###
+@vendor2Id={{getVendor2.response.body.id}}
 
 ### Create Application for Tenant 2
 # @name createApp2

@@ -51,8 +51,17 @@ Authorization: bearer {{configToken}}
     "namespacePrefixes": "uri://ed-fi.org"
 }
 
-### Read the newly-created Vendor ID from the response body
-@vendorId={{createVendor.response.body.id}}
+### Read the newly-created Vendor ID from the Location header
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
 
 ### Create a DMS instance
 # @name createDmsInstance

@@ -77,7 +77,7 @@ public class VendorModuleTests
         public void SetUp()
         {
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(1, true));
+                .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(
@@ -159,11 +159,93 @@ public class VendorModuleTests
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            addResponse.Headers.Location!.IsAbsoluteUri.Should().BeTrue();
             addResponse.Headers.Location!.ToString().Should().EndWith("/v2/vendors/1");
+            var addBody = await addResponse.Content.ReadAsStringAsync();
+            addBody.Should().BeEmpty();
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+    }
+
+    [TestFixture]
+    public class UpsertTests : VendorModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.Success(1, IsNewVendor: false));
+        }
+
+        [Test]
+        public async Task Should_return_200_with_location_when_vendor_already_exists()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v2/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Existing Company",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Headers.Location!.IsAbsoluteUri.Should().BeTrue();
+            response.Headers.Location!.ToString().Should().EndWith("/v2/vendors/1");
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class FailureDuplicateCompanyNameTests : VendorModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.FailureDuplicateCompanyName());
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_with_Company_key()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v2/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Existing Company",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var doc = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+            doc!["validationErrors"]!
+                ["Company"]
+                .Should()
+                .NotBeNull("field key must be 'Company', not 'Name'");
         }
     }
 
