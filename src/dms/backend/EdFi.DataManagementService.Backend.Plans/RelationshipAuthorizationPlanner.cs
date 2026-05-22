@@ -74,27 +74,52 @@ public sealed class RelationshipAuthorizationPlanner
             resource,
             configuredAuthorizationStrategies
         );
+        var createProposedCheckSpec = CreateProposedCheckSpecFactory(resource, writePlan);
 
-        return new RelationshipAuthorizationUpdatePlan(
-            PlanValues(
-                mappingSet,
-                resource,
-                configuredAuthorizationStrategies,
-                authorizationContext,
-                RelationshipAuthorizationValueSource.Stored,
-                CreateStoredCheckSpec,
-                classification
+        return classification.Outcome switch
+        {
+            RelationshipAuthorizationClassificationOutcome.NoAuthorizationRequired => CreateUpdatePlan(
+                new RelationshipAuthorizationResult.NoAuthorizationRequired(
+                    configuredAuthorizationStrategies
+                ),
+                new RelationshipAuthorizationResult.NoAuthorizationRequired(configuredAuthorizationStrategies)
             ),
-            PlanValues(
-                mappingSet,
-                resource,
-                configuredAuthorizationStrategies,
-                authorizationContext,
-                RelationshipAuthorizationValueSource.Proposed,
-                CreateProposedCheckSpecFactory(resource, writePlan),
-                classification
-            )
-        );
+            RelationshipAuthorizationClassificationOutcome.NoFurtherAuthorizationRequired => CreateUpdatePlan(
+                new RelationshipAuthorizationResult.NoFurtherAuthorizationRequired(
+                    classification.NoFurtherAuthorizationRequiredStrategies
+                ),
+                new RelationshipAuthorizationResult.NoFurtherAuthorizationRequired(
+                    classification.NoFurtherAuthorizationRequiredStrategies
+                )
+            ),
+            RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled =>
+                PlanKnownButNotEnabledUpdateStrategies(
+                    mappingSet,
+                    resource,
+                    classification,
+                    authorizationContext,
+                    createProposedCheckSpec
+                ),
+            RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError =>
+                PlanSecurityConfigurationUpdateFailures(
+                    mappingSet,
+                    resource,
+                    classification,
+                    authorizationContext,
+                    createProposedCheckSpec
+                ),
+            RelationshipAuthorizationClassificationOutcome.SupportedStrategies =>
+                PlanSupportedUpdateStrategies(
+                    mappingSet,
+                    resource,
+                    classification.SupportedStrategies,
+                    authorizationContext,
+                    createProposedCheckSpec
+                ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported relationship authorization classification outcome '{classification.Outcome}'."
+            ),
+        };
     }
 
     private RelationshipAuthorizationResult PlanValues(
@@ -278,6 +303,144 @@ public sealed class RelationshipAuthorizationPlanner
         );
     }
 
+    private RelationshipAuthorizationUpdatePlan PlanKnownButNotEnabledUpdateStrategies(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationshipAuthorizationClassification classification,
+        RelationalAuthorizationContext authorizationContext,
+        CreateCheckSpec createProposedCheckSpec
+    )
+    {
+        var knownButNotEnabledFailures = CreateKnownButNotEnabledFailures(
+            resource,
+            classification.KnownButNotEnabledStrategies
+        );
+
+        var supportedStrategySecurityConfigurationFailures =
+            TryPlanSupportedStrategyUpdateSecurityConfigurationFailures(
+                mappingSet,
+                resource,
+                classification.SupportedStrategies,
+                authorizationContext,
+                createProposedCheckSpec,
+                knownButNotEnabledFailures
+            );
+
+        return supportedStrategySecurityConfigurationFailures
+            ?? CreateKnownButNotEnabledUpdatePlan(knownButNotEnabledFailures);
+    }
+
+    private RelationshipAuthorizationUpdatePlan PlanSecurityConfigurationUpdateFailures(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationshipAuthorizationClassification classification,
+        RelationalAuthorizationContext authorizationContext,
+        CreateCheckSpec createProposedCheckSpec
+    )
+    {
+        var classificationFailures = CombineAndOrderFailures(
+            classification.SecurityConfigurationFailures,
+            CreateKnownButNotEnabledFailures(resource, classification.KnownButNotEnabledStrategies)
+        );
+
+        var supportedStrategySecurityConfigurationFailures =
+            TryPlanSupportedStrategyUpdateSecurityConfigurationFailures(
+                mappingSet,
+                resource,
+                classification.SupportedStrategies,
+                authorizationContext,
+                createProposedCheckSpec,
+                classificationFailures
+            );
+
+        return supportedStrategySecurityConfigurationFailures
+            ?? CreateSecurityConfigurationUpdatePlan(classificationFailures);
+    }
+
+    private RelationshipAuthorizationUpdatePlan? TryPlanSupportedStrategyUpdateSecurityConfigurationFailures(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        CreateCheckSpec createProposedCheckSpec,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> additionalFailures
+    )
+    {
+        if (supportedStrategies.Count == 0)
+        {
+            return null;
+        }
+
+        var supportedPlanningResult = PlanSupportedUpdateStrategies(
+            mappingSet,
+            resource,
+            supportedStrategies,
+            authorizationContext,
+            createProposedCheckSpec
+        );
+
+        if (supportedPlanningResult.SecurityConfigurationFailures.Count == 0)
+        {
+            return null;
+        }
+
+        return CreateSecurityConfigurationUpdatePlan(
+            CombineAndOrderFailures(supportedPlanningResult.SecurityConfigurationFailures, additionalFailures)
+        );
+    }
+
+    private RelationshipAuthorizationUpdatePlan PlanSupportedUpdateStrategies(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        CreateCheckSpec createProposedCheckSpec
+    )
+    {
+        var selectedEdOrgSubjects = _edOrgAuthorizationSubjectSelector.Select(
+            mappingSet,
+            resource,
+            supportedStrategies
+        );
+
+        if (
+            selectedEdOrgSubjects.Outcome
+            is RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError
+        )
+        {
+            return CreateSecurityConfigurationUpdatePlan([
+                .. OrderFailures(
+                    ApplyExecutionMetadata(
+                        selectedEdOrgSubjects.SecurityConfigurationFailures,
+                        supportedStrategies,
+                        null
+                    )
+                ),
+            ]);
+        }
+
+        return CreateUpdatePlan(
+            PlanSelectedSupportedStrategies(
+                mappingSet,
+                resource,
+                supportedStrategies,
+                authorizationContext,
+                RelationshipAuthorizationValueSource.Stored,
+                CreateStoredCheckSpec,
+                selectedEdOrgSubjects.Subjects
+            ),
+            PlanSelectedSupportedStrategies(
+                mappingSet,
+                resource,
+                supportedStrategies,
+                authorizationContext,
+                RelationshipAuthorizationValueSource.Proposed,
+                createProposedCheckSpec,
+                selectedEdOrgSubjects.Subjects
+            )
+        );
+    }
+
     private RelationshipAuthorizationResult PlanSupportedStrategies(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -309,11 +472,31 @@ public sealed class RelationshipAuthorizationPlanner
             ]);
         }
 
+        return PlanSelectedSupportedStrategies(
+            mappingSet,
+            resource,
+            supportedStrategies,
+            authorizationContext,
+            valueSource,
+            createCheckSpec,
+            selectedEdOrgSubjects.Subjects
+        );
+    }
+
+    private static RelationshipAuthorizationResult PlanSelectedSupportedStrategies(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        RelationshipAuthorizationValueSource valueSource,
+        CreateCheckSpec createCheckSpec,
+        IReadOnlyList<RelationshipAuthorizationSubject> subjects
+    )
+    {
         var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
         var rootTableModel = concreteResourceModel.RelationalModel.Root;
         var rootTable = rootTableModel.Table;
         var rootDocumentIdColumn = GetRootDocumentIdColumn(rootTableModel);
-        IReadOnlyList<RelationshipAuthorizationSubject> subjects = selectedEdOrgSubjects.Subjects;
 
         List<RelationshipAuthorizationCheckSpec> checkSpecs = [];
         List<RelationshipAuthorizationFailureMetadata> planningFailures = [];
@@ -512,6 +695,88 @@ public sealed class RelationshipAuthorizationPlanner
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> secondaryFailures
     ) => [.. OrderFailures([.. primaryFailures, .. secondaryFailures])];
 
+    private static RelationshipAuthorizationUpdatePlan CreateUpdatePlan(
+        RelationshipAuthorizationResult storedValues,
+        RelationshipAuthorizationResult proposedValues
+    ) =>
+        new(
+            storedValues,
+            proposedValues,
+            CollectSecurityConfigurationFailures(storedValues, proposedValues),
+            CollectKnownButNotEnabledFailures(storedValues, proposedValues)
+        );
+
+    private static RelationshipAuthorizationUpdatePlan CreateSecurityConfigurationUpdatePlan(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> orderedFailures =
+        [
+            .. OrderFailures(failures.DistinctBy(CreateUpdateFailureIdentity)),
+        ];
+        var result = new RelationshipAuthorizationResult.SecurityConfigurationError(orderedFailures);
+
+        return new RelationshipAuthorizationUpdatePlan(result, result, orderedFailures, []);
+    }
+
+    private static RelationshipAuthorizationUpdatePlan CreateKnownButNotEnabledUpdatePlan(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> orderedFailures =
+        [
+            .. OrderFailures(failures.DistinctBy(CreateUpdateFailureIdentity)),
+        ];
+        var result = new RelationshipAuthorizationResult.KnownButNotEnabled(orderedFailures);
+
+        return new RelationshipAuthorizationUpdatePlan(result, result, [], orderedFailures);
+    }
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CollectSecurityConfigurationFailures(
+        RelationshipAuthorizationResult storedValues,
+        RelationshipAuthorizationResult proposedValues
+    ) =>
+        [
+            .. OrderFailures(
+                new[] { storedValues, proposedValues }
+                    .OfType<RelationshipAuthorizationResult.SecurityConfigurationError>()
+                    .SelectMany(static result => result.Failures)
+                    .DistinctBy(CreateUpdateFailureIdentity)
+            ),
+        ];
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CollectKnownButNotEnabledFailures(
+        RelationshipAuthorizationResult storedValues,
+        RelationshipAuthorizationResult proposedValues
+    ) =>
+        [
+            .. OrderFailures(
+                new[] { storedValues, proposedValues }
+                    .OfType<RelationshipAuthorizationResult.KnownButNotEnabled>()
+                    .SelectMany(static result => result.Failures)
+                    .DistinctBy(CreateUpdateFailureIdentity)
+            ),
+        ];
+
+    private static (
+        RelationshipAuthorizationFailureKind FailureKind,
+        QualifiedResourceName Resource,
+        ConfiguredAuthorizationStrategy? ConfiguredStrategy,
+        int? RelationshipLocalOrder,
+        RelationshipAuthorizationAuthObject? AuthObject,
+        RelationshipAuthorizationFailureLocation? Location,
+        string? Hint
+    ) CreateUpdateFailureIdentity(RelationshipAuthorizationFailureMetadata failure) =>
+        (
+            failure.FailureKind,
+            failure.Resource,
+            failure.ConfiguredStrategy,
+            failure.RelationshipLocalOrder,
+            failure.AuthObject,
+            failure.Location,
+            failure.Hint
+        );
+
     private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateMissingProposedRootBindingFailures(
         RelationshipAuthorizationSubject subject,
         QualifiedResourceName resource,
@@ -537,7 +802,7 @@ public sealed class RelationshipAuthorizationPlanner
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> ApplyExecutionMetadata(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures,
         IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
-        RelationshipAuthorizationValueSource valueSource
+        RelationshipAuthorizationValueSource? valueSource
     )
     {
         var authObjectByStrategyIdentity = supportedStrategies.ToDictionary(

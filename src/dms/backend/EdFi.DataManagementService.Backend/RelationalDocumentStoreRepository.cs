@@ -1056,9 +1056,7 @@ public sealed class RelationalDocumentStoreRepository(
             writePlan
         );
 
-        var securityConfigurationFailures = CollectSecurityConfigurationFailures(
-            relationshipAuthorizationPlan
-        );
+        var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
 
         if (securityConfigurationFailures.Count > 0)
         {
@@ -1067,7 +1065,7 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        var knownButNotEnabledFailures = CollectKnownButNotEnabledFailures(relationshipAuthorizationPlan);
+        var knownButNotEnabledFailures = relationshipAuthorizationPlan.KnownButNotEnabledFailures;
 
         if (knownButNotEnabledFailures.Count > 0)
         {
@@ -1134,34 +1132,6 @@ public sealed class RelationalDocumentStoreRepository(
 
         return CreateUpsertRelationshipNotAuthorized(noClaimsFailure);
     }
-
-    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CollectSecurityConfigurationFailures(
-        RelationshipAuthorizationUpdatePlan relationshipAuthorizationPlan
-    ) =>
-        [
-            .. new[]
-            {
-                relationshipAuthorizationPlan.StoredValues,
-                relationshipAuthorizationPlan.ProposedValues,
-            }
-                .OfType<RelationshipAuthorizationResult.SecurityConfigurationError>()
-                .SelectMany(static result => result.Failures)
-                .Distinct(),
-        ];
-
-    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CollectKnownButNotEnabledFailures(
-        RelationshipAuthorizationUpdatePlan relationshipAuthorizationPlan
-    ) =>
-        [
-            .. new[]
-            {
-                relationshipAuthorizationPlan.StoredValues,
-                relationshipAuthorizationPlan.ProposedValues,
-            }
-                .OfType<RelationshipAuthorizationResult.KnownButNotEnabled>()
-                .SelectMany(static result => result.Failures)
-                .Distinct(),
-        ];
 
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
         System.Text.Json.Nodes.JsonNode requestBody,
