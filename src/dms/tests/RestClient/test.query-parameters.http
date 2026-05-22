@@ -65,7 +65,6 @@ Authorization: bearer {{configToken}}
 ### Retrieve Alpha vendor so that we can extract the Id
 # @name getVendorAlpha
 GET {{vendorAlphaLocation}}
-Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 ###

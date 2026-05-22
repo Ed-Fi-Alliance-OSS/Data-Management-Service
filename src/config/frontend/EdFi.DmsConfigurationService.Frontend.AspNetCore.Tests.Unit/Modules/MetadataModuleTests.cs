@@ -375,6 +375,10 @@ public class MetadataModuleTests
             locationHeader.GetProperty("schema").GetProperty("type").GetString().Should().Be("string");
             locationHeader.GetProperty("schema").GetProperty("format").GetString().Should().Be("uri");
             locationHeader.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
+            codeResponse
+                .TryGetProperty("content", out _)
+                .Should()
+                .BeFalse($"{code} response body should be empty per CMS-GAP-009");
         }
     }
 

@@ -190,7 +190,7 @@ public class AuthorizationTests
         public void SetUp()
         {
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
+                .Returns(new VendorInsertResult.Success(1, IsNewVendor: false));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(

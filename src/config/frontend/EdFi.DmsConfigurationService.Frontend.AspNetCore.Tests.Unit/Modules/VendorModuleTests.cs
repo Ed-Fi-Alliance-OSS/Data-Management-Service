@@ -243,9 +243,9 @@ public class VendorModuleTests
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var doc = JsonNode.Parse(await response.Content.ReadAsStringAsync());
             doc!["validationErrors"]!
-                ["Company"]
+                ["Name"]
                 .Should()
-                .NotBeNull("field key must be 'Company', not 'Name'");
+                .NotBeNull("field key must be 'Name' per existing contract");
         }
     }
 

@@ -57,7 +57,6 @@ Authorization: bearer {{configToken}}
 ### Retrieve the vendor so that we can extract the Id
 # @name getVendor
 GET {{vendorLocation}}
-Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 ###

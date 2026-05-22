@@ -96,7 +96,7 @@ public class VendorModule : IEndpointModule
                 FailureResponse.ForDataValidation(
                     [
                         new ValidationFailure(
-                            "Company",
+                            "Name",
                             "A vendor name already exists in the database. Please enter a unique name."
                         ),
                     ],
