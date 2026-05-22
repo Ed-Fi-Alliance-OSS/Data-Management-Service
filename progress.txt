@@ -78,3 +78,8 @@ Key decisions: proposed authorization helper is now a Task side-effecting gate; 
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteNoProfilePersisterTests.cs; tasks.json; progress.txt.
 Verification: formatted touched C# files; requested DefaultRelationalWriteExecutorTests/RelationalWriteNoProfilePersisterTests filter matched no tests; equivalent Given_Default_Relational_Write_Executor/Given_Relational_Write_No_Profile_Persister filter passed 128 tests; fixed stale PostgreSQL nullable proposed-auth SQL assertion to expect bigint cast.
 Notes next: remaining cleanup is stale ExistingResourcePostAsUpdate enum/test removal; pre-existing AUTH-PROGRESS changes remain unrelated.
+Task completed: cleanup stale POST-as-update not-implemented reason for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/04-edorg-only-put-and-post-as-update.md
+Key decisions: removed unused ExistingResourcePostAsUpdate enum member; narrowed UpsertHandler not-implemented test to still-emitted StrategyNotEnabled staging reason; confirmed stale reason is not emitted anywhere in src/dms.
+Files changed: src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpsertResult.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/UpsertHandlerTests.cs; tasks.json; progress.txt.
+Verification: formatted touched C# files; UpsertHandlerTests filter passed 20 tests; rg ExistingResourcePostAsUpdate src/dms returned no matches.
+Notes next: all tasks complete for this story; pre-existing AUTH-PROGRESS changes remain unrelated.

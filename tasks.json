@@ -298,5 +298,22 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalWriteNoProfilePersisterTests\"."
     ],
     "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Remove the stale ExistingResourcePostAsUpdate not-implemented result reason and its handler-only test fixture now that Slice 4 implements relational POST-as-update for EdOrg-only relationship authorization.",
+    "acceptance-criteria": [
+      "UpsertFailureNotImplementedReason no longer includes an ExistingResourcePostAsUpdate value that production code cannot emit.",
+      "UpsertHandlerTests no longer parameterize not-implemented response coverage over the removed ExistingResourcePostAsUpdate reason.",
+      "No POST-as-update EdOrg-only relationship authorization path returns the old existing-resource not-implemented staging reason.",
+      "Remaining not-implemented POST coverage still proves known-but-not-enabled strategy failures map to the temporary 501-style response."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpsertResult.cs for the removed ExistingResourcePostAsUpdate enum member.",
+      "Review src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/UpsertHandlerTests.cs for not-implemented response coverage that only uses still-emitted reasons.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~UpsertHandlerTests\".",
+      "Run rg \"ExistingResourcePostAsUpdate\" src/dms to confirm no stale references remain."
+    ],
+    "completed": true
   }
 ]

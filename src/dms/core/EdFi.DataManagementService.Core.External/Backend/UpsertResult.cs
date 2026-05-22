@@ -14,7 +14,6 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public enum UpsertFailureNotImplementedReason
 {
     StrategyNotEnabled,
-    ExistingResourcePostAsUpdate,
 }
 
 /// <summary>

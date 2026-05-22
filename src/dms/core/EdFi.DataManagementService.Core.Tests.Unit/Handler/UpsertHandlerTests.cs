@@ -837,29 +837,19 @@ public class UpsertHandlerTests
         }
     }
 
-    [TestFixture(UpsertFailureNotImplementedReason.StrategyNotEnabled)]
-    [TestFixture(UpsertFailureNotImplementedReason.ExistingResourcePostAsUpdate)]
+    [TestFixture]
     [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Not_Implemented : UpsertHandlerTests
     {
-        private readonly UpsertFailureNotImplementedReason _reason;
-        private readonly Repository _repository;
+        private readonly Repository _repository = new();
 
-        public Given_A_Repository_That_Returns_Failure_Not_Implemented(
-            UpsertFailureNotImplementedReason reason
-        )
-        {
-            _reason = reason;
-            _repository = new Repository(reason);
-        }
-
-        internal sealed class Repository(UpsertFailureNotImplementedReason reason)
-            : NotImplementedDocumentStoreRepository
+        internal sealed class Repository : NotImplementedDocumentStoreRepository
         {
             public const string ResponseBody =
                 "Relational POST authorization is not implemented for this authorization path.";
 
-            public UpsertFailureNotImplemented Response { get; } = new(ResponseBody, reason);
+            public UpsertFailureNotImplemented Response { get; } =
+                new(ResponseBody, UpsertFailureNotImplementedReason.StrategyNotEnabled);
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
@@ -903,7 +893,7 @@ public class UpsertHandlerTests
         [Test]
         public void It_carries_the_staging_reason()
         {
-            _repository.Response.Reason.Should().Be(_reason);
+            _repository.Response.Reason.Should().Be(UpsertFailureNotImplementedReason.StrategyNotEnabled);
         }
     }
 
