@@ -480,6 +480,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _writeSessionFactory.Session.Commands.Should().BeEmpty();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);

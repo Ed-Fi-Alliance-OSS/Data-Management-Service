@@ -570,6 +570,16 @@ internal sealed class DefaultRelationalWriteExecutor(
             );
         }
 
+        if (TryBuildPutStoredNoClaimsAuthorizationResult(request) is { } noClaimsResult)
+        {
+            return new StoredRelationshipAuthorizationBoundary(
+                request,
+                noClaimsResult,
+                PostTargetReevaluation: PostTargetReevaluationMode.Allowed,
+                ExistingTargetLocked: false
+            );
+        }
+
         var targetResolution = await ResolveStoredRelationshipAuthorizationTargetAsync(
                 request,
                 writeSession,
@@ -627,6 +637,14 @@ internal sealed class DefaultRelationalWriteExecutor(
                 targetResolution.ExistingTargetLocked
             );
     }
+
+    private static RelationalWriteExecutorResult? TryBuildPutStoredNoClaimsAuthorizationResult(
+        RelationalWriteExecutorRequest request
+    ) =>
+        request.OperationKind is RelationalWriteOperationKind.Put
+        && request.StoredRelationshipAuthorization is RelationshipAuthorizationResult.NoClaims noClaims
+            ? BuildNoClaimsStoredRelationshipAuthorizationResult(request.OperationKind, noClaims)
+            : null;
 
     private async Task<StoredRelationshipAuthorizationTargetResolution> ResolveStoredRelationshipAuthorizationTargetAsync(
         RelationalWriteExecutorRequest request,

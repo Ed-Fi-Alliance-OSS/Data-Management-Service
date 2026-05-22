@@ -1345,10 +1345,40 @@ public sealed class RelationalDocumentStoreRepository(
     {
         private WriteGuardRailPreflightResult() { }
 
-        public sealed record Continue(
-            RelationshipAuthorizationResult? StoredRelationshipAuthorization,
-            RelationshipAuthorizationResult.Authorized? ProposedRelationshipAuthorization
-        ) : WriteGuardRailPreflightResult<TResult>;
+        public sealed record Continue : WriteGuardRailPreflightResult<TResult>
+        {
+            public Continue(
+                RelationshipAuthorizationResult? storedRelationshipAuthorization,
+                RelationshipAuthorizationResult.Authorized? proposedRelationshipAuthorization
+            )
+            {
+                ValidateStoredRelationshipAuthorization(storedRelationshipAuthorization);
+                StoredRelationshipAuthorization = storedRelationshipAuthorization;
+                ProposedRelationshipAuthorization = proposedRelationshipAuthorization;
+            }
+
+            public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; }
+
+            public RelationshipAuthorizationResult.Authorized? ProposedRelationshipAuthorization { get; }
+
+            private static void ValidateStoredRelationshipAuthorization(
+                RelationshipAuthorizationResult? storedRelationshipAuthorization
+            )
+            {
+                switch (storedRelationshipAuthorization)
+                {
+                    case RelationshipAuthorizationResult.KnownButNotEnabled:
+                        throw new InvalidOperationException(
+                            "Known-but-not-enabled stored relationship authorization results must be stopped by repository preflight."
+                        );
+
+                    case RelationshipAuthorizationResult.SecurityConfigurationError:
+                        throw new InvalidOperationException(
+                            "Security-configuration stored relationship authorization results must be stopped by repository preflight."
+                        );
+                }
+            }
+        }
 
         public sealed record Stop(TResult Result) : WriteGuardRailPreflightResult<TResult>;
     }
