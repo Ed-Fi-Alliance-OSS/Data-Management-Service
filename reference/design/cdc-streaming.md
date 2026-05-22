@@ -54,9 +54,8 @@ The system will detect changes in the primary data table and publish them to a
 Kafka topic. These messages must have a structure that is easily consumable by
 the sink connector for loading, updating, and deleting from the search database.
 
-The reference implementation Kubernetes deployment for the Data Management
-Service will include Kafka 3.7, packaged by Debezium under its version number
-2.7. This sample setup will also include the [Kafdrop user
+The reference implementation Docker Compose deployment for the Data Management
+Service will include Kafka 3.9. This sample setup will also include the [Kafdrop user
 interface](https://github.com/obsidiandynamics/kafdrop) for browsing topics and
 messages.
 
