@@ -40,8 +40,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
     public async Task<ResolvedExecutionState> ResolveAsync(
         RelationalWriteExecutorRequest request,
         IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken,
-        ExecutionStateResolutionOptions options
+        ExecutionStateResolutionOptions options,
+        CancellationToken cancellationToken
     )
     {
         var targetContext = request.TargetContext;
@@ -63,8 +63,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
                     referentialId,
                     candidateDocumentUuid,
                     writeSession,
-                    cancellationToken,
-                    options
+                    options,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
         }
@@ -74,8 +74,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
                     request,
                     existingDocument,
                     writeSession,
-                    cancellationToken,
-                    options
+                    options,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
         }
@@ -157,8 +157,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
         ReferentialId referentialId,
         DocumentUuid candidateDocumentUuid,
         IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken,
-        ExecutionStateResolutionOptions options
+        ExecutionStateResolutionOptions options,
+        CancellationToken cancellationToken
     )
     {
         var targetLookupResult = await _targetLookupResolver
@@ -194,8 +194,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 },
                 existingTargetContext,
                 writeSession,
-                cancellationToken,
-                options.SuppressPostTargetReevaluation()
+                options.SuppressPostTargetReevaluation(),
+                cancellationToken
             )
             .ConfigureAwait(false);
     }
@@ -204,8 +204,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
         RelationalWriteExecutorRequest request,
         RelationalWriteTargetContext.ExistingDocument targetContext,
         IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken,
-        ExecutionStateResolutionOptions options
+        ExecutionStateResolutionOptions options,
+        CancellationToken cancellationToken
     )
     {
         var missingReadPlanResult = RelationalWriteExecutorResults.BuildMissingExistingDocumentReadPlanResult(
@@ -237,8 +237,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 return await HandleMissingExistingTargetAsync(
                         request,
                         writeSession,
-                        cancellationToken,
-                        options
+                        options,
+                        cancellationToken
                     )
                     .ConfigureAwait(false);
             }
@@ -275,7 +275,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 );
             }
 
-            return await HandleMissingExistingTargetAsync(request, writeSession, cancellationToken, options)
+            return await HandleMissingExistingTargetAsync(request, writeSession, options, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -302,15 +302,15 @@ internal sealed class RelationalWriteExecutionStateResolver(
             );
         }
 
-        return await HandleMissingExistingTargetAsync(request, writeSession, cancellationToken, options)
+        return await HandleMissingExistingTargetAsync(request, writeSession, options, cancellationToken)
             .ConfigureAwait(false);
     }
 
     private async Task<InSessionTargetResolution> HandleMissingExistingTargetAsync(
         RelationalWriteExecutorRequest request,
         IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken,
-        ExecutionStateResolutionOptions options
+        ExecutionStateResolutionOptions options,
+        CancellationToken cancellationToken
     )
     {
         return request.TargetRequest switch
@@ -327,8 +327,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
                             referentialId,
                             candidateDocumentUuid,
                             writeSession,
-                            cancellationToken,
-                            options
+                            options,
+                            cancellationToken
                         )
                         .ConfigureAwait(false)
                     : new InSessionTargetResolution(

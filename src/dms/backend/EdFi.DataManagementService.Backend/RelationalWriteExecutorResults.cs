@@ -3,8 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
+using JsonObject = System.Text.Json.Nodes.JsonObject;
+using JsonValue = System.Text.Json.Nodes.JsonValue;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -74,6 +80,170 @@ internal static class RelationalWriteExecutorResults
         return BuildRelationshipAuthorizationFailureResult(operationKind, noClaimsFailure);
     }
 
+    public static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
+        RelationalWriteOperationKind operationKind,
+        DocumentUuid documentUuid,
+        JsonNode committedResponse
+    )
+    {
+        var etag = GetCommittedResponseEtag(committedResponse);
+
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpdateSuccess(documentUuid, etag),
+                RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(documentUuid, etag),
+                RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    public static RelationalWriteExecutorResult BuildAppliedWriteSuccessResult(
+        RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetContext targetContext,
+        RelationalWritePersistResult persistedTarget,
+        JsonNode committedResponse
+    )
+    {
+        var etag = GetCommittedResponseEtag(committedResponse);
+        var documentUuid = persistedTarget.DocumentUuid;
+
+        return (operationKind, targetContext) switch
+        {
+            (RelationalWriteOperationKind.Post, RelationalWriteTargetContext.CreateNew) =>
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.InsertSuccess(documentUuid, etag),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                ),
+            (RelationalWriteOperationKind.Post, RelationalWriteTargetContext.ExistingDocument) =>
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpdateSuccess(documentUuid, etag),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                ),
+            (RelationalWriteOperationKind.Put, RelationalWriteTargetContext.ExistingDocument) =>
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateSuccess(documentUuid, etag),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                ),
+            _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
+        };
+    }
+
+    public static RelationalWriteExecutorResult BuildStaleNoOpCompareResult(
+        RelationalWriteOperationKind operationKind,
+        WritePrecondition writePrecondition
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writePrecondition);
+        var hasIfMatchPrecondition = writePrecondition is WritePrecondition.IfMatch;
+
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post when hasIfMatchPrecondition =>
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureETagMisMatch(),
+                    RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                ),
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureWriteConflict(),
+                RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+            ),
+            RelationalWriteOperationKind.Put when hasIfMatchPrecondition =>
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureETagMisMatch(),
+                    RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureWriteConflict(),
+                RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    public static RelationalWriteExecutorResult BuildReferenceFailureResult(
+        RelationalWriteOperationKind operationKind,
+        ResolvedReferenceSet resolvedReferences
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureReference(
+                    [.. resolvedReferences.InvalidDocumentReferences],
+                    [.. resolvedReferences.InvalidDescriptorReferences]
+                )
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureReference(
+                    [.. resolvedReferences.InvalidDocumentReferences],
+                    [.. resolvedReferences.InvalidDescriptorReferences]
+                )
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    public static RelationalWriteExecutorResult BuildValidationFailureResult(
+        RelationalWriteOperationKind operationKind,
+        WriteValidationFailure[] validationFailures
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureValidation(validationFailures)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureValidation(validationFailures)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    public static RelationalWriteExecutorResult BuildProfileCreatabilityRejectionResult(
+        RelationalWriteOperationKind operationKind,
+        string profileName
+    ) =>
+        operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureProfileDataPolicy(profileName)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureProfileDataPolicy(profileName)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+
+    public static RelationalWriteExecutorResult BuildProfileContractMismatchResult(
+        RelationalWriteOperationKind operationKind,
+        ProfileFailure[] failures
+    )
+    {
+        var message = $"Profile write contract mismatch: {failures[0].Message}";
+        return BuildUnknownFailureResult(operationKind, message);
+    }
+
+    /// <summary>
+    /// Shapes a planner-emitted <see cref="ProfilePlannerContractMismatchException"/> as a
+    /// profile contract-mismatch result. The leading <c>"Profile write contract mismatch:"</c>
+    /// prefix matches <see cref="BuildProfileContractMismatchResult"/> so callers cannot tell
+    /// upfront-validator failures from planner-driven failures by message shape.
+    /// </summary>
+    public static RelationalWriteExecutorResult BuildPlannerContractMismatchResult(
+        RelationalWriteOperationKind operationKind,
+        ProfilePlannerContractMismatchException exception
+    )
+    {
+        var message = $"Profile write contract mismatch: {exception.Message}";
+        return BuildUnknownFailureResult(operationKind, message);
+    }
+
     public static RelationalWriteExecutorResult BuildPreconditionFailureResult(
         RelationalWriteOperationKind operationKind
     )
@@ -115,4 +285,23 @@ internal static class RelationalWriteExecutorResults
                 RelationalDocumentStoreRepository.PutRelationshipAuthorizationAuth1Index,
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
+
+    private static string GetCommittedResponseEtag(JsonNode committedResponse)
+    {
+        ArgumentNullException.ThrowIfNull(committedResponse);
+
+        if (
+            committedResponse is not JsonObject documentObject
+            || documentObject["_etag"] is not JsonValue etagValue
+            || !etagValue.TryGetValue(out string? etag)
+            || string.IsNullOrWhiteSpace(etag)
+        )
+        {
+            throw new InvalidOperationException(
+                "Committed relational write readback did not produce an external response _etag."
+            );
+        }
+
+        return etag;
+    }
 }
