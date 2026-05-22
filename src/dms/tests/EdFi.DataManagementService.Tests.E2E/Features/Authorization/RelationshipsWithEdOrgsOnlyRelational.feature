@@ -610,6 +610,59 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
 
         @relational-backend
         @relational-ci-shard-3
+        Scenario: PUT returns forbidden and leaves the academic week unchanged when proposed authorization fails
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001, 255901222"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution     | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Authorized school     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901222 | Proposed denied school | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "weekIdentifier": "put proposed forbidden",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2023-08-29",
+                      "endDate": "2023-09-04",
+                      "totalInstructionalDays": 5
+                  }
+                  """
+             Then it should respond with 201 or 200
+             When the resulting id is stored in the "putProposedForbiddenAcademicWeekId" variable
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
+             When a PUT request is made to "/ed-fi/academicWeeks/{putProposedForbiddenAcademicWeekId}" with
+                  """
+                  {
+                      "id": "{putProposedForbiddenAcademicWeekId}",
+                      "weekIdentifier": "put proposed forbidden",
+                      "schoolReference": {
+                          "schoolId": 255901222
+                      },
+                      "beginDate": "2023-08-29",
+                      "endDate": "2023-09-04",
+                      "totalInstructionalDays": 6
+                  }
+                  """
+             Then it should respond with 403
+             When a GET request is made to "/ed-fi/academicWeeks/{putProposedForbiddenAcademicWeekId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "weekIdentifier": "put proposed forbidden",
+                      "beginDate": "2023-08-29",
+                      "endDate": "2023-09-04",
+                      "totalInstructionalDays": 5,
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: POST-as-update succeeds when the caller is authorized for the existing academic week school
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -655,6 +708,78 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
                       "schoolReference": {
                           "schoolId": 255901001
                       }
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: POST-as-update succeeds through the inverted strategy when a school claim updates its parent local education agency
+            # Use broader setup access only to seed the state/LEA/school hierarchy for this scenario.
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 202, 20201"
+              And the system has these "stateEducationAgencies"
+                  | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
+                  | 2                      | Test state        | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#State" }] |
+              And the system has these descriptors
+                  | descriptorValue                                                            |
+                  | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District       |
+                  | uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC                  |
+             When a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 202,
+                      "nameOfInstitution": "POST update inverted LEA",
+                      "stateEducationAgencyReference": {
+                          "stateEducationAgencyId": 2
+                      },
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+                  }
+                  """
+             Then it should respond with 201
+             When the resulting id is stored in the "postUpdateInvertedLeaId" variable
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
+                  | 20201    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | { "localEducationAgencyId": 202} |
+            # Switch to the narrower inverted claim set under test before issuing the POST-as-update.
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet" is authorized with educationOrganizationIds "20201"
+             When a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 202,
+                      "nameOfInstitution": "POST update inverted LEA updated",
+                      "stateEducationAgencyReference": {
+                          "stateEducationAgencyId": 2
+                      },
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+                  }
+                  """
+             Then it should respond with 200
+             When a GET request is made to "/ed-fi/localEducationAgencies/{postUpdateInvertedLeaId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "localEducationAgencyId": 202,
+                      "nameOfInstitution": "POST update inverted LEA updated",
+                      "stateEducationAgencyReference": {
+                          "stateEducationAgencyId": 2
+                      },
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
                   }
                   """
 
