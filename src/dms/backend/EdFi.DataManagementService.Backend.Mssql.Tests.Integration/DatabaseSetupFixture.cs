@@ -40,7 +40,9 @@ public class DatabaseSetupFixture
         var schema = new DbSchemaName("dms");
 
         var createSchema = dialect.CreateSchemaIfNotExists(schema);
-        var createFunction = dialect.CreateUuidv5Function(schema);
+        var createSequence = dialect.CreateSequenceIfNotExists(schema, "ChangeVersionSequence");
+        var createGetMax = dialect.CreateGetMaxChangeVersionFunction(schema);
+        var createUuidv5 = dialect.CreateUuidv5Function(schema);
 
         await using SqlConnection connection = new(connectionString);
         await connection.OpenAsync();
@@ -51,8 +53,19 @@ public class DatabaseSetupFixture
             await cmd.ExecuteNonQueryAsync();
         }
 
-        // CREATE OR ALTER FUNCTION must be in its own batch — no transaction needed
-        await using (var cmd = new SqlCommand(createFunction, connection))
+        // Sequence must exist before GetMaxChangeVersion is invoked.
+        await using (var cmd = new SqlCommand(createSequence, connection))
+        {
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Each CREATE OR ALTER FUNCTION goes in its own SqlCommand (no GO in command text).
+        await using (var cmd = new SqlCommand(createGetMax, connection))
+        {
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var cmd = new SqlCommand(createUuidv5, connection))
         {
             await cmd.ExecuteNonQueryAsync();
         }
