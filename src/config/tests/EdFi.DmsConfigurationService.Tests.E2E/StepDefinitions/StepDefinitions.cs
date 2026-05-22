@@ -415,7 +415,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     public async Task ThenTheResponseBodyIsEmpty()
     {
         string content = await _apiResponse.TextAsync();
-        content.Should().BeNullOrEmpty("POST response body should be empty per CMS-GAP-009");
+        content.Should().BeNullOrEmpty("response body should be empty per CMS-GAP-009");
     }
 
     [Then("the response body should not contain {string}")]

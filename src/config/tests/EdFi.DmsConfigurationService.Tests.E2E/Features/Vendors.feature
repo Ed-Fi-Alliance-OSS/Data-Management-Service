@@ -395,6 +395,12 @@ Feature: Vendors endpoints
                    }
                   """
              Then it should respond with 201
+              And the response headers include
+                  """
+                    {
+                        "location": "/v2/vendors/{vendorId}"
+                    }
+                  """
               And the response body is empty
              When a POST request is made to "/v2/vendors" with
                   """

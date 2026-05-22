@@ -320,7 +320,7 @@ function Get-CmsToken {
         The Keycloak bearer token for authorization (mandatory).
 
     .OUTPUTS
-        [string] Returns the vendor ID of the newly created or updated vendor.
+        [long] Returns the vendor ID of the newly created or updated vendor.
 
     .EXAMPLE
         # Create or update a vendor
