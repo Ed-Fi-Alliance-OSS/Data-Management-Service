@@ -186,7 +186,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalPutAuthorizationTests|FullyQualifiedName~PostgresqlRelationalPostAsUpdateAuthorizationTests\".",
       "Inspect failed PostgreSQL test diagnostics to confirm AUTH1 payload mapping distinguishes StoredValueNull, ProposedValueMissing, and NoRelationship failure kinds."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "profile-integration-tests",

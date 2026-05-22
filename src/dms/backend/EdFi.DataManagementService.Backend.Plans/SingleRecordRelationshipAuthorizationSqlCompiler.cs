@@ -642,16 +642,17 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.AppendLine($"{strategyOrdinal},");
             writer.AppendLine($"{subjectOrdinal},");
             writer.Append("CASE WHEN ");
-            writer.AppendParameter(proposedValueParameterName);
+            AppendProposedSubjectValueSql(writer, proposedValueParameterName);
             writer.Append(" IS NULL THEN 'p' ELSE 'n' END,");
             writer.AppendLine();
             writer.Append("CASE WHEN ");
-            writer.AppendParameter(proposedValueParameterName);
+            AppendProposedSubjectValueSql(writer, proposedValueParameterName);
             writer.Append(" IS NULL OR NOT ");
             AppendAuthorizationSuccessSql(
                 writer,
                 checkSpec,
-                subjectValueWriter => subjectValueWriter.AppendParameter(proposedValueParameterName),
+                subjectValueWriter =>
+                    AppendProposedSubjectValueSql(subjectValueWriter, proposedValueParameterName),
                 authorizationClaimParameterization,
                 authAlias
             );
@@ -659,6 +660,19 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         }
 
         writer.AppendLine();
+    }
+
+    private static void AppendProposedSubjectValueSql(SqlWriter writer, string proposedValueParameterName)
+    {
+        if (writer.Dialect.Rules.Dialect is SqlDialect.Pgsql)
+        {
+            writer.Append("CAST(");
+            writer.AppendParameter(proposedValueParameterName);
+            writer.Append(" AS bigint)");
+            return;
+        }
+
+        writer.AppendParameter(proposedValueParameterName);
     }
 
     private static void AppendAuthorizationSuccessSql(

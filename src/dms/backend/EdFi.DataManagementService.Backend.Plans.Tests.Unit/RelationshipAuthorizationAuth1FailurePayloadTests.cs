@@ -722,24 +722,28 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should().Contain("\"dms\".\"throw_error\"('AUTH1'");
         plan.AuthorizationSql.Should().Contain("CONCAT('1|', '8|', COUNT(1)::text, '|'");
         plan.AuthorizationSql.Should()
-            .Contain("CASE WHEN @relationshipAuthorization_0_0_schoolId IS NULL THEN 'p' ELSE 'n' END");
-        plan.AuthorizationSql.Should()
             .Contain(
-                "CASE WHEN @relationshipAuthorization_0_0_schoolId IS NULL OR NOT (@relationshipAuthorization_0_0_schoolId = ANY(@ClaimEducationOrganizationIds) OR EXISTS (SELECT 1 FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" a0_0 WHERE a0_0.\"TargetEducationOrganizationId\" = @relationshipAuthorization_0_0_schoolId AND a0_0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))) THEN 1 ELSE 0 END"
+                "CASE WHEN CAST(@relationshipAuthorization_0_0_schoolId AS bigint) IS NULL THEN 'p' ELSE 'n' END"
             );
         plan.AuthorizationSql.Should()
-            .Contain("\"TargetEducationOrganizationId\" = @relationshipAuthorization_0_0_schoolId");
+            .Contain(
+                "CASE WHEN CAST(@relationshipAuthorization_0_0_schoolId AS bigint) IS NULL OR NOT (CAST(@relationshipAuthorization_0_0_schoolId AS bigint) = ANY(@ClaimEducationOrganizationIds) OR EXISTS (SELECT 1 FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" a0_0 WHERE a0_0.\"TargetEducationOrganizationId\" = CAST(@relationshipAuthorization_0_0_schoolId AS bigint) AND a0_0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))) THEN 1 ELSE 0 END"
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "\"TargetEducationOrganizationId\" = CAST(@relationshipAuthorization_0_0_schoolId AS bigint)"
+            );
         plan.AuthorizationSql.Should()
             .Contain("\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
         plan.AuthorizationSql.Should()
             .Contain(
-                "\"SourceEducationOrganizationId\" = @relationshipAuthorization_2_0_educationServiceCenterId"
+                "\"SourceEducationOrganizationId\" = CAST(@relationshipAuthorization_2_0_educationServiceCenterId AS bigint)"
             );
         plan.AuthorizationSql.Should()
             .Contain("\"TargetEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
         plan.AuthorizationSql.Should()
             .Contain(
-                "@relationshipAuthorization_2_0_educationServiceCenterId = ANY(@ClaimEducationOrganizationIds)"
+                "CAST(@relationshipAuthorization_2_0_educationServiceCenterId AS bigint) = ANY(@ClaimEducationOrganizationIds)"
             );
         plan.AuthorizationSql.Should()
             .Contain(

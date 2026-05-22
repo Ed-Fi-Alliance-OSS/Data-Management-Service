@@ -418,6 +418,69 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
     }
 
     [Test]
+    public async Task It_maps_stored_null_put_failure_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    {
+        var existingSeed = new AuthorizationNullableSeed(
+            new DocumentUuid(Guid.Parse("cccccccc-1111-0000-0000-000000000010")),
+            410,
+            "stored-null-existing"
+        );
+        var proposedSeed = existingSeed with { Name = "stored-null-change", NullableSchoolId = 100 };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationNullableAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationNullableSideEffectStateAsync(existingSeed.DocumentUuid);
+
+        var result = await _context.UpdateAuthorizationNullableByIdAsync(
+            proposedSeed,
+            existingSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
+        );
+
+        AssertUpdateRelationshipDenied(
+            result,
+            RelationshipAuthorizationFailureValueSource.Stored,
+            RelationshipAuthorizationSubjectFailureKind.StoredValueNull
+        );
+        var after = await _context.ReadAuthorizationNullableSideEffectStateAsync(existingSeed.DocumentUuid);
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
+    [Test]
+    public async Task It_maps_proposed_missing_put_failure_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    {
+        var existingSeed = new AuthorizationNullableSeed(
+            new DocumentUuid(Guid.Parse("cccccccc-1111-0000-0000-000000000011")),
+            411,
+            "proposed-missing-existing",
+            100
+        );
+        var proposedSeed = existingSeed with { Name = "proposed-missing-change", NullableSchoolId = null };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationNullableAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationNullableSideEffectStateAsync(existingSeed.DocumentUuid);
+
+        var result = await _context.UpdateAuthorizationNullableByIdAsync(
+            proposedSeed,
+            existingSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
+        );
+
+        AssertUpdateRelationshipDenied(
+            result,
+            RelationshipAuthorizationFailureValueSource.Proposed,
+            RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing
+        );
+        var after = await _context.ReadAuthorizationNullableSideEffectStateAsync(existingSeed.DocumentUuid);
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
+    [Test]
     public async Task It_denies_proposed_value_put_and_leaves_document_resource_identity_and_journal_rows_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
@@ -453,9 +516,18 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
 
     private static void AssertUpdateRelationshipDenied(
         UpdateResult result,
-        RelationshipAuthorizationFailureValueSource expectedValueSource
+        RelationshipAuthorizationFailureValueSource expectedValueSource,
+        RelationshipAuthorizationSubjectFailureKind expectedFailureKind =
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
     )
     {
+        if (result is UpdateResult.UnknownFailure unknownFailure)
+        {
+            Assert.Fail(
+                $"Expected relationship denial but received unknown failure: {unknownFailure.FailureMessage}"
+            );
+        }
+
         var failure = result.Should().BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>().Subject;
         failure.RelationshipFailure.ValueSource.Should().Be(expectedValueSource);
         failure
@@ -466,7 +538,7 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
             .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
             .Select(static subject => subject.FailureKind)
             .Should()
-            .Contain(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+            .Contain(expectedFailureKind);
     }
 
     private static void AssertRootRow(
@@ -842,6 +914,79 @@ public class Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_S
     }
 
     [Test]
+    public async Task It_maps_stored_null_post_as_update_failure_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    {
+        var existingSeed = new AuthorizationNullableSeed(
+            new DocumentUuid(Guid.Parse("cccccccc-2222-0000-0000-000000000010")),
+            510,
+            "stored-null-existing"
+        );
+        var candidateSeed = existingSeed with
+        {
+            DocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-2222-0000-0000-000000000010")),
+            Name = "stored-null-change",
+            NullableSchoolId = 100,
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationNullableAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationNullableSideEffectStateAsync(existingSeed.DocumentUuid);
+
+        var result = await _context.UpsertAuthorizationNullableAsync(
+            candidateSeed,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
+        );
+
+        AssertUpsertRelationshipDenied(
+            result,
+            RelationshipAuthorizationFailureValueSource.Stored,
+            RelationshipAuthorizationSubjectFailureKind.StoredValueNull
+        );
+        var after = await _context.ReadAuthorizationNullableSideEffectStateAsync(existingSeed.DocumentUuid);
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+        (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_maps_proposed_missing_post_as_update_failure_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    {
+        var existingSeed = new AuthorizationNullableSeed(
+            new DocumentUuid(Guid.Parse("cccccccc-2222-0000-0000-000000000011")),
+            511,
+            "proposed-missing-existing",
+            100
+        );
+        var candidateSeed = existingSeed with
+        {
+            DocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-2222-0000-0000-000000000011")),
+            Name = "proposed-missing-change",
+            NullableSchoolId = null,
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationNullableAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationNullableSideEffectStateAsync(existingSeed.DocumentUuid);
+
+        var result = await _context.UpsertAuthorizationNullableAsync(
+            candidateSeed,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
+        );
+
+        AssertUpsertRelationshipDenied(
+            result,
+            RelationshipAuthorizationFailureValueSource.Proposed,
+            RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing
+        );
+        var after = await _context.ReadAuthorizationNullableSideEffectStateAsync(existingSeed.DocumentUuid);
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+        (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
+    }
+
+    [Test]
     public async Task It_denies_proposed_value_post_as_update_and_leaves_document_resource_identity_and_journal_rows_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
@@ -878,9 +1023,18 @@ public class Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_S
 
     private static void AssertUpsertRelationshipDenied(
         UpsertResult result,
-        RelationshipAuthorizationFailureValueSource expectedValueSource
+        RelationshipAuthorizationFailureValueSource expectedValueSource,
+        RelationshipAuthorizationSubjectFailureKind expectedFailureKind =
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
     )
     {
+        if (result is UpsertResult.UnknownFailure unknownFailure)
+        {
+            Assert.Fail(
+                $"Expected relationship denial but received unknown failure: {unknownFailure.FailureMessage}"
+            );
+        }
+
         var failure = result.Should().BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>().Subject;
         failure.RelationshipFailure.ValueSource.Should().Be(expectedValueSource);
         failure
@@ -891,7 +1045,7 @@ public class Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_S
             .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
             .Select(static subject => subject.FailureKind)
             .Should()
-            .Contain(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+            .Contain(expectedFailureKind);
     }
 
     private static void AssertRootRow(
