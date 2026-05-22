@@ -455,6 +455,79 @@ public class ProvideAuthorizationFiltersMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Relational_Put_Request : ProvideAuthorizationFiltersMiddlewareTests
+    {
+        private readonly IAuthorizationServiceFactory _authorizationServiceFactory =
+            A.Fake<IAuthorizationServiceFactory>();
+
+        private readonly RequestInfo _requestInfo = No.RequestInfo("traceId");
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+            _requestInfo.ClientAuthorizations = CreateClientAuthorizations();
+            _requestInfo.PathComponents = CreateByIdPathComponents();
+            _requestInfo.Method = RequestMethod.PUT;
+            _requestInfo.ResourceActionAuthStrategies =
+            [
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.NamespaceBased,
+            ];
+
+            var middleware = new ProvideAuthorizationFiltersMiddleware(
+                _authorizationServiceFactory,
+                NullLogger.Instance
+            );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_preserves_raw_strategy_names_without_provider_validation()
+        {
+            _nextCalled.Should().BeTrue();
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo
+                .AuthorizationStrategyEvaluators.Select(static evaluator =>
+                    evaluator.AuthorizationStrategyName
+                )
+                .Should()
+                .Equal(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthorizationStrategyNameConstants.NamespaceBased
+                );
+            _requestInfo
+                .AuthorizationStrategyEvaluators.Select(static evaluator => evaluator.Filters)
+                .Should()
+                .OnlyContain(static filters => filters.Length == 0);
+        }
+
+        [Test]
+        public void It_does_not_resolve_filter_providers()
+        {
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
+                        A<string>._,
+                        A<IServiceProvider>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Authorization_Filter_Provider_Throws : ProvideAuthorizationFiltersMiddlewareTests
     {
         private FrontendResponse _response = null!;

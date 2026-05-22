@@ -144,5 +144,8 @@ internal class ProvideAuthorizationFiltersMiddleware(
             requestInfo.Method == RequestMethod.GET
             || requestInfo.Method == RequestMethod.DELETE
             || requestInfo.Method == RequestMethod.POST
+            // Descriptor PUT also bypasses legacy NamespaceBased filters until DMS-1057 wires
+            // descriptor writes into backend-planned namespace authorization.
+            || requestInfo.Method == RequestMethod.PUT
         );
 }
