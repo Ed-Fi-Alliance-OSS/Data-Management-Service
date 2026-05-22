@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Profile;
@@ -15,7 +16,8 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-file sealed class AuthorizationRootChildStoredProjectionInvoker : IStoredStateProjectionInvoker
+file sealed class AuthorizationRootChildStoredProjectionInvoker(ImmutableArray<string> hiddenMemberPaths)
+    : IStoredStateProjectionInvoker
 {
     public ProfileAppliedWriteContext ProjectStoredState(
         JsonNode storedDocument,
@@ -33,7 +35,7 @@ file sealed class AuthorizationRootChildStoredProjectionInvoker : IStoredStatePr
                 new StoredScopeState(
                     Address: new ScopeInstanceAddress("$", []),
                     Visibility: ProfileVisibilityKind.VisiblePresent,
-                    HiddenMemberPaths: ["schoolReference"]
+                    HiddenMemberPaths: hiddenMemberPaths
                 ),
             ],
             VisibleStoredCollectionRows: []
@@ -54,6 +56,17 @@ file static class PostgresqlAuthorizationRootChildProfileTestSupport
     public static BackendProfileWriteContext CreateRootSchoolHiddenProfileContext(
         MappingSet mappingSet,
         JsonNode writableRequestBody
+    ) => CreateRootProfileContext(mappingSet, writableRequestBody, ["schoolReference"]);
+
+    public static BackendProfileWriteContext CreateRootSchoolVisibleProfileContext(
+        MappingSet mappingSet,
+        JsonNode writableRequestBody
+    ) => CreateRootProfileContext(mappingSet, writableRequestBody, []);
+
+    private static BackendProfileWriteContext CreateRootProfileContext(
+        MappingSet mappingSet,
+        JsonNode writableRequestBody,
+        ImmutableArray<string> hiddenMemberPaths
     )
     {
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
@@ -76,7 +89,7 @@ file static class PostgresqlAuthorizationRootChildProfileTestSupport
             ),
             ProfileName: "authorization-root-child-hidden-school-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new AuthorizationRootChildStoredProjectionInvoker()
+            StoredStateProjectionInvoker: new AuthorizationRootChildStoredProjectionInvoker(hiddenMemberPaths)
         );
     }
 }
@@ -363,6 +376,45 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
         result.Should().BeOfType<UpdateResult.UpdateSuccess>();
         var after = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
         AssertRootRow(after, proposedSeed);
+    }
+
+    [Test]
+    public async Task It_denies_profiled_put_with_unauthorized_finalized_proposed_school_and_leaves_rows_unchanged()
+    {
+        var existingSeed = CreateRootChildSeed(
+            "cccccccc-1111-0000-0000-000000000009",
+            409,
+            "profile-proposed-denied-existing",
+            100,
+            []
+        );
+        var proposedSeed = existingSeed with { Name = "profile-proposed-denied-change", SchoolId = 300 };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationRootChildAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
+        var writeBody = RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(
+            proposedSeed
+        );
+        var profileContext =
+            PostgresqlAuthorizationRootChildProfileTestSupport.CreateRootSchoolVisibleProfileContext(
+                _context.MappingSet,
+                writeBody.DeepClone()
+            );
+
+        var result = await _context.UpdateAuthorizationRootChildByIdAsync(
+            proposedSeed,
+            existingSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames,
+            backendProfileWriteContext: profileContext,
+            requestBody: writeBody
+        );
+
+        AssertUpdateRelationshipDenied(result, RelationshipAuthorizationFailureValueSource.Proposed);
+        var after = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
     }
 
     [Test]
@@ -742,6 +794,50 @@ public class Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_S
         result.Should().BeOfType<UpsertResult.UpdateSuccess>();
         var after = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
         AssertRootRow(after, candidateSeed);
+        (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_denies_profiled_post_as_update_with_unauthorized_finalized_proposed_school_and_leaves_rows_unchanged()
+    {
+        var existingSeed = CreateRootChildSeed(
+            "cccccccc-2222-0000-0000-000000000009",
+            509,
+            "profile-proposed-denied-existing",
+            100,
+            []
+        );
+        var candidateSeed = existingSeed with
+        {
+            DocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-2222-0000-0000-000000000009")),
+            Name = "profile-proposed-denied-change",
+            SchoolId = 300,
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationRootChildAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
+        var writeBody = RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(
+            candidateSeed
+        );
+        var profileContext =
+            PostgresqlAuthorizationRootChildProfileTestSupport.CreateRootSchoolVisibleProfileContext(
+                _context.MappingSet,
+                writeBody.DeepClone()
+            );
+
+        var result = await _context.UpsertAuthorizationRootChildAsync(
+            candidateSeed,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames,
+            backendProfileWriteContext: profileContext,
+            requestBody: writeBody
+        );
+
+        AssertUpsertRelationshipDenied(result, RelationshipAuthorizationFailureValueSource.Proposed);
+        var after = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
         (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
     }
 

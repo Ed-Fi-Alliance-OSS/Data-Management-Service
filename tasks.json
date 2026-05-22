@@ -205,7 +205,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalPutAuthorizationTests|FullyQualifiedName~PostgresqlRelationalPostAsUpdateAuthorizationTests\".",
       "Run ConnectionStrings__MssqlAdmin='Server=localhost,1434;User Id=sa;Password=<StrongPassword>;TrustServerCertificate=True;Encrypt=True' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~MssqlRelationalPutAuthorizationTests|FullyQualifiedName~MssqlRelationalPostAsUpdateAuthorizationTests\"."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "mssql-integration-tests",
