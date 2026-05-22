@@ -187,7 +187,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                         writeSession,
                         cancellationToken,
                         evaluateIfMatchPrecondition: !deferPreconditionUntilAfterProposedAuthorization,
-                        lockExistingTargetBeforeCurrentStateLoad: deferPreconditionUntilAfterProposedAuthorization,
+                        lockExistingTargetBeforeCurrentStateLoad: deferPreconditionUntilAfterProposedAuthorization
+                            && !storedAuthorizationBoundary.ExistingTargetLocked,
                         includeDescriptorProjectionForDeferredPrecondition: deferPreconditionUntilAfterProposedAuthorization,
                         allowPostTargetReevaluation: allowPostTargetReevaluation
                     )
@@ -556,7 +557,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             return new StoredRelationshipAuthorizationBoundary(
                 request,
                 null,
-                AllowPostTargetReevaluation: true
+                AllowPostTargetReevaluation: true,
+                ExistingTargetLocked: false
             );
         }
 
@@ -573,7 +575,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             return new StoredRelationshipAuthorizationBoundary(
                 request,
                 targetResolution.ImmediateResult,
-                allowPostTargetReevaluation
+                allowPostTargetReevaluation,
+                targetResolution.ExistingTargetLocked
             );
         }
 
@@ -586,7 +589,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             return new StoredRelationshipAuthorizationBoundary(
                 executionRequest,
                 null,
-                allowPostTargetReevaluation
+                allowPostTargetReevaluation,
+                targetResolution.ExistingTargetLocked
             );
         }
 
@@ -599,11 +603,17 @@ internal sealed class DefaultRelationalWriteExecutor(
             .ConfigureAwait(false);
 
         return authorizationResult is null
-            ? new StoredRelationshipAuthorizationBoundary(executionRequest, null, allowPostTargetReevaluation)
+            ? new StoredRelationshipAuthorizationBoundary(
+                executionRequest,
+                null,
+                allowPostTargetReevaluation,
+                targetResolution.ExistingTargetLocked
+            )
             : new StoredRelationshipAuthorizationBoundary(
                 executionRequest,
                 authorizationResult,
-                allowPostTargetReevaluation
+                allowPostTargetReevaluation,
+                targetResolution.ExistingTargetLocked
             );
     }
 
@@ -626,7 +636,11 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument existingTarget)
         {
-            return new StoredRelationshipAuthorizationTargetResolution(request, null);
+            return new StoredRelationshipAuthorizationTargetResolution(
+                request,
+                null,
+                ExistingTargetLocked: false
+            );
         }
 
         var lockedContentVersion = await TryLockExistingTargetAsync(
@@ -640,7 +654,8 @@ internal sealed class DefaultRelationalWriteExecutor(
         return lockedContentVersion is null
             ? new StoredRelationshipAuthorizationTargetResolution(
                 request,
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists()),
+                ExistingTargetLocked: false
             )
             : new StoredRelationshipAuthorizationTargetResolution(
                 request with
@@ -650,7 +665,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                         ObservedContentVersion = lockedContentVersion.Value,
                     },
                 },
-                null
+                null,
+                ExistingTargetLocked: true
             );
     }
 
@@ -685,7 +701,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                         {
                             TargetContext = createNew,
                         },
-                        null
+                        null,
+                        ExistingTargetLocked: false
                     );
 
                 case RelationalWriteTargetContext.ExistingDocument existingTarget:
@@ -707,7 +724,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                                     ObservedContentVersion = lockedContentVersion.Value,
                                 },
                             },
-                            null
+                            null,
+                            ExistingTargetLocked: true
                         );
                     }
 
@@ -722,7 +740,8 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         return new StoredRelationshipAuthorizationTargetResolution(
             request,
-            new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
+            new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict()),
+            ExistingTargetLocked: false
         );
     }
 
@@ -1919,11 +1938,13 @@ internal sealed class DefaultRelationalWriteExecutor(
     private sealed record StoredRelationshipAuthorizationBoundary(
         RelationalWriteExecutorRequest ExecutionRequest,
         RelationalWriteExecutorResult? ImmediateResult,
-        bool AllowPostTargetReevaluation
+        bool AllowPostTargetReevaluation,
+        bool ExistingTargetLocked
     );
 
     private sealed record StoredRelationshipAuthorizationTargetResolution(
         RelationalWriteExecutorRequest ExecutionRequest,
-        RelationalWriteExecutorResult? ImmediateResult
+        RelationalWriteExecutorResult? ImmediateResult,
+        bool ExistingTargetLocked
     );
 }

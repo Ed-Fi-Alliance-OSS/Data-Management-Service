@@ -4742,6 +4742,7 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _readMaterializer.MaterializeCallCount.Should().Be(1);
+        _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);
