@@ -1492,6 +1492,33 @@
       ]
     }
   ],
+  "auth_objects": {
+    "table": {
+      "table": {
+        "schema": "auth",
+        "name": "EducationOrganizationIdToEducationOrganizationId"
+      },
+      "columns": [
+        {
+          "name": "SourceEducationOrganizationId",
+          "type": "bigint",
+          "is_nullable": false
+        },
+        {
+          "name": "TargetEducationOrganizationId",
+          "type": "bigint",
+          "is_nullable": false
+        }
+      ],
+      "primary_key": {
+        "name": "PK_EducationOrganizationIdToEducationOrganizationId",
+        "columns": [
+          "SourceEducationOrganizationId",
+          "TargetEducationOrganizationId"
+        ]
+      }
+    }
+  },
   "resource_details": [
     {
       "resource": {

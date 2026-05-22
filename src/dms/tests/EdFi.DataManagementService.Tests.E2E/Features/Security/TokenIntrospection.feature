@@ -228,8 +228,6 @@ Feature: JWT Token Introspection
         }
         """
 
-    @relational-backend
-    @relational-ci-shard-3
     Scenario: 02 Missing token in request body returns bad request error
       When a POST request is made to "/oauth/token_info" with
         """
@@ -250,8 +248,6 @@ Feature: JWT Token Introspection
         }
         """
 
-    @relational-backend
-    @relational-ci-shard-3
     Scenario: 03 Token mismatch between Authorization header and request body returns bad request error
       When a POST request is made to "/oauth/token_info" with
         """

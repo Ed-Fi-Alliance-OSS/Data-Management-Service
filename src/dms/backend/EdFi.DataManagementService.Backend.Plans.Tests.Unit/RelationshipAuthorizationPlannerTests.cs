@@ -108,6 +108,10 @@ public class Given_RelationshipAuthorizationPlannerTests
                     RelationshipAuthorizationHierarchyDirection.Inverted
                 )
             );
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject.AllowsDirectClaimMatch)
+            .Should()
+            .OnlyContain(static allowsDirectClaimMatch => allowsDirectClaimMatch);
         authorizedResult.CheckSpecs.Select(static checkSpec => checkSpec.Subjects.Count).Should().Equal(2, 2);
         authorizedResult
             .CheckSpecs[0]
@@ -177,6 +181,10 @@ public class Given_RelationshipAuthorizationPlannerTests
                     )
                 )
             );
+        authorizedResult
+            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject.AllowsDirectClaimMatch)
+            .Should()
+            .OnlyContain(static allowsDirectClaimMatch => allowsDirectClaimMatch);
         authorizedResult.CheckSpecs.Select(static checkSpec => checkSpec.Subjects.Count).Should().Equal(1, 1);
         authorizedResult.CheckSpecs[0].Subjects[0].Contributors.Should().HaveCount(2);
 
@@ -564,6 +572,18 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Failures[0]
             .ConfiguredStrategy?.StrategyName.Should()
             .Be(AuthorizationStrategyNameConstants.NamespaceBased);
+    }
+
+    [Test]
+    public void It_should_leave_direct_claim_match_disabled_for_non_edorg_auth_objects()
+    {
+        var authObject = new RelationshipAuthorizationAuthObject(
+            new DbTableName(new DbSchemaName("auth"), "NonEdOrgAuthorizationObject"),
+            new DbColumnName("SubjectId"),
+            new DbColumnName("ClaimId")
+        );
+
+        authObject.AllowsDirectClaimMatch.Should().BeFalse();
     }
 
     [Test]

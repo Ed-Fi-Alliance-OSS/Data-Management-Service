@@ -282,6 +282,106 @@ public class ProvideAuthorizationFiltersMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Relational_Post_Request_With_Empty_EdOrg_Claims_And_Mixed_Strategies
+        : ProvideAuthorizationFiltersMiddlewareTests
+    {
+        private readonly IAuthorizationServiceFactory _authorizationServiceFactory =
+            A.Fake<IAuthorizationServiceFactory>();
+
+        private readonly RequestInfo _requestInfo = No.RequestInfo("traceId");
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+            _requestInfo.ClientAuthorizations = CreateClientAuthorizations();
+            _requestInfo.PathComponents = CreateGetManyPathComponents();
+            _requestInfo.Method = RequestMethod.POST;
+            _requestInfo.ResourceActionAuthStrategies =
+            [
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                AuthorizationStrategyNameConstants.NamespaceBased,
+            ];
+
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                        _requestInfo.ScopedServiceProvider
+                    )
+                )
+                .Returns(new RelationshipsWithEdOrgsOnlyFiltersProvider());
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                        _requestInfo.ScopedServiceProvider
+                    )
+                )
+                .Returns(new RelationshipsWithEdOrgsOnlyInvertedFiltersProvider());
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
+                        AuthorizationStrategyNameConstants.NamespaceBased,
+                        _requestInfo.ScopedServiceProvider
+                    )
+                )
+                .Returns(new NamespaceBasedFiltersProvider());
+
+            var middleware = new ProvideAuthorizationFiltersMiddleware(
+                _authorizationServiceFactory,
+                NullLogger.Instance
+            );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_the_next_middleware_step()
+        {
+            _nextCalled.Should().BeTrue();
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_preserves_raw_strategy_names_with_empty_filters()
+        {
+            _requestInfo
+                .AuthorizationStrategyEvaluators.Select(static evaluator =>
+                    evaluator.AuthorizationStrategyName
+                )
+                .Should()
+                .Equal(_requestInfo.ResourceActionAuthStrategies);
+
+            _requestInfo
+                .AuthorizationStrategyEvaluators.Select(static evaluator => evaluator.Filters)
+                .Should()
+                .OnlyContain(static filters => filters.Length == 0);
+        }
+
+        [Test]
+        public void It_does_not_resolve_filter_providers()
+        {
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
+                        A<string>._,
+                        A<IServiceProvider>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Relational_Delete_Request : ProvideAuthorizationFiltersMiddlewareTests
     {
         private readonly IAuthorizationServiceFactory _authorizationServiceFactory =

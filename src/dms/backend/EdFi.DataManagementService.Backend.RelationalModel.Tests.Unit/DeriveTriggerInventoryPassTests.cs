@@ -1069,6 +1069,374 @@ file sealed class InvalidUnifiedAliasPresenceGateFixturePass : IRelationalModelS
 }
 
 /// <summary>
+/// Test fixture for IdentityPropagationFallback on MSSQL with a child-collection
+/// reference binding (in addition to the existing root-table binding). Verifies
+/// that child collection referrers must appear as PropagationReferrerTarget
+/// entries on the referenced resource's propagation trigger.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_On_Mssql_With_Child_Collection_Referrer
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildChildReferenceProjectSchemaForTriggerDerivation();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should emit one propagation trigger on School.
+    /// </summary>
+    [Test]
+    public void It_should_emit_one_propagation_trigger_on_School()
+    {
+        var schoolPropagations = _triggers
+            .Where(t =>
+                t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+                && t.Name.Value == "TR_School_PropagateIdentity"
+            )
+            .ToArray();
+
+        schoolPropagations.Should().ContainSingle();
+        schoolPropagations[0].Table.Name.Should().Be("School");
+    }
+
+    /// <summary>
+    /// It should include child table referrer alongside root referrer.
+    /// </summary>
+    [Test]
+    public void It_should_include_child_table_referrer_alongside_root_referrer()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            && t.Name.Value == "TR_School_PropagateIdentity"
+        );
+        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+            schoolPropagation.Parameters;
+
+        // Existing root-table referrer (Enrollment) must still be present.
+        propagationParams.ReferrerUpdates.Should().Contain(r => r.ReferrerTable.Name == "Enrollment");
+
+        // New: child-collection referrer (BusRouteAddress) must be present.
+        propagationParams
+            .ReferrerUpdates.Should()
+            .Contain(
+                r => r.ReferrerTable.Name == "BusRouteAddress",
+                "child collection bindings must be included in IdentityPropagationFallback"
+            );
+    }
+
+    /// <summary>
+    /// It should resolve child referrer target columns against the child table model.
+    /// </summary>
+    [Test]
+    public void It_should_resolve_child_referrer_target_columns_against_the_child_table_model()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            && t.Name.Value == "TR_School_PropagateIdentity"
+        );
+        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+            schoolPropagation.Parameters;
+
+        var childReferrer = propagationParams.ReferrerUpdates.Single(r =>
+            r.ReferrerTable.Name == "BusRouteAddress"
+        );
+
+        childReferrer.ReferrerFkColumn.Value.Should().Be("School_DocumentId");
+
+        var targetColumns = childReferrer.ColumnMappings.Select(m => m.TargetColumn.Value).ToArray();
+        targetColumns.Should().Contain("School_EducationOrganizationId").And.Contain("School_SchoolId");
+    }
+}
+
+/// <summary>
+/// Test fixture for IdentityPropagationFallback on MSSQL with a resource-extension
+/// reference binding (an <c>_ext</c>-scoped reference defined by an extension project that
+/// targets a core resource). Verifies that the extension table appears as a
+/// PropagationReferrerTarget on the referenced resource's propagation trigger; without the
+/// fix, the extension table's projected identity columns go stale on identity updates and
+/// its own stamp trigger never fires.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_On_Mssql_With_Extension_Referrer
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = BuildCoreProjectSchemaForExtensionReferrer();
+        var extensionProjectSchema = BuildExtensionProjectSchemaForExtensionReferrer();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionProjectSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should emit one propagation trigger on School.
+    /// </summary>
+    [Test]
+    public void It_should_emit_one_propagation_trigger_on_School()
+    {
+        var schoolPropagations = _triggers
+            .Where(t =>
+                t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+                && t.Name.Value == "TR_School_PropagateIdentity"
+            )
+            .ToArray();
+
+        schoolPropagations.Should().ContainSingle();
+        schoolPropagations[0].Table.Name.Should().Be("School");
+    }
+
+    /// <summary>
+    /// It should include the extension table referrer.
+    /// </summary>
+    [Test]
+    public void It_should_include_the_extension_table_referrer()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            && t.Name.Value == "TR_School_PropagateIdentity"
+        );
+        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+            schoolPropagation.Parameters;
+
+        propagationParams
+            .ReferrerUpdates.Should()
+            .Contain(
+                r => r.ReferrerTable.Name == "ContactExtension",
+                "_ext-scoped reference bindings must be included in IdentityPropagationFallback"
+            );
+    }
+
+    /// <summary>
+    /// It should resolve extension referrer target columns against the extension table model.
+    /// </summary>
+    [Test]
+    public void It_should_resolve_extension_referrer_target_columns_against_the_extension_table_model()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            && t.Name.Value == "TR_School_PropagateIdentity"
+        );
+        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+            schoolPropagation.Parameters;
+
+        var extensionReferrer = propagationParams.ReferrerUpdates.Single(r =>
+            r.ReferrerTable.Name == "ContactExtension"
+        );
+
+        extensionReferrer.ReferrerFkColumn.Value.Should().Be("School_DocumentId");
+
+        var targetColumns = extensionReferrer.ColumnMappings.Select(m => m.TargetColumn.Value).ToArray();
+        targetColumns.Should().Contain("School_EducationOrganizationId").And.Contain("School_SchoolId");
+    }
+
+    private static JsonObject BuildCoreProjectSchemaForExtensionReferrer()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["contacts"] = BuildContactBaseSchemaForExtensionReferrer(),
+                ["schools"] = BuildSchoolTargetSchemaForExtensionReferrer(),
+            },
+        };
+    }
+
+    private static JsonObject BuildExtensionProjectSchemaForExtensionReferrer()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Sample",
+            ["projectEndpointName"] = "sample",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["contacts"] = BuildContactExtensionWithSchoolReferenceSchema(),
+            },
+        };
+    }
+
+    private static JsonObject BuildContactBaseSchemaForExtensionReferrer()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["contactUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+            },
+            ["required"] = new JsonArray("contactUniqueId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Contact",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.contactUniqueId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["ContactUniqueId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.contactUniqueId",
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildSchoolTargetSchemaForExtensionReferrer()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+            },
+            ["required"] = new JsonArray("schoolId", "educationOrganizationId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.schoolId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganizationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.educationOrganizationId",
+                },
+                ["SchoolId"] = new JsonObject { ["isReference"] = false, ["path"] = "$.schoolId" },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildContactExtensionWithSchoolReferenceSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["_ext"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["schoolReference"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Contact",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = true,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["School"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] = "$._ext.sample.schoolReference.educationOrganizationId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$._ext.sample.schoolReference.schoolId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+}
+
+/// <summary>
 /// Test schema builder for trigger inventory pass tests.
 /// </summary>
 internal static class TriggerInventoryTestSchemaBuilder
