@@ -485,6 +485,78 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
 
         @relational-backend
         @relational-ci-shard-3
+        Scenario: PUT succeeds through the inverted strategy when a school claim updates its parent local education agency
+            # Use broader setup access only to seed the state/LEA/school hierarchy for this scenario.
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
+              And the system has these "stateEducationAgencies"
+                  | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
+                  | 2                      | Test state        | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#State" }] |
+              And the system has these descriptors
+                  | descriptorValue                                                            |
+                  | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District       |
+                  | uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC                  |
+             When a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 201,
+                      "nameOfInstitution": "PUT inverted LEA",
+                      "stateEducationAgencyReference": {
+                          "stateEducationAgencyId": 2
+                      },
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+                  }
+                  """
+             Then it should respond with 201
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
+                  | 20101    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] | { "localEducationAgencyId": 201} |
+            # Switch to the narrower inverted claim set under test before issuing the PUT.
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet" is authorized with educationOrganizationIds "20101"
+             When a PUT request is made to "/ed-fi/localEducationAgencies/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "localEducationAgencyId": 201,
+                      "nameOfInstitution": "PUT inverted LEA updated",
+                      "stateEducationAgencyReference": {
+                          "stateEducationAgencyId": 2
+                      },
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/ed-fi/localEducationAgencies/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "localEducationAgencyId": 201,
+                      "nameOfInstitution": "PUT inverted LEA updated",
+                      "stateEducationAgencyReference": {
+                          "stateEducationAgencyId": 2
+                      },
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+                  }
+                  """
+
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: PUT returns forbidden and leaves the academic week unchanged when stored authorization fails
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
