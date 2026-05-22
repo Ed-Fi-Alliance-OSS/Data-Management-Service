@@ -726,14 +726,13 @@ internal sealed class DefaultRelationalWriteExecutor(
             RelationshipAuthorizationResult.NoClaims noClaims =>
                 BuildNoClaimsStoredRelationshipAuthorizationResult(request.OperationKind, noClaims),
 
-            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
-                BuildKnownButNotEnabledStoredRelationshipAuthorizationResult(request, knownButNotEnabled),
+            RelationshipAuthorizationResult.KnownButNotEnabled => throw new InvalidOperationException(
+                "Known-but-not-enabled stored relationship authorization results must be handled by repository preflight before executor entry."
+            ),
 
-            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
-                BuildStoredRelationshipAuthorizationSecurityConfigurationResult(
-                    request,
-                    securityConfigurationError
-                ),
+            RelationshipAuthorizationResult.SecurityConfigurationError => throw new InvalidOperationException(
+                "Security-configuration stored relationship authorization results must be handled by repository preflight before executor entry."
+            ),
 
             RelationshipAuthorizationResult.Authorized authorized =>
                 await ExecuteStoredRelationshipAuthorizationAsync(
@@ -848,69 +847,6 @@ internal sealed class DefaultRelationalWriteExecutor(
         }
 
         return BuildRelationshipAuthorizationFailureResult(operationKind, noClaimsFailure);
-    }
-
-    private static RelationalWriteExecutorResult BuildKnownButNotEnabledStoredRelationshipAuthorizationResult(
-        RelationalWriteExecutorRequest request,
-        RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled
-    )
-    {
-        var resource = request.WritePlan.Model.Resource;
-        var unsupportedStrategyNames = knownButNotEnabled
-            .Failures.Select(static failure => failure.ConfiguredStrategy?.StrategyName)
-            .Where(static strategyName => strategyName is not null)
-            .Cast<string>()
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
-            .Select(static strategyName => $"'{strategyName}'");
-        var operationLabel = request.OperationKind is RelationalWriteOperationKind.Post ? "POST" : "PUT";
-        var scopeTag = request.OperationKind is RelationalWriteOperationKind.Post ? "DMS-1162" : "DMS-1163";
-        var message =
-            $"Relational {operationLabel} authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
-            + $"when effective {operationLabel} authorization includes strategies outside the current {scopeTag} EdOrg-only scope. Unsupported strategies: "
-            + $"[{string.Join(", ", unsupportedStrategyNames)}].";
-
-        return request.OperationKind switch
-        {
-            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpsertFailureNotImplemented(
-                    message,
-                    UpsertFailureNotImplementedReason.StrategyNotEnabled
-                )
-            ),
-            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateFailureNotImplemented(
-                    message,
-                    UpdateFailureNotImplementedReason.StrategyNotEnabled
-                )
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
-        };
-    }
-
-    private static RelationalWriteExecutorResult BuildStoredRelationshipAuthorizationSecurityConfigurationResult(
-        RelationalWriteExecutorRequest request,
-        RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError
-    )
-    {
-        var operationLabel = request.OperationKind is RelationalWriteOperationKind.Post ? "POST" : "PUT";
-        var errors = securityConfigurationError
-            .Failures.Select(failure =>
-                $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
-                + (failure.Hint ?? $"Failure kind: {failure.FailureKind}.")
-            )
-            .ToArray();
-
-        return request.OperationKind switch
-        {
-            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpsertFailureSecurityConfiguration(errors)
-            ),
-            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateFailureSecurityConfiguration(errors)
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
-        };
     }
 
     private static int GetStoredRelationshipAuthorizationAuth1Index(

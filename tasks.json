@@ -280,7 +280,7 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs to confirm PUT and POST preflight still stops known-but-not-enabled and security-configuration authorization plans before executor invocation.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalDocumentStoreRepositoryTests\"."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "cleanup",
