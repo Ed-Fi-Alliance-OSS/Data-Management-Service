@@ -215,7 +215,7 @@ else {
         throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
     }
 
-    Start-Sleep 60
+    Start-Sleep 20
     if($IdentityProvider -eq "self-contained")
     {
         Write-Output "Starting self-contained initialization script..."
