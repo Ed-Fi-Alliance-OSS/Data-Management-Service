@@ -127,6 +127,10 @@ internal sealed class DefaultRelationalWriteExecutor(
             }
 
             executionRequest = storedAuthorizationBoundary.ExecutionRequest;
+            // A stored-auth POST lookup is the authorization boundary for this attempt. If it saw
+            // CreateNew, keep that decision stable so a later race cannot become an update without
+            // stored-value authorization.
+            var allowPostTargetReevaluation = storedAuthorizationBoundary.AllowPostTargetReevaluation;
 
             if (
                 request.WritePrecondition is WritePrecondition.IfMatch
@@ -136,7 +140,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 var resolvedExecutionState = await ResolveExecutionStateAsync(
                         executionRequest,
                         writeSession,
-                        cancellationToken
+                        cancellationToken,
+                        allowPostTargetReevaluation: allowPostTargetReevaluation
                     )
                     .ConfigureAwait(false);
 
@@ -183,7 +188,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                         cancellationToken,
                         evaluateIfMatchPrecondition: !deferPreconditionUntilAfterProposedAuthorization,
                         lockExistingTargetBeforeCurrentStateLoad: deferPreconditionUntilAfterProposedAuthorization,
-                        includeDescriptorProjectionForDeferredPrecondition: deferPreconditionUntilAfterProposedAuthorization
+                        includeDescriptorProjectionForDeferredPrecondition: deferPreconditionUntilAfterProposedAuthorization,
+                        allowPostTargetReevaluation: allowPostTargetReevaluation
                     )
                     .ConfigureAwait(false);
 
@@ -547,7 +553,11 @@ internal sealed class DefaultRelationalWriteExecutor(
                 or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired
         )
         {
-            return new StoredRelationshipAuthorizationBoundary(request, null);
+            return new StoredRelationshipAuthorizationBoundary(
+                request,
+                null,
+                AllowPostTargetReevaluation: true
+            );
         }
 
         var targetResolution = await ResolveStoredRelationshipAuthorizationTargetAsync(
@@ -556,10 +566,15 @@ internal sealed class DefaultRelationalWriteExecutor(
                 cancellationToken
             )
             .ConfigureAwait(false);
+        var allowPostTargetReevaluation = request.TargetRequest is not RelationalWriteTargetRequest.Post;
 
         if (targetResolution.ImmediateResult is not null)
         {
-            return new StoredRelationshipAuthorizationBoundary(request, targetResolution.ImmediateResult);
+            return new StoredRelationshipAuthorizationBoundary(
+                request,
+                targetResolution.ImmediateResult,
+                allowPostTargetReevaluation
+            );
         }
 
         var executionRequest = targetResolution.ExecutionRequest;
@@ -568,7 +583,11 @@ internal sealed class DefaultRelationalWriteExecutor(
             executionRequest.TargetContext is not RelationalWriteTargetContext.ExistingDocument existingTarget
         )
         {
-            return new StoredRelationshipAuthorizationBoundary(executionRequest, null);
+            return new StoredRelationshipAuthorizationBoundary(
+                executionRequest,
+                null,
+                allowPostTargetReevaluation
+            );
         }
 
         var authorizationResult = await AuthorizeStoredRelationshipAsync(
@@ -580,8 +599,12 @@ internal sealed class DefaultRelationalWriteExecutor(
             .ConfigureAwait(false);
 
         return authorizationResult is null
-            ? new StoredRelationshipAuthorizationBoundary(executionRequest, null)
-            : new StoredRelationshipAuthorizationBoundary(executionRequest, authorizationResult);
+            ? new StoredRelationshipAuthorizationBoundary(executionRequest, null, allowPostTargetReevaluation)
+            : new StoredRelationshipAuthorizationBoundary(
+                executionRequest,
+                authorizationResult,
+                allowPostTargetReevaluation
+            );
     }
 
     private async Task<StoredRelationshipAuthorizationTargetResolution> ResolveStoredRelationshipAuthorizationTargetAsync(
@@ -1271,7 +1294,8 @@ internal sealed class DefaultRelationalWriteExecutor(
         CancellationToken cancellationToken,
         bool evaluateIfMatchPrecondition = true,
         bool lockExistingTargetBeforeCurrentStateLoad = false,
-        bool includeDescriptorProjectionForDeferredPrecondition = false
+        bool includeDescriptorProjectionForDeferredPrecondition = false,
+        bool allowPostTargetReevaluation = true
     )
     {
         var targetContext = request.TargetContext;
@@ -1281,6 +1305,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         if (
             request.TargetRequest
                 is RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid)
+            && allowPostTargetReevaluation
             && (
                 targetContext is RelationalWriteTargetContext.CreateNew
                 || request.WritePrecondition is WritePrecondition.IfMatch
@@ -1308,7 +1333,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                     cancellationToken,
                     evaluateIfMatchPrecondition: evaluateIfMatchPrecondition,
                     lockExistingTargetBeforeCurrentStateLoad: lockExistingTargetBeforeCurrentStateLoad,
-                    includeDescriptorProjectionForDeferredPrecondition: includeDescriptorProjectionForDeferredPrecondition
+                    includeDescriptorProjectionForDeferredPrecondition: includeDescriptorProjectionForDeferredPrecondition,
+                    allowPostTargetReevaluation: allowPostTargetReevaluation
                 )
                 .ConfigureAwait(false);
         }
@@ -1892,7 +1918,8 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private sealed record StoredRelationshipAuthorizationBoundary(
         RelationalWriteExecutorRequest ExecutionRequest,
-        RelationalWriteExecutorResult? ImmediateResult
+        RelationalWriteExecutorResult? ImmediateResult,
+        bool AllowPostTargetReevaluation
     );
 
     private sealed record StoredRelationshipAuthorizationTargetResolution(

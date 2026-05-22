@@ -8,7 +8,7 @@ Over the past three weeks, authorization moved from relational design and genera
 
 ## Slide 2: The Work Landed In Layers
 
-The team first strengthened the generated relational surface, then added query filtering, then split single-record CRUD authorization into smaller slices. That sequencing reduced risk because each runtime operation now builds on shared planning, SQL, and failure metadata.
+The team first strengthened the generated relational surface, then added query filtering, then split single-record CRUD authorization into smaller slices.
 
 ---
 
