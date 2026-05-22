@@ -35,8 +35,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 long id = 0;
-                bool isNewVendor;
-                // Check for existing vendor by Company (natural key), update if found
+                bool isNewVendor = false;
+                // Check for existing vendor by Company (and TenantId if multi-tenancy is enabled)
                 var sql =
                     $"SELECT Id FROM dmscs.Vendor WHERE Company = @Company AND {TenantContext.TenantWhereClause()}";
 
@@ -70,7 +70,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                     sql = "DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId = @VendorId";
                     await connection.ExecuteAsync(sql, new { VendorId = existingVendorId.Value });
                     id = existingVendorId.Value;
-                    isNewVendor = false;
                 }
                 else
                 {
