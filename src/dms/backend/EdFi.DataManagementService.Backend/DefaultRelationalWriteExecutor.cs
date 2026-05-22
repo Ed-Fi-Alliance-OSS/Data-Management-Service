@@ -104,8 +104,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteExecutorResult? writeFailureResult = null;
         var executionRequest = request;
         RelationalWriteCurrentState? currentState = null;
-        var deferPreconditionUntilAfterProposedAuthorization =
-            ShouldDeferPreconditionUntilAfterProposedAuthorization(request);
+        var ifMatchPreconditionEvaluation = GetIfMatchPreconditionEvaluation(request);
 
         await using var writeSession = await _writeSessionFactory
             .CreateAsync(cancellationToken)
@@ -130,18 +129,18 @@ internal sealed class DefaultRelationalWriteExecutor(
             // A stored-auth POST lookup is the authorization boundary for this attempt. If it saw
             // CreateNew, keep that decision stable so a later race cannot become an update without
             // stored-value authorization.
-            var allowPostTargetReevaluation = storedAuthorizationBoundary.AllowPostTargetReevaluation;
+            var postTargetReevaluation = storedAuthorizationBoundary.PostTargetReevaluation;
 
             if (
                 request.WritePrecondition is WritePrecondition.IfMatch
-                && !deferPreconditionUntilAfterProposedAuthorization
+                && ifMatchPreconditionEvaluation is IfMatchPreconditionEvaluation.BeforeProposedAuthorization
             )
             {
                 var resolvedExecutionState = await ResolveExecutionStateAsync(
                         executionRequest,
                         writeSession,
                         cancellationToken,
-                        allowPostTargetReevaluation: allowPostTargetReevaluation
+                        ExecutionStateResolutionOptions.Standard(postTargetReevaluation)
                     )
                     .ConfigureAwait(false);
 
@@ -179,18 +178,24 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             if (
                 request.WritePrecondition is not WritePrecondition.IfMatch
-                || deferPreconditionUntilAfterProposedAuthorization
+                || ifMatchPreconditionEvaluation
+                    is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             )
             {
+                var executionStateResolutionOptions =
+                    ifMatchPreconditionEvaluation
+                    is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+                        ? ExecutionStateResolutionOptions.DeferredIfMatch(
+                            GetExistingTargetLockMode(storedAuthorizationBoundary),
+                            postTargetReevaluation
+                        )
+                        : ExecutionStateResolutionOptions.Standard(postTargetReevaluation);
+
                 var resolvedExecutionState = await ResolveExecutionStateAsync(
                         executionRequest,
                         writeSession,
                         cancellationToken,
-                        evaluateIfMatchPrecondition: !deferPreconditionUntilAfterProposedAuthorization,
-                        lockExistingTargetBeforeCurrentStateLoad: deferPreconditionUntilAfterProposedAuthorization
-                            && !storedAuthorizationBoundary.ExistingTargetLocked,
-                        includeDescriptorProjectionForDeferredPrecondition: deferPreconditionUntilAfterProposedAuthorization,
-                        allowPostTargetReevaluation: allowPostTargetReevaluation
+                        executionStateResolutionOptions
                     )
                     .ConfigureAwait(false);
 
@@ -403,7 +408,10 @@ internal sealed class DefaultRelationalWriteExecutor(
                 )
                 .ConfigureAwait(false);
 
-            if (deferPreconditionUntilAfterProposedAuthorization)
+            if (
+                ifMatchPreconditionEvaluation
+                is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+            )
             {
                 var deferredPreconditionResult = TryBuildDeferredPreconditionFailureResult(
                     executionRequest,
@@ -557,7 +565,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             return new StoredRelationshipAuthorizationBoundary(
                 request,
                 null,
-                AllowPostTargetReevaluation: true,
+                PostTargetReevaluation: PostTargetReevaluationMode.Allowed,
                 ExistingTargetLocked: false
             );
         }
@@ -568,14 +576,17 @@ internal sealed class DefaultRelationalWriteExecutor(
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var allowPostTargetReevaluation = request.TargetRequest is not RelationalWriteTargetRequest.Post;
+        var postTargetReevaluation =
+            request.TargetRequest is RelationalWriteTargetRequest.Post
+                ? PostTargetReevaluationMode.Suppressed
+                : PostTargetReevaluationMode.Allowed;
 
         if (targetResolution.ImmediateResult is not null)
         {
             return new StoredRelationshipAuthorizationBoundary(
                 request,
                 targetResolution.ImmediateResult,
-                allowPostTargetReevaluation,
+                postTargetReevaluation,
                 targetResolution.ExistingTargetLocked
             );
         }
@@ -589,7 +600,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             return new StoredRelationshipAuthorizationBoundary(
                 executionRequest,
                 null,
-                allowPostTargetReevaluation,
+                postTargetReevaluation,
                 targetResolution.ExistingTargetLocked
             );
         }
@@ -606,13 +617,13 @@ internal sealed class DefaultRelationalWriteExecutor(
             ? new StoredRelationshipAuthorizationBoundary(
                 executionRequest,
                 null,
-                allowPostTargetReevaluation,
+                postTargetReevaluation,
                 targetResolution.ExistingTargetLocked
             )
             : new StoredRelationshipAuthorizationBoundary(
                 executionRequest,
                 authorizationResult,
-                allowPostTargetReevaluation,
+                postTargetReevaluation,
                 targetResolution.ExistingTargetLocked
             );
     }
@@ -969,11 +980,20 @@ internal sealed class DefaultRelationalWriteExecutor(
             .ConfigureAwait(false);
     }
 
-    private static bool ShouldDeferPreconditionUntilAfterProposedAuthorization(
+    private static IfMatchPreconditionEvaluation GetIfMatchPreconditionEvaluation(
         RelationalWriteExecutorRequest request
     ) =>
         request.WritePrecondition is WritePrecondition.IfMatch
-        && request.ProposedRelationshipAuthorization is not null;
+        && request.ProposedRelationshipAuthorization is not null
+            ? IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+            : IfMatchPreconditionEvaluation.BeforeProposedAuthorization;
+
+    private static ExistingTargetLockMode GetExistingTargetLockMode(
+        StoredRelationshipAuthorizationBoundary storedAuthorizationBoundary
+    ) =>
+        storedAuthorizationBoundary.ExistingTargetLocked
+            ? ExistingTargetLockMode.AlreadyLocked
+            : ExistingTargetLockMode.LockBeforeCurrentStateLoad;
 
     private RelationalWriteExecutorResult? TryBuildDeferredPreconditionFailureResult(
         RelationalWriteExecutorRequest request,
@@ -1311,10 +1331,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteExecutorRequest request,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken,
-        bool evaluateIfMatchPrecondition = true,
-        bool lockExistingTargetBeforeCurrentStateLoad = false,
-        bool includeDescriptorProjectionForDeferredPrecondition = false,
-        bool allowPostTargetReevaluation = true
+        ExecutionStateResolutionOptions options
     )
     {
         var targetContext = request.TargetContext;
@@ -1324,7 +1341,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         if (
             request.TargetRequest
                 is RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid)
-            && allowPostTargetReevaluation
+            && options.AllowPostTargetReevaluation
             && (
                 targetContext is RelationalWriteTargetContext.CreateNew
                 || request.WritePrecondition is WritePrecondition.IfMatch
@@ -1337,9 +1354,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     candidateDocumentUuid,
                     writeSession,
                     cancellationToken,
-                    evaluateIfMatchPrecondition,
-                    lockExistingTargetBeforeCurrentStateLoad,
-                    includeDescriptorProjectionForDeferredPrecondition
+                    options
                 )
                 .ConfigureAwait(false);
         }
@@ -1350,10 +1365,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     existingDocument,
                     writeSession,
                     cancellationToken,
-                    evaluateIfMatchPrecondition: evaluateIfMatchPrecondition,
-                    lockExistingTargetBeforeCurrentStateLoad: lockExistingTargetBeforeCurrentStateLoad,
-                    includeDescriptorProjectionForDeferredPrecondition: includeDescriptorProjectionForDeferredPrecondition,
-                    allowPostTargetReevaluation: allowPostTargetReevaluation
+                    options
                 )
                 .ConfigureAwait(false);
         }
@@ -1378,9 +1390,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         DocumentUuid candidateDocumentUuid,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken,
-        bool evaluateIfMatchPrecondition = true,
-        bool lockExistingTargetBeforeCurrentStateLoad = false,
-        bool includeDescriptorProjectionForDeferredPrecondition = false
+        ExecutionStateResolutionOptions options
     )
     {
         var targetLookupResult = await _targetLookupResolver
@@ -1417,10 +1427,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 existingTargetContext,
                 writeSession,
                 cancellationToken,
-                allowPostTargetReevaluation: false,
-                evaluateIfMatchPrecondition: evaluateIfMatchPrecondition,
-                lockExistingTargetBeforeCurrentStateLoad: lockExistingTargetBeforeCurrentStateLoad,
-                includeDescriptorProjectionForDeferredPrecondition: includeDescriptorProjectionForDeferredPrecondition
+                options.SuppressPostTargetReevaluation()
             )
             .ConfigureAwait(false);
     }
@@ -1430,10 +1437,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteTargetContext.ExistingDocument targetContext,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken,
-        bool allowPostTargetReevaluation = true,
-        bool evaluateIfMatchPrecondition = true,
-        bool lockExistingTargetBeforeCurrentStateLoad = false,
-        bool includeDescriptorProjectionForDeferredPrecondition = false
+        ExecutionStateResolutionOptions options
     )
     {
         var missingReadPlanResult = TryBuildMissingExistingDocumentReadPlanResult(request);
@@ -1443,7 +1447,11 @@ internal sealed class DefaultRelationalWriteExecutor(
             return new InSessionTargetResolution(null, null, missingReadPlanResult);
         }
 
-        if (!evaluateIfMatchPrecondition && lockExistingTargetBeforeCurrentStateLoad)
+        if (
+            options.IfMatchPreconditionEvaluation
+                is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+            && options.ExistingTargetLock is ExistingTargetLockMode.LockBeforeCurrentStateLoad
+        )
         {
             var lockedContentVersion = await TryLockExistingTargetAsync(
                     request.MappingSet.Key.Dialect,
@@ -1459,10 +1467,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                         request,
                         writeSession,
                         cancellationToken,
-                        allowPostTargetReevaluation,
-                        evaluateIfMatchPrecondition,
-                        lockExistingTargetBeforeCurrentStateLoad,
-                        includeDescriptorProjectionForDeferredPrecondition
+                        options
                     )
                     .ConfigureAwait(false);
             }
@@ -1470,7 +1475,10 @@ internal sealed class DefaultRelationalWriteExecutor(
             targetContext = targetContext with { ObservedContentVersion = lockedContentVersion.Value };
         }
 
-        if (evaluateIfMatchPrecondition && request.WritePrecondition is WritePrecondition.IfMatch ifMatch)
+        if (
+            options.IfMatchPreconditionEvaluation is IfMatchPreconditionEvaluation.BeforeProposedAuthorization
+            && request.WritePrecondition is WritePrecondition.IfMatch ifMatch
+        )
         {
             var preconditionCheckResult = await _currentEtagPreconditionChecker
                 .CheckAsync(
@@ -1496,15 +1504,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            return await HandleMissingExistingTargetAsync(
-                    request,
-                    writeSession,
-                    cancellationToken,
-                    allowPostTargetReevaluation,
-                    evaluateIfMatchPrecondition,
-                    lockExistingTargetBeforeCurrentStateLoad,
-                    includeDescriptorProjectionForDeferredPrecondition
-                )
+            return await HandleMissingExistingTargetAsync(request, writeSession, cancellationToken, options)
                 .ConfigureAwait(false);
         }
 
@@ -1514,7 +1514,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                     request.ExistingDocumentReadPlan!,
                     targetContext,
                     includeDescriptorProjection: request.ProfileWriteContext is not null
-                        || includeDescriptorProjectionForDeferredPrecondition
+                        || options.CurrentStateProjection
+                            is CurrentStateProjectionMode.IncludeDescriptorsForDeferredPrecondition
                 ),
                 writeSession,
                 cancellationToken
@@ -1530,15 +1531,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             );
         }
 
-        return await HandleMissingExistingTargetAsync(
-                request,
-                writeSession,
-                cancellationToken,
-                allowPostTargetReevaluation,
-                evaluateIfMatchPrecondition,
-                lockExistingTargetBeforeCurrentStateLoad,
-                includeDescriptorProjectionForDeferredPrecondition
-            )
+        return await HandleMissingExistingTargetAsync(request, writeSession, cancellationToken, options)
             .ConfigureAwait(false);
     }
 
@@ -1546,10 +1539,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteExecutorRequest request,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken,
-        bool allowPostTargetReevaluation = true,
-        bool evaluateIfMatchPrecondition = true,
-        bool lockExistingTargetBeforeCurrentStateLoad = false,
-        bool includeDescriptorProjectionForDeferredPrecondition = false
+        ExecutionStateResolutionOptions options
     )
     {
         return request.TargetRequest switch
@@ -1560,16 +1550,14 @@ internal sealed class DefaultRelationalWriteExecutor(
                 new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             ),
             RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
-                allowPostTargetReevaluation
+                options.AllowPostTargetReevaluation
                     ? await ResolvePostTargetAsync(
                             request,
                             referentialId,
                             candidateDocumentUuid,
                             writeSession,
                             cancellationToken,
-                            evaluateIfMatchPrecondition,
-                            lockExistingTargetBeforeCurrentStateLoad,
-                            includeDescriptorProjectionForDeferredPrecondition
+                            options
                         )
                         .ConfigureAwait(false)
                     : new InSessionTargetResolution(
@@ -1935,10 +1923,83 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteExecutorResult? ImmediateResult
     );
 
+    private enum IfMatchPreconditionEvaluation
+    {
+        BeforeProposedAuthorization,
+        DeferredUntilAfterProposedAuthorization,
+    }
+
+    private enum ExistingTargetLockMode
+    {
+        NotRequired,
+        AlreadyLocked,
+        LockBeforeCurrentStateLoad,
+    }
+
+    private enum CurrentStateProjectionMode
+    {
+        Standard,
+        IncludeDescriptorsForDeferredPrecondition,
+    }
+
+    private enum PostTargetReevaluationMode
+    {
+        Allowed,
+        Suppressed,
+    }
+
+    private sealed record ExecutionStateResolutionOptions(
+        IfMatchPreconditionEvaluation IfMatchPreconditionEvaluation,
+        ExistingTargetLockMode ExistingTargetLock,
+        CurrentStateProjectionMode CurrentStateProjection,
+        PostTargetReevaluationMode PostTargetReevaluation
+    )
+    {
+        public bool AllowPostTargetReevaluation =>
+            PostTargetReevaluation is PostTargetReevaluationMode.Allowed;
+
+        public static ExecutionStateResolutionOptions Standard(
+            PostTargetReevaluationMode postTargetReevaluation
+        ) =>
+            new(
+                IfMatchPreconditionEvaluation.BeforeProposedAuthorization,
+                ExistingTargetLockMode.NotRequired,
+                CurrentStateProjectionMode.Standard,
+                postTargetReevaluation
+            );
+
+        public static ExecutionStateResolutionOptions DeferredIfMatch(
+            ExistingTargetLockMode existingTargetLock,
+            PostTargetReevaluationMode postTargetReevaluation
+        )
+        {
+            if (existingTargetLock is ExistingTargetLockMode.NotRequired)
+            {
+                throw new ArgumentException(
+                    "Deferred If-Match current-state loading must either lock an existing target or use an existing stored-authorization lock.",
+                    nameof(existingTargetLock)
+                );
+            }
+
+            return new ExecutionStateResolutionOptions(
+                IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization,
+                existingTargetLock,
+                CurrentStateProjectionMode.IncludeDescriptorsForDeferredPrecondition,
+                postTargetReevaluation
+            );
+        }
+
+        public ExecutionStateResolutionOptions SuppressPostTargetReevaluation() =>
+            this with
+            {
+                PostTargetReevaluation = PostTargetReevaluationMode.Suppressed,
+            };
+    }
+
     private sealed record StoredRelationshipAuthorizationBoundary(
         RelationalWriteExecutorRequest ExecutionRequest,
         RelationalWriteExecutorResult? ImmediateResult,
-        bool AllowPostTargetReevaluation,
+        PostTargetReevaluationMode PostTargetReevaluation,
         bool ExistingTargetLocked
     );
 
