@@ -296,7 +296,7 @@ public sealed class PgsqlDialect : SqlDialectBase
         // resolves. The sequence reference is quoted because the sequence is created
         // with PascalCase preserved via QuoteIdentifier.
         return $"""
-            CREATE OR REPLACE FUNCTION {schema.Value}.GetMaxChangeVersion() RETURNS bigint AS
+            CREATE OR REPLACE FUNCTION {QuoteIdentifier(schema.Value)}.GetMaxChangeVersion() RETURNS bigint AS
             $GetMaxChangeVersion$
             DECLARE
                 result bigint;

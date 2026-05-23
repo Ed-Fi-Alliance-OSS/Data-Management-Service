@@ -78,6 +78,7 @@ public class Given_ChangeVersionSequence_Advanced_Three_Times : GetMaxChangeVers
     [SetUp]
     public async Task Setup()
     {
+        await ResetSequenceToStart();
         await AdvanceSequence(3);
         Result = await CallFunction();
     }
@@ -85,7 +86,7 @@ public class Given_ChangeVersionSequence_Advanced_Three_Times : GetMaxChangeVers
     [Test]
     public void It_should_return_the_last_allocated_value()
     {
-        Result.Should().BeGreaterOrEqualTo(3L);
+        Result.Should().Be(3L);
     }
 }
 
