@@ -517,7 +517,7 @@ The `ReadChanges` action is not configured for this resource, so attempts to req
 
 ### Filtering live resources by ChangeVersion
 
-Live resource endpoints are the ordinary resource and descriptor endpoints that return current resource representations, such as `GET /data/v3/ed-fi/students`. These endpoints allow filtering by `minChangeVersion` and `maxChangeVersion`, which internally filter the resource's `ChangeVersion` column. They allow users to retrieve the current representation of resources updated within a given change window.
+Live resource endpoints are the ordinary resource and descriptor endpoints that return current resource representations, such as `GET /data/v3/ed-fi/students`. These endpoints allow filtering by `minChangeVersion` and `maxChangeVersion`, which internally filter the resource's `ChangeVersion` column, which is indexed. They allow users to retrieve the current representation of resources updated within a given change window.
 
 ```http
 GET /data/v3/ed-fi/grades?minChangeVersion=123&maxChangeVersion=987
