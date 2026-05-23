@@ -1783,6 +1783,8 @@ ORDER BY
   cw.FinalChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
+Note that, to avoid introducing breaking changes, the `/deletes` and `/keyChanges` endpoints must return the identifying field names as they appear in the resource's `queryFieldMapping` in `ApiSchema.json`.
+
 ### /availableChangeVersions endpoint
 
 DMS will introduce the `/changeQueries/v1/availableChangeVersions` endpoint with the same request/response bodies and query strings as ODS.
