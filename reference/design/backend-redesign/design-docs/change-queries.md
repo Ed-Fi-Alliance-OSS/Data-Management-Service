@@ -1954,8 +1954,8 @@ DMS should preserve the ODS response shapes below whenever snapsot support gets 
 
 For the `405` case, the response must include an `Allow: GET` header.
 
-### Tickets to create
-- [DMS-1168] Emit the `changes.GetMaxChangeVersion()` function
+### Proposed tickets to create
+- [DMS-1168] Emit the `dms.GetMaxChangeVersion()` function
 - [DMS-1169] Remove `dms.DocumentChangeEvent` because the new tables replace it
 
 - Derive mirror columns (`ContentVersion`, `ContentLastModifiedAt`) onto every root `DbTableModel` with `StorageKind = RelationalTables`, with `ColumnKind` set to `MirroredContentVersion` and `MirroredContentLastModifiedAt` respectively (new values added to [flattening-reconstitution.md](flattening-reconstitution.md)); the `TableWritePlan.ColumnBindings` exclusion rule already covers these kinds. Add `IX_<Table>_ContentVersion` per in-scope root and `IX_Descriptor_Discriminator_ContentVersion` on `dms.Descriptor` to `IndexesInCreateOrder`; add the `MirrorStampTargetTable` field to `DbTriggerInfo` in [compiled-mapping-set.md](compiled-mapping-set.md) and populate it for every `DocumentStamping` entry; extend the core `dms.Descriptor` DDL pass to add the two columns and the composite index.
@@ -1989,8 +1989,7 @@ For the `405` case, the response must include an `Allow: GET` header.
 - **MetaEd**: Emit OpenAPI definitions for the `/deletes`, `/keyChanges`, and `/availableChangeVersions` endpoints (exclude SchoolYearTypes from `/deletes` and `/keyChanges`), and add the `minChangeVersion`/`maxChangeVersion` parameters to existing live resource and descriptor endpoint definitions.
   - **DMS**: Consume MetaEd's updated OpenAPI so the new endpoints and filters are routed and served. Coverage is included in the per-endpoint tickets above; no separate work item.
 
-- Decide what to do with unsupported strategies for v1.0 (OwnershipBased) (also, check that auth strategies and claimsets are exacly the same as ODS)
-- Apply delete order (concrete table should be deleted before the general dms.Document)
+- Apply delete order (main table should be deleted before the general dms.Document)
 
 #### Stretch-goals
 - Add indexes that improve auth checks on `tracked_changes_*` tables (they are missing in ODS as well)
