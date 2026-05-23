@@ -1106,6 +1106,7 @@ We will use the rewrite to make these improvements over ODS:
 - Descriptor `/deletes` endpoints will correctly hide recreated descriptors.
 - Resource `/deletes` endpoints will correctly hide recreated resources that reference recreated descriptors.
 - Concrete abstract resources, such as School, will now get their own `tracked_changes*` table to support SecurableElement overrides.
+
 ### Out of scope
 The next features are deferred after DMS v1.0
 - Support for DB snapshots
@@ -1782,56 +1783,85 @@ ORDER BY
   cw.FinalChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-### Filtering live resources and descriptors by ChangeVersion
+### /availableChangeVersions endpoint
 
-Live resource and descriptor GET-many endpoints support `?minChangeVersion=X&maxChangeVersion=Y`. With the mirror on the concrete tables (see "Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror" above), the runtime query planner emits a direct range filter on the concrete table — no join to `dms.Document` is required for the change-version predicate.
+DMS will introduce the `/changeQueries/v1/availableChangeVersions` endpoint with the same request/response bodies and query strings as ODS.
+The `oldestChangeVersion` remains hardcoded to `0`.
+
+One distinction is that `GetMaxChangeVersion()` function will reside in the `dms` schema instead of `changes` to be consistent with existing DMS schemas.
+
+### Filtering live resources and descriptors by ChangeVersion
+Live resource and descriptor GET-many endpoints support `?minChangeVersion=X&maxChangeVersion=Y`. 
+
+For live resource endpoints, with the mirror on the concrete tables, the runtime query planner emits a direct range filter on the concrete table — no join to `dms.Document` is required for the change-version predicate.
 
 The generated SQL used to fulfill a `GET /data/v3/ed-fi/grades?minChangeVersion=123&maxChangeVersion=987` request is:
 
 ```sql
-WITH authView7f24a2 AS (
-    SELECT DISTINCT
-      av.TargetEducationOrganizationId
-    FROM
-      auth.EducationOrganizationIdToEducationOrganizationId AS av
-    WHERE
-      av.SourceEducationOrganizationId IN (SELECT Id FROM @ClaimEducationOrganizationIds)
-  ),
-  authViewbde5ba AS (
-    SELECT DISTINCT
-      av.Student_DocumentId
-    FROM
-      auth.EducationOrganizationIdToStudentDocumentId AS av
-    WHERE
-      av.SourceEducationOrganizationId IN (SELECT Id FROM @ClaimEducationOrganizationIds)
-  )
-SELECT <projection columns>
-FROM
-  edfi.Grade AS r
-  INNER JOIN authView7f24a2 ON r.SchoolId_Unified = authView7f24a2.TargetEducationOrganizationId  -- Auth check: Relationship with EdOrg
-  INNER JOIN authViewbde5ba ON r.Student_DocumentId = authViewbde5ba.Student_DocumentId          -- Auth check: Relationship with People
-WHERE
-  r.ContentVersion BETWEEN @MinChangeVersion AND @MaxChangeVersion
-ORDER BY
-  r.DocumentId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+DROP TABLE IF EXISTS "page";
+CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
+
+WITH page_ids AS (
+    SELECT r."DocumentId"
+    FROM "edfi"."School" r
+    WHERE r.ContentVersion >= @MinChangeVersion AND ChangeVersion <= @MaxChangeVersion -- Range filter on ContentVersion
+    ORDER BY r."DocumentId" ASC
+    LIMIT @limit OFFSET @offset
+)
+INSERT INTO "page" ("DocumentId")
+SELECT "DocumentId" 
+FROM page_ids;
+
+-- The rest of the reconstitution queries are omitted for brevity.
 ```
 
-Descriptor endpoints filter on the shared `dms.Descriptor` with `Discriminator` and `ContentVersion`, served by `IX_Descriptor_Discriminator_ContentVersion`:
+Descriptor endpoints need to join with `dms.Descriptor` in order to emit the range filter leveraging the `IX_Descriptor_Discriminator_ContentVersion`:
 
 ```sql
-SELECT <descriptor projection>
-FROM dms.Descriptor d
-WHERE d.Discriminator = 'edfi.SchoolCategoryDescriptor'
-  AND d.ContentVersion BETWEEN @MinChangeVersion AND @MaxChangeVersion
-  AND <namespace-based auth predicates>
-ORDER BY d.DocumentId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+SELECT 
+  page_document_ids."DocumentId" AS "DocumentId", 
+  document."DocumentUuid" AS "DocumentUuid", 
+  document."ContentLastModifiedAt" AS "ContentLastModifiedAt", 
+  document."ResourceKeyId" AS "ResourceKeyId", 
+  descriptor."Namespace" AS "Namespace", 
+  descriptor."CodeValue" AS "CodeValue", 
+  descriptor."ShortDescription" AS "ShortDescription", 
+  descriptor."Description" AS "Description", 
+  descriptor."EffectiveBeginDate" AS "EffectiveBeginDate", 
+  descriptor."EffectiveEndDate" AS "EffectiveEndDate", 
+  descriptor."Discriminator" AS "Discriminator" 
+FROM 
+  (
+    SELECT r."DocumentId" 
+    FROM 
+      "dms"."Document" r 
+      INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = r."DocumentId" 
+    WHERE 
+      d.ContentVersion >= @MinChangeVersion AND ChangeVersion <= @MaxChangeVersion -- Range filter on ContentVersion
+      AND (
+        r."ResourceKeyId" = @resourceKeyId
+      ) 
+    ORDER BY 
+      r."DocumentId" ASC 
+    LIMIT 
+      @limit OFFSET @offset
+  ) page_document_ids 
+  INNER JOIN dms."Document" document ON document."DocumentId" = page_document_ids."DocumentId" 
+  LEFT JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = page_document_ids."DocumentId" 
+ORDER BY 
+  page_document_ids."DocumentId" ASC;
 ```
 
 The planner uses this path for every resource with a `MirroredContentVersion` column in its `DbTableModel` — which is every `StorageKind = RelationalTables` resource. There is no fallback path; the mirror is universal for in-scope tables.
 
-`/deletes`, `/keyChanges`, and `/availableChangeVersions` are unchanged. They source from `tracked_changes_*` (which carry their own `ChangeVersion`) or from the sequence directly. The mirror affects only the live resource read path.
+`/deletes`, `/keyChanges`, and `/availableChangeVersions` are unchanged. The mirror affects only the live resource read path.
 
 Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies remain sourced from `dms.Document` for now; switching to the concrete-table mirror is an optional future read-path optimization (the values are identical per Invariant #2).
+
+
+### Snapshot support is deferred
+
+Snapshot support is deferred and will not be available for DMS v1.0; as such, the `/deletes`, `/keyChanges`, `/availableChangeVersions`, and live resource and descriptors endpoints will not support the `Use-Snapshot` header.
 
 ### Model and DDL verification
 
@@ -1853,7 +1883,74 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - Emitted-SQL snapshot: `?minChangeVersion=X&maxChangeVersion=Y` produces a single-table range filter on the concrete table for `/ed-fi/students`, on `dms.Descriptor` (with the `Discriminator` predicate) for descriptors, and the same shape for at least one extension-project resource endpoint.
 
 ### ProblemDetails
-TODO
+
+Authorization-related ProblemDetails for Change Queries are owned by [auth.md](auth.md) and are not repeated here. 
+
+
+#### 1. Parameter Validation Failures (400 Bad Request)
+
+These errors indicate invalid query string values on `/deletes`, `/keyChanges`, or live resource and descriptor GET-many requests using `minChangeVersion` / `maxChangeVersion`.
+
+**Type**: `urn:ed-fi:api:bad-request:parameter-validation-failed`
+
+**Title**: `Parameter Validation Failed`
+
+**Status**: `400`
+
+**Detail**: `Parameters supplied to the request were invalid.`
+
+| Scenario | Error |
+|---|---|
+| `minChangeVersion` cannot be parsed as an integer | `MinChangeVersion must be a numeric value greater than or equal to 0.` |
+| `maxChangeVersion` cannot be parsed as an integer | `MaxChangeVersion must be a numeric value greater than or equal to 0.` |
+| `minChangeVersion` is greater than `maxChangeVersion` | `MinChangeVersion must be less than or equal to MaxChangeVersion.` |
+
+
+#### 2. Resource or Endpoint Not Found (404 Not Found)
+
+These errors indicate that the requested Change Queries route or resource cannot be resolved.
+
+**Type**: `urn:ed-fi:api:not-found`
+
+**Title**: `Not Found`
+
+**Status**: `404`
+
+**Default Detail**: `The specified data could not be found.`
+
+| Scenario | Error |
+|---|---|
+| `/deletes` or `/keyChanges` is requested for an unknown `{schema}/{resource}` pair | *(empty)* |
+| `/changeQueries/v1/availableChangeVersions` is not routed because the Change Queries API surface is not enabled | `Path '{path}' does not exist. Check the resource name and try again.` |
+
+#### 3. Feature Disabled (404 Not Found)
+
+If DMS keeps a runtime feature flag for Change Queries, requests to Change Queries endpoints while the feature is disabled should follow the ODS feature-disabled response shape.
+
+**Type**: `urn:ed-fi:api:system:configuration:feature-disabled`
+
+**Title**: `Feature Disabled`
+
+**Status**: `404`
+
+**Detail**: `The 'ChangeQueries' feature is disabled.`
+
+**Error**: *(empty)*
+
+> Note: This ProblemDetail does not apply yet as the support to disable the feature will be deferred.
+
+#### 4. Snapshot ProblemDetails Are Deferred
+
+Snapshot support is deferred for DMS v1.0. The `Use-Snapshot` header is therefore not part of the DMS v1.0 Change Queries contract, and DMS v1.0 should not emit ODS snapshot-specific ProblemDetails for Change Queries.
+
+DMS should preserve the ODS response shapes below whenever snapsot support gets added:
+
+| Scenario | Type | Title | Status | Detail |
+|---|---|---|---|---|
+| `Use-Snapshot: true` is supplied on a non-`GET` request | `urn:ed-fi:api:snapshots:method-not-allowed` | `Method Not Allowed with Snapshots` | `405` | `An attempt was made to modify data in a Snapshot, but this data is read-only.` |
+| `Use-Snapshot: true` is supplied but no snapshot connection string is configured, or the snapshot database cannot be reached | `urn:ed-fi:api:not-found` | `Not Found` | `404` | `Snapshot not found.` |
+
+For the `405` case, the response must include an `Allow: GET` header.
 
 ### Tickets to create
 - [DMS-1168] Emit the `changes.GetMaxChangeVersion()` function
