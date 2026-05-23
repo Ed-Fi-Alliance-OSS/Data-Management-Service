@@ -340,6 +340,94 @@ public class Given_RelationshipAuthorizationFailureMapper
             .Equal("SchoolId", "LocalEducationAgencyId");
     }
 
+    [Test]
+    public void It_should_map_mixed_proposed_missing_and_no_relationship_failures_across_or_strategies()
+    {
+        var checkSpecs = new[]
+        {
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Inverted,
+                11,
+                1,
+                CreateSubject(
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyReference.localEducationAgencyId"
+                )
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        1,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+        relationshipFailure!.ValueSource.Should().Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        relationshipFailure.FailedStrategies.Should().HaveCount(2);
+        relationshipFailure
+            .FailedStrategies.Select(static strategy => strategy.ConfiguredStrategyIndex)
+            .Should()
+            .Equal(10, 11);
+        relationshipFailure
+            .FailedStrategies.Select(static strategy => strategy.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+        relationshipFailure
+            .FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Select(static subject => subject.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
+                RelationshipAuthorizationSubjectFailureKind.NoRelationship
+            );
+        relationshipFailure
+            .FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Select(static subject => subject.RootBinding.ColumnName)
+            .Should()
+            .Equal("SchoolId", "LocalEducationAgencyId");
+        relationshipFailure.FailedStrategies[0].AuthObject.Should().NotBeNull();
+        relationshipFailure
+            .FailedStrategies[0]
+            .AuthObject!.SubjectValueColumn.Should()
+            .Be("TargetEducationOrganizationId");
+        relationshipFailure
+            .FailedStrategies[0]
+            .AuthObject!.ClaimEducationOrganizationIdColumn.Should()
+            .Be("SourceEducationOrganizationId");
+        relationshipFailure.FailedStrategies[1].AuthObject.Should().NotBeNull();
+        relationshipFailure
+            .FailedStrategies[1]
+            .AuthObject!.SubjectValueColumn.Should()
+            .Be("SourceEducationOrganizationId");
+        relationshipFailure
+            .FailedStrategies[1]
+            .AuthObject!.ClaimEducationOrganizationIdColumn.Should()
+            .Be("TargetEducationOrganizationId");
+    }
+
     private static RelationshipAuthorizationCheckSpec CreateStoredCheckSpec(
         RelationshipAuthorizationHierarchyDirection direction,
         int configuredStrategyIndex,
@@ -634,21 +722,29 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should().Contain("\"dms\".\"throw_error\"('AUTH1'");
         plan.AuthorizationSql.Should().Contain("CONCAT('1|', '8|', COUNT(1)::text, '|'");
         plan.AuthorizationSql.Should()
-            .Contain("CASE WHEN @relationshipAuthorization_0_0_schoolId IS NULL THEN 'p' ELSE 'n' END");
-        plan.AuthorizationSql.Should()
             .Contain(
-                "CASE WHEN @relationshipAuthorization_0_0_schoolId IS NULL OR NOT (@relationshipAuthorization_0_0_schoolId = ANY(@ClaimEducationOrganizationIds) OR EXISTS (SELECT 1 FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" a0_0 WHERE a0_0.\"TargetEducationOrganizationId\" = @relationshipAuthorization_0_0_schoolId AND a0_0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))) THEN 1 ELSE 0 END"
+                "CASE WHEN CAST(@relationshipAuthorization_0_0_schoolId AS bigint) IS NULL THEN 'p' ELSE 'n' END"
             );
         plan.AuthorizationSql.Should()
-            .Contain("\"TargetEducationOrganizationId\" = @relationshipAuthorization_0_0_schoolId");
+            .Contain(
+                "CASE WHEN CAST(@relationshipAuthorization_0_0_schoolId AS bigint) IS NULL OR NOT (CAST(@relationshipAuthorization_0_0_schoolId AS bigint) = ANY(@ClaimEducationOrganizationIds) OR EXISTS (SELECT 1 FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" a0_0 WHERE a0_0.\"TargetEducationOrganizationId\" = CAST(@relationshipAuthorization_0_0_schoolId AS bigint) AND a0_0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))) THEN 1 ELSE 0 END"
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "\"TargetEducationOrganizationId\" = CAST(@relationshipAuthorization_0_0_schoolId AS bigint)"
+            );
         plan.AuthorizationSql.Should()
             .Contain("\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
         plan.AuthorizationSql.Should()
             .Contain(
-                "\"SourceEducationOrganizationId\" = @relationshipAuthorization_2_0_educationServiceCenterId"
+                "\"SourceEducationOrganizationId\" = CAST(@relationshipAuthorization_2_0_educationServiceCenterId AS bigint)"
             );
         plan.AuthorizationSql.Should()
             .Contain("\"TargetEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "CAST(@relationshipAuthorization_2_0_educationServiceCenterId AS bigint) = ANY(@ClaimEducationOrganizationIds)"
+            );
         plan.AuthorizationSql.Should()
             .Contain(
                 "NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 0) OR NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 1) OR NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 2)"
@@ -710,6 +806,46 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should()
             .Contain("IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1)");
         plan.AuthorizationSql.Should().NotContain("@DocumentId");
+    }
+
+    [Test]
+    public void It_should_reject_postgresql_proposed_auth1_sql_for_non_edorg_hierarchy_auth_object()
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var customAuthObject = new RelationshipAuthorizationAuthObject(
+            new DbTableName(AuthNames.AuthSchema, "StudentAuthorization"),
+            new DbColumnName("StudentUniqueId"),
+            AuthNames.SourceEdOrgId
+        );
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateProposedCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            0,
+                            0,
+                            CreateSubject("StudentUniqueId", "$.studentReference.studentUniqueId")
+                        ) with
+                        {
+                            AuthObject = customAuthObject,
+                        },
+                    ],
+                    parameterization,
+                    12
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*only supports the EdOrg hierarchy auth object*");
     }
 
     [Test]

@@ -251,7 +251,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "The API client has been given permissions on a resource that uses the 'RelationshipsWithEdOrgsOnly' authorization strategy but the client doesn't have any education organizations assigned."
+                        "No relationships have been established between the caller's education organization id claims () and the resource item's SchoolId value."
                       ]
                   }
                   """
@@ -482,6 +482,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 09 Ensure client can not get the bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -527,6 +529,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 10 Ensure client can not delete a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -666,6 +670,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
              Then it should respond with 204
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 13.2 Ensure client with access to state education agency 3 can not post or put classPeriods for school 20201
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3"
              When a POST request is made to "/ed-fi/academicWeeks" with
@@ -695,6 +701,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 13.3 Ensure client with access to state education agency 3 can not put classPeriods for school 20201
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3"
              When a PUT request is made to "/ed-fi/academicWeeks/{id}" with
@@ -805,6 +813,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   [
                   ]
                   """
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 14.2 Ensure client with access to school 20101 cannot get by id LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a GET request is made to "/ed-fi/localEducationAgencies/{id}"
@@ -823,6 +833,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     ]
                   }
                   """
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 14.3 Ensure client with access to school 20101 cannot delete by id LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a DELETE request is made to "/ed-fi/localEducationAgencies/{id}"
@@ -841,6 +853,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     ]
                   }
                   """
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 14.4 Ensure client with access to school 20202 cannot PUT LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a PUT request is made to "/ed-fi/localEducationAgencies/{id}" with

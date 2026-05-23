@@ -216,6 +216,77 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_plan_update_specs_with_distinct_stored_and_proposed_value_sources()
+    {
+        (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
+        var resource = new QualifiedResourceName("Ed-Fi", "CourseOffering");
+        var writePlan = mappingSet.GetWritePlanOrThrow(resource);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanUpdateValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.StoredValues.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+        result.ProposedValues.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+        result.SecurityConfigurationFailures.Should().BeEmpty();
+        result.KnownButNotEnabledFailures.Should().BeEmpty();
+
+        var storedValues = (RelationshipAuthorizationResult.Authorized)result.StoredValues;
+        var proposedValues = (RelationshipAuthorizationResult.Authorized)result.ProposedValues;
+
+        storedValues.CheckSpecs.Should().HaveCount(2);
+        proposedValues.CheckSpecs.Should().HaveCount(2);
+        storedValues
+            .CheckSpecs.Select(static checkSpec => checkSpec.ConfiguredStrategy.RawConfiguredIndex)
+            .Should()
+            .Equal(0, 1);
+        proposedValues
+            .CheckSpecs.Select(static checkSpec => checkSpec.ConfiguredStrategy.RawConfiguredIndex)
+            .Should()
+            .Equal(
+                storedValues.CheckSpecs.Select(static checkSpec =>
+                    checkSpec.ConfiguredStrategy.RawConfiguredIndex
+                )
+            );
+        storedValues
+            .CheckSpecs.Select(static checkSpec => checkSpec.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+        proposedValues
+            .CheckSpecs.Select(static checkSpec => checkSpec.RelationshipLocalOrder)
+            .Should()
+            .Equal(storedValues.CheckSpecs.Select(static checkSpec => checkSpec.RelationshipLocalOrder));
+        storedValues
+            .CheckSpecs.Select(static checkSpec => checkSpec.ValueSource)
+            .Should()
+            .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Stored);
+        proposedValues
+            .CheckSpecs.Select(static checkSpec => checkSpec.ValueSource)
+            .Should()
+            .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Proposed);
+        storedValues
+            .CheckSpecs.Select(static checkSpec => checkSpec.CheckTarget)
+            .Should()
+            .AllSatisfy(checkTarget =>
+                checkTarget.Should().BeOfType<RelationshipAuthorizationCheckTarget.Stored>()
+            );
+        proposedValues
+            .CheckSpecs.Select(static checkSpec => checkSpec.CheckTarget)
+            .Should()
+            .AllSatisfy(checkTarget =>
+                checkTarget.Should().BeOfType<RelationshipAuthorizationCheckTarget.Proposed>()
+            );
+    }
+
+    [Test]
     public void It_should_treat_no_further_authorization_required_as_a_noop_in_proposed_value_planning()
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
@@ -547,6 +618,47 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_report_update_subject_selection_failures_once()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var mappingSet = CreateMinimalMappingSet(resource);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanUpdateValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            CreateMinimalWritePlan(mappingSet, resource)
+        );
+
+        result.StoredValues.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+        result.ProposedValues.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+        result.SecurityConfigurationFailures.Should().HaveCount(2);
+        result.KnownButNotEnabledFailures.Should().BeEmpty();
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
+                RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+            );
+        result
+            .SecurityConfigurationFailures.Select(static failure =>
+                failure.ConfiguredStrategy?.RawConfiguredIndex
+            )
+            .Should()
+            .Equal(0, 1);
+        result
+            .SecurityConfigurationFailures.Select(static failure => failure.ValueSource)
+            .Should()
+            .Equal((RelationshipAuthorizationValueSource?)null, null);
+    }
+
+    [Test]
     public void It_should_map_known_but_not_enabled_outcomes_to_shared_failure_metadata()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
@@ -780,6 +892,29 @@ public class Given_RelationshipAuthorizationPlannerTests
                 new ResourceSecurableElements([], [], [], [], [])
             )
         );
+
+    private static ResourceWritePlan CreateMinimalWritePlan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        var relationalModel = mappingSet.GetConcreteResourceModelOrThrow(resource).RelationalModel;
+
+        return new ResourceWritePlan(
+            relationalModel,
+            [
+                new TableWritePlan(
+                    relationalModel.Root,
+                    "",
+                    null,
+                    null,
+                    new BulkInsertBatchingInfo(1, 0, 1),
+                    [],
+                    []
+                ),
+            ]
+        );
+    }
 
     private static TableWritePlan GetRootTableWritePlan(ResourceWritePlan writePlan) =>
         writePlan.TablePlansInDependencyOrder.Single(static plan =>

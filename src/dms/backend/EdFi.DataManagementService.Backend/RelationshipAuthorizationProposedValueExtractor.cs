@@ -3,9 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -34,9 +32,6 @@ internal abstract record ProposedRelationshipAuthorizationExtractionResult
     private ProposedRelationshipAuthorizationExtractionResult() { }
 
     public sealed record Ready(ProposedRelationshipAuthorizationRuntimeCheck RuntimeCheck)
-        : ProposedRelationshipAuthorizationExtractionResult;
-
-    public sealed record NotAuthorized(RelationshipAuthorizationFailure RelationshipFailure)
         : ProposedRelationshipAuthorizationExtractionResult;
 
     public sealed record InvalidAuthorizationPlan(string FailureMessage)
@@ -69,7 +64,6 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             );
         }
 
-        List<RelationshipAuthorizationAuth1SubjectFailure> missingSubjectFailures = [];
         List<ProposedRelationshipAuthorizationRuntimeStrategy> runtimeStrategies = [];
         var rootTable = rootRow.TableWritePlan.TableModel.Table;
 
@@ -133,16 +127,7 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                     );
                 }
 
-                if (!TryGetBoundSqlValue(rootRow.Values[binding.BindingIndex], out var value))
-                {
-                    missingSubjectFailures.Add(
-                        new RelationshipAuthorizationAuth1SubjectFailure(
-                            strategyOrdinal,
-                            subjectOrdinal,
-                            RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
-                        )
-                    );
-                }
+                var value = GetBoundSqlValue(rootRow.Values[binding.BindingIndex]);
 
                 runtimeSubjects.Add(
                     new ProposedRelationshipAuthorizationRuntimeSubject(
@@ -163,21 +148,6 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             );
         }
 
-        if (missingSubjectFailures.Count > 0)
-        {
-            return TryMapMissingValueFailures(
-                authorized.CheckSpecs,
-                claimParameterization.ClaimEducationOrganizationIds,
-                emittedAuth1Index,
-                missingSubjectFailures,
-                out var relationshipFailure
-            )
-                ? new ProposedRelationshipAuthorizationExtractionResult.NotAuthorized(relationshipFailure!)
-                : Invalid(
-                    "Proposed relationship authorization found missing values, but denial metadata could not be built."
-                );
-        }
-
         return new ProposedRelationshipAuthorizationExtractionResult.Ready(
             new ProposedRelationshipAuthorizationRuntimeCheck(
                 authorized.CheckSpecs,
@@ -188,34 +158,15 @@ internal static class RelationshipAuthorizationProposedValueExtractor
         );
     }
 
-    private static bool TryGetBoundSqlValue(
-        FlattenedWriteValue value,
-        [NotNullWhen(true)] out object? sqlValue
-    )
+    private static object? GetBoundSqlValue(FlattenedWriteValue value)
     {
         if (value is FlattenedWriteValue.Literal { Value: { } literalValue } && literalValue is not DBNull)
         {
-            sqlValue = literalValue;
-            return true;
+            return literalValue;
         }
 
-        sqlValue = null;
-        return false;
+        return null;
     }
-
-    private static bool TryMapMissingValueFailures(
-        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
-        IReadOnlyList<long> claimEducationOrganizationIds,
-        int emittedAuth1Index,
-        IReadOnlyList<RelationshipAuthorizationAuth1SubjectFailure> missingSubjectFailures,
-        [NotNullWhen(true)] out RelationshipAuthorizationFailure? relationshipFailure
-    ) =>
-        RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
-            new RelationshipAuthorizationAuth1FailurePayload(emittedAuth1Index, missingSubjectFailures),
-            checkSpecs,
-            claimEducationOrganizationIds,
-            out relationshipFailure
-        );
 
     private static ProposedRelationshipAuthorizationExtractionResult.InvalidAuthorizationPlan Invalid(
         string message

@@ -205,3 +205,10 @@ public abstract record RelationshipAuthorizationResult
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures
     ) : RelationshipAuthorizationResult;
 }
+
+public sealed record RelationshipAuthorizationUpdatePlan(
+    RelationshipAuthorizationResult StoredValues,
+    RelationshipAuthorizationResult ProposedValues,
+    IReadOnlyList<RelationshipAuthorizationFailureMetadata> SecurityConfigurationFailures,
+    IReadOnlyList<RelationshipAuthorizationFailureMetadata> KnownButNotEnabledFailures
+);

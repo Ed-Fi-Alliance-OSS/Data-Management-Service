@@ -183,6 +183,45 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
+    public async Task It_passes_null_proposed_relationship_values_to_authorization_sql()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post);
+        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(
+            request,
+            rootPlan,
+            null
+        );
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, null, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(
+                ReaderResultSets: [CreateSingleValueResultSet("AuthorizationResult", typeof(int), 1)]
+            ),
+        ]);
+
+        await _sut.AuthorizeProposedRelationshipAsync(request, mergeResult, writeSession);
+
+        writeSession.Commands.Should().ContainSingle();
+        var command = writeSession.Commands[0];
+        command.CommandText.Should().Contain("AUTH1");
+        command
+            .CommandText.Should()
+            .Contain("CAST(@relationshipAuthorization_0_0_SchoolId AS bigint) IS NULL");
+        GetParameterValue(command, "@relationshipAuthorization_0_0_SchoolId").Should().BeNull();
+    }
+
+    [Test]
     public async Task It_maps_proposed_relationship_authorization_auth1_failures_before_root_insert()
     {
         var rootPlan = CreateRootPlan();
@@ -1510,6 +1549,12 @@ public class Given_Relational_Write_No_Profile_Persister
     private static ProposedRelationshipAuthorizationRuntimeCheck CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(
         RelationalWriteExecutorRequest request,
         TableWritePlan rootPlan
+    ) => CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan, 255901);
+
+    private static ProposedRelationshipAuthorizationRuntimeCheck CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(
+        RelationalWriteExecutorRequest request,
+        TableWritePlan rootPlan,
+        object? schoolIdValue
     )
     {
         var binding = rootPlan
@@ -1569,7 +1614,7 @@ public class Given_Relational_Write_No_Profile_Persister
                             0,
                             subject,
                             proposedValueBinding,
-                            255901
+                            schoolIdValue
                         ),
                     ]
                 ),

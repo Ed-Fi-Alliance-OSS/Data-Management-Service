@@ -775,14 +775,12 @@ public class ResourceActionAuthorizationMiddlewareTests
         }
 
         [Test]
-        public void It_still_returns_not_implemented()
+        public void It_allows_the_request_to_continue()
         {
-            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
             _requestInfo
-                .FrontendResponse.Body?["error"]?.GetValue<string>()
-                .Should()
-                .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
-                .And.Contain("PUT");
+                .ResourceActionAuthStrategies.Should()
+                .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
         }
     }
 

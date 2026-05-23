@@ -346,6 +346,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             requestInfo.Method == RequestMethod.GET
             || requestInfo.Method == RequestMethod.DELETE
             || requestInfo.Method == RequestMethod.POST
+            || requestInfo.Method == RequestMethod.PUT
         );
 
     private static string GetOperationLabel(RequestInfo requestInfo) =>
