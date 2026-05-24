@@ -1689,6 +1689,16 @@ ORDER BY
 
 In the example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. The same applies to descriptors, where we join using the Namespace and CodeValue.
 
+#### `*_RefKey` index ordering for `/deletes`
+
+The live-table join used by `/deletes` intentionally does not specify the live row's `DocumentId`. It probes the current resource table by the resource's identifying storage values so it can detect whether a deleted resource was recreated under a new `DocumentId` and suppress the tombstone from the response.
+
+This makes the physical order of the `UX_<Table>_RefKey` key columns important. If the reference-key uniqueness remains ordered as `(DocumentId, <identity storage columns...>)`, the recreated-resource probe cannot use the index efficiently because the leading `DocumentId` value is not part of the predicate. The index is still valid for uniqueness and FK enforcement, but it is poorly shaped for queries whose predicate starts with the identity values.
+
+For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>, DocumentId)`. The composite reference FKs that target `*_RefKey` must use the same target-column ordering. This preserves the uniqueness contract while giving `/deletes` a useful seek path for the anti-join against the live table.
+
+Descriptor `/deletes` uses the same conceptual anti-join, but it probes `dms.Descriptor` by `(Discriminator, CodeValue, Namespace)`. DMS v1 will not add a separate descriptor identity lookup index for this path because descriptor deletes and recreations are expected to be rare.
+
 An example generated SQL query used to fulfill the `GET crisisTypeDescriptors/deletes` request is:
 
 ```sql
@@ -1961,8 +1971,7 @@ For the `405` case, the response must include an `Allow: GET` header.
 - Derive mirror columns (`ContentVersion`, `ContentLastModifiedAt`) onto every root `DbTableModel` with `StorageKind = RelationalTables`, with `ColumnKind` set to `MirroredContentVersion` and `MirroredContentLastModifiedAt` respectively (new values added to [flattening-reconstitution.md](flattening-reconstitution.md)); the `TableWritePlan.ColumnBindings` exclusion rule already covers these kinds. Add `IX_<Table>_ContentVersion` per in-scope root and `IX_Descriptor_Discriminator_ContentVersion` on `dms.Descriptor` to `IndexesInCreateOrder`; add the `MirrorStampTargetTable` field to `DbTriggerInfo` in [compiled-mapping-set.md](compiled-mapping-set.md) and populate it for every `DocumentStamping` entry; extend the core `dms.Descriptor` DDL pass to add the two columns and the composite index.
 - Extend the rendered body of every `DbTriggerKind.DocumentStamping` trigger (PostgreSQL and SQL Server) to capture the stamped values from the `dms.Document` UPDATE via `OUTPUT` / `RETURNING` and write them to `MirrorStampTargetTable`; tighten the `affectedDocs` CTE contract to exclude rows whose only diff is in the four stamp columns (`ContentVersion`, `ContentLastModifiedAt`, `IdentityVersion`, `IdentityLastModifiedAt`).
 
-- Emit/Move the `DocumentId` column to the last position in `*_RefKey` indexes to improve performance for queries that do not specify the `DocumentId` (also likely needed by downstream SQL applications in the field)
-  - Emit a new index in `dms.Descriptor` for the Discriminator, CodeValue, Namespace columns (this change is already specified above, we might need to remove this)
+- Emit/Move the `DocumentId` column to the last position in `*_RefKey` indexes to improve performance for queries that do not specify the `DocumentId`, including `/deletes` recreated-resource suppression and downstream SQL applications in the field.
 
 - Derive `TrackedChangeTableInfo`, `TrackedChangeColumnInfo`, descriptor/person join metadata, and `ReadChangesAuthorizationViewInfo` in the shared `DerivedRelationalModelSet`
   - Inventory must include a `TrackedChangeTableInfo` for each concrete abstract resource (e.g. `OrganizationDepartment`, `School`) to support SecurableElement overrides — DMS improvement over ODS, where concrete abstract resources share their abstract parent's tracked-change table.
