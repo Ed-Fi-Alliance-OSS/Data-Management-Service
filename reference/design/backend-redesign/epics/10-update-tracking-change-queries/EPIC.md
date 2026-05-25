@@ -51,3 +51,11 @@ Deliverables include:
 - `DMS-1187` — `24-keychanges-endpoint.md` — Serve `/keyChanges` from tracked-change key-change rows
 - `DMS-1188` — `25-readchanges-authorization.md` — Apply `ReadChanges` authorization to `/deletes` and `/keyChanges`
 - `DMS-1189` — `26-school-year-type-readchanges-forbidden.md` — Return `403 Forbidden` for crafted `SchoolYearType` Change Query requests
+
+## Deferred Stories (post-v1.0)
+
+These spikes investigate features explicitly deferred in `change-queries.md`. Each spike's deliverable is a design proposal plus the implementation tickets it spawns.
+
+- `DMS-TBD` — `27-auth-check-indexes-on-tracked-changes.md` — Spike: auth-check indexes on `tracked_changes_*` tables
+- `DMS-TBD` — `29-snapshot-support.md` — Spike: snapshot support (`Use-Snapshot` header) for Change Queries
+- `DMS-TBD` — `30-disable-change-queries-feature.md` — Spike: runtime feature flag to disable Change Queries
