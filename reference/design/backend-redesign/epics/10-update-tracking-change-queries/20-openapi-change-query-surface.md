@@ -7,9 +7,9 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1183
 
 ## Description
 
-Extend the OpenAPI surface so Change Query routes and query parameters are advertised and routed consistently.
+Extend the OpenAPI surface so Change Query routes and query parameters are advertised consistently.
 
-MetaEd owns emission of the OpenAPI definitions. DMS owns consuming the updated OpenAPI metadata so the relational backend can route and serve the new Change Query endpoints and live change-version filters.
+MetaEd owns emission of the OpenAPI definitions. DMS owns consuming the updated OpenAPI metadata for discovery and documentation, while runtime resource Change Query routing is resolved from the effective resource model.
 
 This ticket is intentionally cross-project because the API contract is split across MetaEd generation and DMS runtime consumption.
 
@@ -24,9 +24,10 @@ This ticket is intentionally cross-project because the API contract is split acr
 - Response schemas for `/deletes`, `/keyChanges`, and `/availableChangeVersions` match the ODS-compatible Change Queries contract.
 - DMS effective-schema loading accepts and preserves the new OpenAPI paths and query parameters.
 - DMS route resolution can distinguish live resource GET-many, `/deletes`, `/keyChanges`, and `/changeQueries/v1/availableChangeVersions`.
-- DMS does not require a separate hard-coded route list for resources covered by the updated OpenAPI.
+- DMS does not treat OpenAPI path presence as the sole source of truth for resource `/deletes` and `/keyChanges` routing; known resources excluded from the OpenAPI Change Query surface still resolve through the effective resource model.
+- DMS does not require a separate hard-coded route list for resource and descriptor `/deletes` or `/keyChanges` endpoints.
 - Tests cover OpenAPI generation for regular resources, descriptors, and `SchoolYearType` exclusion.
-- DMS tests cover startup/loading of the updated OpenAPI and route resolution for the new endpoints.
+- DMS tests cover startup/loading of the updated OpenAPI, route classification for advertised Change Query endpoints, and model-driven resolution for known resources excluded from the OpenAPI Change Query surface.
 
 ## Dependencies
 

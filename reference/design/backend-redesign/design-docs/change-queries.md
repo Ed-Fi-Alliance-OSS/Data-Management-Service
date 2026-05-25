@@ -509,11 +509,11 @@ This is not an issue in ODS because OrganizationDepartment's `ReadChanges` actio
 
 ### SchoolYearTypes
 
-The `SchoolYearType` resource is excluded from this feature because it is immutable. The OpenAPI metadata does not include the `/deletes` or `/keyChanges` endpoints.
+The `SchoolYearType` resource is excluded from the advertised Change Queries OpenAPI surface because it is immutable. The OpenAPI metadata does not include the `/deletes` or `/keyChanges` endpoints.
 
 However, for the sake of simplicity, the generic DeletesController and KeyChangesController do not check for SchoolYearType by name, and the generated DB scripts still add ChangeVersion, a tracked changes table, and delete tracking for SchoolYearType. Its update trigger updates ChangeVersion but does not insert key-change rows.
 
-The `ReadChanges` action is not configured for this resource, so attempts to request its `/deletes` or `/keyChanges` endpoints result in authorization denied.
+The `ReadChanges` action is not configured for this resource, so crafted requests to its `/deletes` or `/keyChanges` endpoints result in authorization denied instead of an unknown-route response.
 
 ### Filtering live resources by ChangeVersion
 
@@ -1612,9 +1612,9 @@ The default `ReadChanges` authorization strategy for descriptors is `NoFurtherAu
 
 #### SchoolYearType
 
-The `ReadChanges` action is not configured for `SchoolYearType`. MetaEd excludes `SchoolYearType` from the emitted OpenAPI for `/deletes` and `/keyChanges`, so the endpoint does not resolve to a route in normal operation.
+The `ReadChanges` action is not configured for `SchoolYearType`. MetaEd excludes `SchoolYearType` from the emitted OpenAPI for `/deletes` and `/keyChanges`, so clients do not discover these endpoints from metadata.
 
-A request crafted directly against `/data/v3/ed-fi/schoolYearTypes/deletes` or `/keyChanges` returns `403 Forbidden` with the `Authorization Denied` ProblemDetails described in [auth.md](auth.md) §2, matching ODS behavior. The 403 comes from the missing `ReadChanges` claim, not from the missing route, because the generic controller still resolves to a handler.
+A request crafted directly against `/data/v3/ed-fi/schoolYearTypes/deletes` or `/keyChanges` still classifies as a Change Query request because `schoolYearTypes` is a known resource in the effective model. It returns `403 Forbidden` with the `Authorization Denied` ProblemDetails described in [auth.md](auth.md) §2, matching ODS behavior. The 403 comes from missing `ReadChanges` authorization, not from the missing OpenAPI path.
 
 #### Concrete abstract resources
 
@@ -1626,7 +1626,7 @@ Other concrete abstract resources with SecurableElement overrides — including 
 
 ### /deletes endpoints
 
-Each resource and descriptor will get an accompanying `/deletes` endpoint, the response body will remain the same as ODS.
+Each known resource and descriptor can route to an accompanying `/deletes` endpoint, and the response body remains the same as ODS. The emitted OpenAPI surface advertises the supported discoverable endpoints.
 
 An example generated SQL query used to fulfill the `GET grades/deletes` request is:
 
@@ -1729,7 +1729,7 @@ ORDER BY
 
 ### /keyChanges endpoints
 
-Each resource and descriptor will get an accompanying `/keyChanges` endpoint, the response body will remain the same as ODS. 
+Each known resource and descriptor can route to an accompanying `/keyChanges` endpoint, and the response body remains the same as ODS. The emitted OpenAPI surface advertises the supported discoverable endpoints.
 
 An example generated SQL query used to fulfill the `GET grades/keyChanges` request is:
 

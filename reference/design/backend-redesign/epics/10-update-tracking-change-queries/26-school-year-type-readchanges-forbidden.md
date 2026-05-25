@@ -9,7 +9,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1189
 
 Preserve ODS behavior for crafted `SchoolYearType` Change Query requests.
 
-MetaEd excludes `SchoolYearType` from emitted `/deletes` and `/keyChanges` OpenAPI definitions, but a request can still be crafted directly against the generic Change Query route shape. When that happens, DMS classifies the `/deletes` or `/keyChanges` suffix, resolves `ed-fi/schoolYearTypes` as a known resource through the effective resource model, and returns `403 Forbidden` because `ReadChanges` is not configured for `SchoolYearType`.
+MetaEd excludes `SchoolYearType` from emitted `/deletes` and `/keyChanges` OpenAPI definitions, but a request can still be crafted directly against the generic Change Query route shape. When that happens, DMS classifies the `/deletes` or `/keyChanges` suffix, resolves `ed-fi/schoolYearTypes` as a known resource through the effective resource model, and returns `403 Forbidden` because `ReadChanges` is not configured for `SchoolYearType`. This uses the same model-driven classification as other known resources rather than a `SchoolYearType`-specific routing branch.
 
 ## Acceptance Criteria
 
@@ -18,6 +18,7 @@ MetaEd excludes `SchoolYearType` from emitted `/deletes` and `/keyChanges` OpenA
 - The failure is caused by missing `ReadChanges` authorization for `SchoolYearType`, not by treating the resource as unknown.
 - The generic Change Query route classification recognizes the `/deletes` and `/keyChanges` suffixes even though `SchoolYearType` paths are not emitted in OpenAPI.
 - Resource resolution finds `ed-fi/schoolYearTypes` in the effective resource model and reaches `ReadChanges` authorization for that known resource.
+- The implementation does not hard-code `SchoolYearType` as a special routable exception; it follows the same known-resource Change Query classification used for other resources.
 - Tests assert the crafted requests do not take the unknown-resource or route-not-found path.
 - The ProblemDetails response matches the authorization-denied shape defined in `auth.md`.
 - Normal OpenAPI emission still excludes `SchoolYearType` `/deletes` and `/keyChanges` paths.

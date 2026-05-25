@@ -11,12 +11,15 @@ Add the shared runtime foundation used by resource and descriptor `/deletes` and
 
 This includes route/resource resolution, endpoint classification, paging, totalCount handling, response-field mapping, and shared SQL-planning primitives. The resource-specific endpoint behavior is delivered by separate `/deletes` and `/keyChanges` tickets.
 
+Runtime resource Change Query routing is driven by generic `/deletes` and `/keyChanges` suffix classification plus effective resource-model resolution. OpenAPI remains the discovery surface, but emitted OpenAPI paths are not the sole runtime source of truth.
+
 The response payload must use identifying field names as they appear in the resource's `queryFieldMapping` in `ApiSchema.json`, preserving the ODS-compatible API contract.
 
 ## Acceptance Criteria
 
-- DMS route resolution identifies `/deletes` and `/keyChanges` for `{schema}/{resource}` pairs that are emitted in the effective OpenAPI Change Query surface.
-- DMS route resolution also identifies `/deletes` and `/keyChanges` for `{schema}/{resource}` pairs that are known resources in the effective resource model but excluded from the OpenAPI Change Query surface (e.g., `SchoolYearType`). Such requests resolve to a Change Query handler and proceed to authorization evaluation, which may return `403`; they MUST NOT take the unknown-resource not-found path. This carve-out applies to any resource the model marks as known but OpenAPI excludes from `/deletes` and `/keyChanges`, not only `SchoolYearType`.
+- DMS route resolution identifies `/deletes` and `/keyChanges` by classifying the trailing path segment and resolving `{schema}/{resource}` through the effective resource model.
+- DMS route resolution identifies `/deletes` and `/keyChanges` for known resources regardless of whether the endpoints are emitted in the effective OpenAPI Change Query surface.
+- Known resources excluded from the OpenAPI Change Query surface, such as `SchoolYearType`, resolve to a Change Query handler and proceed to authorization evaluation, which may return `403`; they MUST NOT take the unknown-resource not-found path.
 - Unknown `{schema}/{resource}` pairs (resources not present in the effective resource model) return the not-found behavior defined in `change-queries.md`.
 - The endpoint foundation resolves the target `ConcreteResourceModel` or descriptor discriminator.
 - The foundation resolves the matching `TrackedChangeTableInfo`.
@@ -27,7 +30,7 @@ The response payload must use identifying field names as they appear in the reso
 - Descriptor responses use descriptor public identity fields, not internal descriptor IDs.
 - Internal descriptor IDs are not returned in descriptor identity fields or descriptor reference fields.
 - Shared SQL planning can compose change-version windows, tombstone/key-change filters, recreated-resource suppression where applicable, paging, totalCount, and authorization predicates.
-- Tests cover route classification, resource resolution, descriptor resolution, paging, totalCount, and field-name mapping without duplicating full endpoint behavior.
+- Tests cover route classification, resource resolution, descriptor resolution, known-resource resolution for OpenAPI-excluded resources such as `SchoolYearType`, paging, totalCount, and field-name mapping without duplicating full endpoint behavior.
 
 ## Dependencies
 
