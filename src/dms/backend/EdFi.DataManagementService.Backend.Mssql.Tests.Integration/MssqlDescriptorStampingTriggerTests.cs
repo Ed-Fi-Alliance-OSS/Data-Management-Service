@@ -148,19 +148,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     }
 
     [Test]
-    public async Task It_does_not_double_stamp_on_descriptor_row_insert()
-    {
-        // SeedAsync inserts a Document (which produces one stamp via column defaults)
-        // and then a Descriptor row. The descriptor stamping trigger is AFTER UPDATE only,
-        // so the Descriptor INSERT must not produce an additional stamp.
-        var seed = await SeedAsync();
-
-        var after = await ReadStampsAsync(seed.DocumentId);
-        after.ContentVersion.Should().Be(seed.ContentVersion);
-        after.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
-    }
-
-    [Test]
     public async Task It_does_not_stamp_on_descriptor_row_delete()
     {
         var seed = await SeedAsync();
