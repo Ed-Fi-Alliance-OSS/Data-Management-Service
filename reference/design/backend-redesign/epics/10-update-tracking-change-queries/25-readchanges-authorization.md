@@ -13,6 +13,8 @@ DMS supports the same ODS authorization strategies for Change Query endpoints ex
 
 The authorization composition rules from `auth.md` apply unchanged.
 
+Unsupported `ReadChanges` strategies are treated as unavailable authorization strategy implementations during request-time authorization resolution. DMS returns the existing security-configuration ProblemDetails from `auth.md`, using the unknown-strategy error text: `Could not find authorization strategy implementations for the following strategy names: '{strategyName1}', '{strategyName2}'.`
+
 ## Acceptance Criteria
 
 - `/deletes` and `/keyChanges` require the `ReadChanges` action.
@@ -26,7 +28,9 @@ The authorization composition rules from `auth.md` apply unchanged.
 - People authorization predicates use denormalized old/new person `DocumentId` values from tracked-change tables rather than joining intermediate resources.
 - Multiple authorization strategies compose with the semantics defined in `auth.md`.
 - Authorization predicates apply before paging and totalCount.
-- Custom view-based `ReadChanges` strategies fail as not implemented or unsupported according to the existing authorization failure conventions for deferred strategies.
+- Unsupported `ReadChanges` strategies fail during request-time authorization resolution with HTTP 500 Security Configuration Error ProblemDetails as defined in `auth.md`.
+- The unsupported-strategy ProblemDetails use type `urn:ed-fi:api:system:configuration:security` and the existing unknown-strategy error text: `Could not find authorization strategy implementations for the following strategy names: '{strategyName1}', '{strategyName2}'.`
+- Unsupported-strategy coverage includes `OwnershipBased`, `RelationshipsWithPeopleOnly`, `RelationshipsWithEdOrgsAndPeopleInverted`, and custom view-based `ReadChanges` strategies deferred from v1.
 - Tests cover `/deletes` and `/keyChanges` for namespace, EdOrg-only, EdOrg-and-people, students-only, and responsibility-through-deleted strategies.
 
 ## Dependencies

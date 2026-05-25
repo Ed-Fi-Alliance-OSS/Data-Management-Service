@@ -22,7 +22,9 @@ The response payload must use identifying field names as they appear in the reso
 - Shared paging supports `limit` and `offset` consistently with existing GET-many behavior.
 - Shared totalCount support counts after endpoint filters and authorization filters.
 - Response shaping maps tracked old/new storage columns back to public query-field names from `queryFieldMapping`.
+- Descriptor reference public fields in shaped responses compose the tracked `Namespace` and `CodeValue` values as a single string in `"<namespace>#<codeValue>"` form.
 - Descriptor responses use descriptor public identity fields, not internal descriptor IDs.
+- Internal descriptor IDs are not returned in descriptor identity fields or descriptor reference fields.
 - Shared SQL planning can compose change-version windows, tombstone/key-change filters, recreated-resource suppression where applicable, paging, totalCount, and authorization predicates.
 - Tests cover route classification, resource resolution, descriptor resolution, paging, totalCount, and field-name mapping without duplicating full endpoint behavior.
 

@@ -32,6 +32,9 @@ The mirror supports live resource and descriptor `minChangeVersion` / `maxChange
   - the owning resource root table for child and `_ext` triggers,
   - `dms.Descriptor` for the descriptor trigger.
 - `TableWritePlan.ColumnBindings` excludes the mirror column kinds from client-writable projections.
+- Generated client insert and update DML does not bind, set, or assign `ContentVersion` or `ContentLastModifiedAt` mirror columns.
+- Mirror columns are maintained only by `*_Stamp` triggers; they are not reachable through client-writable projections.
+- `IdentityVersion` and `IdentityLastModifiedAt` columns are absent from every in-scope concrete resource root table and from `dms.Descriptor`.
 - Fixture or manifest coverage proves mirrors and indexes are emitted for core resources, extension-project resources, and descriptors.
 
 ## Dependencies

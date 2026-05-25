@@ -20,11 +20,13 @@ These views preserve ODS Change Query authorization semantics while adapting the
   - `auth.EducationOrganizationIdToStaffDocumentIdIncludingDeletes`
   - `auth.EducationOrganizationIdToStudentDocumentIdThroughDeletedResponsibility`
 - Each view uses the union arms recorded in inventory without re-deriving table paths inside the dialect emitter.
+- Each emitted view combines current-association and tracked-change arms with SQL `UNION`, not `UNION ALL`.
+- `UNION` is required so duplicate authorization pairs produced by current association arms and tracked-change arms are eliminated before runtime authorization predicates consume the view.
 - Views join against the current `auth.EducationOrganizationIdToEducationOrganizationId` hierarchy.
 - Views reference current association tables and tracked-change tables as specified by inventory.
 - Views are not emitted when the PrimaryAssociation resource guard fails.
 - DDL manifests include the emitted authorization views.
-- PostgreSQL and SQL Server fixture tests validate the rendered view shape.
+- PostgreSQL and SQL Server fixture tests validate the rendered view shape, including use of `UNION` and absence of `UNION ALL`.
 
 ## Dependencies
 

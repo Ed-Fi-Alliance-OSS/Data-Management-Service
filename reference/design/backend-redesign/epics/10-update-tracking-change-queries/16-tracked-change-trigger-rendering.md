@@ -24,6 +24,9 @@ Deletes insert tombstones with old values populated and new values null. Identit
 - Person securable-element values are materialized through `TrackedChangePersonJoinInfo` as person `DocumentId` values.
 - Tombstones and key-change rows store `dms.Document.DocumentUuid` in `Id`.
 - Tombstones and key-change rows store the stamped `dms.Document.ContentVersion` in `ChangeVersion`.
+- Key-change rows inserted by a trigger fire satisfy `tracked_changes.ChangeVersion == dms.Document.ContentVersion == persisted mirror ContentVersion` for that same fire.
+- Delete tombstones inserted by a trigger fire satisfy `tracked_changes.ChangeVersion == dms.Document.ContentVersion` stamped by the delete trigger before `dms.Document` deletion.
+- PostgreSQL and SQL Server tests assert the full three-way linkage for key-change rows and tracked row to document stamp linkage for delete tombstones before document deletion.
 - Descriptor resources write to `tracked_changes_edfi.Descriptor` with the correct `Discriminator`.
 - Concrete abstract resources write to their own tracked-change tables.
 - Tests cover deletes, identity changes, cascading key changes, descriptor paths, people securable paths, key-unification paths, and multi-row updates in both dialects.

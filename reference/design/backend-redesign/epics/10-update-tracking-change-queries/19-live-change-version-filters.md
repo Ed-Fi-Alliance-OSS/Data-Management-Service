@@ -21,10 +21,12 @@ Response metadata remains sourced from `dms.Document` for now.
 - Descriptor page-selection SQL filters `dms.Descriptor.ContentVersion` and includes the descriptor `Discriminator` predicate.
 - The change-version predicate does not require a `dms.Document` join for regular resource page selection.
 - The planner uses this path for every resource with a `MirroredContentVersion` column and has no non-mirror fallback for in-scope relational tables.
+- `SchoolYearType` uses the live GET-many ChangeVersion filter path; its exclusion from `/deletes` and `/keyChanges` does not exclude it from live `minChangeVersion` and `maxChangeVersion` filtering.
 - Pagination and totalCount apply after the change-version filter.
 - Query filtering and authorization filtering continue to compose with the change-version predicate.
 - Tests assert emitted SQL shape for at least:
   - `ed-fi/students`
+  - `ed-fi/schoolYearTypes`
   - one descriptor endpoint
   - one extension-project resource endpoint.
 - Integration tests prove resources outside the range are excluded and resources inside the range are returned.

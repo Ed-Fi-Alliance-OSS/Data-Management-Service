@@ -21,7 +21,7 @@ This story owns semantic derivation only. Dialect renderers and endpoint planner
 - Each tracked-change table includes system-column metadata for `Id`, `ChangeVersion`, and `CreatedAt`.
 - The shared descriptor tracked-change table includes `Discriminator`.
 - `TrackedChangeColumnInfo` includes old/new column pairs for every required identity and securable-element path.
-- Old and new nullability are represented separately.
+- Old and new nullability are represented separately as `IsOldColumnNullable` and `IsNewColumnNullable`.
 - Descriptor reference paths materialize `Namespace` and `CodeValue` columns and reference a table-level `TrackedChangeDescriptorJoinInfo`.
 - Student, Contact, and Staff securable-element paths materialize person `DocumentId` columns and reference a table-level `TrackedChangePersonJoinInfo`.
 - Key-unification paths use canonical storage columns and de-duplicate repeated canonical columns.

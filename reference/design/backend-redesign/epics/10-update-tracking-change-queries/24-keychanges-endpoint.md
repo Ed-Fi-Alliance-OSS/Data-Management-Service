@@ -23,6 +23,7 @@ Descriptor identities are immutable in DMS v1, so descriptor `/keyChanges` endpo
 - Multiple identity changes for the same `Id` inside one window collapse to one response item using the earliest old values and latest new values.
 - The response item `changeVersion` is the final change version in the collapsed window.
 - Response `oldKeyValues` and `newKeyValues` use public field names from `queryFieldMapping`.
+- Descriptor reference values inside `oldKeyValues` and `newKeyValues` compose the tracked `Namespace` and `CodeValue` values as a single string in `"<namespace>#<codeValue>"` form.
 - Descriptor `/keyChanges` endpoints return an empty array and support paging and totalCount behavior consistently.
 - Cascading key-change scenarios are covered.
 - A totalCount regression comparable to ODS-5423 is covered.

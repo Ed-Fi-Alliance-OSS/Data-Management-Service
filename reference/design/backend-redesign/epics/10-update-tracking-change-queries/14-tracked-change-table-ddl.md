@@ -21,7 +21,7 @@ The tables are append-only stores for delete tombstones and key-change rows. The
 - The shared descriptor tracked-change table is emitted as `tracked_changes_edfi.Descriptor`.
 - `Id` uses PostgreSQL `uuid` and SQL Server `uniqueidentifier`.
 - `ChangeVersion` uses `bigint`.
-- `CreatedAt` uses a UTC-current timestamp default appropriate for each dialect.
+- `CreatedAt` uses PostgreSQL `timestamp with time zone DEFAULT now()` and SQL Server `datetime2(7) DEFAULT sysutcdatetime()`.
 - Shared descriptor `Discriminator` uses PostgreSQL `varchar(128)` and SQL Server `nvarchar(128)`.
 - Old/new value column nullability follows `TrackedChangeColumnInfo`.
 - Primary keys are clustered or ordered by `ChangeVersion` where the dialect supports that shape.

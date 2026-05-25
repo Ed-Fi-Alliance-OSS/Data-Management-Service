@@ -24,6 +24,7 @@ The response contract must remain compatible with ODS.
 - Descriptor recreated-resource suppression anti-joins against `dms.Descriptor` using `Discriminator`, `Namespace`, and `CodeValue`.
 - Resource suppression resolves descriptor identity references by joining current `dms.Descriptor` rows on stored `Namespace` and `CodeValue`, so recreated descriptors do not cause false delete results.
 - Response `keyValues` use public field names from `queryFieldMapping`.
+- Descriptor reference values inside `keyValues` compose the tracked `Namespace` and `CodeValue` values as a single string in `"<namespace>#<codeValue>"` form.
 - Descriptor `/deletes` responses include public descriptor identity fields only.
 - Cascading delete scenarios for abstract-resource families are covered, including a scenario comparable to ODS-4087.
 - Tests cover regular resources, descriptors, recreated resources, recreated descriptors, pagination, totalCount, and both dialects.
