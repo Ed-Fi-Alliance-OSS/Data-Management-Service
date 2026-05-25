@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1175
+jira_url: https://edfi.atlassian.net/browse/DMS-1175
 ---
 
 # Story: Derive Tracked-Change Inventory

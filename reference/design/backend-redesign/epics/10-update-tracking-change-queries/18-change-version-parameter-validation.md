@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1181
+jira_url: https://edfi.atlassian.net/browse/DMS-1181
 ---
 
 # Story: Validate Change-Version Query Parameters

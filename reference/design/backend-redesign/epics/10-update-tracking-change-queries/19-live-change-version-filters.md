@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1182
+jira_url: https://edfi.atlassian.net/browse/DMS-1182
 ---
 
 # Story: Filter Live GET-Many Endpoints by Change Version

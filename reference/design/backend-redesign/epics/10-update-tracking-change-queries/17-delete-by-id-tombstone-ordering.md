@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1180
+jira_url: https://edfi.atlassian.net/browse/DMS-1180
 ---
 
 # Story: Delete Concrete Rows Before `dms.Document`

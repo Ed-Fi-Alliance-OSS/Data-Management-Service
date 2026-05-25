@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1178
+jira_url: https://edfi.atlassian.net/browse/DMS-1178
 ---
 
 # Story: Emit `ReadChanges` Authorization Views

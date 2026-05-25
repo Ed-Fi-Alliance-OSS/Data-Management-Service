@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1172
+jira_url: https://edfi.atlassian.net/browse/DMS-1172
 ---
 
 # Story: Derive `ContentVersion` and `ContentLastModifiedAt` Mirrors

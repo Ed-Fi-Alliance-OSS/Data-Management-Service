@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1187
+jira_url: https://edfi.atlassian.net/browse/DMS-1187
 ---
 
 # Story: Serve `/keyChanges` from Tracked-Change Rows

@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1188
+jira_url: https://edfi.atlassian.net/browse/DMS-1188
 ---
 
 # Story: Apply `ReadChanges` Authorization to Change Query Endpoints

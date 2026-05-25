@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1186
+jira_url: https://edfi.atlassian.net/browse/DMS-1186
 ---
 
 # Story: Serve `/deletes` from Tracked-Change Tombstones

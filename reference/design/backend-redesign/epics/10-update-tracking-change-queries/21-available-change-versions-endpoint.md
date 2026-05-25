@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1184
+jira_url: https://edfi.atlassian.net/browse/DMS-1184
 ---
 
 # Story: Serve `/changeQueries/v1/availableChangeVersions`

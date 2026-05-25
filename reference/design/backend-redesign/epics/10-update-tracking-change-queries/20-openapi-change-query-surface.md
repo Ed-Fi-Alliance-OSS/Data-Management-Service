@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1183
+jira_url: https://edfi.atlassian.net/browse/DMS-1183
 ---
 
 # Story: Extend MetaEd and DMS OpenAPI for Change Queries

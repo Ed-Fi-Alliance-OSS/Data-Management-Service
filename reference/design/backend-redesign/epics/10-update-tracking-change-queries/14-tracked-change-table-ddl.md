@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1177
+jira_url: https://edfi.atlassian.net/browse/DMS-1177
 ---
 
 # Story: Emit `tracked_changes_*` Tables

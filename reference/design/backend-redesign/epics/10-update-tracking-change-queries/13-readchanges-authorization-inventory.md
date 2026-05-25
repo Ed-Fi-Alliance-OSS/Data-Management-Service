@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1176
+jira_url: https://edfi.atlassian.net/browse/DMS-1176
 ---
 
 # Story: Derive `ReadChanges` Authorization View Inventory

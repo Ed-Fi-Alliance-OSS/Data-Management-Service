@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1189
+jira_url: https://edfi.atlassian.net/browse/DMS-1189
 ---
 
 # Story: Return `403` for Crafted `SchoolYearType` Change Query Requests

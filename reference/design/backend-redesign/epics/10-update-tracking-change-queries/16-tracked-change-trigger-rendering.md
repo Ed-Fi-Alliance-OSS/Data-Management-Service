@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1179
+jira_url: https://edfi.atlassian.net/browse/DMS-1179
 ---
 
 # Story: Populate Tracked-Change Tables from Stamping Triggers

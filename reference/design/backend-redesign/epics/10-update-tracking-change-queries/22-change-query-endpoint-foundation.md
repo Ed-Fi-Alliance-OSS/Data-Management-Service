@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1185
+jira_url: https://edfi.atlassian.net/browse/DMS-1185
 ---
 
 # Story: Add Shared Foundation for `/deletes` and `/keyChanges`

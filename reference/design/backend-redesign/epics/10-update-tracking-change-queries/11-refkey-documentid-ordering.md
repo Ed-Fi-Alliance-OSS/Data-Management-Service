@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1174
+jira_url: https://edfi.atlassian.net/browse/DMS-1174
 ---
 
 # Story: Emit `*_RefKey` Indexes with `DocumentId` Last

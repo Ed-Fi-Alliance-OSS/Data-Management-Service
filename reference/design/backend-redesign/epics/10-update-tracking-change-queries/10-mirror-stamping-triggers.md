@@ -1,5 +1,6 @@
 ---
-jira: Unassigned
+jira: DMS-1173
+jira_url: https://edfi.atlassian.net/browse/DMS-1173
 ---
 
 # Story: Keep Change-Version Mirrors in Lock-Step from Stamping Triggers

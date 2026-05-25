@@ -1289,7 +1289,7 @@ The existing `*_Stamp` trigger inventory entries will be updated to store tombst
 
 The dialect trigger emitters must use the tracked-change inventory directly. They must not re-derive old/new columns, descriptor joins, person joins, or key-change predicates from SQL text or from ad hoc DDL-only metadata.
 
-For updates, the key-change workset is the owning trigger's `IdentityProjectionColumns` null-safe old/new value-diff workset. This is the same workset used to decide which documents receive identity stamp updates. Under key unification, emitters use the presence-gated canonical expressions defined in [key-unification.md](key-unification.md). Emitters must not use SQL Server `UPDATE(column)`, PostgreSQL `UPDATE OF`, or equivalent target-list checks to decide whether a key-change row should be emitted.
+For updates, the key-change workset is the owning trigger's `IdentityProjectionColumns` null-safe old/new value-diff workset. This is the same workset used to decide which documents receive identity stamp updates. Under key unification, emitters use the presence-gated canonical expressions defined in [key-unification.md](key-unification.md).
 
 Descriptor paths use the table-level `TrackedChangeDescriptorJoinInfo` entries to join with `dms.Descriptor` and store the descriptor's `Namespace` and `CodeValue`. Value columns identify the needed descriptor join by `DescriptorJoinName`.
 
@@ -1646,7 +1646,7 @@ SELECT
   c.Old_SchoolId_Unified,                             
   c.Old_StudentSectionAssociation_SectionIdentifier,                    
   c.Old_StudentSectionAssociation_SessionName,                          
-  c.Old_StudentSectionAssociation_StudentUniqueId,
+  c.Old_StudentSectionAssociation_StudentUniqueId
 FROM 
   tracked_changes_edfi.Grade AS c
   LEFT JOIN dms.Descriptor AS OldGradeTypeDescriptor 
@@ -1816,7 +1816,7 @@ CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
 WITH page_ids AS (
     SELECT r."DocumentId"
     FROM "edfi"."School" r
-    WHERE r.ContentVersion >= @MinChangeVersion AND ChangeVersion <= @MaxChangeVersion -- Range filter on ContentVersion
+    WHERE r.ContentVersion >= @MinChangeVersion AND r.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
     ORDER BY r."DocumentId" ASC
     LIMIT @limit OFFSET @offset
 )
@@ -1849,7 +1849,7 @@ FROM
       "dms"."Document" r 
       INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = r."DocumentId" 
     WHERE 
-      d.ContentVersion >= @MinChangeVersion AND ChangeVersion <= @MaxChangeVersion -- Range filter on ContentVersion
+      d.ContentVersion >= @MinChangeVersion AND d.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
       AND (
         r."ResourceKeyId" = @resourceKeyId
       ) 
