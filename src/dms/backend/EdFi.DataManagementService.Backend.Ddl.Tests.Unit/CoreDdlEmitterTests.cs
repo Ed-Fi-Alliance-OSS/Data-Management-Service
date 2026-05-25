@@ -362,13 +362,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("DEFAULT now()");
     }
 
-    [Test]
-    public void It_should_emit_document_defaults_for_root_insert_initialization()
-    {
-        _ddl.Should().Contain("nextval('\"dms\".\"ChangeVersionSequence\"')");
-        _ddl.Should().Contain("DEFAULT now()");
-    }
-
     // ── Primary keys ────────────────────────────────────────────────
 
     [Test]
