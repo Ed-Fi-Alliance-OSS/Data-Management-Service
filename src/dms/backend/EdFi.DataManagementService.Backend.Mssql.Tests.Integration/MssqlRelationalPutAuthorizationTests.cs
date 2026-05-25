@@ -181,7 +181,7 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
     }
 
     [Test]
-    public async Task It_authorizes_put_and_updates_document_resource_and_journal_rows()
+    public async Task It_authorizes_put_and_updates_document_resource()
     {
         var existingSeed = CreateRootChildSeed(
             "aaaaaaaa-3333-0000-0000-000000000004",
@@ -214,12 +214,11 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
         var after = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
         after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
         after.Document.DocumentUuid.Should().Be(existingSeed.DocumentUuid.Value);
-        after.DocumentChangeEventCount.Should().BeGreaterThan(before.DocumentChangeEventCount);
         AssertRootRow(after, proposedSeed);
     }
 
     [Test]
-    public async Task It_denies_stored_value_put_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_denies_stored_value_put_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
             "aaaaaaaa-3333-0000-0000-000000000001",
@@ -521,7 +520,7 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
     }
 
     [Test]
-    public async Task It_denies_proposed_value_put_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_denies_proposed_value_put_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
             "aaaaaaaa-3333-0000-0000-000000000002",
@@ -739,13 +738,12 @@ public class Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthe
         var after = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
         after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
         after.Document.DocumentUuid.Should().Be(existingSeed.DocumentUuid.Value);
-        after.DocumentChangeEventCount.Should().BeGreaterThan(before.DocumentChangeEventCount);
         AssertRootRow(after, candidateSeed);
         (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
     }
 
     [Test]
-    public async Task It_denies_stored_value_post_as_update_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_denies_stored_value_post_as_update_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
             "aaaaaaaa-4444-0000-0000-000000000001",
@@ -1077,7 +1075,7 @@ public class Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthe
     }
 
     [Test]
-    public async Task It_denies_proposed_value_post_as_update_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_denies_proposed_value_post_as_update_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
             "aaaaaaaa-4444-0000-0000-000000000002",

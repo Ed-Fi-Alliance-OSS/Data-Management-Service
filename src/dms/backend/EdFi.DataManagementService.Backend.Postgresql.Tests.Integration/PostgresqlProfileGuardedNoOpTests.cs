@@ -6,8 +6,8 @@
 // PostgreSQL integration coverage for profile guarded no-op.
 // The fixtures in this file exercise unchanged profiled writes through the real
 // relational write executor and assert that no DML-visible state changes — neither
-// row contents, nor Document version/timestamp metadata, nor the DocumentChangeEvent
-// audit log — when the post-merge effective rowset matches the stored rowset.
+// row contents, nor Document version/timestamp metadata — when the post-merge
+// effective rowset matches the stored rowset.
 //
 // The shared infrastructure (DI handlers, persisted-state records, read helper, and
 // abstract test base) is intentionally reusable so the sibling profiled fixtures
@@ -117,13 +117,7 @@ internal static class ProfileGuardedNoOpIntegrationTestSupport
         > readRootRowByDocumentId
     ) =>
         await ProfileGuardedNoOpPersistedStateSupport
-            .ReadPersistedStateAsync(
-                database,
-                documentUuid,
-                ReadDocumentRowsAsync,
-                readRootRowByDocumentId,
-                ReadDocumentChangeEventRowsAsync
-            )
+            .ReadPersistedStateAsync(database, documentUuid, ReadDocumentRowsAsync, readRootRowByDocumentId)
             .ConfigureAwait(false);
 
     private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadDocumentRowsAsync(
@@ -140,20 +134,6 @@ internal static class ProfileGuardedNoOpIntegrationTestSupport
                 WHERE "DocumentUuid" = @documentUuid;
                 """,
                 new NpgsqlParameter("documentUuid", documentUuid)
-            )
-            .ConfigureAwait(false);
-
-    private static async Task<
-        IReadOnlyList<IReadOnlyDictionary<string, object?>>
-    > ReadDocumentChangeEventRowsAsync(PostgresqlGeneratedDdlTestDatabase database, long documentId) =>
-        await database
-            .QueryRowsAsync(
-                """
-                SELECT COUNT(*) AS "RowCount"
-                FROM "dms"."DocumentChangeEvent"
-                WHERE "DocumentId" = @documentId;
-                """,
-                new NpgsqlParameter("documentId", documentId)
             )
             .ConfigureAwait(false);
 }
@@ -813,12 +793,6 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root
             .Document.IdentityLastModifiedAt.Should()
             .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
     }
-
-    [Test]
-    public void It_does_not_emit_a_document_change_event_row()
-    {
-        _stateAfterUpdate.DocumentChangeEventCount.Should().Be(_stateBeforeUpdate.DocumentChangeEventCount);
-    }
 }
 
 /// <summary>
@@ -924,14 +898,6 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Updat
             .Document.IdentityLastModifiedAt.Should()
             .Be(_stateBeforePostAsUpdate.Document.IdentityLastModifiedAt);
     }
-
-    [Test]
-    public void It_does_not_emit_a_document_change_event_row()
-    {
-        _stateAfterPostAsUpdate
-            .DocumentChangeEventCount.Should()
-            .Be(_stateBeforePostAsUpdate.DocumentChangeEventCount);
-    }
 }
 
 /// <summary>
@@ -998,22 +964,19 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Put
     [Test]
     public void It_preserves_the_persisted_state_aside_from_the_concurrent_content_version_bump()
     {
-        // The freshness-checker bumper raises the stored Document.ContentVersion by one,
-        // which transitively fires the dms.TR_Document_Journal trigger and inserts a
-        // single DocumentChangeEvent row. Both moves are caused by the simulated
-        // concurrent writer — not by the executor's stale-retry no-op success path,
-        // which neither persists rowset content nor mutates Document metadata. We
-        // substitute the bumper's side-effects back to the before-state so the
-        // deep-equivalence assertion proves the no-op retry preserves every other
-        // field (ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt,
-        // RootRow, ResourceKeyId, DocumentUuid, DocumentId).
+        // The freshness-checker bumper raises the stored Document.ContentVersion by one
+        // as the simulated concurrent writer — not the executor's stale-retry no-op
+        // success path, which neither persists rowset content nor mutates Document
+        // metadata. We substitute the bumper's ContentVersion bump back to the
+        // before-state so the deep-equivalence assertion proves the no-op retry
+        // preserves every other field (ContentLastModifiedAt, IdentityVersion,
+        // IdentityLastModifiedAt, RootRow, ResourceKeyId, DocumentUuid, DocumentId).
         var adjustedAfterState = _stateAfterUpdate with
         {
             Document = _stateAfterUpdate.Document with
             {
                 ContentVersion = _stateBeforeUpdate.Document.ContentVersion,
             },
-            DocumentChangeEventCount = _stateBeforeUpdate.DocumentChangeEventCount,
         };
 
         adjustedAfterState.Should().BeEquivalentTo(_stateBeforeUpdate);
@@ -1023,18 +986,6 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Put
     public void It_bumps_the_content_version_by_exactly_one()
     {
         _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion + 1);
-    }
-
-    [Test]
-    public void It_emits_only_the_concurrent_writer_journal_row_and_no_executor_journal_row()
-    {
-        // The Document.ContentVersion bump from the freshness-checker simulated
-        // concurrent writer fires TR_Document_Journal exactly once. The executor's
-        // stale-retry no-op success branch must NOT persist any additional row,
-        // so the post-write journal row count is exactly before + 1.
-        _stateAfterUpdate
-            .DocumentChangeEventCount.Should()
-            .Be(_stateBeforeUpdate.DocumentChangeEventCount + 1);
     }
 }
 
@@ -1112,22 +1063,19 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As
     [Test]
     public void It_preserves_the_persisted_state_aside_from_the_concurrent_content_version_bump()
     {
-        // The freshness-checker bumper raises the stored Document.ContentVersion by one,
-        // which transitively fires the dms.TR_Document_Journal trigger and inserts a
-        // single DocumentChangeEvent row. Both moves are caused by the simulated
-        // concurrent writer — not by the executor's stale-retry no-op success path,
-        // which neither persists rowset content nor mutates Document metadata. We
-        // substitute the bumper's side-effects back to the before-state so the
-        // deep-equivalence assertion proves the no-op retry preserves every other
-        // field (ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt,
-        // RootRow, ResourceKeyId, DocumentUuid, DocumentId).
+        // The freshness-checker bumper raises the stored Document.ContentVersion by one
+        // as the simulated concurrent writer — not the executor's stale-retry no-op
+        // success path, which neither persists rowset content nor mutates Document
+        // metadata. We substitute the bumper's ContentVersion bump back to the
+        // before-state so the deep-equivalence assertion proves the no-op retry
+        // preserves every other field (ContentLastModifiedAt, IdentityVersion,
+        // IdentityLastModifiedAt, RootRow, ResourceKeyId, DocumentUuid, DocumentId).
         var adjustedAfterState = _stateAfterPostAsUpdate with
         {
             Document = _stateAfterPostAsUpdate.Document with
             {
                 ContentVersion = _stateBeforePostAsUpdate.Document.ContentVersion,
             },
-            DocumentChangeEventCount = _stateBeforePostAsUpdate.DocumentChangeEventCount,
         };
 
         adjustedAfterState.Should().BeEquivalentTo(_stateBeforePostAsUpdate);
@@ -1140,18 +1088,6 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As
             .Document.ContentVersion.Should()
             .Be(_stateBeforePostAsUpdate.Document.ContentVersion + 1);
     }
-
-    [Test]
-    public void It_emits_only_the_concurrent_writer_journal_row_and_no_executor_journal_row()
-    {
-        // The Document.ContentVersion bump from the freshness-checker simulated
-        // concurrent writer fires TR_Document_Journal exactly once. The executor's
-        // stale-retry no-op success branch must NOT persist any additional row,
-        // so the post-write journal row count is exactly before + 1.
-        _stateAfterPostAsUpdate
-            .DocumentChangeEventCount.Should()
-            .Be(_stateBeforePostAsUpdate.DocumentChangeEventCount + 1);
-    }
 }
 
 /// <summary>
@@ -1163,9 +1099,8 @@ internal class Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As
 /// separate-table <c>$._ext.sample</c> scope fully VisiblePresent (and creatable)
 /// on both the request and stored sides with no hidden member paths, so the
 /// merged effective rowset across both tables equals the stored rowset and the
-/// guarded no-op short-circuit must fire — neither root nor extension row content,
-/// nor Document version/timestamp metadata, nor a DocumentChangeEvent row may be
-/// written.
+/// guarded no-op short-circuit must fire — neither root nor extension row content
+/// nor Document version/timestamp metadata may be written.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -1266,12 +1201,6 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Sepa
             .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
     }
 
-    [Test]
-    public void It_does_not_emit_a_document_change_event_row()
-    {
-        _stateAfterUpdate.DocumentChangeEventCount.Should().Be(_stateBeforeUpdate.DocumentChangeEventCount);
-    }
-
     /// <summary>
     /// Reads the single <c>sample.ProfileSeparateTableMergeItemExtension</c> row for the
     /// supplied <paramref name="documentUuid"/>. Wraps
@@ -1305,7 +1234,7 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Sepa
 /// and collection tables equals the stored rowset and the guarded no-op short-circuit
 /// must fire — neither root row, nor collection row count, nor collection row
 /// contents (including <c>CollectionItemId</c> and <c>Ordinal</c>), nor Document
-/// version/timestamp metadata, nor a <c>DocumentChangeEvent</c> row may be written.
+/// version/timestamp metadata may be written.
 /// The <c>ContentVersion</c> assertion specifically guards against any DML hitting
 /// the collection table, since insert/update/delete triggers on
 /// <c>edfi.SchoolAddress</c> bump the parent document's <c>ContentVersion</c> and
@@ -1416,11 +1345,5 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_
         _stateAfterUpdate
             .Document.IdentityLastModifiedAt.Should()
             .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
-    }
-
-    [Test]
-    public void It_does_not_emit_a_document_change_event_row()
-    {
-        _stateAfterUpdate.DocumentChangeEventCount.Should().Be(_stateBeforeUpdate.DocumentChangeEventCount);
     }
 }

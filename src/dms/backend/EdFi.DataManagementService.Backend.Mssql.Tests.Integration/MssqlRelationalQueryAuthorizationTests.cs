@@ -813,23 +813,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
-    public async Task<long> CountDocumentChangeEventRowsForResourceAsync(
-        string projectEndpointName,
-        string resourceName
-    )
-    {
-        var resourceKeyId = GetCompiledResourceKeyId(projectEndpointName, resourceName);
-
-        return await Database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT_BIG(*)
-            FROM [dms].[DocumentChangeEvent]
-            WHERE [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
     public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationRootChildSideEffectStateAsync(
         DocumentUuid documentUuid
     )
@@ -845,10 +828,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 document.DocumentId
             ),
             ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
-            ),
-            DocumentChangeEventCount: await CountDocumentChangeEventRowsForDocumentAsync(
                 document.DocumentId,
                 resourceKeyId
             )
@@ -870,10 +849,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 document.DocumentId
             ),
             ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
-            ),
-            DocumentChangeEventCount: await CountDocumentChangeEventRowsForDocumentAsync(
                 document.DocumentId,
                 resourceKeyId
             )
@@ -1230,23 +1205,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 GetRequiredInt16(row, "ResourceKeyId")
             )),
         ];
-    }
-
-    private async Task<long> CountDocumentChangeEventRowsForDocumentAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        return await Database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT_BIG(*)
-            FROM [dms].[DocumentChangeEvent]
-            WHERE [DocumentId] = @documentId
-              AND [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
     }
 
     private DocumentInfo CreateAuthorizationRootChildDocumentInfo(AuthorizationRootChildSeed seed)

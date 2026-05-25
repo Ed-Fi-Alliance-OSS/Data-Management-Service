@@ -277,14 +277,6 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
             .Should()
             .Be(0);
         (await _context.CountReferentialIdentityRowsForAuthorizationRootChildAsync(seed)).Should().Be(0);
-        (
-            await _context.CountDocumentChangeEventRowsForResourceAsync(
-                ProjectEndpointName,
-                RootChildResourceName
-            )
-        )
-            .Should()
-            .Be(0);
     }
 
     private static void AssertRelationshipDenied(

@@ -1,0 +1,199 @@
+{
+  "ticket": "DMS-1169",
+  "title": "Remove dms.DocumentChangeEvent",
+  "tasks": [
+    {
+      "id": 1,
+      "description": "Remove DocumentChangeEvent constant from DmsTableNames",
+      "status": "completed",
+      "phase": 1,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/DmsTableNames.cs"
+      ]
+    },
+    {
+      "id": 2,
+      "description": "Strip DocumentChangeEvent table, FKs, indexes, and Phase 8 trigger emission from CoreDdlEmitter",
+      "status": "completed",
+      "detail": "Delete _documentChangeEventTable field, EmitDocumentChangeEventTable(), the two FK blocks, the two IX blocks, EmitTriggers/EmitPgsqlJournalingTrigger/EmitMssqlJournalingTrigger methods, and the EmitTriggers() call in Emit(). Drop the <item>Triggers</item> line (line 28) from the class-level XML doc phased list. Phase 8 disappears entirely; Emit() ends after Phase 7.",
+      "phase": 1,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs"
+      ]
+    },
+    {
+      "id": 3,
+      "description": "Update CoreDdlEmitterTests: delete per-object + trigger assertions, update group counts and phase ordering",
+      "status": "completed",
+      "detail": "PG block: drop the six DocumentChangeEvent tests and the whole PG trigger section; delete It_should_keep_document_journaling_trigger_compatible_with_default_seeded_insert_flow (line 332). For It_should_keep_document_defaults_available_for_root_insert_initialization (line 324), remove only the third assertion (line 328 'AFTER INSERT OR UPDATE OF \"ContentVersion\"') and rename the method to drop trigger framing (e.g. It_should_emit_document_defaults_for_root_insert_initialization); keep the nextval and DEFAULT now() assertions — they are the PG block's only Document defaults coverage. MSSQL block: drop the named-default DocumentChangeEvent test, the whole MSSQL trigger section, It_should_keep_document_journaling_trigger_compatible_with_default_then_restamp_flow (line 872), and the phase8 line in It_should_emit_phases_in_correct_order. Rename + update the MSSQL group-count tests: It_should_create_all_eight_tables (line 779) -> It_should_create_all_seven_tables; It_should_have_all_eight_foreign_keys (line 1028) -> It_should_have_all_six_foreign_keys; It_should_have_all_six_indexes (line 1055) -> It_should_have_all_four_indexes. Also update It_should_emit_table_in_alphabetical_order to drop the DocumentChangeEvent IndexOf line.",
+      "phase": 2,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CoreDdlEmitterTests.cs"
+      ]
+    },
+    {
+      "id": 4,
+      "description": "Regenerate golden SQL fixtures via UPDATE_GOLDENS=1 and verify diff",
+      "status": "completed",
+      "detail": "Run the DDL unit-test project + the integration fixtures + the authoritative fixture suite with UPDATE_GOLDENS=1. Manually diff every regenerated pgsql.sql / mssql.sql. Expected removals: (a) DocumentChangeEvent / PK_DocumentChangeEvent / FK_DocumentChangeEvent_* / IX_DocumentChangeEvent_* / PG TF_Document_Journal + TR_Document_Journal / MSSQL TR_Document_Journal blocks; (b) the '-- Phase 8: Triggers' phase header + its divider lines; (c) MSSQL only — the trigger-only GO batch separator(s) bracketing the CREATE OR ALTER TRIGGER. Everything else must be byte-for-byte identical.",
+      "phase": 2,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/ext/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/ext/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/naming-stress/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/naming-stress/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/nested/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/nested/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/no-ddl-manifest/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/no-ddl-manifest/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/polymorphic/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/polymorphic/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-root-only-merge/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-root-only-merge/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/referential-identity/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/referential-identity/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/top-level-reference-backed-collection/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/top-level-reference-backed-collection/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension-hidden-descendant/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension-hidden-descendant/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension-with-doc-ref/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension-with-doc-ref/expected/mssql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-nested-and-root-extension-children/expected/pgsql.sql",
+        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-nested-and-root-extension-children/expected/mssql.sql",
+        "src/dms/backend/Fixtures/authoritative/ds-5.2/expected/pgsql.sql",
+        "src/dms/backend/Fixtures/authoritative/ds-5.2/expected/mssql.sql",
+        "src/dms/backend/Fixtures/authoritative/sample/expected/pgsql.sql",
+        "src/dms/backend/Fixtures/authoritative/sample/expected/mssql.sql"
+      ]
+    },
+    {
+      "id": 5,
+      "description": "Drop DocumentChangeEventCount field from AuthorizationWriteSideEffectState and ProfileGuardedNoOpPersistedState; remove obsolete helpers",
+      "status": "completed",
+      "detail": "Records lose the long DocumentChangeEventCount field. In ProfileGuardedNoOpTestSupport.cs also remove the ReadDocumentChangeEventRowsAsync read path and the ExtractSingleRowCount helper if no longer referenced (grep first).",
+      "phase": 3,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/AuthorizationWriteSideEffectState.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/ProfileGuardedNoOpTestSupport.cs"
+      ]
+    },
+    {
+      "id": 6,
+      "description": "Remove DocumentChangeEvent counts from Postgresql relational authorization tests; rename _journal_rows method names",
+      "status": "completed",
+      "detail": "Drop CountDocumentChangeEventRowsForDocumentAsync, DocumentChangeEventCount: arguments in state-builders, BeGreaterThan(before.DocumentChangeEventCount) assertions, and the CountDocumentChangeEventRowsForResourceAsync call in the POST test. Rename test methods that imply journal-row coverage: PostgresqlRelationalPutAuthorizationTests.cs line 171 (drop _and_journal_rows), and lines 209/421/452/484/689/917/953/990 (drop _and_journal_rows_unchanged).",
+      "phase": 3,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalQueryAuthorizationTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalPutAuthorizationTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalPostAuthorizationTests.cs"
+      ]
+    },
+    {
+      "id": 7,
+      "description": "Remove DocumentChangeEvent counts from MSSQL relational authorization tests; rename _journal_rows method names",
+      "status": "completed",
+      "detail": "Mirror task 6: drop the CountDocumentChangeEventRows* helpers, builder arguments, and BeGreaterThan assertions. Rename test methods at MssqlRelationalPutAuthorizationTests.cs lines 184, 222, 524, 748, 1080 to drop _and_journal_rows / _and_journal_rows_unchanged.",
+      "phase": 3,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalQueryAuthorizationTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalPutAuthorizationTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalPostAuthorizationTests.cs"
+      ]
+    },
+    {
+      "id": 8,
+      "description": "Drop DocumentChangeEvent state, builders, and journal-only tests from Postgresql profile-guarded-no-op suites",
+      "status": "completed",
+      "detail": "Remove the It_does_not_emit_a_document_change_event_row tests, drop DocumentChangeEventCount field assignments in expected-state builders, and remove the .Should().Be(...DocumentChangeEventCount + 1) / .Should().Be(before.DocumentChangeEventCount) comparison assertions. Also delete both It_emits_only_the_concurrent_writer_journal_row_and_no_executor_journal_row tests (lines 1029 and 1145) — journal-row-only assertions that would otherwise become empty/misleadingly-named.",
+      "phase": 3,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlProfileGuardedNoOpTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlProfileGuardedNoOpOrdinalAlignmentTests.cs"
+      ]
+    },
+    {
+      "id": 9,
+      "description": "Drop DocumentChangeEvent state, builders, and journal-only tests from MSSQL profile-guarded-no-op suites",
+      "status": "completed",
+      "detail": "Mirror task 8 plus delete the file-local ReadDocumentChangeEventRowsAsync helper at the top of MssqlProfileGuardedNoOpTests.cs. Delete both It_emits_only_the_concurrent_writer_journal_row_and_no_executor_journal_row tests (lines 793 and 897).",
+      "phase": 3,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlProfileGuardedNoOpTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlProfileGuardedNoOpOrdinalAlignmentTests.cs"
+      ]
+    },
+    {
+      "id": 10,
+      "description": "Delete the dedicated journaling-trigger integration test files",
+      "status": "completed",
+      "detail": "PostgresqlJournalingTriggerTests.cs and MssqlJournalingTriggerTests.cs exist solely to assert the trigger. With the trigger gone, the entire files are removed.",
+      "phase": 3,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlJournalingTriggerTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlJournalingTriggerTests.cs"
+      ]
+    },
+    {
+      "id": 11,
+      "description": "Drop DocumentChangeEvent from fingerprint reader and reference resolver expected-table lists",
+      "status": "completed",
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDatabaseFingerprintReaderTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlReferenceResolverTestDatabaseTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlReferenceResolverTestDatabaseTests.cs"
+      ],
+      "phase": 3
+    },
+    {
+      "id": 12,
+      "description": "Update SchemaTools integration helpers: drop ExpectedCoreTables entry, delete It_creates_the_journaling_trigger, drop the FK_DocumentChangeEvent_ResourceKey teardown DDL",
+      "status": "completed",
+      "detail": "ProvisionTestHelper.cs: remove \"DocumentChangeEvent\" from ExpectedCoreTables. DdlProvisionMssqlTests.cs: delete It_creates_the_journaling_trigger (lines 117-129) and remove the ALTER TABLE [dms].[DocumentChangeEvent] DROP CONSTRAINT line from the teardown SQL block (the surrounding test still validates FK-drop ordering via the remaining Document / ReferentialIdentity FKs).",
+      "files": [
+        "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/ProvisionTestHelper.cs",
+        "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/DdlProvisionMssqlTests.cs"
+      ],
+      "phase": 4
+    },
+    {
+      "id": 13,
+      "description": "Regenerate provisioned-schema golden manifests via UPDATE_GOLDENS=1 and verify diff",
+      "status": "completed",
+      "detail": "Run the SchemaTools.Tests.Integration project with UPDATE_GOLDENS=1. Confirm the diff only removes DocumentChangeEvent rows + PG TF_Document_Journal definition + MSSQL TR_Document_Journal definition.",
+      "phase": 4,
+      "files": [
+        "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/expected/provisioned-schema.pgsql.manifest.json",
+        "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/expected/provisioned-schema.mssql.manifest.json"
+      ]
+    },
+    {
+      "id": 14,
+      "description": "Stale-comment cleanup across emitters, descriptor handler, and MSSQL profile-merge helpers",
+      "status": "completed",
+      "detail": "Update misleading documentation now that the journaling trigger is gone. CoreDdlEmitter.cs line 13: drop 'journaling triggers' from the class summary. RelationalModelDdlEmitter.cs lines 811-812: drop 'and journal row' from the root-document INSERT rationale. DescriptorWriteHandler.cs lines 1205-1207: drop the 'and double-journal' clause. MssqlProfileSeparateTableMergeTests.cs line 448 and MssqlProfileRootTableOnlyMergeFixtureTests.cs line 374: drop the TR_Document_Journal rationale from the OUTPUT-routing comment (keep the routing as-is — simplification of the helper itself is out of scope).",
+      "phase": 5,
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlProfileSeparateTableMergeTests.cs",
+        "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlProfileRootTableOnlyMergeFixtureTests.cs"
+      ]
+    },
+    {
+      "id": 15,
+      "description": "Format, build, run touched test suites; final grep for stragglers",
+      "status": "completed",
+      "detail": "dotnet csharpier format on all changed .cs files. dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln. dotnet test on the DDL unit suite and the touched PG/MSSQL/SchemaTools integration suites. Strict final grep against src/dms/** for DocumentChangeEvent|TF_Document_Journal|TR_Document_Journal must return zero matches (design-doc references under reference/design/** are intentionally out of scope). Then a manual stale-prose grep against src/dms/** for journal_rows|journal row|journaling trigger|double-journal — review hits manually; expected zero but the manual pass catches misleading natural-language fragments the strict grep misses.",
+      "phase": 6,
+      "files": []
+    }
+  ]
+}

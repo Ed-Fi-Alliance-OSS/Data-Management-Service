@@ -12,7 +12,7 @@ exist purely to talk to external systems are faked in `Doubles/`: JWT
 validation, the CMS claim-set provider, the application context, the DMS
 instance directory. Everything else is the real production code path -
 ApiSchema loading, profile XML parsing, write/read middleware, the relational
-backend, and the DDL/journaling pipeline that provisions each baseline.
+backend, and the DDL pipeline that provisions each baseline.
 
 ## What this is not
 
