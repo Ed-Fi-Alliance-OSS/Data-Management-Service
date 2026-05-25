@@ -505,8 +505,11 @@ A minimal projector approach:
 ## Delete Path (DELETE by id)
 
 1. Resolve `DocumentUuid` → `DocumentId`.
-2. Attempt delete from `dms.Document` (which cascades to resource tables and identities).
-3. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
+2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
+3. Delete the corresponding `dms.Document` row. The remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize lifecycle cleanup.
+4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
+
+Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.
 
 Error reporting:
 - SQL Server and PostgreSQL will report FK constraint violations. DMS should map the violated constraint name back to the referencing resource (deterministic FK naming) to produce a conflict response comparable to today’s `DeleteFailureReference`.

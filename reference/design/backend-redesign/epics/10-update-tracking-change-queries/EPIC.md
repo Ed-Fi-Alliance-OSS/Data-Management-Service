@@ -25,11 +25,11 @@ Deliverables include:
 ## Stories
 
 - `DMS-1002` — `00-token-stamping.md` — Allocate stamps and update token columns only for representation changes
-- `DMS-1003` — `01-journaling-contract.md` — Treat journals as derived artifacts; validate trigger behavior
+- `DMS-1003` — `01-journaling-contract.md` — _Retired_ (superseded by DMS-1169 + DMS-1179)
 - `DMS-1004` — `02-derived-metadata.md` — Serve `_etag/_lastModifiedDate/ChangeVersion` from stored stamps
 - `DMS-1005` — `03-if-match.md` — Enforce optimistic concurrency using stored `_etag`
-- `DMS-1006` — `04-change-query-selection.md` — Implement Change Query candidate selection (journal + verify)
-- `DMS-1007` — `05-change-query-api.md` — Implement Change Query endpoints (optional/future-facing)
+- `DMS-1006` — `04-change-query-selection.md` — _Retired_ (superseded by DMS-1182 + DMS-1186 + DMS-1187)
+- `DMS-1007` — `05-change-query-api.md` — _Retired_ (superseded by DMS-1184 through DMS-1189)
 - `DMS-1008` — `06-descriptor-stamping.md` — Ensure descriptor writes stamp/journal correctly (triggers on `dms.Descriptor`)
 - `DMS-1168` — `07-get-max-change-version-function.md` — Emit `dms.GetMaxChangeVersion()` function for `/availableChangeVersions`
 - `DMS-1169` — `08-remove-document-change-event.md` — Remove `dms.DocumentChangeEvent`; superseded by the per-resource `tracked_changes_*` tables and the `ContentVersion` mirror

@@ -1408,7 +1408,7 @@ BEGIN
         INNER JOIN [edfi].[StudentSectionAssociation] oldStudentSectionAssociation ON oldStudentSectionAssociation.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
         INNER JOIN [edfi].[Student] oldStudent ON oldStudent.[DocumentId] = oldStudentSectionAssociation.[Student_DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([GradeTypeDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([StudentSectionAssociation_BeginDate]) OR UPDATE([StudentSectionAssociation_LocalCourseCode]) OR UPDATE([StudentSectionAssociation_SectionIdentifier]) OR UPDATE([StudentSectionAssociation_SessionName]) OR UPDATE([StudentSectionAssociation_StudentUniqueId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
         DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
@@ -1815,7 +1815,7 @@ CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
 
 WITH page_ids AS (
     SELECT r."DocumentId"
-    FROM "edfi"."School" r
+    FROM "edfi"."Grade" r
     WHERE r.ContentVersion >= @MinChangeVersion AND r.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
     ORDER BY r."DocumentId" ASC
     LIMIT @limit OFFSET @offset
@@ -1849,7 +1849,8 @@ FROM
       "dms"."Document" r 
       INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = r."DocumentId" 
     WHERE 
-      d.ContentVersion >= @MinChangeVersion AND d.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
+      d."Discriminator" = @discriminator -- Required for IX_Descriptor_Discriminator_ContentVersion to be used as a range seek
+      AND d.ContentVersion >= @MinChangeVersion AND d.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
       AND (
         r."ResourceKeyId" = @resourceKeyId
       ) 
@@ -1874,6 +1875,10 @@ Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies rem
 ### Snapshot support is deferred
 
 Snapshot support is deferred and will not be available for DMS v1.0; as such, the `/deletes`, `/keyChanges`, `/availableChangeVersions`, and live resource and descriptors endpoints will not support the `Use-Snapshot` header.
+
+**DMS v1.0 behavior on receipt of `Use-Snapshot`.** DMS silently ignores the `Use-Snapshot` request header on Change Query and live resource/descriptor GET-many requests. The header has no effect; the request is processed against current data without snapshot isolation. No `Warning` header is set and no error ProblemDetails is emitted.
+
+**Operator guidance — Ed-Fi API Publisher reading from a DMS v1.0 source.** The Ed-Fi API Publisher sends `Use-Snapshot: true` by default when probing snapshot support against a source whose API major version is at least 7 (see `EdFi.Tools.ApiPublisher.Connections.Api/Processing/Source/Isolation/EdFiApiSourceIsolationApplicator.cs`). Because DMS v1.0 silently ignores that header, reads from a DMS v1.0 source are not snapshot-isolated: concurrent writes against the source may be visible mid-publish and can produce inconsistent published data. Operators publishing from a DMS v1.0 source should either accept that risk or run the Publisher with `--ignoreIsolation=true`, which is the explicit acknowledgment that source isolation is unavailable. Snapshot support in DMS is targeted for a later release.
 
 ### Model and DDL verification
 
@@ -1955,7 +1960,7 @@ If DMS keeps a runtime feature flag for Change Queries, requests to Change Queri
 
 Snapshot support is deferred for DMS v1.0. The `Use-Snapshot` header is therefore not part of the DMS v1.0 Change Queries contract, and DMS v1.0 should not emit ODS snapshot-specific ProblemDetails for Change Queries.
 
-DMS should preserve the ODS response shapes below whenever snapsot support gets added:
+DMS should preserve the ODS response shapes below whenever snapshot support gets added:
 
 | Scenario | Type | Title | Status | Detail |
 |---|---|---|---|---|

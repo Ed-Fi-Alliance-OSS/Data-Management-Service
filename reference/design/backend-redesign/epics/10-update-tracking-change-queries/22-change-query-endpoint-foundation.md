@@ -15,8 +15,9 @@ The response payload must use identifying field names as they appear in the reso
 
 ## Acceptance Criteria
 
-- DMS route resolution identifies `/deletes` and `/keyChanges` for known `{schema}/{resource}` pairs from the effective OpenAPI surface.
-- Unknown Change Query resource paths return the not-found behavior defined in `change-queries.md`.
+- DMS route resolution identifies `/deletes` and `/keyChanges` for `{schema}/{resource}` pairs that are emitted in the effective OpenAPI Change Query surface.
+- DMS route resolution also identifies `/deletes` and `/keyChanges` for `{schema}/{resource}` pairs that are known resources in the effective resource model but excluded from the OpenAPI Change Query surface (e.g., `SchoolYearType`). Such requests resolve to a Change Query handler and proceed to authorization evaluation, which may return `403`; they MUST NOT take the unknown-resource not-found path. This carve-out applies to any resource the model marks as known but OpenAPI excludes from `/deletes` and `/keyChanges`, not only `SchoolYearType`.
+- Unknown `{schema}/{resource}` pairs (resources not present in the effective resource model) return the not-found behavior defined in `change-queries.md`.
 - The endpoint foundation resolves the target `ConcreteResourceModel` or descriptor discriminator.
 - The foundation resolves the matching `TrackedChangeTableInfo`.
 - Shared paging supports `limit` and `offset` consistently with existing GET-many behavior.

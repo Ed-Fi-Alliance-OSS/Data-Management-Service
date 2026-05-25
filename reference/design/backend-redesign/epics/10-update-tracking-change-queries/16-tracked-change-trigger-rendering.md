@@ -13,6 +13,8 @@ The renderers consume `TriggerKindParameters.ChangeTracking` and the associated 
 
 Deletes insert tombstones with old values populated and new values null. Identity changes insert key-change rows with old and new values populated. The row's `ChangeVersion` must be the `dms.Document.ContentVersion` produced by the same trigger fire.
 
+Concrete abstract resources (e.g., `School`, `LocalEducationAgency`, `OrganizationDepartment`) participate in tombstone emission but do not emit key-change rows: their inherited identity is immutable in practice, matching legacy ODS behavior for derived resources.
+
 ## Acceptance Criteria
 
 - PostgreSQL and SQL Server document-stamping trigger renderers consume `TriggerKindParameters.ChangeTracking`.
@@ -28,7 +30,7 @@ Deletes insert tombstones with old values populated and new values null. Identit
 - Delete tombstones inserted by a trigger fire satisfy `tracked_changes.ChangeVersion == dms.Document.ContentVersion` stamped by the delete trigger before `dms.Document` deletion.
 - PostgreSQL and SQL Server tests assert the full three-way linkage for key-change rows and tracked row to document stamp linkage for delete tombstones before document deletion.
 - Descriptor resources write to `tracked_changes_edfi.Descriptor` with the correct `Discriminator`.
-- Concrete abstract resources write to their own tracked-change tables.
+- Concrete abstract resources write tombstones to their own tracked-change tables on delete but do not emit key-change rows (their inherited identity is immutable in practice).
 - Tests cover deletes, identity changes, cascading key changes, descriptor paths, people securable paths, key-unification paths, and multi-row updates in both dialects.
 
 ## Dependencies
