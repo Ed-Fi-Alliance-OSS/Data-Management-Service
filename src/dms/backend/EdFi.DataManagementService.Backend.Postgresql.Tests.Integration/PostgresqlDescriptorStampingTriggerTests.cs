@@ -101,19 +101,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         return (Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
     }
 
-    private async Task<int> CountJournalRowsAsync(long documentId)
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT COUNT(*) AS "Count"
-            FROM dms."DocumentChangeEvent"
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", documentId)
-        );
-        return Convert.ToInt32(rows.Single()["Count"]);
-    }
-
     [Test]
     public async Task It_stamps_document_on_descriptor_value_change()
     {
@@ -153,58 +140,16 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     }
 
     [Test]
-    public async Task It_emits_journal_row_on_descriptor_value_change()
-    {
-        var seed = await SeedAsync();
-        var journalsBefore = await CountJournalRowsAsync(seed.DocumentId);
-
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE dms."Descriptor"
-            SET "Description" = 'Changed Description'
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", seed.DocumentId)
-        );
-
-        var journalsAfter = await CountJournalRowsAsync(seed.DocumentId);
-        (journalsAfter - journalsBefore).Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_does_not_emit_journal_row_on_descriptor_no_op_update()
-    {
-        var seed = await SeedAsync();
-        var journalsBefore = await CountJournalRowsAsync(seed.DocumentId);
-
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE dms."Descriptor"
-            SET "ShortDescription" = "ShortDescription"
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", seed.DocumentId)
-        );
-
-        var journalsAfter = await CountJournalRowsAsync(seed.DocumentId);
-        journalsAfter.Should().Be(journalsBefore);
-    }
-
-    [Test]
     public async Task It_does_not_double_stamp_on_descriptor_row_insert()
     {
-        // SeedAsync inserts a Document (which produces one journal row via column defaults)
+        // SeedAsync inserts a Document (which produces one stamp via column defaults)
         // and then a Descriptor row. The descriptor stamping trigger is AFTER UPDATE only,
-        // so the Descriptor INSERT must not produce an additional stamp / journal row.
+        // so the Descriptor INSERT must not produce an additional stamp.
         var seed = await SeedAsync();
 
-        var journalRows = await CountJournalRowsAsync(seed.DocumentId);
-        journalRows
-            .Should()
-            .Be(
-                1,
-                "Document INSERT defaults produce exactly one stamp; descriptor INSERT must not double-stamp"
-            );
+        var after = await ReadStampsAsync(seed.DocumentId);
+        after.ContentVersion.Should().Be(seed.ContentVersion);
+        after.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
     }
 
     [Test]
@@ -236,10 +181,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     }
 
     [Test]
-    public async Task It_does_not_stamp_or_journal_on_descriptor_row_delete()
+    public async Task It_does_not_stamp_on_descriptor_row_delete()
     {
         var seed = await SeedAsync();
-        var journalsBefore = await CountJournalRowsAsync(seed.DocumentId);
 
         // Detach the FK cascade impact by using a plain DELETE on Descriptor only — the
         // owning Document row stays. The descriptor stamping trigger is AFTER UPDATE so
@@ -255,8 +199,5 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         var after = await ReadStampsAsync(seed.DocumentId);
         after.ContentVersion.Should().Be(seed.ContentVersion);
         after.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
-
-        var journalsAfter = await CountJournalRowsAsync(seed.DocumentId);
-        journalsAfter.Should().Be(journalsBefore);
     }
 }
