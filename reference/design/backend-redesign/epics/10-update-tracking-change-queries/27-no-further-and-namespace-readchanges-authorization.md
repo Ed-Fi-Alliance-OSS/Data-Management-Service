@@ -1,6 +1,6 @@
 ---
-jira: DMS-TBD
-jira_url: TBD
+jira: DMS-1197
+jira_url: https://edfi.atlassian.net/browse/DMS-1197
 ---
 
 # Story: Apply `NoFurtherAuthorizationRequired` and `NamespaceBased` `ReadChanges` Authorization

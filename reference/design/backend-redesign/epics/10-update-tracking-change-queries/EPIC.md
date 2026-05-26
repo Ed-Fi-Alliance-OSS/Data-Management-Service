@@ -50,7 +50,7 @@ Deliverables include:
 - `DMS-1187` — `24-keychanges-endpoint.md` — Serve `/keyChanges` from tracked-change key-change rows
 - `DMS-1188` — `25-readchanges-authorization.md` — Apply relationship-based `ReadChanges` authorization to `/deletes` and `/keyChanges`
 - `DMS-1189` — `26-school-year-type-readchanges-forbidden.md` — _Retired_ No longer needed
-- `DMS-TBD` — `27-no-further-and-namespace-readchanges-authorization.md` — Apply `NoFurtherAuthorizationRequired` and `NamespaceBased` `ReadChanges` authorization to Change Query endpoints
+- `DMS-1197` — `27-no-further-and-namespace-readchanges-authorization.md` — Apply `NoFurtherAuthorizationRequired` and `NamespaceBased` `ReadChanges` authorization to Change Query endpoints
 - `DMS-1194` — `32-document-v1-release-note-deferrals.md` — Document DMS v1.0 Change Queries deferred features in release notes
 
 ## Deferred Stories (post-v1.0)
