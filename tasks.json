@@ -109,7 +109,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
       "Add unit tests for mixed EdOrg-and-People, inverted mixed strategy metadata, People-only strategies, and unresolved element failures."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Operation Eligibility",

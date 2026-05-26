@@ -22,3 +22,8 @@ Task completed: Subject Scope for reference/design/backend-redesign/epics/14-aut
 Key decisions: excluded array-nested People paths from executable subjects; retained skipped contributor metadata with ChildCollectionPersonPathOutsideSubjectScope reason; kept predicate dedupe strategy-local and added stored anchor to the key so auth view/path/anchor differences do not merge.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs; tasks.json; progress.txt.
 Blockers/notes: Planner still does not consume People subjects; operation eligibility and failure mapper metadata remain later tasks.
+
+Task completed: Planner Integration for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: made planner subject selection strategy-local; combined EdOrg and People subjects in one strategy subject set; suppressed only no-applicable EdOrg/People scope failures when the other side has executable subjects; missing People auth view guard now uses actual selected People subjects.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs; tasks.json; progress.txt.
+Blockers/notes: Operation-specific People proposed anchors and self-person create-new eligibility remain pending next task; endpoint adapters still not changed.
