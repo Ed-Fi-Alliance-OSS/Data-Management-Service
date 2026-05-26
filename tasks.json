@@ -463,6 +463,6 @@
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"GetByIdHandlerTests|DeleteByIdHandlerTests|UpsertHandlerTests|UpdateByIdHandlerTests\"",
       "Run git diff --stat and review the changed file list for out-of-scope production, test, DDL, or endpoint-enablement changes"
     ],
-    "completed": false
+    "completed": true
   }
 ]

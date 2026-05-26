@@ -122,3 +122,8 @@ Task completed: Repository Integration for reference/design/backend-redesign/epi
 Key decisions: repository People auth-view formatting no longer reads duplicate PersonMetadata auth object; ineligible People subject details use subject.AuthObject; runtime mixed-auth failure messages keep strategy summary null and surface only property names.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs; tasks.json; progress.txt.
 Blockers/notes: RelationalDocumentStoreRepository filter passed. Final remaining task is regression coverage.
+
+Task completed: Regression Coverage for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: treated existing focused refactor coverage as sufficient after full required feedback loop; csharpier changed no files; final implementation diff limited to task tracking.
+Files changed: tasks.json; progress.txt.
+Blockers/notes: Plans full suite, backend relationship/write filter, and core handler filter passed. All refactor tasks complete.
