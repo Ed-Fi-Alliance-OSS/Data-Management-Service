@@ -57,3 +57,8 @@ Task completed: Failure Metadata - People path and anchor DTO mapping for refere
 Key decisions: extended existing external People subject DTO with path kind, ordered DocumentId path steps, stored anchor, and proposed anchor binding; mapper copies metadata from PersonMetadata only, no re-resolution; kept existing RootBinding shape for compatibility while transitive details now expose full path and root/proposed anchors.
 Files changed: src/dms/core/EdFi.DataManagementService.Core.External/Backend/RelationshipAuthorizationFailure.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs; tasks.json; progress.txt.
 Blockers/notes: scoped RelationshipAuthorizationAuth1FailurePayload test filter passed. Simplification cleanup remains.
+
+Task completed: Simplification for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: removed unused RelationshipAuthorizationPeopleAuthViewSelector instead of wiring dead helper; RelationalPeopleAuthorizationSubjectSelector remains the single production People auth view selection path.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPeopleAuthViewSelector.cs; tasks.json; progress.txt.
+Blockers/notes: none.

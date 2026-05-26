@@ -216,7 +216,7 @@
       "Review People auth view selection paths in RelationshipAuthorizationPlanner and RelationalPeopleAuthorizationSubjectSelector for duplicated logic.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Failure Metadata",
