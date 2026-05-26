@@ -16,7 +16,7 @@ function ReadValuesFromEnvFile {
     try {
         Get-Content $EnvironmentFile | ForEach-Object {
             if ($_ -match "^\s*#") { return }
-            $split = $_.Split('=')
+            $split = $_.Split('=', 2)
             if ($split.Length -eq 2) {
                 $key = $split[0].Trim()
                 $value = $split[1].Trim()
@@ -98,10 +98,11 @@ function Resolve-DmsRouteUrl {
             $segments += [string]$value
         }
     }
+    $normalizedBaseUrl = $BaseUrl.TrimEnd('/')
     if ($segments.Count -eq 0) {
-        return $BaseUrl
+        return $normalizedBaseUrl
     }
-    return "$BaseUrl/" + ($segments -join "/")
+    return "$normalizedBaseUrl/" + ($segments -join "/")
 }
 
 function Resolve-IdentityProvider {

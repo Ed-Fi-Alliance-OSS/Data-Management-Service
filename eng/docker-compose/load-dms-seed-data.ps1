@@ -37,7 +37,7 @@ $script:DataStandardRefTag = "v5.2.0"
 $script:SeedXmlExcludePatterns = @(
     "^Manifest.*\.xml$",
     "^\[Content_Types\]\.xml$",
-    "_rels"
+    "(^|[\\/])_rels([\\/]|$)"
 )
 
 function Test-SeedXmlIsLoadable {
@@ -175,7 +175,9 @@ function Invoke-SchoolYearTypeRestPrecondition {
         [Parameter(Mandatory)] [string]$OAuthUrl,
         [int]$FirstYear = 1991,
         [int]$LastYear  = 2037,
-        [int]$CurrentYear = (Get-CurrentSchoolYear)
+        [int]$CurrentYear = (Get-CurrentSchoolYear),
+
+        [scriptblock]$WebInvoker = $null
     )
 
     $tokenBody = ConvertTo-FormBody -Data ([ordered]@{
@@ -183,7 +185,18 @@ function Invoke-SchoolYearTypeRestPrecondition {
         client_secret = $Secret
         grant_type    = "client_credentials"
     })
-    $tokenResp = Invoke-RestMethod -Uri $OAuthUrl -Method Post -Body $tokenBody -ContentType "application/x-www-form-urlencoded"
+    $tokenParams = @{
+        Uri         = $OAuthUrl
+        Method      = "Post"
+        Body        = $tokenBody
+        ContentType = "application/x-www-form-urlencoded"
+    }
+    $tokenResp = if ($null -ne $WebInvoker) {
+        & $WebInvoker @tokenParams
+    }
+    else {
+        Invoke-RestMethod @tokenParams
+    }
     $accessToken = $tokenResp.access_token
     if ([string]::IsNullOrWhiteSpace($accessToken)) {
         throw "SchoolYearType precondition failed: OAuth token endpoint returned empty access_token."
@@ -204,7 +217,19 @@ function Invoke-SchoolYearTypeRestPrecondition {
             currentSchoolYear     = ($year -eq $CurrentYear)
         } | ConvertTo-Json -Compress
 
-        $r = Invoke-WebRequest -Uri $endpoint -Method Post -Headers $headers -Body $body -SkipHttpErrorCheck
+        $requestParams = @{
+            Uri                = $endpoint
+            Method             = "Post"
+            Headers            = $headers
+            Body               = $body
+            SkipHttpErrorCheck = $true
+        }
+        $r = if ($null -ne $WebInvoker) {
+            & $WebInvoker @requestParams
+        }
+        else {
+            Invoke-WebRequest @requestParams
+        }
         switch ($r.StatusCode) {
             201 { $created++ }
             200 { $created++ }

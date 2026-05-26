@@ -691,6 +691,32 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             Remove-Item -LiteralPath $sourceDir -Recurse -Force
         }
 
+        It "excludes only ODS _rels path segments from custom seed staging" {
+            $sourceDir = New-TestDirectory
+            $relsDir = Join-Path $sourceDir "_rels"
+            $districtRelsDir = Join-Path $sourceDir "district_rels"
+            New-Item -ItemType Directory -Path $relsDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $districtRelsDir -Force | Out-Null
+
+            "<root />" | Set-Content -LiteralPath (Join-Path $relsDir "metadata.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $districtRelsDir "Student.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "Course_relationships.xml") -Encoding utf8
+
+            { Assert-SeedDataPathHasXml -SeedDataPath $sourceDir } | Should -Not -Throw
+
+            $workspace = New-SeedWorkspace `
+                -BootstrapRoot $script:repo.BootstrapRoot `
+                -SourceDirectories @($sourceDir)
+
+            $stagedNames = @($workspace.StagedFiles | ForEach-Object { Split-Path -Leaf $_ })
+            $stagedNames.Count | Should -Be 2
+            @($stagedNames | Where-Object { $_ -match "Course_relationships\.xml" }).Count | Should -Be 1
+            @($stagedNames | Where-Object { $_ -match "Student\.xml" }).Count | Should -Be 1
+            @($stagedNames | Where-Object { $_ -match "metadata\.xml" }).Count | Should -Be 0
+
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+        }
+
         It "keeps package-backed seed source outside the disposable BulkLoadClient workspace" {
             $tmpRoot = New-TestDirectory
             $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
@@ -1239,6 +1265,26 @@ DMS_CONFIG_IDENTITY_PROVIDER=self-contained
             }
         }
 
+        It "ReadValuesFromEnvFile preserves values containing equals signs" {
+            $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "test-$([Guid]::NewGuid().ToString('N')).env"
+            @"
+FEED_URL=https://example.test/feed?api-version=6.0
+BASE64_SECRET=abc==
+CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+            try {
+                $envValues = ReadValuesFromEnvFile -EnvironmentFile $envFile
+
+                $envValues["FEED_URL"] | Should -Be "https://example.test/feed?api-version=6.0"
+                $envValues["BASE64_SECRET"] | Should -Be "abc=="
+                $envValues["CONNECTION_STRING"] | Should -Be "Server=localhost;Password=a=b;TrustServerCertificate=true"
+            }
+            finally {
+                Remove-Item -LiteralPath $envFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It "builds host-side OAuth token URLs from port env-vars for self-contained and keycloak" {
             $envValues = @{
                 DMS_CONFIG_ASPNETCORE_HTTP_PORTS = "8081"
@@ -1292,6 +1338,11 @@ DMS_CONFIG_IDENTITY_PROVIDER=self-contained
             # Empty / whitespace-only segments are skipped
             (Resolve-DmsRouteUrl -BaseUrl $base -Tenant "  " -RouteQualifierValues @("", "  ", "2024")) |
                 Should -Be "$base/2024"
+
+            # Direct callers may pass a trailing slash; route composition must stay canonical.
+            (Resolve-DmsRouteUrl -BaseUrl "$base/") | Should -Be $base
+            (Resolve-DmsRouteUrl -BaseUrl "$base/" -Tenant "Tenant1" -RouteQualifierValues @("2024")) |
+                Should -Be "$base/Tenant1/2024"
         }
 
         It "selects DMS instances via explicit InstanceId, SchoolYear matching, or single auto-select" {
@@ -1539,6 +1590,102 @@ EdFi.BulkLoadClient.Console fake
     Context "BulkLoadClient invocation and school-year loop" {
         BeforeAll {
             Import-Module "$script:sourceDockerComposeRoot/env-utility.psm1" -Force
+        }
+
+        It "treats SchoolYearType REST 201 and 200 as created and 409 as already existing" {
+            $oauthUrl = "http://localhost:8081/connect/token"
+            $statuses = [System.Collections.Generic.Queue[int]]::new()
+            foreach ($status in @(201, 200, 409)) {
+                $statuses.Enqueue($status)
+            }
+            $requests = [System.Collections.Generic.List[hashtable]]::new()
+            $webInvoker = {
+                param(
+                    [string]$Uri,
+                    [string]$Method,
+                    $Body,
+                    [string]$ContentType,
+                    [hashtable]$Headers,
+                    $SkipHttpErrorCheck
+                )
+
+                $requests.Add(@{
+                    Uri                = $Uri
+                    Method             = $Method
+                    Body               = $Body
+                    ContentType        = $ContentType
+                    Headers            = $Headers
+                    SkipHttpErrorCheck = $SkipHttpErrorCheck
+                })
+
+                if ($Uri -eq $oauthUrl) {
+                    return [pscustomobject]@{ access_token = "fake-token" }
+                }
+
+                $status = $statuses.Dequeue()
+                return [pscustomobject]@{
+                    StatusCode = $status
+                    Content    = "status-$status"
+                }
+            }.GetNewClosure()
+
+            Invoke-SchoolYearTypeRestPrecondition `
+                -DmsBaseUrl "http://localhost:8080/2025" `
+                -Key "client-key" `
+                -Secret "client-secret" `
+                -OAuthUrl $oauthUrl `
+                -FirstYear 2024 `
+                -LastYear 2026 `
+                -CurrentYear 2025 `
+                -WebInvoker $webInvoker
+
+            $requests.Count | Should -Be 4
+            $requests[0].Uri | Should -Be $oauthUrl
+            $requests[0].Body | Should -Be "client_id=client-key&client_secret=client-secret&grant_type=client_credentials"
+
+            $posts = @($requests | Where-Object { $_.Uri -eq "http://localhost:8080/2025/data/ed-fi/schoolYearTypes" })
+            $posts.Count | Should -Be 3
+            $posts[0].Headers.Authorization | Should -Be "Bearer fake-token"
+            $posts[0].SkipHttpErrorCheck | Should -BeTrue
+            $posts[0].Body | Should -Match '"schoolYear":2024'
+            $posts[1].Body | Should -Match '"schoolYear":2025'
+            $posts[1].Body | Should -Match '"currentSchoolYear":true'
+            $posts[2].Body | Should -Match '"schoolYear":2026'
+        }
+
+        It "throws when SchoolYearType REST returns an unexpected status" {
+            $oauthUrl = "http://localhost:8081/connect/token"
+            $webInvoker = {
+                param(
+                    [string]$Uri,
+                    [string]$Method,
+                    $Body,
+                    [string]$ContentType,
+                    [hashtable]$Headers,
+                    $SkipHttpErrorCheck
+                )
+
+                if ($Uri -eq $oauthUrl) {
+                    return [pscustomobject]@{ access_token = "fake-token" }
+                }
+
+                return [pscustomobject]@{
+                    StatusCode = 500
+                    Content    = "server failed"
+                }
+            }.GetNewClosure()
+
+            {
+                Invoke-SchoolYearTypeRestPrecondition `
+                    -DmsBaseUrl "http://localhost:8080" `
+                    -Key "client-key" `
+                    -Secret "client-secret" `
+                    -OAuthUrl $oauthUrl `
+                    -FirstYear 2024 `
+                    -LastYear 2024 `
+                    -CurrentYear 2024 `
+                    -WebInvoker $webInvoker
+            } | Should -Throw -ExpectedMessage "*HTTP 500*server failed*"
         }
 
         It "constructs BulkLoadClient arguments with base URL, data directory, OAuth, key, secret, and XSD" {
