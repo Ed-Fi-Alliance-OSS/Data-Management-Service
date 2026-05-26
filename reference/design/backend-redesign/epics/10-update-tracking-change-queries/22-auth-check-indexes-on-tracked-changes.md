@@ -1,6 +1,6 @@
 ---
-jira: DMS-TBD
-jira_url: https://edfi.atlassian.net/browse/DMS-TBD
+jira: DMS-1185
+jira_url: https://edfi.atlassian.net/browse/DMS-1185
 ---
 
 # Spike: Auth-Check Indexes on `tracked_changes_*` Tables

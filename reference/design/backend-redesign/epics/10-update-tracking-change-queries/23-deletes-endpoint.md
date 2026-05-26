@@ -15,9 +15,9 @@ The endpoint returns deleted resource identifying values in the requested change
 
 The response contract must remain compatible with ODS.
 
-This story subsumes the retired `22-change-query-endpoint-foundation.md`
-(`DMS-1185`) so the shared foundation is proven by the first concrete endpoint
-implementation. `24-keychanges-endpoint.md` reuses this foundation for
+This story also carries the shared endpoint foundation that was previously
+split into a separate ticket, so the foundation is proven by the first concrete
+endpoint implementation. `24-keychanges-endpoint.md` reuses this foundation for
 `/keyChanges`.
 
 ## Acceptance Criteria

@@ -46,7 +46,6 @@ Deliverables include:
 - `DMS-1182` — `19-live-change-version-filters.md` — Filter live resource and descriptor GET-many endpoints by mirrored `ContentVersion`
 - `DMS-1183` — `20-openapi-change-query-surface.md` — Extend MetaEd and DMS OpenAPI metadata for Change Queries
 - `DMS-1184` — `21-available-change-versions-endpoint.md` — Serve `/changeQueries/v1/availableChangeVersions`
-- `DMS-1185` — `22-change-query-endpoint-foundation.md` — _Retired_ (merged into DMS-1186)
 - `DMS-1186` — `23-deletes-endpoint.md` — Serve `/deletes` from tracked-change tombstones and establish the shared Change Query endpoint foundation
 - `DMS-1187` — `24-keychanges-endpoint.md` — Serve `/keyChanges` from tracked-change key-change rows
 - `DMS-1188` — `25-readchanges-authorization.md` — Apply `ReadChanges` authorization to `/deletes` and `/keyChanges`
@@ -56,6 +55,6 @@ Deliverables include:
 
 These spikes investigate features explicitly deferred in `change-queries.md`. Each spike's deliverable is a design proposal plus the implementation tickets it spawns.
 
-- `DMS-TBD` — `27-auth-check-indexes-on-tracked-changes.md` — Spike: auth-check indexes on `tracked_changes_*` tables
+- `DMS-1185` — `22-auth-check-indexes-on-tracked-changes.md` — Spike: auth-check indexes on `tracked_changes_*` tables
 - `DMS-TBD` — `29-snapshot-support.md` — Spike: snapshot support (`Use-Snapshot` header) for Change Queries
 - `DMS-TBD` — `30-disable-change-queries-feature.md` — Spike: runtime feature flag to disable Change Queries
