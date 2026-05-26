@@ -162,37 +162,30 @@ public sealed record RelationshipAuthorizationAuthObject(
 
     public static RelationshipAuthorizationAuthObject CreatePerson(
         RelationshipAuthorizationPersonAuthViewKind authViewKind
+    )
+    {
+        var definition = AuthObjectDefinitions.GetPeopleAuthViewDefinition(
+            MapPeopleAuthViewKind(authViewKind)
+        );
+
+        return new RelationshipAuthorizationAuthObject(
+            definition.View,
+            definition.PersonDocumentIdOutputColumn,
+            definition.ClaimEducationOrganizationIdColumn,
+            FailureHint: definition.FailureHint
+        );
+    }
+
+    private static AuthPeopleViewKind MapPeopleAuthViewKind(
+        RelationshipAuthorizationPersonAuthViewKind authViewKind
     ) =>
         authViewKind switch
         {
-            RelationshipAuthorizationPersonAuthViewKind.Student => new RelationshipAuthorizationAuthObject(
-                new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToStudentDocumentId"),
-                AuthNames.StudentDocumentId,
-                AuthNames.SourceEdOrgId,
-                FailureHint: "You may need to create a corresponding 'StudentSchoolAssociation' item."
-            ),
-            RelationshipAuthorizationPersonAuthViewKind.Contact => new RelationshipAuthorizationAuthObject(
-                new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToContactDocumentId"),
-                AuthNames.ContactDocumentId,
-                AuthNames.SourceEdOrgId,
-                FailureHint: "You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items."
-            ),
-            RelationshipAuthorizationPersonAuthViewKind.Staff => new RelationshipAuthorizationAuthObject(
-                new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToStaffDocumentId"),
-                AuthNames.StaffDocumentId,
-                AuthNames.SourceEdOrgId,
-                FailureHint: "You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items."
-            ),
+            RelationshipAuthorizationPersonAuthViewKind.Student => AuthPeopleViewKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Contact => AuthPeopleViewKind.Contact,
+            RelationshipAuthorizationPersonAuthViewKind.Staff => AuthPeopleViewKind.Staff,
             RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility =>
-                new RelationshipAuthorizationAuthObject(
-                    new DbTableName(
-                        AuthNames.AuthSchema,
-                        "EducationOrganizationIdToStudentDocumentIdThroughResponsibility"
-                    ),
-                    AuthNames.StudentDocumentId,
-                    AuthNames.SourceEdOrgId,
-                    FailureHint: "You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item."
-                ),
+                AuthPeopleViewKind.StudentThroughResponsibility,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(authViewKind),
                 authViewKind,

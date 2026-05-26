@@ -694,7 +694,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationContracts",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs src/dms/backend/EdFi.DataManagementService.Backend.External/AuthEdOrgHierarchyContracts.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationContracts.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationContractsTests.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Failure Metadata",

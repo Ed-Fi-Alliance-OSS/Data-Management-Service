@@ -79,6 +79,41 @@ public class Given_RelationshipAuthorizationContracts
         authObject.FailureHint.Should().Be(expectedHint);
     }
 
+    [TestCase(RelationshipAuthorizationPersonAuthViewKind.Student, AuthPeopleViewKind.Student)]
+    [TestCase(RelationshipAuthorizationPersonAuthViewKind.Contact, AuthPeopleViewKind.Contact)]
+    [TestCase(RelationshipAuthorizationPersonAuthViewKind.Staff, AuthPeopleViewKind.Staff)]
+    [TestCase(
+        RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility,
+        AuthPeopleViewKind.StudentThroughResponsibility
+    )]
+    public void It_creates_people_auth_objects_from_emitted_auth_view_definitions(
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        AuthPeopleViewKind emittedViewKind
+    )
+    {
+        var authObject = RelationshipAuthorizationAuthObject.CreatePerson(authViewKind);
+        var authViewDefinition = AuthObjectDefinitions.GetPeopleAuthViewDefinition(emittedViewKind);
+        var emittedView = AuthObjectDefinitions.PeopleAuthViews.Single(view => view.View == authObject.Name);
+
+        emittedView.Should().Be(authViewDefinition.ViewDefinition);
+        authObject.Name.Should().Be(authViewDefinition.View);
+        authObject.SubjectValueColumn.Should().Be(authViewDefinition.PersonDocumentIdOutputColumn);
+        authObject
+            .ClaimEducationOrganizationIdColumn.Should()
+            .Be(authViewDefinition.ClaimEducationOrganizationIdColumn);
+        authObject.AllowsDirectClaimMatch.Should().BeFalse();
+        authObject.FailureHint.Should().Be(authViewDefinition.FailureHint);
+
+        emittedView
+            .Arms.Should()
+            .OnlyContain(arm =>
+                arm.OutputColumns.Any(outputColumn =>
+                    outputColumn.Column == authObject.ClaimEducationOrganizationIdColumn
+                )
+                && arm.OutputColumns.Any(outputColumn => outputColumn.Column == authObject.SubjectValueColumn)
+            );
+    }
+
     [Test]
     public void It_can_represent_direct_transitive_and_self_people_subjects()
     {
