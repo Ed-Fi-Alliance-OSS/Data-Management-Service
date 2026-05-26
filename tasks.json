@@ -283,7 +283,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Failure Metadata",

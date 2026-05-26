@@ -1051,65 +1051,28 @@ public sealed class RelationshipAuthorizationPlanner
         QualifiedResourceName resource,
         IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects,
         RelationshipAuthorizationValueSource? valueSource
-    )
-    {
-        var missingAssociationResourceNames =
-            AuthObjectDefinitions.GetMissingPeopleAuthAssociationResourceNames(
-                mappingSet.Model.ConcreteResourcesInNameOrder
-            );
-
-        if (missingAssociationResourceNames.Count == 0)
-        {
-            return [];
-        }
-
-        var selectedPeopleAuthViews = SelectStrategyPersonAuthViews(strategySubjects);
-
-        if (selectedPeopleAuthViews.Count == 0)
-        {
-            return [];
-        }
-
-        var missingAssociationResourceNamesText = string.Join(", ", missingAssociationResourceNames);
-
-        return
-        [
-            .. OrderFailures(
-                selectedPeopleAuthViews.Select(selectedPeopleAuthView =>
-                {
-                    var firstContributor = selectedPeopleAuthView.Contributors.FirstOrDefault();
-
-                    return new RelationshipAuthorizationFailureMetadata(
-                        RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations,
-                        resource,
-                        selectedPeopleAuthView.ConfiguredStrategy,
-                        selectedPeopleAuthView.RelationshipLocalOrder,
-                        ValueSource: valueSource,
-                        AuthObject: selectedPeopleAuthView.AuthObject,
-                        Location: new RelationshipAuthorizationFailureLocation(
-                            Kind: firstContributor?.Kind ?? selectedPeopleAuthView.SecurableElementKind,
-                            JsonPath: firstContributor?.JsonPath,
-                            ReadableName: firstContributor?.ReadableName,
-                            AuthorizationObjectName: selectedPeopleAuthView.AuthObject.Name.ToString()
-                        ),
-                        Hint: $"Strategy '{selectedPeopleAuthView.ConfiguredStrategy.StrategyName}' selects {selectedPeopleAuthView.PersonKind} relationship authorization through auth view '{selectedPeopleAuthView.AuthObject.Name}', but the people auth views were not emitted for resource '{resource.ProjectName}.{resource.ResourceName}'. Missing required association resources: [{missingAssociationResourceNamesText}]."
-                    )
-                    {
-                        PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
-                            selectedPeopleAuthView.PersonKind,
-                            selectedPeopleAuthView.AuthObject
-                        ),
-                        Contributors = selectedPeopleAuthView.Contributors,
-                    };
-                })
-            ),
-        ];
-    }
+    ) =>
+        CreateMissingPeopleAuthViewAssociationFailures(
+            mappingSet,
+            resource,
+            SelectStrategyPersonAuthViews(strategySubjects, valueSource)
+        );
 
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CreateMissingPeopleAuthViewAssociationFailures(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs
+    ) =>
+        CreateMissingPeopleAuthViewAssociationFailures(
+            mappingSet,
+            resource,
+            SelectStrategyPersonAuthViews(checkSpecs)
+        );
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CreateMissingPeopleAuthViewAssociationFailures(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SelectedStrategyPersonAuthView> selectedPeopleAuthViews
     )
     {
         var missingAssociationResourceNames =
@@ -1122,8 +1085,6 @@ public sealed class RelationshipAuthorizationPlanner
             return [];
         }
 
-        var selectedPeopleAuthViews = SelectStrategyPersonAuthViews(checkSpecs);
-
         if (selectedPeopleAuthViews.Count == 0)
         {
             return [];
@@ -1135,38 +1096,51 @@ public sealed class RelationshipAuthorizationPlanner
         [
             .. OrderFailures(
                 selectedPeopleAuthViews.Select(selectedPeopleAuthView =>
-                {
-                    var firstContributor = selectedPeopleAuthView.Contributors.FirstOrDefault();
-
-                    return new RelationshipAuthorizationFailureMetadata(
-                        RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations,
+                    CreateMissingPeopleAuthViewAssociationFailure(
                         resource,
-                        selectedPeopleAuthView.ConfiguredStrategy,
-                        selectedPeopleAuthView.RelationshipLocalOrder,
-                        ValueSource: selectedPeopleAuthView.ValueSource,
-                        AuthObject: selectedPeopleAuthView.AuthObject,
-                        Location: new RelationshipAuthorizationFailureLocation(
-                            Kind: firstContributor?.Kind ?? selectedPeopleAuthView.SecurableElementKind,
-                            JsonPath: firstContributor?.JsonPath,
-                            ReadableName: firstContributor?.ReadableName,
-                            AuthorizationObjectName: selectedPeopleAuthView.AuthObject.Name.ToString()
-                        ),
-                        Hint: $"Strategy '{selectedPeopleAuthView.ConfiguredStrategy.StrategyName}' selects {selectedPeopleAuthView.PersonKind} relationship authorization through auth view '{selectedPeopleAuthView.AuthObject.Name}', but the people auth views were not emitted for resource '{resource.ProjectName}.{resource.ResourceName}'. Missing required association resources: [{missingAssociationResourceNamesText}]."
+                        selectedPeopleAuthView,
+                        missingAssociationResourceNamesText
                     )
-                    {
-                        PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
-                            selectedPeopleAuthView.PersonKind,
-                            selectedPeopleAuthView.AuthObject
-                        ),
-                        Contributors = selectedPeopleAuthView.Contributors,
-                    };
-                })
+                )
             ),
         ];
     }
 
+    private static RelationshipAuthorizationFailureMetadata CreateMissingPeopleAuthViewAssociationFailure(
+        QualifiedResourceName resource,
+        SelectedStrategyPersonAuthView selectedPeopleAuthView,
+        string missingAssociationResourceNamesText
+    )
+    {
+        var firstContributor = selectedPeopleAuthView.Contributors.FirstOrDefault();
+
+        return new RelationshipAuthorizationFailureMetadata(
+            RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations,
+            resource,
+            selectedPeopleAuthView.ConfiguredStrategy,
+            selectedPeopleAuthView.RelationshipLocalOrder,
+            ValueSource: selectedPeopleAuthView.ValueSource,
+            AuthObject: selectedPeopleAuthView.AuthObject,
+            Location: new RelationshipAuthorizationFailureLocation(
+                Kind: firstContributor?.Kind ?? selectedPeopleAuthView.SecurableElementKind,
+                JsonPath: firstContributor?.JsonPath,
+                ReadableName: firstContributor?.ReadableName,
+                AuthorizationObjectName: selectedPeopleAuthView.AuthObject.Name.ToString()
+            ),
+            Hint: $"Strategy '{selectedPeopleAuthView.ConfiguredStrategy.StrategyName}' selects {selectedPeopleAuthView.PersonKind} relationship authorization through auth view '{selectedPeopleAuthView.AuthObject.Name}', but the people auth views were not emitted for resource '{resource.ProjectName}.{resource.ResourceName}'. Missing required association resources: [{missingAssociationResourceNamesText}]."
+        )
+        {
+            PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
+                selectedPeopleAuthView.PersonKind,
+                selectedPeopleAuthView.AuthObject
+            ),
+            Contributors = selectedPeopleAuthView.Contributors,
+        };
+    }
+
     private static IReadOnlyList<SelectedStrategyPersonAuthView> SelectStrategyPersonAuthViews(
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects,
+        RelationshipAuthorizationValueSource? valueSource
     ) =>
         [
             .. strategySubjects
@@ -1179,7 +1153,7 @@ public sealed class RelationshipAuthorizationPlanner
                             return new SelectedStrategyPersonAuthView(
                                 strategySubject.Strategy.ConfiguredStrategy,
                                 strategySubject.Strategy.RelationshipLocalOrder,
-                                null,
+                                valueSource,
                                 SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
                                 personMetadata.PersonKind,
                                 personMetadata.AuthObject,
