@@ -402,22 +402,22 @@ public sealed class RelationshipAuthorizationPlanner
     )
     {
         var selectedSubjects = SelectSupportedStrategySubjects(mappingSet, resource, supportedStrategies);
-
-        if (selectedSubjects.Failures.Count > 0)
-        {
-            return CreateSecurityConfigurationUpdatePlan([
-                .. OrderFailures(
-                    ApplyExecutionMetadata(selectedSubjects.Failures, supportedStrategies, null)
-                ),
-            ]);
-        }
-
         var missingPeopleAuthViewFailures = CreateMissingPeopleAuthViewAssociationFailures(
             mappingSet,
             resource,
             selectedSubjects.StrategySubjects,
             null
         );
+
+        if (selectedSubjects.Failures.Count > 0)
+        {
+            return CreateSecurityConfigurationUpdatePlan([
+                .. OrderFailures([
+                    .. ApplyExecutionMetadata(selectedSubjects.Failures, supportedStrategies, null),
+                    .. missingPeopleAuthViewFailures,
+                ]),
+            ]);
+        }
 
         if (missingPeopleAuthViewFailures.Count > 0)
         {
@@ -455,10 +455,18 @@ public sealed class RelationshipAuthorizationPlanner
 
         if (selectedSubjects.Failures.Count > 0)
         {
+            var missingPeopleAuthViewFailures = CreateMissingPeopleAuthViewAssociationFailures(
+                mappingSet,
+                resource,
+                selectedSubjects.StrategySubjects,
+                valueSource
+            );
+
             return new RelationshipAuthorizationResult.SecurityConfigurationError([
-                .. OrderFailures(
-                    ApplyExecutionMetadata(selectedSubjects.Failures, supportedStrategies, valueSource)
-                ),
+                .. OrderFailures([
+                    .. ApplyExecutionMetadata(selectedSubjects.Failures, supportedStrategies, valueSource),
+                    .. missingPeopleAuthViewFailures,
+                ]),
             ]);
         }
 
@@ -1146,72 +1154,93 @@ public sealed class RelationshipAuthorizationPlanner
         IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects,
         RelationshipAuthorizationValueSource? valueSource
     ) =>
-        [
-            .. strategySubjects
-                .SelectMany(strategySubject =>
-                    strategySubject
-                        .Subjects.Where(static subject => subject.PersonMetadata is not null)
-                        .Select(subject =>
-                        {
-                            var personMetadata = subject.PersonMetadata!;
-                            return new SelectedStrategyPersonAuthView(
-                                strategySubject.Strategy.ConfiguredStrategy,
-                                strategySubject.Strategy.RelationshipLocalOrder,
-                                valueSource,
-                                SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
-                                personMetadata.PersonKind,
-                                subject.AuthObject,
-                                subject.Contributors
-                            );
-                        })
-                )
-                .DistinctBy(static selected =>
-                    (
-                        selected.ConfiguredStrategy.RawConfiguredIndex,
-                        selected.RelationshipLocalOrder,
-                        selected.ValueSource,
-                        selected.SecurableElementKind,
-                        selected.PersonKind,
-                        selected.AuthObject.Name,
-                        selected.AuthObject.SubjectValueColumn
-                    )
-                ),
-        ];
+        MergeSelectedStrategyPersonAuthViews(
+            strategySubjects.SelectMany(strategySubject =>
+                strategySubject
+                    .Subjects.Where(static subject => subject.PersonMetadata is not null)
+                    .Select(subject =>
+                    {
+                        var personMetadata = subject.PersonMetadata!;
+                        return new SelectedStrategyPersonAuthView(
+                            strategySubject.Strategy.ConfiguredStrategy,
+                            strategySubject.Strategy.RelationshipLocalOrder,
+                            valueSource,
+                            SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
+                            personMetadata.PersonKind,
+                            subject.AuthObject,
+                            subject.Contributors
+                        );
+                    })
+            )
+        );
 
     private static IReadOnlyList<SelectedStrategyPersonAuthView> SelectStrategyPersonAuthViews(
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs
     ) =>
+        MergeSelectedStrategyPersonAuthViews(
+            checkSpecs.SelectMany(checkSpec =>
+                checkSpec
+                    .Subjects.Where(static subject => subject.PersonMetadata is not null)
+                    .Select(subject =>
+                    {
+                        var personMetadata = subject.PersonMetadata!;
+                        return new SelectedStrategyPersonAuthView(
+                            checkSpec.ConfiguredStrategy,
+                            checkSpec.RelationshipLocalOrder,
+                            checkSpec.ValueSource,
+                            SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
+                            personMetadata.PersonKind,
+                            subject.AuthObject,
+                            subject.Contributors
+                        );
+                    })
+            )
+        );
+
+    private static IReadOnlyList<SelectedStrategyPersonAuthView> MergeSelectedStrategyPersonAuthViews(
+        IEnumerable<SelectedStrategyPersonAuthView> selectedPeopleAuthViews
+    ) =>
         [
-            .. checkSpecs
-                .SelectMany(checkSpec =>
-                    checkSpec
-                        .Subjects.Where(static subject => subject.PersonMetadata is not null)
-                        .Select(subject =>
-                        {
-                            var personMetadata = subject.PersonMetadata!;
-                            return new SelectedStrategyPersonAuthView(
-                                checkSpec.ConfiguredStrategy,
-                                checkSpec.RelationshipLocalOrder,
-                                checkSpec.ValueSource,
-                                SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
-                                personMetadata.PersonKind,
-                                subject.AuthObject,
-                                subject.Contributors
-                            );
-                        })
-                )
-                .DistinctBy(static selected =>
-                    (
-                        selected.ConfiguredStrategy.RawConfiguredIndex,
-                        selected.RelationshipLocalOrder,
-                        selected.ValueSource,
-                        selected.SecurableElementKind,
-                        selected.PersonKind,
-                        selected.AuthObject.Name,
-                        selected.AuthObject.SubjectValueColumn
-                    )
-                ),
+            .. selectedPeopleAuthViews
+                .GroupBy(CreateSelectedStrategyPersonAuthViewKey)
+                .Select(static group =>
+                {
+                    var selected = group.First();
+                    return selected with
+                    {
+                        Contributors =
+                        [
+                            .. group
+                                .SelectMany(static groupedSelected => groupedSelected.Contributors)
+                                .OrderBy(static contributor => contributor.ContributionOrder)
+                                .ThenBy(static contributor => contributor.JsonPath, StringComparer.Ordinal)
+                                .ThenBy(
+                                    static contributor => contributor.ReadableName,
+                                    StringComparer.Ordinal
+                                ),
+                        ],
+                    };
+                }),
         ];
+
+    private static (
+        int RawConfiguredIndex,
+        int RelationshipLocalOrder,
+        RelationshipAuthorizationValueSource? ValueSource,
+        SecurableElementKind SecurableElementKind,
+        RelationshipAuthorizationPersonKind PersonKind,
+        DbTableName AuthObjectName,
+        DbColumnName SubjectValueColumn
+    ) CreateSelectedStrategyPersonAuthViewKey(SelectedStrategyPersonAuthView selected) =>
+        (
+            selected.ConfiguredStrategy.RawConfiguredIndex,
+            selected.RelationshipLocalOrder,
+            selected.ValueSource,
+            selected.SecurableElementKind,
+            selected.PersonKind,
+            selected.AuthObject.Name,
+            selected.AuthObject.SubjectValueColumn
+        );
 
     private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateNoApplicableSubjectFailures(
         QualifiedResourceName resource,

@@ -137,3 +137,8 @@ Task completed: Operation Eligibility - transitive People proposed anchors for r
 Key decisions: proposed extractor now validates transitive People subjects against PersonMetadata.ProposedAnchor.Binding; direct/EdOrg bindings still use subject column; single-record SQL boundary now stages People specs before EdOrg-only root/same-column invariants.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs; backend unit tests; tasks.json; progress.txt.
 Blockers/notes: RelationshipAuthorizationProposedValueExtractor and SingleRecordRelationshipAuthorizationExecutor filters passed. One incomplete Failure Metadata task remains.
+
+Task completed: Failure Metadata - missing People auth view failure aggregation for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: collect missing People auth-view failures before returning independent subject-selection failures; group selected People auth views and merge contributor metadata instead of DistinctBy first-wins.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted planner/test; RelationshipAuthorizationPlanner filter passed. All tasks now complete.
