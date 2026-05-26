@@ -1,6 +1,6 @@
 ---
-jira: DMS-TBD
-jira_url: https://edfi.atlassian.net/browse/DMS-TBD
+jira: DMS-1190
+jira_url: https://edfi.atlassian.net/browse/DMS-1190
 ---
 
 # Spike: Snapshot and Read-replica Support for Change Queries

@@ -56,5 +56,5 @@ Deliverables include:
 These spikes investigate features explicitly deferred in `change-queries.md`. Each spike's deliverable is a design proposal plus the implementation tickets it spawns.
 
 - `DMS-1185` — `22-auth-check-indexes-on-tracked-changes.md` — Spike: auth-check indexes on `tracked_changes_*` tables
-- `DMS-TBD` — `29-snapshot-support.md` — Spike: snapshot support (`Use-Snapshot` header) for Change Queries
-- `DMS-TBD` — `30-disable-change-queries-feature.md` — Spike: runtime feature flag to disable Change Queries
+- `DMS-1190` — `29-snapshot-support.md` — Spike: snapshot support (`Use-Snapshot` header) for Change Queries
+- `DMS-1191` — `30-disable-change-queries-feature.md` — Spike: runtime feature flag to disable Change Queries

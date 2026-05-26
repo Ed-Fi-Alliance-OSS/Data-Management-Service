@@ -1,6 +1,6 @@
 ---
-jira: DMS-TBD
-jira_url: https://edfi.atlassian.net/browse/DMS-TBD
+jira: DMS-1191
+jira_url: https://edfi.atlassian.net/browse/DMS-1191
 ---
 
 # Spike: Runtime Feature Flag to Disable Change Queries
