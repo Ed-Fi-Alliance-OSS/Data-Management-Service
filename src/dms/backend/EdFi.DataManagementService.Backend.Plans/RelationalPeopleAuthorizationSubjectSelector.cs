@@ -252,22 +252,6 @@ public static class RelationalPeopleAuthorizationSubjectSelector
 
             if (chain is not null)
             {
-                if (!chain[0].SourceTable.Equals(rootTable))
-                {
-                    skippedPaths.Add(
-                        CreateSkippedPersonPath(
-                            securableElementKind,
-                            personKind,
-                            personPath,
-                            contributionOrder,
-                            chain[0].SourceTable,
-                            chain[0].SourceColumnName
-                        )
-                    );
-
-                    continue;
-                }
-
                 candidates.Add(
                     CreateResolvedPersonCandidate(
                         securableElementKind,

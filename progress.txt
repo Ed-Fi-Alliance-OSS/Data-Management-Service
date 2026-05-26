@@ -187,3 +187,8 @@ Task completed: Failure Metadata - unresolved People contribution order for refe
 Key decisions: carried contribution order through UnresolvedPersonPath and unresolved failure contributors; failure ordering uses unresolved contribution order before lexical fallback without changing skipped-path ordering.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs; tasks.json; progress.txt.
 Blockers/notes: csharpier formatted selector/test; RelationalPeopleAuthorizationSubjectSelector filter passed. One incomplete task remains: non-root chain cleanup.
+
+Task completed: Simplification - unreachable non-root chain branch for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: removed selector non-root chain skip branch because PersonJoinPathResolver returns chains rooted at the subject root table; child-collection exclusion remains handled by array-nested skipped-path flow.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted selector; RelationalPeopleAuthorizationSubjectSelector filter passed. All tasks now complete.
