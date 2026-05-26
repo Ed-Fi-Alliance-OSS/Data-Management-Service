@@ -77,6 +77,15 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                         )
                     );
                 }
+                else
+                {
+                    if (!HasUnresolvedPersonPath(supportedStrategy, personCandidates.UnresolvedPaths))
+                    {
+                        securityConfigurationFailures.AddRange(
+                            CreateNoApplicablePersonSubjectFailures(resource, supportedStrategy)
+                        );
+                    }
+                }
 
                 continue;
             }
@@ -106,6 +115,15 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             []
         );
     }
+
+    private static bool HasUnresolvedPersonPath(
+        SupportedRelationshipAuthorizationStrategy supportedStrategy,
+        IReadOnlyList<UnresolvedPersonPath> unresolvedPaths
+    ) =>
+        supportedStrategy.EligibleSubjects.Any(eligibleSubject =>
+            eligibleSubject.PersonAuthViewKind is not null
+            && unresolvedPaths.Any(unresolvedPath => unresolvedPath.Kind == eligibleSubject.Kind)
+        );
 
     private static ResolvedPeopleCandidates ResolvePersonCandidates(
         ConcreteResourceModel concreteResourceModel,
@@ -513,6 +531,38 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                     ),
             SkippedContributors = [skippedContributor],
         });
+
+    private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateNoApplicablePersonSubjectFailures(
+        QualifiedResourceName resource,
+        SupportedRelationshipAuthorizationStrategy supportedStrategy
+    ) =>
+        supportedStrategy
+            .EligibleSubjects.Where(static eligibleSubject => eligibleSubject.PersonAuthViewKind is not null)
+            .Select(eligibleSubject =>
+            {
+                var authObject = RelationshipAuthorizationAuthObject.CreatePerson(
+                    eligibleSubject.PersonAuthViewKind!.Value
+                );
+
+                return new RelationshipAuthorizationFailureMetadata(
+                    RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
+                    resource,
+                    supportedStrategy.ConfiguredStrategy,
+                    supportedStrategy.RelationshipLocalOrder,
+                    AuthObject: authObject,
+                    Location: new RelationshipAuthorizationFailureLocation(
+                        Kind: eligibleSubject.Kind,
+                        AuthorizationObjectName: authObject.Name.ToString()
+                    ),
+                    Hint: $"No applicable {eligibleSubject.Kind} relationship authorization subject was selected for strategy '{supportedStrategy.ConfiguredStrategy.StrategyName}'."
+                )
+                {
+                    PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
+                        MapPersonKind(eligibleSubject.Kind),
+                        authObject
+                    ),
+                };
+            });
 
     private static PersonPredicateKey CreatePredicateKey(
         ResolvedPeopleCandidate candidate,

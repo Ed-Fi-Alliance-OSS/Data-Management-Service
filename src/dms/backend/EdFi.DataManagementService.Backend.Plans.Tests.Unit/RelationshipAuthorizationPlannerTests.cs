@@ -1608,6 +1608,44 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_not_duplicate_no_applicable_people_failures_from_selector()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentlessAuthorizationResource");
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMinimalMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoApplicableRootSubject);
+        failure
+            .ConfiguredStrategy?.StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
+        failure.RelationshipLocalOrder.Should().Be(0);
+        failure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        failure.AuthObject.Should().Be(expectedAuthObject);
+        failure.Location!.Kind.Should().Be(SecurableElementKind.Student);
+        failure.Location.AuthorizationObjectName.Should().Be(expectedAuthObject.Name.ToString());
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        failure.PersonMetadata.AuthObject.Should().Be(expectedAuthObject);
+    }
+
+    [Test]
     public void It_should_map_known_but_not_enabled_outcomes_to_shared_failure_metadata()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");

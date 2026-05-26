@@ -186,6 +186,73 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
     }
 
     [Test]
+    public void It_should_report_no_applicable_strategy_when_no_matching_people_path_or_skipped_contributor_exists()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentCarrier");
+        var studentReferencePath = "$.studentReference.studentUniqueId";
+        var mappingSet = CreateMappingSet(
+            CreateCarrierResource(
+                resource.ResourceName,
+                new PersonReferenceSpec(
+                    SecurableElementKind.Student,
+                    studentReferencePath,
+                    Col("Student_DocumentId")
+                )
+            ),
+            CreatePersonResource(SecurableElementKind.Student)
+        );
+        var expectedContactAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Contact
+        );
+
+        var result = RelationalPeopleAuthorizationSubjectSelector.Select(
+            mappingSet,
+            resource,
+            [
+                CreateSinglePeopleSupportedStrategy(
+                    RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                    0,
+                    SecurableElementKind.Student,
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                ),
+                CreateSinglePeopleSupportedStrategy(
+                    RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                    AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                    1,
+                    SecurableElementKind.Contact,
+                    RelationshipAuthorizationPersonAuthViewKind.Contact
+                ),
+            ]
+        );
+
+        result
+            .Outcome.Should()
+            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
+
+        var strategySelection = result.StrategySubjectSelections.Should().ContainSingle().Subject;
+
+        strategySelection.ConfiguredStrategy.RawConfiguredIndex.Should().Be(0);
+        strategySelection
+            .Subjects.Should()
+            .ContainSingle()
+            .Which.Column.Should()
+            .Be(Col("Student_DocumentId"));
+
+        var failure = result.SecurityConfigurationFailures.Should().ContainSingle().Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoApplicableRootSubject);
+        failure.ConfiguredStrategy?.RawConfiguredIndex.Should().Be(1);
+        failure.RelationshipLocalOrder.Should().Be(1);
+        failure.AuthObject.Should().Be(expectedContactAuthObject);
+        failure.Location!.Kind.Should().Be(SecurableElementKind.Contact);
+        failure.Location.AuthorizationObjectName.Should().Be(expectedContactAuthObject.Name.ToString());
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Contact);
+        failure.PersonMetadata.AuthObject.Should().Be(expectedContactAuthObject);
+        failure.SkippedContributors.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_should_select_a_transitive_course_transcript_to_student_path()
     {
         var courseTranscript = new QualifiedResourceName("Ed-Fi", "CourseTranscript");
@@ -972,6 +1039,21 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
                     }
             ),
         ];
+
+    private static SupportedRelationshipAuthorizationStrategy CreateSinglePeopleSupportedStrategy(
+        RelationshipAuthorizationStrategyKind strategyKind,
+        string strategyName,
+        int index,
+        SecurableElementKind subjectKind,
+        RelationshipAuthorizationPersonAuthViewKind authViewKind
+    ) =>
+        new(
+            strategyKind,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            new ConfiguredAuthorizationStrategy(strategyName, index),
+            index,
+            [new RelationshipAuthorizationStrategySubjectEligibility(subjectKind, authViewKind)]
+        );
 
     private static ConcreteResourceModel CreateCarrierResource(
         string resourceName,
