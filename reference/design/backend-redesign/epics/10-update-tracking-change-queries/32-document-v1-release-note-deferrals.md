@@ -1,3 +1,8 @@
+---
+jira: DMS-1194
+jira_url: https://edfi.atlassian.net/browse/DMS-1194
+---
+
 # Story: Document DMS v1.0 Change Queries Deferred Features in Release Notes
 
 ## Description

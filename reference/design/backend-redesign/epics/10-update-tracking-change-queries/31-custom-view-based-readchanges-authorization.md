@@ -1,6 +1,6 @@
 ---
-jira: DMS-TBD
-jira_url: https://edfi.atlassian.net/browse/DMS-TBD
+jira: DMS-1193
+jira_url: https://edfi.atlassian.net/browse/DMS-1193
 ---
 
 # Spike: Custom View-Based `ReadChanges` Authorization
