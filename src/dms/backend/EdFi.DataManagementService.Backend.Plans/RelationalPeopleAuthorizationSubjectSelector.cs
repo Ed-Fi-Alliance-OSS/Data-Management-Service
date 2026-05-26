@@ -192,10 +192,12 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             var personPath = personPaths[contributionOrder];
 
             if (
-                PersonJoinPathResolver.IsPersonResource(
+                IsSelfPersonIdentityPath(
                     concreteResourceModel.RelationalModel.Resource,
-                    personResourceName
-                ) && !IsArrayNestedPath(personPath)
+                    securableElementKind,
+                    personResourceName,
+                    personPath
+                )
             )
             {
                 candidates.Add(
@@ -633,6 +635,50 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         return null;
     }
 
+    private static bool IsSelfPersonIdentityPath(
+        QualifiedResourceName resource,
+        SecurableElementKind securableElementKind,
+        string personResourceName,
+        string personPath
+    ) =>
+        PersonJoinPathResolver.IsPersonResource(resource, personResourceName)
+        && string.Equals(
+            GetPersonResourceName(securableElementKind),
+            personResourceName,
+            StringComparison.Ordinal
+        )
+        && string.Equals(
+            personPath,
+            GetSelfPersonIdentityJsonPath(securableElementKind),
+            StringComparison.Ordinal
+        );
+
+    private static string GetSelfPersonIdentityJsonPath(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "$.studentUniqueId",
+            SecurableElementKind.Contact => "$.contactUniqueId",
+            SecurableElementKind.Staff => "$.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported relationship authorization person securable element kind."
+            ),
+        };
+
+    private static string GetPersonResourceName(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "Student",
+            SecurableElementKind.Contact => "Contact",
+            SecurableElementKind.Staff => "Staff",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported relationship authorization person securable element kind."
+            ),
+        };
+
     private static DbTableModel? FindTable(ConcreteResourceModel concreteResourceModel, DbTableName table)
     {
         foreach (var tableModel in concreteResourceModel.RelationalModel.TablesInDependencyOrder)
@@ -645,9 +691,6 @@ public static class RelationalPeopleAuthorizationSubjectSelector
 
         return null;
     }
-
-    private static bool IsArrayNestedPath(string jsonPath) =>
-        jsonPath.Contains("[*]", StringComparison.Ordinal);
 
     private static RelationshipAuthorizationPersonKind MapPersonKind(SecurableElementKind kind) =>
         kind switch

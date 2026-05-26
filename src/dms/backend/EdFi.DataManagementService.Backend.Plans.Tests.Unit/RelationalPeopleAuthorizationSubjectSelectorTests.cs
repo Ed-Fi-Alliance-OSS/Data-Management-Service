@@ -325,6 +325,101 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
     }
 
     [Test]
+    public void It_should_resolve_a_same_kind_person_reference_on_a_person_resource_through_the_reference_document_id()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var relatedStudentReferencePath = "$.relatedStudentReference.studentUniqueId";
+        var relatedStudentDocumentIdColumn = Col("RelatedStudent_DocumentId");
+        var mappingSet = CreateMappingSet(
+            CreateCarrierResource(
+                resource.ResourceName,
+                new PersonReferenceSpec(
+                    SecurableElementKind.Student,
+                    relatedStudentReferencePath,
+                    relatedStudentDocumentIdColumn
+                )
+            )
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            resource,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        );
+
+        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+
+        var subject = result.StrategySubjectSelections.Single().Subjects.Should().ContainSingle().Subject;
+
+        subject.Table.Should().Be(Table(resource.ResourceName));
+        subject.Column.Should().Be(relatedStudentDocumentIdColumn);
+        subject
+            .PersonMetadata!.Path.Kind.Should()
+            .Be(RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn);
+        subject.PersonMetadata.Path.Steps.Should().ContainSingle();
+        subject.PersonMetadata.Path.Steps[0].SourceTable.Should().Be(Table(resource.ResourceName));
+        subject.PersonMetadata.Path.Steps[0].SourceColumnName.Should().Be(relatedStudentDocumentIdColumn);
+        subject.PersonMetadata.Path.Steps[0].TargetTable.Should().Be(Table(resource.ResourceName));
+        subject.PersonMetadata.Path.Steps[0].TargetColumnName.Should().Be(_documentId);
+        subject
+            .Contributors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                new RelationshipAuthorizationSubjectContributor(
+                    SecurableElementKind.Student,
+                    relatedStudentReferencePath,
+                    "StudentUniqueId",
+                    0
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_fail_unresolved_non_self_same_kind_person_paths_on_person_resources()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var unresolvedStudentReferencePath = "$.relatedStudentReference.studentUniqueId";
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                resource.ResourceName,
+                CreateModelWithTables(
+                    resource.ResourceName,
+                    CreateRootTable(Table(resource.ResourceName)),
+                    []
+                ),
+                new ResourceSecurableElements([], [], [unresolvedStudentReferencePath], [], [])
+            )
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            resource,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        );
+
+        result
+            .Outcome.Should()
+            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
+        result.StrategySubjectSelections.Should().BeEmpty();
+
+        var failure = result.SecurityConfigurationFailures.Should().ContainSingle().Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.UnresolvedSecurableElement);
+        failure.Location!.Kind.Should().Be(SecurableElementKind.Student);
+        failure.Location.JsonPath.Should().Be(unresolvedStudentReferencePath);
+        failure.Location.ReadableName.Should().Be("StudentUniqueId");
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        failure
+            .PersonMetadata.AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+    }
+
+    [Test]
     public void It_should_create_one_subject_per_independent_declared_person_path()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "DualStudentCarrier");

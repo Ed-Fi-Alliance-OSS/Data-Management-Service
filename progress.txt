@@ -142,3 +142,8 @@ Task completed: Failure Metadata - missing People auth view failure aggregation 
 Key decisions: collect missing People auth-view failures before returning independent subject-selection failures; group selected People auth views and merge contributor metadata instead of DistinctBy first-wins.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs; tasks.json; progress.txt.
 Blockers/notes: csharpier formatted planner/test; RelationshipAuthorizationPlanner filter passed. All tasks now complete.
+
+Task completed: Subject Resolution - self-person identity path restriction for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: zero-hop self-person subjects now require the matching core person resource and actual self UniqueId path; same-kind root references on person resources resolve through normal DocumentId reference paths; unresolved non-self same-kind paths remain security-configuration failures.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted selector/test; RelationalPeopleAuthorizationSubjectSelector filter passed.
