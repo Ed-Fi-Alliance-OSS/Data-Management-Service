@@ -212,3 +212,8 @@ Task completed: Subject Resolution - zero-hop self-person applicability for refe
 Key decisions: tracked applicable People paths separately from emitted join chains; exact Student/Contact/Staff self paths now suppress child-collection-only failure while still emitting no person join index; child-only paths still fail.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/SecurableElementColumnPathResolver.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveAuthorizationIndexInventoryPass.cs; resolver/index unit tests; tasks.json; progress.txt.
 Blockers/notes: requested DeriveAuthorizationIndexInventoryPass filter matched only one test, so also ran focused self-plus-child and child-only index filters.
+
+Task completed: Simplification - remove unused People subject selection outcome for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: removed RelationalPeopleAuthorizationSubjectSelectionOutcome and Outcome from People selector result; success/error state is represented by strategy selections plus ordered security failures; tests assert those lists directly.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted selector/test; RelationalPeopleAuthorizationSubjectSelector filter passed. Broad Outcome rg still finds EdOrg/classifier outcomes only, not People selector outcome.

@@ -8,12 +8,6 @@ using EdFi.DataManagementService.Backend.RelationalModel;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
-public enum RelationalPeopleAuthorizationSubjectSelectionOutcome
-{
-    Success,
-    SecurityConfigurationError,
-}
-
 public sealed record RelationalPeopleAuthorizationStrategySubjectSelection(
     ConfiguredAuthorizationStrategy ConfiguredStrategy,
     int RelationshipLocalOrder,
@@ -22,7 +16,6 @@ public sealed record RelationalPeopleAuthorizationStrategySubjectSelection(
 );
 
 public sealed record RelationalPeopleAuthorizationSubjectSelection(
-    RelationalPeopleAuthorizationSubjectSelectionOutcome Outcome,
     IReadOnlyList<RelationalPeopleAuthorizationStrategySubjectSelection> StrategySubjectSelections,
     IReadOnlyList<RelationshipAuthorizationFailureMetadata> SecurityConfigurationFailures
 );
@@ -103,17 +96,12 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         if (securityConfigurationFailures.Count > 0)
         {
             return new RelationalPeopleAuthorizationSubjectSelection(
-                RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError,
                 subjectsByStrategy,
                 [.. OrderFailures(securityConfigurationFailures)]
             );
         }
 
-        return new RelationalPeopleAuthorizationSubjectSelection(
-            RelationalPeopleAuthorizationSubjectSelectionOutcome.Success,
-            subjectsByStrategy,
-            []
-        );
+        return new RelationalPeopleAuthorizationSubjectSelection(subjectsByStrategy, []);
     }
 
     private static bool HasUnresolvedPersonPath(

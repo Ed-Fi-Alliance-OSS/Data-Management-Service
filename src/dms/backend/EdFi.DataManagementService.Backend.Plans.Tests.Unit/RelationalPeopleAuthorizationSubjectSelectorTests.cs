@@ -41,7 +41,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
         result.StrategySubjectSelections.Should().ContainSingle();
 
         var subject = result.StrategySubjectSelections[0].Subjects.Should().ContainSingle().Subject;
@@ -106,7 +106,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
 
         var subject = result.StrategySubjectSelections.Single().Subjects.Should().ContainSingle().Subject;
 
@@ -156,7 +156,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
 
         var strategySelection = result.StrategySubjectSelections.Should().ContainSingle().Subject;
 
@@ -225,10 +225,6 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
                 ),
             ]
         );
-
-        result
-            .Outcome.Should()
-            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
 
         var strategySelection = result.StrategySubjectSelections.Should().ContainSingle().Subject;
 
@@ -321,7 +317,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
 
         var subject = result.StrategySubjectSelections.Single().Subjects.Should().ContainSingle().Subject;
 
@@ -366,7 +362,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
 
         var result = SelectSubjects(mappingSet, resource, GetPersonStrategyName(securableElementKind));
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
 
         var subject = result.StrategySubjectSelections.Single().Subjects.Should().ContainSingle().Subject;
 
@@ -414,7 +410,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
 
         var subject = result.StrategySubjectSelections.Single().Subjects.Should().ContainSingle().Subject;
 
@@ -465,9 +461,6 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result
-            .Outcome.Should()
-            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
         result.StrategySubjectSelections.Should().BeEmpty();
 
         var failure = result.SecurityConfigurationFailures.Should().ContainSingle().Subject;
@@ -514,10 +507,6 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             resource,
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
-
-        result
-            .Outcome.Should()
-            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
 
         var selectedSubject = result
             .StrategySubjectSelections.Single()
@@ -582,10 +571,6 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result
-            .Outcome.Should()
-            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
-
         var strategySelection = result.StrategySubjectSelections.Should().ContainSingle().Subject;
         var subject = strategySelection.Subjects.Should().ContainSingle().Subject;
 
@@ -626,10 +611,6 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
         );
 
         result
-            .Outcome.Should()
-            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
-
-        result
             .SecurityConfigurationFailures.Select(static failure =>
                 (failure.Location!.JsonPath, failure.Contributors.Single().ContributionOrder)
             )
@@ -664,7 +645,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
 
         result
             .StrategySubjectSelections.Single()
@@ -726,7 +707,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
 
         var subject = result.StrategySubjectSelections.Single().Subjects.Should().ContainSingle().Subject;
 
@@ -790,7 +771,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
 
         var strategySelection = result.StrategySubjectSelections.Should().ContainSingle().Subject;
 
@@ -861,9 +842,6 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result
-            .Outcome.Should()
-            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
         result.StrategySubjectSelections.Should().BeEmpty();
 
         var failure = result.SecurityConfigurationFailures.Should().ContainSingle().Subject;
@@ -911,7 +889,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
         result.StrategySubjectSelections.Should().HaveCount(2);
         result
             .StrategySubjectSelections.Select(static selection =>
@@ -958,7 +936,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
         result.StrategySubjectSelections.Should().HaveCount(2);
         result
             .StrategySubjectSelections.Select(static selection =>
@@ -995,7 +973,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted
         );
 
-        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+        result.SecurityConfigurationFailures.Should().BeEmpty();
         result.StrategySubjectSelections.Should().HaveCount(2);
         result
             .StrategySubjectSelections.Select(static selection => selection.ConfiguredStrategy.StrategyName)
