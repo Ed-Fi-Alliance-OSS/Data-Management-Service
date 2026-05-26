@@ -62,3 +62,8 @@ Task completed: Simplification for reference/design/backend-redesign/epics/14-au
 Key decisions: removed unused RelationshipAuthorizationPeopleAuthViewSelector instead of wiring dead helper; RelationalPeopleAuthorizationSubjectSelector remains the single production People auth view selection path.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPeopleAuthViewSelector.cs; tasks.json; progress.txt.
 Blockers/notes: none.
+
+Task completed: Execution Boundaries - People-core-only planning failures staged for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: endpoint staging now treats only People-core security failures as staging-compatible; invalid/custom/non-People failures still return security configuration; known-but-not-enabled diagnostics are retained in staged messages.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs; tasks.json; progress.txt.
+Blockers/notes: RelationalDocumentStoreRepository test filter passed after csharpier.

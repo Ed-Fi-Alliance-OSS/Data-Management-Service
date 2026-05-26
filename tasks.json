@@ -234,5 +234,73 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationAuth1FailurePayload"
     ],
     "completed": true
+  },
+  {
+    "category": "Execution Boundaries",
+    "description": "Medium: Keep People-core-only planning failures behind endpoint staging until DMS-1095 and DMS-1158 consume the core.",
+    "acceptance-criteria": [
+      "GET-many, GET-by-id, POST, PUT, and DELETE continue returning the known-but-not-enabled People staging response when the only security-configuration failures are produced by selected People subjects, such as missing People auth view associations, no applicable People subjects, or no executable People subjects for the current operation.",
+      "Invalid or unresolved non-People security metadata still takes precedence over People staging as already required.",
+      "The relationship authorization planner still reports People-core security-configuration failures for core/unit consumers; only the current endpoint adapters keep those failures behind the staged endpoint response.",
+      "Mixed EdOrg-and-People strategies do not execute partial People specs or leak MissingPeopleAuthViewAssociations responses before DMS-1095 or DMS-1158 consumes endpoint execution."
+    ],
+    "steps-to-verify": [
+      "Review RelationalDocumentStoreRepository People staging flow around PlanStoredValues, PlanUpdateValues, and security-configuration failure handling.",
+      "Add focused repository unit coverage for People missing-auth-view and no-applicable-subject planning failures and verify the endpoint result remains the known-but-not-enabled staging response.",
+      "Add focused repository unit coverage for People strategies combined with invalid or unresolved non-People security metadata and verify the security-configuration result still wins over staging.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Execution Boundaries",
+    "description": "Low: Centralize People relationship strategy staging classification and relationship-local order calculation.",
+    "acceptance-criteria": [
+      "People relationship strategy detection for endpoint staging reuses a shared helper or classifier-owned metadata instead of duplicating a strategy-name switch in RelationalDocumentStoreRepository.",
+      "Known-but-not-enabled People staging failures calculate relationship-local order with the same NoFurtherAuthorizationRequired skip rule used by RelationshipAuthorizationStrategyClassifier.",
+      "Raw configured strategy indexes remain preserved on ConfiguredAuthorizationStrategy diagnostics.",
+      "Adding or renaming a People relationship strategy requires updating one authoritative classification path for both planning and endpoint staging."
+    ],
+    "steps-to-verify": [
+      "Review RelationalDocumentStoreRepository.TryCreatePeopleEndpointStagingFailures and RelationshipAuthorizationEndpointExecutionBoundary for duplicate People strategy switches.",
+      "Add focused unit coverage where NoFurtherAuthorizationRequired precedes a People strategy and verify the staging failure relationship-local order matches classifier ordering.",
+      "Run rg \"RelationshipsWithEdOrgsAndPeople|RelationshipsWithPeopleOnly|RelationshipsWithStudentsOnly\" src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Plans and confirm endpoint staging no longer owns a duplicate People strategy list.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Simplification",
+    "description": "Low: Collapse duplicated MissingPeopleAuthViewAssociations failure construction in the relationship authorization planner.",
+    "acceptance-criteria": [
+      "The two CreateMissingPeopleAuthViewAssociationFailures call paths share one failure-construction helper after selecting People auth views.",
+      "Stored-value, proposed-value, and update-plan value-source behavior remains unchanged.",
+      "MissingPeopleAuthViewAssociations diagnostics continue to include resource, strategy, relationship-local order, auth object, location, hint, person metadata, and contributors.",
+      "No behavior changes are made to EdOrg-only or mixed-strategy planning beyond removing duplicated construction logic."
+    ],
+    "steps-to-verify": [
+      "Review RelationshipAuthorizationPlanner.CreateMissingPeopleAuthViewAssociationFailures overloads and extract the common RelationshipAuthorizationFailureMetadata construction.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Failure Metadata",
+    "description": "Medium: Format People relationship security-configuration failures with People-specific wording instead of EdOrg-only diagnostics.",
+    "acceptance-criteria": [
+      "Security-configuration messages for People UnresolvedSecurableElement failures identify Student, Contact, or Staff securable elements and do not say the strategy requires resolvable EducationOrganization elements.",
+      "Security-configuration messages for child-collection or no-applicable People subject failures identify the selected People subject kind, skipped path reason, auth view when available, and contributor metadata.",
+      "Security-configuration messages for People MissingProposedRootBinding failures do not describe the missing binding as an EducationOrganization subject.",
+      "The EdOrg-only grouped security-configuration formatter is used only when every grouped failure is for an EducationOrganization subject.",
+      "Existing EdOrg-only security-configuration wording and tests remain unchanged."
+    ],
+    "steps-to-verify": [
+      "Review RelationalDocumentStoreRepository.HasOnlyEdOrgSubjectSelectionFailures and BuildSecurityConfigurationFailureMessage for People-aware branching by failure.Location.Kind and PersonMetadata.",
+      "Add focused repository unit coverage for People unresolved, child-collection no-applicable, and missing proposed binding failures and assert the returned security-configuration errors use People-specific wording.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs"
+    ],
+    "completed": false
   }
 ]

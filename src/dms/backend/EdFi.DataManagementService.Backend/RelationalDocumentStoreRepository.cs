@@ -656,10 +656,10 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         if (
-            relationshipAuthorizationResult is not RelationshipAuthorizationResult.SecurityConfigurationError
-            && TryCreatePeopleEndpointStagingFailures(
+            TryCreatePeopleEndpointStagingFailures(
                 resource,
                 configuredAuthorizationStrategies,
+                relationshipAuthorizationResult,
                 out var peopleStagingFailures
             )
         )
@@ -873,10 +873,10 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         if (
-            relationshipAuthorizationResult is not RelationshipAuthorizationResult.SecurityConfigurationError
-            && TryCreatePeopleEndpointStagingFailures(
+            TryCreatePeopleEndpointStagingFailures(
                 resource,
                 configuredAuthorizationStrategies,
+                relationshipAuthorizationResult,
                 out var peopleStagingFailures
             )
         )
@@ -1040,7 +1040,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
 
-        if (securityConfigurationFailures.Count > 0)
+        if (
+            securityConfigurationFailures.Count > 0
+            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationFailures)
+        )
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
                 BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
@@ -1133,7 +1136,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
 
-        if (securityConfigurationFailures.Count > 0)
+        if (
+            securityConfigurationFailures.Count > 0
+            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationFailures)
+        )
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
                 BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
@@ -1699,10 +1705,10 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         if (
-            relationshipAuthorizationResult is not RelationshipAuthorizationResult.SecurityConfigurationError
-            && TryCreatePeopleEndpointStagingFailures(
+            TryCreatePeopleEndpointStagingFailures(
                 resource,
                 configuredAuthorizationStrategies,
+                relationshipAuthorizationResult,
                 out var peopleStagingFailures
             )
         )
@@ -1939,6 +1945,30 @@ public sealed class RelationalDocumentStoreRepository(
     private static bool TryCreatePeopleEndpointStagingFailures(
         QualifiedResourceName resource,
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        RelationshipAuthorizationResult relationshipAuthorizationResult,
+        out IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        if (
+            relationshipAuthorizationResult
+                is RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError
+            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationError.Failures)
+        )
+        {
+            failures = [];
+            return false;
+        }
+
+        return TryCreatePeopleEndpointStagingFailures(
+            resource,
+            configuredAuthorizationStrategies,
+            out failures
+        );
+    }
+
+    private static bool TryCreatePeopleEndpointStagingFailures(
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
         out IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
     )
     {
@@ -1961,22 +1991,77 @@ public sealed class RelationalDocumentStoreRepository(
         return failures.Count > 0;
     }
 
+    private static bool HasOnlyPeopleEndpointStagingCompatibleFailures(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    ) =>
+        failures.Count > 0
+        && failures.All(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
+            || IsPeopleCorePlanningFailure(failure)
+        );
+
+    private static bool IsPeopleCorePlanningFailure(RelationshipAuthorizationFailureMetadata failure) =>
+        failure.FailureKind
+            is RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+                or RelationshipAuthorizationFailureKind.NoExecutableSubjects
+                or RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+                or RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+                or RelationshipAuthorizationFailureKind.MissingProposedRootBinding
+        && (
+            failure.PersonMetadata is not null
+            || failure.Location?.Kind
+                is SecurableElementKind.Student
+                    or SecurableElementKind.Contact
+                    or SecurableElementKind.Staff
+            || failure.Contributors.Any(static contributor =>
+                contributor.Kind
+                    is SecurableElementKind.Student
+                        or SecurableElementKind.Contact
+                        or SecurableElementKind.Staff
+            )
+            || failure.IneligibleSubjects.Any(static ineligibleSubject =>
+                ineligibleSubject.Subject.PersonMetadata is not null
+            )
+        );
+
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
         RelationshipAuthorizationResult relationshipAuthorizationResult
     ) =>
-        relationshipAuthorizationResult
-            is RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled
-            ? [.. peopleEndpointStagingFailures, .. knownButNotEnabled.Failures]
-            : peopleEndpointStagingFailures;
+        relationshipAuthorizationResult switch
+        {
+            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
+            [
+                .. peopleEndpointStagingFailures,
+                .. knownButNotEnabled.Failures,
+            ],
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+            [
+                .. peopleEndpointStagingFailures,
+                .. securityConfigurationError.Failures.Where(static failure =>
+                    failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
+                ),
+            ],
+            _ => peopleEndpointStagingFailures,
+        };
 
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
         RelationshipAuthorizationUpdatePlan relationshipAuthorizationPlan
-    ) =>
-        relationshipAuthorizationPlan.KnownButNotEnabledFailures.Count > 0
-            ? [.. peopleEndpointStagingFailures, .. relationshipAuthorizationPlan.KnownButNotEnabledFailures]
+    )
+    {
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures =
+        [
+            .. relationshipAuthorizationPlan.KnownButNotEnabledFailures,
+            .. relationshipAuthorizationPlan.SecurityConfigurationFailures.Where(static failure =>
+                failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
+            ),
+        ];
+
+        return knownButNotEnabledFailures.Count > 0
+            ? [.. peopleEndpointStagingFailures, .. knownButNotEnabledFailures]
             : peopleEndpointStagingFailures;
+    }
 
     private static bool IsPeopleRelationshipStrategy(string strategyName) =>
         strategyName switch
