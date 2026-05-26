@@ -302,5 +302,167 @@
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs"
     ],
     "completed": true
+  },
+  {
+    "category": "Refactor Contracts",
+    "description": "Move executable relationship authorization auth object ownership from check specs and People metadata onto each relationship authorization subject.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationSubject has a required non-null RelationshipAuthorizationAuthObject value and continues to expose IsPersonSubject from PersonMetadata.",
+      "RelationshipAuthorizationCheckSpec no longer has an AuthObject property or constructor argument.",
+      "RelationshipAuthorizationPersonSubjectMetadata no longer has an AuthObject property or constructor argument.",
+      "RelationshipAuthorizationFailureMetadata continues to allow auth object metadata for planning and configuration failures that occur before an executable subject exists.",
+      "All production and test call sites that construct relationship authorization subjects, check specs, or People metadata compile against the new contract shape."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationContracts.cs for the new subject-owned auth object contract.",
+      "Run rg \"checkSpec\\.AuthObject|CreateCheckSpecAuthObject|PersonMetadata\\?\\.AuthObject|personMetadata\\.AuthObject\" src/dms and confirm no stale executable-subject auth object reads remain.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Subject Selection",
+    "description": "Update EdOrg and People relationship subject selection so every executable subject is stamped with the auth object required to evaluate that subject.",
+    "acceptance-criteria": [
+      "RelationalEdOrgAuthorizationSubjectSelector selects subjects for one SupportedRelationshipAuthorizationStrategy and stamps each EdOrg subject with the direction-specific EdOrg hierarchy auth object.",
+      "RelationalPeopleAuthorizationSubjectSelector stamps each Student, Contact, Staff, and responsibility Student subject with the selected People auth object on RelationshipAuthorizationSubject.",
+      "People skipped contributors and pre-subject failure metadata retain auth object metadata only where needed for diagnostics before an executable subject exists.",
+      "Mixed EdOrg plus People strategies can produce subjects with distinct auth objects without collapsing them to one strategy-level auth object.",
+      "People-only strategies with more than one person kind can produce distinct subject auth objects in the same configured strategy."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalEdOrgAuthorizationSubjectSelector.cs and src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs.",
+      "Add or update unit tests for normal EdOrg, inverted EdOrg, mixed EdOrg plus Student, and People-only Student plus Contact subject auth object stamping.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Planner Integration",
+    "description": "Simplify relationship authorization planner check-spec creation and no-claims failure construction around subject-level auth objects.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationPlanner no longer creates or stores a check-spec-level auth object for stored-value or proposed-value checks.",
+      "ApplyProposedAnchorToPersonSubject preserves subject.AuthObject while replacing only the People proposed anchor metadata.",
+      "No-claims failure metadata is derived from distinct subject auth objects, producing one metadata entry per needed auth object while preserving the configured strategy identity.",
+      "Pre-subject configuration failures continue to derive auth object metadata from the selected eligible subject when no executable subject exists.",
+      "Relationship OR metadata, configured strategy indexes, relationship-local order, and ineligible subject metadata are unchanged by the refactor."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs for removal of CreateCheckSpecAuthObject and check-spec auth object constructor usage.",
+      "Add or update planner tests for proposed People anchor transformation, mixed-auth-object no-claims metadata, homogeneous People no-claims metadata, and EdOrg-only no-claims behavior.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Execution Boundaries",
+    "description": "Update the single-record relationship authorization SQL compiler to read auth object metadata from the subject being emitted.",
+    "acceptance-criteria": [
+      "SingleRecordRelationshipAuthorizationSqlCompiler reads the current subject's auth object when emitting direct-claim-match and auth object EXISTS predicates.",
+      "SQL compiler helper methods that need auth-object behavior accept an explicit RelationshipAuthorizationAuthObject argument instead of reading a check-spec-level auth object.",
+      "Existing EdOrg-only single-record authorization SQL output remains unchanged for PostgreSQL and SQL Server.",
+      "Compiler tests and fixtures construct RelationshipAuthorizationSubject instances with auth objects and no longer depend on RelationshipAuthorizationCheckSpec.AuthObject.",
+      "A mixed-auth-object check spec is not rejected by the compiler model merely because the check spec has no top-level auth object; endpoint support remains enforced by the execution boundary."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs for subject.AuthObject usage and removed checkSpec.AuthObject reads.",
+      "Add or update SQL compiler tests proving normal and inverted EdOrg SQL, direct-claim-match predicates, and AUTH1 failure payload SQL remain unchanged.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationSqlCompiler"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Execution Boundaries",
+    "description": "Update the page-document adapter and relationship authorization execution boundary to validate auth object support from subject metadata.",
+    "acceptance-criteria": [
+      "PageDocumentIdAuthorizationSpecAdapter selects exactly one EdOrg auth object from check-spec subjects after the current execution boundary has accepted the plan.",
+      "PageDocumentIdAuthorizationSpecAdapter fails clearly when a page-document check contains multiple distinct auth objects or a non-EdOrg auth object.",
+      "RelationshipAuthorizationEndpointExecutionBoundary validates endpoint support by inspecting all subject auth objects rather than a check-spec-level auth object.",
+      "Unsupported auth object messages identify the first unsupported subject auth object.",
+      "People GET-many and CRUD endpoint execution remains staged until DMS-1095 and DMS-1158 consume the People core."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdAuthorizationSpecAdapter.cs and src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationEndpointExecutionBoundary.cs.",
+      "Add or update PageDocumentIdAuthorizationSpecAdapter tests for exactly one EdOrg auth object, multiple-auth-object guard failures, and non-EdOrg guard failures.",
+      "Add or update execution-boundary tests proving People subject auth objects still produce the current staged unsupported result.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"PageDocumentIdAuthorizationSpecAdapter|RelationshipAuthorizationEndpointExecutionBoundary\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Failure DTO",
+    "description": "Update the external relationship authorization failure DTO so failed subjects carry auth object detail and failed strategies retain only a homogeneous summary.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationFailedSubject has a required non-null RelationshipAuthorizationAuthObjectInfo value.",
+      "RelationshipAuthorizationPersonSubjectInfo no longer duplicates auth object metadata.",
+      "RelationshipAuthorizationFailedStrategy.AuthObject remains nullable and is documented by usage as a summary for homogeneous failed subjects.",
+      "The final DTO shape does not leave a nullable or optional subject-level auth object path that mapper code can silently omit.",
+      "Core, backend, and handler tests that construct relationship authorization failure DTOs compile against the new shape.",
+      "Existing EdOrg-only response payload semantics remain unchanged except for the additional per-subject auth object detail."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core.External/Backend/RelationshipAuthorizationFailure.cs for the final DTO shape.",
+      "Run rg \"RelationshipAuthorizationPersonSubjectInfo|RelationshipAuthorizationFailedSubject\" src/dms and confirm call sites pass subject-level auth object detail and no People-specific auth object argument remains.",
+      "Update tests in src/dms/core/EdFi.DataManagementService.Core.Tests.Unit and src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit that construct RelationshipAuthorizationFailedSubject or RelationshipAuthorizationPersonSubjectInfo.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationAuth1FailurePayload",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"GetByIdHandlerTests|DeleteByIdHandlerTests|UpsertHandlerTests|UpdateByIdHandlerTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Failure Mapping",
+    "description": "Refactor relationship authorization failure mapping to use subject-level auth objects for AUTH1 runtime failures and no-claims failures.",
+    "acceptance-criteria": [
+      "Runtime AUTH1 mapping populates each failed subject's external auth object from RelationshipAuthorizationSubject.AuthObject.",
+      "Runtime AUTH1 strategy-level AuthObject is selected from only the failed subject ordinals represented in the AUTH1 payload.",
+      "Runtime AUTH1 strategy-level AuthObject is null when failed subjects in the same configured strategy have distinct auth objects.",
+      "No-claims mapping maps all executable subjects for the failed configured strategy and uses null strategy summary for mixed-auth-object failures.",
+      "No-claims mapping matches no-claims failure metadata back to subjects by subject auth object, and by People kind/path when that metadata is available.",
+      "People hints, person kind, DocumentId path, stored anchor, and proposed anchor metadata remain available after auth object duplication is removed from People subject info."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs for removal of check-spec auth object fallback logic.",
+      "Add or update tests for mixed EdOrg plus People failures where only the People subject fails, both subjects fail, and no claims are present.",
+      "Add or update tests for People-only Student plus Contact failures and homogeneous Students-only failures.",
+      "Add or update tests proving mixed EdOrg plus Student no-claims failures produce one failed strategy with a null strategy auth-object summary and per-subject auth objects.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationFailureMapper|RelationshipAuthorizationAuth1FailurePayload\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Repository Integration",
+    "description": "Update repository staging and relationship authorization error formatting to consume subject-level failure auth objects without changing endpoint behavior.",
+    "acceptance-criteria": [
+      "RelationalDocumentStoreRepository no longer reads People auth object metadata from PersonMetadata for executable-subject failures.",
+      "Repository staging helpers prefer failed subject auth object metadata when a subject exists and continue to use RelationshipAuthorizationFailureMetadata.AuthObject for pre-subject planning failures.",
+      "Known-but-not-enabled People staging behavior and security-configuration precedence remain unchanged.",
+      "Mixed-auth-object failed strategies do not invent one user-facing auth object name when the strategy summary auth object is null.",
+      "Existing EdOrg-only security-configuration and authorization message tests remain semantically unchanged."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs and src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationErrorMessageFormatter.cs.",
+      "Add or update repository tests for People staging failures, mixed-auth-object failures, and EdOrg-only failure message regressions.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Regression Coverage",
+    "description": "Complete the focused test and formatting pass for the auth-object ownership refactor.",
+    "acceptance-criteria": [
+      "Planner tests assert EdOrg normal and inverted subjects, People subjects, mixed EdOrg plus People subjects, proposed-value transformed subjects, and self-person create-new ineligible subjects preserve subject-level auth objects.",
+      "SQL compiler and adapter tests prove existing EdOrg SQL and page-document behavior remain unchanged after removing check-spec auth objects.",
+      "Failure mapper tests cover homogeneous and mixed-auth-object strategy summaries for AUTH1 and no-claims paths.",
+      "Core and backend handler tests prove relationship failure DTO construction and user-facing response semantics still work with subject-level auth object detail.",
+      "All touched C# files are formatted with csharpier and the final implementation diff contains no out-of-scope DDL, endpoint-enablement, or unrelated refactoring changes."
+    ],
+    "steps-to-verify": [
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/core/EdFi.DataManagementService.Core.External src/dms/core/EdFi.DataManagementService.Core.Tests.Unit",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalDocumentStoreRepository|SingleRecordRelationshipAuthorizationExecutor|DefaultRelationalWriteExecutor\"",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"GetByIdHandlerTests|DeleteByIdHandlerTests|UpsertHandlerTests|UpdateByIdHandlerTests\"",
+      "Run git diff --stat and review the changed file list for out-of-scope production, test, DDL, or endpoint-enablement changes"
+    ],
+    "completed": false
   }
 ]
