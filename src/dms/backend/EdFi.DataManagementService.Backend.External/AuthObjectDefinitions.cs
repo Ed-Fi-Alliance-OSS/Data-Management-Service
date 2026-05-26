@@ -146,12 +146,28 @@ public static class AuthObjectDefinitions
         IReadOnlyList<ConcreteResourceModel> concreteResources
     )
     {
-        return RequiredPeopleAuthAssociationResourceNames.All(requiredResourceName =>
-            concreteResources.Any(r =>
-                DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
-                && r.ResourceKey.Resource.ResourceName == requiredResourceName
-            )
-        );
+        return GetMissingPeopleAuthAssociationResourceNames(concreteResources).Count == 0;
+    }
+
+    /// <summary>
+    /// Returns the concrete core association resource names missing from the supplied model set that
+    /// caused the people auth views to be suppressed.
+    /// </summary>
+    public static IReadOnlyList<string> GetMissingPeopleAuthAssociationResourceNames(
+        IReadOnlyList<ConcreteResourceModel> concreteResources
+    )
+    {
+        ArgumentNullException.ThrowIfNull(concreteResources);
+
+        return
+        [
+            .. RequiredPeopleAuthAssociationResourceNames.Where(requiredResourceName =>
+                !concreteResources.Any(r =>
+                    DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
+                    && r.ResourceKey.Resource.ResourceName == requiredResourceName
+                )
+            ),
+        ];
     }
 
     private static IReadOnlyList<AuthViewDefinition> BuildPeopleAuthViews()

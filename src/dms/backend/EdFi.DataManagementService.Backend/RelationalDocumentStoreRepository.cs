@@ -2150,6 +2150,11 @@ public sealed class RelationalDocumentStoreRepository(
                     + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires proposed-value EducationOrganization subject "
                     + $"{FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "from relationship authorization metadata"}, "
                     + $"but root column '{failure.Location?.Table}.{failure.Location?.Column?.Value}' does not have a matching root write binding.",
+            RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' selects People relationship subject '{failure.Location?.Kind}' "
+                    + $"through auth view '{failure.Location?.AuthorizationObjectName}', but the people auth views were not emitted in mapping set "
+                    + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'. {failure.Hint}",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(failure),
                 failure.FailureKind,

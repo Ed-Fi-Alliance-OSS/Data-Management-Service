@@ -53,7 +53,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
       "Review planner unit tests for all four auth view selections, hint metadata, missing-association security-configuration failures, and EdOrg-only continuation when People views are suppressed."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Subject Resolution",

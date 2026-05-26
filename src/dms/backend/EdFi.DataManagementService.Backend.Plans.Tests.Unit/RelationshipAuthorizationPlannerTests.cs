@@ -484,6 +484,87 @@ public class Given_RelationshipAuthorizationPlannerTests
         noClaimsResult.Failures[0].RelationshipLocalOrder.Should().Be(0);
     }
 
+    [TestCaseSource(nameof(PeopleAuthViewSelectionCases))]
+    public void It_should_report_missing_people_auth_view_associations_for_selected_people_subjects(
+        SecurableElementKind securableElementKind,
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        string strategyName
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", $"{personKind}AuthorizationResource");
+        var mappingSet = CreatePeopleSubjectMappingSet(resource, securableElementKind);
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(authViewKind);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(strategyName),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var securityConfigurationError = (RelationshipAuthorizationResult.SecurityConfigurationError)result;
+
+        securityConfigurationError.Failures.Should().ContainSingle();
+
+        var failure = securityConfigurationError.Failures[0];
+        failure
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations);
+        failure.ConfiguredStrategy?.StrategyName.Should().Be(strategyName);
+        failure.RelationshipLocalOrder.Should().Be(0);
+        failure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        failure.AuthObject.Should().Be(expectedAuthObject);
+        failure.AuthObject?.SubjectValueColumn.Should().Be(expectedAuthObject.SubjectValueColumn);
+        failure.AuthObject?.FailureHint.Should().Be(expectedAuthObject.FailureHint);
+        failure.Location?.Kind.Should().Be(securableElementKind);
+        failure.Location?.AuthorizationObjectName.Should().Be(expectedAuthObject.Name.ToString());
+        failure.Hint.Should().Contain(resource.ResourceName);
+        failure.Hint.Should().Contain(strategyName);
+        failure.Hint.Should().Contain(personKind.ToString());
+        failure.Hint.Should().Contain(expectedAuthObject.Name.ToString());
+
+        foreach (var requiredResourceName in AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames)
+        {
+            failure.Hint.Should().Contain(requiredResourceName);
+        }
+    }
+
+    [Test]
+    public void It_should_continue_with_edorg_subjects_for_mixed_strategies_when_people_views_are_suppressed_but_no_people_subject_is_selected()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMultipleRootSubjectMappingSet(),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var authorized = (RelationshipAuthorizationResult.Authorized)result;
+
+        authorized.CheckSpecs.Should().ContainSingle();
+        authorized
+            .CheckSpecs[0]
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                )
+            );
+        authorized.CheckSpecs[0].Subjects.Should().HaveCount(2);
+        authorized.CheckSpecs[0].Subjects.Should().OnlyContain(static subject => !subject.IsPersonSubject);
+    }
+
     [Test]
     public void It_should_preserve_relationship_local_order_when_supported_strategies_skip_noop_entries()
     {
@@ -893,6 +974,52 @@ public class Given_RelationshipAuthorizationPlannerTests
             )
         );
 
+    private static MappingSet CreatePeopleSubjectMappingSet(
+        QualifiedResourceName resource,
+        SecurableElementKind securableElementKind
+    )
+    {
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    GetPersonDocumentIdColumn(securableElementKind),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(GetPersonReferenceJsonPath(securableElementKind)),
+                    new QualifiedResourceName("Ed-Fi", GetPersonResourceName(securableElementKind))
+                ),
+            ]
+        );
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(resource.ResourceName, rootTable, []),
+            CreatePersonSecurableElements(securableElementKind)
+        );
+
+        return CreateMappingSet(
+            concreteResource,
+            new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>
+            {
+                [resource] =
+                [
+                    new ResolvedSecurableElementPath(
+                        securableElementKind,
+                        [
+                            new ColumnPathStep(
+                                rootTable.Table,
+                                GetPersonDocumentIdColumn(securableElementKind),
+                                Table(GetPersonResourceName(securableElementKind)),
+                                _documentId
+                            ),
+                        ]
+                    ),
+                ],
+            }
+        );
+    }
+
     private static ResourceWritePlan CreateMinimalWritePlan(
         MappingSet mappingSet,
         QualifiedResourceName resource
@@ -1002,7 +1129,13 @@ public class Given_RelationshipAuthorizationPlannerTests
             SecurableElements = securableElements,
         };
 
-    private static MappingSet CreateMappingSet(ConcreteResourceModel concreteResourceModel)
+    private static MappingSet CreateMappingSet(
+        ConcreteResourceModel concreteResourceModel,
+        IReadOnlyDictionary<
+            QualifiedResourceName,
+            IReadOnlyList<ResolvedSecurableElementPath>
+        >? securableElementColumnPathsByResource = null
+    )
     {
         var resourceKeysInIdOrder = new[] { concreteResourceModel.ResourceKey };
 
@@ -1041,10 +1174,8 @@ public class Given_RelationshipAuthorizationPlannerTests
             ResourceKeyById: resourceKeysInIdOrder.ToDictionary(static resourceKey =>
                 resourceKey.ResourceKeyId
             ),
-            SecurableElementColumnPathsByResource: new Dictionary<
-                QualifiedResourceName,
-                IReadOnlyList<ResolvedSecurableElementPath>
-            >()
+            SecurableElementColumnPathsByResource: securableElementColumnPathsByResource
+                ?? new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
         );
     }
 
@@ -1052,4 +1183,107 @@ public class Given_RelationshipAuthorizationPlannerTests
 
     private static RelationalEdOrgAuthorizationSubjectSelector CreateSelector() =>
         new(new RelationalEdOrgAuthorizationElementResolutionCache());
+
+    private static IEnumerable<TestCaseData> PeopleAuthViewSelectionCases()
+    {
+        yield return new TestCaseData(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        ).SetName("Student");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Contact,
+            RelationshipAuthorizationPersonAuthViewKind.Contact,
+            RelationshipAuthorizationPersonKind.Contact,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        ).SetName("Contact");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Staff,
+            RelationshipAuthorizationPersonAuthViewKind.Staff,
+            RelationshipAuthorizationPersonKind.Staff,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        ).SetName("Staff");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility,
+            RelationshipAuthorizationPersonKind.Student,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility
+        ).SetName("StudentThroughResponsibility");
+    }
+
+    private static ResourceSecurableElements CreatePersonSecurableElements(
+        SecurableElementKind securableElementKind
+    ) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => new ResourceSecurableElements(
+                [],
+                [],
+                [GetPersonReferenceJsonPath(securableElementKind)],
+                [],
+                []
+            ),
+            SecurableElementKind.Contact => new ResourceSecurableElements(
+                [],
+                [],
+                [],
+                [GetPersonReferenceJsonPath(securableElementKind)],
+                []
+            ),
+            SecurableElementKind.Staff => new ResourceSecurableElements(
+                [],
+                [],
+                [],
+                [],
+                [GetPersonReferenceJsonPath(securableElementKind)]
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported people relationship authorization securable element kind."
+            ),
+        };
+
+    private static DbColumnName GetPersonDocumentIdColumn(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => AuthNames.StudentDocumentId,
+            SecurableElementKind.Contact => AuthNames.ContactDocumentId,
+            SecurableElementKind.Staff => AuthNames.StaffDocumentId,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported people relationship authorization securable element kind."
+            ),
+        };
+
+    private static string GetPersonReferenceJsonPath(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "$.studentReference.studentUniqueId",
+            SecurableElementKind.Contact => "$.contactReference.contactUniqueId",
+            SecurableElementKind.Staff => "$.staffReference.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported people relationship authorization securable element kind."
+            ),
+        };
+
+    private static string GetPersonResourceName(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "Student",
+            SecurableElementKind.Contact => "Contact",
+            SecurableElementKind.Staff => "Staff",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported people relationship authorization securable element kind."
+            ),
+        };
 }

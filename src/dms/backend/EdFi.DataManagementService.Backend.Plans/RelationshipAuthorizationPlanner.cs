@@ -397,6 +397,18 @@ public sealed class RelationshipAuthorizationPlanner
         CreateCheckSpec createProposedCheckSpec
     )
     {
+        var missingPeopleAuthViewFailures = CreateMissingPeopleAuthViewAssociationFailures(
+            mappingSet,
+            resource,
+            supportedStrategies,
+            null
+        );
+
+        if (missingPeopleAuthViewFailures.Count > 0)
+        {
+            return CreateSecurityConfigurationUpdatePlan(missingPeopleAuthViewFailures);
+        }
+
         var selectedEdOrgSubjects = _edOrgAuthorizationSubjectSelector.Select(
             mappingSet,
             resource,
@@ -450,6 +462,20 @@ public sealed class RelationshipAuthorizationPlanner
         CreateCheckSpec createCheckSpec
     )
     {
+        var missingPeopleAuthViewFailures = CreateMissingPeopleAuthViewAssociationFailures(
+            mappingSet,
+            resource,
+            supportedStrategies,
+            valueSource
+        );
+
+        if (missingPeopleAuthViewFailures.Count > 0)
+        {
+            return new RelationshipAuthorizationResult.SecurityConfigurationError(
+                missingPeopleAuthViewFailures
+            );
+        }
+
         var selectedEdOrgSubjects = _edOrgAuthorizationSubjectSelector.Select(
             mappingSet,
             resource,
@@ -689,6 +715,58 @@ public sealed class RelationshipAuthorizationPlanner
                 ))
             ),
         ];
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CreateMissingPeopleAuthViewAssociationFailures(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+        RelationshipAuthorizationValueSource? valueSource
+    )
+    {
+        var missingAssociationResourceNames =
+            AuthObjectDefinitions.GetMissingPeopleAuthAssociationResourceNames(
+                mappingSet.Model.ConcreteResourcesInNameOrder
+            );
+
+        if (missingAssociationResourceNames.Count == 0)
+        {
+            return [];
+        }
+
+        var selectedPeopleAuthViews = RelationshipAuthorizationPeopleAuthViewSelector.Select(
+            mappingSet,
+            resource,
+            supportedStrategies
+        );
+
+        if (selectedPeopleAuthViews.Count == 0)
+        {
+            return [];
+        }
+
+        var missingAssociationResourceNamesText = string.Join(", ", missingAssociationResourceNames);
+
+        return
+        [
+            .. OrderFailures(
+                selectedPeopleAuthViews.Select(
+                    selectedPeopleAuthView => new RelationshipAuthorizationFailureMetadata(
+                        RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations,
+                        resource,
+                        selectedPeopleAuthView.ConfiguredStrategy,
+                        selectedPeopleAuthView.RelationshipLocalOrder,
+                        ValueSource: valueSource,
+                        AuthObject: selectedPeopleAuthView.AuthObject,
+                        Location: new RelationshipAuthorizationFailureLocation(
+                            Kind: selectedPeopleAuthView.SecurableElementKind,
+                            AuthorizationObjectName: selectedPeopleAuthView.AuthObject.Name.ToString()
+                        ),
+                        Hint: $"Strategy '{selectedPeopleAuthView.ConfiguredStrategy.StrategyName}' selects {selectedPeopleAuthView.PersonKind} relationship authorization through auth view '{selectedPeopleAuthView.AuthObject.Name}', but the people auth views were not emitted for resource '{resource.ProjectName}.{resource.ResourceName}'. Missing required association resources: [{missingAssociationResourceNamesText}]."
+                    )
+                )
+            ),
+        ];
+    }
 
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombineAndOrderFailures(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> primaryFailures,

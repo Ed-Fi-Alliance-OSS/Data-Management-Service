@@ -328,6 +328,7 @@ public enum RelationshipAuthorizationFailureKind
     MissingProposedRootBinding,
     StoredValueNull,
     ProposedValueMissing,
+    MissingPeopleAuthViewAssociations,
 }
 
 public sealed record RelationshipAuthorizationFailureLocation(
