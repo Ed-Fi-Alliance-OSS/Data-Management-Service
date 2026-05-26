@@ -1,0 +1,189 @@
+[
+  {
+    "category": "Contracts",
+    "description": "Extend the shared relationship authorization plan contracts so they can represent People relationship subjects without introducing endpoint execution behavior.",
+    "acceptance-criteria": [
+      "Relationship auth specs can carry person-specific subject metadata for Student, Contact, and Staff in addition to existing EducationOrganization subjects.",
+      "Person auth object metadata includes the selected auth view/table name, expected person DocumentId output column, claim EducationOrganizationId column, direct-claim-match flag set to false, and auth failure hint text.",
+      "Person subject metadata can represent direct root-column bindings, transitive ordered join paths, and zero-hop self-person root DocumentId bindings.",
+      "Stored and proposed anchor metadata are explicit enough for later GET-many and CRUD SQL builders to consume without re-resolving strategy-specific behavior.",
+      "Existing EdOrg-only relationship contract behavior, including AllowDirectClaimMatch for EdOrg hierarchy checks, remains compatible with current consumers."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationContracts.cs for People-capable contract fields and unchanged EdOrg semantics.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PageDocumentIdAuthorizationSpecAdapter"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Strategy Classification",
+    "description": "Teach the shared People core to classify the five People-involved relationship strategies as supported core strategies with explicit subject-kind eligibility.",
+    "acceptance-criteria": [
+      "RelationshipsWithEdOrgsAndPeople selects EducationOrganization, Student, Contact, and Staff subjects.",
+      "RelationshipsWithEdOrgsAndPeopleInverted selects EducationOrganization, Student, Contact, and Staff subjects while marking only EdOrg hierarchy checks as inverted.",
+      "RelationshipsWithPeopleOnly selects Student, Contact, and Staff subjects and excludes EducationOrganization subjects.",
+      "RelationshipsWithStudentsOnly selects Student subjects only.",
+      "RelationshipsWithStudentsOnlyThroughResponsibility selects Student subjects only and records responsibility-based auth view selection.",
+      "Duplicate configured relationship strategies are preserved as separate OR entries with their raw configured indexes and relationship-local order.",
+      "NamespaceBased, OwnershipBased, custom view strategies, NoFurtherAuthorizationRequired, and invalid strategy classification behavior remain unchanged outside this People core scope."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationStrategyClassifier.cs for People strategy support and unchanged non-People classifications.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationStrategyClassifier",
+      "Add or update unit tests that assert the subject-kind matrix for all five People strategies."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Auth View Selection",
+    "description": "Implement People auth view selection and missing-view configuration failure metadata from the existing auth object definitions.",
+    "acceptance-criteria": [
+      "Student subjects use auth.EducationOrganizationIdToStudentDocumentId with Student_DocumentId.",
+      "Contact subjects use auth.EducationOrganizationIdToContactDocumentId with Contact_DocumentId.",
+      "Staff subjects use auth.EducationOrganizationIdToStaffDocumentId with Staff_DocumentId.",
+      "RelationshipsWithStudentsOnlyThroughResponsibility uses auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility with Student_DocumentId.",
+      "Each selected People auth view carries the matching auth.md hint text.",
+      "When a selected, operation-applicable person subject requires People auth views that were not emitted, the planning result is a security-configuration failure that names the resource, strategy, selected person kind, auth view, and all missing resources from AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames.",
+      "Mixed EdOrg-and-People strategies that select only applicable EducationOrganization subjects continue with those EdOrg subjects even when AuthObjectDefinitions.HasAllPeopleAuthViewAssociations is false.",
+      "The planner does not emit executable specs that reference conventional People auth view names when AuthObjectDefinitions.HasAllPeopleAuthViewAssociations is false."
+    ],
+    "steps-to-verify": [
+      "Review the People auth view mapping against src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs and AuthEdOrgHierarchyContracts.cs.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Review planner unit tests for all four auth view selections, hint metadata, missing-association security-configuration failures, and EdOrg-only continuation when People views are suppressed."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Subject Resolution",
+    "description": "Implement People subject selection from resolved securable element paths, including direct person references, transitive person references, and self-person resources.",
+    "acceptance-criteria": [
+      "Direct Student, Contact, and Staff securable elements resolve to the person DocumentId column on the subject resource root table or proposed root row.",
+      "Transitive Student, Contact, and Staff securable elements retain the ordered ResolveSecurableElementColumnPath hop chain through intermediate resource tables.",
+      "Student, Contact, and Staff resources with their own person securable element produce a zero-hop self-person subject whose terminal value is the aggregate root DocumentId.",
+      "No People subject uses UniqueId or USI values as the authorization value.",
+      "One People authorization subject is produced per independent declared securable element path, with dedupe limited to identical canonical physical predicate keys.",
+      "Contributor metadata preserves original JSON path, readable or MetaEd name, person kind, and contribution order for every contributing person securable element."
+    ],
+    "steps-to-verify": [
+      "Review the new People selector against src/dms/backend/EdFi.DataManagementService.Backend.External/AuthSecurableElementContracts.cs and the mapping set securable column path contracts.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector",
+      "Add unit tests covering a direct Student reference, a transitive CourseTranscript-to-Student path, Contact and Staff references, and zero-hop Student/Contact/Staff self subjects."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Subject Scope",
+    "description": "Apply ODS-parity subject scope filtering and predicate dedupe rules for People relationship subjects.",
+    "acceptance-criteria": [
+      "Person securable paths whose resolved path starts from a child collection table are excluded from executable People subjects.",
+      "Excluded child-collection People paths are retained as skipped or ineligible contributor metadata with reason ChildCollectionPersonPathOutsideSubjectScope.",
+      "Identical People predicates are deduped only within a single configured strategy/check using a key that includes physical person path, value anchor, terminal person kind, auth view, and output column.",
+      "Duplicate configured strategies remain separate OR entries even when their selected People predicates are identical.",
+      "Normal and inverted mixed strategies are not deduped together, and responsibility-based Student subjects are not deduped with non-responsibility Student subjects.",
+      "If ODS subject-scope filtering leaves a selected strategy with no executable subjects, the result is a no-applicable-subject security-configuration failure that includes skipped-path diagnostics."
+    ],
+    "steps-to-verify": [
+      "Review the People predicate key and skipped-path metadata implementation for strategy-local scope.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector",
+      "Add unit tests for child-collection exclusion, same-path dedupe with merged contributors, duplicate strategy preservation, and no-applicable-subject failures."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Planner Integration",
+    "description": "Integrate selected People subjects with the existing relationship authorization planner while preserving EdOrg behavior for mixed strategies.",
+    "acceptance-criteria": [
+      "RelationshipsWithEdOrgsAndPeople combines applicable root-table EducationOrganization subjects and applicable People subjects with AND semantics inside each strategy.",
+      "RelationshipsWithEdOrgsAndPeopleInverted preserves the EdOrg direct-claim-match flag and swaps only the EdOrg hierarchy Source/Target filtering metadata.",
+      "Person auth view semantics are the same for normal and inverted mixed strategies.",
+      "Mixed EdOrg-and-People strategies continue with applicable People subjects when EdOrg securable elements resolve only to non-root paths.",
+      "Mixed EdOrg-and-People strategies continue with applicable EducationOrganization subjects when no selected, operation-applicable People subject requires a People auth view.",
+      "A true unresolved configured securable element remains a security-configuration failure with resource, strategy, and securable element details.",
+      "Multiple configured relationship strategies preserve OR composition metadata, raw configured indexes, and relationship-local ordering.",
+      "No endpoint adapter or SQL compiler is wired to execute People relationship checks in this task."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs for combined EdOrg and People planning.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Add unit tests for mixed EdOrg-and-People, inverted mixed strategy metadata, People-only strategies, and unresolved element failures."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Operation Eligibility",
+    "description": "Model stored-value, proposed-value, and create-new eligibility for People subjects so later CRUD execution can consume the core without inventing parallel rules.",
+    "acceptance-criteria": [
+      "Stored People specs carry root-table stored anchors and the ordered person path needed to resolve null or broken stored transitive paths.",
+      "Proposed People specs carry explicit proposed root-row or first-hop anchors derived from the ResourceWritePlan, with direct references represented as the degenerate single-anchor case.",
+      "Zero-hop self-person subjects are marked ineligible for POST create-new with reason SelfPersonDocumentIdUnavailableForCreateNew, while remaining applicable for stored and existing-resource operations.",
+      "When a self-person subject is ineligible for create-new and another subject in the same strategy is executable, the ineligible subject is omitted from that operation's AND check and retained in eligibility metadata.",
+      "When every subject in a selected strategy is operation-ineligible for create-new, the planner exposes a no-executable-subjects security-configuration failure with diagnostic eligibility reasons.",
+      "The core does not create a same-row People bootstrap subject for primary association resources whose proposed row would only become visible in a selected People auth view after insertion."
+    ],
+    "steps-to-verify": [
+      "Review proposed anchor metadata against src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Add unit tests for stored transitive anchors, proposed direct and transitive anchors, self-person create-new ineligibility, mixed executable/ineligible strategy handling, and all-ineligible strategy failures."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Failure Metadata",
+    "description": "Extend relationship authorization failure metadata and mapping inputs so People failures can be rendered later by AUTH1 and ProblemDetails consumers.",
+    "acceptance-criteria": [
+      "People failure metadata includes person kind, selected auth view/table name, expected person DocumentId output column, value source, configured strategy identity, relationship-local order, and contributing securable element metadata.",
+      "No-claims metadata for People relationship checks identifies the selected person auth view and hint so GET-many can short-circuit to an empty result and CRUD can map to 403 later.",
+      "Stored null or broken transitive person paths are represented as stored-value invalid-data metadata for the original person securable element, not as security configuration or no-relationship metadata.",
+      "The metadata distinguishes GET-many treatment of null or broken stored person paths as nonmatching rows from CRUD stored-value invalid-data mapping for a specific resource.",
+      "Missing proposed person path values are represented as proposed element-required metadata for the original person securable element.",
+      "The existing versioned compact AUTH1 failure-set ordinal model can map People strategy and subject ordinals back to the extended metadata without adding user-readable values to the payload.",
+      "Security-configuration failures for no applicable People subjects include resource, strategy, selected subject kinds, and skipped or unresolved securable element details."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationAuth1FailurePayload.cs and RelationshipAuthorizationFailureMapper.cs for People metadata compatibility.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationAuth1FailurePayload",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationFailureMapper",
+      "Add unit tests for People no-claims, stored invalid-data metadata, proposed missing metadata, auth-view hints, and ordinal-to-metadata mapping."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Execution Boundaries",
+    "description": "Preserve the existing staged runtime behavior for GET-many and CRUD adapters until DMS-1095 and DMS-1158 consume the People core.",
+    "acceptance-criteria": [
+      "Existing GET-many adapters do not expose or execute People relationship specs before the DMS-1095 integration story.",
+      "Existing GET-by-id, POST, PUT, and DELETE adapters do not expose or execute People relationship specs before the DMS-1158 integration story.",
+      "Known-but-not-enabled or explicit staging behavior remains in place for endpoint paths that are not part of this core story.",
+      "EdOrg-only GET-many and CRUD authorization behavior remains unchanged.",
+      "No E2E feature tags are re-enabled as part of this core story.",
+      "No production DDL, auth view definitions, or database execution paths are changed except where needed to inspect existing auth object metadata."
+    ],
+    "steps-to-verify": [
+      "Review PageDocumentIdAuthorizationSpecAdapter, SingleRecordRelationshipAuthorizationSqlCompiler, and CRUD orchestrators for unchanged People execution staging.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PageDocumentIdAuthorizationSpecAdapter",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationExecutor",
+      "Search the E2E feature files to confirm no @relational-backend tags were re-enabled for People scenarios in this story."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Regression Coverage",
+    "description": "Add focused unit coverage for the People relationship core and run the scoped formatting and test pass for the implementation.",
+    "acceptance-criteria": [
+      "Unit tests cover strategy classification for all five People relationship strategies.",
+      "Unit tests cover subject-kind selection, auth view selection, inverted EdOrg metadata, transitive person path handling, zero-hop self subjects, responsibility-based Student handling, and no-subject security failures.",
+      "Unit tests cover missing People auth view guard behavior, child-collection path exclusion, operation eligibility reasons, contributor metadata, and duplicate strategy preservation.",
+      "Existing EdOrg-only planner, adapter, AUTH1 payload, and failure mapper tests still pass.",
+      "Changed C# files under the DMS backend and backend unit test projects are formatted with csharpier."
+    ],
+    "steps-to-verify": [
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationExecutor",
+      "Run git diff -- tasks.json and confirm no production or test source files were edited by the task-refinement pass itself."
+    ],
+    "completed": false
+  }
+]
